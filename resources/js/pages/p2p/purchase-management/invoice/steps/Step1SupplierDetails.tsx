@@ -1,22 +1,17 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { EditSelect, Field } from '../../order/create-po/form-fields';
-/* The compliance rules themselves, shared with the Create PO form. This step
-   calls them rather than restating them, so the two screens cannot drift apart
-   on what "stale scrutiny" or "high risk" means. */
 import {
   SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
 import { poLookupApi } from '../../order/api/po-api';
+import { legalFromVault } from '../../order/create-po/supplier-checks';
+import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
+import { spiApi } from '../spi-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 
-/* The supplier's Evidence Vault, the same one the purchase order opens. Lazy:
-   it is a large screen that most visits to this form never ask for. */
 const SupplierEvidenceVaultModal = lazy(() => import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 const warmVault = () => { void import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
 
-/* Onboarding a new supplier and editing an existing one are the same screen:
-   `vendorId` is what switches it from one to the other. The purchase order
-   reaches the master the same way. */
 const AddSupplierFlow = lazy(() => import('../../order/create-po/AddSupplierFlow'));
 const warmSupplierFlow = () => { void import('../../order/create-po/AddSupplierFlow'); };
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
@@ -25,11 +20,8 @@ import {
   IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPin,
   IcoPencil, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn,
 } from '../../../icons';
-import { SUPPLIER_LEGAL } from '../data';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
 
-/* The option lists. At module scope because they never change — rebuilding
-   four arrays on every keystroke in the address field would be waste. */
 const PO_TYPES = ['Material / Goods', 'Services'];
 const DOC_TYPES = ['Domestics', 'International'];
 const TRANSPORT_MODES = ['Road', 'Rail', 'Air', 'Sea'];
@@ -41,14 +33,6 @@ const GST_STATUSES = ['Active', 'Suspended', 'Cancelled'];
 const COUNTRIES = ['India', 'United Arab Emirates', 'Singapore', 'United States'];
 const STATES = ['Maharashtra', 'Gujarat', 'Karnataka', 'Delhi', 'Tamil Nadu'];
 
-/**
- * The checklist shown once the supplier's rating or category forces it.
- *
- * Stated here rather than taken from the PO form's `RISK_GUIDELINES`, whose
- * wording was softened to "recommended / switched on by default". The design
- * is firmer — these are rules, not advice — and the PO form's own copy is left
- * alone rather than changed underneath it.
- */
 const GUIDELINES = [
   {
     title: 'Physical inspection is mandatory',
@@ -60,22 +44,9 @@ const GUIDELINES = [
   },
 ];
 
-/**
- * Step 01 — Supplier Details.
- *
- * Two sections: the purchase order's own details, then the supplier this
- * invoice is for. Every class belongs to the shared P2P wizard chrome or to
- * the Create PO form's additions, both of which the shell already imports —
- * this file adds no CSS.
- *
- * The fields hold local state and no API. The endpoint does not exist yet, so
- * the screen is built against the design first; when it lands, this component
- * takes a draft and a setter the way the PO form's steps do, and nothing about
- * the markup changes.
- */
-export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDraft; set: SetDraft }) {
-  /* One flag per collapsible. Separate rather than one open-section id,
-     because the design lets several be open at once. */
+export default function Step1SupplierDetails({ draft, set, error = null }: {
+  draft: InvoiceDraft; set: SetDraft; error?: string | null;
+}) {
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
   const [supCardOpen, setSupCardOpen] = useState(true);
@@ -84,8 +55,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
   const [gstOpen, setGstOpen] = useState(true);
   const [riskOpen, setRiskOpen] = useState(true);
 
-  /* Every field reads the form's draft. Destructured so the markup below stays
-     the same length it was when each one was its own useState. */
   const {
     poType, docType, transport, poDate, deliveryDate, deliveryLocation, paymentType,
     physInspection, poNumber, supplier, supplierCode, legalName, supplierType, riskLevel, category,
@@ -93,39 +62,20 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
     scrutinyDate, gstNumber, gstStatus, filingDate, remarks,
   } = draft;
 
-  /* The supplier the chooser settled counts as chosen, so the compliance cards
-     below know whether they have anything to report. */
   const hasSupplier = !!supplier;
 
-  /* Linked to a purchase order: the order's own terms are read back here, not
-     asked for again. A standalone invoice has none, so the block stays open. */
   const hasPo = !!poNumber;
 
-  /* This form knows its supplier by name — it is handed one, it does not pick
-     one — so anything that needs the master's own record has to find it first.
-     Both the Evidence Vault and Edit go through here, and the answer is kept,
-     so the second of them costs nothing. Resolved on the click rather than on
-     mount: a request for a screen most visits never open is a poor trade. */
   const toast = useToast();
   const [vendorId, setVendorId] = useState<number | null>(null);
   const [vault, setVault] = useState<ReturnType<typeof vaultTargetOf> | null>(null);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  /* Which button is waiting on the lookup, so only that one says so. */
   const [busy, setBusy] = useState<'vault' | 'edit' | null>(null);
 
-  /**
-   * The master's id for this invoice's supplier, or null when it has none.
-   *
-   * Matched on the NAME, and on the code only to tell two identical names
-   * apart. Not code-first, which is what this did at first: the invoice's
-   * supplier code is a placeholder until the list is served by the API, and
-   * 'S-001' happens to be a real code in the master — so a code-first match
-   * resolved to a different supplier entirely and looked like it had worked.
-   * There is deliberately no fallback: the wrong supplier is worse than none.
-   */
   const resolveVendorId = async (purpose: string): Promise<number | null> => {
+    if (draft.vendorId !== null) return draft.vendorId;
     if (vendorId !== null) return vendorId;
     const list = await poLookupApi.suppliers();
     const name = supplier.trim().toLowerCase();
@@ -143,6 +93,7 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
 
   const openVault = async () => {
     if (vault) { setVaultOpen(true); return; }
+    if (draft.supplierDetail) { setVault(vaultTargetOf(draft.supplierDetail)); setVaultOpen(true); return; }
     if (busy) return;
     setBusy('vault');
     try {
@@ -157,7 +108,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
     }
   };
 
-  /* Edit needs only the id — the master screen loads the rest itself. */
   const openEdit = async () => {
     if (busy) return;
     setBusy('edit');
@@ -171,15 +121,42 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
     }
   };
 
-  /* Read from the supplier's Evidence Vault. Same thresholds the PO form uses,
-     so the two cards cannot disagree about what counts as compliant. */
-  const legal = SUPPLIER_LEGAL;
+  const editVendorId = draft.vendorId ?? vendorId;
+
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshSupplier = async () => {
+    const id = editVendorId;
+    if (id === null) return;
+    setRefreshing(true);
+    try {
+      const [fresh, scrutinyRows] = await Promise.all([
+        poLookupApi.supplier(id),
+        spiApi.vendorScrutiny(id).catch(() => null),
+      ]);
+      const gst = newestScrutiny(scrutinyRows);
+      set({
+        ...draftFromSupplier(fresh),
+        ...(gst ? draftFromScrutiny(gst) : { scrutinyDate, filingDate }),
+      });
+      setVault(vaultTargetOf(fresh));
+      poLookupApi.supplierVault(id)
+        .then(v => set({ legal: legalFromVault(v) }))
+        .catch(() => {});
+      if ((fresh.category ?? '').toLowerCase().includes('blacklist')) {
+        toast.warning('Supplier is now blacklisted', `${fresh.name} is blacklisted — review this invoice before saving it.`);
+      } else {
+        toast.success('Supplier updated', `${fresh.code} — ${fresh.name} details refreshed on this invoice.`);
+      }
+    } catch {
+      toast.error('Could not refresh the supplier', 'The changes were saved, but this form could not reload them — reopen it to see them.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
 
-  /* The GST verdict and the risk checks are NOT written out here — they come
-     from the same two functions the PO form calls, fed this step's own field
-     values. Restating the rules would let the two screens drift apart on what
-     "stale" or "high risk" means, and the server re-runs these anyway. */
   const gst = gstState(hasSupplier ? supplier : '', scrutinyDate, filingDate);
   const scrutinyAge = monthsAgo(scrutinyDate);
   const filingAge = monthsAgo(filingDate);
@@ -193,7 +170,7 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
         international: docType === 'International',
       }, physInspection)
       : []),
-    [hasSupplier, riskLevel, category, gstStatus, gstNumber, filingDate, scrutinyDate, legal, docType],
+    [hasSupplier, riskLevel, category, gstStatus, gstNumber, filingDate, scrutinyDate, legal, docType, physInspection],
   );
 
   const nHigh = risks.filter(r => r.sev === 'high').length;
@@ -208,19 +185,15 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
 
   return (
     <>
-      {/* Not view-only: a missing document can be uploaded from here, which is
-          the point of reaching the vault from an invoice at all. */}
       {vaultOpen && vault && (
         <Suspense fallback={null}>
           <SupplierEvidenceVaultModal open supplier={vault} onClose={() => setVaultOpen(false)} />
         </Suspense>
       )}
 
-      {/* The same screen twice: with an id it edits that supplier, without one
-          it onboards a new one. */}
-      {editOpen && vendorId !== null && (
+      {editOpen && editVendorId !== null && (
         <Suspense fallback={null}>
-          <AddSupplierFlow vendorId={vendorId} onClose={() => setEditOpen(false)} />
+          <AddSupplierFlow vendorId={editVendorId} onClose={() => setEditOpen(false)} onSaved={() => void refreshSupplier()} />
         </Suspense>
       )}
       {adding && (
@@ -229,7 +202,12 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
         </Suspense>
       )}
 
-      {/* ── Purchase Order ─────────────────────────────────────────────── */}
+      {error && (
+        <div className="spi-dt-legal-note is-error" role="alert">
+          Could not load the purchase order: {error}
+        </div>
+      )}
+
       <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head" onClick={() => setPoOpen(o => !o)}>
           <div className="spi-dt-sec-ico"><IcoFile /></div>
@@ -246,11 +224,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
 
         <div className="spi-dt-sec-body">
           <div className="spi-dt-grid4">
-            {/* Linked to a PO, this block reads the order back rather than
-                asking for it again — the same way the supplier block below is
-                read-only once a supplier is chosen. Editing them here would
-                let an invoice disagree with the order it is matched against.
-                A standalone invoice has no order to read, so they stay open. */}
             <Field label="PO Type" req>
               <EditSelect readOnly={hasPo} value={poType} options={PO_TYPES} onChange={v => set({ poType: v })} />
             </Field>
@@ -261,16 +234,12 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
               <EditSelect readOnly={hasPo} value={transport} options={TRANSPORT_MODES} onChange={v => set({ transport: v })} />
             </Field>
             <Field label="PO Date">
-              {/* Never typed: the order's own date, carried over from the PO. */}
               <div className="spi-dt-inp-auto">
                 <input className="spi-dt-inp" value={formatDmy(poDate)} readOnly />
                 <span className="spi-dt-auto"><IcoLock /> AUTO</span>
               </div>
             </Field>
             <Field label="Expected Delivery Date" req>
-              {/* Carried from the order as a formatted date, not a bare date
-                  input: a read-only `type="date"` still shows its picker
-                  affordance and reads as something to fill in. */}
               {hasPo
                 ? <input className="spi-dt-inp" value={formatDmy(deliveryDate)} readOnly />
                 : <input className="spi-dt-inp" type="date"
@@ -284,9 +253,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             <Field label="Payment Type" req>
               <EditSelect readOnly={hasPo} value={paymentType} options={PAYMENT_TYPES} onChange={v => set({ paymentType: v })} />
             </Field>
-            {/* Read-only here, unlike the PO form's Yes/No toggle: by the time
-                an invoice is raised the inspection was already decided on the
-                order, so this reports it rather than asking again. */}
             <Field label="Physical Inspection Status">
               <div className="spi-dt-inp-auto">
                 <input className="spi-dt-inp" value={physInspection ? 'Required' : 'Not Applicable'} readOnly />
@@ -297,7 +263,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
         </div>
       </div>
 
-      {/* ── Supplier ───────────────────────────────────────────────────── */}
       <div className={`spi-dt-sec ${supOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head" onClick={() => setSupOpen(o => !o)}>
           <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoUser /></div>
@@ -313,32 +278,25 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
         </div>
 
         <div className="spi-dt-sec-body">
-          {/* Supplier Details */}
           <div className="spi-dt-card">
             <div className="spi-dt-card-head cpf-clickable" onClick={() => setSupCardOpen(o => !o)}>
               <div className="spi-dt-card-title">
                 <span className="spi-dt-card-ico"><IcoUser /></span> Supplier Details
               </div>
-              {/* stopPropagation, or opening the master would also collapse the
-                  card the button sits in. */}
-              <button type="button" className="cpf-addbtn" title="Onboard a supplier that is not in this list"
-                onPointerEnter={warmSupplierFlow}
-                onClick={e => { e.stopPropagation(); setAdding(true); }}>
-                <IcoPlus /> Add Supplier
-              </button>
+              {!hasPo && (
+                <button type="button" className="cpf-addbtn" title="Onboard a supplier that is not in this list"
+                  onPointerEnter={warmSupplierFlow}
+                  onClick={e => { e.stopPropagation(); setAdding(true); }}>
+                  <IcoPlus /> Add Supplier
+                </button>
+              )}
               <span className="spi-dt-fields-badge cpf-push">5 FIELDS</span>
               <span className={`cpf-chev ${supCardOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
             </div>
             {supCardOpen && (
               <div className="spi-dt-grid4 cpf-grid5">
                 <Field label="SELECT SUPPLIER" req>
-                  {/* The select and its edit button share a row — `.cpf-supsel`
-                      is the purchase order's own wrapper for exactly this. */}
                   <div className="cpf-supsel">
-                    {/* Frozen once chosen, as on the purchase order. The list
-                        only ever holds the supplier already on the invoice, so
-                        an open picker offered a choice that did not exist; the
-                        footer's Change Selection is how it is swapped. */}
                     {hasSupplier ? (
                       <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
                     ) : (
@@ -349,16 +307,13 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
                         onChange={v => set({ supplier: v })}
                       />
                     )}
-                    {/* Opens this supplier in the master. Only once there is a
-                        supplier to open — on a blank form it would have
-                        nothing to edit. */}
                     {hasSupplier && (
                       <button
                         type="button"
                         className="cpf-supedit"
                         title={`Edit ${supplier} in the Supplier master`}
                         aria-label="Edit supplier"
-                        disabled={busy === 'edit'}
+                        disabled={busy === 'edit' || refreshing}
                         onPointerEnter={warmSupplierFlow}
                         onClick={() => void openEdit()}
                       >
@@ -384,7 +339,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             )}
           </div>
 
-          {/* Address & Contact Details */}
           <div className="spi-dt-card">
             <div className="spi-dt-card-head cpf-clickable" onClick={() => setAddrOpen(o => !o)}>
               <div className="spi-dt-card-title">
@@ -395,8 +349,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             </div>
             {addrOpen && (
               <div className="spi-dt-grid4">
-                {/* `full` spans the grid: an address needs the width, and a
-                    quarter-width box would wrap a PIN code onto its own line. */}
                 <Field label="REGISTERED OFFICE ADDRESS" full>
                   <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Building / street / area / landmark, with PIN code"} readOnly={hasSupplier}
                     value={address} onChange={e => set({ address: e.target.value })} />
@@ -435,7 +387,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             )}
           </div>
 
-          {/* Supplier Legal Status */}
           <div className="spi-dt-card">
             <div className="spi-dt-card-head cpf-clickable cpf-lghead" onClick={() => setLegalOpen(o => !o)}>
               <div className="spi-dt-card-title">
@@ -449,7 +400,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
                   <button
                     type="button"
                     className="cpf-vault"
-                    /* stopPropagation because the whole head toggles the card. */
                     onClick={e => { e.stopPropagation(); void openVault(); }}
                     onPointerEnter={warmVault}
                     disabled={busy === 'vault'}
@@ -464,8 +414,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
                 </>
               ) : (
                 <>
-                  {/* The badge's slot still shows while there is nothing to
-                      score, as a dash — an absent badge would shift the bar. */}
                   <span className="cpf-push spi-dt-legal-badge cpf-lgbadge--none">–</span>
                   <span className="cpf-lgbar"><span className="cpf-lgbar__fill is-empty" /></span>
                   <span className="cpf-lgpct">0%</span>
@@ -478,8 +426,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
                 {hasSupplier ? (
                   <div className="cpf-lg__tabs">
                     {legal.sections.map((sec, i) => (
-                      /* `title` lists what the group counts, so the two-line
-                         tile does not have to name all three sources. */
                       <div key={sec.name} className={`cpf-lg__tab cpf-lg__tab--${sec.tone}`} title={sec.parts.join(' · ')}>
                         <div className="cpf-lg__hd">
                           <span className="cpf-lg__ico">{i === 0 ? <IcoShield /> : <IcoDocSm />}</span>
@@ -505,7 +451,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             )}
           </div>
 
-          {/* GST Scrutiny Details */}
           <div className="spi-dt-card">
             <div className="spi-dt-card-head cpf-clickable" onClick={() => setGstOpen(o => !o)}>
               <div className="spi-dt-card-title">
@@ -516,9 +461,6 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             </div>
             {gstOpen && (
               <>
-                {/* The verdict for the two dates below. `idle` is the
-                    unmodified tone: nothing to judge yet, so a clock rather
-                    than a pass or a fail. */}
                 <div className={`cpf-gst invf-gst${gst.tone === 'idle' ? '' : ` cpf-gst--${gst.tone}`}`}>
                   <span className="cpf-gst__ico">
                     {gst.tone === 'ok' ? <IcoOk />
@@ -540,31 +482,28 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
                   </span>
                 </div>
                 <div className="spi-dt-grid4">
-                  {/* Plain date inputs, as the design draws them. MasterDatePicker
-                      adds a clear button and a calendar chip inside the field,
-                      which crowds a four-column row — and these two dates sit
-                      next to a GSTIN and a status, so they have to read as
-                      ordinary fields rather than as controls. */}
                   <Field label="SCRUTINY DATE">
-                    <input className="spi-dt-inp" type="date"
-                      value={scrutinyDate} onChange={e => set({ scrutinyDate: e.target.value })} />
+                    {hasPo
+                      ? <input className="spi-dt-inp" value={formatDmy(scrutinyDate)} readOnly />
+                      : <input className="spi-dt-inp" type="date"
+                        value={scrutinyDate} onChange={e => set({ scrutinyDate: e.target.value })} />}
                   </Field>
                   <Field label="GST NUMBER">
-                    <input className="spi-dt-inp" placeholder="15-digit GSTIN" maxLength={15}
+                    <input className="spi-dt-inp" placeholder={hasPo ? '—' : '15-digit GSTIN'} maxLength={15} readOnly={hasPo}
                       value={gstNumber} onChange={e => set({ gstNumber: e.target.value.toUpperCase() })} />
                   </Field>
                   <Field label="GST STATUS">
-                    <EditSelect value={gstStatus} options={GST_STATUSES} onChange={v => set({ gstStatus: v })} />
+                    <EditSelect readOnly={hasPo} value={gstStatus} options={GST_STATUSES} onChange={v => set({ gstStatus: v })} />
                   </Field>
                   <Field label="LAST FILING DATE">
-                    <input className="spi-dt-inp" type="date"
-                      value={filingDate} onChange={e => set({ filingDate: e.target.value })} />
+                    {hasPo
+                      ? <input className="spi-dt-inp" value={formatDmy(filingDate)} readOnly />
+                      : <input className="spi-dt-inp" type="date"
+                        value={filingDate} onChange={e => set({ filingDate: e.target.value })} />}
                   </Field>
                   <Field label="PREV. INVOICE / REMARKS" full>
-                    {/* No `rows`: the stylesheet's own min-height (74px) is the
-                        design's height, and a rows count overrides it. */}
-                    <textarea className="spi-dt-textarea"
-                      placeholder="Notes on previous invoices, filing history or scrutiny remarks…"
+                    <textarea className="spi-dt-textarea" readOnly={hasPo}
+                      placeholder={hasPo ? '—' : 'Notes on previous invoices, filing history or scrutiny remarks…'}
                       value={remarks} onChange={e => set({ remarks: e.target.value })} />
                   </Field>
                 </div>
@@ -572,14 +511,11 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             )}
           </div>
 
-          {/* Supplier Risk Alert */}
           <div className="spi-dt-card">
             <div className="spi-dt-card-head cpf-clickable" onClick={() => setRiskOpen(o => !o)}>
               <div className="spi-dt-card-title">
                 <span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoAlert /></span> Supplier Risk Alert
               </div>
-              {/* `cpf-hide` keeps the slot's width while there is nothing to
-                  say, so the chevron does not move once a verdict arrives. */}
               <span className={`cpf-risk__badge cpf-risk__badge--${riskSev} ${hasSupplier ? '' : 'cpf-hide'}`}>
                 {!hasSupplier ? ''
                   : nHigh ? `${nHigh} critical${nMed ? ` · ${nMed} warning` : ''}`
@@ -602,11 +538,8 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
                             : 'risk rating, category, GST registration, filing, scrutiny and documents'}
                         </div>
                       </div>
-                      {/* The same score as a figure, at the end of the row. */}
                       <span className="cpf-risk__sum-score">{nOk}/{risks.length}</span>
                     </div>
-                    {/* Shown only when the supplier's own rating or category
-                        forces them — otherwise they are not rules, just advice. */}
                     {isRiskMandatory({ risk: riskLevel, category }) && (
                       <div className="cpf-guide">
                         <div className="cpf-guide__hd">

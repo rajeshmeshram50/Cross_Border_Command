@@ -2,14 +2,13 @@
 
 namespace App\Http\Controllers\Api\P2p;
 
-use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiBoxItem;
 use App\Models\P2p\SupplierInvoice;
 use App\Services\P2p\SupplierInvoiceService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -23,19 +22,7 @@ use Illuminate\Validation\Rule;
  */
 class SpiBoxController extends Controller
 {
-    use RunsInTransaction;
-
     public function __construct(private SupplierInvoiceService $svc) {}
-
-    private function ok($data, int $code = 200): JsonResponse
-    {
-        return response()->json(['status' => true, 'data' => $data], $code);
-    }
-
-    private function fail(string $message, int $code = 422, array $extra = []): JsonResponse
-    {
-        return response()->json(['status' => false, 'message' => $message] + $extra, $code);
-    }
 
     private function tenantUser(Request $request)
     {
@@ -58,54 +45,79 @@ class SpiBoxController extends Controller
     /* ══════════════════════════ READ ══════════════════════════ */
 
     /** GET /p2p/spi/{id}/boxes */
-    public function index(Request $request, int $id): JsonResponse
+    public function index(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        $boxes = $spi->boxes()->with('items')->orderBy('box_code')->get()
-            ->map(fn ($b) => $b->toArray() + ['volumetric_weight_kg' => $b->volumetricWeightKg()]);
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
 
-        $rows = $this->svc->packingSummary($id);
+            $boxes = $spi->boxes()->with('items')->orderBy('box_code')->get()
+                ->map(fn ($b) => $b->toArray() + ['volumetric_weight_kg' => $b->volumetricWeightKg()]);
 
-        return $this->ok([
-            'boxes'           => $boxes,
-            'packing_summary' => $rows,
-            'totals'          => $this->svc->packingTotals($rows) + ['boxes' => $boxes->count()],
-        ]);
+            $rows = $this->svc->packingSummary($id);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'boxes'           => $boxes,
+                'packing_summary' => $rows,
+                'totals'          => $this->svc->packingTotals($rows) + ['boxes' => $boxes->count()],
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** GET /p2p/spi/{id}/packing-summary — packed versus pending, per line. */
-    public function packingSummary(Request $request, int $id): JsonResponse
+    public function packingSummary(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        $rows = $this->svc->packingSummary($id);
+            $this->tenantUser($request);
+            $this->findSpi($id);
 
-        return $this->ok([
-            'items'  => $rows,
-            // The TOTALS row under the grid.
-            'totals' => $this->svc->packingTotals($rows) + [
-                'boxes' => SpiBox::where('supplier_invoice_id', $id)->count(),
-            ],
-        ]);
+            $rows = $this->svc->packingSummary($id);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'items'  => $rows,
+                // The TOTALS row under the grid.
+                'totals' => $this->svc->packingTotals($rows) + [
+                    'boxes' => SpiBox::where('supplier_invoice_id', $id)->count(),
+                ],
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ WRITE ══════════════════════════ */
 
     /** POST /p2p/spi/{id}/boxes — the box and its contents in one payload. */
-    public function store(Request $request, int $id): JsonResponse
+    public function store(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $spi  = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        if (!$spi->isEditable()) return $this->fail("{$spi->code} is {$spi->status} and can no longer be packed.");
+            $user = $this->tenantUser($request);
+            $spi  = $this->findSpi($id);
 
-        $data = $this->validateBox($request);
-        if ($blocked = $this->guardOverPacking($spi, $data['items'], null)) return $blocked;
+            if (!$spi->isEditable()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$spi->code} is {$spi->status} and can no longer be packed.",
+                ], 422));
+            }
 
-        $box = $this->inTransaction('create the box', function () use ($spi, $data, $user) {
+            $data = $this->validateBox($request);
+            $this->guardOverPacking($spi, $data['items'], null);
+
             $box = SpiBox::create(collect($data)->except('items')->all() + [
                 'supplier_invoice_id' => $spi->id,
                 // Sequential within the INVOICE, so three SPIs packed at once
@@ -117,31 +129,42 @@ class SpiBoxController extends Controller
             $this->writeItems($box, $data['items']);
             $this->svc->log($spi, 'box_created', ['box_id' => $box->id, 'new_value' => $box->box_code, 'stage' => 3]);
 
-            return $box->load('items');
-        });
+            $box->load('items');
+            $rows = $this->svc->packingSummary($spi->id);
 
-        $rows = $this->svc->packingSummary($spi->id);
+            DB::commit();
 
-        return $this->ok([
-            'box'             => $box->toArray() + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
-            'packing_summary' => $rows,
-            'totals'          => $this->svc->packingTotals($rows),
-        ], 201);
+            return response()->json(['status' => true, 'data' => [
+                'box'             => $box->toArray() + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
+                'packing_summary' => $rows,
+                'totals'          => $this->svc->packingTotals($rows),
+            ]], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** PUT /p2p/spi/{id}/boxes/{box} */
-    public function update(Request $request, int $id, int $boxId): JsonResponse
+    public function update(Request $request, int $id, int $boxId)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
-        $box = $this->findBox($id, $boxId);
+        try {
+            DB::beginTransaction();
 
-        if (!$spi->isEditable()) return $this->fail("{$spi->code} is {$spi->status} and can no longer be packed.");
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
+            $box = $this->findBox($id, $boxId);
 
-        $data = $this->validateBox($request);
-        if ($blocked = $this->guardOverPacking($spi, $data['items'], $box->id)) return $blocked;
+            if (!$spi->isEditable()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$spi->code} is {$spi->status} and can no longer be packed.",
+                ], 422));
+            }
 
-        $box = $this->inTransaction('update the box', function () use ($spi, $box, $data) {
+            $data = $this->validateBox($request);
+            $this->guardOverPacking($spi, $data['items'], $box->id);
+
             $box->forceFill(collect($data)->except('items')->all())->save();
 
             // Contents are replaced wholesale — a partial update would leave
@@ -151,79 +174,99 @@ class SpiBoxController extends Controller
 
             $this->svc->log($spi, 'box_updated', ['box_id' => $box->id, 'new_value' => $box->box_code, 'stage' => 3]);
 
-            return $box->refresh()->load('items');
-        });
+            $box->refresh()->load('items');
+            $rows = $this->svc->packingSummary($spi->id);
 
-        $rows = $this->svc->packingSummary($spi->id);
+            DB::commit();
 
-        return $this->ok([
-            'box'             => $box->toArray() + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
-            'packing_summary' => $rows,
-            'totals'          => $this->svc->packingTotals($rows),
-        ]);
+            return response()->json(['status' => true, 'data' => [
+                'box'             => $box->toArray() + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
+                'packing_summary' => $rows,
+                'totals'          => $this->svc->packingTotals($rows),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** DELETE /p2p/spi/{id}/boxes/{box} — soft delete; the quantity goes back to pending. */
-    public function destroy(Request $request, int $id, int $boxId): JsonResponse
+    public function destroy(Request $request, int $id, int $boxId)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
-        $box = $this->findBox($id, $boxId);
+        try {
+            DB::beginTransaction();
 
-        // A placed box is on a shelf being scanned — remove it from there first.
-        if ($box->putaway()->whereNotNull('confirmed_at')->exists()) {
-            return $this->fail("{$box->box_code} is already put away — remove it from its shelf before deleting the box.");
-        }
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
+            $box = $this->findBox($id, $boxId);
 
-        $renumbered = $this->inTransaction('delete the box', function () use ($spi, $box) {
+            // A placed box is on a shelf being scanned — remove it from there first.
+            if ($box->putaway()->whereNotNull('confirmed_at')->exists()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$box->box_code} is already put away — remove it from its shelf before deleting the box.",
+                ], 422));
+            }
+
             $this->svc->log($spi, 'box_deleted', ['box_id' => $box->id, 'old_value' => $box->box_code, 'stage' => 3]);
 
             $box->items()->delete();
             $box->delete();
 
-            return $this->renumber($spi->id);
-        });
+            $renumbered = $this->renumber($spi->id);
+            $rows       = $this->svc->packingSummary($spi->id);
 
-        $rows = $this->svc->packingSummary($spi->id);
+            DB::commit();
 
-        return $this->ok([
-            'deleted_box_id'  => $boxId,
-            'renumbered'      => $renumbered,
-            'packing_summary' => $rows,
-            'totals'          => $this->svc->packingTotals($rows),
-        ]);
+            return response()->json(['status' => true, 'data' => [
+                'deleted_box_id'  => $boxId,
+                'renumbered'      => $renumbered,
+                'packing_summary' => $rows,
+                'totals'          => $this->svc->packingTotals($rows),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** POST /p2p/spi/{id}/boxes/{box}/sticker — printing freezes the box code. */
-    public function printSticker(Request $request, int $id, int $boxId): JsonResponse
+    public function printSticker(Request $request, int $id, int $boxId)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
-        $box = $this->findBox($id, $boxId);
+        try {
+            DB::beginTransaction();
 
-        $box = $this->inTransaction('print the sticker', function () use ($spi, $box) {
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
+            $box = $this->findBox($id, $boxId);
+
             $box->forceFill(['sticker_printed_at' => now()])->save();
             $this->svc->log($spi, 'sticker_printed', ['box_id' => $box->id, 'new_value' => $box->box_code, 'stage' => 3]);
 
-            return $box->refresh()->load('items.invoiceItem');
-        });
+            $box->refresh()->load('items.invoiceItem');
 
-        return $this->ok([
-            'box_code'           => $box->box_code,
-            'sticker_printed_at' => $box->sticker_printed_at,
-            // The signal to the UI that this box can no longer be renumbered.
-            'code_locked'        => true,
-            'payload'            => [
-                'spi_code'        => $spi->code,
-                'box_code'        => $box->box_code,
-                'gross_weight_kg' => $box->gross_weight_kg,
-                'products'        => $box->items->map(fn ($i) => [
-                    'description' => $i->invoiceItem?->description,
-                    'quantity'    => (float) $i->quantity,
-                    'uom'         => $i->invoiceItem?->uom,
-                ]),
-            ],
-        ]);
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'box_code'           => $box->box_code,
+                'sticker_printed_at' => $box->sticker_printed_at,
+                // The signal to the UI that this box can no longer be renumbered.
+                'code_locked'        => true,
+                'payload'            => [
+                    'spi_code'        => $spi->code,
+                    'box_code'        => $box->box_code,
+                    'gross_weight_kg' => $box->gross_weight_kg,
+                    'products'        => $box->items->map(fn ($i) => [
+                        'description' => $i->invoiceItem?->description,
+                        'quantity'    => (float) $i->quantity,
+                        'uom'         => $i->invoiceItem?->uom,
+                    ]),
+                ],
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */
@@ -298,7 +341,7 @@ class SpiBoxController extends Controller
     }
 
     /** Nothing may be packed beyond what the invoice says was billed. */
-    private function guardOverPacking(SupplierInvoice $spi, array $items, ?int $ignoreBoxId): ?JsonResponse
+    private function guardOverPacking(SupplierInvoice $spi, array $items, ?int $ignoreBoxId): void
     {
         $summary = collect($this->svc->packingSummary($spi->id))->keyBy('supplier_invoice_item_id');
 
@@ -313,14 +356,20 @@ class SpiBoxController extends Controller
 
         foreach ($wanted as $itemId => $qty) {
             $row = $summary[$itemId] ?? null;
-            if (!$row) return $this->fail('That product is not on this invoice.');
+            if (!$row) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'That product is not on this invoice.',
+                ], 422));
+            }
 
             $left = $row['qty_pending'] + (float) ($own[$itemId] ?? 0);
             if ($qty > $left + 0.001) {
-                return $this->fail('Only ' . number_format($left, 3) . ' of that product is left to pack.');
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'Only ' . number_format($left, 3) . ' of that product is left to pack.',
+                ], 422));
             }
         }
-
-        return null;
     }
 }

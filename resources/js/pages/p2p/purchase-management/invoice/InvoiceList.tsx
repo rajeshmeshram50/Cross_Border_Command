@@ -70,7 +70,8 @@ export default function InvoiceList() {
   }, []);
 
   const [formFor, setFormFor] = useState<InvoiceFormInput | null>(null);
-  const closeForm = useCallback(() => setFormFor(null), []);
+  const reloadList = list.reload;
+  const closeForm = useCallback(() => { setFormFor(null); reloadList(); }, [reloadList]);
 
   const confirmStorage = useCallback((choice: StorageChoice) => {
     if (!storageFor) return;
@@ -93,6 +94,9 @@ export default function InvoiceList() {
     if (action === 'vault') { setVaultRow(row); return; }
     if (action === 'edit') {
       setFormFor({
+        spiId: row.apiId,
+        status: row.status,
+        statusLabel: row.statusLabel,
         poNo: row.poNo,
         supplier: row.supplierName,
         storage: row.warehouseKind === 'third-party'
@@ -102,7 +106,7 @@ export default function InvoiceList() {
             warehouse: row.warehouseName
               ? STORAGE_WAREHOUSES.find(w => w.name === row.warehouseName)
                 ?? { id: row.warehouseName, name: row.warehouseName, location: '—' }
-              : undefined,
+              : STORAGE_WAREHOUSES[0],
           },
         invoiceNo: row.invoiceNo,
       });

@@ -1,15 +1,10 @@
 import { useCallback, useState } from 'react';
+import type { PoDetail, SupplierDetail } from '../order/api/po-api';
+import { DOC_TYPE_OPTIONS, PO_TYPE_OPTIONS } from '../order/create-po/po-draft';
+import { categoryLabel, riskLabel, type LegalView } from '../order/create-po/supplier-checks';
+import type { TaxMode } from './invoice-products';
 
-/**
- * Everything the four steps collect, in one object.
- *
- * It lives in InvoiceForm rather than inside each step, because Step 02 opens
- * with a read-only recap of Step 01 — a step cannot summarise state it does
- * not hold. The Create PO form holds its draft the same way, for the same
- * reason.
- */
 export interface InvoiceDraft {
-  /* ── Step 01: the purchase order ─────────────────────────────────────── */
   poType: string;
   docType: string;
   transport: string;
@@ -17,14 +12,17 @@ export interface InvoiceDraft {
   deliveryDate: string;
   deliveryLocation: string;
   paymentType: string;
-  /** Decided on the order, reported here. */
   physInspection: boolean;
+  taxMode: TaxMode | null;
+  currency: string;
+  exchangeRate: string;
 
-  /* ── Step 01: the supplier ───────────────────────────────────────────── */
+  vendorId: number | null;
+  supplierDetail: SupplierDetail | null;
+  legal: LegalView | null;
+
   supplier: string;
   supplierCode: string;
-  /** The order and proforma this invoice is matched against, shown on the
-   *  product section's head. */
   poNumber: string;
   piNumber: string;
   legalName: string;
@@ -48,85 +46,155 @@ export interface InvoiceDraft {
   filingDate: string;
   remarks: string;
 
-  /* ── Step 02: the invoice itself ─────────────────────────────────────── */
   invoiceNumber: string;
   invoiceDate: string;
-  /** File names only — the upload endpoint does not exist yet. */
   invoiceFile: string;
   ewayBillFile: string;
 }
 
-/** A date that many months in the past, for the prefilled compliance dates. */
-const monthsBack = (months: number) => {
+const today = () => {
   const d = new Date();
-  d.setDate(d.getDate() - Math.round(months * 30.44));
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const day = (v: string | null | undefined) => (v ? v.slice(0, 10) : '');
 
-/** `iso` plus n days, as an ISO date. Used for the PO's delivery window. */
-const addDays = (iso: string, n: number) =>
-  new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+export function draftFromSupplier(sup: SupplierDetail): Partial<InvoiceDraft> {
+  return {
+    supplierDetail: sup,
+    supplier: sup.name,
+    supplierCode: sup.code,
+    legalName: sup.legalName ?? '',
+    supplierType: sup.type ?? '',
+    riskLevel: riskLabel(sup.risk),
+    category: categoryLabel(sup.category),
+    address: sup.addr ?? '',
+    country: sup.country ?? '',
+    state: sup.state ?? '',
+    stateCode: sup.stateCode ?? '',
+    city: sup.city ?? '',
+    contactName: sup.contact ?? '',
+    designation: sup.desig ?? '',
+    contactNumber: sup.phone ?? '',
+    email: sup.email ?? '',
+    scrutinyDate: day(sup.scrutiny),
+    gstNumber: sup.gstNo ?? '',
+    gstStatus: sup.gstStatus ?? '',
+    filingDate: day(sup.filing),
+    remarks: sup.remarks ?? '',
+  };
+}
 
-/**
- * The draft, plus a setter that merges a patch.
- *
- * `set` is wrapped in useCallback and never depends on the draft, so it keeps
- * one identity for the life of the form. A setter that changed on every
- * keystroke would be a new prop for every step and every memoised child below.
- */
-export function useInvoiceDraft(seed: {
-  supplier: string; invoiceNo: string; poNo?: string;
-  /** Where the goods are being staged — the PO's delivery location. */
-  warehouse?: string;
-}) {
+export type GstScrutinyRow = {
+  id: number;
+  gst_number: string | null;
+  status: string | null;
+  scrutiny_date: string | null;
+  last_filing_date: string | null;
+  prev_non_gst_2a_invoice: string | null;
+  red_flags: string | null;
+};
+
+type PoWithSupplierDetails = PoDetail & {
+  supplier_details?: { data?: { gst_scrutiny?: GstScrutinyRow[] } } | null;
+};
+
+export function newestScrutiny(rows: GstScrutinyRow[] | null | undefined): GstScrutinyRow | null {
+  return (rows ?? []).reduce<GstScrutinyRow | null>((best, r) => (!best || r.id > best.id ? r : best), null);
+}
+
+export function latestScrutiny(po: PoDetail): GstScrutinyRow | null {
+  return newestScrutiny((po as PoWithSupplierDetails).supplier_details?.data?.gst_scrutiny);
+}
+
+export function draftFromScrutiny(g: GstScrutinyRow): Partial<InvoiceDraft> {
+  return {
+    scrutinyDate: day(g.scrutiny_date),
+    gstNumber: g.gst_number ?? '',
+    gstStatus: g.status ?? '',
+    filingDate: day(g.last_filing_date),
+    remarks: g.prev_non_gst_2a_invoice || g.red_flags || '',
+  };
+}
+
+export function draftFromPo(po: PoDetail, sup: SupplierDetail | null): Partial<InvoiceDraft> {
+  const gst = latestScrutiny(po);
+  return {
+    poType: PO_TYPE_OPTIONS.find(o => o.key === po.po_type)?.label ?? po.po_type ?? '',
+    docType: DOC_TYPE_OPTIONS.find(o => o.key === po.document_type)?.label ?? po.document_type ?? '',
+    transport: po.mode_of_transport ?? '',
+    poDate: day(po.po_date),
+    deliveryDate: day(po.expected_delivery_date),
+    deliveryLocation: po.delivery_location ?? '',
+    paymentType: po.payment_type ?? '',
+    physInspection: po.physical_inspection === 'yes',
+    taxMode: po.document_type === 'international' ? 'export' : (po.tax_mode ?? null),
+    currency: po.currency_code ?? '',
+    exchangeRate: po.exchange_rate ?? '',
+
+    vendorId: po.vendor_id,
+    poNumber: po.code,
+    piNumber: po.pi_code ?? '',
+
+    supplierDetail: null,
+    supplier: po.supplier?.supplier_name ?? '',
+    supplierCode: po.supplier?.supplier_code ?? '',
+    stateCode: po.supplier?.supplier_state_code ?? '',
+    gstNumber: po.supplier?.supplier_gstin ?? '',
+    ...(sup ? draftFromSupplier(sup) : {}),
+    ...(!sup?.stateCode && po.supplier?.supplier_state_code ? { stateCode: po.supplier.supplier_state_code } : {}),
+    ...(!sup?.gstNo && po.supplier?.supplier_gstin ? { gstNumber: po.supplier.supplier_gstin } : {}),
+
+    scrutinyDate: day(po.gst_scrutiny_date ?? sup?.scrutiny),
+    filingDate: day(po.gst_last_filing_date ?? sup?.filing),
+    ...(gst ? draftFromScrutiny(gst) : {}),
+  };
+}
+
+export function useInvoiceDraft(seed: { supplier: string; poNo?: string }) {
   const [draft, setDraft] = useState<InvoiceDraft>(() => ({
-    poType: 'Material / Goods',
-    docType: 'Domestics',
-    transport: 'Road',
-    poDate: today(),
-    /* An invoice raised against a PO inherits the order's own terms — it does
-       not restate them. Blank here meant the two fields opened on placeholders
-       as if waiting for input, on a block that is a read-back of the order.
-       Without a PO there is nothing to inherit and they stay empty. */
-    deliveryDate: seed.poNo ? addDays(today(), 14) : '',
-    deliveryLocation: seed.poNo ? (seed.warehouse ?? '') : '',
-    paymentType: 'Advance',
+    poType: '',
+    docType: '',
+    transport: '',
+    poDate: '',
+    deliveryDate: '',
+    deliveryLocation: '',
+    paymentType: '',
     physInspection: false,
+    taxMode: null,
+    currency: '',
+    exchangeRate: '',
+
+    vendorId: null,
+    supplierDetail: null,
+    legal: null,
 
     supplier: seed.supplier,
-    supplierCode: 'S-001',
+    supplierCode: '',
     poNumber: seed.poNo ?? '',
-    /* Derived from the order: a PO raised from PI/2025-26/001 carries it. */
-    piNumber: seed.poNo ? seed.poNo.replace(/^PO/, 'PI') : '',
+    piNumber: '',
     legalName: '',
-    supplierType: 'Manufacturer',
-    riskLevel: 'High Risk',
-    category: 'Star Supplier',
+    supplierType: '',
+    riskLevel: '',
+    category: '',
 
     address: '',
-    country: 'India',
-    state: 'Maharashtra',
-    /* The GST state code for Maharashtra. It belongs with the state it
-       describes, so the two are seeded together rather than leaving the
-       product table's STATE CODE pill showing a dash. */
-    stateCode: '27',
+    country: '',
+    state: '',
+    stateCode: '',
     city: '',
     contactName: '',
     designation: '',
     contactNumber: '',
     email: '',
 
-    /* Both inside the 3-month window, so the GST card opens on its cleared
-       verdict rather than on a failure the user did nothing to cause. */
-    scrutinyDate: monthsBack(1.8),
-    gstNumber: '27AAACR5055K1Z5',
-    gstStatus: 'Active',
-    filingDate: monthsBack(1.6),
+    scrutinyDate: '',
+    gstNumber: '',
+    gstStatus: '',
+    filingDate: '',
     remarks: '',
 
-    invoiceNumber: seed.invoiceNo,
+    invoiceNumber: '',
     invoiceDate: today(),
     invoiceFile: '',
     ewayBillFile: '',
@@ -139,5 +207,4 @@ export function useInvoiceDraft(seed: {
   return { draft, set };
 }
 
-/** How a step's setter is passed down. */
 export type SetDraft = (patch: Partial<InvoiceDraft>) => void;

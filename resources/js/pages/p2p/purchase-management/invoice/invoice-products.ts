@@ -1,135 +1,61 @@
-/**
- * One line of the 3-way match: the same product as the PI named it, as the PO
- * named it, and as the supplier invoiced it.
- *
- * The three names are separate fields rather than one, because the whole point
- * of the screen is that they can disagree.
- */
+import type { PoItem } from '../order/api/po-api';
 export interface ProductLine {
+  key?: string;
+  poItemId?: number;
+  piItemId?: number | null;
+  spiItemId?: number;
+  uom?: string;
   code: string;
   hsn: string;
   piName: string;
   poName: string;
-  /** The only identity on the row the user may change. */
   spiName: string;
   description: string;
-  /**
-   * The product master record behind the line, for the detail view "Read more"
-   * opens. Optional because a line can name a product the master does not hold
-   * yet, and there is then nothing to open.
-   */
   productId?: number;
   piQty: number;
   poQty: number;
-  /** Editable: what the supplier actually billed. */
   spiQty: number;
-  /** Editable: the rate on the supplier's invoice. */
   spiRate: number;
-  /** The rate the PO agreed, for the cost being matched against. */
   poRate: number;
   gst: number;
 }
 
-/**
- * How the GST on a line is split.
- *
- * `intra` — supplier and our branch are in the same state: CGST + SGST, half
- * each. `inter` — different states: one IGST at the full rate. `export` — the
- * supplier is outside India, so Indian GST does not arise and the rate is zero
- * before any split is reached.
- *
- * The same three values the purchase order's own table takes, named the same
- * way (create-po/steps/ProductTable.tsx), so the two screens can be read
- * against each other. 'export' is the PO's word for an international document.
- */
 export type TaxMode = 'intra' | 'inter' | 'export';
 
-/**
- * The tax mode for a supplier, from the two things that decide it.
- *
- * Mirrors the server: the country decides whether Indian GST applies at all,
- * and only then does state-vs-state decide the split. Derived, never stored —
- * `App\Support\Gst` says the same of `gst_applicable`.
- */
 export function taxModeFor(country: string, supplierState: string, homeState: string): TaxMode {
-  /* Blank country means DOMESTIC, matching
-     PurchaseOrderController::vendorOrigin() — `if (empty($vendor->country_id))
-     return 'domestic'`. Note this is deliberately the opposite of
-     App\Support\Gst::isDomestic(), where a blank country is not domestic; the
-     purchase order is the behaviour being matched here, so an unanswered
-     country is taxed rather than zero-rated. */
   const name = country.trim().toLowerCase();
   if (name !== '' && name !== 'india') return 'export';
-  /* An unknown state falls to intra, which is what
-     PurchaseOrderService::taxMode() does with a blank code. */
   if (!supplierState || !homeState) return 'intra';
   return supplierState === homeState ? 'intra' : 'inter';
 }
 
-/**
- * Maharashtra — the home state assumed when a branch has no GSTIN on file.
- *
- * A stand-in until the branch is loaded into the draft. Note the server has
- * two answers for this: `App\Support\Gst::homeStateCode()` defaults to '27'
- * like this one, while `PurchaseOrderService::homeStateCode()` returns null,
- * which then falls through `taxMode()` to intra. Worth settling on one before
- * this is wired to the real branch.
- */
 export const DEFAULT_HOME_STATE_CODE = '27';
 
-/** Paise, the way the server rounds. */
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Everything derived from a line. Nothing here is stored. */
 export interface LineTotals {
-  /** What the PO committed to, with GST — the figure being matched. */
   poCost: number;
-  /** The invoice's own value before tax. */
   base: number;
   gstAmount: number;
-  /** The split of `gstAmount`. Two of the three are always zero. */
   cgst: number;
   sgst: number;
   igst: number;
-  /** The rates behind that split, for the table's own % columns. */
   cgstPct: number;
   sgstPct: number;
   igstPct: number;
-  /** base + GST. */
   cost: number;
-  /** Short of the PO, never negative — the overage is `extra`. */
   missing: number;
   extra: number;
 }
 
-/**
- * The derived figures for one line.
- *
- * A plain function, not a memo: it is six multiplications, and the table calls
- * it once per row per render. Caching it would cost more in bookkeeping than
- * the arithmetic it saves.
- */
 export function lineTotals(l: ProductLine, mode: TaxMode = 'intra'): LineTotals {
-  /* Rounded at each step, in the same order as
-     PurchaseOrderService::lineAmounts(): taxable to paise, then the GST on
-     that rounded figure. Multiplying first and rounding once gives a different
-     paisa on some lines, and the two screens would then disagree about the
-     same invoice. */
   const base = round2(l.spiQty * l.spiRate);
-  /* An import carries no Indian GST, so the rate is zeroed here rather than
-     split to nothing later — the same thing the PO does at the line. */
   const rate = mode === 'export' ? 0 : l.gst;
   const gstAmount = round2((base * rate) / 100);
   const poBase = round2(l.poQty * l.poRate);
 
-  /* An import is one Tax pair at 0%, so it rides the single-column path
-     alongside inter-state. create-po's ProductTable makes the same join:
-     `const inter = taxMode === 'inter' || taxMode === 'export'`. */
   const inter = mode === 'inter' || mode === 'export';
 
-  /* SGST is the remainder, not a second half: on an odd paisa the two halves
-     must still add back to the full GST. PurchaseOrderService::lineAmounts()
-     takes the same care. */
   const cgst = inter ? 0 : round2(gstAmount / 2);
   const sgst = inter ? 0 : round2(gstAmount - cgst);
   const igst = inter ? gstAmount : 0;
@@ -145,14 +71,11 @@ export function lineTotals(l: ProductLine, mode: TaxMode = 'intra'): LineTotals 
     sgst,
     igst,
     cost: round2(base + gstAmount),
-    /* Clamped at zero on both sides: a line is either short or over, never
-       both, and a negative "missing" would read as an overage in disguise. */
     missing: Math.max(0, l.poQty - l.spiQty),
     extra: Math.max(0, l.spiQty - l.poQty),
   };
 }
 
-/** The column totals, summed from the same function the rows display. */
 export function tableTotals(lines: ProductLine[], mode: TaxMode = 'intra') {
   return lines.reduce((t, l) => {
     const c = lineTotals(l, mode);
@@ -176,13 +99,6 @@ export function tableTotals(lines: ProductLine[], mode: TaxMode = 'intra') {
   });
 }
 
-/**
- * The lines this invoice starts with, copied from the purchase order.
- *
- * Stand-in data until the endpoint exists. Quantities and rates match the PO
- * exactly, so the table opens on a clean match and any mismatch on screen is
- * one the user created by editing.
- */
 export const PRODUCT_LINES: ProductLine[] = [
   {
     code: 'P-104',
@@ -212,26 +128,95 @@ export const PRODUCT_LINES: ProductLine[] = [
   },
 ];
 
-/** How much of a description a table shows before cutting it. */
+const num = (v: string | number | null | undefined) => {
+  const n = typeof v === 'number' ? v : parseFloat(v ?? '');
+  return Number.isFinite(n) ? n : 0;
+};
+
+export function linesFromPo(items: PoItem[], open: Record<number, number>): ProductLine[] {
+  return items.map(it => {
+    const poQty = num(it.quantity);
+    const left = open[it.id];
+    const spiQty = left === undefined ? poQty : Math.max(0, left);
+    const name = it.product_name ?? it.description ?? `Line ${it.line_no}`;
+    return {
+      key: `po-${it.id}`,
+      poItemId: it.id,
+      piItemId: it.pi_item_id,
+      productId: it.product_id ?? undefined,
+      uom: it.uom ?? undefined,
+      code: it.product_code ?? `L-${it.line_no}`,
+      hsn: it.hsn_code ?? '—',
+      piName: it.pi_product_name ?? (it.pi_item_id ? name : '—'),
+      poName: name,
+      spiName: name,
+      description: it.description ?? '',
+      piQty: num(it.pi_quantity ?? (it.pi_item_id ? poQty : 0)),
+      poQty,
+      spiQty,
+      spiRate: num(it.rate),
+      poRate: num(it.rate),
+      gst: num(it.gst_pct),
+    };
+  });
+}
+
+export type SpiItemsPayload = {
+  items: Array<{
+    po_item_id: number | null;
+    product_id: number;
+    qty_spi: number;
+    rate: number;
+    extra_qty: number;
+    gst_pct: number | null;
+    taxable_amount: number;
+    cgst_amount: number | null;
+    sgst_amount: number | null;
+    igst_amount: number | null;
+    line_total: number;
+  }>;
+  taxable_total: number;
+  total_cgst: number;
+  total_sgst: number;
+  total_igst: number;
+  grand_total: number;
+};
+
+export function itemsPayload(lines: ProductLine[], mode: TaxMode): SpiItemsPayload {
+  const billed = lines.filter(l => l.spiQty > 0 && l.productId != null);
+  const t = tableTotals(billed, mode);
+  const exportSpi = mode === 'export';
+  return {
+    items: billed.map(l => {
+      const c = lineTotals(l, mode);
+      return {
+        po_item_id: l.poItemId ?? null,
+        product_id: l.productId!,
+        qty_spi: l.spiQty,
+        rate: l.spiRate,
+        extra_qty: c.extra,
+        gst_pct: exportSpi ? null : l.gst,
+        taxable_amount: c.base,
+        cgst_amount: exportSpi ? null : c.cgst,
+        sgst_amount: exportSpi ? null : c.sgst,
+        igst_amount: exportSpi ? null : c.igst,
+        line_total: c.cost,
+      };
+    }),
+    taxable_total: round2(t.base),
+    total_cgst: round2(t.cgst),
+    total_sgst: round2(t.sgst),
+    total_igst: round2(t.igst),
+    grand_total: round2(t.cost),
+  };
+}
+
 export const DESC_MAX = 30;
 
-/**
- * Cuts a description to `DESC_MAX` characters.
- *
- * A character count, not a CSS clamp: the column has to hold the same width
- * whatever the viewport, and a clamp cuts at whatever happens to fit — which
- * is how a column grows under one description and shrinks under the next.
- * Trailing space is dropped first so the ellipsis sits against the last word
- * rather than floating away from it.
- *
- * Shared by all three tables that show a description, so a line reads the same
- * in the 3-way match, the box table and Packed Products.
- */
 export function truncateDesc(text: string): string {
   return text.length <= DESC_MAX ? text : `${text.slice(0, DESC_MAX).trimEnd()}…`;
 }
 
-/** The catalogue the Product (SPI) picker offers. */
 export const PRODUCT_CATALOGUE = PRODUCT_LINES.map(l => ({
   value: l.code,
   label: `${l.code} — ${l.spiName}`,

@@ -2,16 +2,15 @@
 
 namespace App\Http\Controllers\Api\P2p;
 
-use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PoPaymentRequest;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\SpiPoFulfilment;
 use App\Models\P2p\SupplierInvoice;
 use App\Services\P2p\SupplierInvoiceService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 /**
@@ -26,19 +25,7 @@ use Illuminate\Validation\Rule;
  */
 class SupplierInvoiceController extends Controller
 {
-    use RunsInTransaction;
-
     public function __construct(private SupplierInvoiceService $svc) {}
-
-    private function ok($data, int $code = 200): JsonResponse
-    {
-        return response()->json(['status' => true, 'data' => $data], $code);
-    }
-
-    private function fail(string $message, int $code = 422, array $extra = []): JsonResponse
-    {
-        return response()->json(['status' => false, 'message' => $message] + $extra, $code);
-    }
 
     /** Writes need a tenant: a super admin has no client to raise an invoice under. */
     private function tenantUser(Request $request)
@@ -57,202 +44,242 @@ class SupplierInvoiceController extends Controller
     /* ══════════════════════════ LOOKUPS ══════════════════════════ */
 
     /** GET /p2p/spi/next-code — preview only; nothing is written until Stage 01 is saved. */
-    public function nextCode(Request $request): JsonResponse
+    public function nextCode(Request $request)
     {
-        $user = $this->tenantUser($request);
+        try {
+            DB::beginTransaction();
 
-        return $this->ok([
-            'code'           => $this->svc->previewCode((int) $user->client_id, (int) $user->branch_id),
-            'financial_year' => $this->svc->financialYear(),
-        ]);
+            $user = $this->tenantUser($request);
+
+            $body = [
+                'code'           => $this->svc->previewCode((int) $user->client_id, (int) $user->branch_id),
+                'financial_year' => $this->svc->financialYear(),
+            ];
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
      * GET /p2p/spi/orders/{po}/lines — PO lines to prefill Stage 02, each with
      * what is still uninvoiced so the same line is not billed twice.
      */
-    public function poLines(Request $request, int $po): JsonResponse
+    public function poLines(Request $request, int $po)
     {
-        $this->tenantUser($request);
-        $order = PurchaseOrder::findOrFail($po);
-        $open  = $this->svc->openQtyByPoItem($po, $request->integer('exclude_spi') ?: null);
+        try {
+            DB::beginTransaction();
 
-        // p2p_purchase_order_items has no deleted_at — it is hard-deleted.
-        $lines = DB::table('p2p_purchase_order_items')
-            ->where('purchase_order_id', $po)
-            ->orderBy('line_no')
-            ->get()
-            ->map(fn($l) => [
-                'po_item_id'   => $l->id,
-                'pi_item_id'   => $l->pi_item_id,
-                'product_id'   => $l->product_id,
-                'description'  => $l->description,
-                'qty_po'       => (float) $l->quantity,
-                'qty_open'     => (float) ($open[$l->id] ?? 0),
-                'rate'         => (float) $l->rate,
-                'gst_pct'      => $l->gst_pct === null ? null : (float) $l->gst_pct,
-            ]);
+            $this->tenantUser($request);
+            $order = PurchaseOrder::findOrFail($po);
+            $open  = $this->svc->openQtyByPoItem($po, $request->integer('exclude_spi') ?: null);
 
-        return $this->ok([
-            'purchase_order_id' => $order->id,
-            'document_type'     => $order->document_type,
-            'currency_code'     => $order->currency_code,
-            'vendor_id'         => $order->vendor_id,
-            'lines'             => $lines,
-        ]);
+            // p2p_purchase_order_items has no deleted_at — it is hard-deleted.
+            $lines = DB::table('p2p_purchase_order_items')
+                ->where('purchase_order_id', $po)
+                ->orderBy('line_no')
+                ->get()
+                ->map(fn($l) => [
+                    'po_item_id'   => $l->id,
+                    'pi_item_id'   => $l->pi_item_id,
+                    'product_id'   => $l->product_id,
+                    'description'  => $l->description,
+                    'qty_po'       => (float) $l->quantity,
+                    'qty_open'     => (float) ($open[$l->id] ?? 0),
+                    'rate'         => (float) $l->rate,
+                    'gst_pct'      => $l->gst_pct === null ? null : (float) $l->gst_pct,
+                ]);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'purchase_order_id' => $order->id,
+                'document_type'     => $order->document_type,
+                'currency_code'     => $order->currency_code,
+                'vendor_id'         => $order->vendor_id,
+                'lines'             => $lines,
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ LIST AND DETAIL ══════════════════════════ */
 
     /** GET /p2p/spi — the list, filtered by the four flavours. */
-    public function index(Request $request): JsonResponse
+    public function index(Request $request)
     {
-        $this->tenantUser($request);
+        try {
+            DB::beginTransaction();
 
-        /* A mistyped filter used to be ignored in silence — ?po_mode=withpo
-           returned every row rather than an error, which reads as a bug in the
-           tab rather than a typo in the URL. */
-        $f = $request->validate([
-            'po_mode'       => ['nullable', Rule::in(['with_po', 'without_po'])],
-            'shipment_mode' => ['nullable', Rule::in(['with_shipment', 'without_shipment'])],
-            'status'        => ['nullable', Rule::in(SupplierInvoice::STATUSES)],
-            'vendor_id'     => ['nullable', 'integer'],
-            'from'          => ['nullable', 'date'],
-            'to'            => ['nullable', 'date'],
-            'q'             => ['nullable', 'string', 'max:120'],
-            'page'          => ['nullable', 'integer', 'min:1'],
-            'per_page'      => ['nullable', 'integer', 'min:1', 'max:100'],
-        ]);
+            $this->tenantUser($request);
 
-        /* Every column is table-qualified: the search joins out to the purchase
-           order, and `po` carries its own status, vendor_id and code — unqualified
-           names would be an ambiguous reference, which Postgres refuses. */
-        $t = 'p2p_supplier_invoices';
+            /* A mistyped filter used to be ignored in silence — ?po_mode=withpo
+               returned every row rather than an error, which reads as a bug in the
+               tab rather than a typo in the URL. */
+            $f = $request->validate([
+                'po_mode'       => ['nullable', Rule::in(['with_po', 'without_po'])],
+                'shipment_mode' => ['nullable', Rule::in(['with_shipment', 'without_shipment'])],
+                'status'        => ['nullable', Rule::in(SupplierInvoice::STATUSES)],
+                'vendor_id'     => ['nullable', 'integer'],
+                'from'          => ['nullable', 'date'],
+                'to'            => ['nullable', 'date'],
+                'q'             => ['nullable', 'string', 'max:120'],
+                'page'          => ['nullable', 'integer', 'min:1'],
+                'per_page'      => ['nullable', 'integer', 'min:1', 'max:100'],
+            ]);
 
-        /* The screen-wide filters go on a bare query first. The counts run off
-           a clone of THAT: cloning the list query instead drags its withCount
-           subqueries and its `table.*` into the aggregate, which Postgres
-           rejects for not being in a GROUP BY. */
-        $base = SupplierInvoice::query();
+            /* Every column is table-qualified: the search joins out to the purchase
+               order, and `po` carries its own status, vendor_id and code — unqualified
+               names would be an ambiguous reference, which Postgres refuses. */
+            $t = 'p2p_supplier_invoices';
 
-        if (!empty($f['status']))    $base->where("$t.status", $f['status']);
-        if (!empty($f['vendor_id'])) $base->where("$t.vendor_id", $f['vendor_id']);
-        if (!empty($f['from']))      $base->whereDate("$t.invoice_date", '>=', $f['from']);
-        if (!empty($f['to']))        $base->whereDate("$t.invoice_date", '<=', $f['to']);
+            /* The screen-wide filters go on a bare query first. The counts run off
+               a clone of THAT: cloning the list query instead drags its withCount
+               subqueries and its `table.*` into the aggregate, which Postgres
+               rejects for not being in a GROUP BY. */
+            $base = SupplierInvoice::query();
 
-        /* Counted BEFORE the tab and the search narrow the list: typing in the
-           search box must not make "All SPI's 60" fall to 3. */
-        $tabs = $this->tabCounts(clone $base, $f['po_mode'] ?? null);
+            if (!empty($f['status']))    $base->where("$t.status", $f['status']);
+            if (!empty($f['vendor_id'])) $base->where("$t.vendor_id", $f['vendor_id']);
+            if (!empty($f['from']))      $base->whereDate("$t.invoice_date", '>=', $f['from']);
+            if (!empty($f['to']))        $base->whereDate("$t.invoice_date", '<=', $f['to']);
 
-        $q = $base->with([
-            'vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category',
-            'vendor.riskLevel:id,name',
-            // po_date was read by listRow but never selected, so the PO DATE
-            // column came back blank on every row.
-            'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,proforma_invoice_id,'
-                . 'procurement_request_code,physical_inspection,inspection_status,zoho_status,'
-                . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
-            'warehouse:id,wh_id,wh_name,wh_type',
-        ])
-            /* The row's Payment Requests button shows a count and a ready-to-pay
-               note. Subqueries, so a page of 10 rows costs two extra queries
-               rather than twenty. */
-            ->withCount(['paymentRequests as pending_payment_requests' =>
-                fn ($r) => $r->where('status', PoPaymentRequest::STATUS_PENDING)])
-            // The constants, not literals: the column stores them lowercase and
-            // 'Approved' silently matched nothing.
-            ->withSum(['paymentRequests as approved_unpaid_amount' =>
-                fn ($r) => $r->where('status', PoPaymentRequest::STATUS_APPROVED)],
-                DB::raw('GREATEST(approved_amount - paid_amount, 0)'));
+            /* Counted BEFORE the tab and the search narrow the list: typing in the
+               search box must not make "All SPI's 60" fall to 3. */
+            $tabs = $this->tabCounts(clone $base, $f['po_mode'] ?? null);
 
-        $this->applyPoMode($q, $f['po_mode'] ?? null);
-        $this->applyShipmentMode($q, $f['shipment_mode'] ?? null);
+            $q = $base->with([
+                'vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category',
+                'vendor.riskLevel:id,name',
+                // po_date was read by listRow but never selected, so the PO DATE
+                // column came back blank on every row.
+                'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,proforma_invoice_id,'
+                    . 'procurement_request_code,physical_inspection,inspection_status,zoho_status,'
+                    . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
+                'warehouse:id,wh_id,wh_name,wh_type',
+            ])
+                /* The row's Payment Requests button shows a count and a ready-to-pay
+                   note. Subqueries, so a page of 10 rows costs two extra queries
+                   rather than twenty. */
+                ->withCount(['paymentRequests as pending_payment_requests' =>
+                    fn ($r) => $r->where('status', PoPaymentRequest::STATUS_PENDING)])
+                // The constants, not literals: the column stores them lowercase and
+                // 'Approved' silently matched nothing.
+                ->withSum(['paymentRequests as approved_unpaid_amount' =>
+                    fn ($r) => $r->where('status', PoPaymentRequest::STATUS_APPROVED)],
+                    DB::raw('GREATEST(approved_amount - paid_amount, 0)'));
 
-        if ($term = trim((string) ($f['q'] ?? ''))) {
-            $this->applySearch($q, $term);
+            $this->applyPoMode($q, $f['po_mode'] ?? null);
+            $this->applyShipmentMode($q, $f['shipment_mode'] ?? null);
+
+            if ($term = trim((string) ($f['q'] ?? ''))) {
+                $this->applySearch($q, $term);
+            }
+
+            $page = $q->orderByDesc("$t.id")->paginate((int) ($f['per_page'] ?? 10));
+            $rows = collect($page->items());
+            // Shipment and opportunity codes for the whole page in two queries.
+            $refs = $this->linkRefs($rows);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => true,
+                'data'   => $rows->map(fn ($s) => $this->listRow($s, $refs))->all(),
+                'tabs'   => $tabs,
+                'meta'   => [
+                    'page'      => $page->currentPage(),
+                    'per_page'  => $page->perPage(),
+                    'total'     => $page->total(),
+                    // useServerList, shared with the PO list, needs this to know
+                    // whether there is a next page.
+                    'last_page' => $page->lastPage(),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
-
-        $page = $q->orderByDesc("$t.id")->paginate((int) ($f['per_page'] ?? 10));
-        $rows = collect($page->items());
-        // Shipment and opportunity codes for the whole page in two queries.
-        $refs = $this->linkRefs($rows);
-
-        return response()->json([
-            'status' => true,
-            'data'   => $rows->map(fn ($s) => $this->listRow($s, $refs))->all(),
-            'tabs'   => $tabs,
-            'meta'   => [
-                'page'      => $page->currentPage(),
-                'per_page'  => $page->perPage(),
-                'total'     => $page->total(),
-                // useServerList, shared with the PO list, needs this to know
-                // whether there is a next page.
-                'last_page' => $page->lastPage(),
-            ],
-        ]);
     }
 
     /** GET /p2p/spi/{id} — one invoice with its items and the packing summary. */
-    public function show(Request $request, int $id): JsonResponse
+    public function show(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        /* Every stage in one call — the detail screen renders all four, and
-           three round trips to paint one page is three chances to show a
-           half-loaded invoice. */
-        $spi->load([
-            'items',
-            'vendor:id,vendor_code,company_name',
-            'warehouse:id,wh_id,wh_name,wh_type',
-            'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,procurement_request_code,'
-                . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
-            'purchaseOrder.shipmentOrder:id,shipment_code',
-            'boxes.items',
-            'boxes.attachments',
-            'putaways.box:id,box_code',
-        ]);
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
 
-        $full    = $this->isOwnWarehouse($spi->warehouse_id);
-        $packing = $this->svc->packingSummary($spi->id);
+            /* Every stage in one call — the detail screen renders all four, and
+               three round trips to paint one page is three chances to show a
+               half-loaded invoice. */
+            $spi->load([
+                'items',
+                'vendor:id,vendor_code,company_name',
+                'warehouse:id,wh_id,wh_name,wh_type',
+                'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,procurement_request_code,'
+                    . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
+                'purchaseOrder.shipmentOrder:id,shipment_code',
+                'boxes.items',
+                'boxes.attachments',
+                'putaways.box:id,box_code',
+            ]);
 
-        return $this->ok([
-            'invoice'        => $spi,
-            'owns_zoho_bill' => $spi->ownsZohoBill(),
+            $full    = $this->isOwnWarehouse($spi->warehouse_id);
+            $packing = $this->svc->packingSummary($spi->id);
 
-            // Stage 02 — ordered against billed.
-            'match' => $this->matchSummary($spi),
+            DB::commit();
 
-            // Stage 03 — packed against pending, per line and in total.
-            'packing_summary' => $packing,
-            'packing_totals'  => $this->svc->packingTotals($packing) + ['boxes' => $spi->boxes->count()],
+            return response()->json(['status' => true, 'data' => [
+                'invoice'        => $spi,
+                'owns_zoho_bill' => $spi->ownsZohoBill(),
 
-            // Stage 04 — where each box is, and what it still owes.
-            'putaway' => [
-                'mode'     => $full ? 'full' : 'summary',
-                'placed'   => $spi->putaways->whereNotNull('confirmed_at')->count(),
-                'total'    => $spi->boxes->count(),
-                'rows'     => $spi->putaways->map(fn($p) => [
-                    'id'               => $p->id,
-                    'box_code'         => $p->box?->box_code,
-                    'destination'      => $p->destination,
-                    'confirmed_at'     => $p->confirmed_at,
-                    'next_scan'        => $p->nextScan($full),
-                    'ready_to_confirm' => $p->isReadyToConfirm($full),
-                ])->values(),
-            ],
-        ]);
+                // Stage 02 — ordered against billed.
+                'match' => $this->matchSummary($spi),
+
+                // Stage 03 — packed against pending, per line and in total.
+                'packing_summary' => $packing,
+                'packing_totals'  => $this->svc->packingTotals($packing) + ['boxes' => $spi->boxes->count()],
+
+                // Stage 04 — where each box is, and what it still owes.
+                'putaway' => [
+                    'mode'     => $full ? 'full' : 'summary',
+                    'placed'   => $spi->putaways->whereNotNull('confirmed_at')->count(),
+                    'total'    => $spi->boxes->count(),
+                    'rows'     => $spi->putaways->map(fn($p) => [
+                        'id'               => $p->id,
+                        'box_code'         => $p->box?->box_code,
+                        'destination'      => $p->destination,
+                        'confirmed_at'     => $p->confirmed_at,
+                        'next_scan'        => $p->nextScan($full),
+                        'ready_to_confirm' => $p->isReadyToConfirm($full),
+                    ])->values(),
+                ],
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ STAGE 01 ══════════════════════════ */
 
     /** POST /p2p/spi — the first write of the whole flow. Opening the form writes nothing. */
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
-        $user = $this->tenantUser($request);
-        $data = $this->validateHeader($request, $user, null);
+        try {
+            DB::beginTransaction();
 
-        $spi = $this->inTransaction('create the invoice', function () use ($user, $data) {
+            $user = $this->tenantUser($request);
+            $data = $this->validateHeader($request, $user, null);
+
             $spi = SupplierInvoice::create($data + [
                 'code'            => $this->svc->nextCode((int) $user->client_id, (int) $user->branch_id),
                 'stage_completed' => 1,
@@ -262,43 +289,57 @@ class SupplierInvoiceController extends Controller
 
             $this->svc->log($spi, 'created', ['new_value' => $spi->code]);
 
-            return $spi;
-        });
+            DB::commit();
 
-        return $this->ok($spi, 201);
+            return response()->json(['status' => true, 'data' => $spi], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** PUT /p2p/spi/{id}/stage-1 — editable while the invoice is still a draft. */
-    public function updateStage1(Request $request, int $id): JsonResponse
+    public function updateStage1(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $spi  = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        if (!$spi->isEditable()) return $this->fail("{$spi->code} is {$spi->status} and can no longer be edited.");
+            $user = $this->tenantUser($request);
+            $spi  = $this->findSpi($id);
 
-        $data = $this->validateHeader($request, $user, $spi);
+            if (!$spi->isEditable()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$spi->code} is {$spi->status} and can no longer be edited.",
+                ], 422));
+            }
 
-        // Re-pointing at a different PO after items exist would orphan the match.
-        if (
-            array_key_exists('purchase_order_id', $data)
-            && (int) $data['purchase_order_id'] !== (int) $spi->purchase_order_id
-            && $spi->items()->exists()
-        ) {
-            return $this->fail(
-                "Items are already mapped to this invoice — clear Stage 02 before changing the purchase order.",
-                422,
-                ['errors' => ['purchase_order_id' => ['Cannot be changed while items exist.']]]
-            );
-        }
+            $data = $this->validateHeader($request, $user, $spi);
 
-        $spi = $this->inTransaction('update the invoice', function () use ($spi, $data, $user) {
+            // Re-pointing at a different PO after items exist would orphan the match.
+            if (
+                array_key_exists('purchase_order_id', $data)
+                && (int) $data['purchase_order_id'] !== (int) $spi->purchase_order_id
+                && $spi->items()->exists()
+            ) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'Items are already mapped to this invoice — clear Stage 02 before changing the purchase order.',
+                    'errors'  => ['purchase_order_id' => ['Cannot be changed while items exist.']],
+                ], 422));
+            }
+
             $spi->forceFill($data + ['updated_by' => $user->id])->save();
             $this->svc->log($spi, 'stage1_saved');
+            $spi->refresh();
 
-            return $spi->refresh();
-        });
+            DB::commit();
 
-        return $this->ok($spi);
+            return response()->json(['status' => true, 'data' => $spi], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ STAGE 02 ══════════════════════════ */
@@ -309,76 +350,87 @@ class SupplierInvoiceController extends Controller
      * Never row by row: the header totals are rolled up from the lines in the
      * same transaction, so a partial save would leave the two disagreeing.
      */
-    public function updateItems(Request $request, int $id): JsonResponse
+    public function updateItems(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $spi  = $this->findSpi($id);
+        // Named out here so the catch can clean them up — the files land on
+        // disk before the transaction opens, and a failed save must not leave
+        // an orphan behind.
+        $files = [];
 
-        if (!$spi->isEditable()) return $this->fail("{$spi->code} is {$spi->status} and can no longer be edited.");
+        try {
+            DB::beginTransaction();
 
-        // The supplier's invoice number, date and e-way details are part of
-        // this screen, not Stage 01 — so they save with the grid.
-        $header = $this->validateInvoiceDetails($request, $user, $spi);
+            $user = $this->tenantUser($request);
+            $spi  = $this->findSpi($id);
 
-        /* The grid does its own arithmetic and posts the result; the server
-           stores it. Only description, qty_po and pi_item_id are filled in
-           here, and those are snapshots of the order rather than calculations. */
-        $data = $request->validate([
-            'items'              => ['required', 'array', 'min:1'],
-            'items.*.po_item_id' => ['nullable', 'integer'],
-            'items.*.product_id' => ['required', 'integer'],
-            'items.*.qty_spi'    => ['required', 'numeric', 'gt:0'],
-            'items.*.rate'       => ['required', 'numeric', 'min:0'],
+            if (!$spi->isEditable()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$spi->code} is {$spi->status} and can no longer be edited.",
+                ], 422));
+            }
 
-            'items.*.extra_qty'      => ['nullable', 'numeric', 'min:0'],
-            'items.*.gst_pct'        => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'items.*.taxable_amount' => ['required', 'numeric', 'min:0'],
-            'items.*.cgst_amount'    => ['nullable', 'numeric', 'min:0'],
-            'items.*.sgst_amount'    => ['nullable', 'numeric', 'min:0'],
-            'items.*.igst_amount'    => ['nullable', 'numeric', 'min:0'],
-            'items.*.line_total'     => ['required', 'numeric', 'min:0'],
+            // The supplier's invoice number, date and e-way details are part of
+            // this screen, not Stage 01 — so they save with the grid.
+            $header = $this->validateInvoiceDetails($request, $user, $spi);
 
-            // The TOTALS row, also computed by the grid.
-            'taxable_total' => ['required', 'numeric', 'min:0'],
-            'total_cgst'    => ['nullable', 'numeric', 'min:0'],
-            'total_sgst'    => ['nullable', 'numeric', 'min:0'],
-            'total_igst'    => ['nullable', 'numeric', 'min:0'],
-            'grand_total'   => ['required', 'numeric', 'min:0'],
+            /* The grid does its own arithmetic and posts the result; the server
+               stores it. Only description, qty_po and pi_item_id are filled in
+               here, and those are snapshots of the order rather than calculations. */
+            $data = $request->validate([
+                'items'              => ['required', 'array', 'min:1'],
+                'items.*.po_item_id' => ['nullable', 'integer'],
+                'items.*.product_id' => ['required', 'integer'],
+                'items.*.qty_spi'    => ['required', 'numeric', 'gt:0'],
+                'items.*.rate'       => ['required', 'numeric', 'min:0'],
 
-            /* The attachments ride along with the save, so Stage 02 is one
-               request. Send the whole thing as multipart when there are files;
-               plain JSON still works when there are none. */
-            'invoice_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
-            'eway_file'    => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
-        ], [
-            'invoice_file.mimes' => 'The invoice must be a PDF or an image.',
-            'invoice_file.max'   => 'The invoice may not be larger than 10 MB.',
-            'eway_file.mimes'    => 'The e-way bill must be a PDF or an image.',
-            'eway_file.max'      => 'The e-way bill may not be larger than 10 MB.',
-        ]);
+                'items.*.extra_qty'      => ['nullable', 'numeric', 'min:0'],
+                'items.*.gst_pct'        => ['nullable', 'numeric', 'min:0', 'max:100'],
+                'items.*.taxable_amount' => ['required', 'numeric', 'min:0'],
+                'items.*.cgst_amount'    => ['nullable', 'numeric', 'min:0'],
+                'items.*.sgst_amount'    => ['nullable', 'numeric', 'min:0'],
+                'items.*.igst_amount'    => ['nullable', 'numeric', 'min:0'],
+                'items.*.line_total'     => ['required', 'numeric', 'min:0'],
 
-        // Stored before the transaction opens; RunsInTransaction removes them
-        // again if the write fails, so a failed save leaves no orphan file.
-        $files = $this->storeAttachments($request, $spi);
+                // The TOTALS row, also computed by the grid.
+                'taxable_total' => ['required', 'numeric', 'min:0'],
+                'total_cgst'    => ['nullable', 'numeric', 'min:0'],
+                'total_sgst'    => ['nullable', 'numeric', 'min:0'],
+                'total_igst'    => ['nullable', 'numeric', 'min:0'],
+                'grand_total'   => ['required', 'numeric', 'min:0'],
 
-        // An international supplier charges no Indian GST: the four tax columns
-        // stay NULL, which is a different fact from "charged at zero rate".
-        $rows = $this->priceLines($data['items'], $spi->isInternational());
+                /* The attachments ride along with the save, so Stage 02 is one
+                   request. Send the whole thing as multipart when there are files;
+                   plain JSON still works when there are none. */
+                'invoice_file' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
+                'eway_file'    => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:10240'],
+            ], [
+                'invoice_file.mimes' => 'The invoice must be a PDF or an image.',
+                'invoice_file.max'   => 'The invoice may not be larger than 10 MB.',
+                'eway_file.mimes'    => 'The e-way bill must be a PDF or an image.',
+                'eway_file.max'      => 'The e-way bill may not be larger than 10 MB.',
+            ]);
 
-        // Over-supply is accepted, not refused — the goods arrived. It comes
-        // back as a warning beside the saved invoice.
-        $warnings = $this->overBillWarnings($spi, $rows);
+            // On disk now; the catch deletes them again if the write fails.
+            $files = $this->storeAttachments($request, $spi);
 
-        // The TOTALS row the grid calculated, stored as sent.
-        $totals = [
-            'taxable_total' => $data['taxable_total'],
-            'total_cgst'    => $spi->isInternational() ? 0 : ($data['total_cgst'] ?? 0),
-            'total_sgst'    => $spi->isInternational() ? 0 : ($data['total_sgst'] ?? 0),
-            'total_igst'    => $spi->isInternational() ? 0 : ($data['total_igst'] ?? 0),
-            'grand_total'   => $data['grand_total'],
-        ];
+            // An international supplier charges no Indian GST: the four tax columns
+            // stay NULL, which is a different fact from "charged at zero rate".
+            $rows = $this->priceLines($data['items'], $spi->isInternational());
 
-        $spi = $this->inTransaction('save the invoice items', function () use ($spi, $rows, $header, $totals, $files, $user) {
+            // Over-supply is accepted, not refused — the goods arrived. It comes
+            // back as a warning beside the saved invoice.
+            $warnings = $this->overBillWarnings($spi, $rows);
+
+            // The TOTALS row the grid calculated, stored as sent.
+            $totals = [
+                'taxable_total' => $data['taxable_total'],
+                'total_cgst'    => $spi->isInternational() ? 0 : ($data['total_cgst'] ?? 0),
+                'total_sgst'    => $spi->isInternational() ? 0 : ($data['total_sgst'] ?? 0),
+                'total_igst'    => $spi->isInternational() ? 0 : ($data['total_igst'] ?? 0),
+                'grand_total'   => $data['grand_total'],
+            ];
+
             $spi->forceFill($header + $totals + $files + [
                 'stage_completed' => max(2, (int) $spi->stage_completed),
                 'updated_by'      => $user->id,
@@ -392,67 +444,98 @@ class SupplierInvoiceController extends Controller
 
             // rollUp: false — the grid owns the arithmetic, so recomputing here
             // would overwrite the figures the user actually saw with our own.
-            return $this->svc->saveItems($spi, $rows, false);
-        }, array_values(array_filter($files, fn($k) => str_ends_with($k, '_path'), ARRAY_FILTER_USE_KEY)));
+            $spi = $this->svc->saveItems($spi, $rows, false);
 
-        /* No packing summary here: nothing is packed at Stage 02, so it would
-           be a row of zeros. What this stage owns is the MATCH — what the PO
-           ordered against what the supplier billed. The packing figures belong
-           to Stage 03 and have their own endpoint. */
-        $spi->load('items');
+            /* No packing summary here: nothing is packed at Stage 02, so it would
+               be a row of zeros. What this stage owns is the MATCH — what the PO
+               ordered against what the supplier billed. The packing figures belong
+               to Stage 03 and have their own endpoint. */
+            $spi->load('items');
 
-        return $this->ok([
-            'invoice'  => $spi,
-            'match'    => $this->matchSummary($spi),
-            'warnings' => $warnings,
-        ]);
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'invoice'  => $spi,
+                'match'    => $this->matchSummary($spi),
+                'warnings' => $warnings,
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            $this->removeFiles($files);
+            throw $e;
+        }
+    }
+
+    /** Best effort: a file left behind after a rolled-back save is an orphan. */
+    private function removeFiles(array $files): void
+    {
+        foreach ($files as $key => $path) {
+            if (!str_ends_with($key, '_path') || !$path) continue;
+            try { Storage::disk('public')->delete($path); } catch (\Throwable) { /* nothing to do */ }
+        }
     }
 
     /* ══════════════════════════ CLOSE ══════════════════════════ */
 
     /** PUT /p2p/spi/{id}/submit — refuses while quantity is still unpacked. */
-    public function submit(Request $request, int $id): JsonResponse
+    public function submit(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        if (!$spi->items()->exists()) return $this->fail('Add at least one item before submitting.');
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
 
-        $pending = collect($this->svc->packingSummary($spi->id))->firstWhere('qty_pending', '>', 0);
-        if ($pending) {
-            return $this->fail(
-                number_format($pending['qty_pending'], 3) . ' is still unpacked. Goods not in a box have no box code, '
-                    . 'so they cannot be scanned, racked or inspected.'
-            );
-        }
+            if (!$spi->items()->exists()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => 'Add at least one item before submitting.',
+                ], 422));
+            }
 
-        $note = $request->input('note');
+            $pending = collect($this->svc->packingSummary($spi->id))->firstWhere('qty_pending', '>', 0);
+            if ($pending) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => number_format($pending['qty_pending'], 3)
+                        . ' is still unpacked. Goods not in a box have no box code, '
+                        . 'so they cannot be scanned, racked or inspected.',
+                ], 422));
+            }
 
-        $spi = $this->inTransaction('submit the invoice', function () use ($spi, $note) {
             $spi->forceFill([
                 'status'          => SupplierInvoice::STATUS_MAPPED,
                 'stage_completed' => 4,
             ])->save();
 
-            $this->svc->log($spi, 'submitted', ['note' => $note]);
+            $this->svc->log($spi, 'submitted', ['note' => $request->input('note')]);
+            $spi->refresh();
 
-            return $spi->refresh();
-        });
+            DB::commit();
 
-        return $this->ok($spi);
+            return response()->json(['status' => true, 'data' => $spi], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** DELETE /p2p/spi/{id} — soft delete, refused once goods have moved on. */
-    public function destroy(Request $request, int $id): JsonResponse
+    public function destroy(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        if ($spi->status === SupplierInvoice::STATUS_CLOSED) {
-            return $this->fail("{$spi->code} is closed — a received invoice cannot be deleted.");
-        }
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
 
-        $this->inTransaction('delete the invoice', function () use ($spi) {
+            if ($spi->status === SupplierInvoice::STATUS_CLOSED) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$spi->code} is closed — a received invoice cannot be deleted.",
+                ], 422));
+            }
+
             // Every line gives its quantity back to the PO before the invoice goes.
             foreach ($spi->items as $item) {
                 $this->svc->syncFulfilment($item, SpiPoFulfilment::EVENT_CANCELLED, (float) $item->qty_spi);
@@ -461,9 +544,14 @@ class SupplierInvoiceController extends Controller
             $this->svc->log($spi, 'cancelled');
             $spi->items()->delete();
             $spi->delete();
-        });
 
-        return $this->ok(['id' => $id, 'deleted' => true]);
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => ['id' => $id, 'deleted' => true]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
@@ -478,118 +566,151 @@ class SupplierInvoiceController extends Controller
      * amount is the supplier's claim, not a ledger. So `po` is returned
      * alongside, and that is the figure a new request is validated against.
      */
-    public function paymentRequests(Request $request, int $id): JsonResponse
+    public function paymentRequests(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
-        $po  = $spi->purchaseOrder;
+        try {
+            DB::beginTransaction();
 
-        $rows = PoPaymentRequest::where('supplier_invoice_id', $spi->id)
-            ->orderBy('id')->get();
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
+            $po  = $spi->purchaseOrder;
 
-        $approved = $rows->where('status', 'Approved');
-        $paid     = round((float) $rows->sum('paid_amount'), 2);
-        $gst      = round((float) $spi->total_cgst + (float) $spi->total_sgst + (float) $spi->total_igst, 2);
+            $rows = PoPaymentRequest::where('supplier_invoice_id', $spi->id)
+                ->orderBy('id')->get();
 
-        return $this->ok([
-            'spi' => [
-                'id' => $spi->id,
-                'code' => $spi->code,
-                'base_amount'  => (float) $spi->taxable_total,   // without GST
-                'gst_amount'   => $gst,
-                'grand_total'  => (float) $spi->grand_total,     // with GST
-                'paid_amount'  => $paid,
-                'balance'      => round((float) $spi->grand_total - $paid, 2),
-            ],
+            $approved = $rows->where('status', 'Approved');
+            $paid     = round((float) $rows->sum('paid_amount'), 2);
+            $gst      = round((float) $spi->total_cgst + (float) $spi->total_sgst + (float) $spi->total_igst, 2);
 
-            'requests_summary' => [
-                'total'            => $rows->count(),
-                'requested_amount' => round((float) $rows->sum('requested_amount'), 2),
-                'awaiting'         => round((float) $rows->where('status', 'Pending')->sum('requested_amount'), 2),
-                'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
-                'paid_amount'      => $paid,
-                // Approved but not yet released — what the Make Payment button owes.
-                'ready_to_pay'     => round((float) $approved->sum(fn($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
-            ],
+            DB::commit();
 
-            /* The real ceiling. A request against this invoice is still checked
-               against the PO's balance, not the invoice's. */
-            'po' => $po ? [
-                'id' => $po->id,
-                'code' => $po->code,
-                'grand_total'    => (float) $po->grand_total,
-                'tds_amount'     => (float) $po->tds_amount,
-                'net_payable'    => round((float) $po->grand_total - (float) $po->tds_amount, 2),
-                'paid_amount'    => (float) $po->paid_amount,
-                'balance_amount' => (float) $po->balance_amount,
-            ] : null,
+            return response()->json(['status' => true, 'data' => [
+                'spi' => [
+                    'id' => $spi->id,
+                    'code' => $spi->code,
+                    'base_amount'  => (float) $spi->taxable_total,   // without GST
+                    'gst_amount'   => $gst,
+                    'grand_total'  => (float) $spi->grand_total,     // with GST
+                    'paid_amount'  => $paid,
+                    'balance'      => round((float) $spi->grand_total - $paid, 2),
+                ],
 
-            'requests' => $rows->map(fn($r) => [
-                'id' => $r->id,
-                'code' => $r->code,
-                'payment_type'     => $r->payment_type,
-                'percentage'       => $r->percentage !== null ? (float) $r->percentage : null,
-                'requested_amount' => (float) $r->requested_amount,
-                'requested_to'     => $r->requested_to,
-                'requested_at'     => $r->requested_at,
-                'status'           => $r->status,
-                'approved_amount'  => $r->approved_amount !== null ? (float) $r->approved_amount : null,
-                'paid_amount'      => (float) $r->paid_amount,
-                'due'              => $r->approved_amount !== null
-                    ? max(0, round((float) $r->approved_amount - (float) $r->paid_amount, 2))
-                    : null,
-            ])->values(),
-        ]);
+                'requests_summary' => [
+                    'total'            => $rows->count(),
+                    'requested_amount' => round((float) $rows->sum('requested_amount'), 2),
+                    'awaiting'         => round((float) $rows->where('status', 'Pending')->sum('requested_amount'), 2),
+                    'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
+                    'paid_amount'      => $paid,
+                    // Approved but not yet released — what the Make Payment button owes.
+                    'ready_to_pay'     => round((float) $approved->sum(fn($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
+                ],
+
+                /* The real ceiling. A request against this invoice is still checked
+                   against the PO's balance, not the invoice's. */
+                'po' => $po ? [
+                    'id' => $po->id,
+                    'code' => $po->code,
+                    'grand_total'    => (float) $po->grand_total,
+                    'tds_amount'     => (float) $po->tds_amount,
+                    'net_payable'    => round((float) $po->grand_total - (float) $po->tds_amount, 2),
+                    'paid_amount'    => (float) $po->paid_amount,
+                    'balance_amount' => (float) $po->balance_amount,
+                ] : null,
+
+                'requests' => $rows->map(fn($r) => [
+                    'id' => $r->id,
+                    'code' => $r->code,
+                    'payment_type'     => $r->payment_type,
+                    'percentage'       => $r->percentage !== null ? (float) $r->percentage : null,
+                    'requested_amount' => (float) $r->requested_amount,
+                    'requested_to'     => $r->requested_to,
+                    'requested_at'     => $r->requested_at,
+                    'status'           => $r->status,
+                    'approved_amount'  => $r->approved_amount !== null ? (float) $r->approved_amount : null,
+                    'paid_amount'      => (float) $r->paid_amount,
+                    'due'              => $r->approved_amount !== null
+                        ? max(0, round((float) $r->approved_amount - (float) $r->paid_amount, 2))
+                        : null,
+                ])->values(),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ ZOHO ══════════════════════════ */
 
     /** POST /p2p/spi/{id}/zoho-sync — only a standalone invoice creates its own bill. */
-    public function zohoSync(Request $request, int $id): JsonResponse
+    public function zohoSync(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        if (!$spi->ownsZohoBill()) {
-            $po = $spi->purchaseOrder;
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
 
-            return $this->fail("This invoice is against {$po?->code} — its Zoho bill belongs to the purchase order.");
+            if (!$spi->ownsZohoBill()) {
+                $po = $spi->purchaseOrder;
+
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "This invoice is against {$po?->code} — its Zoho bill belongs to the purchase order.",
+                ], 422));
+            }
+
+            abort(response()->json([
+                'status'  => false,
+                'message' => 'Zoho sync for standalone invoices is not wired up yet.',
+            ], 501));
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
-
-        return $this->fail('Zoho sync for standalone invoices is not wired up yet.', 501);
     }
 
     /** GET /p2p/spi/{id}/zoho-tracker — says WHY there is no bill, rather than showing an empty state. */
-    public function zohoTracker(Request $request, int $id): JsonResponse
+    public function zohoTracker(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        if (!$spi->ownsZohoBill()) {
-            $po = $spi->purchaseOrder;
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
 
-            return $this->ok([
-                'owns_bill'  => false,
-                'bill_owner' => [
-                    'type' => 'purchase_order',
-                    'id' => $po?->id,
-                    'code' => $po?->code,
-                    'zoho_bill_id' => $po?->zoho_bill_id,
-                    'zoho_bill_number' => $po?->zoho_bill_number,
-                ],
-                'can_retry' => false,
-            ]);
+            if (!$spi->ownsZohoBill()) {
+                $po = $spi->purchaseOrder;
+
+                $body = [
+                    'owns_bill'  => false,
+                    'bill_owner' => [
+                        'type'             => 'purchase_order',
+                        'id'               => $po?->id,
+                        'code'             => $po?->code,
+                        'zoho_bill_id'     => $po?->zoho_bill_id,
+                        'zoho_bill_number' => $po?->zoho_bill_number,
+                    ],
+                    'can_retry' => false,
+                ];
+            } else {
+                $body = [
+                    'owns_bill'        => true,
+                    'zoho_bill_id'     => $spi->zoho_bill_id,
+                    'zoho_bill_number' => $spi->zoho_bill_number,
+                    'zoho_status'      => $spi->zoho_status,
+                    'zoho_synced_at'   => $spi->zoho_synced_at,
+                    'zoho_error'       => $spi->zoho_error,
+                    'can_retry'        => $spi->zoho_status === 'failed',
+                ];
+            }
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
-
-        return $this->ok([
-            'owns_bill'        => true,
-            'zoho_bill_id'     => $spi->zoho_bill_id,
-            'zoho_bill_number' => $spi->zoho_bill_number,
-            'zoho_status'      => $spi->zoho_status,
-            'zoho_synced_at'   => $spi->zoho_synced_at,
-            'zoho_error'       => $spi->zoho_error,
-            'can_retry'        => $spi->zoho_status === 'failed',
-        ]);
     }
 
     /* ══════════════════════════ HELPERS ══════════════════════════ */

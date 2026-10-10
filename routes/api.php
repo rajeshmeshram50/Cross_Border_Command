@@ -65,6 +65,15 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RazorpayWebhookController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\Api\Inventory\ProductFlagController;
+use App\Http\Controllers\Api\Inventory\RackController;
+use App\Http\Controllers\Api\Inventory\ShelfController;
+use App\Http\Controllers\Api\Inventory\WarehouseController;
+use App\Http\Controllers\Api\Inventory\ZoneController;
+use App\Http\Controllers\Api\P2p\PoPaymentRequestController;
+use App\Http\Controllers\Api\P2p\SpiBoxController;
+use App\Http\Controllers\Api\P2p\SpiPutawayController;
+use App\Http\Controllers\Api\P2p\SupplierInvoiceController;
 use Illuminate\Support\Facades\Route;
 
 
@@ -504,57 +513,106 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
        Supplier and warehouse pickers are NOT here: they reuse
        /p2p/orders/suppliers and /master/warehouse_master. */
     Route::prefix('p2p/spi')->group(function () {
-        $spi = \App\Http\Controllers\Api\P2p\SupplierInvoiceController::class;
-        $box = \App\Http\Controllers\Api\P2p\SpiBoxController::class;
-        $put = \App\Http\Controllers\Api\P2p\SpiPutawayController::class;
-
         // Lookups first: /{id} would otherwise swallow them.
-        Route::get   ('/next-code',         [$spi, 'nextCode']);
-        Route::get   ('/orders/{po}/lines', [$spi, 'poLines'])->whereNumber('po');
+        Route::get   ('/next-code',         [SupplierInvoiceController::class, 'nextCode']);
+        Route::get   ('/orders/{po}/lines', [SupplierInvoiceController::class, 'poLines'])->whereNumber('po');
 
         // Header and stages 01–02
-        Route::get   ('/',             [$spi, 'index']);
-        Route::post  ('/',             [$spi, 'store']);              // Stage 01 — create draft
-        Route::get   ('/{id}',         [$spi, 'show'])->whereNumber('id');
-        Route::put   ('/{id}/stage-1', [$spi, 'updateStage1'])->whereNumber('id');
+        Route::get   ('/',             [SupplierInvoiceController::class, 'index']);
+        Route::post  ('/',             [SupplierInvoiceController::class, 'store']);              // Stage 01 — create draft
+        Route::get   ('/{id}',         [SupplierInvoiceController::class, 'show'])->whereNumber('id');
+        Route::put   ('/{id}/stage-1', [SupplierInvoiceController::class, 'updateStage1'])->whereNumber('id');
         /* Stage 02 — the grid, the totals AND the two attachments, in one save.
            POST rather than PUT because PHP does not populate $_FILES on a PUT;
            the same endpoint still accepts plain JSON when there are no files. */
-        Route::post  ('/{id}/items',   [$spi, 'updateItems'])->whereNumber('id');
-        Route::put   ('/{id}/submit',  [$spi, 'submit'])->whereNumber('id');
-        Route::delete('/{id}',         [$spi, 'destroy'])->whereNumber('id');
+        Route::post  ('/{id}/items',   [SupplierInvoiceController::class, 'updateItems'])->whereNumber('id');
+        Route::put   ('/{id}/submit',  [SupplierInvoiceController::class, 'submit'])->whereNumber('id');
+        Route::delete('/{id}',         [SupplierInvoiceController::class, 'destroy'])->whereNumber('id');
 
         // Stage 03 · box packaging
-        Route::get   ('/{id}/boxes',               [$box, 'index'])->whereNumber('id');
-        Route::get   ('/{id}/packing-summary',     [$box, 'packingSummary'])->whereNumber('id');
-        Route::post  ('/{id}/boxes',               [$box, 'store'])->whereNumber('id');
-        Route::put   ('/{id}/boxes/{box}',         [$box, 'update'])->whereNumber('id')->whereNumber('box');
-        Route::delete('/{id}/boxes/{box}',         [$box, 'destroy'])->whereNumber('id')->whereNumber('box');
-        Route::post  ('/{id}/boxes/{box}/sticker', [$box, 'printSticker'])->whereNumber('id')->whereNumber('box');
+        Route::get   ('/{id}/boxes',               [SpiBoxController::class, 'index'])->whereNumber('id');
+        Route::get   ('/{id}/packing-summary',     [SpiBoxController::class, 'packingSummary'])->whereNumber('id');
+        Route::post  ('/{id}/boxes',               [SpiBoxController::class, 'store'])->whereNumber('id');
+        Route::put   ('/{id}/boxes/{box}',         [SpiBoxController::class, 'update'])->whereNumber('id')->whereNumber('box');
+        Route::delete('/{id}/boxes/{box}',         [SpiBoxController::class, 'destroy'])->whereNumber('id')->whereNumber('box');
+        Route::post  ('/{id}/boxes/{box}/sticker', [SpiBoxController::class, 'printSticker'])->whereNumber('id')->whereNumber('box');
 
         // Stage 04 · temporary put-away. The scan is POST, not PUT: each one
         // stamps its own timestamp, so it is not idempotent.
-        Route::get   ('/{id}/putaway',               [$put, 'index'])->whereNumber('id');
-        Route::put   ('/{id}/storage-type',          [$put, 'setStorageType'])->whereNumber('id');
-        Route::post  ('/{id}/putaway/scan',          [$put, 'scan'])->whereNumber('id');
-        Route::put   ('/{id}/putaway/{row}/confirm', [$put, 'confirm'])->whereNumber('id')->whereNumber('row');
+        Route::get   ('/{id}/putaway',               [SpiPutawayController::class, 'index'])->whereNumber('id');
+        Route::put   ('/{id}/storage-type',          [SpiPutawayController::class, 'setStorageType'])->whereNumber('id');
+        Route::post  ('/{id}/putaway/scan',          [SpiPutawayController::class, 'scan'])->whereNumber('id');
+        Route::put   ('/{id}/putaway/{row}/confirm', [SpiPutawayController::class, 'confirm'])->whereNumber('id')->whereNumber('row');
 
         /* Payment Requests History for ONE invoice. The requests themselves are
            still raised and decided on the PO — this is the read that scopes
            them to the invoice they were raised against. */
-        Route::get   ('/{id}/payment-requests', [$spi, 'paymentRequests'])->whereNumber('id');
+        Route::get   ('/{id}/payment-requests', [SupplierInvoiceController::class, 'paymentRequests'])->whereNumber('id');
         /* Raised from the invoice, but it still belongs to the PO — same
            ceiling, same approver rules, same deduction. The SPI screen
            therefore never needs to know the purchase order id. */
-        $pay = \App\Http\Controllers\Api\P2p\PoPaymentRequestController::class;
-        Route::post  ('/{id}/payment-requests',                  [$pay, 'storeFromSpi'])->whereNumber('id');
+        Route::post  ('/{id}/payment-requests',                  [PoPaymentRequestController::class, 'storeFromSpi'])->whereNumber('id');
         // The "Make SPI Payment" button. Still recorded against the PO.
-        Route::post  ('/{id}/payment-requests/{req}/payments',   [$pay, 'storePaymentFromSpi'])
+        Route::post  ('/{id}/payment-requests/{req}/payments',   [PoPaymentRequestController::class, 'storePaymentFromSpi'])
             ->whereNumber('id')->whereNumber('req');
 
         // Zoho Books — only a standalone invoice creates its own bill.
-        Route::post  ('/{id}/zoho-sync',    [$spi, 'zohoSync'])->whereNumber('id');
-        Route::get   ('/{id}/zoho-tracker', [$spi, 'zohoTracker'])->whereNumber('id');
+        Route::post  ('/{id}/zoho-sync',    [SupplierInvoiceController::class, 'zohoSync'])->whereNumber('id');
+        Route::get   ('/{id}/zoho-tracker', [SupplierInvoiceController::class, 'zohoTracker'])->whereNumber('id');
+    });
+
+    /* Inventory masters. Four of the five nest — warehouse → zone → rack →
+       shelf — and each level's /options feeds the next level's dropdown.
+
+       Every list takes ?tab=all|active|inactive&q=&page=&per_page=, and
+       returns { data, tabs, meta }. Nothing is hard-deleted once it has
+       children: the status toggle is how a location is retired. */
+    Route::prefix('inventory')->group(function () {
+        /* Warehouse. store/update are POST because the business-card upload is
+           multipart and PHP does not populate $_FILES on a PUT. */
+        Route::get   ('/warehouses',               [WarehouseController::class, 'index']);
+        Route::get   ('/warehouses/options',       [WarehouseController::class, 'options']);     // before /{id}
+        Route::post  ('/warehouses',               [WarehouseController::class, 'store']);
+        Route::get   ('/warehouses/{id}',          [WarehouseController::class, 'show'])->whereNumber('id');
+        Route::post  ('/warehouses/{id}',          [WarehouseController::class, 'update'])->whereNumber('id');
+        Route::put   ('/warehouses/{id}/status',   [WarehouseController::class, 'setStatus'])->whereNumber('id');
+        Route::delete('/warehouses/{id}',          [WarehouseController::class, 'destroy'])->whereNumber('id');
+
+        // Zone
+        Route::get   ('/zones',                    [ZoneController::class, 'index']);
+        Route::get   ('/zones/options',            [ZoneController::class, 'options']);
+        Route::post  ('/zones',                    [ZoneController::class, 'store']);
+        Route::get   ('/zones/{id}',               [ZoneController::class, 'show'])->whereNumber('id');
+        Route::put   ('/zones/{id}',               [ZoneController::class, 'update'])->whereNumber('id');
+        Route::put   ('/zones/{id}/status',        [ZoneController::class, 'setStatus'])->whereNumber('id');
+        Route::delete('/zones/{id}',               [ZoneController::class, 'destroy'])->whereNumber('id');
+
+        // Rack
+        Route::get   ('/racks',                    [RackController::class, 'index']);
+        Route::get   ('/racks/options',            [RackController::class, 'options']);
+        Route::post  ('/racks',                    [RackController::class, 'store']);
+        Route::get   ('/racks/{id}',               [RackController::class, 'show'])->whereNumber('id');
+        Route::put   ('/racks/{id}',               [RackController::class, 'update'])->whereNumber('id');
+        Route::put   ('/racks/{id}/status',        [RackController::class, 'setStatus'])->whereNumber('id');
+        Route::delete('/racks/{id}',               [RackController::class, 'destroy'])->whereNumber('id');
+
+        /* Shelf. Listed and created under its rack, because every rule it has
+           to pass is a comparison against that rack; edited by its own id. */
+        Route::get   ('/racks/{rack}/shelves',     [ShelfController::class, 'index'])->whereNumber('rack');
+        Route::post  ('/racks/{rack}/shelves',     [ShelfController::class, 'store'])->whereNumber('rack');
+        Route::get   ('/shelves/{id}',             [ShelfController::class, 'show'])->whereNumber('id');
+        Route::put   ('/shelves/{id}',             [ShelfController::class, 'update'])->whereNumber('id');
+        Route::put   ('/shelves/{id}/status',      [ShelfController::class, 'setStatus'])->whereNumber('id');
+        Route::delete('/shelves/{id}',             [ShelfController::class, 'destroy'])->whereNumber('id');
+
+        // Product flags
+        Route::get   ('/product-flags',            [ProductFlagController::class, 'index']);
+        Route::get   ('/product-flags/options',    [ProductFlagController::class, 'options']);
+        Route::post  ('/product-flags',            [ProductFlagController::class, 'store']);
+        Route::get   ('/product-flags/{id}',       [ProductFlagController::class, 'show'])->whereNumber('id');
+        Route::put   ('/product-flags/{id}',       [ProductFlagController::class, 'update'])->whereNumber('id');
+        Route::put   ('/product-flags/{id}/status',[ProductFlagController::class, 'setStatus'])->whereNumber('id');
+        Route::delete('/product-flags/{id}',       [ProductFlagController::class, 'destroy'])->whereNumber('id');
     });
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     // Per-deal "is this document needed?" answers for the trade-doc / agreement popup.
