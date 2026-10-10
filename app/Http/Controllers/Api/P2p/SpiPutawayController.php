@@ -152,17 +152,19 @@ class SpiPutawayController extends Controller
         ]);
 
         $full = $this->isFullPutaway($spi->warehouse_id);
-        $box  = SpiBox::where('supplier_invoice_id', $id)
-            ->where('box_code', $data['box_code'] ?? $data['scanned_value'])->first();
+        [$box, $other] = $this->resolveScannedBox($spi, $data);
 
         // ── Refusals. Each one is logged with the reason before it aborts. ──
 
         if ($data['scan_type'] === 'box' && !$box) {
-            $other = SpiBox::withoutGlobalScope('tenant')->where('box_code', $data['scanned_value'])->first();
+            $value = $data['scanned_value'];
 
             $this->refuse($spi, $data, $user,
                 $other ? 'wrong_spi' : 'unknown_code',
-                $other ? "{$data['scanned_value']} belongs to another invoice." : "No box matches {$data['scanned_value']}.");
+                $other
+                    ? "{$value} is box {$other->box_code} on " . ($other->invoice?->code ?: 'another invoice') . '.'
+                    : "No box matches {$value}.",
+                null, null, null, $other?->id);
         }
 
         if (!$box) {
@@ -285,6 +287,44 @@ class SpiPutawayController extends Controller
     }
 
     /**
+     * The box a scan names, and — when it is not one of this invoice's — the
+     * box it actually is, so the refusal can say which invoice to open.
+     *
+     * Resolved by ID first. A box id is unique across every invoice, client and
+     * branch; a box CODE is only unique inside its own invoice, because every
+     * invoice starts again at BOX-001. The sticker QR therefore carries the id,
+     * and a numeric scan needs no invoice context at all.
+     *
+     * A textual scan is still accepted — someone keying the printed code by
+     * hand — and that one is matched inside this invoice only.
+     *
+     * Both lookups go through the tenant scope, so a box of another client or
+     * another branch is simply not found. The old version bypassed that scope
+     * and searched everywhere, which made "belongs to another invoice" fire for
+     * every typo once BOX-001 existed on more than one SPI.
+     *
+     * @return array{0: ?SpiBox, 1: ?SpiBox} the box on this invoice, the box scanned
+     */
+    private function resolveScannedBox(SupplierInvoice $spi, array $data): array
+    {
+        $value = trim((string) ($data['box_code'] ?? $data['scanned_value']));
+
+        if ($value === '') return [null, null];
+
+        if (ctype_digit($value)) {
+            $box = SpiBox::with('invoice:id,code')->find((int) $value);
+
+            return [(int) $box?->supplier_invoice_id === (int) $spi->id ? $box : null, $box];
+        }
+
+        $box = SpiBox::where('supplier_invoice_id', $spi->id)->where('box_code', $value)->first();
+        if ($box) return [$box, $box];
+
+        // The same code on another of this tenant's invoices — name it.
+        return [null, SpiBox::with('invoice:id,code')->where('box_code', $value)->first()];
+    }
+
+    /**
      * Turn a scanned barcode into the id it names.
      *
      * Returns the columns to write, or a string naming why it was refused:
@@ -348,17 +388,25 @@ class SpiPutawayController extends Controller
      */
     private function refuse(
         SupplierInvoice $spi, array $data, $user, string $reason, string $message,
-        ?SpiBox $box = null, ?SpiPutaway $row = null, ?string $expected = null
+        ?SpiBox $box = null, ?SpiPutaway $row = null, ?string $expected = null,
+        ?int $resolvedId = null
     ): never {
-        $this->logScan($spi, $data, $user, 'failed', $reason, $message, $box, $row, $expected);
+        $this->logScan($spi, $data, $user, 'failed', $reason, $message, $box, $row, $expected, $resolvedId);
 
         abort(response()->json(['status' => false, 'message' => $message], 422));
     }
 
+    /**
+     * $resolvedId is what the scan actually named, which is not always a box of
+     * THIS invoice — a carton from the next SPI resolves fine and is still
+     * refused. box_id stays null in that case so the log cannot be read as if
+     * the box belonged here, while resolved_id keeps the evidence.
+     */
     private function logScan(
         SupplierInvoice $spi, array $data, $user, string $result,
         ?string $reason = null, ?string $message = null,
-        ?SpiBox $box = null, ?SpiPutaway $row = null, ?string $expected = null
+        ?SpiBox $box = null, ?SpiPutaway $row = null, ?string $expected = null,
+        ?int $resolvedId = null
     ): void {
         SpiScanLog::create([
             'supplier_invoice_id' => $spi->id,
@@ -368,7 +416,7 @@ class SpiPutawayController extends Controller
             // The raw string the scanner reported, kept even when unreadable —
             // that string is the evidence.
             'scanned_value'       => $data['scanned_value'],
-            'resolved_id'         => $box?->id,
+            'resolved_id'         => $resolvedId ?? $box?->id,
             'result'              => $result,
             'failure_reason'      => $reason,
             'message'             => $message,

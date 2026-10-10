@@ -101,6 +101,46 @@ class SpiBoxController extends Controller
         }
     }
 
+    /**
+     * GET /p2p/spi/{id}/boxes/next-codes?count=5
+     *
+     * The codes the packing screen is about to use, so it can label its rows
+     * before anything is saved.
+     *
+     * PREVIEW ONLY. Nothing is reserved — two people packing the same invoice
+     * are both shown BOX-003, and whoever saves first gets it. The code that
+     * ends up in the database is the one store() allocates under a row lock,
+     * and it is returned on the save, so the screen should take it from there
+     * rather than trusting what it was shown.
+     */
+    public function nextCodes(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
+
+            // Capped: this answers a packing screen, not a label print run.
+            $f = $request->validate(['count' => ['nullable', 'integer', 'min:1', 'max:100']]);
+            $count = (int) ($f['count'] ?? 1);
+
+            $codes = $this->nextBoxCodes($spi->id, $count);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => [
+                'count'      => $count,
+                'next_codes' => $codes,
+                // True while no other save lands first.
+                'preview'    => true,
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     /* ══════════════════════════ WRITE ══════════════════════════ */
 
     /** POST /p2p/spi/{id}/boxes — the box and its contents in one payload. */
@@ -122,10 +162,18 @@ class SpiBoxController extends Controller
             $data = $this->validateBox($request);
             $this->guardOverPacking($spi, $data['items'], null);
 
+            /* The invoice row is locked for the length of the allocation, so
+               two people packing the same SPI queue instead of both reading
+               the same highest number and colliding on the unique index. The
+               PO and SPI codes are allocated the same way. */
+            SupplierInvoice::whereKey($spi->id)->lockForUpdate()->first();
+
             $box = SpiBox::create(collect($data)->except('items')->all() + [
                 'supplier_invoice_id' => $spi->id,
                 // Sequential within the INVOICE, so three SPIs packed at once
-                // never interleave their numbering.
+                // never interleave their numbering. Allocated here, under the
+                // lock — never taken from the request, whatever the preview
+                // endpoint showed the screen.
                 'box_code'            => $this->nextBoxCode($spi->id),
                 'created_by'          => $user->id,
             ]);
@@ -365,7 +413,11 @@ class SpiBoxController extends Controller
             'dims'       => $dims,
             'packedOn'   => $box->created_at?->format('d M Y'),
             'printedOn'  => now()->format('d M Y H:i'),
-            'qr'         => $this->qr($box->box_code),
+            /* The ID, not the code. A box id is unique across every invoice,
+               client and branch; BOX-001 exists on almost every SPI, so a QR
+               carrying the code cannot say which carton it is. The code is
+               printed in text beside it for the human. */
+            'qr'         => $this->qr((string) $box->id),
         ];
     }
 
@@ -441,6 +493,17 @@ class SpiBoxController extends Controller
      */
     private function nextBoxCode(int $spiId): string
     {
+        return $this->nextBoxCodes($spiId, 1)[0];
+    }
+
+    /**
+     * The next $count codes in sequence, as an array.
+     *
+     * One query whatever the count: the sequence is the highest number ever
+     * issued on the invoice, so the codes after it are arithmetic, not lookups.
+     */
+    private function nextBoxCodes(int $spiId, int $count): array
+    {
         $max = 0;
         // Matches BOX-01 and BOX-001 alike, so the older two-digit rows still
         // count toward the sequence.
@@ -448,7 +511,12 @@ class SpiBoxController extends Controller
             if (preg_match('/^BOX-(\d+)$/', (string) $code, $m)) $max = max($max, (int) $m[1]);
         }
 
-        return sprintf('BOX-%03d', $max + 1);
+        $codes = [];
+        for ($i = 1; $i <= $count; $i++) {
+            $codes[] = sprintf('BOX-%03d', $max + $i);
+        }
+
+        return $codes;
     }
 
     /** Nothing may be packed beyond what the invoice says was billed. */
