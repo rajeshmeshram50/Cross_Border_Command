@@ -75,7 +75,7 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
      the same length it was when each one was its own useState. */
   const {
     poType, docType, transport, poDate, deliveryDate, deliveryLocation, paymentType,
-    physInspection, supplier, legalName, supplierType, riskLevel, category,
+    physInspection, poNumber, supplier, legalName, supplierType, riskLevel, category,
     address, country, state, stateCode, city, contactName, designation, contactNumber, email,
     scrutinyDate, gstNumber, gstStatus, filingDate, remarks,
   } = draft;
@@ -83,6 +83,10 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
   /* The supplier the chooser settled counts as chosen, so the compliance cards
      below know whether they have anything to report. */
   const hasSupplier = !!supplier;
+
+  /* Linked to a purchase order: the order's own terms are read back here, not
+     asked for again. A standalone invoice has none, so the block stays open. */
+  const hasPo = !!poNumber;
 
   /* Read from the supplier's Evidence Vault. Same thresholds the PO form uses,
      so the two cards cannot disagree about what counts as compliant. */
@@ -138,14 +142,19 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
 
         <div className="spi-dt-sec-body">
           <div className="spi-dt-grid4">
+            {/* Linked to a PO, this block reads the order back rather than
+                asking for it again — the same way the supplier block below is
+                read-only once a supplier is chosen. Editing them here would
+                let an invoice disagree with the order it is matched against.
+                A standalone invoice has no order to read, so they stay open. */}
             <Field label="PO Type" req>
-              <EditSelect value={poType} options={PO_TYPES} onChange={v => set({ poType: v })} />
+              <EditSelect readOnly={hasPo} value={poType} options={PO_TYPES} onChange={v => set({ poType: v })} />
             </Field>
             <Field label="Document Type" req>
-              <EditSelect value={docType} options={DOC_TYPES} onChange={v => set({ docType: v })} />
+              <EditSelect readOnly={hasPo} value={docType} options={DOC_TYPES} onChange={v => set({ docType: v })} />
             </Field>
             <Field label="Mode of Transport" req>
-              <EditSelect value={transport} options={TRANSPORT_MODES} onChange={v => set({ transport: v })} />
+              <EditSelect readOnly={hasPo} value={transport} options={TRANSPORT_MODES} onChange={v => set({ transport: v })} />
             </Field>
             <Field label="PO Date">
               {/* Never typed: the order's own date, carried over from the PO. */}
@@ -155,15 +164,21 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
               </div>
             </Field>
             <Field label="Expected Delivery Date" req>
-              <input className="spi-dt-inp" type="date"
-                value={deliveryDate} onChange={e => set({ deliveryDate: e.target.value })} />
+              {/* Carried from the order as a formatted date, not a bare date
+                  input: a read-only `type="date"` still shows its picker
+                  affordance and reads as something to fill in. */}
+              {hasPo
+                ? <input className="spi-dt-inp" value={formatDmy(deliveryDate)} readOnly />
+                : <input className="spi-dt-inp" type="date"
+                  value={deliveryDate} onChange={e => set({ deliveryDate: e.target.value })} />}
             </Field>
             <Field label="Delivery Location" req>
-              <input className="spi-dt-inp" placeholder="Enter delivery location" maxLength={255}
+              <input className="spi-dt-inp" readOnly={hasPo}
+                placeholder={hasPo ? '—' : 'Enter delivery location'} maxLength={255}
                 value={deliveryLocation} onChange={e => set({ deliveryLocation: e.target.value })} />
             </Field>
             <Field label="Payment Type" req>
-              <EditSelect value={paymentType} options={PAYMENT_TYPES} onChange={v => set({ paymentType: v })} />
+              <EditSelect readOnly={hasPo} value={paymentType} options={PAYMENT_TYPES} onChange={v => set({ paymentType: v })} />
             </Field>
             {/* Read-only here, unlike the PO form's Yes/No toggle: by the time
                 an invoice is raised the inspection was already decided on the

@@ -1697,3 +1697,50 @@
 [data-bs-theme="dark"] .arf-att__opt:hover { background: rgba(34, 211, 238, .1); }
 [data-bs-theme="dark"] .arf-att__opt b { color: #e2e8f0; }
 [data-bs-theme="dark"] .arf-att__opt + .arf-att__opt { border-top-color: #1f2d42; }
+
+/* A choice that is not built yet: greyed and inert, but still on screen so
+   the option is known to be coming. */
+.spi-mdl-card.is-disabled {
+  cursor: not-allowed;
+  background: #f7fafc;
+  border-color: #e8eff6;
+  filter: grayscale(.85);
+  box-shadow: none;
+}
+
+.spi-mdl-card.is-disabled:hover {
+  border-color: #e8eff6;
+  box-shadow: none;
+  transform: none;
+}
+
+.spi-mdl-card.is-disabled .spi-mdl-card-title,
+.spi-mdl-card.is-disabled .spi-mdl-card-desc { color: #8aa0ae; }
+
+.spi-mdl-soon {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #64748b;
+  background: #eef3f7;
+  border: 1px solid #dde6ed;
+}
+
+[data-bs-theme="dark"] .spi-mdl-card.is-disabled {
+  background: rgba(255, 255, 255, .03);
+  border-color: rgba(255, 255, 255, .08);
+}
+
+[data-bs-theme="dark"] .spi-mdl-card.is-disabled .spi-mdl-card-title,
+[data-bs-theme="dark"] .spi-mdl-card.is-disabled .spi-mdl-card-desc { color: #7f94a3; }
+
+[data-bs-theme="dark"] .spi-mdl-soon {
+  color: #9dbccb;
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .1);
+}

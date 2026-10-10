@@ -65,6 +65,10 @@ const monthsBack = (months: number) => {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/** `iso` plus n days, as an ISO date. Used for the PO's delivery window. */
+const addDays = (iso: string, n: number) =>
+  new Date(Date.parse(iso + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+
 /**
  * The draft, plus a setter that merges a patch.
  *
@@ -72,14 +76,22 @@ const today = () => new Date().toISOString().slice(0, 10);
  * one identity for the life of the form. A setter that changed on every
  * keystroke would be a new prop for every step and every memoised child below.
  */
-export function useInvoiceDraft(seed: { supplier: string; invoiceNo: string; poNo?: string }) {
+export function useInvoiceDraft(seed: {
+  supplier: string; invoiceNo: string; poNo?: string;
+  /** Where the goods are being staged — the PO's delivery location. */
+  warehouse?: string;
+}) {
   const [draft, setDraft] = useState<InvoiceDraft>(() => ({
     poType: 'Material / Goods',
     docType: 'Domestics',
     transport: 'Road',
     poDate: today(),
-    deliveryDate: '',
-    deliveryLocation: '',
+    /* An invoice raised against a PO inherits the order's own terms — it does
+       not restate them. Blank here meant the two fields opened on placeholders
+       as if waiting for input, on a block that is a read-back of the order.
+       Without a PO there is nothing to inherit and they stay empty. */
+    deliveryDate: seed.poNo ? addDays(today(), 14) : '',
+    deliveryLocation: seed.poNo ? (seed.warehouse ?? '') : '',
     paymentType: 'Advance',
     physInspection: false,
 

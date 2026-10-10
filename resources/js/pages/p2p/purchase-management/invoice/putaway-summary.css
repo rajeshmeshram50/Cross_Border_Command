@@ -1407,3 +1407,12 @@
 }
 
 [data-bs-theme="dark"] .pts-box__btxt { color: #e2f4fb; }
+
+/* The warehouse pill and "Temporary" sit in a no-shrink group pinned right,
+   which pushed the collapse chevron off the screen on a phone. The head wraps
+   so they take their own row and the chevron stays reachable. */
+@media (max-width: 760px) {
+  .pts-sec .spi-dt-sec-head { flex-wrap: wrap; row-gap: 8px; }
+  .pts-sec-right { margin-left: 0; flex-wrap: wrap; }
+  .pts-sec .spi-dt-sec-mid { flex: 1 1 160px; }
+}

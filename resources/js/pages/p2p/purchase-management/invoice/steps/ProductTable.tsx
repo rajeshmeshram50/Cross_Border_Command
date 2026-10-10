@@ -31,9 +31,12 @@ export default function ProductTable({
   taxMode?: TaxMode;
 }) {
   const totals = tableTotals(lines, taxMode);
-  /* The GST column says which tax it is showing rather than making the reader
-     work it out from the supplier's address. */
-  const taxLabel = taxMode === 'inter' ? 'IGST' : taxMode === 'none' ? 'GST' : 'CGST + SGST';
+  /* The tax columns swap rather than a single column explaining itself, which
+     is how the purchase order's own table reads: one IGST pair inter-state,
+     a CGST + SGST pair intra-state, and one Tax pair at 0% on an import.
+     create-po/steps/ProductTable.tsx does exactly this. */
+  const exportSpi = taxMode === 'export';
+  const inter = taxMode === 'inter' || exportSpi;
   /* Which product "Read more" opened. Null is closed — one piece of state
      rather than an open flag that could disagree with the id beside it. */
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -65,7 +68,11 @@ export default function ProductTable({
               {/* The two sides being reconciled, labelled as such: one PO
                   column to match against, then what the supplier invoiced. */}
               <th colSpan={1}>Purchase Order (PO)</th>
-              <th colSpan={5}>Supplier Invoice (SPI)</th>
+              {/* Rate, cost-without-GST, the tax pair twice over (% then
+                  amount), the GST total and the final cost. The tax pair is
+                  one column inter-state and two intra, so the band has to
+                  count them rather than assume. */}
+              <th colSpan={4 + 2 * (inter ? 1 : 2)}>Supplier Invoice (SPI)</th>
               <th rowSpan={2}>Action</th>
             </tr>
             <tr>
@@ -84,10 +91,14 @@ export default function ProductTable({
               <th className="cpd-th-amt">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
               <th className="cpd-th-amt cpd-c cpd-edh">Product Rate</th>
               <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
-              <th>GST (%)</th>
-              <th className="cpd-th-amt cpd-th-amt--tax">
-                Total GST Amount<span className="cpd-th-sub cpd-th-sub--tax">{taxLabel}</span>
-              </th>
+              {inter
+                ? <th>{exportSpi ? 'Tax (%)' : 'IGST (%)'}</th>
+                : <><th>CGST (%)</th><th>SGST (%)</th></>}
+              {inter
+                ? <th className="cpd-th-amt cpd-th-amt--tax">{exportSpi ? 'Tax Amount' : 'IGST Amount'}</th>
+                : <><th className="cpd-th-amt cpd-th-amt--tax">CGST Amount</th>
+                  <th className="cpd-th-amt cpd-th-amt--tax">SGST Amount</th></>}
+              <th className="cpd-th-amt cpd-th-amt--tax">Total GST Amount</th>
               <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
             </tr>
           </thead>
@@ -120,18 +131,12 @@ export default function ProductTable({
                     across different products would be a number with no use. */}
                 <td />
                 <td className="cpd-r">{money(totals.base)}</td>
-                <td />
-                <td className="cpd-r">
-                  {money(totals.gstAmount)}
-                  {taxMode === 'intra' && totals.gstAmount > 0 && (
-                    <span className="spi-taxsplit">
-                      CGST {money(totals.cgst)} · SGST {money(totals.sgst)}
-                    </span>
-                  )}
-                  {taxMode === 'inter' && totals.gstAmount > 0 && (
-                    <span className="spi-taxsplit">IGST {money(totals.igst)}</span>
-                  )}
-                </td>
+                {/* A rate has no total; the amounts beside it do. */}
+                {inter
+                  ? <><td /><td className="cpd-r">{money(totals.igst)}</td></>
+                  : <><td /><td /><td className="cpd-r">{money(totals.cgst)}</td>
+                    <td className="cpd-r">{money(totals.sgst)}</td></>}
+                <td className="cpd-r">{money(totals.gstAmount)}</td>
                 <td className="cpd-r cpd-foot-final">{money(totals.cost)}</td>
                 <td />
               </tr>
@@ -160,6 +165,8 @@ const Row = memo(function Row({
   taxMode: TaxMode;
 }) {
   const t = lineTotals(line, taxMode);
+  /* Same join the header makes: an import rides the single-column path at 0%. */
+  const inter = taxMode === 'inter' || taxMode === 'export';
 
   /* Bound to this row's index so the cells below pass only their value. */
   const patch = useCallback(
@@ -243,20 +250,13 @@ const Row = memo(function Row({
         />
       </td>
       <td className="cpd-r">{money(t.base)}</td>
-      {/* An import is taxed at zero, so the line says so rather than printing
-          a rate it is not charging. */}
-      <td className="cpd-c">{taxMode === 'none' ? <span className="spi-nogst">NA</span> : `${line.gst}%`}</td>
-      <td className="cpd-r">
-        {money(t.gstAmount)}
-        {taxMode === 'intra' && t.gstAmount > 0 && (
-          <span className="spi-taxsplit">
-            CGST {money(t.cgst)} · SGST {money(t.sgst)}
-          </span>
-        )}
-        {taxMode === 'inter' && t.gstAmount > 0 && (
-          <span className="spi-taxsplit">IGST {money(t.igst)}</span>
-        )}
-      </td>
+      {inter
+        ? <td className="cpd-c">{t.igstPct}%</td>
+        : <><td className="cpd-c">{t.cgstPct}%</td><td className="cpd-c">{t.sgstPct}%</td></>}
+      {inter
+        ? <td className="cpd-r">{money(t.igst)}</td>
+        : <><td className="cpd-r">{money(t.cgst)}</td><td className="cpd-r">{money(t.sgst)}</td></>}
+      <td className="cpd-r">{money(t.gstAmount)}</td>
       <td className="cpd-r">{money(t.cost)}</td>
 
       <td className="cpd-c">

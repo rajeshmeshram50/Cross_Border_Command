@@ -2585,3 +2585,30 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 @keyframes cpf-applying-spin { to { transform: rotate(360deg); } }
 [data-bs-theme="dark"] .cpf-applying { color: #67e8f9; }
 [data-bs-theme="dark"] .cpf-applying__ring { border-color: rgba(34, 211, 238, .25); border-top-color: #22d3ee; }
+
+/* ── Supplier legal bar on a phone ────────────────────────────────────────
+   `.cpf-lgbar` is a fixed 270px that cannot shrink and `.cpf-vault` is a
+   216px button, so on a phone the pair ran past the right edge of the card
+   and the compliance figure went with them. Shared by the purchase order's
+   Step 01, this invoice's, and the Payment Request Detail page — all three
+   break the same way, and all three are fixed here.
+
+   The bar becomes flexible rather than hidden: the percentage beside it is
+   the point of the row, and a bar with no width to show is worse than a
+   short one. */
+@media (max-width: 760px) {
+  .cpf-lghead { flex-wrap: wrap; row-gap: 8px; }
+
+  .cpf-lghead .cpf-vault {
+    width: 100%;
+    justify-content: center;
+    margin-left: 0;
+  }
+
+  .cpf-lghead .cpf-lgbar {
+    width: auto;
+    flex: 1 1 110px;
+    min-width: 80px;
+    margin-left: 0;
+  }
+}
