@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { changeLayoutMode } from '../slices/thunks';
 import { useAuth } from '../../contexts/AuthContext';
@@ -212,6 +212,9 @@ type DD = 'sales' | 'clm' | 'hr' | 'p2p';
 
 export default function IdimsHeader() {
   const navigate = useNavigate();
+  /* Re-renders the bar on every navigation, which is what lets it mark the
+     module the current page belongs to. */
+  const { pathname } = useLocation();
   const toast = useToast();
   const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
@@ -553,6 +556,41 @@ export default function IdimsHeader() {
       : kind === 'hr' ? hrLeafPath(id)
       : kind === 'p2p' ? p2pLeafPath(id)
       : clmLeafPath(id);
+
+  /* ── Which module the page on screen belongs to ─────────────────────────
+     The nav used to mark a button only while its own menu was open, so the
+     moment you picked something out of CLM and the menu closed, nothing in
+     the bar said you were still inside CLM.
+
+     Derived from the paths the dropdown itself links to — `topPath` for the
+     button and `leafPath` for every leaf under it — so a module that gains a
+     page is matched by the same table that navigates to it, with nothing to
+     keep in step by hand.
+
+     Longest match wins: '/master' and '/master/products' are both real
+     entries, and the shorter one must not claim the longer one's page. A
+     path matches its own children too ('/clm/ctc/41' is still CLM), which is
+     what makes a detail screen keep its module marked. */
+  const currentTopId = useMemo(() => {
+    let bestId: string | null = null;
+    let bestLen = 0;
+    const consider = (id: string, path: string) => {
+      // '/' would match every page; a leaf with no page yet has nothing to own.
+      if (!path || path === '/') return;
+      if (pathname !== path && !pathname.startsWith(`${path}/`)) return;
+      if (path.length <= bestLen) return;
+      bestId = id;
+      bestLen = path.length;
+    };
+    navItems.forEach(item => {
+      consider(item.id, topPath(item.id));
+      if (!item.dd) return;
+      colsFor(item.dd).flat().forEach(g =>
+        g.children.forEach(leaf => consider(item.id, leafPath(leaf.id, item.dd!))));
+    });
+    return bestId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, navItems]);
 
   /* ── Search index — modules + sub-modules only ──────────────────────────
      Flattens the accessible top-level nav items and their dropdown leaves
@@ -947,7 +985,9 @@ export default function IdimsHeader() {
               {visibleNav.map(item => (
                 item.dd ? (
                   <div className="idims-dd-wrap" key={item.id}>
-                    <button type="button" className={`idims-nav-btn ${openDD === item.dd ? 'dd-open' : ''}`}
+                    <button type="button"
+                      className={`idims-nav-btn ${openDD === item.dd ? 'dd-open' : ''} ${currentTopId === item.id ? 'is-current' : ''}`}
+                      aria-current={currentTopId === item.id ? 'page' : undefined}
                       onClick={() => { setBranchOpen(false); setProfileOpen(false); setMoreOpen(false); setOpenDD(o => o === item.dd ? null : item.dd!); }}>
                       <span className="idims-ico">{item.icon}</span>{item.label}
                       <span className="dd-chev">{IC.chevSm}</span>
@@ -984,7 +1024,10 @@ export default function IdimsHeader() {
                     )}
                   </div>
                 ) : (
-                  <button type="button" className="idims-nav-btn" key={item.id} onClick={() => go(topPath(item.id))}>
+                  <button type="button" key={item.id}
+                    className={`idims-nav-btn ${currentTopId === item.id ? 'is-current' : ''}`}
+                    aria-current={currentTopId === item.id ? 'page' : undefined}
+                    onClick={() => go(topPath(item.id))}>
                     <span className="idims-ico">{item.icon}</span>{item.label}
                   </button>
                 )
@@ -993,7 +1036,11 @@ export default function IdimsHeader() {
               {/* Overflow "More" dropdown — holds items that don't fit. */}
               {overflowNav.length > 0 && (
                 <div className="idims-dd-wrap idims-more-wrap">
-                  <button type="button" className={`idims-nav-btn ${moreOpen ? 'dd-open' : ''}`}
+                  {/* A module that did not fit the bar still has to be findable:
+                      when the current page belongs to one of the overflow
+                      items, More carries the mark on its behalf. */}
+                  <button type="button"
+                    className={`idims-nav-btn ${moreOpen ? 'dd-open' : ''} ${overflowNav.some(i => i.id === currentTopId) ? 'is-current' : ''}`}
                     onClick={() => { setBranchOpen(false); setProfileOpen(false); setOpenDD(null); setMoreOpen(o => !o); }}>
                     <span className="idims-ico">{IC.more}</span>More
                     <span className="dd-chev">{IC.chevSm}</span>
@@ -1302,8 +1349,8 @@ const IDIMS_CSS = `
 /* !important so brand wins over the dark-theme hover rule (.idims-dark
    .idims-nav-btn:hover) which has equal specificity but comes later — without
    it the icon/underline turn primary in dark+brand but the text stays grey. */
-.idims-brand .idims-nav-btn:hover, .idims-brand .idims-nav-btn.dd-open { color: var(--bp) !important; }
-.idims-brand .idims-nav-btn:hover .idims-ico, .idims-brand .idims-nav-btn.dd-open .idims-ico { color: var(--bp) !important; }
+.idims-brand .idims-nav-btn:hover, .idims-brand .idims-nav-btn.dd-open, .idims-brand .idims-nav-btn.is-current { color: var(--bp) !important; }
+.idims-brand .idims-nav-btn:hover .idims-ico, .idims-brand .idims-nav-btn.dd-open .idims-ico, .idims-brand .idims-nav-btn.is-current .idims-ico { color: var(--bp) !important; }
 .idims-brand .idims-nav-btn::after { background: var(--bp); }
 .idims-brand .idims-action-btn:hover { color: var(--bp); background: color-mix(in srgb, var(--bp) 10%, transparent); }
 .idims-brand .idims-mob-item:hover, .idims-brand .idims-mob-item.open { color: var(--bp); background: color-mix(in srgb, var(--bp) 10%, transparent); }
@@ -1383,6 +1430,13 @@ const IDIMS_CSS = `
 .idims-nav-btn.dd-open { font-weight: 500; color: #6D28D9; }
 .idims-nav-btn.dd-open .idims-ico { color: #8B5CF6; }
 .idims-nav-btn.dd-open::after { width: 100%; opacity: 1; }
+/* The module the current page belongs to. Same underline as an open menu, but
+   held while you are inside the module rather than only while the menu is
+   down, and a heavier label so it still reads as "you are here" when a
+   different module's menu is open over it. */
+.idims-nav-btn.is-current { font-weight: 650; color: #6D28D9; }
+.idims-nav-btn.is-current .idims-ico { color: #8B5CF6; }
+.idims-nav-btn.is-current::after { width: 100%; opacity: 1; }
 .dd-chev { display: flex; align-items: center; opacity: .45; transition: transform .18s, opacity .13s; margin-left: 2px; }
 .idims-nav-btn.dd-open .dd-chev { transform: rotate(180deg); opacity: .9; }
 
@@ -1547,7 +1601,8 @@ const IDIMS_CSS = `
 .idims-dark .idims-more-sub-item { color: #AEB7CC; }
 .idims-dark .idims-more-sub-item:hover { background: #252A3A; color: #A78BFA; }
 .idims-dark .idims-nav-btn { color: #9CA3AF; }
-.idims-dark .idims-nav-btn:hover, .idims-dark .idims-nav-btn.dd-open { color: #C4B5FD; }
+.idims-dark .idims-nav-btn:hover, .idims-dark .idims-nav-btn.dd-open, .idims-dark .idims-nav-btn.is-current { color: #C4B5FD; }
+.idims-dark .idims-nav-btn.is-current .idims-ico { color: #A78BFA; }
 .idims-dark .idims-action-btn { color: #9CA3AF; }
 .idims-dark .idims-action-btn:hover { color: #C4B5FD; background: #221E36; }
 /* Keep the logout icon RED in dark mode too (the generic action-btn rule
