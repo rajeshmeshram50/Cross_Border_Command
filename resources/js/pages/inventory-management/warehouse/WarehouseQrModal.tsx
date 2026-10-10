@@ -3,6 +3,9 @@ import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import type { Warehouse } from './warehouse-data';
+/* Carries its own styling: the QR card, the backdrop and the modal's edge all
+   live here, and the list page is not always what opened it. */
+import './warehouse-master.css';
 
 /**
  * What the code carries.

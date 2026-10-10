@@ -4,6 +4,13 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
 import '../../p2p/p2p-detail.css';
 import '../../p2p/purchase-management/order/create-po/create-po.css';
+/* Its own two, not the page's. The Product Flags list imports these, so the
+   form looked right when opened from there — and arrived unstyled when the
+   SPI's box drawer opened it instead: no section card, no grid, labels
+   wrapping beside a textarea an inch tall. A component that travels has to
+   carry its stylesheets with it. */
+import '../warehouse/warehouse-master.css';
+import './product-flag.css';
 import { Field } from '../../p2p/purchase-management/order/create-po/form-fields';
 import { PRODUCT_FLAGS, type ProductFlag } from './product-flag-data';
 

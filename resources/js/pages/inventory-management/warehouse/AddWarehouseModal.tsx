@@ -14,6 +14,9 @@ import '../../p2p/p2p-detail.css';
    to the page's body text — full size, near-black in light and near-white in
    dark, where they should be small and muted in both. */
 import '../../p2p/purchase-management/order/create-po/create-po.css';
+/* And its own, so it is dressed wherever it is opened from rather than only
+   on the page that happens to import them. */
+import './warehouse-master.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
 import { WAREHOUSES, type Warehouse, type WarehouseType } from './warehouse-data';
 /* Loaded only when someone picks "Take photo": it pulls in getUserMedia
