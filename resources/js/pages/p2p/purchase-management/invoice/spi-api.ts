@@ -134,6 +134,7 @@ export type SpiDetail = {
     invoice_file_name: string | null;
     eway_file_name: string | null;
     items: SpiDetailItem[];
+    warehouse: { id: number; wh_id: string | null; wh_name: string; wh_type: string | null } | null;
   };
 };
 

@@ -6,7 +6,7 @@ import '../order/create-po/create-po.css';
 import './invoice-form.css';
 import { HeadPill } from '../order/create-po/CreatePoForm';
 import {
-  IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoUser, IcoWarehouse, IcoX,
+  IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoLock, IcoUser, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
@@ -16,10 +16,12 @@ import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
 import { legalFromVault } from '../order/create-po/supplier-checks';
 import { useToast } from '../../../../contexts/ToastContext';
 import { spiApi } from './spi-api';
+import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
   DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor, type ProductLine,
 } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
+import { STORAGE_WAREHOUSES } from './data';
 
 const STAGES = [
   { title: 'Supplier Details', desc: 'Link the PO and confirm supplier details' },
@@ -32,6 +34,8 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 
 export interface InvoiceFormInput {
   spiId?: number;
+  status?: string;
+  statusLabel?: string;
   poId?: number;
   poNo?: string;
   supplier: string;
@@ -57,6 +61,12 @@ export default function InvoiceForm({
   const [spiId, setSpiId] = useState<number | null>(null);
   const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
   const [saving, setSaving] = useState(false);
+  const [savedWarehouse, setSavedWarehouse] = useState<string | null>(null);
+  const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
+    status: input.status, label: input.statusLabel,
+  });
+  const viewOnly = !!spiViewOnlyReason(spiStatus.status, spiStatus.label);
+  const editing = !!input.spiId;
 
   useEffect(() => {
     if (input.invoiceNo) return;
@@ -78,6 +88,8 @@ export default function InvoiceForm({
         if (existing) {
           setSpiId(existing.id);
           setSpiCode(existing.code);
+          if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
+          setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
           setReached(Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1));
         }
         if (!poId) {
@@ -223,12 +235,16 @@ export default function InvoiceForm({
   };
 
   const goNext = () => {
+    if (viewOnly) {
+      if (stage >= STAGES.length - 1) onClose(); else advance();
+      return;
+    }
     if (stage >= STAGES.length - 1) return;
     if (stage === 0) { void saveStage1(); return; }
     if (stage === 1) { void saveStage2(); return; }
     advance();
   };
-  const nextBlocked = saving || (stage === 0 && (poLoading || !!poError));
+  const nextBlocked = viewOnly ? poLoading : saving || (stage === 0 && (poLoading || !!poError));
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
@@ -242,7 +258,13 @@ export default function InvoiceForm({
               <div className="spi-dt-head-ico"><IcoDoc /><span className="spi-dt-head-dot" /></div>
               <div>
                 <div className="spi-dt-head-title">Supplier Purchase Invoice</div>
-                <div className="spi-dt-head-sub">Draft · not yet mapped</div>
+                <div className="spi-dt-head-sub">
+                  {viewOnly
+                    ? `Viewing ${spiCode ?? invoiceNo} · view only`
+                    : editing
+                      ? `Editing ${spiCode ?? invoiceNo}${spiStatus.label ? ` · ${spiStatus.label}` : ''}`
+                      : 'Draft · not yet mapped'}
+                </div>
               </div>
             </div>
 
@@ -253,7 +275,7 @@ export default function InvoiceForm({
               <span className="spi-dt-dots">⋮</span>
               <HeadPill icon={<IcoUser />} label="SUPPLIER" value={draft.supplier || input.supplier} />
               <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={warehouseLabel(input.storage)} alt />
+              <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={savedWarehouse ?? warehouseLabel(input.storage)} alt />
             </div>
 
             <div className="spi-dt-head-r">
@@ -293,9 +315,15 @@ export default function InvoiceForm({
             <>
               {saving && <StageSkeleton stage={stage + 1} />}
               <div className="cpf-stepwrap" hidden={saving}>
+                {viewOnly && (
+                  <div className="cpf-viewonly-banner">
+                    <IcoLock /> <b>View only.</b>{' '}
+                    This invoice is {spiStatus.label || spiStatus.status}, so it can no longer be changed — every step is still here to read.
+                  </div>
+                )}
                 {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} />}
                 {stage === 1 && (
-                  <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile}
+                  <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly}
                     onChangeLine={changeLine} />
                 )}
                 {stage === 2 && <Step3BoxPackaging draft={draft} lines={lines} />}
@@ -327,7 +355,7 @@ export default function InvoiceForm({
               disabled={nextBlocked}
             >
               {isLast && <IcoCheck />}
-              {isLast ? 'Map Invoice' : saving ? 'Saving…' : 'Save & Next'}
+              {viewOnly ? (isLast ? 'Close' : 'Next') : isLast ? 'Map Invoice' : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
               {!isLast && <IcoChevronR />}
             </button>
           </div>
@@ -436,5 +464,5 @@ function StageSkeleton({ stage }: { stage: number }) {
 
 function warehouseLabel(storage: StorageChoice): string {
   if (storage.type === 'third-party') return 'Third Party Warehouse';
-  return storage.warehouse?.name ?? '—';
+  return storage.warehouse?.name ?? STORAGE_WAREHOUSES[0]?.name ?? '—';
 }

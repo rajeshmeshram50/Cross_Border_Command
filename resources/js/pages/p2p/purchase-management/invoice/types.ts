@@ -77,3 +77,14 @@ export interface StorageWarehouse {
   name: string;
   location: string;
 }
+
+export const SPI_EDITABLE_STATUSES = ['draft', 'mapped'];
+
+export const SPI_STATUS_LABELS: Record<string, string> = {
+  draft: 'Draft', mapped: 'Mapped', grn_pending: 'GRN Pending', closed: 'Closed', cancelled: 'Cancelled',
+};
+
+export function spiViewOnlyReason(status: string | null | undefined, label?: string | null): string | undefined {
+  if (!status || SPI_EDITABLE_STATUSES.includes(status)) return undefined;
+  return `This invoice is ${label || SPI_STATUS_LABELS[status] || status} — it opens view-only`;
+}

@@ -22,7 +22,7 @@ const ICON_PICK_CAMERA = (
 );
 
 export default function Step2InvoiceProducts({
-  draft, set, lines, onChangeLine, taxMode, onPickFile,
+  draft, set, lines, onChangeLine, taxMode, onPickFile, readOnly = false,
 }: {
   draft: InvoiceDraft;
   set: SetDraft;
@@ -30,6 +30,7 @@ export default function Step2InvoiceProducts({
   onChangeLine: (index: number, patch: Partial<ProductLine>) => void;
   taxMode: TaxMode;
   onPickFile: (kind: 'invoice' | 'eway', file: File) => void;
+  readOnly?: boolean;
 
 }) {
   const [invOpen, setInvOpen] = useState(true);
@@ -58,18 +59,18 @@ export default function Step2InvoiceProducts({
         <div className="spi-dt-sec-body">
           <div className="spi-dt-grid4">
             <Field label="PURCHASE INVOICE NUMBER" req>
-              <input className="spi-dt-inp" placeholder="Supplier's own invoice number"
+              <input className="spi-dt-inp" placeholder="Supplier's own invoice number" readOnly={readOnly}
                 value={draft.invoiceNumber} onChange={e => set({ invoiceNumber: e.target.value })} />
             </Field>
             <Field label="PURCHASE INVOICE DATE" req>
-              <input className="spi-dt-inp" type="date"
+              <input className="spi-dt-inp" type="date" readOnly={readOnly}
                 value={draft.invoiceDate} onChange={e => set({ invoiceDate: e.target.value })} />
             </Field>
             <Field label="PURCHASE INVOICE ATTACHMENT" req>
-              <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} />
+              <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly} />
             </Field>
             <Field label="E-WAY BILL ATTACHMENT">
-              <FilePick label="E-Way Bill" value={draft.ewayBillFile} onPick={f => onPickFile('eway', f)} />
+              <FilePick label="E-Way Bill" value={draft.ewayBillFile} onPick={f => onPickFile('eway', f)} disabled={readOnly} />
             </Field>
           </div>
         </div>
@@ -101,14 +102,14 @@ export default function Step2InvoiceProducts({
         </div>
 
         <div className="spi-dt-sec-body">
-          <ProductTable lines={lines} onChange={onChangeLine} taxMode={taxMode} />
+          <ProductTable lines={lines} onChange={onChangeLine} taxMode={taxMode} readOnly={readOnly} />
         </div>
       </div>
     </>
   );
 }
 
-function FilePick({ label, value, onPick }: { label: string; value: string; onPick: (file: File) => void }) {
+function FilePick({ label, value, onPick, disabled = false }: { label: string; value: string; onPick: (file: File) => void; disabled?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -155,6 +156,7 @@ function FilePick({ label, value, onPick }: { label: string; value: string; onPi
         type="button"
         ref={btnRef}
         className="spi-dt-file-btn"
+        disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={!!pickAt}
         onClick={openMenu}

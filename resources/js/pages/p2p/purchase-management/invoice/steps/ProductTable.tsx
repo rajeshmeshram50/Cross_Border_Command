@@ -10,10 +10,11 @@ const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFr
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
-  lines, onChange, taxMode = 'intra',
+  lines, onChange, taxMode = 'intra', readOnly = false,
 }: {
   lines: ProductLine[];
   onChange: (index: number, patch: Partial<ProductLine>) => void;
+  readOnly?: boolean;
 
   taxMode?: TaxMode;
 }) {
@@ -105,7 +106,7 @@ export default function ProductTable({
             {lines.map((line, i) => (
               <Row
                 key={line.key ?? line.code} line={line} index={i}
-                onChange={onChange} taxMode={taxMode} catalogue={catalogue}
+                onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
               />
@@ -141,7 +142,7 @@ export default function ProductTable({
 }
 
 const Row = memo(function Row({
-  line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue,
+  line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly,
 }: {
   line: ProductLine;
   index: number;
@@ -152,6 +153,7 @@ const Row = memo(function Row({
   onAddProduct: () => void;
   taxMode: TaxMode;
   catalogue: Array<{ value: string; label: string; name: string; productId?: number }>;
+  readOnly: boolean;
 }) {
   const t = lineTotals(line, taxMode);
   const inter = taxMode === 'inter' || taxMode === 'export';
@@ -177,6 +179,7 @@ const Row = memo(function Row({
             <MasterSelect
               value={line.productId != null ? String(line.productId) : ''}
               options={catalogue}
+              disabled={readOnly}
               onChange={v => {
                 const pick = catalogue.find(c => c.value === v);
                 if (pick) onChange(index, { productId: pick.productId, spiName: pick.name });
@@ -187,7 +190,7 @@ const Row = memo(function Row({
               title={line.productId == null
                 ? 'This line is not linked to a product in the master'
                 : 'Edit this product in the product master'}
-              disabled={line.productId == null}
+              disabled={readOnly || line.productId == null}
               onClick={() => line.productId != null && onEditProduct(line.productId)}
             >
               <IcoPencil />
@@ -200,6 +203,7 @@ const Row = memo(function Row({
             <button
               type="button" className="cpd-addbtn"
               title="Add a new product to the product master"
+              disabled={readOnly}
               onClick={onAddProduct}
             >
               <IcoPlus />
@@ -219,7 +223,7 @@ const Row = memo(function Row({
       <td className="cpd-c">{line.poQty}</td>
       <td className="cpd-c cpd-ed">
         <input
-          className="cpd-in cpd-in--num" type="number" min={0}
+          className="cpd-in cpd-in--num" type="number" min={0} readOnly={readOnly}
           value={line.spiQty}
           onChange={e => patch({ spiQty: Number(e.target.value) || 0 })}
         />
@@ -235,7 +239,7 @@ const Row = memo(function Row({
       <td className="cpd-r spi-pocost">{money(t.poCost)}</td>
       <td className="cpd-r cpd-ed">
         <input
-          className="cpd-in cpd-in--num" type="number" min={0} step="0.01"
+          className="cpd-in cpd-in--num" type="number" min={0} step="0.01" readOnly={readOnly}
           value={line.spiRate}
           onChange={e => patch({ spiRate: Number(e.target.value) || 0 })}
         />

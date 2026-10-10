@@ -95,6 +95,8 @@ export default function InvoiceList() {
     if (action === 'edit') {
       setFormFor({
         spiId: row.apiId,
+        status: row.status,
+        statusLabel: row.statusLabel,
         poNo: row.poNo,
         supplier: row.supplierName,
         storage: row.warehouseKind === 'third-party'
@@ -104,7 +106,7 @@ export default function InvoiceList() {
             warehouse: row.warehouseName
               ? STORAGE_WAREHOUSES.find(w => w.name === row.warehouseName)
                 ?? { id: row.warehouseName, name: row.warehouseName, location: '—' }
-              : undefined,
+              : STORAGE_WAREHOUSES[0],
           },
         invoiceNo: row.invoiceNo,
       });
