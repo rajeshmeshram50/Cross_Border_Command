@@ -1573,6 +1573,18 @@
 
 [data-bs-theme="dark"] .spi-mdl {
   background: #0e1b24;
+  /* The light shell draws its edge as a 1.5px ring of rgba(255,255,255,.9) --
+     a hairline against a white page, a white outline around a dark dialog.
+     Same ring, in the cyan the rest of the dark chrome edges with. */
+  box-shadow: 0 0 0 1.5px rgba(34, 211, 238, .22), 0 24px 60px rgba(0, 0, 0, .6);
+}
+
+/* The header band runs to #22d3ee, which on a white page is a title bar and on
+   a dark one is the brightest thing on screen -- and it sits above a #0e1b24
+   body, so the jump is the full range of the palette in one edge. Pulled to
+   the range the active step card uses in dark mode. */
+[data-bs-theme="dark"] .spi-mdl-head {
+  background: linear-gradient(110deg, #0a3b49, #0c5265 38%, #0e6b84 70%, #0891b2);
 }
 
 [data-bs-theme="dark"] .spi-mdl-card {

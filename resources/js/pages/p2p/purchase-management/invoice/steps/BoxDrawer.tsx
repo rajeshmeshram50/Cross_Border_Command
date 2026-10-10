@@ -1,11 +1,17 @@
-import { lazy, Suspense, useCallback, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import {
-  IcoBox, IcoCamera, IcoChevronR, IcoSave, IcoTag, IcoThermometer, IcoUpload, IcoWarn,
+  IcoBox, IcoCamera, IcoChevronR, IcoSave, IcoTag, IcoThermometer, IcoUpload, IcoWarn, IcoX,
 } from '../../../icons';
 import { type CustomFlag } from './ProductFlagsModal';
 const AddProductFlagModal = lazy(() => import('../../../../inventory-management/product-flag/AddProductFlagModal'));
+/* The same camera Physical Inspection uses. Lazy because it carries its own
+   stylesheet and most boxes are saved without a photo. */
+const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
+
+/** A photo of the carton, with the preview URL it is shown by. */
+type Shot = { file: File; url: string };
 import TemperatureModal, { formatRange, type TempRange } from './TemperatureModal';
 import SelectedProducts, {
   EMPTY_IDENTITY, type BoxContent, type ProductIdentity,
@@ -160,6 +166,30 @@ export default function BoxDrawer({
   const [identities, setIdentities] = useState<Record<string, ProductIdentity>>(
     () => initial?.identities ?? {},
   );
+
+  /* Photos of the carton. Held with their preview URL so a shot can be checked
+     and dropped before it is kept -- and revoked on unmount, or the drawer
+     leaks a blob per photo for the life of the tab. */
+  const [photos, setPhotos] = useState<Shot[]>([]);
+  const [camOpen, setCamOpen] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const addPhotos = useCallback((files: File[]) => {
+    const pics = files.filter(f => f.type.startsWith('image/'));
+    if (!pics.length) return;
+    setPhotos(p => [...p, ...pics.map(file => ({ file, url: URL.createObjectURL(file) }))]);
+  }, []);
+
+  const dropPhoto = (url: string) => {
+    URL.revokeObjectURL(url);
+    setPhotos(p => p.filter(s => s.url !== url));
+  };
+
+  /* Revokes on unmount only -- a dependency on `photos` would revoke the URL
+     of every photo still on screen each time one is added. */
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  useEffect(() => () => { photosRef.current.forEach(s => URL.revokeObjectURL(s.url)); }, []);
   const patchIdentity = useCallback((code: string, patch: Partial<ProductIdentity>) => {
     setIdentities(m => ({ ...m, [code]: { ...(m[code] ?? EMPTY_IDENTITY), ...patch } }));
   }, []);
@@ -283,10 +313,17 @@ export default function BoxDrawer({
               ))}
             </div>
             <Tooltip label="Upload a photo of this box">
-              <button type="button" className="vti-dw-icon-btn"><IcoUpload size={13} stroke={2.3} /> Upload</button>
+              <button type="button" className="vti-dw-icon-btn" onClick={() => fileRef.current?.click()}>
+                <IcoUpload size={13} stroke={2.3} /> Upload
+              </button>
             </Tooltip>
+            {/* The device camera, not `<input capture>`: on a desktop that
+                attribute falls back to the file picker, and a box is
+                photographed at a packing bench. */}
             <Tooltip label="Photograph this box with the camera">
-              <button type="button" className="vti-dw-icon-btn"><IcoCamera size={13} stroke={2.3} /> Camera</button>
+              <button type="button" className="vti-dw-icon-btn" onClick={() => setCamOpen(true)}>
+                <IcoCamera size={13} stroke={2.3} /> Camera
+              </button>
             </Tooltip>
             {/* On an edit the box is already saved, so `saved` must not lock
                 the button -- that is what would make an edit read-only the
@@ -315,6 +352,32 @@ export default function BoxDrawer({
         </div>
 
         <div className="vti-dw-body">
+          {/* Photos sit at the top of the body, under the buttons that took
+              them, rather than in a section of their own -- they are evidence
+              about the carton, not another field to fill in. */}
+          {photos.length > 0 && (
+            <div className="vti-dw-shots">
+              <div className="vti-dw-shots-lbl">
+                Box Photos <span>{photos.length}</span>
+              </div>
+              <div className="vti-dw-shots-strip">
+                {photos.map(s => (
+                  <div className="vti-dw-shot" key={s.url}>
+                    <img src={s.url} alt={s.file.name} />
+                    <button
+                      type="button"
+                      className="vti-dw-shot__x"
+                      onClick={() => dropPhoto(s.url)}
+                      aria-label={`Remove ${s.file.name}`}
+                    >
+                      <IcoX size={10} stroke={3} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {mixedCarton && (
             <SelectedProducts
               rows={contentRows}
@@ -518,6 +581,32 @@ export default function BoxDrawer({
           <AddProductFlagModal onClose={() => setFlagsOpen(false)} />
         </Suspense>
       )}
+
+      {camOpen && (
+        <Suspense fallback={null}>
+          <CameraCaptureModal
+            subject={mixedCarton ? `${contentRows.length} products in ${boxId}` : line.spiName}
+            title={`Photograph ${boxId}`}
+            namePrefix={`box-${boxId.toLowerCase()}`}
+            onAttach={files => { addPhotos(files); setCamOpen(false); }}
+            onClose={() => setCamOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* The Upload twin of the camera. Hidden rather than styled, because the
+          button beside Camera is the control. */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={e => {
+          addPhotos(Array.from(e.target.files ?? []));
+          e.target.value = '';
+        }}
+      />
     </Shell>
   );
 }

@@ -202,7 +202,10 @@
 .vti-actions { justify-content:center; }
 .vti-table tbody tr:last-child td { border-bottom:none; }
 .vti-table tbody tr { transition: background .12s; }
-.vti-table tbody tr:not(.vti-extra-section):not(.vti-extra-label-row):hover { background:#F5FEFF; }
+/* The all-packed note joins the rows that do not light up: there is nothing
+   under the pointer to act on, and in dark mode the light-theme hover turned
+   the whole strip white. */
+.vti-table tbody tr:not(.vti-extra-section):not(.vti-extra-label-row):not(.invf-allpacked-row):hover { background:#F5FEFF; }
 .vti-cb { width:14px; height:14px; border-radius:4px; border:1.5px solid #BAE6FD; cursor:pointer; display:flex; align-items:center; justify-content:center; background:#F0FDFF; transition:all .15s; flex-shrink:0; }
 .vti-cb:hover { border-color:#0891b2; background:#E0F9FD; }
 .vti-prod-cell { display:flex; align-items:center; gap:9px; }
@@ -1078,7 +1081,9 @@
 /* Both classes: `.spi-mdl` sets `width: min(560px, 100%)` at the same single
    class, and p2p-common.css wins that tie — a label is a narrower thing than a
    form dialog, so it says so at (0,2,0) rather than hoping for load order. */
-.spi-mdl.invf-stk { width: min(460px, calc(100vw - 32px)); }
+/* Wider than the shared shell's default: the label is a fixed-shape thing
+   being previewed, and at 460px the facts beside the QR wrapped. */
+.spi-mdl.invf-stk { width: min(560px, calc(100vw - 32px)); }
 /* Says the label is provisional, in the header where it cannot be missed. */
 .invf-stk__temp {
   display: inline-flex;
@@ -1267,9 +1272,28 @@
   border-bottom-color: rgba(34, 211, 238, .16);
 }
 [data-bs-theme="dark"] .vti-table td { color: #cbd5e1; }
+/* The row line lives on the <td>, not the <tr>. Overriding the row left the
+   light theme's near-white #F1F5F9 in place, which on a dark table is not a
+   divider but a lit bar across every row. */
+[data-bs-theme="dark"] .vti-table td { border-bottom-color: rgba(148, 163, 184, .13); }
+[data-bs-theme="dark"] .vti-table thead tr { border-bottom-color: rgba(34, 211, 238, .2); }
 [data-bs-theme="dark"] .vti-prod-row { border-bottom-color: rgba(148, 163, 184, .12); }
+
+/* Remove was a white chip with a red glyph -- the white is what carried, so a
+   row of them read as the brightest column in the table. The red carries it
+   instead. */
+[data-bs-theme="dark"] .invf-selprod__rm {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, .14);
+  border-color: rgba(239, 68, 68, .32);
+}
+
+[data-bs-theme="dark"] .invf-selprod__rm:hover {
+  color: #fff;
+  background: rgba(239, 68, 68, .5);
+  border-color: rgba(239, 68, 68, .7);
+}
 [data-bs-theme="dark"] .vti-prod-row:nth-child(even) { background: rgba(34, 211, 238, .045); }
-[data-bs-theme="dark"] .vti-prod-row:hover { background: rgba(34, 211, 238, .11); }
 [data-bs-theme="dark"] .vti-prod-name { color: #e2e8f0; }
 [data-bs-theme="dark"] .vti-prod-sku,
 [data-bs-theme="dark"] .vti-desc__wrap,
@@ -1324,9 +1348,14 @@
 [data-bs-theme="dark"] .vti-dw-section-title { color: #7dd3fc; }
 [data-bs-theme="dark"] .vti-dw-field-lbl { color: #67e8f9; }
 [data-bs-theme="dark"] .vti-dw-adv-toggle { color: #7dd3fc; }
+/* The card is a label sitting ON the dialog, so it needs a surface of its own.
+   It was #0e1b24 -- the dialog's exact background -- which left a hairline
+   floating with nothing inside it, and that is the "border looks wrong": there
+   was no card, only an outline. */
 [data-bs-theme="dark"] .invf-stk__card {
-  background: #0e1b24;
-  border-color: rgba(34, 211, 238, .22);
+  background: #13242e;
+  border-color: rgba(34, 211, 238, .3);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .35);
 }
 [data-bs-theme="dark"] .invf-stk__name { color: #e2e8f0; }
 [data-bs-theme="dark"] .invf-stk__rows > div { border-bottom-color: rgba(148, 163, 184, .12); }
@@ -1341,6 +1370,27 @@
 /* The QR keeps a white quiet zone whatever the theme — a scanner needs the
    light modules light, and inverting it is how a code stops reading. */
 [data-bs-theme="dark"] .invf-stk__qrbox { background: #fff; border-color: rgba(34, 211, 238, .25); }
+/* The rule above the QR block. #e8f4f8 is a hairline on a white card and a
+   lit wire across a dark one. */
+[data-bs-theme="dark"] .invf-stk__grid { border-top-color: rgba(148, 163, 184, .14); }
+/* The three label chips were pastels -- lilac, mint, pale cyan -- so on a dark
+   card they outshone the box code they qualify. Each keeps its hue as a
+   translucent wash. */
+[data-bs-theme="dark"] .invf-stk__chip--code {
+  color: #7dd3fc;
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .3);
+}
+[data-bs-theme="dark"] .invf-stk__chip--mode {
+  color: #c4b5fd;
+  background: rgba(139, 92, 246, .16);
+  border-color: rgba(139, 92, 246, .34);
+}
+[data-bs-theme="dark"] .invf-stk__chip--cond {
+  color: #86efac;
+  background: rgba(34, 197, 94, .15);
+  border-color: rgba(34, 197, 94, .32);
+}
 [data-bs-theme="dark"] .invf-stk__contents li {
   color: #cbd5e1;
   border-bottom-color: rgba(148, 163, 184, .12);
@@ -1438,7 +1488,112 @@
 /* The white sheen over each tile reads as a grey wash on a dark surface. */
 [data-bs-theme="dark"] .vti-rmk-btn::after,
 [data-bs-theme="dark"] .vti-cond-btn::after,
-[data-bs-theme="dark"] .vti-flag-btn::before { opacity: .06; }
+[data-bs-theme="dark"] .vti-flag-btn::before { opacity: .05; }
+
+/* ── The drawer in dark mode ────────────────────────────────────────────────
+   An unselected flag is a near-white pastel in light mode, which on a dark
+   page turns into the brightest thing on screen -- four cream and pink lozenges
+   shouting louder than the one that is actually on.
+
+   Each pill keeps its own hue and wears it as a translucent wash instead, with
+   the hue's pale tint as the label. The SELECTED states are left alone: they
+   are saturated already, and they have to stay the loud one. */
+[data-bs-theme="dark"] .vti-flag-btn:not(.is-active) {
+  background: linear-gradient(135deg, rgba(var(--flag), .17) 0%, rgba(var(--flag), .09) 100%);
+  border-color: rgba(var(--flag), .32);
+  color: rgb(var(--flag-ink));
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .vti-flag-btn:not(.is-active) svg { color: rgb(var(--flag-ink)); }
+
+[data-bs-theme="dark"] .vti-flag-btn:not(.is-active):hover {
+  background: linear-gradient(135deg, rgba(var(--flag), .28) 0%, rgba(var(--flag), .16) 100%);
+  border-color: rgba(var(--flag), .58);
+  box-shadow: 0 4px 14px rgba(var(--flag), .18);
+}
+
+[data-bs-theme="dark"] .vti-flag-btn.flag-hazardous { --flag: 245, 158, 11; --flag-ink: 253, 230, 138; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-regulated { --flag: 99, 102, 241; --flag-ink: 199, 210, 254; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-coldchain { --flag: 6, 182, 212; --flag-ink: 165, 243, 252; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-fragile { --flag: 244, 63, 94; --flag-ink: 254, 205, 211; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-custom-violet { --flag: 139, 92, 246; --flag-ink: 221, 214, 254; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-custom-blue { --flag: 59, 130, 246; --flag-ink: 191, 219, 254; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-custom-emerald { --flag: 16, 185, 129; --flag-ink: 167, 243, 208; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-custom-orange { --flag: 249, 115, 22; --flag-ink: 254, 215, 170; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-custom-pink { --flag: 236, 72, 153; --flag-ink: 251, 207, 232; }
+[data-bs-theme="dark"] .vti-flag-btn.flag-custom-slate { --flag: 100, 116, 139; --flag-ink: 203, 213, 225; }
+
+/* Stackable sits in the same row as the flags and was a plain white pill, so
+   it read as the brightest of the lot while being the least important. */
+[data-bs-theme="dark"] .vti-stack-toggle {
+  background: rgba(148, 163, 184, .1);
+  border-color: rgba(148, 163, 184, .26);
+  color: #94a3b8;
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .vti-stack-toggle:hover { border-color: rgba(148, 163, 184, .5); }
+
+[data-bs-theme="dark"] .vti-stack-toggle .vti-stack-sw { background: rgba(148, 163, 184, .34); }
+
+[data-bs-theme="dark"] .vti-stack-toggle.is-stack {
+  background: rgba(14, 165, 233, .14);
+  border-color: rgba(56, 189, 248, .38);
+  color: #7dd3fc;
+}
+
+[data-bs-theme="dark"] .vti-stack-toggle .vti-stack-knob {
+  background: #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+}
+
+/* The strip's white chips -- the chosen unit and Save -- are solid #fff on a
+   teal band that no longer has a bright page around it. Dimmed to an off-white
+   so they still read as the selected one without being the only light source
+   on the screen. */
+/* The drawer's teal band runs to #14c0e4 and carries a cyan glow, which on a
+   white page is a header and on a dark one is a lamp. Pulled back to the range
+   the active step card already uses in dark mode -- the same teal, read as a
+   surface rather than a light source -- and the glow becomes a plain shadow,
+   since there is nothing left for cyan to glow against. */
+[data-bs-theme="dark"] .vti-dw-strip,
+[data-bs-theme="dark"] .vmb-nav {
+  background: linear-gradient(98deg, #0a3b49 0%, #0c5265 32%, #0e6b84 60%, #0b7f9c 82%, #0891b2 100%);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .07);
+}
+
+[data-bs-theme="dark"] .vti-dw-strip::before {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .06) 0%, transparent 100%);
+}
+
+/* The chosen unit reads as pressed INTO the band rather than as a white tile
+   on top of it -- darker than its surroundings, lit text. An off-white chip
+   was still the brightest thing in the row. */
+[data-bs-theme="dark"] .vti-dw-strip .vti-dw-unit-opt.is-active {
+  background: rgba(2, 26, 34, .72);
+  color: #9fe8f7;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, .5);
+}
+
+/* Update Box stays the primary, in saturated cyan instead of white: on a teal
+   band in light mode white is the strongest contrast available, and on a dark
+   one it is simply the loudest. */
+[data-bs-theme="dark"] .vti-dw-strip .vti-dw-save-btn {
+  background: linear-gradient(180deg, #22d3ee 0%, #06b6d4 100%);
+  color: #04323f;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+
+[data-bs-theme="dark"] .vti-dw-strip .vti-dw-save-btn:disabled {
+  background: rgba(34, 211, 238, .22);
+  color: rgba(226, 252, 255, .55);
+  box-shadow: none;
+}
+
+/* Upload, Camera, Box Sticker and Close are left as they are: inside the strip
+   they are already translucent-white ghosts on a teal band, which reads the
+   same either way. Only the two SOLID white chips needed dimming. */
 [data-bs-theme="dark"] .vti-dw-dim-label { color: inherit; }
 
 /* The Packaging Scenarios header band itself. Its title and subtitle were
@@ -1472,8 +1627,13 @@
   border-color: #22d3ee;
   color: #a5e9f5;
 }
-/* Hover on a row that is already open must not undo the open state. */
-[data-bs-theme="dark"] .vti-prod-row:hover:not(.is-expanded):not(.is-selected) {
+/* Hover on a row that is already open must not undo the open state.
+
+   Carries the light rule's `.vti-table tbody tr` as well, and has to: the
+   light hover is (0,5,2) and this was (0,5,0), so every hovered row in dark
+   mode was painted #F5FEFF by the light theme. A specificity difference of two
+   element selectors is invisible when reading either rule on its own. */
+[data-bs-theme="dark"] .vti-table tbody tr.vti-prod-row:hover:not(.is-expanded):not(.is-selected) {
   background: rgba(34, 211, 238, .11);
 }
 [data-bs-theme="dark"] .vti-dw-adv-toggle:hover,
@@ -1665,6 +1825,97 @@
 }
 
 [data-bs-theme="dark"] .invf-allpacked { color: #6ee7b7; }
+
+/* Photos of the carton, under the buttons that took them. A strip rather than
+   a grid: they are shot in ones and twos and checked left to right, and a grid
+   would reserve a row's height for the first photo. */
+.vti-dw-shots {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(6, 182, 212, .2);
+  background: linear-gradient(145deg, #f5fbfd 0%, #edf8fb 100%);
+}
+
+.vti-dw-shots-lbl {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #0e7490;
+}
+
+.vti-dw-shots-lbl span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 20px;
+  background: #0891b2;
+  color: #fff;
+  font-size: 9px;
+  letter-spacing: 0;
+}
+
+.vti-dw-shots-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+
+.vti-dw-shot {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1.5px solid rgba(6, 182, 212, .25);
+  background: #fff;
+}
+
+.vti-dw-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* On the thumbnail, not beside it: with six photos a column of remove buttons
+   is wider than the photos themselves. */
+.vti-dw-shot__x {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, .68);
+  color: #fff;
+  cursor: pointer;
+  transition: background .14s;
+}
+
+.vti-dw-shot__x:hover { background: #e11d48; }
+
+[data-bs-theme="dark"] .vti-dw-shots {
+  background: rgba(6, 182, 212, .07);
+  border-color: rgba(34, 211, 238, .2);
+}
+
+[data-bs-theme="dark"] .vti-dw-shots-lbl { color: #67e8f9; }
+[data-bs-theme="dark"] .vti-dw-shot { background: #13242e; border-color: rgba(34, 211, 238, .26); }
 
 /* The row number. Quiet and tabular, because it is there to be referred to
    ("row 2"), not to be read down the column. */
