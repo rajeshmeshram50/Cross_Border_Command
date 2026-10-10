@@ -82,7 +82,7 @@ class SupplierInvoiceController extends Controller
             ->where('purchase_order_id', $po)
             ->orderBy('line_no')
             ->get()
-            ->map(fn ($l) => [
+            ->map(fn($l) => [
                 'po_item_id'   => $l->id,
                 'pi_item_id'   => $l->pi_item_id,
                 'product_id'   => $l->product_id,
@@ -109,47 +109,84 @@ class SupplierInvoiceController extends Controller
     {
         $this->tenantUser($request);
 
+        /* A mistyped filter used to be ignored in silence — ?po_mode=withpo
+           returned every row rather than an error, which reads as a bug in the
+           tab rather than a typo in the URL. */
+        $f = $request->validate([
+            'po_mode'       => ['nullable', Rule::in(['with_po', 'without_po'])],
+            'shipment_mode' => ['nullable', Rule::in(['with_shipment', 'without_shipment'])],
+            'status'        => ['nullable', Rule::in(SupplierInvoice::STATUSES)],
+            'vendor_id'     => ['nullable', 'integer'],
+            'from'          => ['nullable', 'date'],
+            'to'            => ['nullable', 'date'],
+            'q'             => ['nullable', 'string', 'max:120'],
+            'page'          => ['nullable', 'integer', 'min:1'],
+            'per_page'      => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
         /* Every column is table-qualified: the search joins out to the purchase
            order, and `po` carries its own status, vendor_id and code — unqualified
            names would be an ambiguous reference, which Postgres refuses. */
         $t = 'p2p_supplier_invoices';
 
-        $q = SupplierInvoice::query()->with([
-            'vendor:id,vendor_code,company_name,risk_level_id',
-            'purchaseOrder:id,code,po_type,shipment_order_id,lead_id,procurement_request_code,'
+        /* The screen-wide filters go on a bare query first. The counts run off
+           a clone of THAT: cloning the list query instead drags its withCount
+           subqueries and its `table.*` into the aggregate, which Postgres
+           rejects for not being in a GROUP BY. */
+        $base = SupplierInvoice::query();
+
+        if (!empty($f['status']))    $base->where("$t.status", $f['status']);
+        if (!empty($f['vendor_id'])) $base->where("$t.vendor_id", $f['vendor_id']);
+        if (!empty($f['from']))      $base->whereDate("$t.invoice_date", '>=', $f['from']);
+        if (!empty($f['to']))        $base->whereDate("$t.invoice_date", '<=', $f['to']);
+
+        /* Counted BEFORE the tab and the search narrow the list: typing in the
+           search box must not make "All SPI's 60" fall to 3. */
+        $tabs = $this->tabCounts(clone $base, $f['po_mode'] ?? null);
+
+        $q = $base->with([
+            'vendor:id,vendor_code,company_name,legal_name,risk_level_id,supplier_category',
+            // po_date was read by listRow but never selected, so the PO DATE
+            // column came back blank on every row.
+            'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,proforma_invoice_id,'
+                . 'procurement_request_code,physical_inspection,inspection_status,zoho_status,'
                 . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
-            'purchaseOrder.shipmentOrder:id,shipment_code',
             'warehouse:id,wh_id,wh_name,wh_type',
-        ]);
+        ])
+            /* The row's Payment Requests button shows a count and a ready-to-pay
+               note. Subqueries, so a page of 10 rows costs two extra queries
+               rather than twenty. */
+            ->withCount(['paymentRequests as pending_payment_requests' =>
+                fn ($r) => $r->where('status', PoPaymentRequest::STATUS_PENDING)])
+            // The constants, not literals: the column stores them lowercase and
+            // 'Approved' silently matched nothing.
+            ->withSum(['paymentRequests as approved_unpaid_amount' =>
+                fn ($r) => $r->where('status', PoPaymentRequest::STATUS_APPROVED)],
+                DB::raw('GREATEST(approved_amount - paid_amount, 0)'));
 
-        // The prototype's top split: with PO / without PO (Direct SPI).
-        if ($request->query('po_mode') === 'with_po')    $q->whereNotNull("$t.purchase_order_id");
-        if ($request->query('po_mode') === 'without_po') $q->whereNull("$t.purchase_order_id");
+        $this->applyPoMode($q, $f['po_mode'] ?? null);
+        $this->applyShipmentMode($q, $f['shipment_mode'] ?? null);
 
-        // The sub-split rides on the PO, which is where the shipment lives.
-        if ($s = $request->query('shipment_mode')) {
-            $q->whereHas('purchaseOrder', fn ($p) => $s === 'with_shipment'
-                ? $p->whereNotNull('shipment_order_id')
-                : $p->whereNull('shipment_order_id'));
-        }
-
-        if ($st = $request->query('status'))      $q->where("$t.status", $st);
-        if ($v  = $request->integer('vendor_id')) $q->where("$t.vendor_id", $v);
-        if ($f  = $request->query('from'))        $q->whereDate("$t.invoice_date", '>=', $f);
-        if ($to = $request->query('to'))          $q->whereDate("$t.invoice_date", '<=', $to);
-
-        if ($term = trim((string) $request->query('q'))) {
+        if ($term = trim((string) ($f['q'] ?? ''))) {
             $this->applySearch($q, $term);
         }
 
-        $page = $q->orderByDesc("$t.id")->paginate(max(1, min(100, $request->integer('per_page', 10))));
+        $page = $q->orderByDesc("$t.id")->paginate((int) ($f['per_page'] ?? 10));
+        $rows = collect($page->items());
+        // Shipment and opportunity codes for the whole page in two queries.
+        $refs = $this->linkRefs($rows);
 
         return response()->json([
             'status' => true,
-            'data'   => collect($page->items())->map(fn ($s) => $this->listRow($s))->all(),
-            'tabs'   => $this->tabCounts(),
+            'data'   => $rows->map(fn ($s) => $this->listRow($s, $refs))->all(),
+            'tabs'   => $tabs,
             'meta'   => [
-                'page' => $page->currentPage(), 'per_page' => $page->perPage(), 'total' => $page->total(),
+                'page'      => $page->currentPage(),
+                'per_page'  => $page->perPage(),
+                'total'     => $page->total(),
+                // useServerList, shared with the PO list, needs this to know
+                // whether there is a next page.
+                'last_page' => $page->lastPage(),
             ],
         ]);
     }
@@ -194,7 +231,7 @@ class SupplierInvoiceController extends Controller
                 'mode'     => $full ? 'full' : 'summary',
                 'placed'   => $spi->putaways->whereNotNull('confirmed_at')->count(),
                 'total'    => $spi->boxes->count(),
-                'rows'     => $spi->putaways->map(fn ($p) => [
+                'rows'     => $spi->putaways->map(fn($p) => [
                     'id'               => $p->id,
                     'box_code'         => $p->box?->box_code,
                     'destination'      => $p->destination,
@@ -241,9 +278,11 @@ class SupplierInvoiceController extends Controller
         $data = $this->validateHeader($request, $user, $spi);
 
         // Re-pointing at a different PO after items exist would orphan the match.
-        if (array_key_exists('purchase_order_id', $data)
+        if (
+            array_key_exists('purchase_order_id', $data)
             && (int) $data['purchase_order_id'] !== (int) $spi->purchase_order_id
-            && $spi->items()->exists()) {
+            && $spi->items()->exists()
+        ) {
             return $this->fail(
                 "Items are already mapped to this invoice — clear Stage 02 before changing the purchase order.",
                 422,
@@ -353,7 +392,7 @@ class SupplierInvoiceController extends Controller
             // rollUp: false — the grid owns the arithmetic, so recomputing here
             // would overwrite the figures the user actually saw with our own.
             return $this->svc->saveItems($spi, $rows, false);
-        }, array_values(array_filter($files, fn ($k) => str_ends_with($k, '_path'), ARRAY_FILTER_USE_KEY)));
+        }, array_values(array_filter($files, fn($k) => str_ends_with($k, '_path'), ARRAY_FILTER_USE_KEY)));
 
         /* No packing summary here: nothing is packed at Stage 02, so it would
            be a row of zeros. What this stage owns is the MATCH — what the PO
@@ -382,7 +421,7 @@ class SupplierInvoiceController extends Controller
         if ($pending) {
             return $this->fail(
                 number_format($pending['qty_pending'], 3) . ' is still unpacked. Goods not in a box have no box code, '
-                . 'so they cannot be scanned, racked or inspected.'
+                    . 'so they cannot be scanned, racked or inspected.'
             );
         }
 
@@ -453,7 +492,8 @@ class SupplierInvoiceController extends Controller
 
         return $this->ok([
             'spi' => [
-                'id' => $spi->id, 'code' => $spi->code,
+                'id' => $spi->id,
+                'code' => $spi->code,
                 'base_amount'  => (float) $spi->taxable_total,   // without GST
                 'gst_amount'   => $gst,
                 'grand_total'  => (float) $spi->grand_total,     // with GST
@@ -468,13 +508,14 @@ class SupplierInvoiceController extends Controller
                 'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
                 'paid_amount'      => $paid,
                 // Approved but not yet released — what the Make Payment button owes.
-                'ready_to_pay'     => round((float) $approved->sum(fn ($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
+                'ready_to_pay'     => round((float) $approved->sum(fn($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
             ],
 
             /* The real ceiling. A request against this invoice is still checked
                against the PO's balance, not the invoice's. */
             'po' => $po ? [
-                'id' => $po->id, 'code' => $po->code,
+                'id' => $po->id,
+                'code' => $po->code,
                 'grand_total'    => (float) $po->grand_total,
                 'tds_amount'     => (float) $po->tds_amount,
                 'net_payable'    => round((float) $po->grand_total - (float) $po->tds_amount, 2),
@@ -482,8 +523,9 @@ class SupplierInvoiceController extends Controller
                 'balance_amount' => (float) $po->balance_amount,
             ] : null,
 
-            'requests' => $rows->map(fn ($r) => [
-                'id' => $r->id, 'code' => $r->code,
+            'requests' => $rows->map(fn($r) => [
+                'id' => $r->id,
+                'code' => $r->code,
                 'payment_type'     => $r->payment_type,
                 'percentage'       => $r->percentage !== null ? (float) $r->percentage : null,
                 'requested_amount' => (float) $r->requested_amount,
@@ -528,8 +570,11 @@ class SupplierInvoiceController extends Controller
             return $this->ok([
                 'owns_bill'  => false,
                 'bill_owner' => [
-                    'type' => 'purchase_order', 'id' => $po?->id, 'code' => $po?->code,
-                    'zoho_bill_id' => $po?->zoho_bill_id, 'zoho_bill_number' => $po?->zoho_bill_number,
+                    'type' => 'purchase_order',
+                    'id' => $po?->id,
+                    'code' => $po?->code,
+                    'zoho_bill_id' => $po?->zoho_bill_id,
+                    'zoho_bill_number' => $po?->zoho_bill_number,
                 ],
                 'can_retry' => false,
             ]);
@@ -556,33 +601,60 @@ class SupplierInvoiceController extends Controller
      * deliberately not copied onto the invoice. A Direct SPI has no PO, so all
      * of them come back null and the UI shows a dash.
      */
-    private function listRow(SupplierInvoice $s): array
+    private function listRow(SupplierInvoice $s, array $refs = ['ship' => [], 'opp' => []]): array
     {
-        $po = $s->purchaseOrder;
+        $po   = $s->purchaseOrder;
+        $ship = $po?->shipment_order_id   ? ($refs['ship'][$po->shipment_order_id] ?? null) : null;
+        $opp  = $po?->proforma_invoice_id ? ($refs['opp'][$po->proforma_invoice_id] ?? null) : null;
+        $day  = fn ($d) => $d ? substr((string) $d, 0, 10) : null;
 
         return [
             'id'          => $s->id,
             'spi_number'  => $s->code,
-            'spi_date'    => $s->invoice_date?->toDateString(),
+            // A draft has no supplier invoice date until Stage 02, so the
+            // column would read blank for the whole of Stage 01.
+            'spi_date'    => $day($s->invoice_date ?: $s->created_at),
             'invoice_no'  => $s->invoice_no,
 
             'is_direct'   => $s->isStandalone(),
             'po_number'   => $po?->code,
-            'po_date'     => $po?->po_date,
+            'po_date'     => $day($po?->po_date),
             'po_type'     => $po?->po_type,
-            'document_type'    => $s->document_type,
-            'shipment_id'      => $po?->shipmentOrder?->shipment_code,
-            'opportunity_id'   => $po?->lead_id,
+            'document_type'       => $s->document_type,
+            // Drives the Physical Inspection badge under the PO number.
+            'physical_inspection' => $po?->physical_inspection,
+            'inspection_status'   => $po?->physical_inspection === 'yes'
+                ? ($po->inspection_status ?: 'pending')
+                : 'not_applicable',
+
+            // Real references, not raw ids: the opportunity code lives on the
+            // proforma invoice, and the row used to print lead_id (a number).
+            'shipment_id'      => $ship->shipment_code ?? null,
+            'shipment_date'    => $day($ship->created_at ?? null),
+            'opportunity_id'   => $opp->opp_code ?? null,
+            'opportunity_date' => $day($opp->created_at ?? null),
             'procurement_id'   => $po?->procurement_request_code,
 
             'supplier'    => [
                 'id'            => $s->vendor?->id,
                 'code'          => $s->vendor?->vendor_code,
-                'name'          => $s->vendor?->company_name,
+                // Legal name first, as the PO list does — that is the name on
+                // the paperwork; the trading name is the fallback.
+                'name'          => $s->vendor?->legal_name ?: $s->vendor?->company_name,
                 'risk_level_id' => $s->vendor?->risk_level_id,
+                'category'      => $s->vendor?->supplier_category,
             ],
 
-            'expected_delivery_date' => $po?->expected_delivery_date,
+            'expected_delivery_date' => $day($po?->expected_delivery_date),
+
+            /* A Direct SPI owns its own Zoho bill; one against a PO is billed
+               through that order, so it shows the order's state. */
+            'zoho_status' => $s->isStandalone() ? $s->zoho_status : $po?->zoho_status,
+
+            // From the subqueries on the list, so the Payment Requests button
+            // has its count and its ready-to-pay note without a call per row.
+            'pending_payment_requests' => (int) ($s->pending_payment_requests ?? 0),
+            'approved_unpaid_amount'   => round((float) ($s->approved_unpaid_amount ?? 0), 2),
 
             // Money lives on the PO: an SPI amount is the supplier's claim, it
             // is not what the balance is measured against.
@@ -610,23 +682,102 @@ class SupplierInvoiceController extends Controller
      * The counts on the list's two rows of tabs. Four aggregates in one query
      * rather than four round trips — the global tenant scope still applies.
      */
-    private function tabCounts(): array
+    /** The top tab: with a purchase order, or a Direct SPI that has none. */
+    private function applyPoMode($q, ?string $mode): void
     {
-        $r = SupplierInvoice::selectRaw(
-            'COUNT(*) AS all_spi,
-             COUNT(purchase_order_id) AS with_po,
-             COUNT(*) FILTER (WHERE purchase_order_id IS NULL) AS direct_spi'
-        )->first();
+        if ($mode === 'with_po')    $q->whereNotNull('p2p_supplier_invoices.purchase_order_id');
+        if ($mode === 'without_po') $q->whereNull('p2p_supplier_invoices.purchase_order_id');
+    }
 
-        // The shipment split hangs off the PO, so it needs the join.
-        $withShipment = SupplierInvoice::whereHas('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'))->count();
+    /**
+     * The sub-tab. The shipment hangs off the PO, so this has to reach through
+     * it — and a Direct SPI has no PO at all.
+     *
+     * whereHas(PO where shipment IS NULL) dropped every Direct SPI from BOTH
+     * sub-tabs, because the relation itself was absent. whereDoesntHave(PO
+     * WITH a shipment) is the correct complement: no PO also means no shipment.
+     */
+    private function applyShipmentMode($q, ?string $mode): void
+    {
+        if ($mode === 'with_shipment') {
+            $q->whereHas('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'));
+        }
+        if ($mode === 'without_shipment') {
+            $q->whereDoesntHave('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'));
+        }
+    }
+
+    /**
+     * Shipment and opportunity references for a whole page, in two queries.
+     *
+     * The opportunity code lives on the proforma invoice, not on the lead — the
+     * row used to print the raw lead_id (a number like 7) where the screen
+     * wants OPP-0004. Same logic the PO list uses, so both read alike.
+     *
+     * @return array{ship: array<int,object>, opp: array<int,object>}
+     */
+    private function linkRefs($rows): array
+    {
+        $pos = collect($rows)->map(fn ($s) => $s->purchaseOrder)->filter();
+
+        $ship = DB::table('shipment_orders')
+            ->whereIn('id', $pos->pluck('shipment_order_id')->filter()->unique()->all() ?: [0])
+            ->get(['id', 'shipment_code', 'created_at'])->keyBy('id');
+
+        $opp = DB::table('proforma_invoices')
+            ->whereIn('id', $pos->pluck('proforma_invoice_id')->filter()->unique()->all() ?: [0])
+            ->get(['id', 'opp_code', 'created_at'])->keyBy('id');
+
+        return ['ship' => $ship, 'opp' => $opp];
+    }
+
+    /**
+     * The tab numbers.
+     *
+     * Counted from the query as it stands BEFORE the tab and the search are
+     * applied, so the numbers hold still while you type — but after status,
+     * supplier and date, which the whole screen is filtered by.
+     *
+     * The sub-tab counts are taken WITHIN the selected top tab, because the
+     * screen nests them under it. With the Direct-SPI fix in
+     * applyShipmentMode(), the two sub-tabs now add up to their parent.
+     */
+    private function tabCounts($base, ?string $poMode = null): array
+    {
+        // One pass for the top row of tabs.
+        $r = (clone $base)->selectRaw(
+            'COUNT(*) AS all_spi,
+             COUNT(p2p_supplier_invoices.purchase_order_id) AS with_po,
+             COUNT(*) FILTER (WHERE p2p_supplier_invoices.purchase_order_id IS NULL) AS direct_spi,
+             COUNT(DISTINCT p2p_supplier_invoices.purchase_order_id) AS distinct_po'
+        )->reorder()->first();
+
+        /* The sub-tabs sit UNDER the selected top tab, so they are counted
+           within it — before, they always counted every SPI and the two never
+           added up to their parent. */
+        $scoped = clone $base;
+        $this->applyPoMode($scoped, $poMode);
+        $scopedTotal = (clone $scoped)->count();
+
+        $withShipment = (clone $scoped)
+            ->whereHas('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'))
+            ->count();
 
         return [
-            'all_spi'         => (int) $r->all_spi,
-            'with_po'         => (int) $r->with_po,
-            'direct_spi'      => (int) $r->direct_spi,
-            'with_shipment'   => $withShipment,
-            'without_shipment' => (int) $r->all_spi - $withShipment,
+            // Two names for one figure: `all_spi` reads alongside the other
+            // tabs, `total_spi` is what the header chip calls it.
+            'all_spi'          => (int) $r->all_spi,
+            'total_spi'        => (int) $r->all_spi,
+            'with_po'          => (int) $r->with_po,
+            // Likewise — the tab reads "Without Purchase Order SPI (Direct SPI)".
+            'direct_spi'       => (int) $r->direct_spi,
+            'without_po'       => (int) $r->direct_spi,
+            // How many ORDERS are represented, not how many invoices: several
+            // SPIs can sit under one PO.
+            'distinct_po'      => (int) $r->distinct_po,
+            // Within the selected top tab, so the two add up to it.
+            'with_shipment'    => $withShipment,
+            'without_shipment' => $scopedTotal - $withShipment,
         ];
     }
 
@@ -701,9 +852,11 @@ class SupplierInvoiceController extends Controller
     {
         return $request->validate([
             'invoice_no' => [
-                'required', 'string', 'max:60',
+                'required',
+                'string',
+                'max:60',
                 Rule::unique('p2p_supplier_invoices', 'invoice_no')
-                    ->where(fn ($q) => $q->where('client_id', $user->client_id)->where('vendor_id', $spi->vendor_id))
+                    ->where(fn($q) => $q->where('client_id', $user->client_id)->where('vendor_id', $spi->vendor_id))
                     ->ignore($spi->id),
             ],
             'invoice_date'  => ['required', 'date', 'before_or_equal:today'],
@@ -744,7 +897,7 @@ class SupplierInvoiceController extends Controller
             // the pair is ever non-zero on a given line.
             'missing_qty' => round((float) $items->sum('missing_qty'), 3),
             'extra_qty'   => round((float) $items->sum('extra_qty'), 3),
-            'matched'     => $items->every(fn ($i) => $i->missing_qty <= 0.001 && (float) $i->extra_qty <= 0.001),
+            'matched'     => $items->every(fn($i) => $i->missing_qty <= 0.001 && (float) $i->extra_qty <= 0.001),
         ];
     }
 
