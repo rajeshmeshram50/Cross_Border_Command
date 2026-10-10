@@ -124,6 +124,9 @@ const P2P_LEAF: Record<string, string> = {
   // Order grant rather than introducing a module row of its own: it is part of
   // the same business object, so nobody has to be re-granted anything. It rode
   // on p2p.spi until that module was removed with the old screen.
+  '/p2p/supplier-purchase-invoice': 'p2p.order',
+  /* The old path, still routed as a redirect. It needs the same grant: the
+     guard runs before the redirect does. */
   '/p2p/invoice': 'p2p.order',
   '/p2p/order': 'p2p.order',
   '/p2p/payment-request': 'p2p.payment_request',

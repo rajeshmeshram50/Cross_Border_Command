@@ -953,7 +953,10 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
               <Route path="/p2p/bulk-sourcing" element={<P2pBulkSourcing />} />
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
-              <Route path="/p2p/invoice" element={<Invoice />} />
+              <Route path="/p2p/supplier-purchase-invoice" element={<Invoice />} />
+              {/* The screen used to live at /p2p/invoice. Kept as a redirect so
+                  a bookmark or a link in an old email still lands on it. */}
+              <Route path="/p2p/invoice" element={<Navigate to="/p2p/supplier-purchase-invoice" replace />} />
               <Route path="/p2p/order" element={<Order />} />
               <Route path="/inbox/po-approval/:id" element={<PoGstApprovalReview />} />
               <Route path="/p2p/payment-request" element={<PaymentRequestManagement />} />
