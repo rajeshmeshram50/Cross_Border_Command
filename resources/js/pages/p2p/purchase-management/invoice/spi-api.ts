@@ -142,7 +142,72 @@ export type ProductRefresh = {
   id: number; code: string; name: string; description: string; hsn: string; gst: number; uom: string | null;
 };
 
+export type SpiBoxScenario = 's1' | 's2' | 's3';
+
+export type SpiBoxItemBody = {
+  supplier_invoice_item_id: number;
+  quantity: number;
+  is_stackable: boolean;
+  remark: 'correct' | 'damaged' | 'mismatched' | 'extra';
+  remark_note: string | null;
+  flags: number[];
+  serial_no: string | null;
+  lot_no: string | null;
+  batch_no: string | null;
+  cat_no: string | null;
+  expiry_date: string | null;
+  mfg_date: string | null;
+};
+
+export type SpiBoxBody = {
+  scenario: SpiBoxScenario;
+  length_cm: number | null;
+  width_cm: number | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  net_weight_kg: number | null;
+  gross_weight_kg: number | null;
+  condition: 'perfect' | 'minor' | 'major' | 'severe';
+  items: SpiBoxItemBody[];
+};
+
+export type SpiBoxItem = { id: number; supplier_invoice_item_id: number; quantity: string };
+
+export type SpiBox = {
+  id: number;
+  box_code: string;
+  scenario: SpiBoxScenario;
+  condition: string;
+  sticker_printed_at: string | null;
+  items: SpiBoxItem[];
+};
+
+export type SpiPackingTotals = {
+  lines: number; qty_spi: number; qty_packed: number; qty_pending: number; lines_done: number; fully_packed: boolean;
+};
+
+export type ProductFlagOption = { id: number; flag_name: string | null };
+
 export const spiApi = {
+  boxes: (spiId: number) =>
+    call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`),
+      (b) => ((b as { data?: { boxes?: SpiBox[] } } | null)?.data?.boxes ?? [])),
+
+  createBox: (spiId: number, body: SpiBoxBody) =>
+    call('SPI box save', () => api.post(`/p2p/spi/${spiId}/boxes`, body),
+      (b) => (b as { data?: { box: SpiBox; totals: SpiPackingTotals } } | null)?.data?.box as SpiBox),
+
+  deleteBox: (spiId: number, boxId: number) =>
+    call('SPI box delete', () => api.delete(`/p2p/spi/${spiId}/boxes/${boxId}`), () => true),
+
+  packingTotals: (spiId: number) =>
+    call('SPI packing summary', () => api.get(`/p2p/spi/${spiId}/packing-summary`),
+      (b) => (b as { data?: { totals?: SpiPackingTotals } } | null)?.data?.totals ?? null),
+
+  productFlags: () =>
+    call('Product flags', () => api.get('/inventory/product-flags/options'),
+      (b) => ((b as { data?: ProductFlagOption[] } | null)?.data ?? [])),
+
   product: (id: number) =>
     call('Product detail', () => api.get(`/products/${id}`), (b) => {
       const d = ((b as { data?: Record<string, unknown> } | null)?.data ?? b ?? {}) as {

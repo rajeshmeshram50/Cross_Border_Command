@@ -15,7 +15,7 @@ import { draftFromPo, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
 import { legalFromVault } from '../order/create-po/supplier-checks';
 import { useToast } from '../../../../contexts/ToastContext';
-import { spiApi } from './spi-api';
+import { spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
   DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor, type ProductLine,
@@ -61,6 +61,9 @@ export default function InvoiceForm({
   const [spiId, setSpiId] = useState<number | null>(null);
   const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
   const [saving, setSaving] = useState(false);
+  const [boxes, setBoxes] = useState<SpiBox[]>([]);
+  const [flagMaster, setFlagMaster] = useState<ProductFlagOption[]>([]);
+  const [boxesLoading, setBoxesLoading] = useState(false);
   const [savedWarehouse, setSavedWarehouse] = useState<string | null>(null);
   const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
     status: input.status, label: input.statusLabel,
@@ -234,6 +237,67 @@ export default function InvoiceForm({
     }
   };
 
+  const boxLines = lines.filter(l => l.spiItemId != null && l.spiQty > 0);
+
+  const reloadBoxes = useCallback(async (id: number) => {
+    const list = await spiApi.boxes(id);
+    setBoxes(list);
+    return list;
+  }, []);
+
+  useEffect(() => {
+    if (stage !== 2 || !spiId) return;
+    let live = true;
+    setBoxesLoading(true);
+    Promise.all([
+      reloadBoxes(spiId),
+      spiApi.productFlags().then(f => { if (live) setFlagMaster(f); }).catch(() => {}),
+    ])
+      .catch(e => { if (live) toast.error('Could not load the boxes', e instanceof PoApiError ? e.firstError : 'Please try again.'); })
+      .finally(() => { if (live) setBoxesLoading(false); });
+    return () => { live = false; };
+  }, [stage, spiId, reloadBoxes, toast]);
+
+  const boxError = (e: unknown) => {
+    if (!(e instanceof PoApiError)) return 'Please try again.';
+    return (e.status ?? 0) >= 500 ? 'The server could not save it — nothing was changed. Please try again.' : e.firstError;
+  };
+
+  const createBox = useCallback(async (body: SpiBoxBody): Promise<SpiBox | null> => {
+    if (!spiId) return null;
+    try {
+      const box = await spiApi.createBox(spiId, body);
+      await reloadBoxes(spiId);
+      toast.success(`${box.box_code} saved`, `${body.items.length} product${body.items.length === 1 ? '' : 's'} packed in this box.`);
+      return box;
+    } catch (e) {
+      toast.error('Could not save the box', boxError(e));
+      return null;
+    }
+  }, [spiId, reloadBoxes, toast]);
+
+  const deleteBoxes = useCallback(async (ids: number[]): Promise<boolean> => {
+    if (!spiId) return false;
+    let removed = 0;
+    try {
+      for (const id of ids) { await spiApi.deleteBox(spiId, id); removed++; }
+      toast.success(`${removed} box${removed === 1 ? '' : 'es'} removed`, 'The product is back to Pending.');
+      return true;
+    } catch (e) {
+      toast.error('Could not remove the box', boxError(e));
+      return false;
+    } finally {
+      await reloadBoxes(spiId).catch(() => {});
+    }
+  }, [spiId, reloadBoxes, toast]);
+
+  const unboxed = () => boxLines.filter(l => {
+    const packed = boxes.reduce((n, b) => n + b.items
+      .filter(i => i.supplier_invoice_item_id === l.spiItemId)
+      .reduce((m, i) => m + (Number(i.quantity) || 0), 0), 0);
+    return packed < l.spiQty - 0.0005;
+  });
+
   const goNext = () => {
     if (viewOnly) {
       if (stage >= STAGES.length - 1) onClose(); else advance();
@@ -242,9 +306,19 @@ export default function InvoiceForm({
     if (stage >= STAGES.length - 1) return;
     if (stage === 0) { void saveStage1(); return; }
     if (stage === 1) { void saveStage2(); return; }
+    if (stage === 2) {
+      const left = unboxed();
+      if (left.length) {
+        toast.warning(
+          `${left.length} product${left.length === 1 ? ' is' : 's are'} not fully boxed`,
+          `Box every unit before moving on: ${left.map(l => l.spiName).join(', ')}.`,
+        );
+        return;
+      }
+    }
     advance();
   };
-  const nextBlocked = viewOnly ? poLoading : saving || (stage === 0 && (poLoading || !!poError));
+  const nextBlocked = viewOnly ? poLoading : saving || (stage === 0 && (poLoading || !!poError)) || (stage === 2 && boxesLoading);
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
@@ -309,7 +383,7 @@ export default function InvoiceForm({
         </div>
 
         <div className="spi-dt-body" inert={saving}>
-          {poLoading ? (
+          {poLoading || (stage === 2 && boxesLoading) ? (
             <StageSkeleton stage={stage} />
           ) : (
             <>
@@ -326,7 +400,17 @@ export default function InvoiceForm({
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly}
                     onChangeLine={changeLine} />
                 )}
-                {stage === 2 && <Step3BoxPackaging draft={draft} lines={lines} />}
+                {stage === 2 && (
+                  <Step3BoxPackaging
+                    draft={draft}
+                    lines={spiId ? boxLines : lines}
+                    boxes={boxes}
+                    flagMaster={flagMaster}
+                    readOnly={viewOnly}
+                    onCreateBox={spiId ? createBox : undefined}
+                    onDeleteBoxes={spiId ? deleteBoxes : undefined}
+                  />
+                )}
               </div>
             </>
           )}

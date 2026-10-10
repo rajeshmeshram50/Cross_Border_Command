@@ -5,10 +5,6 @@ import {
   IcoBox, IcoCamera, IcoChevronR, IcoSave, IcoTag, IcoThermometer, IcoUpload, IcoWarn,
 } from '../../../icons';
 import { type CustomFlag } from './ProductFlagsModal';
-/* The product-flag master's own form. The plus beside Product Flags creates
-   a flag for the whole tenant, not one that lives on this box — the same way
-   the plus on the product table opens the product master. Lazy: it is a form
-   most visits to this drawer never open. */
 const AddProductFlagModal = lazy(() => import('../../../../inventory-management/product-flag/AddProductFlagModal'));
 import TemperatureModal, { formatRange, type TempRange } from './TemperatureModal';
 import SelectedProducts, {
@@ -17,7 +13,6 @@ import SelectedProducts, {
 import BoxStickerModal from './BoxStickerModal';
 import type { ProductLine } from '../invoice-products';
 
-/** How a box's contents came in. */
 const REMARKS = [
   { id: 'correct', cls: 'vti-rmk-correct', title: 'Correct Product', sub: 'As expected' },
   { id: 'damaged', cls: 'vti-rmk-damaged', title: 'Damaged / Rejected', sub: 'Not accepted' },
@@ -25,21 +20,18 @@ const REMARKS = [
   { id: 'extra', cls: 'vti-rmk-extra', title: 'Extra Quantity', sub: 'Over-supplied' },
 ] as const;
 
-/** What state the carton itself arrived in. */
 const CONDITIONS = [
   { id: 'perfect', cls: 'vti-cond-perfect', title: 'Perfect', sub: 'No damage' },
   { id: 'minor', cls: 'vti-cond-minor', title: 'Minor Damage', sub: 'Light wear' },
   { id: 'severe', cls: 'vti-cond-severe', title: 'Critical Damage', sub: 'Not usable' },
 ] as const;
 
-/** The three standing handling flags. */
 const FLAGS = [
   { id: 'hazardous', cls: 'flag-hazardous', label: 'Hazardous' },
   { id: 'coldchain', cls: 'flag-coldchain', label: 'Cold Chain' },
   { id: 'fragile', cls: 'flag-fragile', label: 'Fragile' },
 ] as const;
 
-/** The box's measurements. Each one follows the toggle for its own kind. */
 const DIMENSIONS = [
   { key: 'length', label: 'Length', unit: 'dim' },
   { key: 'width', label: 'Width', unit: 'dim' },
@@ -49,14 +41,6 @@ const DIMENSIONS = [
   { key: 'grossWeight', label: 'Gross Weight', unit: 'wt' },
 ] as const;
 
-/**
- * The optional identifiers, behind Advanced Details.
- *
- * A box holding ONE product carries exactly one of each, so they belong to the
- * box and sit here. A mixed carton does not — four SKUs have four lots and four
- * expiry dates — so there they are per product, as columns in Selected
- * Products, and this panel is not shown at all.
- */
 const ADVANCED = [
   { key: 'serial', label: 'Serial No.', placeholder: 'e.g. SN-001', type: 'text' },
   { key: 'lot', label: 'Lot No.', placeholder: 'e.g. LT-001', type: 'text' },
@@ -66,17 +50,23 @@ const ADVANCED = [
   { key: 'mfg', label: 'MFG Date', placeholder: '', type: 'date' },
 ] as const;
 
-/** The air-freight divisor: L × W × H in cm, over 5000, gives kg. */
+export interface BoxSaveData {
+  dims: {
+    length_cm: number | null; width_cm: number | null; height_cm: number | null;
+    weight_kg: number | null; net_weight_kg: number | null; gross_weight_kg: number | null;
+  };
+  condition: 'perfect' | 'minor' | 'severe';
+  remark: 'correct' | 'damaged' | 'mismatched' | 'extra';
+  flagIds: string[];
+  flagNames: string[];
+  stackable: boolean;
+  note: string | null;
+  boxIdentity: ProductIdentity;
+  identities: Record<string, ProductIdentity>;
+}
+
 const VOLUMETRIC_DIVISOR = 5000;
 
-/**
- * One box, opened under its product row.
- *
- * Everything on it describes a single physical carton: its id, its dimensions,
- * what was inside, what state it arrived in, and the identifiers printed on
- * it. The `vti-dw-*` classes are the prototype's own; nothing in the repo had
- * a box drawer to borrow from.
- */
 export default function BoxDrawer({
   boxId, line, quantity,
   scenario = '1 Product → 1 Box',
@@ -87,55 +77,28 @@ export default function BoxDrawer({
   onRemoveContent,
   onClearContents,
   onSave,
+  saving = false,
+  saved = false,
   customFlags = [],
   onQuantityChange,
 }: {
   boxId: string;
   line: ProductLine;
   quantity: number;
-  /** Which packing scenario this box belongs to. */
   scenario?: string;
-  /** Scenario 01 labels this slot "Mode"; a split calls it "Box". */
   modeKey?: string;
-  /** "Single Box", or "Box 3 of 20" in a split. */
   modeLabel?: string;
-  /**
-   * Where this drawer is mounted.
-   *
-   * 'accordion' (the default) wraps it in `.vti-drawer-inner`, which the
-   * product row's `.vti-drawer-row.is-open` expands from max-height 0.
-   * 'panel' renders it bare, for the split-carton strip: there is no drawer
-   * row there, so that wrapper would collapse the whole thing to nothing —
-   * which is exactly what it did. The prototype puts the strip and body
-   * straight into `.vmb-panel` for the same reason.
-   */
   variant?: 'accordion' | 'panel';
-  /**
-   * What is in this box, when it is more than the one product above.
-   *
-   * Left out for a single box or one carton of a split, where the contents are
-   * exactly `line` at `quantity` and saying so twice would only let the two
-   * disagree. A mixed carton passes its several products.
-   */
   contents?: BoxContent[];
-  /** Given only where a product can be taken back out — a mixed carton. */
   onRemoveContent?: (code: string) => void;
   onClearContents?: () => void;
-  /** Finalises the box. The product then leaves the table above and appears
-   *  under Packed Products. */
-  onSave?: () => void;
-  /* Flags beyond the three standing ones, shared by every box on the step
-     rather than owned by one of them. Read-only here now: the plus creates a
-     flag in the product-flag master, not one that lives on this carton. */
+  onSave?: (data: BoxSaveData) => void;
+  saving?: boolean;
+  saved?: boolean;
   customFlags?: CustomFlag[];
-  /** Given when this box's unit count may be changed. Absent on a single-box
-   *  carton, where the quantity IS the product's quantity. */
   onQuantityChange?: (qty: number) => void;
 }) {
   const [unit, setUnit] = useState<'cm' | 'm'>('cm');
-  /* Weight switches too. It used to be fixed at kg while the sides switched,
-     so half the row's unit tags could be changed and half could not, with
-     nothing saying why. */
   const [wUnit, setWUnit] = useState<'kg' | 'g'>('kg');
   const [dims, setDims] = useState<Record<string, string>>({});
   const [remark, setRemark] = useState<string>('correct');
@@ -143,65 +106,66 @@ export default function BoxDrawer({
   const [flags, setFlags] = useState<string[]>([]);
   const [stackable, setStackable] = useState(true);
   const [flagsOpen, setFlagsOpen] = useState(false);
-  /* Kept as strings: an empty field is '' and a typed minus sign is '-', and
-     neither survives a round trip through Number. */
   const [temp, setTemp] = useState<TempRange>({ min: '', max: '' });
   const [tempOpen, setTempOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
   const [advOpen, setAdvOpen] = useState(false);
-  /* Wired, unlike the panel this restores: its inputs carried no value and no
-     onChange, so everything typed into them was discarded. */
   const [boxIdentity, setBoxIdentity] = useState<Record<string, string>>({});
 
-  /* The identifiers for whatever is in THIS box, keyed by product code.
-     Held per drawer rather than per step: one product split across twenty
-     cartons is twenty boxes, and keying by product alone would give them all
-     the same lot number. One drawer is one box, so a code is unique here. */
   const [identities, setIdentities] = useState<Record<string, ProductIdentity>>({});
   const patchIdentity = useCallback((code: string, patch: Partial<ProductIdentity>) => {
     setIdentities(m => ({ ...m, [code]: { ...(m[code] ?? EMPTY_IDENTITY), ...patch } }));
   }, []);
-  /* A box with no explicit contents holds exactly the product above it, at
-     this box's own quantity — which in a split is its share, not the total. */
   const contentRows: BoxContent[] = contents ?? [{ line, qty: quantity }];
-  /* Only a mixed carton is given contents; every other box holds exactly the
-     product above it, which is what tells the two layouts apart. */
   const mixedCarton = !!contents;
 
-
-  /* Volumetric weight — what a carrier bills when a box is bulky but light.
-     Computed, never typed, which is what the AUTO tag on the field means.
-
-     The unit toggle re-reads the same figures in the new unit rather than
-     converting them, so switching to M does raise the answer: 50 metres is a
-     hundred times 50 centimetres, and the volume a million times. The sides
-     are normalised to cm and divided by the standard 5000.
-
-     NOTE: the prototype divides by 5 for metres, which is not the standard
-     factor — 1 m3 is 1,000,000 cm3, so metres work out at x200, not /5. This
-     follows the formula a carrier actually bills on. */
   const volumetric = (() => {
     const toCm = (v: string) => (Number(v) || 0) * (unit === 'm' ? 100 : 1);
     const cc = toCm(dims.length) * toCm(dims.width) * toCm(dims.height);
     if (cc <= 0) return '';
-    /* The divisor yields kilograms; shown in grams when that is what the
-       weights beside it are in, so the two can be read against each other. */
     const kg = cc / VOLUMETRIC_DIVISOR;
     return (wUnit === 'g' ? kg * 1000 : kg).toFixed(2);
   })();
 
+  const collect = (): BoxSaveData => {
+    const num = (v: string | undefined, factor: number) => {
+      const n = parseFloat(v ?? '');
+      return Number.isFinite(n) ? Math.round(n * factor * 1000) / 1000 : null;
+    };
+    const dimF = unit === 'm' ? 100 : 1;
+    const wtF = wUnit === 'g' ? 0.001 : 1;
+    const range = flags.includes('coldchain') ? formatRange(temp) : '';
+    const note = [boxIdentity.remarks?.trim(), range ? `Cold chain ${range}` : ''].filter(Boolean).join(' · ');
+    return {
+      dims: {
+        length_cm: num(dims.length, dimF), width_cm: num(dims.width, dimF), height_cm: num(dims.height, dimF),
+        weight_kg: num(dims.weight, wtF), net_weight_kg: num(dims.netWeight, wtF), gross_weight_kg: num(dims.grossWeight, wtF),
+      },
+      condition: condition as BoxSaveData['condition'],
+      remark: (remark === 'mismatch' ? 'mismatched' : remark) as BoxSaveData['remark'],
+      flagIds: flags,
+      flagNames: flags
+        .map(id => FLAGS.find(f => f.id === id)?.label ?? customFlags.find(c => c.id === id)?.name)
+        .filter((n): n is string => !!n),
+      stackable,
+      note: note || null,
+      boxIdentity: {
+        serial: boxIdentity.serial ?? '', lot: boxIdentity.lot ?? '', batch: boxIdentity.batch ?? '',
+        cat: boxIdentity.cat ?? '', expiry: boxIdentity.expiry ?? '', mfg: boxIdentity.mfg ?? '',
+        remarks: boxIdentity.remarks ?? '',
+      },
+      identities,
+    };
+  };
+
   const toggleFlag = (id: string) =>
     setFlags(f => (f.includes(id) ? f.filter(x => x !== id) : [...f, id]));
 
-  /* The accordion needs the collapsing wrapper; the split panel must not have
-     it. Rendering the body once and choosing its shell keeps the two mountings
-     from drifting apart. */
   const Shell = variant === 'accordion' ? AccordionShell : PanelShell;
 
   return (
     <Shell>
 
-        {/* The identity strip: which box this is, and the actions on it. */}
         <div className="vti-dw-strip">
           <div className="vti-dw-strip-accent" />
           <div className="vti-dw-strip-left">
@@ -219,13 +183,6 @@ export default function BoxDrawer({
             <div className="vti-dw-strip-sep" />
             <StripItem label="Quantity">
               {onQuantityChange ? (
-                /* Editable when the caller can take the change — a split's
-                   boxes are an even division to start with, but a packer
-                   moves units between cartons as they fill them.
-
-                   Typed OR stepped: the steppers are our own rather than the
-                   browser's, which are a few pixels wide, appear only on
-                   hover, and render differently in every engine. */
                 <span className="vti-dw-strip-qty invf-qty-edit">
                   <span className="vti-dw-strip-qty-dot" />
                   <input
@@ -234,10 +191,6 @@ export default function BoxDrawer({
                     aria-label="Units in this box"
                     onChange={e => onQuantityChange(Math.max(0, Number(e.target.value) || 0))}
                   />
-                  {/* Stacked arrows at the field's right edge, the shape of the
-                      Sub-Box Count spinner. Drawn rather than left native: the
-                      browser's own spinner is invisible against this teal strip
-                      and appears only on hover. */}
                   <span className="invf-qty-spin">
                     <button
                       type="button" className="invf-qty-spin__btn" aria-label="One unit more"
@@ -247,7 +200,6 @@ export default function BoxDrawer({
                     </button>
                     <button
                       type="button" className="invf-qty-spin__btn" aria-label="One unit fewer"
-                      /* Nothing below zero: a carton cannot hold a negative. */
                       disabled={quantity <= 0}
                       onClick={() => onQuantityChange(Math.max(0, quantity - 1))}
                     >
@@ -273,9 +225,6 @@ export default function BoxDrawer({
                 </button>
               ))}
             </div>
-            {/* The same control for the other half of the row. Without it the
-                sides could be switched and the weights could not, which is
-                only visible as unit tags that respond differently. */}
             <span className="vti-dw-dim-label">Weight</span>
             <div className="vti-dw-unit-toggle">
               {(['kg', 'g'] as const).map(u => (
@@ -292,25 +241,21 @@ export default function BoxDrawer({
             <Tooltip label="Photograph this box with the camera">
               <button type="button" className="vti-dw-icon-btn"><IcoCamera size={13} stroke={2.3} /> Camera</button>
             </Tooltip>
-            <Tooltip label="Scan this box's barcode">
-              <button type="button" className="vti-dw-icon-btn"><IcoBox size={13} stroke={2.3} /> Scan</button>
-            </Tooltip>
-            <button type="button" className="vti-dw-save-btn" onClick={onSave}>
-              <IcoSave size={12} stroke={2.5} /> Save
+            <button type="button" className="vti-dw-save-btn"
+              disabled={saving || saved || !onSave}
+              onClick={() => onSave?.(collect())}>
+              <IcoSave size={12} stroke={2.5} /> {saving ? 'Saving…' : saved ? 'Saved' : 'Save'}
             </button>
           </div>
-          <button type="button" className="vti-dw-sticker-btn" onClick={() => setStickerOpen(true)}>
-            <IcoBox size={13} stroke={2.3} /> Box Sticker
-          </button>
+          <Tooltip label={saved ? `Print the sticker for ${boxId}` : 'Save the box first — the sticker carries its box ID'}>
+            <button type="button" className="vti-dw-sticker-btn" disabled={!saved}
+              onClick={() => { if (saved) setStickerOpen(true); }}>
+              <IcoBox size={13} stroke={2.3} /> Box Sticker
+            </button>
+          </Tooltip>
         </div>
 
         <div className="vti-dw-body">
-          {/* The carton's contents, above the figures that describe the
-              carton itself — what is in the box, then the box. A mixed carton
-              shows this INSTEAD of the Advanced Details panel at the foot:
-              four SKUs have four lots and four expiry dates, which one
-              box-level set cannot express, so the identifiers are columns
-              here. The two never appear together. */}
           {mixedCarton && (
             <SelectedProducts
               rows={contentRows}
@@ -329,8 +274,6 @@ export default function BoxDrawer({
             <div className="vti-dw-fields">
               {DIMENSIONS.map((f, i) => (
                 <Fragmentish key={f.key}>
-                  {/* A rule after the third field: the measurements and the
-                      weights are two different kinds of number. */}
                   {i === 3 && <div className="vti-dw-field-sep" />}
                   <div className="vti-dw-field">
                     <label className="vti-dw-field-lbl">
@@ -347,8 +290,6 @@ export default function BoxDrawer({
                   Vol. Weight <span className="vti-dw-unit-tag">{wUnit}</span>{' '}
                   <span className="vti-dw-auto-tag">Auto</span>
                 </label>
-                {/* readOnly, not disabled: a disabled field is skipped by the
-                    keyboard and drops out of a form submission. */}
                 <input className="vti-dw-inp vti-dw-inp--auto" type="text" placeholder="—"
                   value={volumetric} readOnly />
               </div>
@@ -389,14 +330,9 @@ export default function BoxDrawer({
                       onClick={() => setFlagsOpen(true)}>+</button>
                   </Tooltip>
                 </div>
-                {/* Flags are independent of each other, so they toggle rather
-                    than select — a box can be both fragile and cold chain. */}
                 <div className="vti-dw-flags">
                   {FLAGS.map(f => {
                     const on = flags.includes(f.id);
-                    /* Cold Chain is the one flag that needs an answer as well
-                       as a state, so switching it on asks for the range. The
-                       chip then carries it, which is where you would look. */
                     const cold = f.id === 'coldchain';
                     const label = cold && on && formatRange(temp)
                       ? `${f.label} · ${formatRange(temp)}`
@@ -407,10 +343,6 @@ export default function BoxDrawer({
                         aria-pressed={on}
                         onClick={() => {
                           toggleFlag(f.id);
-                          /* Switching Cold Chain ON asks for the range; OFF
-                             clears it, so a stale one cannot reappear when the
-                             flag is switched on again. Otherwise this chip
-                             toggles exactly like the rest. */
                           if (!cold) return;
                           if (on) setTemp({ min: '', max: '' });
                           else setTempOpen(true);
@@ -419,9 +351,6 @@ export default function BoxDrawer({
                       </button>
                     );
                   })}
-                  {/* Custom flags sit with the standing three and toggle the
-                      same way. Their colour is inline because it is data, not
-                      one of a fixed set of classes. */}
                   {customFlags.map(f => {
                     const on = flags.includes(f.id);
                     return (
@@ -454,18 +383,11 @@ export default function BoxDrawer({
 
           </div>
 
-          {/* A box holding one product carries exactly one serial, one lot
-              and one batch, so they belong to the box and sit here, closed by
-              default — six fields most boxes never carry. A mixed carton has
-              its identifiers per product in the table above instead. */}
           {!mixedCarton && (
             <div className="vti-dw-advanced">
               <button type="button" className={`vti-dw-adv-toggle${advOpen ? ' is-open' : ''}`}
                 onClick={() => setAdvOpen(o => !o)}>
                 <IcoChevronR size={10} stroke={2.8} className="adv-chev" />
-                {/* The gap is a non-breaking space INSIDE the span. The toggle
-                    is a flex row, and a whitespace-only text node between two
-                    flex items is not rendered at all — a plain space vanishes. */}
                 Advanced Details<span style={{ fontWeight: 400, opacity: .6 }}>&nbsp;(optional)</span>
               </button>
               {advOpen && (
@@ -516,8 +438,6 @@ export default function BoxDrawer({
           quantity={quantity}
           scenario={scenario}
           modeLabel={modeLabel}
-          /* The chosen condition by its label, not its id: the sticker is read
-             by a person at a rack, not by the code that set it. */
           condition={CONDITIONS.find(c => c.id === condition)?.title ?? 'Perfect'}
           onClose={() => setStickerOpen(false)}
         />
@@ -527,8 +447,6 @@ export default function BoxDrawer({
         <TemperatureModal
           range={temp}
           onApply={r => { setTemp(r); setTempOpen(false); }}
-          /* Cancelled with no range set means the flag was never answered, so
-             it goes back off rather than sitting on with nothing behind it. */
           onCancel={() => {
             setTempOpen(false);
             if (!formatRange(temp)) setFlags(f => f.filter(x => x !== 'coldchain'));
@@ -545,10 +463,6 @@ export default function BoxDrawer({
   );
 }
 
-/**
- * The accordion mounting: the collapsing wrapper the product row expands.
- * `.vti-drawer-inner` is max-height 0 until `.vti-drawer-row.is-open` opens it.
- */
 function AccordionShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="vti-drawer-inner">
@@ -557,17 +471,10 @@ function AccordionShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** The split-carton mounting: no wrapper, because `.vmb-panel` is the shell. */
 function PanelShell({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/**
- * One arrowhead of the quantity spinner.
- *
- * A filled triangle rather than a chevron, because that is the shape the
- * browser's own spinner draws and the Sub-Box Count field shows.
- */
 function Caret({ up }: { up?: boolean }) {
   return (
     <svg width="7" height="4" viewBox="0 0 7 4" aria-hidden
@@ -577,7 +484,6 @@ function Caret({ up }: { up?: boolean }) {
   );
 }
 
-/** One labelled item on the identity strip. */
 function StripItem({ label, className, children }: {
   label: string; className?: string; children: React.ReactNode;
 }) {
@@ -589,9 +495,6 @@ function StripItem({ label, className, children }: {
   );
 }
 
-/* The separator sits between two siblings in a grid, so the pair needs one
-   parent that renders nothing of its own. A shorthand fragment cannot take a
-   key, hence the named one. */
 function Fragmentish({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
