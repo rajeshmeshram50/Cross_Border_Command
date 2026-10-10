@@ -70,7 +70,8 @@ export default function InvoiceList() {
   }, []);
 
   const [formFor, setFormFor] = useState<InvoiceFormInput | null>(null);
-  const closeForm = useCallback(() => setFormFor(null), []);
+  const reloadList = list.reload;
+  const closeForm = useCallback(() => { setFormFor(null); reloadList(); }, [reloadList]);
 
   const confirmStorage = useCallback((choice: StorageChoice) => {
     if (!storageFor) return;

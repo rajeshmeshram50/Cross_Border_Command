@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import '../../p2p-detail.css';
@@ -11,7 +11,11 @@ import {
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
-import { useInvoiceDraft } from './invoice-draft';
+import { draftFromPo, useInvoiceDraft } from './invoice-draft';
+import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
+import { legalFromVault } from '../order/create-po/supplier-checks';
+import { useToast } from '../../../../contexts/ToastContext';
+import { spiApi } from './spi-api';
 import { PRODUCT_LINES, type ProductLine } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
 
@@ -39,10 +43,49 @@ export default function InvoiceForm({
   invoiceNo: string;
   onClose: () => void;
 }) {
-  const { draft, set } = useInvoiceDraft({
-    supplier: input.supplier, invoiceNo, poNo: input.poNo,
-    warehouse: warehouseLabel(input.storage),
-  });
+  const { draft, set } = useInvoiceDraft({ supplier: input.supplier, poNo: input.poNo });
+  const toast = useToast();
+
+  const [poLoading, setPoLoading] = useState(!!input.poId);
+  const [poError, setPoError] = useState<string | null>(null);
+  const [spiId, setSpiId] = useState<number | null>(null);
+  const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (input.invoiceNo) return;
+    let live = true;
+    spiApi.nextCode().then(c => { if (live && c) setSpiCode(cur => cur ?? c.code); }).catch(() => {});
+    return () => { live = false; };
+  }, [input.invoiceNo]);
+
+  useEffect(() => {
+    if (!input.poId) return;
+    let live = true;
+    setPoLoading(true);
+    setPoError(null);
+    (async () => {
+      try {
+        const po = await poApi.show(input.poId!);
+        const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
+        if (!live) return;
+        set(draftFromPo(po, sup));
+        if (po.vendor_id) {
+          poLookupApi.supplierVault(po.vendor_id)
+            .then(v => { if (live) set({ legal: legalFromVault(v) }); })
+            .catch(() => { if (live) set({ legal: legalFromVault(null) }); });
+        }
+      } catch (e) {
+        if (!live) return;
+        const msg = e instanceof PoApiError ? e.firstError : 'Please try again.';
+        setPoError(msg);
+        toast.error('Could not load the purchase order', msg);
+      } finally {
+        if (live) setPoLoading(false);
+      }
+    })();
+    return () => { live = false; };
+  }, [input.poId, set, toast]);
 
   const [lines, setLines] = useState<ProductLine[]>(PRODUCT_LINES);
 
@@ -56,12 +99,42 @@ export default function InvoiceForm({
   useScrollLock(true, '.spi-dt-overlay');
 
   const goTo = (i: number) => { if (i <= reached) setStage(i); };
-  const goNext = () => {
-    if (stage >= STAGES.length - 1) return;
+  const advance = () => {
     const next = stage + 1;
     setStage(next);
     setReached(r => Math.max(r, next));
   };
+
+  const saveStage1 = async () => {
+    if (spiId) { advance(); return; }
+    if (!draft.vendorId) {
+      toast.warning('Supplier not loaded', 'The purchase order has no supplier to raise this invoice against.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const spi = await spiApi.create({
+        purchase_order_id: input.poId ?? null,
+        vendor_id: draft.vendorId,
+        document_type: draft.docType === 'International' ? 'international' : 'domestic',
+      });
+      setSpiId(spi.id);
+      setSpiCode(spi.code);
+      toast.success(`${spi.code} created`, 'Saved as a draft — continue with the invoice details.');
+      advance();
+    } catch (e) {
+      toast.error('Could not save Stage 01', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const goNext = () => {
+    if (stage >= STAGES.length - 1) return;
+    if (stage === 0) { void saveStage1(); return; }
+    advance();
+  };
+  const nextBlocked = stage === 0 && (poLoading || saving || !!poError);
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
@@ -80,11 +153,11 @@ export default function InvoiceForm({
             </div>
 
             <div className="spi-dt-pills">
-              <HeadPill icon={<IcoLines />} label="INVOICE NO" value={invoiceNo} mono />
+              <HeadPill icon={<IcoLines />} label="INVOICE NO" value={spiCode ?? invoiceNo} mono />
               <span className="spi-dt-dots">⋮</span>
               <HeadPill icon={<IcoLines />} label="PO NUMBER" value={input.poNo ?? '—'} alt mono />
               <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoUser />} label="SUPPLIER" value={input.supplier} />
+              <HeadPill icon={<IcoUser />} label="SUPPLIER" value={draft.supplier || input.supplier} />
               <span className="spi-dt-dots">⋮</span>
               <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={warehouseLabel(input.storage)} alt />
             </div>
@@ -119,13 +192,22 @@ export default function InvoiceForm({
           </div>
         </div>
 
-        <div className="spi-dt-body">
-          {stage === 0 && <Step1SupplierDetails draft={draft} set={set} />}
-          {stage === 1 && (
-            <Step2InvoiceProducts draft={draft} set={set} lines={lines}
-              onChangeLine={changeLine} />
+        <div className="spi-dt-body" inert={saving}>
+          {poLoading ? (
+            <StageSkeleton stage={stage} />
+          ) : (
+            <>
+              {saving && <StageSkeleton stage={stage + 1} />}
+              <div className="cpf-stepwrap" hidden={saving}>
+                {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} />}
+                {stage === 1 && (
+                  <Step2InvoiceProducts draft={draft} set={set} lines={lines}
+                    onChangeLine={changeLine} />
+                )}
+                {stage === 2 && <Step3BoxPackaging draft={draft} lines={lines} />}
+              </div>
+            </>
           )}
-          {stage === 2 && <Step3BoxPackaging draft={draft} lines={lines} />}
         </div>
 
         <div className="spi-dt-foot">
@@ -148,9 +230,10 @@ export default function InvoiceForm({
               type="button"
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
+              disabled={nextBlocked}
             >
               {isLast && <IcoCheck />}
-              {isLast ? 'Map Invoice' : 'Save & Next'}
+              {isLast ? 'Map Invoice' : saving ? 'Saving…' : 'Save & Next'}
               {!isLast && <IcoChevronR />}
             </button>
           </div>
@@ -158,6 +241,102 @@ export default function InvoiceForm({
       </div>
     </div>,
     document.body,
+  );
+}
+
+function SkHead() {
+  return (
+    <div className="spi-dt-sec-head" style={{ cursor: 'default' }}>
+      <div className="spi-dt-sk spi-dt-sk-ico" />
+      <div className="spi-dt-sec-mid">
+        <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 200 }} />
+        <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 280, height: 8, marginTop: 7 }} />
+      </div>
+    </div>
+  );
+}
+
+function SkFields({ count }: { count: number }) {
+  return (
+    <div className="spi-dt-grid4">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i}>
+          <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 84, height: 8, marginBottom: 9 }} />
+          <div className="spi-dt-sk spi-dt-sk-field" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkRows({ count }: { count: number }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="spi-dt-sk spi-dt-sk-field" style={{ height: 34 }} />
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="spi-dt-sk spi-dt-sk-field" style={{ height: 52 }} />
+      ))}
+    </div>
+  );
+}
+
+function SkSection({ children }: { children: ReactNode }) {
+  return (
+    <div className="spi-dt-sec" aria-busy="true">
+      <SkHead />
+      <div className="spi-dt-sec-body">{children}</div>
+    </div>
+  );
+}
+
+function SkRecap() {
+  return (
+    <div className="spi-dt-sec" aria-busy="true">
+      <SkHead />
+    </div>
+  );
+}
+
+function StageSkeleton({ stage }: { stage: number }) {
+  if (stage === 1) {
+    return (
+      <>
+        <SkRecap />
+        <SkSection><SkFields count={4} /></SkSection>
+        <SkSection><SkRows count={3} /></SkSection>
+      </>
+    );
+  }
+  if (stage === 2) {
+    return (
+      <>
+        <SkRecap />
+        <SkSection>
+          <div className="spi-dt-grid4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            {[0, 1, 2].map(i => <div key={i} className="spi-dt-sk spi-dt-sk-field" style={{ height: 120 }} />)}
+          </div>
+        </SkSection>
+        <SkSection><SkRows count={3} /></SkSection>
+      </>
+    );
+  }
+  if (stage >= 3) {
+    return (
+      <>
+        <SkRecap />
+        <SkSection><SkRows count={4} /></SkSection>
+      </>
+    );
+  }
+  return (
+    <>
+      <SkSection><SkFields count={8} /></SkSection>
+      <SkSection>
+        <SkFields count={5} />
+        <div style={{ height: 16 }} />
+        <SkFields count={8} />
+      </SkSection>
+    </>
   );
 }
 

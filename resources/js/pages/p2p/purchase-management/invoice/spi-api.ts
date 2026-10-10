@@ -80,7 +80,23 @@ const SHIPMENT_MODE: Record<InvoiceShipmentScope, string> = {
   'with-shipment': 'with_shipment', 'without-shipment': 'without_shipment',
 };
 
+export type SpiStage1Body = {
+  purchase_order_id: number | null;
+  vendor_id: number;
+  document_type: 'domestic' | 'international';
+};
+
+export type SpiHeader = { id: number; code: string; status: string; stage_completed: number };
+
 export const spiApi = {
+  nextCode: () =>
+    call('SPI next code', () => api.get('/p2p/spi/next-code'),
+      (b) => (b as { data?: { code: string; financial_year: string } } | null)?.data ?? null),
+
+  create: (body: SpiStage1Body) =>
+    call('SPI create (Stage 01)', () => api.post('/p2p/spi', body),
+      (b) => (b as { data?: SpiHeader } | null)?.data as SpiHeader),
+
   list: ({ scope = 'all', shipScope, search, page, per_page }: SpiListQuery = {}) =>
     call('SPI list', () => api.get('/p2p/spi', {
       params: {
