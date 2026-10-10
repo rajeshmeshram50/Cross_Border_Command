@@ -129,7 +129,15 @@ export default function Tooltip({
        not do. Real overflow here is hundreds of pixels. */
     const el = tipRef.current;
     if (el) setScrollable(el.scrollHeight - el.clientHeight > 12);
-    const onScrollOrResize = () => setOpen(false);
+    /* The page moving under a fixed tooltip would leave it pointing at
+       nothing, so a scroll closes it — but NOT a scroll inside the tooltip
+       itself. Registered in the capture phase, so without this check reading a
+       long description closed the very thing being read on the first wheel
+       click. */
+    const onScrollOrResize = (e?: Event) => {
+      if (e?.type === 'scroll' && tipRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     window.addEventListener('scroll', onScrollOrResize, true);
     window.addEventListener('resize', onScrollOrResize);
     return () => {

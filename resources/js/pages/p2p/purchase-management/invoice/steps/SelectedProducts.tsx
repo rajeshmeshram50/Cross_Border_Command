@@ -1,4 +1,5 @@
 import { memo, useCallback } from 'react';
+import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { IcoCheck, IcoX } from '../../../icons';
 import { DESC_MAX, truncateDesc, type ProductLine } from '../invoice-products';
@@ -176,14 +177,25 @@ const IdentityRow = memo(function IdentityRow({
 
       {IDENTITY_COLUMNS.map(c => (
         <td key={c.key}>
-          <input
-            className={`cpd-in invf-selprod__in${c.key === 'remarks' ? ' invf-selprod__in--note' : ''}`}
-            type={c.type}
-            placeholder={c.placeholder}
-            value={identity[c.key]}
-            onChange={e => patch({ [c.key]: e.target.value })}
-            aria-label={`${c.label} for ${line.spiName}`}
-          />
+          {/* A date is the app's own picker, not the browser's: the native
+              control renders mm/dd/yyyy in the OS locale and looks nothing
+              like the rest of the form. */}
+          {c.type === 'date' ? (
+            <MasterDatePicker
+              value={identity[c.key]}
+              onChange={v => patch({ [c.key]: v })}
+              placeholder={c.label}
+            />
+          ) : (
+            <input
+              className={`cpd-in invf-selprod__in${c.key === 'remarks' ? ' invf-selprod__in--note' : ''}`}
+              type={c.type}
+              placeholder={c.placeholder}
+              value={identity[c.key]}
+              onChange={e => patch({ [c.key]: e.target.value })}
+              aria-label={`${c.label} for ${line.spiName}`}
+            />
+          )}
         </td>
       ))}
 

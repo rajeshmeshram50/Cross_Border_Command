@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useState } from 'react';
+import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import {
   IcoBox, IcoCamera, IcoChevronR, IcoSave, IcoTag, IcoThermometer, IcoUpload, IcoWarn,
@@ -474,11 +475,20 @@ export default function BoxDrawer({
                       {ADVANCED.map(f => (
                         <div className="vti-dw-field" key={f.key}>
                           <label className="vti-dw-field-lbl">{f.label}</label>
-                          <input
-                            className="vti-dw-inp" type={f.type} placeholder={f.placeholder}
-                            value={boxIdentity[f.key] ?? ''}
-                            onChange={e => setBoxIdentity(m => ({ ...m, [f.key]: e.target.value }))}
-                          />
+                          {/* Same here: the app's picker, not the browser's. */}
+                          {f.type === 'date' ? (
+                            <MasterDatePicker
+                              value={boxIdentity[f.key] ?? ''}
+                              onChange={v => setBoxIdentity(m => ({ ...m, [f.key]: v }))}
+                              placeholder={f.label}
+                            />
+                          ) : (
+                            <input
+                              className="vti-dw-inp" type={f.type} placeholder={f.placeholder}
+                              value={boxIdentity[f.key] ?? ''}
+                              onChange={e => setBoxIdentity(m => ({ ...m, [f.key]: e.target.value }))}
+                            />
+                          )}
                         </div>
                       ))}
                     </div>
