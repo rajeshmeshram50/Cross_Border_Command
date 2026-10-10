@@ -1,0 +1,9 @@
+flag_name,purpose
+Standard,Normal product with no special handling
+Fragile,Requires careful handling
+Hazardous,Dangerous or regulated material
+Cold Chain,Requires controlled cold temperature
+Temperature Sensitive,Requires a specified temperature range
+Flammable,Fire-risk material requiring suitable storage
+Non-Stackable,Cannot have other boxes stacked on top
+Keep Upright,Must remain in a specified orientation

@@ -77,6 +77,8 @@ The tab counts are taken **before** the search narrows anything, so typing in th
 makes "All 24" fall to 3. Every list takes `?tab=all|active|inactive&q=&page=&per_page=`;
 `per_page` defaults to 10 and is capped at 100.
 
+**Geography is stored by master id.** `country_id` -> `master_countries`, `state_id` -> `master_states`. `state_name` sits beside `state_id` for the one case an id cannot cover: the form offers the States master only for India, and every other country takes a typed province. Exactly one of the two is filled, and `state` in the response is whichever it was.
+
 **The frontend computes, the server stores.** `floor_area`, `volume`, `usable_volume`, the
 shelf's `area` and `volume` — all taken as sent. Two exceptions, both because the server uses
 the number to decide something:
@@ -101,7 +103,7 @@ cold-chain in a rack that is not.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/warehouses` | + `wh_type`, `city`, `state`. Rows carry `zones_count`, `racks_count` |
+| GET | `/warehouses` | + `wh_type`, `city`, `state_id`, `country_id`. Rows carry `zones_count`, `racks_count` |
 | GET | `/warehouses/options` | active only; `wh_type`, `area_sqft`, `location` for the AUTO fields |
 | POST | `/warehouses` | **multipart** — the business card |
 | GET | `/warehouses/{id}` | adds `free_area_sqft` |

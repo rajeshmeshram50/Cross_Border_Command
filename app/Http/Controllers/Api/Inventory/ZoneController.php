@@ -37,7 +37,8 @@ class ZoneController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
 
             $f = $request->validate($this->listRules() + [
                 'warehouse_id' => ['nullable', 'integer'],
@@ -46,11 +47,20 @@ class ZoneController extends BaseInventoryController
                 'hazardous'    => ['nullable', 'integer', 'in:0,1'],
             ]);
 
-            $base = Zone::query();
+            $base = $this->scopeTenant(Zone::query(), $user, $branch);
             if (!empty($f['warehouse_id'])) $base->where('warehouse_id', $f['warehouse_id']);
             if (!empty($f['rack_mode']))    $base->where('rack_mode', $f['rack_mode']);
             if (isset($f['cold_chain']))    $base->where('cold_chain', $f['cold_chain']);
             if (isset($f['hazardous']))     $base->where('hazardous', $f['hazardous']);
+
+            // The dropdown leaves before the tabs, the counts and the paging.
+            if ($this->wantsOptions($request)) {
+                $body = $this->optionsBody($base, 'zone_name', fn (Zone $z) => $this->optionRow($z));
+
+                DB::commit();
+
+                return response()->json($body, 200);
+            }
 
             $tabs = $this->tabCounts(clone $base);
 
@@ -72,45 +82,12 @@ class ZoneController extends BaseInventoryController
 
     /**
      * GET /inventory/zones/options?warehouse_id=&rack_mode=rack
-     * The Rack form's zone dropdown, which lists racked zones only — and sends
-     * the AUTO fields it shows beside the picker.
+     * The Rack form's zone dropdown. Same method as the list; warehouse_id and
+     * rack_mode are ordinary filters there, so nothing special is needed here.
      */
     public function options(Request $request)
     {
-        try {
-            DB::beginTransaction();
-
-            $this->tenantUser($request);
-
-            $f = $request->validate([
-                'warehouse_id' => ['required', 'integer'],
-                'rack_mode'    => ['nullable', Rule::in(Zone::MODES)],
-            ]);
-
-            $rows = Zone::where('warehouse_id', $f['warehouse_id'])
-                ->where('status', 1)
-                ->when(!empty($f['rack_mode']), fn ($q) => $q->where('rack_mode', $f['rack_mode']))
-                ->orderBy('zone_name')
-                ->get(['id', 'zone_name', 'rack_mode', 'area_sqft', 'cold_chain', 'hazardous', 'temp_min_c', 'temp_max_c'])
-                ->map(fn (Zone $z) => [
-                    'id'         => $z->id,
-                    'zone_code'  => $z->zone_code,
-                    'zone_name'  => $z->zone_name,
-                    'rack_mode'  => $z->rack_mode,
-                    'area_sqft'  => (float) $z->area_sqft,
-                    'cold_chain' => (int) $z->cold_chain,
-                    'hazardous'  => (int) $z->hazardous,
-                    'temp_min_c' => $z->temp_min_c !== null ? (float) $z->temp_min_c : null,
-                    'temp_max_c' => $z->temp_max_c !== null ? (float) $z->temp_max_c : null,
-                ]);
-
-            DB::commit();
-
-            return response()->json(['status' => true, 'data' => $rows], 200);
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
-        }
+        return $this->index($request->merge(['view' => 'options']));
     }
 
     /** GET /inventory/zones/{id} */
@@ -393,6 +370,22 @@ class ZoneController extends BaseInventoryController
         }
 
         return $d;
+    }
+
+    /** The dropdown shape: what the Rack form shows as AUTO beside the picker. */
+    private function optionRow(Zone $z): array
+    {
+        return [
+            'id'         => $z->id,
+            'zone_code'  => $z->zone_code,
+            'zone_name'  => $z->zone_name,
+            'rack_mode'  => $z->rack_mode,
+            'area_sqft'  => (float) $z->area_sqft,
+            'cold_chain' => (int) $z->cold_chain,
+            'hazardous'  => (int) $z->hazardous,
+            'temp_min_c' => $z->temp_min_c !== null ? (float) $z->temp_min_c : null,
+            'temp_max_c' => $z->temp_max_c !== null ? (float) $z->temp_max_c : null,
+        ];
     }
 
     private function row(Zone $z): array

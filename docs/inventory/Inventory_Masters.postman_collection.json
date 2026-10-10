@@ -60,6 +60,14 @@
         {
             "key": "wh_area_sqft",
             "value": "48000"
+        },
+        {
+            "key": "flag_name",
+            "value": "Cold Chain"
+        },
+        {
+            "key": "purpose",
+            "value": "Requires controlled cold temperature"
         }
     ],
     "auth": {
@@ -1360,10 +1368,10 @@
                                 "product-flags"
                             ]
                         },
-                        "description": "Two flags called 'Fragile' would be indistinguishable on the box form, so the name is unique per client.",
+                        "description": "Two flags called \"Fragile\" would be indistinguishable on the box form, so the name is unique per client (case-insensitive) - a repeat comes back 422.\n\nThe body reads {{flag_name}} / {{purpose}}, so the SAME request seeds all eight in one go: Runner > pick this request only > Data: product-flags.csv > 8 iterations.\n\nNo code is sent - PF-004 is \"PF-\" + the id.",
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"flag_name\": \"Cold Chain\",\n    \"purpose\": \"Requires controlled cold temperature\"\n}"
+                            "raw": "{\n    \"flag_name\": \"{{flag_name}}\",\n    \"purpose\": \"{{purpose}}\"\n}"
                         }
                     },
                     "event": [
@@ -1436,7 +1444,7 @@
                         "description": "",
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"flag_name\": \"Cold Chain\",\n    \"purpose\": \"Requires controlled cold temperature (2–8 °C)\"\n}"
+                            "raw": "{\n    \"flag_name\": \"{{flag_name}}\",\n    \"purpose\": \"{{purpose}} (updated)\"\n}"
                         }
                     }
                 },

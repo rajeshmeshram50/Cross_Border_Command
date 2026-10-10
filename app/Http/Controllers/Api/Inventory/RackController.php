@@ -32,7 +32,8 @@ class RackController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
 
             $f = $request->validate($this->listRules() + [
                 'warehouse_id' => ['nullable', 'integer'],
@@ -41,11 +42,20 @@ class RackController extends BaseInventoryController
                 'hazardous'    => ['nullable', 'integer', 'in:0,1'],
             ]);
 
-            $base = Rack::query();
+            $base = $this->scopeTenant(Rack::query(), $user, $branch);
             if (!empty($f['warehouse_id'])) $base->where('warehouse_id', $f['warehouse_id']);
             if (!empty($f['zone_id']))      $base->where('zone_id', $f['zone_id']);
             if (isset($f['cold_chain']))    $base->where('cold_chain', $f['cold_chain']);
             if (isset($f['hazardous']))     $base->where('hazardous', $f['hazardous']);
+
+            // The dropdown leaves before the tabs, the counts and the paging.
+            if ($this->wantsOptions($request)) {
+                $body = $this->optionsBody($base, 'rack_name', fn (Rack $r) => $this->optionRow($r));
+
+                DB::commit();
+
+                return response()->json($body, 200);
+            }
 
             $tabs = $this->tabCounts(clone $base);
 
@@ -72,48 +82,13 @@ class RackController extends BaseInventoryController
         }
     }
 
-    /** GET /inventory/racks/options?warehouse_id=&zone_id= — the put-away picker. */
+    /**
+     * GET /inventory/racks/options?warehouse_id=&zone_id= - the put-away picker.
+     * Same method as the list; both ids are ordinary filters there.
+     */
     public function options(Request $request)
     {
-        try {
-            DB::beginTransaction();
-
-            $this->tenantUser($request);
-
-            $f = $request->validate([
-                'warehouse_id' => ['nullable', 'integer'],
-                'zone_id'      => ['nullable', 'integer'],
-            ]);
-
-            if (empty($f['warehouse_id']) && empty($f['zone_id'])) {
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => 'Pass warehouse_id or zone_id.',
-                ], 422));
-            }
-
-            $rows = Rack::where('status', 1)
-                ->when(!empty($f['warehouse_id']), fn ($q) => $q->where('warehouse_id', $f['warehouse_id']))
-                ->when(!empty($f['zone_id']), fn ($q) => $q->where('zone_id', $f['zone_id']))
-                ->orderBy('rack_name')
-                ->get(['id', 'zone_id', 'rack_name', 'cold_chain', 'hazardous', 'dim_unit', 'height'])
-                ->map(fn (Rack $r) => [
-                    'id'         => $r->id,
-                    'rack_code'  => $r->rack_code,
-                    'rack_name'  => $r->rack_name,
-                    'zone_id'    => $r->zone_id,
-                    'cold_chain' => (int) $r->cold_chain,
-                    'hazardous'  => (int) $r->hazardous,
-                    'height_cm'  => $r->height_cm,
-                ]);
-
-            DB::commit();
-
-            return response()->json(['status' => true, 'data' => $rows], 200);
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
-        }
+        return $this->index($request->merge(['view' => 'options']));
     }
 
     /** GET /inventory/racks/{id} */
@@ -362,6 +337,20 @@ class RackController extends BaseInventoryController
         }
 
         return [$zone, $area];
+    }
+
+    /** The dropdown shape: enough for the put-away picker to validate a scan. */
+    private function optionRow(Rack $r): array
+    {
+        return [
+            'id'         => $r->id,
+            'rack_code'  => $r->rack_code,
+            'rack_name'  => $r->rack_name,
+            'zone_id'    => $r->zone_id,
+            'cold_chain' => (int) $r->cold_chain,
+            'hazardous'  => (int) $r->hazardous,
+            'height_cm'  => $r->height_cm,
+        ];
     }
 
     private function row(Rack $r): array
