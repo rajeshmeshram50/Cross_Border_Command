@@ -131,7 +131,12 @@
 .ord-list .spi-seg-btn:not(.is-active):hover { color: #0891b2; background: rgba(8, 145, 178, .06); }
 .ord-list .spi-seg-btn.is-active {
   color: #fff;
-  background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  /* Dark to bright, left to right. This read #22d3ee → #0e7490, which is the
+     prototype's three colours in reverse: the tab came out bright on the left
+     and dark on the right, the opposite of the design and of the shared
+     .spi-seg-btn rule this one overrides. Only the painted pixels show it —
+     a computed style reports the stops, never which end they land on. */
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
   box-shadow: 0 6px 16px -5px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
 .ord-list .spi-seg-c {
@@ -1516,6 +1521,9 @@ body:has(.ord-page) .master-select-item.active { background: rgba(8, 145, 178, .
    tabs. It is given the design's breathing space from the row above it, which
    a shared 6px margin did not provide once the two rows were separate. */
 /* Measured: 16px here plus the tab row's own 10px padding put 26px above the
-   sub-tabs against 10px below them — the gap read as loose because it was
-   lopsided, not because it was large. 8px evens it to 18 over 10. */
-.ord-page .spi-sub { margin-top: 8px; margin-bottom: 10px; }
+   sub-tabs against 10px below them. 8px brought that to 18 over 10, which was
+   better but still lopsided and still read as a gap between two rows that
+   belong together. Nothing here: the row above already contributes 10px of
+   its own padding, so the sub-tabs sit 10 under the tabs and 10 over the
+   table — even, and on the page's 8px rhythm rather than twice it. */
+.ord-page .spi-sub { margin-top: 0; margin-bottom: 10px; }

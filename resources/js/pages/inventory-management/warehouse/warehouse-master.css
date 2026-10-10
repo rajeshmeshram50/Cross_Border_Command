@@ -31,6 +31,17 @@
    a row of bare labels, so they stay. */
 .whm-page .ord-list .spi-segrow .spi-seg-ico { display: flex; }
 
+/* The active tab runs dark to bright, left to right. order.css declares the
+   same three colours the other way round, so ours came out bright on the left
+   and dark on the right — sampled, not read off the declaration, because a
+   computed style reports the stops and never which end they land on. 120deg,
+   not 135, so the sweep is flatter across a wide tab. Four classes deep to
+   clear `.ord-list .spi-seg-btn.is-active`. */
+.whm-page .ord-list .spi-segrow .spi-seg-btn.is-active {
+  background: linear-gradient(120deg, #0e7490, #0891b2 55%, #22d3ee);
+  box-shadow: 0 10px 22px -8px rgba(15, 58, 77, .4), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+
 .whm-page .spi-seg-ico {
   width: 28px;
   height: 28px;
