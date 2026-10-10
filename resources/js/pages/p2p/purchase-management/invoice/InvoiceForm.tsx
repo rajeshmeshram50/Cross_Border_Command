@@ -16,7 +16,9 @@ import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
 import { legalFromVault } from '../order/create-po/supplier-checks';
 import { useToast } from '../../../../contexts/ToastContext';
 import { spiApi } from './spi-api';
-import { PRODUCT_LINES, type ProductLine } from './invoice-products';
+import {
+  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor, type ProductLine,
+} from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
 
 const STAGES = [
@@ -29,6 +31,7 @@ const STAGES = [
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 export interface InvoiceFormInput {
+  spiId?: number;
   poId?: number;
   poNo?: string;
   supplier: string;
@@ -46,8 +49,11 @@ export default function InvoiceForm({
   const { draft, set } = useInvoiceDraft({ supplier: input.supplier, poNo: input.poNo });
   const toast = useToast();
 
-  const [poLoading, setPoLoading] = useState(!!input.poId);
+  const [poLoading, setPoLoading] = useState(!!(input.poId || input.spiId));
   const [poError, setPoError] = useState<string | null>(null);
+  const [lines, setLines] = useState<ProductLine[]>(input.poId || input.spiId ? [] : PRODUCT_LINES);
+  const [files, setFiles] = useState<{ invoice_file?: File | null; eway_file?: File | null }>({});
+  const [uploaded, setUploaded] = useState<{ invoice?: string | null; eway?: string | null }>({});
   const [spiId, setSpiId] = useState<number | null>(null);
   const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
   const [saving, setSaving] = useState(false);
@@ -60,16 +66,55 @@ export default function InvoiceForm({
   }, [input.invoiceNo]);
 
   useEffect(() => {
-    if (!input.poId) return;
+    if (!input.poId && !input.spiId) return;
     let live = true;
     setPoLoading(true);
     setPoError(null);
     (async () => {
       try {
-        const po = await poApi.show(input.poId!);
+        const existing = input.spiId ? (await spiApi.show(input.spiId)).invoice : null;
+        const poId = input.poId ?? existing?.purchase_order_id ?? null;
+        if (!live) return;
+        if (existing) {
+          setSpiId(existing.id);
+          setSpiCode(existing.code);
+          setReached(Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1));
+        }
+        if (!poId) {
+          setPoError('This invoice is not linked to a purchase order.');
+          return;
+        }
+        const [po, openLines] = await Promise.all([
+          poApi.show(poId),
+          spiApi.poLines(poId, existing?.id).catch(() => []),
+        ]);
+        const open: Record<number, number> = {};
+        for (const l of openLines) open[l.po_item_id] = l.qty_open;
         const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
         if (!live) return;
         set(draftFromPo(po, sup));
+
+        let rows = linesFromPo(po.items ?? [], open);
+        if (existing) {
+          const saved = new Map(existing.items.filter(i => i.po_item_id != null).map(i => [i.po_item_id!, i]));
+          if (saved.size) {
+            rows = rows.map(l => {
+              const it = l.poItemId != null ? saved.get(l.poItemId) : undefined;
+              return it
+                ? { ...l, spiQty: Number(it.qty_spi) || 0, spiRate: Number(it.rate) || 0, productId: it.product_id, spiItemId: it.id }
+                : { ...l, spiQty: 0 };
+            });
+          }
+          set({
+            invoiceNumber: existing.invoice_no ?? '',
+            ...(existing.invoice_date ? { invoiceDate: existing.invoice_date.slice(0, 10) } : {}),
+            invoiceFile: existing.invoice_file_name ?? '',
+            ewayBillFile: existing.eway_file_name ?? '',
+          });
+          setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
+        }
+        setLines(rows);
+
         if (po.vendor_id) {
           poLookupApi.supplierVault(po.vendor_id)
             .then(v => { if (live) set({ legal: legalFromVault(v) }); })
@@ -79,15 +124,13 @@ export default function InvoiceForm({
         if (!live) return;
         const msg = e instanceof PoApiError ? e.firstError : 'Please try again.';
         setPoError(msg);
-        toast.error('Could not load the purchase order', msg);
+        toast.error(input.spiId ? 'Could not load the invoice' : 'Could not load the purchase order', msg);
       } finally {
         if (live) setPoLoading(false);
       }
     })();
     return () => { live = false; };
-  }, [input.poId, set, toast]);
-
-  const [lines, setLines] = useState<ProductLine[]>(PRODUCT_LINES);
+  }, [input.poId, input.spiId, set, toast]);
 
   const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -129,12 +172,63 @@ export default function InvoiceForm({
     }
   };
 
+  const taxMode = draft.taxMode ?? taxModeFor(draft.country, draft.stateCode, DEFAULT_HOME_STATE_CODE);
+
+  const pickFile = useCallback((kind: 'invoice' | 'eway', file: File) => {
+    setFiles(f => ({ ...f, [`${kind}_file`]: file }));
+    set(kind === 'invoice' ? { invoiceFile: file.name } : { ewayBillFile: file.name });
+  }, [set]);
+
+  const saveStage2 = async () => {
+    if (!spiId) { toast.warning('Save Stage 01 first', 'The invoice has not been created yet.'); return; }
+    const missing = [
+      !draft.invoiceNumber.trim() && 'the purchase invoice number',
+      !draft.invoiceDate && 'the purchase invoice date',
+      !files.invoice_file && !uploaded.invoice && 'the purchase invoice attachment',
+    ].filter(Boolean);
+    if (missing.length) {
+      toast.warning('Fill in the invoice details', `Enter ${missing.join(', ')} before saving.`);
+      return;
+    }
+    const payload = itemsPayload(lines, taxMode);
+    if (payload.items.length === 0) {
+      toast.warning('Nothing to invoice', 'Enter a quantity above zero on at least one product line.');
+      return;
+    }
+    const international = draft.docType === 'International';
+    setSaving(true);
+    try {
+      const res = await spiApi.saveItems(spiId, {
+        ...payload,
+        invoice_no: draft.invoiceNumber.trim(),
+        invoice_date: draft.invoiceDate,
+        ...(international ? { currency_code: draft.currency || null, exchange_rate: draft.exchangeRate || null } : {}),
+      }, files);
+      const saved = [...(res.invoice.items ?? [])].sort((a, b) => a.line_no - b.line_no);
+      let n = 0;
+      const withIds = lines.map(l => (l.spiQty > 0 && l.productId != null
+        ? { ...l, spiItemId: saved[n++]?.id }
+        : { ...l, spiItemId: undefined }));
+      setLines(withIds);
+      setUploaded({ invoice: res.invoice.invoice_file_name, eway: res.invoice.eway_file_name });
+      setFiles({});
+      if (res.warnings?.length) toast.warning('Billed above the order', res.warnings.join(' '));
+      else toast.success('Invoice details saved', `${saved.length} product line${saved.length === 1 ? '' : 's'} matched against ${draft.poNumber || 'the order'}.`);
+      advance();
+    } catch (e) {
+      toast.error('Could not save Stage 02', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const goNext = () => {
     if (stage >= STAGES.length - 1) return;
     if (stage === 0) { void saveStage1(); return; }
+    if (stage === 1) { void saveStage2(); return; }
     advance();
   };
-  const nextBlocked = stage === 0 && (poLoading || saving || !!poError);
+  const nextBlocked = saving || (stage === 0 && (poLoading || !!poError));
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
@@ -201,7 +295,7 @@ export default function InvoiceForm({
               <div className="cpf-stepwrap" hidden={saving}>
                 {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} />}
                 {stage === 1 && (
-                  <Step2InvoiceProducts draft={draft} set={set} lines={lines}
+                  <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile}
                     onChangeLine={changeLine} />
                 )}
                 {stage === 2 && <Step3BoxPackaging draft={draft} lines={lines} />}

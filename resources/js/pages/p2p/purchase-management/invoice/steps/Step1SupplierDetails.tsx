@@ -5,7 +5,8 @@ import {
 } from '../../order/create-po/supplier-checks';
 import { poLookupApi } from '../../order/api/po-api';
 import { legalFromVault } from '../../order/create-po/supplier-checks';
-import { draftFromSupplier } from '../invoice-draft';
+import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
+import { spiApi } from '../spi-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 
 const SupplierEvidenceVaultModal = lazy(() => import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
@@ -128,11 +129,14 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
     if (id === null) return;
     setRefreshing(true);
     try {
-      const fresh = await poLookupApi.supplier(id);
+      const [fresh, scrutinyRows] = await Promise.all([
+        poLookupApi.supplier(id),
+        spiApi.vendorScrutiny(id).catch(() => null),
+      ]);
+      const gst = newestScrutiny(scrutinyRows);
       set({
         ...draftFromSupplier(fresh),
-        scrutinyDate: (fresh.scrutiny ?? '').slice(0, 10) || scrutinyDate,
-        filingDate: (fresh.filing ?? '').slice(0, 10) || filingDate,
+        ...(gst ? draftFromScrutiny(gst) : { scrutinyDate, filingDate }),
       });
       setVault(vaultTargetOf(fresh));
       poLookupApi.supplierVault(id)

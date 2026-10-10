@@ -94,6 +94,7 @@ export default function InvoiceList() {
     if (action === 'vault') { setVaultRow(row); return; }
     if (action === 'edit') {
       setFormFor({
+        spiId: row.apiId,
         poNo: row.poNo,
         supplier: row.supplierName,
         storage: row.warehouseKind === 'third-party'

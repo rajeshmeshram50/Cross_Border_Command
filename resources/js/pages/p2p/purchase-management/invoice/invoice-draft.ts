@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import type { PoDetail, SupplierDetail } from '../order/api/po-api';
 import { DOC_TYPE_OPTIONS, PO_TYPE_OPTIONS } from '../order/create-po/po-draft';
 import { categoryLabel, riskLabel, type LegalView } from '../order/create-po/supplier-checks';
+import type { TaxMode } from './invoice-products';
 
 export interface InvoiceDraft {
   poType: string;
@@ -12,6 +13,9 @@ export interface InvoiceDraft {
   deliveryLocation: string;
   paymentType: string;
   physInspection: boolean;
+  taxMode: TaxMode | null;
+  currency: string;
+  exchangeRate: string;
 
   vendorId: number | null;
   supplierDetail: SupplierDetail | null;
@@ -81,7 +85,40 @@ export function draftFromSupplier(sup: SupplierDetail): Partial<InvoiceDraft> {
   };
 }
 
+export type GstScrutinyRow = {
+  id: number;
+  gst_number: string | null;
+  status: string | null;
+  scrutiny_date: string | null;
+  last_filing_date: string | null;
+  prev_non_gst_2a_invoice: string | null;
+  red_flags: string | null;
+};
+
+type PoWithSupplierDetails = PoDetail & {
+  supplier_details?: { data?: { gst_scrutiny?: GstScrutinyRow[] } } | null;
+};
+
+export function newestScrutiny(rows: GstScrutinyRow[] | null | undefined): GstScrutinyRow | null {
+  return (rows ?? []).reduce<GstScrutinyRow | null>((best, r) => (!best || r.id > best.id ? r : best), null);
+}
+
+export function latestScrutiny(po: PoDetail): GstScrutinyRow | null {
+  return newestScrutiny((po as PoWithSupplierDetails).supplier_details?.data?.gst_scrutiny);
+}
+
+export function draftFromScrutiny(g: GstScrutinyRow): Partial<InvoiceDraft> {
+  return {
+    scrutinyDate: day(g.scrutiny_date),
+    gstNumber: g.gst_number ?? '',
+    gstStatus: g.status ?? '',
+    filingDate: day(g.last_filing_date),
+    remarks: g.prev_non_gst_2a_invoice || g.red_flags || '',
+  };
+}
+
 export function draftFromPo(po: PoDetail, sup: SupplierDetail | null): Partial<InvoiceDraft> {
+  const gst = latestScrutiny(po);
   return {
     poType: PO_TYPE_OPTIONS.find(o => o.key === po.po_type)?.label ?? po.po_type ?? '',
     docType: DOC_TYPE_OPTIONS.find(o => o.key === po.document_type)?.label ?? po.document_type ?? '',
@@ -91,6 +128,9 @@ export function draftFromPo(po: PoDetail, sup: SupplierDetail | null): Partial<I
     deliveryLocation: po.delivery_location ?? '',
     paymentType: po.payment_type ?? '',
     physInspection: po.physical_inspection === 'yes',
+    taxMode: po.document_type === 'international' ? 'export' : (po.tax_mode ?? null),
+    currency: po.currency_code ?? '',
+    exchangeRate: po.exchange_rate ?? '',
 
     vendorId: po.vendor_id,
     poNumber: po.code,
@@ -107,6 +147,7 @@ export function draftFromPo(po: PoDetail, sup: SupplierDetail | null): Partial<I
 
     scrutinyDate: day(po.gst_scrutiny_date ?? sup?.scrutiny),
     filingDate: day(po.gst_last_filing_date ?? sup?.filing),
+    ...(gst ? draftFromScrutiny(gst) : {}),
   };
 }
 
@@ -120,6 +161,9 @@ export function useInvoiceDraft(seed: { supplier: string; poNo?: string }) {
     deliveryLocation: '',
     paymentType: '',
     physInspection: false,
+    taxMode: null,
+    currency: '',
+    exchangeRate: '',
 
     vendorId: null,
     supplierDetail: null,
