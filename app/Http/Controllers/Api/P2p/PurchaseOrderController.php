@@ -4,17 +4,21 @@ namespace App\Http\Controllers\Api\P2p;
 
 use App\Support\FxRate;
 use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
+use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PoGstApproval;
 use App\Models\P2p\PoItemQtyHistory;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\PurchaseOrderDocument;
 use App\Models\P2p\PurchaseOrderItem;
+use App\Models\P2p\SpiActivity;
+use App\Models\P2p\SupplierInvoice;
 use App\Services\P2p\PurchaseOrderService;
 use App\Services\P2p\VendorCurrencyGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -280,7 +284,45 @@ class PurchaseOrderController extends Controller
         $po = $this->findPo($id);
         // So signing_started reflects documents sent from Step 04 and any request Zoho has since declined.
         $this->refreshSigning($po);
-        return $this->ok($this->shapeDetail($po));
+        $out = $this->shapeDetail($po);
+        // The whole supplier record, alongside the short `supplier` block.
+        $out['supplier_details'] = $this->supplierDetails((int) $po->vendor_id);
+
+        return $this->ok($out);
+    }
+
+    /**
+     * The supplier's own single view, embedded in the PO detail.
+     *
+     * Delegated to VendorController::show rather than rebuilt here, so the
+     * shape is the one the vendor screen already renders — address, bank
+     * accounts, GST scrutiny, segments, product mappings and the segment
+     * uploads — and stays that shape when the vendor master changes.
+     *
+     * Only on show(): the write paths return shapeDetail() too, and they do
+     * not need to pay for this.
+     *
+     * Null when the PO has no supplier yet, or when the supplier is soft
+     * deleted — the short `supplier` block reads those, this one does not.
+     */
+    private function supplierDetails(?int $vendorId): ?array
+    {
+        if (!$vendorId) return null;
+
+        try {
+            return json_decode(
+                (new VendorController())->show(request(), $vendorId)->getContent(),
+                true
+            );
+        } catch (\Throwable $e) {
+            // A missing supplier must not take the PO detail down with it.
+            Log::warning('P2P PO: could not embed the supplier detail', [
+                'vendor_id' => $vendorId,
+                'error'     => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /** GET /p2p/orders/{id}/qty-history */
@@ -415,7 +457,10 @@ class PurchaseOrderController extends Controller
             $wasVendor = (int) $po->vendor_id;
             $po->update($attrs);
             if ($taxChanged) $this->retaxItems($po);
-            if ($vendorChanged) $this->currency()->forget((int) $po->client_id, $wasVendor, (int) $po->id);
+            if ($vendorChanged) {
+                $this->currency()->forget((int) $po->client_id, $wasVendor, (int) $po->id);
+                $this->resupplyInvoices($po, $wasVendor);
+            }
             $this->rememberCurrency($po);
         });
 
@@ -440,6 +485,42 @@ class PurchaseOrderController extends Controller
             $po->code,
             $po->currency_code,
         );
+    }
+
+    /**
+     * Move this PO's supplier invoices onto the new supplier.
+     *
+     * The PO reads its supplier live from vendors, so its own detail is right
+     * the moment vendor_id changes. An SPI does not: it copies vendor_id when
+     * it is raised, and nothing re-read it — so the SPI list, its supplier
+     * chip and the per-supplier invoice-number check all stayed on the old
+     * supplier while the PO showed the new one.
+     *
+     * Each move is written to the SPI's own trail, because the change is made
+     * from the PO and would otherwise be invisible on the invoice.
+     */
+    private function resupplyInvoices(PurchaseOrder $po, int $wasVendor): void
+    {
+        $invoices = SupplierInvoice::where('purchase_order_id', $po->id)
+            ->where('vendor_id', $wasVendor)
+            ->get();
+
+        foreach ($invoices as $spi) {
+            $spi->forceFill(['vendor_id' => $po->vendor_id])->save();
+            SpiActivity::create([
+                'client_id'           => $spi->client_id,
+                'branch_id'           => $spi->branch_id,
+                'supplier_invoice_id' => $spi->id,
+                'event'               => 'supplier_changed',
+                'stage'               => $spi->stage_completed,
+                'field'               => 'vendor_id',
+                'old_value'           => (string) $wasVendor,
+                'new_value'           => (string) $po->vendor_id,
+                'note'                => "Supplier changed on {$po->code}.",
+                'performed_by'        => auth()->id(),
+                'performed_at'        => now(),
+            ]);
+        }
     }
 
     /** Validates shipment and supplier against the tenant; returns what Stage 01 derives. */
