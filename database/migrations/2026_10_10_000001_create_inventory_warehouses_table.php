@@ -27,8 +27,8 @@ return new class extends Migration
             $t->decimal('area_sqft', 14, 2)->nullable();
 
             $t->text('address')->nullable();
-            // Names, not geography ids: the state field is free text for every
-            // country except India, so an id could not hold what is typed.
+            // Superseded by 2026_10_10_000006, which moves these onto the
+            // geography masters. Left as it ran — this migration is applied.
             $t->string('country', 100)->nullable();
             $t->string('state', 100)->nullable();
             $t->string('city', 100)->nullable();

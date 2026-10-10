@@ -28,33 +28,59 @@ class WarehouseController extends BaseInventoryController
     /* ══════════════════════════ READ ══════════════════════════ */
 
     /** GET /inventory/warehouses */
+    /**
+     * GET /inventory/warehouses          the grid
+     * GET /inventory/warehouses?view=options   the dropdown
+     *
+     * One method, because the two differ only in what comes out: the filters,
+     * the tenancy and the ordering are the same question asked once.
+     */
     public function index(Request $request)
     {
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
 
             $f = $request->validate($this->listRules() + [
-                'wh_type' => ['nullable', Rule::in(Warehouse::TYPES)],
-                'city'    => ['nullable', 'string', 'max:100'],
-                'state'   => ['nullable', 'string', 'max:100'],
+                'wh_type'    => ['nullable', Rule::in(Warehouse::TYPES)],
+                'city'       => ['nullable', 'string', 'max:100'],
+                'state_id'   => ['nullable', 'integer'],
+                'country_id' => ['nullable', 'integer'],
             ]);
 
-            $base = Warehouse::query();
-            if (!empty($f['wh_type'])) $base->where('wh_type', $f['wh_type']);
-            if (!empty($f['city']))    $base->where('city', $f['city']);
-            if (!empty($f['state']))   $base->where('state', $f['state']);
+            $base = $this->scopeTenant(Warehouse::query(), $user, $branch);
+            if (!empty($f['wh_type']))    $base->where('wh_type', $f['wh_type']);
+            if (!empty($f['city']))       $base->where('city', $f['city']);
+            if (!empty($f['state_id']))   $base->where('state_id', $f['state_id']);
+            if (!empty($f['country_id'])) $base->where('country_id', $f['country_id']);
+
+            // The dropdown wants none of what follows — no tabs, no counts, no
+            // paging — so it leaves before any of it is built.
+            if ($this->wantsOptions($request)) {
+                $body = $this->optionsBody(
+                    $base->with('state:id,name'),
+                    'wh_name',
+                    fn (Warehouse $w) => $this->optionRow($w)
+                );
+
+                DB::commit();
+
+                return response()->json($body, 200);
+            }
 
             $tabs = $this->tabCounts(clone $base);
 
             /* The grid shows how many zones and racks each warehouse holds.
                Subqueries, so a page of ten costs two extra queries, not twenty. */
-            $q = $base->withCount(['zones', 'racks'])->orderByDesc('id');
+            $q = $base->with(['country:id,name', 'state:id,name'])
+                ->withCount(['zones', 'racks'])
+                ->orderByDesc('id');
 
             $this->applyTab($q, $f['tab'] ?? null);
             $this->applySearch($q, $f['q'] ?? null, [
-                'wh_name', 'city', 'state', 'contact_person', 'contact_mobile',
+                'wh_name', 'city', 'state_name', 'contact_person', 'contact_mobile',
             ]);
 
             $body = $this->listBody($q, $request, $tabs, fn (Warehouse $w) => $this->row($w));
@@ -69,36 +95,13 @@ class WarehouseController extends BaseInventoryController
     }
 
     /**
-     * GET /inventory/warehouses/options
-     * The cascading dropdown on the Zone and Rack forms. Active only, and only
-     * the fields those forms display as AUTO.
+     * GET /inventory/warehouses/options — the cascading dropdown on the Zone
+     * and Rack forms. Kept as its own route because the URL reads better from
+     * the frontend; it is the same method underneath.
      */
     public function options(Request $request)
     {
-        try {
-            DB::beginTransaction();
-
-            $this->tenantUser($request);
-
-            $rows = Warehouse::where('status', 1)
-                ->orderBy('wh_name')
-                ->get(['id', 'wh_name', 'wh_type', 'area_sqft', 'city', 'state'])
-                ->map(fn (Warehouse $w) => [
-                    'id'        => $w->id,
-                    'wh_code'   => $w->wh_code,
-                    'wh_name'   => $w->wh_name,
-                    'wh_type'   => $w->wh_type,
-                    'area_sqft' => (float) $w->area_sqft,
-                    'location'  => trim(implode(', ', array_filter([$w->city, $w->state]))),
-                ]);
-
-            DB::commit();
-
-            return response()->json(['status' => true, 'data' => $rows], 200);
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
-        }
+        return $this->index($request->merge(['view' => 'options']));
     }
 
     /** GET /inventory/warehouses/{id} */
@@ -108,7 +111,9 @@ class WarehouseController extends BaseInventoryController
             DB::beginTransaction();
 
             $this->tenantUser($request);
-            $warehouse = Warehouse::withCount(['zones', 'racks'])->findOrFail($id);
+            $warehouse = Warehouse::with(['country:id,name', 'state:id,name'])
+                ->withCount(['zones', 'racks'])
+                ->findOrFail($id);
 
             $body = $this->row($warehouse) + [
                 'free_area_sqft' => $this->svc->freeWarehouseAreaSqft($warehouse),
@@ -243,8 +248,11 @@ class WarehouseController extends BaseInventoryController
             'wh_type'        => ['required', Rule::in(Warehouse::TYPES)],
             'area_sqft'      => ['required', 'numeric', 'min:1'],
             'address'        => ['required', 'string', 'max:1000'],
-            'country'        => ['required', 'string', 'max:100'],
-            'state'          => ['required', 'string', 'max:100'],
+            'country_id'     => ['required', 'integer', Rule::exists('master_countries', 'id')],
+            /* The form offers the States master only for India; every other
+               country takes a typed province. One of the two is required. */
+            'state_id'       => ['nullable', 'required_without:state_name', 'integer', Rule::exists('master_states', 'id')],
+            'state_name'     => ['nullable', 'required_without:state_id', 'string', 'max:100'],
             'city'           => ['required', 'string', 'max:100'],
             // 6 digits in India, longer postal codes elsewhere.
             'pincode'        => ['required', 'string', 'max:20'],
@@ -270,6 +278,20 @@ class WarehouseController extends BaseInventoryController
         return ['card_path' => $path, 'card_name' => $file->getClientOriginalName()];
     }
 
+    /** The dropdown shape: the id, the label, and the fields the Zone and Rack
+     *  forms show as AUTO beside the picker. Nothing else is loaded for it. */
+    private function optionRow(Warehouse $w): array
+    {
+        return [
+            'id'        => $w->id,
+            'wh_code'   => $w->wh_code,
+            'wh_name'   => $w->wh_name,
+            'wh_type'   => $w->wh_type,
+            'area_sqft' => (float) $w->area_sqft,
+            'location'  => trim(implode(', ', array_filter([$w->city, $w->stateLabel()]))),
+        ];
+    }
+
     private function row(Warehouse $w): array
     {
         return [
@@ -280,11 +302,13 @@ class WarehouseController extends BaseInventoryController
             'wh_type_label'  => $w->isOwn() ? 'Own Warehouse' : 'Third Party Warehouse',
             'area_sqft'      => (float) $w->area_sqft,
             'address'        => $w->address,
-            'country'        => $w->country,
-            'state'          => $w->state,
+            'country_id'     => $w->country_id,
+            'country'        => $w->country?->name,
+            'state_id'       => $w->state_id,
+            'state'          => $w->stateLabel(),
             'city'           => $w->city,
             'pincode'        => $w->pincode,
-            'location'       => trim(implode(', ', array_filter([$w->city, $w->state]))),
+            'location'       => trim(implode(', ', array_filter([$w->city, $w->stateLabel()]))),
             'map_url'        => $w->map_url,
             'contact_person' => $w->contact_person,
             'contact_dial'   => $w->contact_dial,

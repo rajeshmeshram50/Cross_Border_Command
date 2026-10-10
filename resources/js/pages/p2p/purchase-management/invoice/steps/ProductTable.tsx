@@ -5,7 +5,8 @@ import { useToast } from '../../../../../contexts/ToastContext';
 import { IcoPencil, IcoPlus } from '../../../icons';
 const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
-import { lineTotals, tableTotals, type ProductLine, type TaxMode } from '../invoice-products';
+import { formatProductCode, lineTotals, tableTotals, type ProductLine, type TaxMode } from '../invoice-products';
+import { spiApi } from '../spi-api';
 
 const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money = (n: number) => `₹${inr.format(n)}`;
@@ -41,6 +42,33 @@ export default function ProductTable({
   const addProduct = useCallback(() => setAdding(true), []);
   const closeProduct = useCallback(() => { setEditing(null); setAdding(false); }, []);
 
+  const refreshProduct = async (productId: number) => {
+    try {
+      const p = await spiApi.product(productId);
+      let touched = 0;
+      lines.forEach((l, i) => {
+        const patch: Partial<ProductLine> = {};
+        if (l.poProductId === productId) {
+          Object.assign(patch, {
+            code: formatProductCode(p.code) || l.code,
+            poName: p.name || l.poName,
+            description: p.description,
+            hsn: p.hsn || l.hsn,
+            gst: p.gst,
+            ...(p.uom ? { uom: p.uom } : {}),
+          });
+        }
+        if (l.productId === productId) patch.spiName = p.name || l.spiName;
+        if (Object.keys(patch).length) { onChange(i, patch); touched++; }
+      });
+      toast.success('Product updated', touched
+        ? `${formatProductCode(p.code)} — ${p.name} refreshed on this invoice.`
+        : 'Saved in the product master.');
+    } catch {
+      toast.error('Could not refresh the product', 'The changes were saved, but this table could not reload them — reopen the invoice to see them.');
+    }
+  };
+
   return (
     <>
       <div className="cpd-legend">
@@ -59,11 +87,13 @@ export default function ProductTable({
               onClose={closeProduct}
               onSaved={(_id, finalised) => {
                 if (!finalised) return;
-                toast.success(
-                  editing != null ? 'Product updated' : 'Product added',
-                  'Saved in the product master.',
-                );
+                const editedId = editing;
                 closeProduct();
+                if (editedId == null) {
+                  toast.success('Product added', 'Saved in the product master.');
+                  return;
+                }
+                void refreshProduct(editedId);
               }}
             />
           </Suspense>
@@ -167,10 +197,10 @@ const Row = memo(function Row({
   return (
     <tr>
       <td className="cpd-c cpd-stick cpd-stick--1">{index + 1}</td>
-      <td className="cpd-prodcell cpd-stick cpd-stick--2">
-        <ProdCell name={line.piName} code={line.code} hsn={line.hsn} gst={line.gst} />
+      <td className="cpd-prodcell cpd-td-left cpd-stick cpd-stick--2">
+        <ProdCell name={line.piName} code={line.piCode ?? line.code} hsn={line.hsn} gst={line.gst} />
       </td>
-      <td className="cpd-prodcell">
+      <td className="cpd-prodcell cpd-td-left">
         <ProdCell name={line.poName} code={line.code} hsn={line.hsn} gst={line.gst} />
       </td>
 

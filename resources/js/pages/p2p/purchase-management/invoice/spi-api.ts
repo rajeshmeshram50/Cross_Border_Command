@@ -138,7 +138,29 @@ export type SpiDetail = {
   };
 };
 
+export type ProductRefresh = {
+  id: number; code: string; name: string; description: string; hsn: string; gst: number; uom: string | null;
+};
+
 export const spiApi = {
+  product: (id: number) =>
+    call('Product detail', () => api.get(`/products/${id}`), (b) => {
+      const d = ((b as { data?: Record<string, unknown> } | null)?.data ?? b ?? {}) as {
+        id: number; product_code?: string; name?: string; description?: string | null;
+        hsn?: { hsn_code?: string } | null; gst_percentage?: { percentage?: string | number } | null;
+        uom?: { short_code?: string; title?: string } | null;
+      };
+      return {
+        id: d.id,
+        code: d.product_code ?? '',
+        name: d.name ?? '',
+        description: d.description ?? '',
+        hsn: d.hsn?.hsn_code ?? '',
+        gst: Number(d.gst_percentage?.percentage ?? 0) || 0,
+        uom: d.uom?.short_code ?? d.uom?.title ?? null,
+      } as ProductRefresh;
+    }),
+
   vendorScrutiny: (vendorId: number) =>
     call('Supplier GST scrutiny', () => api.get(`/vendors/${vendorId}`),
       (b) => ((b as { data?: { gst_scrutiny?: GstScrutinyRow[] } } | null)?.data?.gst_scrutiny ?? [])),

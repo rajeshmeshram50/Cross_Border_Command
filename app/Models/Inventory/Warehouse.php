@@ -5,6 +5,8 @@ namespace App\Models\Inventory;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Concerns\BelongsToTenant;
+use App\Models\Masters\Countries;
+use App\Models\Masters\States;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -33,8 +35,9 @@ class Warehouse extends Model
         'wh_type',
         'area_sqft',
         'address',
-        'country',
-        'state',
+        'country_id',
+        'state_id',
+        'state_name',
         'city',
         'pincode',
         'map_url',
@@ -67,6 +70,24 @@ class Warehouse extends Model
     {
         if (!preg_match('/(\d+)\s*$/', (string) $code, $m)) return null;
         return (int) $m[1];
+    }
+
+    public function country(): BelongsTo
+    {
+        return $this->belongsTo(Countries::class, 'country_id');
+    }
+    public function state(): BelongsTo
+    {
+        return $this->belongsTo(States::class, 'state_id');
+    }
+
+    /**
+     * The master name for India, the typed one for anywhere else — the form
+     * only offers the States master when the country is India.
+     */
+    public function stateLabel(): ?string
+    {
+        return $this->state?->name ?: $this->state_name;
     }
 
     public function client(): BelongsTo

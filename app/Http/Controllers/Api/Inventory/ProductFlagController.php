@@ -21,17 +21,27 @@ class ProductFlagController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $f = $request->validate($this->listRules());
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
+            $f      = $request->validate($this->listRules());
 
-            $base = ProductFlag::query();
+            $base = $this->scopeTenant(ProductFlag::query(), $user, $branch);
             $tabs = $this->tabCounts(clone $base);
+
+            // The dropdown leaves before the tabs, the counts and the paging.
+            if ($this->wantsOptions($request)) {
+                $body = $this->optionsBody($base, 'flag_name', fn (ProductFlag $p) => $this->optionRow($p));
+
+                DB::commit();
+
+                return response()->json($body, 200);
+            }
 
             $q = $base->orderByDesc('id');
             $this->applyTab($q, $f['tab'] ?? null);
             $this->applySearch($q, $f['q'] ?? null, ['flag_name', 'purpose']);
 
-            $body = $this->listBody($q, $request, $tabs, fn (ProductFlag $p) => $this->row($p));
+            $body = $this->listBody($q, $request, $tabs, fn(ProductFlag $p) => $this->row($p));
 
             DB::commit();
 
@@ -42,31 +52,13 @@ class ProductFlagController extends BaseInventoryController
         }
     }
 
-    /** GET /inventory/product-flags/options — the picker on the box-item form. */
+    /**
+     * GET /inventory/product-flags/options - the picker on the SPI box-item
+     * form. Same method as the list, in the dropdown shape.
+     */
     public function options(Request $request)
     {
-        try {
-            DB::beginTransaction();
-
-            $this->tenantUser($request);
-
-            $rows = ProductFlag::where('status', 1)
-                ->orderBy('flag_name')
-                ->get(['id', 'flag_name', 'purpose'])
-                ->map(fn (ProductFlag $p) => [
-                    'id'        => $p->id,
-                    'flag_code' => $p->flag_code,
-                    'flag_name' => $p->flag_name,
-                    'purpose'   => $p->purpose,
-                ]);
-
-            DB::commit();
-
-            return response()->json(['status' => true, 'data' => $rows], 200);
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
-        }
+        return $this->index($request->merge(['view' => 'options']));
     }
 
     /** GET /inventory/product-flags/{id} */
@@ -75,8 +67,9 @@ class ProductFlagController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $flag = ProductFlag::findOrFail($id);
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
+            $flag = $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id);
 
             DB::commit();
 
@@ -93,17 +86,18 @@ class ProductFlagController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $user = $this->tenantUser($request);
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
             $data = $request->validate($this->rules());
 
-            if ($this->nameTaken($data['flag_name'], null)) {
+            if ($this->nameTaken($user, $branch, $data['flag_name'], null)) {
                 abort(response()->json([
                     'status'  => false,
                     'message' => 'A product flag with this name already exists.',
                 ], 422));
             }
 
-            $flag = new ProductFlag($data);
+            $flag = new ProductFlag($data + $this->tenantColumns($user, $branch));
             $flag->created_by = $user->id;
             $flag->save();
 
@@ -122,11 +116,12 @@ class ProductFlagController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $user = $this->tenantUser($request);
-            $flag = ProductFlag::findOrFail($id);
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
+            $flag = $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id);
             $data = $request->validate($this->rules());
 
-            if ($this->nameTaken($data['flag_name'], $flag->id)) {
+            if ($this->nameTaken($user, $branch, $data['flag_name'], $flag->id)) {
                 abort(response()->json([
                     'status'  => false,
                     'message' => 'A product flag with this name already exists.',
@@ -152,8 +147,9 @@ class ProductFlagController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $user = $this->tenantUser($request);
-            $flag = ProductFlag::findOrFail($id);
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
+            $flag = $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id);
             $data = $request->validate(['status' => ['required', 'integer', 'in:0,1']]);
 
             $flag->forceFill(['status' => $data['status'], 'updated_by' => $user->id])->save();
@@ -173,8 +169,9 @@ class ProductFlagController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            ProductFlag::findOrFail($id)->delete();
+            $user   = $this->tenantUser($request);
+            $branch = $this->branchScope($request, $user);
+            $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id)->delete();
 
             DB::commit();
 
@@ -196,12 +193,27 @@ class ProductFlagController extends BaseInventoryController
         ];
     }
 
-    /** Two flags called "Fragile" would be indistinguishable on the box form. */
-    private function nameTaken(string $name, ?int $exceptId): bool
+    /**
+     * Two flags called "Fragile" would be indistinguishable on the box form.
+     * Asked within the branch only: another branch having the name is no
+     * clash, because the two never appear on the same picker.
+     */
+    private function nameTaken($user, ?int $branchId, string $name, ?int $exceptId): bool
     {
-        return ProductFlag::where('flag_name', 'ilike', $name)
-            ->when($exceptId, fn ($q) => $q->where('id', '!=', $exceptId))
+        return $this->scopeTenant(ProductFlag::query(), $user, $branchId)->where('flag_name', 'ilike', $name)
+            ->when($exceptId, fn($q) => $q->where('id', '!=', $exceptId))
             ->exists();
+    }
+
+    /** The dropdown shape: the label and why it exists, nothing more. */
+    private function optionRow(ProductFlag $p): array
+    {
+        return [
+            'id'        => $p->id,
+            'flag_code' => $p->flag_code,
+            'flag_name' => $p->flag_name,
+            'purpose'   => $p->purpose,
+        ];
     }
 
     private function row(ProductFlag $p): array

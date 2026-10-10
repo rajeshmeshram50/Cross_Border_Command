@@ -1,6 +1,8 @@
 import type { PoItem } from '../order/api/po-api';
 export interface ProductLine {
   key?: string;
+  piCode?: string;
+  poProductId?: number;
   poItemId?: number;
   piItemId?: number | null;
   spiItemId?: number;
@@ -133,6 +135,18 @@ const num = (v: string | number | null | undefined) => {
   return Number.isFinite(n) ? n : 0;
 };
 
+export function formatProductCode(code: string | null | undefined): string {
+  const raw = (code ?? '').trim();
+  const m = /^([A-Za-z]+)-?(\d+)$/.exec(raw);
+  return m ? `${m[1].toUpperCase()}-${m[2].padStart(3, '0')}` : raw;
+}
+
+const withoutCodePrefix = (name: string, code: string | null | undefined) => {
+  if (!code) return name;
+  const esc = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return name.replace(new RegExp(`^\\s*${esc}\\s*[–—-]\\s*`), '') || name;
+};
+
 export function linesFromPo(items: PoItem[], open: Record<number, number>): ProductLine[] {
   return items.map(it => {
     const poQty = num(it.quantity);
@@ -144,10 +158,14 @@ export function linesFromPo(items: PoItem[], open: Record<number, number>): Prod
       poItemId: it.id,
       piItemId: it.pi_item_id,
       productId: it.product_id ?? undefined,
+      poProductId: it.product_id ?? undefined,
       uom: it.uom ?? undefined,
-      code: it.product_code ?? `L-${it.line_no}`,
+      code: formatProductCode(it.product_code) || `L-${it.line_no}`,
+      piCode: it.pi_product_code ? formatProductCode(it.pi_product_code) : undefined,
       hsn: it.hsn_code ?? '—',
-      piName: it.pi_product_name ?? (it.pi_item_id ? name : '—'),
+      piName: it.pi_product_name
+        ? withoutCodePrefix(it.pi_product_name, it.pi_product_code)
+        : (it.pi_item_id ? name : '—'),
       poName: name,
       spiName: name,
       description: it.description ?? '',
