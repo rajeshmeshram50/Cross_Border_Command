@@ -1,6 +1,6 @@
 import { memo, useCallback, useState } from 'react';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
-import { IcoPencil, IcoPlus, IcoTrash } from '../../../icons';
+import { IcoPencil, IcoPlus } from '../../../icons';
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
 import { lineTotals, tableTotals, PRODUCT_CATALOGUE, type ProductLine, type TaxMode } from '../invoice-products';
 
@@ -22,11 +22,11 @@ const money = (n: number) => `₹${inr.format(n)}`;
  * the missing / extra pills and the row delete.
  */
 export default function ProductTable({
-  lines, onChange, onRemove, taxMode = 'intra',
+  lines, onChange, taxMode = 'intra',
 }: {
   lines: ProductLine[];
   onChange: (index: number, patch: Partial<ProductLine>) => void;
-  onRemove: (index: number) => void;
+
   /** How this supplier's GST splits — see `taxModeFor`. */
   taxMode?: TaxMode;
 }) {
@@ -73,7 +73,6 @@ export default function ProductTable({
                   one column inter-state and two intra, so the band has to
                   count them rather than assume. */}
               <th colSpan={4 + 2 * (inter ? 1 : 2)}>Supplier Invoice (SPI)</th>
-              <th rowSpan={2}>Action</th>
             </tr>
             <tr>
               <th className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>
@@ -107,7 +106,7 @@ export default function ProductTable({
             {lines.map((line, i) => (
               <Row
                 key={line.code} line={line} index={i}
-                onChange={onChange} onRemove={onRemove} taxMode={taxMode}
+                onChange={onChange} taxMode={taxMode}
                 /* A setState function keeps the same identity for the life of
                    the table, so passing it straight through leaves the rows'
                    memoisation intact. */
@@ -138,7 +137,6 @@ export default function ProductTable({
                     <td className="cpd-r">{money(totals.sgst)}</td></>}
                 <td className="cpd-r">{money(totals.gstAmount)}</td>
                 <td className="cpd-r cpd-foot-final">{money(totals.cost)}</td>
-                <td />
               </tr>
             </tfoot>
           )}
@@ -155,12 +153,12 @@ export default function ProductTable({
  * this each of those keystrokes would re-render every other row too.
  */
 const Row = memo(function Row({
-  line, index, onChange, onRemove, onOpenDetail, taxMode,
+  line, index, onChange, onOpenDetail, taxMode,
 }: {
   line: ProductLine;
   index: number;
   onChange: (index: number, patch: Partial<ProductLine>) => void;
-  onRemove: (index: number) => void;
+
   onOpenDetail: (productId: number) => void;
   taxMode: TaxMode;
 }) {
@@ -258,13 +256,6 @@ const Row = memo(function Row({
         : <><td className="cpd-r">{money(t.cgst)}</td><td className="cpd-r">{money(t.sgst)}</td></>}
       <td className="cpd-r">{money(t.gstAmount)}</td>
       <td className="cpd-r">{money(t.cost)}</td>
-
-      <td className="cpd-c">
-        <button type="button" className="spi-delrow" title="Remove this line"
-          onClick={() => onRemove(index)}>
-          <IcoTrash />
-        </button>
-      </td>
     </tr>
   );
 });

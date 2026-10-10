@@ -1,0 +1,382 @@
+/* ── Evidence Vault (invoice row) ─────────────────────────────────────────
+   Its own shell rather than `.spi-mdl`: that one rings every P2P modal in a
+   1.5px white edge, which this design does not have. */
+
+.iev-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(5, 18, 32, .62);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  animation: iev-fade .2s ease both;
+}
+
+@keyframes iev-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes iev-up { from { opacity: 0; transform: translateY(18px) scale(.97); } to { opacity: 1; transform: none; } }
+
+.iev-card {
+  width: min(820px, 100%);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 40px 100px rgba(6, 182, 212, .26), 0 10px 30px rgba(0, 0, 0, .2);
+  animation: iev-up .3s cubic-bezier(.16, 1, .3, 1) both;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.iev-card:focus { outline: none; }
+
+[data-bs-theme="dark"] .iev-card {
+  background: #0b1623;
+  box-shadow: 0 40px 100px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .34);
+}
+
+/* ── Head ─────────────────────────────────────────────────────────────── */
+
+.iev-head {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 15px 20px;
+  background: linear-gradient(108deg, #0a5f75 0%, #0891b2 48%, #06b6d4 78%, #22c9e5 100%);
+}
+
+.iev-head::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), transparent);
+}
+
+.iev-head > * { position: relative; z-index: 1; }
+
+.iev-head__ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, .18);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .3);
+}
+
+.iev-head__ico svg { width: 19px; height: 19px; }
+
+.iev-head__txt { flex: 1; min-width: 0; }
+
+.iev-head__t {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.3px;
+  line-height: 1.2;
+  color: #fff;
+}
+
+.iev-head__s {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, .84);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iev-head__x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #fff;
+  background: rgba(255, 255, 255, .18);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .28);
+  transition: background .14s;
+}
+
+.iev-head__x:hover { background: rgba(255, 255, 255, .3); }
+.iev-head__x svg { width: 15px; height: 15px; }
+
+/* ── Body ─────────────────────────────────────────────────────────────── */
+
+.iev-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: linear-gradient(180deg, #f4fbfe, #fff);
+}
+
+/* A column flex item shrinks by default; without this the groups squash
+   instead of the body scrolling. */
+.iev-body > * { flex-shrink: 0; }
+
+[data-bs-theme="dark"] .iev-body {
+  background: linear-gradient(180deg, #0b1623, #0e1b2a);
+}
+
+.iev-grp {
+  border: 1px solid #dcecf3;
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(8, 145, 178, .05);
+}
+
+[data-bs-theme="dark"] .iev-grp {
+  border-color: rgba(34, 211, 238, .18);
+  background: #0f1d2b;
+  box-shadow: none;
+}
+
+.iev-grp__hd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+}
+
+.iev-grp__ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  box-shadow: 0 3px 9px rgba(8, 145, 178, .3);
+}
+
+.iev-grp__ico svg { width: 17px; height: 17px; }
+
+.iev-grp__txt { flex: 1; min-width: 0; }
+
+.iev-grp__t {
+  font-size: 14.5px;
+  font-weight: 800;
+  letter-spacing: -.2px;
+  color: #123542;
+}
+
+[data-bs-theme="dark"] .iev-grp__t { color: #e8f2f6; }
+
+.iev-grp__s {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #5f8090;
+}
+
+[data-bs-theme="dark"] .iev-grp__s { color: #8fb2c2; }
+
+/* The count sits in the corner, quiet — it labels the group, it is not a
+   figure anyone reads on its own. */
+.iev-grp__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0 7px;
+  border: 1px solid #c2e3ee;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #0891b2;
+  background: #fff;
+}
+
+[data-bs-theme="dark"] .iev-grp__n {
+  color: #a5f3fc;
+  border-color: rgba(6, 182, 212, .32);
+  background: rgba(6, 182, 212, .14);
+}
+
+/* ── A document ───────────────────────────────────────────────────────── */
+
+.iev-doc {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 12px 12px;
+  padding: 11px 13px;
+  border: 1px solid #e8f2f7;
+  border-radius: 13px;
+  background: #fbfeff;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.iev-doc:hover {
+  border-color: #b9e2ef;
+  box-shadow: 0 4px 14px rgba(8, 145, 178, .1);
+}
+
+[data-bs-theme="dark"] .iev-doc {
+  border-color: rgba(34, 211, 238, .14);
+  background: rgba(255, 255, 255, .03);
+}
+
+[data-bs-theme="dark"] .iev-doc:hover {
+  border-color: rgba(34, 211, 238, .3);
+  box-shadow: none;
+}
+
+/* Red, because that is what a PDF is everywhere else. */
+.iev-doc__ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: #fff;
+  background: linear-gradient(135deg, #fb7185, #e11d48);
+  box-shadow: 0 3px 9px rgba(225, 29, 72, .28);
+}
+
+.iev-doc__txt { flex: 1; min-width: 0; }
+
+.iev-doc__name {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -.1px;
+  color: #123542;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-bs-theme="dark"] .iev-doc__name { color: #e8f2f6; }
+
+.iev-doc__meta {
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #7c93a4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-bs-theme="dark"] .iev-doc__meta { color: #8aa8b8; }
+
+.iev-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: #fff;
+  transition: transform .14s, box-shadow .14s, filter .14s;
+}
+
+.iev-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.iev-btn--view { background: linear-gradient(135deg, #22d3ee, #0891b2); box-shadow: 0 3px 10px rgba(8, 145, 178, .3); }
+.iev-btn--dl { background: linear-gradient(135deg, #1e4a63, #0f2e40); box-shadow: 0 3px 10px rgba(15, 46, 64, .32); }
+
+.iev-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+
+/* Flat and muted rather than faded: fading a gradient dims the label with
+   the fill, and the word stops separating from its own button. */
+.iev-btn:disabled {
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  color: #5f7d8d;
+  background: #eef3f7;
+}
+
+[data-bs-theme="dark"] .iev-btn:disabled {
+  color: #6f8c9c;
+  background: rgba(255, 255, 255, .06);
+}
+
+/* ── Foot ─────────────────────────────────────────────────────────────── */
+
+.iev-foot {
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  padding: 13px 20px;
+  border-top: 1px solid #e6eef2;
+  background: #fafcfe;
+}
+
+[data-bs-theme="dark"] .iev-foot {
+  border-top-color: rgba(34, 211, 238, .18);
+  background: #0f1c26;
+}
+
+.iev-close {
+  height: 38px;
+  padding: 0 26px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  color: #475569;
+  background: #fff;
+  transition: background .14s, border-color .14s;
+}
+
+.iev-close:hover { background: #f8fafc; border-color: #cbd5e1; }
+
+[data-bs-theme="dark"] .iev-close {
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, .05);
+  border-color: rgba(255, 255, 255, .12);
+}
+
+[data-bs-theme="dark"] .iev-close:hover { background: rgba(255, 255, 255, .1); }
+
+/* ── Phone ────────────────────────────────────────────────────────────── */
+
+@media (max-width: 700px) {
+  .iev-backdrop { padding: 12px; }
+  .iev-doc { flex-wrap: wrap; row-gap: 10px; }
+  .iev-doc__txt { flex: 1 1 100%; order: -1; }
+  .iev-btn { flex: 1 1 auto; justify-content: center; }
+}

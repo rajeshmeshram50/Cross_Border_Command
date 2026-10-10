@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, type RefObject } from 'react';
 import { formatDmy } from '../../../../utils/formatDmy';
 import { INVOICE_COLUMNS, INVOICE_TABLE_WIDTH } from './columns';
 import { invoiceBalance, type InvoiceRow } from './types';
@@ -37,11 +37,23 @@ interface InvoiceTableProps {
    * keystroke. The memoisation and this requirement are one decision.
    */
   onAction: (action: InvoiceAction, row: InvoiceRow) => void;
+  /**
+   * How many rows came before this page, so the serial number counts on from
+   * the previous one instead of restarting at 1. The PO list numbers its own
+   * pages the same way.
+   */
+  startSr?: number;
+  /**
+   * The scroll box, handed up to the page so `useFitPageSize` can measure it.
+   * A ref object keeps the same identity for the life of the page, so passing
+   * it through costs the row memoisation nothing.
+   */
+  scrollRef?: RefObject<HTMLDivElement | null>;
 }
 
-function InvoiceTableBase({ rows, onAction }: InvoiceTableProps) {
+function InvoiceTableBase({ rows, onAction, startSr = 0, scrollRef }: InvoiceTableProps) {
   return (
-    <div className="ord-table-scroll">
+    <div className="ord-table-scroll" ref={scrollRef}>
       {/* `table-layout: fixed` + an explicit width + a colgroup is the whole
           trick behind a 22-column table that does not reflow. The browser lays
           it out from the colgroup alone, without measuring any cell, so one
@@ -76,7 +88,7 @@ function InvoiceTableBase({ rows, onAction }: InvoiceTableProps) {
         ) : (
           rows.map((row, i) => (
             <tbody key={row.id}>
-              <InvoiceTableRow row={row} index={i} onAction={onAction} />
+              <InvoiceTableRow row={row} index={startSr + i} onAction={onAction} />
             </tbody>
           ))
         )}

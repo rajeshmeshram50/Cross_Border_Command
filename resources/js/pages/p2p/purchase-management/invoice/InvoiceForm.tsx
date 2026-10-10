@@ -88,9 +88,6 @@ export default function InvoiceForm({
   const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }, []);
-  const removeLine = useCallback((index: number) => {
-    setLines(ls => ls.filter((_, i) => i !== index));
-  }, []);
 
   const [stage, setStage] = useState(0);
   /* The furthest step reached. The stepper is clickable backwards but not
@@ -183,7 +180,7 @@ export default function InvoiceForm({
           {stage === 0 && <Step1SupplierDetails draft={draft} set={set} />}
           {stage === 1 && (
             <Step2InvoiceProducts draft={draft} set={set} lines={lines}
-              onChangeLine={changeLine} onRemoveLine={removeLine} />
+              onChangeLine={changeLine} />
           )}
           {stage === 2 && <Step3BoxPackaging draft={draft} lines={lines} />}
         </div>

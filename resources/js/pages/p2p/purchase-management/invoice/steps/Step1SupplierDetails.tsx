@@ -1,16 +1,29 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { EditSelect, Field } from '../../order/create-po/form-fields';
 /* The compliance rules themselves, shared with the Create PO form. This step
    calls them rather than restating them, so the two screens cannot drift apart
    on what "stale scrutiny" or "high risk" means. */
 import {
-  SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, type Severity,
+  SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
+import { poLookupApi } from '../../order/api/po-api';
+import { useToast } from '../../../../../contexts/ToastContext';
+
+/* The supplier's Evidence Vault, the same one the purchase order opens. Lazy:
+   it is a large screen that most visits to this form never ask for. */
+const SupplierEvidenceVaultModal = lazy(() => import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
+const warmVault = () => { void import('../../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'); };
+
+/* Onboarding a new supplier and editing an existing one are the same screen:
+   `vendorId` is what switches it from one to the other. The purchase order
+   reaches the master the same way. */
+const AddSupplierFlow = lazy(() => import('../../order/create-po/AddSupplierFlow'));
+const warmSupplierFlow = () => { void import('../../order/create-po/AddSupplierFlow'); };
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { formatDmy } from '../../../../../utils/formatDmy';
 import {
   IcoAlert, IcoCheck, IcoChevron, IcoClock, IcoDocSm, IcoFile, IcoLock, IcoOk, IcoPin,
-  IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn,
+  IcoPencil, IcoPlus, IcoShield, IcoStop, IcoUser, IcoWarn,
 } from '../../../icons';
 import { SUPPLIER_LEGAL } from '../data';
 import type { InvoiceDraft, SetDraft } from '../invoice-draft';
@@ -75,7 +88,7 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
      the same length it was when each one was its own useState. */
   const {
     poType, docType, transport, poDate, deliveryDate, deliveryLocation, paymentType,
-    physInspection, poNumber, supplier, legalName, supplierType, riskLevel, category,
+    physInspection, poNumber, supplier, supplierCode, legalName, supplierType, riskLevel, category,
     address, country, state, stateCode, city, contactName, designation, contactNumber, email,
     scrutinyDate, gstNumber, gstStatus, filingDate, remarks,
   } = draft;
@@ -87,6 +100,76 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
   /* Linked to a purchase order: the order's own terms are read back here, not
      asked for again. A standalone invoice has none, so the block stays open. */
   const hasPo = !!poNumber;
+
+  /* This form knows its supplier by name — it is handed one, it does not pick
+     one — so anything that needs the master's own record has to find it first.
+     Both the Evidence Vault and Edit go through here, and the answer is kept,
+     so the second of them costs nothing. Resolved on the click rather than on
+     mount: a request for a screen most visits never open is a poor trade. */
+  const toast = useToast();
+  const [vendorId, setVendorId] = useState<number | null>(null);
+  const [vault, setVault] = useState<ReturnType<typeof vaultTargetOf> | null>(null);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  /* Which button is waiting on the lookup, so only that one says so. */
+  const [busy, setBusy] = useState<'vault' | 'edit' | null>(null);
+
+  /**
+   * The master's id for this invoice's supplier, or null when it has none.
+   *
+   * Matched on the NAME, and on the code only to tell two identical names
+   * apart. Not code-first, which is what this did at first: the invoice's
+   * supplier code is a placeholder until the list is served by the API, and
+   * 'S-001' happens to be a real code in the master — so a code-first match
+   * resolved to a different supplier entirely and looked like it had worked.
+   * There is deliberately no fallback: the wrong supplier is worse than none.
+   */
+  const resolveVendorId = async (purpose: string): Promise<number | null> => {
+    if (vendorId !== null) return vendorId;
+    const list = await poLookupApi.suppliers();
+    const name = supplier.trim().toLowerCase();
+    const byName = list.filter(s => s.name.trim().toLowerCase() === name);
+    const hit = byName.length > 1
+      ? byName.find(s => s.code?.toLowerCase() === supplierCode.trim().toLowerCase()) ?? byName[0]
+      : byName[0];
+    if (!hit) {
+      toast.info('Supplier not in the master', `${supplier} could not be found, so ${purpose} cannot be opened.`);
+      return null;
+    }
+    setVendorId(hit.id);
+    return hit.id;
+  };
+
+  const openVault = async () => {
+    if (vault) { setVaultOpen(true); return; }
+    if (busy) return;
+    setBusy('vault');
+    try {
+      const id = await resolveVendorId('its Evidence Vault');
+      if (id === null) return;
+      setVault(vaultTargetOf(await poLookupApi.supplier(id)));
+      setVaultOpen(true);
+    } catch {
+      toast.error('Could not open the Evidence Vault', 'The supplier could not be loaded — please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /* Edit needs only the id — the master screen loads the rest itself. */
+  const openEdit = async () => {
+    if (busy) return;
+    setBusy('edit');
+    try {
+      const id = await resolveVendorId('the supplier master');
+      if (id !== null) setEditOpen(true);
+    } catch {
+      toast.error('Could not open the supplier', 'The supplier could not be loaded — please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   /* Read from the supplier's Evidence Vault. Same thresholds the PO form uses,
      so the two cards cannot disagree about what counts as compliant. */
@@ -125,6 +208,27 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
 
   return (
     <>
+      {/* Not view-only: a missing document can be uploaded from here, which is
+          the point of reaching the vault from an invoice at all. */}
+      {vaultOpen && vault && (
+        <Suspense fallback={null}>
+          <SupplierEvidenceVaultModal open supplier={vault} onClose={() => setVaultOpen(false)} />
+        </Suspense>
+      )}
+
+      {/* The same screen twice: with an id it edits that supplier, without one
+          it onboards a new one. */}
+      {editOpen && vendorId !== null && (
+        <Suspense fallback={null}>
+          <AddSupplierFlow vendorId={vendorId} onClose={() => setEditOpen(false)} />
+        </Suspense>
+      )}
+      {adding && (
+        <Suspense fallback={null}>
+          <AddSupplierFlow onClose={() => setAdding(false)} />
+        </Suspense>
+      )}
+
       {/* ── Purchase Order ─────────────────────────────────────────────── */}
       <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head" onClick={() => setPoOpen(o => !o)}>
@@ -218,7 +322,8 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
               {/* stopPropagation, or opening the master would also collapse the
                   card the button sits in. */}
               <button type="button" className="cpf-addbtn" title="Onboard a supplier that is not in this list"
-                onClick={e => e.stopPropagation()}>
+                onPointerEnter={warmSupplierFlow}
+                onClick={e => { e.stopPropagation(); setAdding(true); }}>
                 <IcoPlus /> Add Supplier
               </button>
               <span className="spi-dt-fields-badge cpf-push">5 FIELDS</span>
@@ -227,20 +332,40 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
             {supCardOpen && (
               <div className="spi-dt-grid4 cpf-grid5">
                 <Field label="SELECT SUPPLIER" req>
-                  {/* Frozen once chosen, as on the purchase order. The list
-                      only ever holds the supplier already on the invoice, so
-                      an open picker offered a choice that did not exist; the
-                      footer's Change Selection is how it is swapped. */}
-                  {hasSupplier ? (
-                    <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
-                  ) : (
-                    <MasterSelect
-                      value={supplier}
-                      options={[{ value: supplier, label: supplier }]}
-                      placeholder="— Select Supplier —"
-                      onChange={v => set({ supplier: v })}
-                    />
-                  )}
+                  {/* The select and its edit button share a row — `.cpf-supsel`
+                      is the purchase order's own wrapper for exactly this. */}
+                  <div className="cpf-supsel">
+                    {/* Frozen once chosen, as on the purchase order. The list
+                        only ever holds the supplier already on the invoice, so
+                        an open picker offered a choice that did not exist; the
+                        footer's Change Selection is how it is swapped. */}
+                    {hasSupplier ? (
+                      <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
+                    ) : (
+                      <MasterSelect
+                        value={supplier}
+                        options={[{ value: supplier, label: supplier }]}
+                        placeholder="— Select Supplier —"
+                        onChange={v => set({ supplier: v })}
+                      />
+                    )}
+                    {/* Opens this supplier in the master. Only once there is a
+                        supplier to open — on a blank form it would have
+                        nothing to edit. */}
+                    {hasSupplier && (
+                      <button
+                        type="button"
+                        className="cpf-supedit"
+                        title={`Edit ${supplier} in the Supplier master`}
+                        aria-label="Edit supplier"
+                        disabled={busy === 'edit'}
+                        onPointerEnter={warmSupplierFlow}
+                        onClick={() => void openEdit()}
+                      >
+                        <IcoPencil />
+                      </button>
+                    )}
+                  </div>
                 </Field>
                 <Field label="COMPANY LEGAL NAME">
                   <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Registered legal entity name"} readOnly={hasSupplier}
@@ -321,8 +446,16 @@ export default function Step1SupplierDetails({ draft, set }: { draft: InvoiceDra
                   <span className={`cpf-push spi-dt-legal-badge ${legal.pct === 100 ? 'ok' : 'warn'}`}>
                     {legal.pct === 100 ? '100% Compliant' : `${legal.pct}% · Needs Review`}
                   </span>
-                  <button type="button" className="cpf-vault" onClick={e => e.stopPropagation()}>
-                    <IcoShield /> <span>Visit Supplier Evidence Vault</span>
+                  <button
+                    type="button"
+                    className="cpf-vault"
+                    /* stopPropagation because the whole head toggles the card. */
+                    onClick={e => { e.stopPropagation(); void openVault(); }}
+                    onPointerEnter={warmVault}
+                    disabled={busy === 'vault'}
+                    title={`Open ${supplier}'s Evidence Vault`}
+                  >
+                    <IcoShield /> <span>{busy === 'vault' ? 'Opening…' : 'Visit Supplier Evidence Vault'}</span>
                   </button>
                   <span className="cpf-lgbar">
                     <span className={`cpf-lgbar__fill cpf-fill-${legalTone}`} style={{ width: `${legal.pct}%` }} />

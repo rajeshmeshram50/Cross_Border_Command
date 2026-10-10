@@ -31,7 +31,7 @@ const ICON_PICK_CAMERA = (
  * attachments, then the PI vs PO vs SPI product table.
  */
 export default function Step2InvoiceProducts({
-  draft, set, lines, onChangeLine, onRemoveLine,
+  draft, set, lines, onChangeLine,
 }: {
   draft: InvoiceDraft;
   set: SetDraft;
@@ -39,7 +39,7 @@ export default function Step2InvoiceProducts({
      list into boxes, so neither step can be the one that owns it. */
   lines: ProductLine[];
   onChangeLine: (index: number, patch: Partial<ProductLine>) => void;
-  onRemoveLine: (index: number) => void;
+
 }) {
   const [invOpen, setInvOpen] = useState(true);
   const [prodOpen, setProdOpen] = useState(true);
@@ -126,7 +126,7 @@ export default function Step2InvoiceProducts({
 
         <div className="spi-dt-sec-body">
           {/* The footer's "Save & Next" is the only save on this step. */}
-          <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} />
+          <ProductTable lines={lines} onChange={onChangeLine} taxMode={taxMode} />
         </div>
       </div>
     </>

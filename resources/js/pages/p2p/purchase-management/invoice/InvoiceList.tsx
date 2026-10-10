@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useCallback, useMemo, useDeferredValue } from 'react';
+import { lazy, Suspense, useState, useCallback, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import type { ReactNode } from 'react';
 /* The P2P stylesheets, and NOTHING of our own.
    `p2p-common.css` carries the page chrome every P2P screen shares — the teal
@@ -11,13 +11,20 @@ import '../order/po-list/order.css';
 import { INVOICE_STEPS } from './steps';
 import { INVOICE_ROWS, NEXT_INVOICE_NO, STORAGE_WAREHOUSES } from './data';
 import { InvoiceTable } from './InvoiceTable';
+import WorklistPager from '../../../../components/ui/WorklistPager';
+import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import MapInvoiceModal, { type InvoiceMapChoice } from './MapInvoiceModal';
 import InvoicePaymentsModal from './InvoicePaymentsModal';
 const PutawaySummary = lazy(() => import('./PutawaySummary'));
+/* The row's document vault — lazy, and it carries a stylesheet of its own. */
+const InvoiceEvidenceVault = lazy(() => import('./InvoiceEvidenceVault'));
 import StorageSelectionModal, { type StorageChoice } from './StorageSelectionModal';
 import InvoiceForm, { type InvoiceFormInput } from './InvoiceForm';
 import type { InvoiceAction } from './cells/RowActions';
 import type { InvoiceRow, InvoiceScope, InvoiceShipmentScope } from './types';
+
+/* The sizes the PO list offers, so the two footers read the same. */
+const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 /**
  * Invoice (Supplier Purchase Invoice) — the list page.
@@ -113,10 +120,13 @@ export default function InvoiceList() {
   /* The row whose putaway summary is open. Same shape as above, and separate
      from it so the two screens can never both be up. */
   const [summaryRow, setSummaryRow] = useState<InvoiceRow | null>(null);
+  /* The row whose Evidence Vault is open. */
+  const [vaultRow, setVaultRow] = useState<InvoiceRow | null>(null);
 
   const handleRowAction = useCallback((action: InvoiceAction, row: InvoiceRow) => {
     if (action === 'payment-requests') { setPaymentsRow(row); return; }
     if (action === 'summary') { setSummaryRow(row); return; }
+    if (action === 'vault') { setVaultRow(row); return; }
     if (action === 'edit') {
       /* The same four-step form a new invoice opens, carrying this row's own
          answers — editing an entry and creating one are the same screen, so
@@ -168,6 +178,37 @@ export default function InvoiceList() {
       shipScope === 'with-shipment' ? !!r.shipmentId : !r.shipmentId);
     return searchRows(byShipment, deferredQuery);
   }, [scopedRows, shipScope, deferredQuery]);
+
+  /* ── Paging ───────────────────────────────────────────────────────────────
+     As the PO list pages, and for the same reason: the footer is where a long
+     worklist tells you how much of it you are looking at. The difference is
+     that the PO asks the server for one page and this list still runs on
+     fixtures, so the slice happens here — the footer and the arithmetic behind
+     it are identical either way. */
+  const [page, setPage] = useState(1);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  /* Rows per page = as many as fit the table area, never fewer than 10, until
+     the user picks a size. Measured off a real row, so it holds at any zoom. */
+  const [pageSize, choosePageSize, refitPageSize] = useFitPageSize(scrollRef);
+
+  /* The row set changed, so the fit is measured again — the first fit runs
+     before any row exists and would otherwise stay at the minimum. */
+  useEffect(() => { if (visibleRows.length) refitPageSize(); }, [visibleRows.length, refitPageSize]);
+
+  /* A filter or a search leaves page 4 of a list that may now have one page.
+     Back to the first page, which is what the user is looking at anyway. */
+  useEffect(() => { setPage(1); }, [scope, shipScope, deferredQuery]);
+
+  const total = visibleRows.length;
+  const start = (page - 1) * pageSize;
+  const pagedRows = useMemo(
+    () => visibleRows.slice(start, start + pageSize),
+    [visibleRows, start, pageSize],
+  );
+
+  /* Picking a size keeps you at the top rather than on a page number that
+     means something different now. */
+  const changePageSize = useCallback((n: number) => { choosePageSize(n); setPage(1); }, [choosePageSize]);
 
   return (
     /* `ord-page` and `ord-list` are not decoration — order.css scopes its
@@ -287,11 +328,36 @@ export default function InvoiceList() {
         {/* The table takes only its rows. Everything that changes per keystroke
             stays up here, so `memo` on the table means typing re-renders the
             input and not 22 x 60 cells. */}
-        <InvoiceTable rows={visibleRows} onAction={handleRowAction} />
+        <InvoiceTable
+          rows={pagedRows} onAction={handleRowAction}
+          startSr={start} scrollRef={scrollRef}
+        />
+
+        {/* The footer the PO list carries, with the same band and the same
+            controls: how much of the list is on screen, rows per page, and the
+            page itself. Hidden when there is nothing to page — "No records"
+            beneath an empty table says it twice. */}
+        {total > 0 && (
+          <WorklistPager
+            className="wl-teal"
+            total={total}
+            page={page}
+            pageSize={pageSize}
+            onPage={setPage}
+            onPageSize={changePageSize}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+          />
+        )}
       </div>
 
       {paymentsRow && (
         <InvoicePaymentsModal row={paymentsRow} onClose={() => setPaymentsRow(null)} />
+      )}
+
+      {vaultRow && (
+        <Suspense fallback={null}>
+          <InvoiceEvidenceVault row={vaultRow} onClose={() => setVaultRow(null)} />
+        </Suspense>
       )}
 
       {/* Lazy: a read-only screen most visits never open, and it carries its
