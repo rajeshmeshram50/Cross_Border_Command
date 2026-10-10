@@ -6,6 +6,7 @@ import { INVOICE_STEPS } from './steps';
 import { NEXT_INVOICE_NO, STORAGE_WAREHOUSES } from './data';
 import { InvoiceTable } from './InvoiceTable';
 import WorklistPager from '../../../../components/ui/WorklistPager';
+import SearchClear from '../../../../components/ui/SearchClear';
 import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import { useServerList } from '../../../../hooks/useServerList';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
@@ -210,6 +211,10 @@ export default function InvoiceList() {
               aria-label="Search invoices"
               autoComplete="off"
             />
+            {/* The PO list's own × . Without it, emptying the box means
+                selecting the text and deleting it, and until that is done a
+                filtered table reads as "no invoices". */}
+            <SearchClear show={query} onClear={() => setQuery('')} />
           </div>
         </div>
 
