@@ -378,6 +378,36 @@
    scrolls between a head and a footer that stay put. */
 .whm-addbody { max-height: calc(92vh - 164px); overflow-y: auto; }
 
+/* ── The backdrop and the card's edge ───────────────────────────────────
+   The shared backdrop is a 4px blur at .45; the design pushes the page
+   further back — twice the blur, a touch more tint, and a slight saturation
+   lift so the colour behind stays alive rather than going grey. Its own
+   class, so every other dialog keeps the shared wash. */
+.spi-mdl-backdrop.whm-backdrop {
+  background: rgba(8, 47, 73, .5);
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
+}
+
+/* The card sits on that blur with a soft white halo rather than the shared
+   hard 1.5px rim, over a deeper and much wider drop. Rounder, too: 26px. */
+.whm-backdrop > .spi-mdl {
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, .7);
+  box-shadow:
+    0 50px 120px -30px rgba(8, 47, 73, .7),
+    0 0 0 6px rgba(255, 255, 255, .12);
+}
+/* The header is the card's top edge, so it has to round with it. */
+.whm-backdrop > .spi-mdl .spi-mdl-head { border-radius: 25px 25px 0 0; }
+
+[data-bs-theme="dark"] .whm-backdrop > .spi-mdl {
+  border-color: rgba(148, 163, 184, .22);
+  box-shadow:
+    0 50px 120px -30px rgba(0, 0, 0, .85),
+    0 0 0 6px rgba(148, 163, 184, .08);
+}
+
 /* The body is a pale wash so the white section cards read as cards. */
 .spi-mdl.whm-addmdl { background: linear-gradient(180deg, #f4fbfd 0%, #eef7fa 100%); }
 

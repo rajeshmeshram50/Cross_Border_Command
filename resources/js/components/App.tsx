@@ -120,6 +120,7 @@ const ClockIn = lazyPage(() => import('../pages/ClockIn'));
 const ModuleStubPage = lazyPage(() => import('../pages/ModuleStubPage'));
 /* Inventory Management — designed one master at a time; the rest are still stubs. */
 const WarehouseMaster = lazyPage(() => import('../pages/inventory-management/warehouse/WarehouseMaster'));
+const ProductFlagMaster = lazyPage(() => import('../pages/inventory-management/product-flag/ProductFlagMaster'));
 const P2pBulkSourcing = lazyPage(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
 /* Invoice — the rebuilt supplier purchase invoice, and now the only one: the
@@ -962,7 +963,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/inventory-management/warehouse-master" element={<WarehouseMaster />} />
               <Route path="/inventory-management/zone-master" element={<ModuleStubPage />} />
               <Route path="/inventory-management/rack-master" element={<ModuleStubPage />} />
-              <Route path="/inventory-management/product-flags" element={<ModuleStubPage />} />
+              <Route path="/inventory-management/product-flags" element={<ProductFlagMaster />} />
               <Route path="/p2p/supplier-purchase-invoice" element={<Invoice />} />
               {/* The screen used to live at /p2p/invoice. Kept as a redirect so
                   a bookmark or a link in an old email still lands on it. */}

@@ -39,7 +39,7 @@ export function splitQuantity(total: number, boxes: number): SplitBox[] {
  * limit was arbitrary and a real delivery can exceed it.
  */
 export default function MultiBoxPanel({
-  line, boxes, onClose, onSave, customFlags, onAddFlag, onRemoveFlag, onBoxQty,
+  line, boxes, onClose, onSave, customFlags, onBoxQty,
 }: {
   line: ProductLine;
   boxes: SplitBox[];
@@ -48,8 +48,6 @@ export default function MultiBoxPanel({
    *  the cartons were generated together. */
   onSave: () => void;
   customFlags?: CustomFlag[];
-  onAddFlag?: (f: CustomFlag) => void;
-  onRemoveFlag?: (id: string) => void;
   /** Moves units into or out of one carton. */
   onBoxQty?: (boxNo: number, qty: number) => void;
 }) {
@@ -116,7 +114,7 @@ export default function MultiBoxPanel({
           modeKey="Box"
           variant="panel"
           onSave={onSave}
-          customFlags={customFlags} onAddFlag={onAddFlag} onRemoveFlag={onRemoveFlag}
+          customFlags={customFlags}
           onQuantityChange={onBoxQty ? q => onBoxQty(box.no, q) : undefined}
         />
       </div>

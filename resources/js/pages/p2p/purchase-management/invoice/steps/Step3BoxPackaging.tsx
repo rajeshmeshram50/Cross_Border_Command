@@ -94,9 +94,11 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
 
   /* Custom product flags belong to the step, not to a box: one created on a
      carton should be offered on every other carton too. */
-  const [customFlags, setCustomFlags] = useState<CustomFlag[]>([]);
-  const addFlag = (f: CustomFlag) => setCustomFlags(fs => [...fs, f]);
-  const removeFlag = (id: string) => setCustomFlags(fs => fs.filter(f => f.id !== id));
+  /* Nothing writes to this any more: the drawer's plus opens the product-flag
+     master rather than adding a flag that lived only on this invoice. Kept so
+     the chips still render once that master reaches a real endpoint and this
+     can be filled from it. */
+  const [customFlags] = useState<CustomFlag[]>([]);
 
   /* A split contributes its own boxes; a single contributes one; and every
      Scenario 03 row shares ONE master carton between them, so the group is
@@ -405,9 +407,11 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                         <div className="vti-cb is-checked" role="checkbox" aria-checked
                           aria-label={`${line.spiName} is in the master carton`} />
                       ) : pack ? (
-                        <div className="vti-scn-lock is-cb" title={`Locked by ${scenarioNo}`}>
-                          <IcoLock size={10} stroke={2.6} />
-                        </div>
+                        <Tooltip label={`Locked by ${scenarioNo}`}>
+                          <div className="vti-scn-lock is-cb">
+                            <IcoLock size={10} stroke={2.6} />
+                          </div>
+                        </Tooltip>
                       ) : (
                         <div
                           className={`vti-cb${isTicked ? ' is-checked' : ''}`}
@@ -426,12 +430,14 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                           <div className="vti-prod-name">{line.spiName}</div>
                           <div className="vti-prod-sku">HSN {line.hsn}</div>
                           {pack && (
-                            <span className="vti-scn-chip is-on" title="Reset the packaging scenario for this product"
-                              onClick={() => reset(line.code)}>
-                              <span className="vti-scn-chip-dot" />
-                              {scenarioLabel}
-                              <span className="vti-scn-chip-x">✕</span>
-                            </span>
+                            <Tooltip label="Reset the packaging scenario for this product">
+                              <span className="vti-scn-chip is-on"
+                                onClick={() => reset(line.code)}>
+                                <span className="vti-scn-chip-dot" />
+                                {scenarioLabel}
+                                <span className="vti-scn-chip-x">✕</span>
+                              </span>
+                            </Tooltip>
                           )}
                         </div>
                       </div>
@@ -523,7 +529,7 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                           line={line}
                           quantity={line.spiQty}
                           onSave={() => saveRow(line.code)}
-                          customFlags={customFlags} onAddFlag={addFlag} onRemoveFlag={removeFlag}
+                          customFlags={customFlags}
                         />
                       </td>
                     </tr>
@@ -534,7 +540,7 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                       <td colSpan={BOX_TABLE_COLUMNS} style={{ padding: 0, border: 'none', background: 'transparent' }}>
                         <MultiBoxPanel line={line} boxes={pack.boxes}
                           onClose={() => reset(line.code)} onSave={() => saveRow(line.code)}
-                          customFlags={customFlags} onAddFlag={addFlag} onRemoveFlag={removeFlag}
+                          customFlags={customFlags}
                           onBoxQty={(no, q) => setBoxQty(line.code, no, q)} />
                       </td>
                     </tr>
@@ -570,8 +576,6 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
             onClearContents={() => setMixedBox(null)}
             onSave={saveMixedBox}
             customFlags={customFlags}
-            onAddFlag={addFlag}
-            onRemoveFlag={removeFlag}
           />
       )}
 

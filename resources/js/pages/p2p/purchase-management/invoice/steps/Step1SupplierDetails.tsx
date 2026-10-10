@@ -1,4 +1,6 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import Tooltip from '../../../../../components/ui/Tooltip';
+import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { EditSelect, Field } from '../../order/create-po/form-fields';
 import {
   SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, vaultTargetOf, type Severity,
@@ -24,6 +26,10 @@ import type { InvoiceDraft, SetDraft } from '../invoice-draft';
 
 const PO_TYPES = ['Material / Goods', 'Services'];
 const DOC_TYPES = ['Domestics', 'International'];
+/* The server's own list (PurchaseOrder::INCO_TERMS), as the PO form spells it. */
+const INCO_TERMS = ['CIF', 'C&F', 'EXW', 'FOB'];
+/* The ceiling App\Support\FxRate enforces. */
+const FX_RATE_MAX = 10000;
 const TRANSPORT_MODES = ['Road', 'Rail', 'Air', 'Sea'];
 const PAYMENT_TYPES = ['Advance', 'Credit', 'Partial Advance'];
 const SUPPLIER_TYPES = ['Manufacturer', 'Trader', 'Distributor', 'Service Provider'];
@@ -60,11 +66,42 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
     physInspection, poNumber, supplier, supplierCode, legalName, supplierType, riskLevel, category,
     address, country, state, stateCode, city, contactName, designation, contactNumber, email,
     scrutinyDate, gstNumber, gstStatus, filingDate, remarks,
+    currency, exchangeRate, incoTerm, portLoading, portDischarge, finalDestination, countryOrigin,
   } = draft;
 
   const hasSupplier = !!supplier;
 
   const hasPo = !!poNumber;
+
+  /* The same seven fields the purchase order shows for an international
+     document. With a PO they are the PO's, read-only; a standalone invoice
+     fills them in. */
+  const isInternational = docType === 'International';
+
+  /* Fetched only when they are editable — with a PO the values come from it,
+     and a domestic invoice never shows the fields at all. */
+  const [currencies, setCurrencies] = useState<string[]>([]);
+  const [countries, setCountries] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isInternational || hasPo || currencies.length) return;
+    let live = true;
+    const names = (rows: Record<string, unknown>[], key: string) =>
+      rows.map(r => String(r[key] ?? r.name ?? '')).filter(Boolean);
+    void (async () => {
+      try {
+        const [c, k] = await Promise.all([
+          poLookupApi.master('currencies'), poLookupApi.master('countries'),
+        ]);
+        if (!live) return;
+        setCurrencies(names(c, 'code'));
+        setCountries(names(k, 'name'));
+      } catch {
+        /* The fields stay usable: an empty list leaves the select with
+           nothing to offer rather than breaking the step. */
+      }
+    })();
+    return () => { live = false; };
+  }, [isInternational, hasPo, currencies.length]);
 
   const toast = useToast();
   const [vendorId, setVendorId] = useState<number | null>(null);
@@ -242,8 +279,7 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
             <Field label="Expected Delivery Date" req>
               {hasPo
                 ? <input className="spi-dt-inp" value={formatDmy(deliveryDate)} readOnly />
-                : <input className="spi-dt-inp" type="date"
-                  value={deliveryDate} onChange={e => set({ deliveryDate: e.target.value })} />}
+                : <MasterDatePicker value={deliveryDate} onChange={v => set({ deliveryDate: v })} />}
             </Field>
             <Field label="Delivery Location" req>
               <input className="spi-dt-inp" readOnly={hasPo}
@@ -259,6 +295,50 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                 <span className="spi-dt-auto">{physInspection ? 'MANDATORY' : 'NOT REQUIRED'}</span>
               </div>
             </Field>
+
+            {isInternational && (
+              <>
+                <Field label="Currency" req>
+                  <EditSelect readOnly={hasPo} value={currency} options={currencies}
+                    onChange={v => set({ currency: v })} />
+                </Field>
+                <Field label="Exchange Rate" req>
+                  {/* Digits and one point only, and capped the way the PO caps
+                      it: a rate is a multiplier, so a typo does not add one
+                      digit to the invoice, it adds as many as the typo. */}
+                  <input className="spi-dt-inp" readOnly={hasPo} inputMode="decimal"
+                    placeholder={hasPo ? '—' : 'e.g. 83.25'} value={exchangeRate}
+                    onChange={e => {
+                      const v = e.target.value.replace(/[^d.]/g, '').slice(0, 16);
+                      if (v !== '' && Number(v) > FX_RATE_MAX) return;
+                      set({ exchangeRate: v });
+                    }} />
+                </Field>
+                <Field label="INCO Term" req>
+                  <EditSelect readOnly={hasPo} value={incoTerm} options={INCO_TERMS}
+                    onChange={v => set({ incoTerm: v })} />
+                </Field>
+                <Field label="Port of Loading" req>
+                  <input className="spi-dt-inp" readOnly={hasPo} maxLength={255}
+                    placeholder={hasPo ? '—' : 'e.g. Nhava Sheva'} value={portLoading}
+                    onChange={e => set({ portLoading: e.target.value })} />
+                </Field>
+                <Field label="Port of Discharge" req>
+                  <input className="spi-dt-inp" readOnly={hasPo} maxLength={255}
+                    placeholder={hasPo ? '—' : 'e.g. Jebel Ali'} value={portDischarge}
+                    onChange={e => set({ portDischarge: e.target.value })} />
+                </Field>
+                <Field label="Final Destination" req>
+                  <input className="spi-dt-inp" readOnly={hasPo} maxLength={128}
+                    placeholder={hasPo ? '—' : 'Enter final destination'} value={finalDestination}
+                    onChange={e => set({ finalDestination: e.target.value })} />
+                </Field>
+                <Field label="Country of Origin" req>
+                  <EditSelect readOnly={hasPo} value={countryOrigin} options={countries}
+                    onChange={v => set({ countryOrigin: v })} />
+                </Field>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -284,11 +364,11 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                 <span className="spi-dt-card-ico"><IcoUser /></span> Supplier Details
               </div>
               {!hasPo && (
-                <button type="button" className="cpf-addbtn" title="Onboard a supplier that is not in this list"
+                <Tooltip label="Onboard a supplier that is not in this list"><button type="button" className="cpf-addbtn"
                   onPointerEnter={warmSupplierFlow}
                   onClick={e => { e.stopPropagation(); setAdding(true); }}>
                   <IcoPlus /> Add Supplier
-                </button>
+                </button></Tooltip>
               )}
               <span className="spi-dt-fields-badge cpf-push">5 FIELDS</span>
               <span className={`cpf-chev ${supCardOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
@@ -308,17 +388,18 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                       />
                     )}
                     {hasSupplier && (
-                      <button
-                        type="button"
-                        className="cpf-supedit"
-                        title={`Edit ${supplier} in the Supplier master`}
-                        aria-label="Edit supplier"
-                        disabled={busy === 'edit' || refreshing}
-                        onPointerEnter={warmSupplierFlow}
-                        onClick={() => void openEdit()}
-                      >
-                        <IcoPencil />
-                      </button>
+                      <Tooltip label={`Edit ${supplier} in the Supplier master`}>
+                        <button
+                          type="button"
+                          className="cpf-supedit"
+                          aria-label="Edit supplier"
+                          disabled={busy === 'edit' || refreshing}
+                          onPointerEnter={warmSupplierFlow}
+                          onClick={() => void openEdit()}
+                        >
+                          <IcoPencil />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 </Field>
@@ -397,16 +478,17 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                   <span className={`cpf-push spi-dt-legal-badge ${legal.pct === 100 ? 'ok' : 'warn'}`}>
                     {legal.pct === 100 ? '100% Compliant' : `${legal.pct}% · Needs Review`}
                   </span>
-                  <button
-                    type="button"
-                    className="cpf-vault"
-                    onClick={e => { e.stopPropagation(); void openVault(); }}
-                    onPointerEnter={warmVault}
-                    disabled={busy === 'vault'}
-                    title={`Open ${supplier}'s Evidence Vault`}
-                  >
-                    <IcoShield /> <span>{busy === 'vault' ? 'Opening…' : 'Visit Supplier Evidence Vault'}</span>
-                  </button>
+                  <Tooltip label={`Open ${supplier}'s Evidence Vault`}>
+                    <button
+                      type="button"
+                      className="cpf-vault"
+                      onClick={e => { e.stopPropagation(); void openVault(); }}
+                      onPointerEnter={warmVault}
+                      disabled={busy === 'vault'}
+                    >
+                      <IcoShield /> <span>{busy === 'vault' ? 'Opening…' : 'Visit Supplier Evidence Vault'}</span>
+                    </button>
+                  </Tooltip>
                   <span className="cpf-lgbar">
                     <span className={`cpf-lgbar__fill cpf-fill-${legalTone}`} style={{ width: `${legal.pct}%` }} />
                   </span>
@@ -426,20 +508,22 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                 {hasSupplier ? (
                   <div className="cpf-lg__tabs">
                     {legal.sections.map((sec, i) => (
-                      <div key={sec.name} className={`cpf-lg__tab cpf-lg__tab--${sec.tone}`} title={sec.parts.join(' · ')}>
-                        <div className="cpf-lg__hd">
-                          <span className="cpf-lg__ico">{i === 0 ? <IcoShield /> : <IcoDocSm />}</span>
-                          <span className="cpf-lg__txt">
-                            <span className="cpf-lg__nm">{sec.name}</span>
-                            <span className="cpf-lg__sub">{sec.sub}</span>
-                          </span>
-                          <span className="cpf-lg__cnt">{sec.done} / {sec.total}</span>
-                          <span className="cpf-lg__pct">{sec.pct}%</span>
+                      <Tooltip key={sec.name} label={sec.parts.join(' · ')}>
+                        <div className={`cpf-lg__tab cpf-lg__tab--${sec.tone}`}>
+                          <div className="cpf-lg__hd">
+                            <span className="cpf-lg__ico">{i === 0 ? <IcoShield /> : <IcoDocSm />}</span>
+                            <span className="cpf-lg__txt">
+                              <span className="cpf-lg__nm">{sec.name}</span>
+                              <span className="cpf-lg__sub">{sec.sub}</span>
+                            </span>
+                            <span className="cpf-lg__cnt">{sec.done} / {sec.total}</span>
+                            <span className="cpf-lg__pct">{sec.pct}%</span>
+                          </div>
+                          <div className="cpf-lg__bar">
+                            <span className="cpf-lg__fill" style={{ width: `${sec.pct}%` }} />
+                          </div>
                         </div>
-                        <div className="cpf-lg__bar">
-                          <span className="cpf-lg__fill" style={{ width: `${sec.pct}%` }} />
-                        </div>
-                      </div>
+                      </Tooltip>
                     ))}
                   </div>
                 ) : (
@@ -485,8 +569,7 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                   <Field label="SCRUTINY DATE">
                     {hasPo
                       ? <input className="spi-dt-inp" value={formatDmy(scrutinyDate)} readOnly />
-                      : <input className="spi-dt-inp" type="date"
-                        value={scrutinyDate} onChange={e => set({ scrutinyDate: e.target.value })} />}
+                      : <MasterDatePicker value={scrutinyDate} onChange={v => set({ scrutinyDate: v })} />}
                   </Field>
                   <Field label="GST NUMBER">
                     <input className="spi-dt-inp" placeholder={hasPo ? '—' : '15-digit GSTIN'} maxLength={15} readOnly={hasPo}
@@ -498,8 +581,7 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                   <Field label="LAST FILING DATE">
                     {hasPo
                       ? <input className="spi-dt-inp" value={formatDmy(filingDate)} readOnly />
-                      : <input className="spi-dt-inp" type="date"
-                        value={filingDate} onChange={e => set({ filingDate: e.target.value })} />}
+                      : <MasterDatePicker value={filingDate} onChange={v => set({ filingDate: v })} />}
                   </Field>
                   <Field label="PREV. INVOICE / REMARKS" full>
                     <textarea className="spi-dt-textarea" readOnly={hasPo}

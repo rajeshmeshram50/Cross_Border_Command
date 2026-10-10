@@ -204,7 +204,7 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
   };
 
   return createPortal(
-    <div className="spi-mdl-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="spi-mdl-backdrop whm-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div
         className="spi-mdl whm-addmdl"
         role="dialog" aria-modal="true" aria-labelledby="whm-add-title"

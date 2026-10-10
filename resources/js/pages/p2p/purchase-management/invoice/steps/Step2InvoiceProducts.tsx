@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
@@ -63,8 +64,7 @@ export default function Step2InvoiceProducts({
                 value={draft.invoiceNumber} onChange={e => set({ invoiceNumber: e.target.value })} />
             </Field>
             <Field label="PURCHASE INVOICE DATE" req>
-              <input className="spi-dt-inp" type="date" readOnly={readOnly}
-                value={draft.invoiceDate} onChange={e => set({ invoiceDate: e.target.value })} />
+              <MasterDatePicker value={draft.invoiceDate} onChange={v => set({ invoiceDate: v })} disabled={readOnly} />
             </Field>
             <Field label="PURCHASE INVOICE ATTACHMENT" req>
               <FilePick label="Purchase Invoice" value={draft.invoiceFile} onPick={f => onPickFile('invoice', f)} disabled={readOnly} />

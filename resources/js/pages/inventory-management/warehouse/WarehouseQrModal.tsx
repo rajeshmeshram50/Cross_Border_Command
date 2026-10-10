@@ -85,7 +85,7 @@ export default function WarehouseQrModal({ warehouse: w, onClose }: {
   };
 
   return createPortal(
-    <div className="spi-mdl-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="spi-mdl-backdrop whm-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div
         className="spi-mdl whm-qrmodal"
         role="dialog" aria-modal="true" aria-labelledby="whm-qr-title"

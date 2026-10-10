@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { IcoList, IcoPlus, IcoTag, IcoTrash, IcoX } from '../../../icons';
@@ -131,10 +132,12 @@ export default function ProductFlagsModal({
                   >
                     <IcoTag size={11} stroke={2.4} /> {f.name}
                   </span>
-                  <button type="button" className="invf-flags__del" onClick={() => onRemove(f.id)}
-                    aria-label={`Remove ${f.name}`} title={`Remove ${f.name}`}>
-                    <IcoTrash size={13} stroke={2.2} />
-                  </button>
+                  <Tooltip label={`Remove ${f.name}`}>
+                    <button type="button" className="invf-flags__del" onClick={() => onRemove(f.id)}
+                      aria-label={`Remove ${f.name}`}>
+                      <IcoTrash size={13} stroke={2.2} />
+                    </button>
+                  </Tooltip>
                 </div>
               ))
             )}

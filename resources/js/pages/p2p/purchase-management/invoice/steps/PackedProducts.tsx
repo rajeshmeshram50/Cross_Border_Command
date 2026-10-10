@@ -115,29 +115,31 @@ export default function PackedProducts({ rows, onEdit }: {
                       {/* The box list is behind a popup rather than inline: a
                           split can produce a hundred cartons, and a cell cannot
                           hold them without setting the row's height. */}
-                      <button
-                        type="button"
-                        className="vti-btn-single vti-btn-single--ico"
-                        onClick={() => setShowing(row)}
-                        title={`View the ${row.boxes.length} box${row.boxes.length === 1 ? '' : 'es'} for ${row.line.spiName}`}
-                        aria-label={`View boxes for ${row.line.spiName}`}
-                      >
-                        <IcoEye size={14} />
-                      </button>
+                      <Tooltip label={`View the ${row.boxes.length} box${row.boxes.length === 1 ? '' : 'es'} for ${row.line.spiName}`}>
+                        <button
+                          type="button"
+                          className="vti-btn-single vti-btn-single--ico"
+                          onClick={() => setShowing(row)}
+                          aria-label={`View boxes for ${row.line.spiName}`}
+                        >
+                          <IcoEye size={14} />
+                        </button>
+                      </Tooltip>
                       {/* Sends the product back to the table above with its
                           scenario and boxes intact, so repacking is a change
                           rather than a redo. Nothing is destroyed here, which
                           is why it needs no confirmation. */}
                       {onEdit && (
-                        <button
-                          type="button"
-                          className="vti-btn-single vti-btn-single--ico vti-btn-single--edit"
-                          onClick={() => onEdit(row.line.code)}
-                          title={`Repack ${row.line.spiName} — returns it to the box generator with its ${row.scenarioNo.toLowerCase()} and boxes kept`}
-                          aria-label={`Repack ${row.line.spiName}`}
-                        >
-                          <IcoPencil size={14} />
-                        </button>
+                        <Tooltip label={`Repack ${row.line.spiName} — returns it to the box generator with its ${row.scenarioNo.toLowerCase()} and boxes kept`}>
+                          <button
+                            type="button"
+                            className="vti-btn-single vti-btn-single--ico vti-btn-single--edit"
+                            onClick={() => onEdit(row.line.code)}
+                            aria-label={`Repack ${row.line.spiName}`}
+                          >
+                            <IcoPencil size={14} />
+                          </button>
+                        </Tooltip>
                       )}
                     </span>
                   </td>
@@ -195,9 +197,11 @@ function BoxListModal({ row, onClose }: { row: PackedRow; onClose: () => void })
                   {b.qty === 0 ? 'Empty' : `${b.qty} unit${b.qty === 1 ? '' : 's'}`}
                 </span>
                 {b.sharedWith && b.sharedWith.length > 0 && (
-                  <span className="invf-boxchip__shared" title={`Shared with ${b.sharedWith.join(', ')}`}>
-                    +{b.sharedWith.length} more
-                  </span>
+                  <Tooltip label={`Shared with ${b.sharedWith.join(', ')}`}>
+                    <span className="invf-boxchip__shared">
+                      +{b.sharedWith.length} more
+                    </span>
+                  </Tooltip>
                 )}
               </div>
             ))}

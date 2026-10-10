@@ -1,8 +1,14 @@
-import { useCallback, useState } from 'react';
+import { lazy, Suspense, useCallback, useState } from 'react';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import {
   IcoBox, IcoCamera, IcoChevronR, IcoSave, IcoTag, IcoThermometer, IcoUpload, IcoWarn,
 } from '../../../icons';
-import ProductFlagsModal, { type CustomFlag } from './ProductFlagsModal';
+import { type CustomFlag } from './ProductFlagsModal';
+/* The product-flag master's own form. The plus beside Product Flags creates
+   a flag for the whole tenant, not one that lives on this box — the same way
+   the plus on the product table opens the product master. Lazy: it is a form
+   most visits to this drawer never open. */
+const AddProductFlagModal = lazy(() => import('../../../../inventory-management/product-flag/AddProductFlagModal'));
 import TemperatureModal, { formatRange, type TempRange } from './TemperatureModal';
 import SelectedProducts, {
   EMPTY_IDENTITY, type BoxContent, type ProductIdentity,
@@ -81,8 +87,6 @@ export default function BoxDrawer({
   onClearContents,
   onSave,
   customFlags = [],
-  onAddFlag,
-  onRemoveFlag,
   onQuantityChange,
 }: {
   boxId: string;
@@ -119,11 +123,10 @@ export default function BoxDrawer({
   /** Finalises the box. The product then leaves the table above and appears
    *  under Packed Products. */
   onSave?: () => void;
-  /* Custom flags are shared by every box on the step, not owned by one of
-     them: a flag created on one carton should be offered on all of them. */
+  /* Flags beyond the three standing ones, shared by every box on the step
+     rather than owned by one of them. Read-only here now: the plus creates a
+     flag in the product-flag master, not one that lives on this carton. */
   customFlags?: CustomFlag[];
-  onAddFlag?: (f: CustomFlag) => void;
-  onRemoveFlag?: (id: string) => void;
   /** Given when this box's unit count may be changed. Absent on a single-box
    *  carton, where the quantity IS the product's quantity. */
   onQuantityChange?: (qty: number) => void;
@@ -282,9 +285,15 @@ export default function BoxDrawer({
                 </button>
               ))}
             </div>
-            <button type="button" className="vti-dw-icon-btn" title="Upload Photo"><IcoUpload size={13} stroke={2.3} /> Upload</button>
-            <button type="button" className="vti-dw-icon-btn" title="Camera"><IcoCamera size={13} stroke={2.3} /> Camera</button>
-            <button type="button" className="vti-dw-icon-btn" title="Scan Barcode"><IcoBox size={13} stroke={2.3} /> Scan</button>
+            <Tooltip label="Upload a photo of this box">
+              <button type="button" className="vti-dw-icon-btn"><IcoUpload size={13} stroke={2.3} /> Upload</button>
+            </Tooltip>
+            <Tooltip label="Photograph this box with the camera">
+              <button type="button" className="vti-dw-icon-btn"><IcoCamera size={13} stroke={2.3} /> Camera</button>
+            </Tooltip>
+            <Tooltip label="Scan this box's barcode">
+              <button type="button" className="vti-dw-icon-btn"><IcoBox size={13} stroke={2.3} /> Scan</button>
+            </Tooltip>
             <button type="button" className="vti-dw-save-btn" onClick={onSave}>
               <IcoSave size={12} stroke={2.5} /> Save
             </button>
@@ -374,8 +383,10 @@ export default function BoxDrawer({
               <div className="vti-dw-mini-section">
                 <div className="vti-dw-mini-title-row">
                   <div className="vti-dw-mini-title">Product Flags</div>
-                  <button type="button" className="vti-flag-add-btn" title="Add a custom product flag"
-                    onClick={() => setFlagsOpen(true)}>+</button>
+                  <Tooltip label="Add a product flag to the master">
+                    <button type="button" className="vti-flag-add-btn"
+                      onClick={() => setFlagsOpen(true)}>+</button>
+                  </Tooltip>
                 </div>
                 {/* Flags are independent of each other, so they toggle rather
                     than select — a box can be both fragile and cold chain. */}
@@ -516,12 +527,9 @@ export default function BoxDrawer({
       )}
 
       {flagsOpen && (
-        <ProductFlagsModal
-          flags={customFlags}
-          onAdd={f => onAddFlag?.(f)}
-          onRemove={id => onRemoveFlag?.(id)}
-          onClose={() => setFlagsOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <AddProductFlagModal onClose={() => setFlagsOpen(false)} />
+        </Suspense>
       )}
     </Shell>
   );

@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useMemo, useState } from 'react';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { IcoPencil, IcoPlus } from '../../../icons';
@@ -185,29 +186,31 @@ const Row = memo(function Row({
                 if (pick) onChange(index, { productId: pick.productId, spiName: pick.name });
               }}
             />
-            <button
-              type="button" className="cpd-iconbtn"
-              title={line.productId == null
-                ? 'This line is not linked to a product in the master'
-                : 'Edit this product in the product master'}
-              disabled={readOnly || line.productId == null}
-              onClick={() => line.productId != null && onEditProduct(line.productId)}
-            >
-              <IcoPencil />
-            </button>
+            <Tooltip label={line.productId == null
+              ? 'This line is not linked to a product in the master'
+              : 'Edit this product in the product master'}>
+              <button
+                type="button" className="cpd-iconbtn"
+                disabled={readOnly || line.productId == null}
+                onClick={() => line.productId != null && onEditProduct(line.productId)}
+              >
+                <IcoPencil />
+              </button>
+            </Tooltip>
           </div>
           <div className="cpd-prod__meta">
             <span className="cpd-kv">HSN <b>{line.hsn}</b></span>
             <span className="cpd-prod__dot" />
             <span className="cpd-kv">GST <b>{line.gst}%</b></span>
-            <button
-              type="button" className="cpd-addbtn"
-              title="Add a new product to the product master"
-              disabled={readOnly}
-              onClick={onAddProduct}
-            >
-              <IcoPlus />
-            </button>
+            <Tooltip label="Add a new product to the product master">
+              <button
+                type="button" className="cpd-addbtn"
+                disabled={readOnly}
+                onClick={onAddProduct}
+              >
+                <IcoPlus />
+              </button>
+            </Tooltip>
           </div>
         </div>
       </td>

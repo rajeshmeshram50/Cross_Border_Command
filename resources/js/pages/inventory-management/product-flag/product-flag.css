@@ -1,0 +1,65 @@
+/* Product Flags Master — ONLY what differs from the warehouse list.
+
+   Every cell style, the tab squares, the table weights and the Add-form chrome
+   come from `warehouse-master.css`, which this page imports and which the
+   prototype shares between these masters the same way: its own root is
+   `whm-page pfm-page`. What is left is four columns instead of nine, and the
+   purpose line. */
+
+/* Four columns, so they are given widths rather than left to the content: No.
+   and Action are fixed, Product Flag takes a third, and Purpose takes the rest
+   — otherwise the longest purpose decides the whole table. */
+.pfm-page .ord-table th:nth-child(1) { width: 80px; }
+.pfm-page .ord-table th:nth-child(2) { width: 30%; }
+.pfm-page .ord-table th:nth-child(4) { width: 140px; }
+
+/* Flag and Purpose read left; the number and the actions stay centred. */
+.pfm-page .ord-table th:nth-child(2),
+.pfm-page .ord-table th:nth-child(3),
+.pfm-page .ord-table tbody td:nth-child(2),
+.pfm-page .ord-table tbody td:nth-child(3) { text-align: left; }
+
+/* A sentence, not a label: it wraps rather than truncating, and stops at a
+   readable measure instead of running the width of the table. */
+.pfm-page .pfm-purp {
+  display: block;
+  max-width: 640px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #475569;
+}
+[data-bs-theme="dark"] .pfm-page .pfm-purp { color: #94a3b8; }
+
+/* The flag's own cell carries no second line, so the icon centres on the name
+   instead of sitting at the top of a block. */
+.pfm-page .whm-namecell { align-items: center; }
+
+/* The Add form is two fields in one column — wider than the 600px it started
+   at, which let the header subtitle wrap to two lines and made a short form
+   taller than it needed to be. */
+.spi-mdl.pfm-addmdl { width: min(680px, 100%); }
+/* Compact with it: this form has two fields, so the generous spacing the
+   four-section warehouse form needs only leaves it hollow. */
+.pfm-addmdl .whm-addbody { padding: 14px 18px 10px; }
+.pfm-addmdl .whm-card { padding-bottom: 12px; }
+.pfm-addmdl .spi-dt-grid4 { grid-template-columns: 1fr; }
+/* The purpose is a few lines, and it is the only field here that grows. */
+.pfm-addmdl .pfm-ta {
+  height: auto;
+  min-height: 76px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.5;
+  resize: vertical;
+}
+/* The character count, pushed to the end of the label row. Its own casing and
+   tracking, because the label around it is uppercase and letter-spaced and a
+   number set that way is hard to read. */
+.pfm-addmdl .pfm-cnt {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #94a3b8;
+}

@@ -1,4 +1,5 @@
 import { memo, useCallback } from 'react';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { IcoCheck, IcoX } from '../../../icons';
 import { DESC_MAX, truncateDesc, type ProductLine } from '../invoice-products';
 
@@ -164,8 +165,12 @@ const IdentityRow = memo(function IdentityRow({
         </div>
       </td>
       <td><span className="vti-code">{line.code}</span></td>
-      <td className="vti-desc" title={line.description.length > DESC_MAX ? line.description : undefined}>
-        <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
+      <td className="vti-desc">
+        {/* Only once it is actually cut — a tooltip repeating text you can
+            already read in full is noise. */}
+        <Tooltip label={line.description} disabled={line.description.length <= DESC_MAX}>
+          <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
+        </Tooltip>
       </td>
       <td><span className="vti-qty-badge">{qty}</span></td>
 
@@ -184,15 +189,16 @@ const IdentityRow = memo(function IdentityRow({
 
       {onRemove && (
         <td>
-          <button
-            type="button"
-            className="invf-selprod__rm"
-            onClick={() => onRemove(line.code)}
-            title={`Take ${line.spiName} out of this carton`}
-            aria-label={`Remove ${line.spiName}`}
-          >
-            <IcoX size={12} stroke={2.6} />
-          </button>
+          <Tooltip label={`Take ${line.spiName} out of this carton`}>
+            <button
+              type="button"
+              className="invf-selprod__rm"
+              onClick={() => onRemove(line.code)}
+              aria-label={`Remove ${line.spiName}`}
+            >
+              <IcoX size={12} stroke={2.6} />
+            </button>
+          </Tooltip>
         </td>
       )}
     </tr>

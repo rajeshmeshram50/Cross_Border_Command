@@ -14,8 +14,16 @@ export interface InvoiceDraft {
   paymentType: string;
   physInspection: boolean;
   taxMode: TaxMode | null;
+  /* The seven an international document carries. Domestic invoices leave
+     them empty and the form does not show them — the same rule the purchase
+     order applies, and the SPI copies the PO's values when it has one. */
   currency: string;
   exchangeRate: string;
+  incoTerm: string;
+  portLoading: string;
+  portDischarge: string;
+  finalDestination: string;
+  countryOrigin: string;
 
   vendorId: number | null;
   supplierDetail: SupplierDetail | null;
@@ -131,6 +139,11 @@ export function draftFromPo(po: PoDetail, sup: SupplierDetail | null): Partial<I
     taxMode: po.document_type === 'international' ? 'export' : (po.tax_mode ?? null),
     currency: po.currency_code ?? '',
     exchangeRate: po.exchange_rate ?? '',
+    incoTerm: po.inco_term ?? '',
+    portLoading: po.port_of_loading ?? '',
+    portDischarge: po.port_of_discharge ?? '',
+    finalDestination: po.final_destination ?? '',
+    countryOrigin: po.country_of_origin ?? '',
 
     vendorId: po.vendor_id,
     poNumber: po.code,
@@ -164,6 +177,11 @@ export function useInvoiceDraft(seed: { supplier: string; poNo?: string }) {
     taxMode: null,
     currency: '',
     exchangeRate: '',
+    incoTerm: '',
+    portLoading: '',
+    portDischarge: '',
+    finalDestination: '',
+    countryOrigin: '',
 
     vendorId: null,
     supplierDetail: null,
