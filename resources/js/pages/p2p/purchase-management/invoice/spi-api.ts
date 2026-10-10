@@ -218,6 +218,10 @@ export const spiApi = {
     call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`),
       (b) => ((b as { data?: { boxes?: SpiBox[] } } | null)?.data?.boxes ?? [])),
 
+  nextBoxCodes: (spiId: number, count = 20) =>
+    call('SPI next box codes', () => api.get(`/p2p/spi/${spiId}/boxes/next-codes`, { params: { count } }),
+      (b) => ((b as { data?: { next_codes?: string[] } } | null)?.data?.next_codes ?? [])),
+
   createBox: (spiId: number, body: SpiBoxBody) =>
     call('SPI box save', () => api.post(`/p2p/spi/${spiId}/boxes`, body),
       (b) => (b as { data?: { box: SpiBox; totals: SpiPackingTotals } } | null)?.data?.box as SpiBox),
