@@ -714,7 +714,10 @@
    The shell is the shared `.spi-mdl` one; all that is here is the card the
    code sits on and the three lines under it. Not scoped under `.whm-page`:
    the modal portals to document.body, outside the page. */
-.spi-mdl.whm-qrmodal { width: min(400px, 100%); }
+/* 480, not the 400 it started at: at 400 the header subtitle wrapped onto a
+   second line and a warehouse address onto a third, which made a short dialog
+   read as a narrow column beside a full-width page. */
+.spi-mdl.whm-qrmodal { width: min(480px, 100%); }
 .whm-qr {
   display: flex;
   flex-direction: column;

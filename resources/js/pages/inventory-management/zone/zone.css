@@ -1,0 +1,124 @@
+/* Zone Master — ONLY what a zone row needs beyond the warehouse list.
+
+   The page carries `whm-page znm-page` and imports `warehouse-master.css`, so
+   the cells, tab squares, table weights, modal shell and form chrome all come
+   across — the prototype shares them between these masters the same way. What
+   is here is the four columns a warehouse row does not have: the zone's type
+   with its storage line, the area with its second measure, the two flag
+   columns, and the warehouse the zone sits in. */
+
+/* Eleven columns need room, so the table has a floor of 1400px and scrolls
+   sideways under that. `max(…, 100%)` keeps BOTH halves: a plain 1400px here
+   would replace order.css's `min-width: 100%` and leave the table short of a
+   wide card — 1456 inside 1672 — with the dead band that fix was added to
+   remove. */
+.znm-page .ord-table { min-width: max(1400px, 100%); }
+
+/* Zone and Warehouse Location read left; everything else centres. */
+.znm-page .ord-table th:nth-child(3),
+.znm-page .ord-table th:nth-child(8),
+.znm-page .ord-table th:nth-child(9),
+.znm-page .ord-table tbody td:nth-child(3),
+.znm-page .ord-table tbody td:nth-child(8),
+.znm-page .ord-table tbody td:nth-child(9) { text-align: left; }
+
+/* The name cell holds a purpose line under the zone, so it needs a floor and
+   a ceiling — left to itself it would take the width the longest name wants. */
+.znm-page .whm-namecell { min-width: 210px; max-width: 260px; }
+
+/* ── Zone type: the pill, with how it stores underneath ─────────────────── */
+.znm-typecell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.znm-sub2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+}
+.znm-sub2 svg { color: #0891b2; flex-shrink: 0; }
+
+/* ── Area: square feet, and what that is in litres or usable volume ─────── */
+.znm-page .znm-area {
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.znm-area > span { display: inline-flex; align-items: baseline; gap: 4px; }
+.znm-area > small { font-size: 9.5px; font-weight: 600; color: #64748b; }
+
+/* ── Cold chain and hazardous ───────────────────────────────────────────── */
+.znm-flagcell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.znm-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.znm-flag--cold { color: #0369a1; background: #e0f2fe; border: 1px solid #bae6fd; }
+.znm-flag--haz { color: #b45309; background: #fef3c7; border: 1px solid #fde68a; }
+/* "Not Allowed" is the quiet state: it is the answer on most rows, and two
+   columns of coloured pills would read as two columns of warnings. */
+.znm-flag--no { color: #94a3b8; background: #f8fafc; border: 1px solid #e2e8f0; font-weight: 700; }
+.znm-rng {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #0369a1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The warehouse the zone is in ───────────────────────────────────────── */
+.znm-whcell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 170px;
+}
+.znm-whcell b {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #0c2c3a;
+  /* A warehouse name is free text; capped and cut, with the title carrying it
+     whole, so one long name cannot widen the column. */
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.znm-whid { font-size: 10px; padding: 2px 7px; }
+
+/* ── Dark ───────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .znm-sub2,
+[data-bs-theme="dark"] .znm-area > small { color: #94a3b8; }
+[data-bs-theme="dark"] .znm-whcell b { color: #e2e8f0; }
+[data-bs-theme="dark"] .znm-flag--cold {
+  color: #7dd3fc;
+  background: rgba(14, 165, 233, .14);
+  border-color: rgba(14, 165, 233, .3);
+}
+[data-bs-theme="dark"] .znm-flag--haz {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, .14);
+  border-color: rgba(245, 158, 11, .3);
+}
+[data-bs-theme="dark"] .znm-flag--no {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, .1);
+  border-color: rgba(148, 163, 184, .22);
+}
+[data-bs-theme="dark"] .znm-rng { color: #7dd3fc; }
