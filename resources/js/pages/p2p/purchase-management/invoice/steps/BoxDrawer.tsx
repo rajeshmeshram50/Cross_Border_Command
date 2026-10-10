@@ -65,10 +65,34 @@ export interface BoxSaveData {
   identities: Record<string, ProductIdentity>;
 }
 
+/**
+ * A saved box, read back into the fields that made it.
+ *
+ * The same shape `collect()` produces, so editing is the drawer's own output
+ * handed back to it -- anything it can save, it can reopen.
+ *
+ * Lengths are centimetres and weights kilograms, which is how the server
+ * stores them; the drawer's CM/M and KG/G toggles start at those units on an
+ * edit so the numbers shown are the numbers saved.
+ */
+export interface BoxInitial {
+  dims: BoxSaveData['dims'];
+  condition: BoxSaveData['condition'];
+  remark: BoxSaveData['remark'];
+  flagIds: string[];
+  stackable: boolean;
+  boxIdentity: ProductIdentity;
+  identities: Record<string, ProductIdentity>;
+  temp?: TempRange;
+}
+
 const VOLUMETRIC_DIVISOR = 5000;
 
+/** A stored number back into a field: null and 0 both mean "not entered". */
+const dimStr = (v: number | null | undefined) => (v == null ? '' : String(v));
+
 export default function BoxDrawer({
-  boxId, line, quantity,
+  boxId, line, quantity, initial,
   scenario = '1 Product → 1 Box',
   modeKey = 'Mode',
   modeLabel = 'Single Box',
@@ -77,6 +101,7 @@ export default function BoxDrawer({
   onRemoveContent,
   onClearContents,
   onSave,
+  onClose,
   saving = false,
   saved = false,
   customFlags = [],
@@ -85,6 +110,8 @@ export default function BoxDrawer({
   boxId: string;
   line: ProductLine;
   quantity: number;
+  /** Open the drawer on a box that already exists, with its saved values. */
+  initial?: BoxInitial;
   scenario?: string;
   modeKey?: string;
   modeLabel?: string;
@@ -93,26 +120,46 @@ export default function BoxDrawer({
   onRemoveContent?: (code: string) => void;
   onClearContents?: () => void;
   onSave?: (data: BoxSaveData) => void;
+  /** Close the drawer without saving. Only the edit route has one. */
+  onClose?: () => void;
   saving?: boolean;
   saved?: boolean;
   customFlags?: CustomFlag[];
   onQuantityChange?: (qty: number) => void;
 }) {
+  /* Seeded lazily rather than through an effect: the drawer is mounted fresh
+     per box (keyed on its id), so the first render already has the right
+     values and there is no moment where an edit shows an empty form. */
   const [unit, setUnit] = useState<'cm' | 'm'>('cm');
   const [wUnit, setWUnit] = useState<'kg' | 'g'>('kg');
-  const [dims, setDims] = useState<Record<string, string>>({});
-  const [remark, setRemark] = useState<string>('correct');
-  const [condition, setCondition] = useState<string>('perfect');
-  const [flags, setFlags] = useState<string[]>([]);
-  const [stackable, setStackable] = useState(true);
+  const [dims, setDims] = useState<Record<string, string>>((): Record<string, string> => (initial ? {
+    length: dimStr(initial.dims.length_cm),
+    width: dimStr(initial.dims.width_cm),
+    height: dimStr(initial.dims.height_cm),
+    weight: dimStr(initial.dims.weight_kg),
+    netWeight: dimStr(initial.dims.net_weight_kg),
+    grossWeight: dimStr(initial.dims.gross_weight_kg),
+  } : {}));
+  /* The drawer's chip is "mismatch"; the server's value is "mismatched".
+     collect() maps one way, this maps the other. */
+  const [remark, setRemark] = useState<string>(
+    initial ? (initial.remark === 'mismatched' ? 'mismatch' : initial.remark) : 'correct',
+  );
+  const [condition, setCondition] = useState<string>(initial?.condition ?? 'perfect');
+  const [flags, setFlags] = useState<string[]>(initial?.flagIds ?? []);
+  const [stackable, setStackable] = useState(initial?.stackable ?? true);
   const [flagsOpen, setFlagsOpen] = useState(false);
-  const [temp, setTemp] = useState<TempRange>({ min: '', max: '' });
+  const [temp, setTemp] = useState<TempRange>(initial?.temp ?? { min: '', max: '' });
   const [tempOpen, setTempOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
   const [advOpen, setAdvOpen] = useState(false);
-  const [boxIdentity, setBoxIdentity] = useState<Record<string, string>>({});
+  const [boxIdentity, setBoxIdentity] = useState<Record<string, string>>(
+    () => (initial ? { ...initial.boxIdentity } : {}),
+  );
 
-  const [identities, setIdentities] = useState<Record<string, ProductIdentity>>({});
+  const [identities, setIdentities] = useState<Record<string, ProductIdentity>>(
+    () => initial?.identities ?? {},
+  );
   const patchIdentity = useCallback((code: string, patch: Partial<ProductIdentity>) => {
     setIdentities(m => ({ ...m, [code]: { ...(m[code] ?? EMPTY_IDENTITY), ...patch } }));
   }, []);
@@ -241,11 +288,23 @@ export default function BoxDrawer({
             <Tooltip label="Photograph this box with the camera">
               <button type="button" className="vti-dw-icon-btn"><IcoCamera size={13} stroke={2.3} /> Camera</button>
             </Tooltip>
+            {/* On an edit the box is already saved, so `saved` must not lock
+                the button -- that is what would make an edit read-only the
+                moment it opened. */}
             <button type="button" className="vti-dw-save-btn"
-              disabled={saving || saved || !onSave}
+              disabled={saving || (!initial && saved) || !onSave}
               onClick={() => onSave?.(collect())}>
-              <IcoSave size={12} stroke={2.5} /> {saving ? 'Saving…' : saved ? 'Saved' : 'Save'}
+              <IcoSave size={12} stroke={2.5} />
+              {saving ? 'Saving…' : initial ? 'Update Box' : saved ? 'Saved' : 'Save'}
             </button>
+            {/* Beside Save rather than at the far right: the drawer opened out
+                of the row above it, and the way out belongs next to the way
+                to commit. */}
+            {onClose && (
+              <button type="button" className="vti-dw-close-btn" onClick={onClose} disabled={saving}>
+                × Close
+              </button>
+            )}
           </div>
           <Tooltip label={saved ? `Print the sticker for ${boxId}` : 'Save the box first — the sticker carries its box ID'}>
             <button type="button" className="vti-dw-sticker-btn" disabled={!saved}

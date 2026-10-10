@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IcoBox, IcoCheck, IcoChevron, IcoLock, IcoShip } from '../../../icons';
 import StageSummary from './StageSummary';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import BoxDrawer, { type BoxSaveData } from './BoxDrawer';
+import BoxDrawer, { type BoxInitial, type BoxSaveData } from './BoxDrawer';
 import PackedProducts, { type PackedRow } from './PackedProducts';
 import type { CustomFlag } from './ProductFlagsModal';
 import MultiBoxPanel, { splitQuantity, type SplitBox } from './MultiBoxPanel';
@@ -10,8 +10,8 @@ import { lineTotals, truncateDesc, DESC_MAX, type ProductLine } from '../invoice
 import type { InvoiceDraft } from '../invoice-draft';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../contexts/ConfirmContext';
-import { EMPTY_IDENTITY } from './SelectedProducts';
-import type { ProductFlagOption, SpiBox, SpiBoxBody } from '../spi-api';
+import { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
+import type { ProductFlagOption, SpiBox, SpiBoxBody, SpiBoxItem } from '../spi-api';
 
 const BOX_TABLE_COLUMNS = 10;
 
@@ -45,13 +45,18 @@ const SCENARIOS: Array<{ id: Scenario; no: string; title: string; arrow: string;
 
 const FLAG_PALETTE = ['#0891b2', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#2563eb', '#ca8a04'];
 
+/** What the drawer's Mode reads when it is open on a box that already exists. */
+const EDIT_MODE: Record<Scenario, string> = {
+  s1: 'Single Box', s2: 'Split Carton', s3: 'Mixed Carton',
+};
+
 const todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 export default function Step3BoxPackaging({
-  draft, lines, boxes = [], flagMaster = [], readOnly = false, onCreateBox, onDeleteBoxes,
+  draft, lines, boxes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes,
 }: {
   draft: InvoiceDraft;
   lines: ProductLine[];
@@ -59,6 +64,8 @@ export default function Step3BoxPackaging({
   flagMaster?: ProductFlagOption[];
   readOnly?: boolean;
   onCreateBox?: (body: SpiBoxBody) => Promise<SpiBox | null>;
+  /** Save a box that already exists, keeping its code. */
+  onUpdateBox?: (boxId: number, body: SpiBoxBody) => Promise<SpiBox | null>;
   onDeleteBoxes?: (ids: number[]) => Promise<boolean>;
 }) {
   const toast = useToast();
@@ -213,7 +220,22 @@ export default function Step3BoxPackaging({
     return { ids: [...new Set(ids)], missing };
   };
 
-  const validate = (scenario: Scenario, data: BoxSaveData, contents: Array<{ line: ProductLine; qty: number }>) => {
+  /**
+   * How much of a product is packed elsewhere.
+   *
+   * `exclude` is the box being edited: its own units are already in packedQty,
+   * so without this an edit would look like double-packing and every "a single
+   * box must hold all N units" check would fail on a box that was correct.
+   */
+  const packedElsewhere = (code: string, exclude?: SpiBox | null) =>
+    Math.round(((packedQty[code] ?? 0) - (exclude ? qtyIn(exclude, code) : 0)) * 1000) / 1000;
+
+  const validate = (
+    scenario: Scenario,
+    data: BoxSaveData,
+    contents: Array<{ line: ProductLine; qty: number }>,
+    exclude?: SpiBox | null,
+  ) => {
     const d = data.dims;
     const need = [
       d.length_cm == null && 'Length', d.width_cm == null && 'Width', d.height_cm == null && 'Height',
@@ -229,7 +251,7 @@ export default function Step3BoxPackaging({
     const units = (n: number) => `${Math.round(n * 1000) / 1000} unit${n === 1 ? '' : 's'}`;
     if (scenario === 's1' || scenario === 's3') {
       for (const c of contents) {
-        const left = Math.round((c.line.spiQty - (packedQty[c.line.code] ?? 0)) * 1000) / 1000;
+        const left = Math.round((c.line.spiQty - packedElsewhere(c.line.code, exclude)) * 1000) / 1000;
         if (Math.abs(c.qty - left) > 0.0005) {
           return scenario === 's1'
             ? `A single box must hold all ${units(left)} of ${c.line.spiName} — it holds ${units(c.qty)}.`
@@ -391,6 +413,152 @@ export default function Step3BoxPackaging({
   const clearLocal = (codes: string[]) => {
     setPacking(p => { const next = { ...p }; for (const c of codes) delete next[c]; return next; });
     setSplitCodes(m => { const next = { ...m }; for (const c of codes) delete next[c]; return next; });
+  };
+
+  /* ── Editing a box that is already saved ─────────────────────────────── */
+
+  /**
+   * A saved box read back into the values the drawer was filled with.
+   *
+   * The inverse of `bodyFor`, and it has to stay that way: anything added to
+   * one and forgotten in the other is a field that silently empties itself the
+   * first time somebody edits a box.
+   */
+  const readBox = (box: SpiBox): BoxInitial => {
+    const first = box.items[0];
+    /* The note is a joined string, not two columns: bodyFor writes
+       "remarks · Cold chain -4…4°C". Split it back so the remark does not
+       grow a temperature on every save. */
+    const parts = (first?.remark_note ?? '').split(' · ').map(s => s.trim()).filter(Boolean);
+    const cold = parts.find(p => p.startsWith('Cold chain'));
+    const range = cold?.replace('Cold chain', '').replace('°C', '').trim().split('…') ?? [];
+
+    const identity = (i?: SpiBoxItem): ProductIdentity => ({
+      serial: i?.serial_no ?? '',
+      lot: i?.lot_no ?? '',
+      batch: i?.batch_no ?? '',
+      cat: i?.cat_no ?? '',
+      /* Date-cast on the server, so it arrives as a timestamp and the date
+         inputs need the calendar day alone. */
+      expiry: (i?.expiry_date ?? '').slice(0, 10),
+      mfg: (i?.mfg_date ?? '').slice(0, 10),
+      remarks: (i?.remark_note ?? '').split(' · ').filter(p => !p.trim().startsWith('Cold chain')).join(' · ').trim(),
+    });
+
+    /* Stored flag ids are the master's numbers; the drawer speaks "m<id>" for
+       a master flag and a plain word for its three built-ins. */
+    const flagIds = (first?.flags ?? []).map(id => {
+      const name = (flagMaster.find(f => f.id === id)?.flag_name ?? '').trim().toLowerCase();
+      const builtIn = ['hazardous', 'coldchain', 'fragile']
+        .find(b => b === name.replace(/\s+/g, ''));
+      return builtIn ?? `m${id}`;
+    });
+
+    const num = (v: string | number | null | undefined) => {
+      const n = typeof v === 'number' ? v : parseFloat(v ?? '');
+      return Number.isFinite(n) ? n : null;
+    };
+
+    return {
+      dims: {
+        length_cm: num(box.length_cm), width_cm: num(box.width_cm), height_cm: num(box.height_cm),
+        weight_kg: num(box.weight_kg), net_weight_kg: num(box.net_weight_kg),
+        gross_weight_kg: num(box.gross_weight_kg),
+      },
+      condition: (box.condition === 'major' ? 'severe' : box.condition) as BoxInitial['condition'],
+      remark: first?.remark ?? 'correct',
+      flagIds,
+      stackable: first?.is_stackable ?? true,
+      boxIdentity: identity(first),
+      identities: Object.fromEntries(
+        box.items
+          .map(i => [codeOfItem.get(i.supplier_invoice_item_id), identity(i)] as const)
+          .filter((e): e is [string, ProductIdentity] => !!e[0]),
+      ),
+      ...(range.length === 2 ? { temp: { min: range[0], max: range[1] } } : {}),
+    };
+  };
+
+  /* Which box the drawer is open on, held as an id rather than the box
+     itself: `boxes` is replaced on every reload, and a captured object would
+     go stale the moment the edit saved. */
+  const [editingId, setEditingId] = useState<number | null>(null);
+  /* The drawer opens ABOVE the row that was pressed, so without this the page
+     does not move and the click reads as having done nothing. */
+  const editRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (editingId != null) editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [editingId]);
+  /* Products taken out of the carton during this edit. Kept apart from the
+     box so Cancel really cancels -- nothing is sent until Update Box. */
+  const [dropped, setDropped] = useState<string[]>([]);
+  const editingBox = boxes.find(b => b.id === editingId) ?? null;
+
+  const openEdit = (boxCode: string) => {
+    if (readOnly) return;
+    const box = boxes.find(b => b.box_code === boxCode);
+    if (!box) return;
+    if (!onUpdateBox) {
+      toast.info('Save the invoice first', 'A box can be edited once Stage 02 is saved.');
+      return;
+    }
+    setDropped([]);
+    setEditingId(box.id);
+  };
+
+  const closeEdit = () => { setEditingId(null); setDropped([]); };
+
+  /* What the carton holds right now in the drawer: its saved items, minus
+     anything removed in this sitting. */
+  const editContents = (editingBox?.items ?? [])
+    .map(i => {
+      const code = codeOfItem.get(i.supplier_invoice_item_id);
+      const line = code ? lines.find(l => l.code === code) : undefined;
+      return line && !dropped.includes(line.code)
+        ? { line, qty: Number(i.quantity) || 0 }
+        : null;
+    })
+    .filter((c): c is { line: ProductLine; qty: number } => !!c);
+
+  const saveEdit = async (data: BoxSaveData) => {
+    if (!editingBox || !onUpdateBox) return;
+    if (!editContents.length) {
+      toast.warning('A box cannot be empty', `Delete ${editingBox.box_code} instead of taking everything out of it.`);
+      return;
+    }
+    const err = validate(editingBox.scenario, data, editContents, editingBox);
+    if (err) { toast.warning('Box not updated', err); return; }
+    const { missing } = flagIdsFor(data);
+    if (missing.length) {
+      toast.info('Some flags were not saved', `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not in the Product Flag master yet.`);
+    }
+    setSavingKey(`edit:${editingBox.id}`);
+    try {
+      const saved = await onUpdateBox(editingBox.id, bodyFor(editingBox.scenario, data, editContents));
+      if (!saved) return;
+      /* A product taken out of the carton is unpacked again, so its scenario
+         chip has to go with it or the row above would come back pre-set. */
+      if (dropped.length) clearLocal(dropped);
+      closeEdit();
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const dropFromBox = async (code: string) => {
+    if (!editingBox) return;
+    if (editContents.length <= 1) {
+      toast.warning('A box cannot be empty', `Delete ${editingBox.box_code} instead of taking everything out of it.`);
+      return;
+    }
+    const line = lines.find(l => l.code === code);
+    const ok = await confirm({
+      title: `Take ${line?.spiName ?? code} out of ${editingBox.box_code}?`,
+      message: 'It goes back to Pending and can be packed again. The box keeps its code and the rest of its contents.',
+      tone: 'danger',
+      confirmLabel: 'Take it out',
+    });
+    if (ok) setDropped(d => (d.includes(code) ? d : [...d, code]));
   };
 
   const reset = async (code: string) => {
@@ -662,6 +830,19 @@ export default function Step3BoxPackaging({
                   </Fragmentish>
                 );
               })}
+              {/* Nothing left to pack. A table of headings over an empty strip
+                  reads as a screen that failed to load, so it says what
+                  happened instead -- and names where the boxes went, since the
+                  products did not disappear, they moved down the page. */}
+              {pendingLines.length === 0 && (
+                <tr className="invf-allpacked-row">
+                  <td colSpan={BOX_TABLE_COLUMNS}>
+                    <div className="invf-allpacked">
+                      All {lines.length} product{lines.length === 1 ? '' : 's'} packed in {totalBoxes} box{totalBoxes === 1 ? '' : 'es'} — see Packed Products below.
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -685,9 +866,49 @@ export default function Step3BoxPackaging({
           />
       )}
 
+      {/* The edit drawer opens in the same slot the mixed carton is built in:
+          between the products table and Packed Products. One place on this
+          page where a box is worked on, whether it is being made or changed. */}
+      {editingBox && editContents.length > 0 && (
+        <div ref={editRef}>
+        <BoxDrawer
+          /* Keyed on the box so the drawer remounts -- its fields seed from
+             `initial` on first render, and a shared instance would keep the
+             previous box's values. */
+          key={editingBox.id}
+          boxId={editingBox.box_code}
+          line={editContents[0].line}
+          quantity={editContents[0].qty}
+          scenario={SCN_LABEL[editingBox.scenario][1]}
+          modeKey={editingBox.scenario === 's3' ? 'Products' : 'Mode'}
+          modeLabel={editingBox.scenario === 's3'
+            ? `${editContents.length} SKU${editContents.length === 1 ? '' : 's'}`
+            : EDIT_MODE[editingBox.scenario]}
+          variant="panel"
+          initial={readBox(editingBox)}
+          /* A mixed carton lists its contents, and that list is where one
+             product is taken out without the others being unpacked. A
+             single-product box would show a one-row table saying what the
+             strip above it already says. */
+          {...(editingBox.scenario === 's3'
+            ? {
+              contents: editContents,
+              ...(editContents.length > 1 ? { onRemoveContent: (code: string) => void dropFromBox(code) } : {}),
+            }
+            : {})}
+          customFlags={customFlags}
+          saving={savingKey === `edit:${editingBox.id}`}
+          saved
+          onSave={data => void saveEdit(data)}
+          onClose={closeEdit}
+        />
+        </div>
+      )}
+
       <PackedProducts
         rows={packedRows}
-        onEdit={readOnly ? undefined : code => void reset(code)}
+        onEditBox={readOnly ? undefined : openEdit}
+        editingBoxId={editingBox?.box_code ?? null}
       />
     </>
   );

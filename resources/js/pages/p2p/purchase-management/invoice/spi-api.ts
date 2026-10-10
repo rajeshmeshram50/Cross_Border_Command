@@ -171,7 +171,25 @@ export type SpiBoxBody = {
   items: SpiBoxItemBody[];
 };
 
-export type SpiBoxItem = { id: number; supplier_invoice_item_id: number; quantity: string };
+/* The list endpoint returns the whole row, so a saved box can be read back
+   into the drawer that made it. Everything past `quantity` is what an edit
+   needs and a create does not. */
+export type SpiBoxItem = {
+  id: number;
+  supplier_invoice_item_id: number;
+  quantity: string;
+  is_stackable?: boolean;
+  remark?: 'correct' | 'damaged' | 'mismatched' | 'extra';
+  remark_note?: string | null;
+  flags?: number[] | null;
+  serial_no?: string | null;
+  lot_no?: string | null;
+  batch_no?: string | null;
+  cat_no?: string | null;
+  /** Date-cast on the server, so it arrives as a full ISO timestamp. */
+  expiry_date?: string | null;
+  mfg_date?: string | null;
+};
 
 export type SpiBox = {
   id: number;
@@ -179,6 +197,13 @@ export type SpiBox = {
   scenario: SpiBoxScenario;
   condition: string;
   sticker_printed_at: string | null;
+  /** Decimal-cast, so these arrive as strings like "40.00". */
+  length_cm?: string | number | null;
+  width_cm?: string | number | null;
+  height_cm?: string | number | null;
+  weight_kg?: string | number | null;
+  net_weight_kg?: string | number | null;
+  gross_weight_kg?: string | number | null;
   items: SpiBoxItem[];
 };
 
@@ -196,6 +221,13 @@ export const spiApi = {
   createBox: (spiId: number, body: SpiBoxBody) =>
     call('SPI box save', () => api.post(`/p2p/spi/${spiId}/boxes`, body),
       (b) => (b as { data?: { box: SpiBox; totals: SpiPackingTotals } } | null)?.data?.box as SpiBox),
+
+  /* Replaces a saved box in place: same box_code, new dimensions and new
+     contents. The server swaps the items wholesale, so dropping one product
+     out of a mixed carton is an edit here rather than a delete-and-rebuild. */
+  updateBox: (spiId: number, boxId: number, body: SpiBoxBody) =>
+    call('SPI box update', () => api.put(`/p2p/spi/${spiId}/boxes/${boxId}`, body),
+      (b) => (b as { data?: { box: SpiBox } } | null)?.data?.box as SpiBox),
 
   deleteBox: (spiId: number, boxId: number) =>
     call('SPI box delete', () => api.delete(`/p2p/spi/${spiId}/boxes/${boxId}`), () => true),

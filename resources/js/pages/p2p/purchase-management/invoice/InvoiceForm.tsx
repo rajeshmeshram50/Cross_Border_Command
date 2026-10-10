@@ -276,6 +276,23 @@ export default function InvoiceForm({
     }
   }, [spiId, reloadBoxes, toast]);
 
+  /* Edit a box in place. The box keeps its code and its sticker stays valid,
+     which is the whole reason this is not a delete followed by a create: a
+     rebuilt carton would come back as a new code and the label on the shelf
+     would be wrong. */
+  const updateBox = useCallback(async (boxId: number, body: SpiBoxBody): Promise<SpiBox | null> => {
+    if (!spiId) return null;
+    try {
+      const box = await spiApi.updateBox(spiId, boxId, body);
+      await reloadBoxes(spiId);
+      toast.success(`${box.box_code} updated`, `It now holds ${body.items.length} product${body.items.length === 1 ? '' : 's'}.`);
+      return box;
+    } catch (e) {
+      toast.error('Could not update the box', boxError(e));
+      return null;
+    }
+  }, [spiId, reloadBoxes, toast]);
+
   const deleteBoxes = useCallback(async (ids: number[]): Promise<boolean> => {
     if (!spiId) return false;
     let removed = 0;
@@ -408,6 +425,7 @@ export default function InvoiceForm({
                     flagMaster={flagMaster}
                     readOnly={viewOnly}
                     onCreateBox={spiId ? createBox : undefined}
+                    onUpdateBox={spiId ? updateBox : undefined}
                     onDeleteBoxes={spiId ? deleteBoxes : undefined}
                   />
                 )}

@@ -750,11 +750,17 @@
    needs a floor the other columns do not. */
 .vti-table th:nth-child(2),
 .vti-table td:nth-child(2) { min-width: 190px; }
-/* Packed Products has no checkbox, so its product column is the FIRST one. */
-.invf-packed .vti-table th:first-child,
-.invf-packed .vti-table td:first-child { min-width: 190px; }
-.invf-packed .vti-table th:nth-child(2),
-.invf-packed .vti-table td:nth-child(2) { min-width: 0; }
+/* Packed Products leads with Sr No and Box ID, so the two columns the base
+   table reserves for a checkbox and a product name are the wrong ones here:
+   left as they were, the 190px floor meant for a product name sat under "01"
+   and opened a gap the width of a product before the box id. */
+.invf-packed .invf-packed-table th:first-child,
+.invf-packed .invf-packed-table td:first-child { min-width: 0; width: 52px; }
+.invf-packed .invf-packed-table th:nth-child(2),
+.invf-packed .invf-packed-table td:nth-child(2) { min-width: 0; width: 1%; white-space: nowrap; }
+/* Third column is the product, and it is the one that needs the floor. */
+.invf-packed .invf-packed-table th:nth-child(3),
+.invf-packed .invf-packed-table td:nth-child(3) { min-width: 190px; text-align: left; }
 /* Give the description room to earn its 30 characters in both tables. */
 .vti-table td.vti-desc { min-width: 210px; }
 
@@ -1634,16 +1640,89 @@
   .vti-header-stats { flex-wrap: wrap; }
 }
 
-/* The packed row's two actions: view the boxes, or send the product back to
-   be repacked. */
+/* The box ids on a packed row. Two chips and a count at most, so the cell
+   cannot grow a second line and push the row's height around.
+
+   The chips borrow .vti-code: a box id and a product code are the same kind
+   of fact, and giving them the same chip is one less thing to learn. */
+.invf-boxids {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+/* One line where the rows used to be. A note, not a panel: the step is
+   finished, and a card with an icon would take more room saying so than the
+   rows it replaced. */
+.invf-allpacked-row > td { border-bottom: none !important; }
+
+.invf-allpacked {
+  padding: 2px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #047857;
+  text-align: center;
+}
+
+[data-bs-theme="dark"] .invf-allpacked { color: #6ee7b7; }
+
+/* The row number. Quiet and tabular, because it is there to be referred to
+   ("row 2"), not to be read down the column. */
+.invf-sr {
+  font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-bs-theme="dark"] .invf-sr { color: #94a3b8; }
+
+/* The id is the control. Styled as the chip it already was rather than as a
+   button, so the column still reads as data -- the hover is what says it can
+   be pressed. */
+.invf-boxid-btn {
+  cursor: pointer;
+  font-family: inherit;
+  transition: color .16s, background .16s, border-color .16s, box-shadow .16s;
+}
+
+.invf-boxid-btn:hover {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  border-color: transparent;
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
+}
+
+.invf-boxid-btn:focus-visible {
+  outline: 2px solid #0891b2;
+  outline-offset: 2px;
+}
+
+[data-bs-theme="dark"] .invf-boxid-btn:hover {
+  color: #042f3b;
+}
+
+/* The overflow count is the same chip with its border dropped, so it reads as
+   "and more of these" rather than as another id. */
+.invf-boxid--more {
+  background: transparent;
+  border-color: transparent;
+  font-weight: 800;
+  opacity: .8;
+  cursor: help;
+  padding-left: 2px;
+  padding-right: 2px;
+}
+/* The packed row's two actions: view the boxes, or delete them. */
 .vti-packed-acts {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-/* Repack is the quieter of the two — viewing is what this row is mostly for,
-   and an edit that shouts invites undoing work that is already correct. */
+/* Edit is the quiet one of the three: most visits to this row are to look,
+   and an edit that shouts invites changing work that is already right. */
 .vti-btn-single--edit {
   color: #0e7490;
   background: #eafaff;
@@ -1661,3 +1740,122 @@
   background: rgba(6, 182, 212, .14);
   border-color: rgba(6, 182, 212, .28);
 }
+
+/* Edit on a box card in the box list. Sits under the unit count, so the card
+   stays a label-and-value and the action is a third line rather than a thing
+   competing with the id. */
+.invf-boxchip__edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 1px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(8, 145, 178, .26);
+  background: #fff;
+  color: #0e7490;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color .16s, background .16s, border-color .16s;
+}
+
+.invf-boxchip__edit:hover {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  border-color: transparent;
+}
+
+[data-bs-theme="dark"] .invf-boxchip__edit {
+  background: rgba(8, 145, 178, .12);
+  border-color: rgba(6, 182, 212, .3);
+  color: #67e8f9;
+}
+
+/* Close, beside Save inside the drawer's strip. The same ghost pill the
+   multi-box panel already closes with, so the two drawers shut alike. */
+.vti-dw-strip .vti-dw-close-btn {
+  flex-shrink: 0;
+  padding: 0 14px;
+  align-self: stretch;
+  border-radius: 8px;
+  border: 1.5px solid rgba(255, 255, 255, .25);
+  background: rgba(255, 255, 255, .08);
+  color: rgba(255, 255, 255, .78);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.vti-dw-strip .vti-dw-close-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, .3);
+  border-color: rgba(239, 68, 68, .5);
+  color: #fff;
+}
+
+.vti-dw-strip .vti-dw-close-btn:disabled { opacity: .5; cursor: default; }
+
+/* The row whose carton is open in the drawer above, marked so the two are
+   visibly the same box. */
+.invf-grp-row.is-open > td { background: #f0fdff; }
+[data-bs-theme="dark"] .invf-grp-row.is-open > td { background: rgba(8, 145, 178, .1); }
+.vti-btn-single--edit.is-on {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  border-color: transparent;
+}
+
+/* Several products in one carton: one row, their values stacked and divided,
+   rather than a row each pretending to be separate boxes. */
+.invf-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+/* `justify-content: inherit` was the bug the headers exposed: a <td> is not a
+   flex container, so there was nothing to inherit and every stacked cell fell
+   back to flex-start -- centred headers over left-packed values, while the
+   un-stacked columns beside them stayed centred. Each cell now matches the
+   alignment its own column uses. */
+.invf-stack__cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 6px 0;
+}
+
+.invf-packed-table td:nth-child(3) .invf-stack__cell,
+.invf-packed-table td.vti-desc .invf-stack__cell { justify-content: flex-start; }
+
+.invf-stack__cell + .invf-stack__cell {
+  border-top: 1px dashed rgba(8, 145, 178, .26);
+}
+
+[data-bs-theme="dark"] .invf-stack__cell + .invf-stack__cell {
+  border-top-color: rgba(6, 182, 212, .24);
+}
+
+/* A grouped row's own cells sit against the top so the box id and the
+   scenario line up with the first product rather than floating in the middle
+   of a two-product row. */
+.invf-grp-row > td { vertical-align: middle; }
+
+/* What a mixed carton holds, under its unit count in the box list. */
+.invf-boxchip__mix {
+  font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  color: #0e7490;
+  opacity: .8;
+  line-height: 1.5;
+}
+
+[data-bs-theme="dark"] .invf-boxchip__mix { color: #7dd3fc; }
+
