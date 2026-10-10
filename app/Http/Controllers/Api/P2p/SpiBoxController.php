@@ -7,8 +7,12 @@ use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiBoxItem;
 use App\Models\P2p\SupplierInvoice;
 use App\Services\P2p\SupplierInvoiceService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use chillerlan\QRCode\QRCode;
+use chillerlan\QRCode\QROptions;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
@@ -213,14 +217,18 @@ class SpiBoxController extends Controller
             $box->items()->delete();
             $box->delete();
 
-            $renumbered = $this->renumber($spi->id);
-            $rows       = $this->svc->packingSummary($spi->id);
+            /* Nothing is renumbered. Deleting BOX-03 leaves a permanent gap:
+               that label was printed, stuck on a carton and may already have
+               been scanned, so no later box may answer to the code. Closing
+               the gap also broke the unique index outright — the soft-deleted
+               row still holds its box_code, so renaming BOX-04 to BOX-03 hit
+               a constraint violation. */
+            $rows = $this->svc->packingSummary($spi->id);
 
             DB::commit();
 
             return response()->json(['status' => true, 'data' => [
                 'deleted_box_id'  => $boxId,
-                'renumbered'      => $renumbered,
                 'packing_summary' => $rows,
                 'totals'          => $this->svc->packingTotals($rows),
             ]], 200);
@@ -269,7 +277,115 @@ class SpiBoxController extends Controller
         }
     }
 
+    /**
+     * GET /p2p/spi/{id}/boxes/{box}/sticker/download — the label, as a PDF.
+     *
+     * 4x6in, the standard label stock. The QR carries the BOX CODE and nothing
+     * else: that is the exact string the put-away scanner matches on, so a URL
+     * or a json blob in it would break the scan.
+     *
+     * Downloading IS printing, so this stamps sticker_printed_at when it is
+     * still null — the same lock the preview takes. Without it a label could be
+     * on a carton while the code was still free to be renumbered, and the floor
+     * would scan the wrong box.
+     */
+    public function downloadSticker(Request $request, int $id, int $boxId)
+    {
+        try {
+            DB::beginTransaction();
+
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
+            $box = $this->findBox($id, $boxId);
+
+            $box->load('items.invoiceItem');
+            $spi->loadMissing('vendor:id,vendor_code,company_name,legal_name');
+
+            if (!$box->sticker_printed_at) {
+                $box->forceFill(['sticker_printed_at' => now()])->save();
+                $this->svc->log($spi, 'sticker_printed', [
+                    'box_id' => $box->id, 'new_value' => $box->box_code, 'stage' => 3,
+                ]);
+            }
+
+            $pdf = Pdf::loadView('pdf.spi-box-sticker', $this->stickerData($spi, $box))
+                // Points, because the blade is laid out in points: 4in x 6in.
+                ->setPaper([0, 0, 288, 432]);
+
+            DB::commit();
+
+            return $pdf->download(str_replace('/', '-', $spi->code) . '-' . $box->box_code . '.pdf');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     /* ══════════════════════════ HELPERS ══════════════════════════ */
+
+    /** Everything the sticker blade renders, resolved once. */
+    private function stickerData(SupplierInvoice $spi, SpiBox $box): array
+    {
+        $items = $box->items;
+
+        // One product reads as itself; several read as a count, because the
+        // carton has no single name.
+        $first    = $items->first()?->invoiceItem?->description;
+        $headline = $items->count() > 1
+            ? $items->count() . ' products'
+            : ($first ?: 'Mixed carton');
+
+        // Capped: a sticker that spills onto page 2 is useless on a carton.
+        $lines = $items->take(6)->map(fn ($i) => [
+            'description' => Str::limit((string) ($i->invoiceItem?->description ?: '—'), 48),
+            'batch'       => $i->batch_no ?: ($i->lot_no ?: '—'),
+            'qty'         => rtrim(rtrim(number_format((float) $i->quantity, 3, '.', ''), '0'), '.'),
+            'uom'         => $i->invoiceItem?->uom ?: '',
+        ])->all();
+
+        $dims = $box->length_cm && $box->width_cm && $box->height_cm
+            ? sprintf('%s x %s x %s cm', (float) $box->length_cm, (float) $box->width_cm, (float) $box->height_cm)
+            : null;
+
+        return [
+            'spi'           => $spi,
+            'box'           => $box,
+            'headline'      => $headline,
+            'supplier'      => $spi->vendor?->legal_name ?: $spi->vendor?->company_name,
+            'scenarioLabel' => match ($box->scenario) {
+                's1'    => 'One product / one box',
+                's2'    => 'One product / many boxes',
+                's3'    => 'Many products / one box',
+                default => (string) $box->scenario,
+            },
+            'lines'      => $lines,
+            'hidden'     => max(0, $items->count() - 6),
+            'totalQty'   => rtrim(rtrim(number_format((float) $items->sum('quantity'), 3, '.', ''), '0'), '.'),
+            'volumetric' => $box->volumetricWeightKg(),
+            'dims'       => $dims,
+            'packedOn'   => $box->created_at?->format('d M Y'),
+            'printedOn'  => now()->format('d M Y H:i'),
+            'qr'         => $this->qr($box->box_code),
+        ];
+    }
+
+    /** A base64 PNG dompdf can embed. Null when it cannot be built — the
+     *  sticker still prints, with the code in text, rather than failing. */
+    private function qr(?string $value): ?string
+    {
+        if (!$value) return null;
+
+        try {
+            return (new QRCode(new QROptions([
+                'eccLevel'    => 3,        // H — a scuffed carton label still reads
+                'scale'       => 6,
+                'imageBase64' => true,
+                'outputType'  => 'png',
+            ])))->render($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 
     private function validateBox(Request $request): array
     {
@@ -307,37 +423,32 @@ class SpiBoxController extends Controller
         }
     }
 
-    /** BOX-01 … BOX-n, per invoice. Trashed codes are skipped — they are free again. */
+    /**
+     * BOX-01 … BOX-n, per invoice. A code is issued once and never again.
+     *
+     * withTrashed() is the whole point: the unique index on
+     * (supplier_invoice_id, box_code) covers soft-deleted rows, so a deleted
+     * BOX-04 still holds that code. Counting only live boxes would hand the
+     * next carton BOX-04 again and the insert would fail on the constraint.
+     *
+     * Gaps are therefore permanent, and that is the correct behaviour: BOX-03
+     * was printed, stuck on a carton and may have been scanned. Nothing else
+     * may ever answer to that code.
+     *
+     * Three digits, not two, precisely because of those gaps: the sequence is
+     * the highest ever issued, not the live count, so an invoice that packs and
+     * repacks runs past 99 long before it holds 99 cartons.
+     */
     private function nextBoxCode(int $spiId): string
     {
         $max = 0;
-        foreach (SpiBox::where('supplier_invoice_id', $spiId)->pluck('box_code') as $code) {
+        // Matches BOX-01 and BOX-001 alike, so the older two-digit rows still
+        // count toward the sequence.
+        foreach (SpiBox::withTrashed()->where('supplier_invoice_id', $spiId)->pluck('box_code') as $code) {
             if (preg_match('/^BOX-(\d+)$/', (string) $code, $m)) $max = max($max, (int) $m[1]);
         }
 
-        return sprintf('BOX-%02d', $max + 1);
-    }
-
-    /**
-     * Close the gap a deleted box leaves — but only for boxes whose sticker has
-     * not been printed. A printed label is physically on a carton being scanned
-     * at put-away, so renaming it would point the floor at the wrong box.
-     */
-    private function renumber(int $spiId): array
-    {
-        $moved = [];
-        $n = 0;
-
-        foreach (SpiBox::where('supplier_invoice_id', $spiId)->orderBy('box_code')->get() as $box) {
-            $n++;
-            $want = sprintf('BOX-%02d', $n);
-            if ($box->box_code === $want || $box->isCodeLocked()) continue;
-
-            $moved[] = ['id' => $box->id, 'from' => $box->box_code, 'to' => $want];
-            $box->forceFill(['box_code' => $want])->save();
-        }
-
-        return $moved;
+        return sprintf('BOX-%03d', $max + 1);
     }
 
     /** Nothing may be packed beyond what the invoice says was billed. */
