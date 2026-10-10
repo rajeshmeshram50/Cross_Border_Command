@@ -108,7 +108,7 @@ class SpiBoxController extends Controller
      * before anything is saved.
      *
      * PREVIEW ONLY. Nothing is reserved — two people packing the same invoice
-     * are both shown BOX-003, and whoever saves first gets it. The code that
+     * are both shown B-003, and whoever saves first gets it. The code that
      * ends up in the database is the one store() allocates under a row lock,
      * and it is returned on the save, so the screen should take it from there
      * rather than trusting what it was shown.
@@ -265,11 +265,11 @@ class SpiBoxController extends Controller
             $box->items()->delete();
             $box->delete();
 
-            /* Nothing is renumbered. Deleting BOX-03 leaves a permanent gap:
+            /* Nothing is renumbered. Deleting B-003 leaves a permanent gap:
                that label was printed, stuck on a carton and may already have
                been scanned, so no later box may answer to the code. Closing
                the gap also broke the unique index outright — the soft-deleted
-               row still holds its box_code, so renaming BOX-04 to BOX-03 hit
+               row still holds its box_code, so renaming B-004 to B-003 hit
                a constraint violation. */
             $rows = $this->svc->packingSummary($spi->id);
 
@@ -414,7 +414,7 @@ class SpiBoxController extends Controller
             'packedOn'   => $box->created_at?->format('d M Y'),
             'printedOn'  => now()->format('d M Y H:i'),
             /* The ID, not the code. A box id is unique across every invoice,
-               client and branch; BOX-001 exists on almost every SPI, so a QR
+               client and branch; B-001 exists on almost every SPI, so a QR
                carrying the code cannot say which carton it is. The code is
                printed in text beside it for the human. */
             'qr'         => $this->qr((string) $box->id),
@@ -476,14 +476,14 @@ class SpiBoxController extends Controller
     }
 
     /**
-     * BOX-01 … BOX-n, per invoice. A code is issued once and never again.
+     * B-001 … B-nnn, per invoice. A code is issued once and never again.
      *
      * withTrashed() is the whole point: the unique index on
      * (supplier_invoice_id, box_code) covers soft-deleted rows, so a deleted
-     * BOX-04 still holds that code. Counting only live boxes would hand the
-     * next carton BOX-04 again and the insert would fail on the constraint.
+     * B-004 still holds that code. Counting only live boxes would hand the
+     * next carton B-004 again and the insert would fail on the constraint.
      *
-     * Gaps are therefore permanent, and that is the correct behaviour: BOX-03
+     * Gaps are therefore permanent, and that is the correct behaviour: B-003
      * was printed, stuck on a carton and may have been scanned. Nothing else
      * may ever answer to that code.
      *
@@ -505,15 +505,15 @@ class SpiBoxController extends Controller
     private function nextBoxCodes(int $spiId, int $count): array
     {
         $max = 0;
-        // Matches BOX-01 and BOX-001 alike, so the older two-digit rows still
-        // count toward the sequence.
+        // Matches the retired BOX-01 / BOX-001 forms as well as B-001, so a
+        // renamed invoice keeps counting from where it left off.
         foreach (SpiBox::withTrashed()->where('supplier_invoice_id', $spiId)->pluck('box_code') as $code) {
-            if (preg_match('/^BOX-(\d+)$/', (string) $code, $m)) $max = max($max, (int) $m[1]);
+            if (preg_match('/^B(?:OX)?-(\d+)$/', (string) $code, $m)) $max = max($max, (int) $m[1]);
         }
 
         $codes = [];
         for ($i = 1; $i <= $count; $i++) {
-            $codes[] = sprintf('BOX-%03d', $max + $i);
+            $codes[] = sprintf('B-%03d', $max + $i);
         }
 
         return $codes;

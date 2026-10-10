@@ -292,7 +292,7 @@ class SpiPutawayController extends Controller
      *
      * Resolved by ID first. A box id is unique across every invoice, client and
      * branch; a box CODE is only unique inside its own invoice, because every
-     * invoice starts again at BOX-001. The sticker QR therefore carries the id,
+     * invoice starts again at B-001. The sticker QR therefore carries the id,
      * and a numeric scan needs no invoice context at all.
      *
      * A textual scan is still accepted — someone keying the printed code by
@@ -301,7 +301,7 @@ class SpiPutawayController extends Controller
      * Both lookups go through the tenant scope, so a box of another client or
      * another branch is simply not found. The old version bypassed that scope
      * and searched everywhere, which made "belongs to another invoice" fire for
-     * every typo once BOX-001 existed on more than one SPI.
+     * every typo once B-001 existed on more than one SPI.
      *
      * @return array{0: ?SpiBox, 1: ?SpiBox} the box on this invoice, the box scanned
      */
