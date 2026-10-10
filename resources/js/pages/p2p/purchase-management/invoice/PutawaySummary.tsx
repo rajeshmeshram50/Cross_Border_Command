@@ -189,15 +189,23 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
                   <tr key={p.code}>
                     <td><span className="pts-sr">{i + 1}</span></td>
                     <td><span className="pts-chip pts-chip--code">{p.code}</span></td>
-                    <td className="pts-l"><span className="pts-pname"><i className="pts-pdot" />{p.name}</span></td>
+                    {/* The name is the one cell here with no shape to it. In
+                        an auto-layout table a long one widens its column and
+                        squeezes every other, so it is capped and cut with "…",
+                        and the title carries it whole. */}
+                    <td className="pts-l">
+                      <span className="pts-pname" title={p.name}>
+                        <i className="pts-pdot" /><span className="pts-trunc">{p.name}</span>
+                      </span>
+                    </td>
                     <td><span className="pts-qty">{p.qty}</span></td>
                     <td><Flag on={p.hazardous} /></td>
                     <td><Flag on={p.coldChain} /></td>
                     <td><span className="pts-mono pts-dim">{p.serial}</span></td>
                     <td><span className="pts-mono pts-dim">{p.lot}</span></td>
                     <td><span className="pts-mono pts-dim">{p.batch}</span></td>
-                    <td><span className="pts-chip">{p.cat}</span></td>
-                    <td><span className="pts-ok">{p.remark}</span></td>
+                    <td><span className="pts-chip pts-chip--cap" title={p.cat}>{p.cat}</span></td>
+                    <td><span className="pts-ok pts-ok--cap" title={p.remark}>{p.remark}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -332,7 +340,7 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
             sub="Temporary putaway location recorded for each box at invoice mapping."
             right={(
               <>
-                <span className="pts-whpill"><IcoPin /> {row.warehouseName}</span>
+                <span className="pts-whpill" title={row.warehouseName}><IcoPin /><span className="pts-trunc">{row.warehouseName}</span></span>
                 <span className="pts-temp">Temporary</span>
               </>
             )}
@@ -351,7 +359,13 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
                       <td><span className="pts-sr">{i + 1}</span></td>
                       <td><span className="pts-chip pts-chip--code">{b.id}</span></td>
                       <td className="pts-l">{b.scenario}</td>
-                      <td className="pts-l"><span className="pts-whcell"><IcoWarehouse /> {row.warehouseName}</span></td>
+                      {/* Same treatment as the product name: a warehouse is
+                          free text and can be long. */}
+                      <td className="pts-l">
+                        <span className="pts-whcell" title={row.warehouseName}>
+                          <IcoWarehouse /><span className="pts-trunc">{row.warehouseName}</span>
+                        </span>
+                      </td>
                       <td><span className="pts-chip pts-chip--zone">{ICON_ZONE}{b.zone}</span></td>
                       <td><span className="pts-chip pts-chip--rack">{ICON_RACK}{b.rack}</span></td>
                       <td><span className="pts-chip pts-chip--shelf">{ICON_SHELF}{b.shelf}</span></td>

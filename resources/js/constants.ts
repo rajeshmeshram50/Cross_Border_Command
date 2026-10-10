@@ -195,6 +195,37 @@ export const MASTER_GROUPS: MenuGroup[] = [
   },
 ];
 
+/**
+ * Inventory Management — the prototype's own module, one "Inventory Master"
+ * column sitting between P2P and GTS in the nav.
+ *
+ * Not the same thing as Inventory Management System, which is a separate
+ * system with its own put-away, sticker and scanning screens.
+ *
+ * The leaves keep their `master.*` ids on purpose. Those ids are the
+ * permission slugs AND the master keys the generic master page is routed by,
+ * so a warehouse already granted to someone stays granted and no new row,
+ * route or alias is needed — the entries are a second way in to pages the
+ * Master module already holds, which is how HRMS already carries the
+ * attendance masters.
+ */
+export const INVENTORY_GROUPS: MenuGroup[] = [
+  {
+    id: 'inv.master',
+    label: 'Inventory Master',
+    icon: 'Warehouse',
+    children: [
+      { id: 'master.warehouse_master', icon: 'Warehouse', label: 'Warehouse Master' },
+      { id: 'master.zone_master', icon: 'Grid3x3', label: 'Zone Master' },
+      { id: 'master.racks', icon: 'Rows3', label: 'Rack Master' },
+      /* In the design, not yet in the app: there is no product-flags master,
+         so it has no permission row and renders disabled, the way every other
+         unbuilt leaf in this nav does. */
+      { id: 'master.product_flags', icon: 'Flag', label: 'Product Flags Master' },
+    ],
+  },
+];
+
 export const HR_GROUPS: MenuGroup[] = [
   {
     id: 'hr.command',

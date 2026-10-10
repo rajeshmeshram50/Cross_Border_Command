@@ -118,6 +118,8 @@ import { Shimmer, ShimmerTable, ShimmerEmployeeProfile } from './ui/Shimmer';
 const PublicOnboarding = lazyPage(() => import('../pages/PublicOnboarding'));
 const ClockIn = lazyPage(() => import('../pages/ClockIn'));
 const ModuleStubPage = lazyPage(() => import('../pages/ModuleStubPage'));
+/* Inventory Management — designed one master at a time; the rest are still stubs. */
+const WarehouseMaster = lazyPage(() => import('../pages/inventory-management/warehouse/WarehouseMaster'));
 const P2pBulkSourcing = lazyPage(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
 /* Invoice — the rebuilt supplier purchase invoice, and now the only one: the
@@ -953,6 +955,14 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
               <Route path="/p2p/bulk-sourcing" element={<P2pBulkSourcing />} />
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
+              {/* Inventory Management — blank while each master is designed.
+                  Separate from /master/* on purpose: those are the existing
+                  master screens with their data, these are being built fresh.
+                  Point a route at its real component as that one ships. */}
+              <Route path="/inventory-management/warehouse-master" element={<WarehouseMaster />} />
+              <Route path="/inventory-management/zone-master" element={<ModuleStubPage />} />
+              <Route path="/inventory-management/rack-master" element={<ModuleStubPage />} />
+              <Route path="/inventory-management/product-flags" element={<ModuleStubPage />} />
               <Route path="/p2p/supplier-purchase-invoice" element={<Invoice />} />
               {/* The screen used to live at /p2p/invoice. Kept as a redirect so
                   a bookmark or a link in an old email still lands on it. */}

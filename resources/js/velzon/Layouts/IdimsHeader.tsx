@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { changeLayoutMode } from '../slices/thunks';
@@ -6,7 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { moduleVisible } from '../../utils/menuAccess';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
-import { SALES_GROUPS, CLM_GROUPS, HR_GROUPS, P2P_GROUPS } from '../../constants';
+import { SALES_GROUPS, CLM_GROUPS, HR_GROUPS, P2P_GROUPS, INVENTORY_GROUPS } from '../../constants';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import { onNetworkChange, stopAll, resumeAll, pendingRequests } from '../../api';
 import { useToast } from '../../contexts/ToastContext';
@@ -42,6 +42,11 @@ const PERM_ALIAS: Record<string, string> = {
   'hr.devices': 'hr.attendance',
   'p2p.advance_refund': 'p2p.order',
   'p2p.invoice': 'p2p.order',
+  /* Product Flags has no master of its own yet, so it has no permission row
+     to be granted. It rides on the warehouse grant — the masters it sits
+     with — so it opens for the same people rather than showing locked for a
+     reason that has nothing to do with permissions. */
+  'master.product_flags': 'master.warehouse_master',
 };
 
 const permSlugFor = (leafId: string): string => PERM_ALIAS[leafId] ?? leafId;
@@ -121,6 +126,12 @@ const LEAF_DESC: Record<string, string> = {
 
   'p2p.payment_request': 'Review and action every pending PO payment request.',
   'p2p.advance_refund': 'Adjust refunds against advances already released.',
+
+  /* Inventory Management — the prototype's own wording for each leaf. */
+  'master.warehouse_master': 'Set up and manage warehouses.',
+  'master.zone_master': 'Define storage zones within each warehouse.',
+  'master.racks': 'Configure racks and bin locations in each zone.',
+  'master.product_flags': 'Manage handling and storage flags for products.',
 };
 
 // Top-level slug → route.
@@ -158,6 +169,15 @@ function salesLeafPath(id: string): string {
 // Central CLM leaf → route. URL uses dashes; ids use underscores.
 function clmLeafPath(id: string): string {
   return `/clm/${id.replace(/^clm\./, '').replace(/_/g, '-')}`;
+}
+
+/* Inventory Management leaf → route.
+   Its own /inventory-management/* pages, NOT the /master/* screens the ids
+   are named after. Those are the existing masters carrying existing data;
+   these are being designed fresh, one at a time, and each starts blank. */
+function invLeafPath(id: string): string {
+  const slug = id.replace(/^master\./, '').replace(/_/g, '-');
+  return `/inventory-management/${slug === 'racks' ? 'rack-master' : slug}`;
 }
 
 // HRMS leaf → route (mirrors LayoutMenuData.hrLeafLink). HR groups also carry
@@ -208,7 +228,7 @@ function p2pLeafPath(id: string): string {
   }
 }
 
-type DD = 'sales' | 'clm' | 'hr' | 'p2p';
+type DD = 'sales' | 'clm' | 'hr' | 'p2p' | 'inv';
 
 export default function IdimsHeader() {
   const navigate = useNavigate();
@@ -229,6 +249,20 @@ export default function IdimsHeader() {
   };
 
   const [openDD, setOpenDD] = useState<DD | null>(null);
+  /* The open button's bottom-left corner, for a dropdown that hangs under it. */
+  const [ddAnchor, setDdAnchor] = useState<{ left: number; top: number } | null>(null);
+
+  /* Keeps an anchored panel on screen: placed at the button's left edge it can
+     run off the right on a narrow window, so once it is measurable it is
+     pulled back inside. A callback ref rather than an effect, because the
+     panel mounts and unmounts with the menu. */
+  const anchorDd = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const w = el.getBoundingClientRect().width;
+    const max = window.innerWidth - w - 12;
+    const left = parseFloat(el.style.left || '0');
+    if (left > max) el.style.left = `${Math.max(12, max)}px`;
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [branchOpen, setBranchOpen] = useState(false);
@@ -469,6 +503,14 @@ export default function IdimsHeader() {
     // (→ /developers/shipment) so existing permission grants keep working;
     // only the visible label changed from the old "Dev Tools".
     if (can('developers.shipment')) items.push({ id: 'developers', label: 'Shipment 360', icon: IC.truck });
+    /* Inventory Management — between P2P and GTS, where the prototype puts
+       it. Its leaves are the warehouse masters, so it is gated on those same
+       grants rather than on a module row of its own: anyone who can already
+       see a warehouse sees the menu, and nobody has to be re-granted. */
+    if (INVENTORY_GROUPS.some(g => g.children.some(l => isSuperAdmin
+      || (!planExpired && perms[permSlugFor(l.id)]?.can_view)))) {
+      items.push({ id: 'inventory-management', label: 'Inventory Management', icon: IC.warehouse, dd: 'inv' });
+    }
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
@@ -548,14 +590,24 @@ export default function IdimsHeader() {
   // One group per column (shared P2P_GROUPS drives the sidebar too).
   const p2pCols: Group[][] = useMemo(() => P2P_GROUPS.map(g => [g as unknown as Group]), []);
 
+  /* One column, as the prototype draws it. */
+  const invCols: Group[][] = useMemo(
+    () => INVENTORY_GROUPS.map(g => [g as unknown as Group]), [],
+  );
+
   const colsFor = (dd: DD): Group[][] =>
-    dd === 'sales' ? salesCols : dd === 'hr' ? hrCols : dd === 'p2p' ? p2pCols : clmCols;
+    dd === 'sales' ? salesCols
+      : dd === 'hr' ? hrCols
+        : dd === 'p2p' ? p2pCols
+          : dd === 'inv' ? invCols
+            : clmCols;
 
   const leafPath = (id: string, kind: DD) =>
     kind === 'sales' ? salesLeafPath(id)
       : kind === 'hr' ? hrLeafPath(id)
-      : kind === 'p2p' ? p2pLeafPath(id)
-      : clmLeafPath(id);
+        : kind === 'p2p' ? p2pLeafPath(id)
+          : kind === 'inv' ? invLeafPath(id)
+            : clmLeafPath(id);
 
   /* ── Which module the page on screen belongs to ─────────────────────────
      The nav used to mark a button only while its own menu was open, so the
@@ -988,13 +1040,31 @@ export default function IdimsHeader() {
                     <button type="button"
                       className={`idims-nav-btn ${openDD === item.dd ? 'dd-open' : ''} ${currentTopId === item.id ? 'is-current' : ''}`}
                       aria-current={currentTopId === item.id ? 'page' : undefined}
-                      onClick={() => { setBranchOpen(false); setProfileOpen(false); setMoreOpen(false); setOpenDD(o => o === item.dd ? null : item.dd!); }}>
+                      onClick={(e) => {
+                        setBranchOpen(false); setProfileOpen(false); setMoreOpen(false);
+                        /* Where the button is, for the menus that hang under
+                           it rather than centring on the screen. Taken here
+                           because the panel is `position: fixed` — it escapes
+                           the nav's own box, so it cannot be placed by CSS
+                           alone. */
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setDdAnchor({ left: Math.round(r.left), top: Math.round(r.bottom + 8) });
+                        setOpenDD(o => o === item.dd ? null : item.dd!);
+                      }}>
                       <span className="idims-ico">{item.icon}</span>{item.label}
                       <span className="dd-chev">{IC.chevSm}</span>
                     </button>
                     {openDD === item.dd && (
                       <div
-                        className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}`}
+                        className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}${item.dd === 'inv' ? ' idims-dd-inv' : ''}`}
+                        /* The wide mega-menus span most of the screen, so they
+                           centre on it. A narrow one centred that way floats in
+                           the middle with nothing above it — it hangs under its
+                           own button instead. */
+                        ref={item.dd === 'inv' ? anchorDd : undefined}
+                        style={item.dd === 'inv' && ddAnchor
+                          ? { left: ddAnchor.left, top: ddAnchor.top, transform: 'none' }
+                          : undefined}
                       >
                         <div className="idims-dd-topbar" />
                         <div className="idims-dd-inner">
@@ -1189,6 +1259,10 @@ const IC = {
   branch: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></svg>,
   more: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>,
   globe: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" /></svg>,
+  /* Inventory Management. Deliberately NOT the cube: that is Inventory
+     Management System sitting a few items along, and the two are different
+     systems. This is the prototype's own warehouse glyph. */
+  warehouse: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21V9l9-6 9 6v12" /><path d="M9 21v-7h6v7" /><line x1="3" y1="21" x2="21" y2="21" /></svg>,
   box: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path fillRule="evenodd" clipRule="evenodd" d="M12 1.95l9.05 4.52v11.06L12 22.05l-9.05-4.52V6.47L12 1.95zm0 2.24L5.66 7.36 12 10.53l6.34-3.17L12 4.19zM4.95 9.03v7.25L11 19.3v-7.25L4.95 9.03zm14.1 0L13 12.05v7.25l6.05-3.02V9.03z" /></svg>,
   db: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C7.58 2 4 3.57 4 5.5S7.58 9 12 9s8-1.57 8-3.5S16.42 2 12 2zM4 7.97v4.53C4 14.43 7.58 16 12 16s8-1.57 8-3.5V7.97c-1.72 1.4-4.66 2.13-8 2.13s-6.28-.73-8-2.13zm0 7v3.53C4 20.43 7.58 22 12 22s8-1.57 8-3.5V14.97c-1.72 1.4-4.66 2.13-8 2.13s-6.28-.73-8-2.13z" /></svg>,
   search: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>,
@@ -1448,6 +1522,11 @@ const IDIMS_CSS = `
 /* P2P has 4 columns but compact content — narrower than the CLM/HR wide menu,
    yet roomy enough that the longer labels don't crowd. */
 .idims-dd-p2p { width: min(1320px, calc(100vw - 28px)); }
+/* Inventory Management is a single column of four. At the shared 1060px it
+   would be a strip of whitespace with the items stranded on the left, so it
+   takes its width from its content, as the prototype's panel does. */
+.idims-dd-inv { width: max-content; min-width: 320px; max-width: calc(100vw - 40px); }
+.idims-dd-inv .idims-dd-grid { grid-template-columns: minmax(300px, max-content); }
 .idims-dd-med { width: min(620px, calc(100vw - 28px)); }
 /* CLM mega layout — 3 sections; Operations + Master Management each split into
    two sub-columns with sub-headers; Without-Shipment nests its agreements. */
@@ -1485,6 +1564,12 @@ const IDIMS_CSS = `
   .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-top-color: #262B38; }
 }
 @keyframes idimsDD { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+/* The same entrance without the horizontal half-step. A panel that hangs off
+   its button is placed by its left offset alone, and the shared keyframes end
+   on translate(-50%) with fill-mode both — which beats any inline transform
+   and drags it half its own width to the left. */
+@keyframes idimsDDanchor { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+.idims-dropdown.idims-dd-inv { animation-name: idimsDDanchor; }
 /* Stop loading — muted and inert until something is actually on the wire,
    so a permanently visible button in a dense icon row does not read as
    clickable when it would do nothing. */

@@ -1111,6 +1111,8 @@
 }
 
 .pts-whcell svg { width: 12px; height: 12px; flex-shrink: 0; }
+/* A warehouse name is free text, and this column sits beside eight others. */
+.pts-whcell { max-width: 190px; }
 
 [data-bs-theme="dark"] .pts-whcell {
   color: #a5f3fc;
@@ -1132,11 +1134,30 @@
   background: linear-gradient(135deg, #0891b2, #06b6d4);
 }
 
+/* ── Long values ────────────────────────────────────────────────────────
+   `.pts-tbl` is `width: 100%` with no `table-layout: fixed`, so every column
+   sizes itself to its widest cell. One long product name therefore widens its
+   own column and takes the width back off all ten others, and past the card
+   the wrapper starts scrolling sideways. The free-text cells are capped and
+   cut with "…"; each one carries a `title`, so the whole value is a hover
+   away. Codes, quantities and ids are never long enough to reach the cap.
+
+   The cut goes on this inner span rather than the cell: the cells are
+   inline-flex (icon + text), and `text-overflow` does nothing to a flex
+   child — it has to sit on the element whose own text overflows. */
+.pts-trunc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pts-pname {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   font-weight: 700;
+  max-width: 230px;
 }
 
 .pts-pdot {
@@ -1181,6 +1202,16 @@
 }
 
 .pts-ok { font-weight: 800; color: #15803d; }
+/* Cat No. and Remark are typed in by hand, so both are capped the same way.
+   They hold no icon, so the cut sits on the element itself. */
+.pts-chip--cap, .pts-ok--cap {
+  display: inline-block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
 [data-bs-theme="dark"] .pts-ok { color: #6ee7b7; }
 
 /* The warehouse and "Temporary", pinned to the allocation section's head. */
@@ -1188,6 +1219,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* Sits in a section header beside the Temporary badge and the chevron. */
+  max-width: 240px;
   padding: 5px 11px;
   border-radius: 9px;
   font-size: 11px;

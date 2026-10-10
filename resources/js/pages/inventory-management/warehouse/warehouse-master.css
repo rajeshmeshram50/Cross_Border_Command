@@ -1,0 +1,777 @@
+/* Warehouse Master — ONLY the cells.
+
+   The page chrome is borrowed whole: `p2p-common.css` carries the teal head
+   strip, the "What We Are Doing Here" panel and its step cards, the segmented
+   tabs and the search box; `order.css` carries the table, its scroller and the
+   pager band. What is left — and all this file holds — is how a warehouse row
+   paints itself. Every rule below is the prototype's own, with the selectors
+   scoped under `.whm-page` so nothing leaks into the lists that share the
+   table. */
+
+/* ── Tab icons ──────────────────────────────────────────────────────────
+   The shared `.spi-seg-ico` is a bare `display: flex` — the glyph sits on
+   the tab with nothing behind it. The design gives each one a filled square:
+   a teal gradient while the tab is resting, and a translucent white inset
+   once the tab is active and the gradient has moved to the tab itself.
+   Scoped to `.whm-page`, so the SPI and PO lists keep their own tabs. */
+/* The tab itself is a size up from the PO list's, and sits closer on its
+   left where the icon square already provides the inset.
+
+   Four classes deep to clear `.ord-list .spi-segrow .spi-seg-btn`, which
+   order.css sets inside a media query at three. */
+.whm-page .ord-list .spi-segrow .spi-seg-btn {
+  height: 40px;
+  gap: 9px;
+  padding: 0 18px 0 8px;
+  font-size: 12.5px;
+}
+
+/* order.css hides the tab icons between 769 and 1280px to win back room on a
+   small laptop. Here the squares are the tabs' design, and losing them leaves
+   a row of bare labels, so they stay. */
+.whm-page .ord-list .spi-segrow .spi-seg-ico { display: flex; }
+
+.whm-page .spi-seg-ico {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(135deg, #67e8f9, #0891b2 70%, #0e7490);
+  box-shadow: 0 3px 9px -2px rgba(8, 145, 178, .45);
+  transition: background .22s cubic-bezier(.22, 1, .36, 1),
+              box-shadow .22s cubic-bezier(.22, 1, .36, 1),
+              transform .22s cubic-bezier(.22, 1, .36, 1);
+}
+.whm-page .spi-seg-ico svg { width: 13px; height: 13px; }
+.whm-page .spi-seg-btn:hover .spi-seg-ico { transform: scale(1.06); }
+/* On the active tab the gradient belongs to the tab, so the square steps
+   back to a pane of white over it rather than competing. */
+.whm-page .spi-seg-btn.is-active .spi-seg-ico {
+  background: rgba(255, 255, 255, .24);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .4);
+  transform: none;
+}
+
+/* ── The table, back to the prototype's weights ─────────────────────────
+   `.ord-table` is tuned for the purchase-order list, which is a heavier
+   object: bigger type, tighter cells, and a 2.5px rule closing each group.
+   Measured side by side, that is what made this table read as bold. These
+   are the prototype's own numbers, scoped to `.whm-page` so the PO list
+   keeps every one of its own. */
+.whm-page .ord-table thead th {
+  padding: 11px 12px;
+  font-size: 9.5px;
+  letter-spacing: .07em;
+  color: #0e7490;
+  background: linear-gradient(180deg, #f0fdff, #e3f7fb);
+  border-bottom: 1px solid #c9ebf2;
+}
+.whm-page .ord-table tbody td {
+  padding: 12px;
+  font-size: 11.5px;
+  color: #1e293b;
+  /* A hairline, not a rule: rows are separated, not fenced off. */
+  border-bottom: 1px solid #eef5f8;
+}
+.whm-page .ord-table tbody:nth-of-type(even) td { background: #fbfeff; }
+.whm-page .ord-table tbody tr:hover td,
+.whm-page .ord-table tbody:nth-of-type(even) tr:hover td { background: #f0fbfd; }
+/* Nothing to separate after the last row, and the pager closes the card. */
+.whm-page .ord-table tbody:last-child td { border-bottom: 0; }
+
+[data-bs-theme="dark"] .whm-page .ord-table thead th {
+  color: #67e8f9;
+  background: linear-gradient(180deg, rgba(34, 211, 238, .08), rgba(34, 211, 238, .04));
+  border-bottom-color: rgba(34, 211, 238, .2);
+}
+[data-bs-theme="dark"] .whm-page .ord-table tbody td {
+  color: #cbd5e1;
+  border-bottom-color: rgba(148, 163, 184, .14);
+}
+[data-bs-theme="dark"] .whm-page .ord-table tbody:nth-of-type(even) td {
+  background: rgba(148, 163, 184, .04);
+}
+[data-bs-theme="dark"] .whm-page .ord-table tbody tr:hover td,
+[data-bs-theme="dark"] .whm-page .ord-table tbody:nth-of-type(even) tr:hover td {
+  background: rgba(34, 211, 238, .07);
+}
+
+/* ── Sr. No ─────────────────────────────────────────────────────────────── */
+.whm-page .whm-sr {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: #ecfeff;
+  border: 1px solid #cdeef4;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0e7490;
+}
+
+/* ── Warehouse ID: the pill, with its created-on date beneath ───────────── */
+.whm-page .whm-idcell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.whm-page .whm-idpill {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 7px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  color: #0e7490;
+  background: #ecfeff;
+  border: 1px solid #bfe9f1;
+  white-space: nowrap;
+}
+.whm-page .whm-iddate {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+/* ── Warehouse: icon, name, street, then city line ──────────────────────── */
+.whm-page .whm-namecell {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+}
+.whm-page .whm-namecell__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  color: #0891b2;
+  background: #e0f7fb;
+  border: 1px solid #c4ecf4;
+}
+.whm-page .whm-namecell__t {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.whm-page .whm-namecell__t b {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0c2c3a;
+}
+.whm-page .whm-namecell__t span {
+  font-size: 10.5px;
+  color: #64748b;
+}
+.whm-page .whm-namecell__loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.whm-page .whm-namecell__loc svg { color: #0891b2; flex-shrink: 0; }
+
+/* ── Type ───────────────────────────────────────────────────────────────── */
+.whm-page .whm-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.whm-page .whm-type--own { color: #0e7490; background: #e0f7fb; border: 1px solid #bfe9f1; }
+.whm-page .whm-type--tpl { color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; }
+
+/* ── Area ───────────────────────────────────────────────────────────────── */
+.whm-page .whm-area {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+.whm-page .whm-area b {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  /* Lining figures, so a column of areas reads as a column. */
+  font-variant-numeric: tabular-nums;
+}
+.whm-page .whm-area small { font-size: 9.5px; font-weight: 700; color: #64748b; }
+
+/* ── Google location ────────────────────────────────────────────────────── */
+.whm-page .whm-loc {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+}
+.whm-page .whm-loc__city { font-size: 11.5px; color: #64748b; }
+.whm-page .whm-loc__city b { font-weight: 800; color: #0c2c3a; }
+.whm-page .whm-loc__row { display: inline-flex; align-items: center; gap: 6px; }
+.whm-page .whm-loc__pin {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+.whm-page .whm-maplink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #0e7490;
+  text-decoration: none;
+  background: #ecfeff;
+  border: 1px solid #bfe9f1;
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.whm-page .whm-maplink:hover { background: #0891b2; color: #fff; border-color: #0891b2; }
+/* A warehouse with no share link says so, rather than offering a dead link. */
+.whm-page .whm-nomap { font-size: 10px; color: #94a3b8; font-style: italic; }
+
+/* ── Contact person ─────────────────────────────────────────────────────── */
+.whm-page .whm-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+}
+.whm-page .whm-contact b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #0c2c3a;
+}
+.whm-page .whm-contact span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: #64748b;
+}
+.whm-page .whm-contact svg { color: #0891b2; flex-shrink: 0; }
+.whm-page .whm-contact a { color: #64748b; text-decoration: none; }
+.whm-page .whm-contact a:hover { color: #0891b2; text-decoration: underline; }
+
+/* ── Status ─────────────────────────────────────────────────────────────── */
+.whm-page .whm-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.whm-page .whm-status i { width: 7px; height: 7px; border-radius: 50%; }
+.whm-page .whm-status--on { color: #047857; background: #d1fae5; border: 1px solid #a7f3d0; }
+.whm-page .whm-status--on i { background: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, .18); }
+.whm-page .whm-status--off { color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; }
+.whm-page .whm-status--off i { background: #94a3b8; }
+
+/* ── Actions: edit, the status switch, QR ───────────────────────────────── */
+.whm-page .whm-acts { display: inline-flex; align-items: center; gap: 6px; }
+.whm-page .whm-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 6px 12px -6px rgba(8, 145, 178, .75), inset 0 1px 0 rgba(255, 255, 255, .3);
+  transition: background .18s, transform .18s, box-shadow .18s;
+}
+.whm-page .whm-act:hover {
+  background: linear-gradient(140deg, #0891b2, #0e7490 60%, #0b4f63);
+  transform: translateY(-1px);
+}
+.whm-page .whm-act svg { width: 15px; height: 15px; }
+.whm-page .whm-act:focus-visible,
+.whm-page .whm-toggle:focus-visible { outline: 2px solid #0891b2; outline-offset: 2px; }
+
+.whm-page .whm-toggle {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  background: linear-gradient(180deg, #e2e8f0, #cbd5e1);
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, .18);
+  transition: background .2s;
+}
+.whm-page .whm-toggle span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff, #f1f5f9);
+  box-shadow: 0 2px 4px rgba(15, 23, 42, .25);
+  transition: transform .2s;
+}
+.whm-page .whm-toggle span::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.whm-page .whm-toggle.is-on {
+  background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15), 0 0 0 3px rgba(34, 211, 238, .15);
+}
+.whm-page .whm-toggle.is-on span { transform: translateX(18px); }
+.whm-page .whm-toggle.is-on span::after { background: #0891b2; }
+
+/* An inactive warehouse is dimmed — except its status and its controls, which
+   are the two things you would be looking at it to change. */
+.whm-page .ord-table tbody tr.is-off td { opacity: .62; }
+.whm-page .ord-table tbody tr.is-off td:nth-last-child(1),
+.whm-page .ord-table tbody tr.is-off td:nth-last-child(2) { opacity: 1; }
+
+/* ── Add / Edit Warehouse form ──────────────────────────────────────────
+   The shell is the shared `.spi-mdl`, the fields are the wizard's `Field` +
+   `.spi-dt-grid4` + `.spi-dt-inp`, and the dropdowns are the app's
+   MasterSelect. What is left — and all this holds — is the four controls
+   this form has that no other screen does. Not scoped under `.whm-page`:
+   the modal portals to document.body. */
+/* Two class names, not one: .spi-mdl sets width:min(560px,100%) at the same
+   specificity, and which of the two wins would otherwise come down to which
+   stylesheet Vite injected last — which changes the moment a lazy chunk pulls
+   another sheet in. .spi-mdl.whm-addmdl settles it. */
+.spi-mdl.whm-addmdl { width: min(1180px, 100%); }
+/* The three sections are taller than a viewport on a laptop, so the body
+   scrolls between a head and a footer that stay put. */
+.whm-addbody { max-height: calc(92vh - 164px); overflow-y: auto; }
+
+/* The body is a pale wash so the white section cards read as cards. */
+.spi-mdl.whm-addmdl { background: linear-gradient(180deg, #f4fbfd 0%, #eef7fa 100%); }
+
+/* The header strip. The shared one is a 110deg band from #0e7490; this is the
+   design's own: 120deg, starting a shade deeper at #0b4f63 so the left end
+   has somewhere to travel from, with two soft light pools over it and a wide
+   thin ring bleeding off the top-right corner. */
+.whm-addmdl .spi-mdl-head {
+  position: relative;
+  overflow: hidden;
+  padding: 16px 22px;
+  background: linear-gradient(120deg, #0b4f63 0%, #0e7490 38%, #0891b2 70%, #22d3ee 100%);
+}
+/* Light from above-right and a cyan wash from below-left. */
+.whm-addmdl .spi-mdl-head::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: .55;
+  pointer-events: none;
+  background:
+    radial-gradient(420px 160px at 88% -20%, rgba(255, 255, 255, .45), transparent 60%),
+    radial-gradient(260px 120px at 12% 140%, rgba(103, 232, 249, .45), transparent 60%);
+}
+/* The ring: a 220px circle with a 26px border, mostly off the corner, so what
+   shows is an arc rather than a shape sitting on the strip. */
+.whm-addmdl .spi-mdl-head::after {
+  content: '';
+  position: absolute;
+  right: -40px;
+  top: -60px;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: 26px solid rgba(255, 255, 255, .08);
+  pointer-events: none;
+}
+/* Both layers are painted behind the title and the close button. */
+.whm-addmdl .spi-mdl-head > * { position: relative; z-index: 1; }
+.whm-addbody { display: flex; flex-direction: column; gap: 12px; }
+
+/* One section: a white card with a gradient bar down its whole left edge. */
+.whm-card {
+  position: relative;
+  padding: 12px 16px 14px 20px;
+  border-radius: 16px;
+  background: #fff;
+  border: 1px solid #d7eef4;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 10px 24px -20px rgba(8, 145, 178, .5);
+  /* In a column flexbox children shrink by default, which would squash the
+     cards instead of scrolling the body. */
+  flex-shrink: 0;
+}
+.whm-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #22d3ee, #0891b2 55%, #0e7490);
+}
+
+/* Section header: icon tile and an uppercase title, no description line. */
+.whm-sec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #edf5f8;
+}
+.whm-sec__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  color: #0891b2;
+  background: #e0f7fb;
+  border: 1px solid #c4ecf4;
+}
+.whm-sec__ico svg { width: 15px; height: 15px; }
+.whm-sec b {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: #0e7490;
+}
+
+/* Field labels are uppercase here; the shared wizard sets them in sentence
+   case, which reads as a different form beside these section titles. */
+.whm-addmdl .spi-dt-field-lbl {
+  font-size: 9.5px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: #5b7585;
+}
+
+/* Inputs: taller and softer than the wizard's, sitting on a tint until they
+   are focused. */
+.whm-addmdl .spi-dt-inp,
+.whm-addmdl .spi-dt-textarea {
+  height: 42px;
+  border-radius: 12px;
+  border: 1.5px solid #dfeaf0;
+  background-color: #fbfdfe;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, .04);
+}
+.whm-addmdl .spi-dt-textarea { height: auto; }
+.whm-addmdl .spi-dt-inp:hover,
+.whm-addmdl .spi-dt-textarea:hover { border-color: #c4e3ec; background-color: #fff; }
+.whm-addmdl .spi-dt-inp:focus,
+.whm-addmdl .spi-dt-textarea:focus {
+  border-color: #22d3ee;
+  background-color: #fff;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, .14), 0 6px 16px -10px rgba(8, 145, 178, .6);
+}
+
+/* The generated id: read-only, with the AUTO tag sitting on it. */
+.whm-auto { position: relative; }
+.whm-auto .spi-dt-inp {
+  background: #f3fbfd;
+  color: #0e7490;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-weight: 800;
+  letter-spacing: .04em;
+  cursor: default;
+  /* Room for the tag, so a longer id never runs under it. */
+  padding-right: 62px;
+}
+.whm-auto__tag {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  pointer-events: none;
+}
+
+/* "Sq. Ft" after the area, "+91" before the mobile — joined to the input
+   rather than floating beside it. */
+.whm-suf,
+.whm-pre { display: flex; align-items: stretch; }
+.whm-suf .spi-dt-inp,
+.whm-pre .spi-dt-inp { min-width: 0; }
+.whm-suf .spi-dt-inp { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.whm-pre .spi-dt-inp { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.whm-suf > span,
+.whm-pre > span {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  color: #0e7490;
+  background: #ecfeff;
+  border: 1.5px solid #e6eef3;
+}
+.whm-suf > span { border-left: 0; border-radius: 0 12px 12px 0; }
+.whm-pre > span { border-right: 0; border-radius: 12px 0 0 12px; }
+
+/* The address is one line until it needs more. */
+.whm-ta { min-height: 42px; resize: vertical; }
+
+/* Business card picker */
+.whm-file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: 1.5px dashed #a5dfeb;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f3fbfd, #ecfeff);
+  transition: border-color .15s, background .15s;
+}
+.whm-file:hover { border-color: #22d3ee; background: #ecfeff; }
+.whm-file.has-file { border-style: solid; border-color: #22d3ee; background: #ecfeff; }
+.whm-file__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+}
+.whm-file__txt {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0e7490;
+  cursor: pointer;
+  /* A filename is arbitrary, so it is cut and the title carries it whole. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.whm-file.has-file .whm-file__txt { color: #0c2c3a; }
+.whm-file__x {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+}
+.whm-file__x:hover { background: #fee2e2; color: #e11d48; }
+/* The menu is anchored to the field rather than portalled: it opens inside
+   the scrolling body, and a portalled one would stay put while the form
+   scrolled away underneath it. */
+.whm-file__menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 2; width: 232px; }
+.whm-file__scrim { position: fixed; inset: 0; z-index: 1; }
+
+/* The footer's left note. */
+.whm-footnote {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+.whm-footnote svg { color: #0891b2; flex-shrink: 0; }
+
+[data-bs-theme="dark"] .spi-mdl.whm-addmdl { background: #0b1626; }
+[data-bs-theme="dark"] .whm-card { background: #0f1b2d; border-color: #1e3a52; }
+[data-bs-theme="dark"] .whm-addmdl .spi-dt-inp,
+[data-bs-theme="dark"] .whm-addmdl .spi-dt-textarea { background-color: #0b1626; border-color: #1e3a52; }
+[data-bs-theme="dark"] .whm-sec { border-bottom-color: rgba(148, 163, 184, .16); }
+[data-bs-theme="dark"] .whm-sec b { color: #67e8f9; }
+[data-bs-theme="dark"] .whm-sec__ico { color: #67e8f9; background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .26); }
+[data-bs-theme="dark"] .whm-sec small,
+[data-bs-theme="dark"] .whm-footnote { color: #94a3b8; }
+[data-bs-theme="dark"] .whm-auto .spi-dt-inp,
+[data-bs-theme="dark"] .whm-suf > span,
+[data-bs-theme="dark"] .whm-pre > span,
+[data-bs-theme="dark"] .whm-file {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .08);
+  border-color: rgba(34, 211, 238, .22);
+}
+[data-bs-theme="dark"] .whm-file.has-file .whm-file__txt { color: #e2e8f0; }
+[data-bs-theme="dark"] .whm-file__x { background: rgba(148, 163, 184, .16); color: #cbd5e1; }
+
+
+/* The upload label keeps its light-mode teal otherwise: .whm-file__txt sets
+   its own colour, so dressing .whm-file alone leaves dark teal on navy. */
+[data-bs-theme="dark"] .whm-file__txt { color: #67e8f9; }
+/* The generated id reads as a value, not as disabled text. The shared
+   readonly rule greys it, so this has to be said again here. */
+[data-bs-theme="dark"] .whm-auto .spi-dt-inp { color: #67e8f9; }
+/* Brighter than the shared label grey: these sit on a card that is itself
+   only a shade off the modal, so the label needs the separation. */
+[data-bs-theme="dark"] .whm-addmdl .spi-dt-field-lbl { color: #9fb6c7; }
+/* The card is four points off the modal behind it. A ring lifts it without
+   lightening the fill, which would wash out the gradient bar. */
+[data-bs-theme="dark"] .whm-card {
+  border-color: #244563;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 10px 26px -18px rgba(0, 0, 0, .8);
+}
+
+/* ── Warehouse QR popup ─────────────────────────────────────────────────
+   The shell is the shared `.spi-mdl` one; all that is here is the card the
+   code sits on and the three lines under it. Not scoped under `.whm-page`:
+   the modal portals to document.body, outside the page. */
+.spi-mdl.whm-qrmodal { width: min(400px, 100%); }
+.whm-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 4px 0 2px;
+}
+.whm-qr__code {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 224px;
+  height: 224px;
+  padding: 12px;
+  box-sizing: border-box;
+  border-radius: 18px;
+  background: #fff;
+  border: 1.5px solid #cdeef4;
+  box-shadow: 0 12px 26px -16px rgba(8, 145, 178, .6);
+}
+.whm-qr__code canvas { display: block; }
+.whm-qr__load { font-size: 11px; color: #94a3b8; padding: 10px; }
+.whm-qr__id {
+  margin-top: 12px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 13px;
+  font-weight: 800;
+  color: #0e7490;
+}
+.whm-qr__name { margin-top: 2px; font-size: 14px; font-weight: 800; color: #0c2c3a; }
+.whm-qr__addr {
+  margin-top: 3px;
+  max-width: 300px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #64748b;
+}
+/* The type, in the footer's left corner, as the design places it. */
+.whm-qr__note {
+  margin-right: auto;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #0e7490;
+  background: #ecfeff;
+  border: 1px solid #bfe9f1;
+}
+/* The card stays white in dark mode: a QR is read by contrast, and inverting
+   it is the one change that can stop a scanner seeing it. */
+[data-bs-theme="dark"] .whm-qr__name { color: #e2e8f0; }
+[data-bs-theme="dark"] .whm-qr__addr { color: #94a3b8; }
+[data-bs-theme="dark"] .whm-qr__id,
+[data-bs-theme="dark"] .whm-qr__note {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .10);
+  border-color: rgba(34, 211, 238, .24);
+}
+
+/* ── Dark ───────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .whm-page .whm-sr,
+[data-bs-theme="dark"] .whm-page .whm-idpill {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .10);
+  border-color: rgba(34, 211, 238, .24);
+}
+[data-bs-theme="dark"] .whm-page .whm-iddate,
+[data-bs-theme="dark"] .whm-page .whm-namecell__t span,
+[data-bs-theme="dark"] .whm-page .whm-contact span,
+[data-bs-theme="dark"] .whm-page .whm-contact a,
+[data-bs-theme="dark"] .whm-page .whm-loc__city { color: #94a3b8; }
+[data-bs-theme="dark"] .whm-page .whm-namecell__t b,
+[data-bs-theme="dark"] .whm-page .whm-contact b,
+[data-bs-theme="dark"] .whm-page .whm-loc__city b,
+[data-bs-theme="dark"] .whm-page .whm-area b { color: #e2e8f0; }
+[data-bs-theme="dark"] .whm-page .whm-loc__pin { color: #cbd5e1; }
+[data-bs-theme="dark"] .whm-page .whm-namecell__ico,
+[data-bs-theme="dark"] .whm-page .whm-type--own,
+[data-bs-theme="dark"] .whm-page .whm-maplink {
+  color: #67e8f9;
+  background: rgba(34, 211, 238, .10);
+  border-color: rgba(34, 211, 238, .24);
+}
+[data-bs-theme="dark"] .whm-page .whm-type--tpl {
+  color: #cbd5e1;
+  background: rgba(148, 163, 184, .12);
+  border-color: rgba(148, 163, 184, .24);
+}
+[data-bs-theme="dark"] .whm-page .whm-status--on {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, .14);
+  border-color: rgba(16, 185, 129, .3);
+}
+[data-bs-theme="dark"] .whm-page .whm-status--off {
+  color: #94a3b8;
+  background: rgba(148, 163, 184, .12);
+  border-color: rgba(148, 163, 184, .24);
+}
+[data-bs-theme="dark"] .whm-page .whm-toggle {
+  background: linear-gradient(180deg, #334155, #1e293b);
+}

@@ -120,6 +120,14 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/diagnosis': 'p2p.diagnosis',
   '/p2p/bulk-sourcing': 'p2p.bulk_sourcing',
   '/p2p/case-to-case': 'p2p.case_to_case',
+  /* Inventory Management. Each page is gated on the master it is replacing,
+     so the people who can already see that master keep seeing it here and
+     nobody has to be re-granted. Product Flags has no master of its own yet,
+     so it rides on the warehouse grant it sits with. */
+  '/inventory-management/warehouse-master': 'master.warehouse_master',
+  '/inventory-management/zone-master': 'master.zone_master',
+  '/inventory-management/rack-master': 'master.racks',
+  '/inventory-management/product-flags': 'master.warehouse_master',
   // Invoice — the rebuilt supplier purchase invoice. It rides on the Purchase
   // Order grant rather than introducing a module row of its own: it is part of
   // the same business object, so nobody has to be re-granted anything. It rode
