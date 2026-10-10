@@ -536,6 +536,10 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::put   ('/{id}/boxes/{box}',         [SpiBoxController::class, 'update'])->whereNumber('id')->whereNumber('box');
         Route::delete('/{id}/boxes/{box}',         [SpiBoxController::class, 'destroy'])->whereNumber('id')->whereNumber('box');
         Route::post  ('/{id}/boxes/{box}/sticker', [SpiBoxController::class, 'printSticker'])->whereNumber('id')->whereNumber('box');
+        // The label itself, as a 4x6in PDF. GET so the browser can download it
+        // straight; it stamps sticker_printed_at the first time, because a
+        // label in hand is a label about to go on a carton.
+        Route::get   ('/{id}/boxes/{box}/sticker/download', [SpiBoxController::class, 'downloadSticker'])->whereNumber('id')->whereNumber('box');
 
         // Stage 04 · temporary put-away. The scan is POST, not PUT: each one
         // stamps its own timestamp, so it is not idempotent.
