@@ -239,9 +239,15 @@ export default function InvoiceForm({
 
   const boxLines = lines.filter(l => l.spiItemId != null && l.spiQty > 0);
 
+  const [nextBoxCodes, setNextBoxCodes] = useState<string[]>([]);
+
   const reloadBoxes = useCallback(async (id: number) => {
-    const list = await spiApi.boxes(id);
+    const [list, codes] = await Promise.all([
+      spiApi.boxes(id),
+      spiApi.nextBoxCodes(id, 50).catch(() => [] as string[]),
+    ]);
     setBoxes(list);
+    setNextBoxCodes(codes);
     return list;
   }, []);
 
@@ -422,6 +428,7 @@ export default function InvoiceForm({
                     draft={draft}
                     lines={spiId ? boxLines : lines}
                     boxes={boxes}
+                    nextBoxCodes={nextBoxCodes}
                     flagMaster={flagMaster}
                     readOnly={viewOnly}
                     onCreateBox={spiId ? createBox : undefined}

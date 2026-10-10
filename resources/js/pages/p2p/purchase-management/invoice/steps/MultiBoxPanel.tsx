@@ -21,13 +21,14 @@ export function splitQuantity(total: number, boxes: number): SplitBox[] {
 }
 
 export default function MultiBoxPanel({
-  line, boxes, onClose, onSaveBox, savedCodes = {}, savingNo = null, readOnly = false, customFlags, onBoxQty,
+  line, boxes, onClose, onSaveBox, savedCodes = {}, previewCodes = {}, savingNo = null, readOnly = false, customFlags, onBoxQty,
 }: {
   line: ProductLine;
   boxes: SplitBox[];
   onClose: () => void;
   onSaveBox: (boxNo: number, qty: number, data: BoxSaveData) => void;
   savedCodes?: Record<number, string>;
+  previewCodes?: Record<number, string>;
   savingNo?: number | null;
   readOnly?: boolean;
   customFlags?: CustomFlag[];
@@ -77,7 +78,7 @@ export default function MultiBoxPanel({
         {boxes.map(b => (
           <div key={b.no} hidden={b.no !== active}>
             <BoxDrawer
-              boxId={savedCodes[b.no] ?? `New box ${b.no}`}
+              boxId={savedCodes[b.no] ?? previewCodes[b.no] ?? `New box ${b.no}`}
               line={line}
               quantity={b.qty}
               scenario="1 Product → Multiple Boxes"

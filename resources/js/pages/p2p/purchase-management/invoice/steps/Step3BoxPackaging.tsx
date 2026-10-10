@@ -17,7 +17,7 @@ const BOX_TABLE_COLUMNS = 10;
 
 type Packing =
   | { scenario: 's1' }
-  | { scenario: 's2'; boxes: SplitBox[] }
+  | { scenario: 's2'; boxes: SplitBox[]; of: number }
   | { scenario: 's3' };
 
 export type Scenario = 's1' | 's2' | 's3';
@@ -56,11 +56,12 @@ const todayIso = () => {
 };
 
 export default function Step3BoxPackaging({
-  draft, lines, boxes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes,
+  draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes,
 }: {
   draft: InvoiceDraft;
   lines: ProductLine[];
   boxes?: SpiBox[];
+  nextBoxCodes?: string[];
   flagMaster?: ProductFlagOption[];
   readOnly?: boolean;
   onCreateBox?: (body: SpiBoxBody) => Promise<SpiBox | null>;
@@ -94,31 +95,16 @@ export default function Step3BoxPackaging({
     lines.map(l => [l.code, l.spiQty > 0 && (packedQty[l.code] ?? 0) >= l.spiQty - 0.0005]),
   );
 
-  const [packing, setPacking] = useState<Record<string, Packing>>(() => {
-    const out: Record<string, Packing> = {};
-    for (const l of lines) {
-      const bs = boxesOf(l.code);
-      if (!bs.length) continue;
-      const sc = bs[0].scenario;
-      if (sc === 's2') {
-        const split = bs.map((b, i) => ({ no: i + 1, qty: qtyIn(b, l.code) }));
-        const left = Math.round((l.spiQty - split.reduce((n, b) => n + b.qty, 0)) * 1000) / 1000;
-        if (left > 0) split.push({ no: split.length + 1, qty: left });
-        out[l.code] = { scenario: 's2', boxes: split };
-      } else {
-        out[l.code] = { scenario: sc };
-      }
-    }
-    return out;
-  });
-  const [splitCodes, setSplitCodes] = useState<Record<string, Record<number, string>>>(() => {
-    const out: Record<string, Record<number, string>> = {};
-    for (const l of lines) {
-      const bs = boxesOf(l.code).filter(b => b.scenario === 's2');
-      if (bs.length) out[l.code] = Object.fromEntries(bs.map((b, i) => [i + 1, b.box_code]));
-    }
-    return out;
-  });
+  const [packing, setPacking] = useState<Record<string, Packing>>({});
+  const [splitCodes, setSplitCodes] = useState<Record<string, Record<number, string>>>({});
+
+  const fullOf = (code: string) => lines.find(l => l.code === code);
+  const remainingOf = (l: ProductLine) =>
+    Math.max(0, Math.round((l.spiQty - (packedQty[l.code] ?? 0)) * 1000) / 1000);
+  const viewOf = (l: ProductLine): ProductLine => {
+    const p = packing[l.code];
+    return { ...l, spiQty: p?.scenario === 's2' ? p.of : remainingOf(l) };
+  };
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
   const [invalid, setInvalid] = useState<string | null>(null);
@@ -143,7 +129,8 @@ export default function Step3BoxPackaging({
   const boxedCount = lines.filter(l => saved[l.code]).length;
   const pending = lines.length - boxedCount;
 
-  const selectable = lines.filter(l => !packing[l.code] && !saved[l.code]).map(l => l.code);
+  const pendingLines = lines.filter(l => remainingOf(l) > 0).map(viewOf);
+  const selectable = pendingLines.filter(l => !packing[l.code]).map(l => l.code);
   const allSelected = selectable.length > 0 && selectable.every(c => selected.includes(c));
 
   const toggleSelect = (code: string) => {
@@ -156,18 +143,18 @@ export default function Step3BoxPackaging({
     setSelected(allSelected ? [] : selectable);
   };
 
-  const pendingLines = lines.filter(l => !saved[l.code]);
 
   const SCN_LABEL: Record<Scenario, [string, string]> = {
     s1: ['Scenario 01', '1 Product → 1 Box'],
     s2: ['Scenario 02', '1 Product → Multiple Boxes'],
     s3: ['Scenario 03', 'Multiple Products → 1 Box'],
   };
-  const packedRows: PackedRow[] = lines.filter(l => saved[l.code]).map(line => {
+  const packedRows: PackedRow[] = lines.filter(l => (packedQty[l.code] ?? 0) > 0).map(line => {
     const bs = boxesOf(line.code);
     const sc = bs[0]?.scenario ?? 's1';
     return {
-      line, scenarioNo: SCN_LABEL[sc][0], scenario: SCN_LABEL[sc][1],
+      line: { ...line, spiQty: Math.round((packedQty[line.code] ?? 0) * 1000) / 1000 },
+      scenarioNo: SCN_LABEL[sc][0], scenario: SCN_LABEL[sc][1],
       boxes: bs.map(b => ({
         id: b.box_code,
         qty: qtyIn(b, line.code),
@@ -184,6 +171,27 @@ export default function Step3BoxPackaging({
     s3: s3Rows + selected.length,
   };
 
+  const slotKeys: string[] = [];
+  for (const l of pendingLines) {
+    const p = packing[l.code];
+    if (p?.scenario === 's1') slotKeys.push(l.code);
+    if (p?.scenario === 's2') {
+      for (const b of p.boxes) if (!splitCodes[l.code]?.[b.no]) slotKeys.push(`${l.code}#${b.no}`);
+    }
+  }
+  if (mixedBox?.length) slotKeys.push('mixed');
+  const codeFor = (key: string) => {
+    const i = slotKeys.indexOf(key);
+    return (i >= 0 ? nextBoxCodes[i] : undefined) ?? 'New box';
+  };
+  const previewCodesOf = (code: string): Record<number, string> => {
+    const p = packing[code];
+    if (p?.scenario !== 's2') return {};
+    return Object.fromEntries(p.boxes
+      .map(b => [b.no, codeFor(`${code}#${b.no}`)] as const)
+      .filter(([, c]) => c !== 'New box'));
+  };
+
   const packSelected = () => {
     if (selected.length < 2) {
       toast.warning('Pick at least 2 products', 'A mixed carton holds two or more products — use a single box for one.');
@@ -194,7 +202,7 @@ export default function Step3BoxPackaging({
   };
 
   const mixedLines = (mixedBox ?? [])
-    .map(c => lines.find(l => l.code === c))
+    .map(c => pendingLines.find(l => l.code === c))
     .filter((l): l is ProductLine => !!l);
   const mixedCartonQty = mixedLines.reduce((n, l) => n + l.spiQty, 0);
   const mixedCartonLine: ProductLine = {
@@ -251,8 +259,12 @@ export default function Step3BoxPackaging({
     const units = (n: number) => `${Math.round(n * 1000) / 1000} unit${n === 1 ? '' : 's'}`;
     if (scenario === 's1' || scenario === 's3') {
       for (const c of contents) {
-        const left = Math.round((c.line.spiQty - packedElsewhere(c.line.code, exclude)) * 1000) / 1000;
-        if (Math.abs(c.qty - left) > 0.0005) {
+        const full = fullOf(c.line.code) ?? c.line;
+        const left = Math.round((full.spiQty - packedElsewhere(c.line.code, exclude)) * 1000) / 1000;
+        if (exclude && c.qty > left + 0.0005) {
+          return `${exclude.box_code} can hold at most ${units(left)} of ${c.line.spiName} — the rest is packed in other boxes.`;
+        }
+        if (!exclude && Math.abs(c.qty - left) > 0.0005) {
           return scenario === 's1'
             ? `A single box must hold all ${units(left)} of ${c.line.spiName} — it holds ${units(c.qty)}.`
             : `The mixed carton must hold all ${units(left)} of ${c.line.spiName} — it holds ${units(c.qty)}.`;
@@ -264,9 +276,9 @@ export default function Step3BoxPackaging({
       const pack = line ? packing[line.code] : undefined;
       if (line && pack?.scenario === 's2') {
         const allocated = Math.round(pack.boxes.reduce((n, b) => n + b.qty, 0) * 1000) / 1000;
-        if (Math.abs(allocated - line.spiQty) > 0.0005) {
-          const gap = Math.round((line.spiQty - allocated) * 1000) / 1000;
-          return `The boxes hold ${units(allocated)} of ${line.spiName}'s ${units(line.spiQty)} — `
+        if (Math.abs(allocated - pack.of) > 0.0005) {
+          const gap = Math.round((pack.of - allocated) * 1000) / 1000;
+          return `The boxes hold ${units(allocated)} of the ${units(pack.of)} of ${line.spiName} being split — `
             + (gap > 0 ? `assign the other ${units(gap)} to a box` : `take ${units(-gap)} out`) + ' before saving.';
         }
       }
@@ -385,21 +397,21 @@ export default function Step3BoxPackaging({
     if (count < 1) { fail('A split needs at least 1 box.'); return; }
     if (count > maxBoxes) { fail(`${line.spiName} has ${line.spiQty} units — it cannot fill more than ${maxBoxes} boxes.`); return; }
     setInvalid(null);
-    setPacking(p => ({ ...p, [line.code]: { scenario: 's2', boxes: splitQuantity(line.spiQty, count) } }));
+    setPacking(p => ({ ...p, [line.code]: { scenario: 's2', boxes: splitQuantity(line.spiQty, count), of: line.spiQty } }));
   };
 
   const setBoxQty = (code: string, boxNo: number, qty: number) => {
     const pack = packing[code];
     if (!pack || pack.scenario !== 's2') return;
     const line = lines.find(l => l.code === code);
-    const total = line?.spiQty ?? 0;
+    const total = pack.of;
     const others = pack.boxes.reduce((n, b) => (b.no === boxNo ? n : n + b.qty), 0);
     const max = Math.max(0, total - others);
     const wanted = Math.max(0, qty);
     if (wanted > max) {
       toast.warning(
         `Box ${boxNo} can hold at most ${max} unit${max === 1 ? '' : 's'}`,
-        `${line?.spiName ?? 'This product'} has ${total} units on the SPI, and the other boxes already hold ${others}.`,
+        `${total} units of ${line?.spiName ?? 'this product'} are being split, and the other boxes already hold ${others}.`,
       );
     }
     const next = Math.min(wanted, max);
@@ -685,7 +697,7 @@ export default function Step3BoxPackaging({
             </thead>
             <tbody>
               {pendingLines.map((line, i) => {
-                const { missing, extra } = lineTotals(line);
+                const { missing, extra } = lineTotals(fullOf(line.code) ?? line);
                 const pack = packing[line.code];
                 const single = pack?.scenario === 's1';
                 const split = pack?.scenario === 's2';
@@ -802,7 +814,7 @@ export default function Step3BoxPackaging({
                     <tr className="vti-drawer-row is-open">
                       <td colSpan={BOX_TABLE_COLUMNS} className="vti-drawer-td">
                         <BoxDrawer
-                          boxId="New box"
+                          boxId={codeFor(line.code)}
                           line={line}
                           quantity={line.spiQty}
                           onSave={readOnly ? undefined : (d: BoxSaveData) => saveSingle(line, d)}
@@ -820,6 +832,7 @@ export default function Step3BoxPackaging({
                           onClose={() => void reset(line.code)}
                           onSaveBox={(no, qty, d) => void saveSplitBox(line, no, qty, d)}
                           savedCodes={splitCodes[line.code]}
+                          previewCodes={previewCodesOf(line.code)}
                           savingNo={savingKey?.startsWith(`${line.code}#`) ? Number(savingKey.split('#')[1]) : null}
                           readOnly={readOnly}
                           customFlags={customFlags}
@@ -850,7 +863,7 @@ export default function Step3BoxPackaging({
 
       {mixedBox && mixedBox.length > 0 && (
           <BoxDrawer
-            boxId="New mixed carton"
+            boxId={codeFor('mixed')}
             line={mixedCartonLine}
             quantity={mixedCartonQty}
             scenario="Multiple Products → 1 Box"
