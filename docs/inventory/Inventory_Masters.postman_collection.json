@@ -1,7 +1,7 @@
 {
     "info": {
         "name": "Inventory · Masters (Warehouse / Zone / Rack / Shelf / Product Flags)",
-        "description": "34 endpoints under /api/inventory.\n\nPROPOSED — the five tables are not migrated yet, so every call 500s until `php artisan migrate` has run.\n\nRun **Auth → Login** first; the script writes {{token}} and the collection auth is already Bearer {{token}}.\n\nThen run the folders in order: creating a warehouse sets {{warehouse_id}}, creating a zone sets {{zone_id}}, and so on down the chain. Each level's /options feeds the next level's dropdown.\n\n**No codes are ever sent.** WH-014, ZN-003, RK-001 and PF-004 are 'PREFIX-' plus the zero-padded id, and RK-001-SH-01 is the rack code plus the level. They come back on every row as wh_code / zone_code / rack_code / shelf_code / flag_code.\n\n**status is 0 or 1**, not a word. Nothing is hard-deleted once it has children — the toggle is how a location is retired, and deactivating cascades downwards.\n\n**Every list returns the same envelope**: { status, data[], tabs: { all, active, inactive }, meta: { page, per_page, total, last_page } }. The tab counts are taken before the search narrows anything.",
+        "description": "42 endpoints under /api/inventory.\n\nPROPOSED — the five tables are not migrated yet, so every call 500s until `php artisan migrate` has run.\n\nRun **Auth → Login** first; the script writes {{token}} and the collection auth is already Bearer {{token}}.\n\nThen run the folders in order: creating a warehouse sets {{warehouse_id}}, creating a zone sets {{zone_id}}, and so on down the chain. Each level's /options feeds the next level's dropdown.\n\n**No codes are ever sent.** WH-014, ZN-003, RK-001 and PF-004 are 'PREFIX-' plus the zero-padded id, and RK-001-SH-01 is the rack code plus the level. They come back on every row as wh_code / zone_code / rack_code / shelf_code / flag_code.\n\n**status is 0 or 1**, not a word. Nothing is hard-deleted once it has children — the toggle is how a location is retired, and deactivating cascades downwards.\n\n**Every list returns the same envelope**: { status, data[], tabs: { all, active, inactive }, meta: { page, per_page, total, last_page } }. The tab counts are taken before the search narrows anything.",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "variable": [
@@ -68,6 +68,14 @@
         {
             "key": "purpose",
             "value": "Requires controlled cold temperature"
+        },
+        {
+            "key": "country_id",
+            "value": "104"
+        },
+        {
+            "key": "state_id",
+            "value": "14"
         }
     ],
     "auth": {
@@ -201,7 +209,7 @@
                                 "options"
                             ]
                         },
-                        "description": "Active warehouses only, with the four AUTO fields the Zone and Rack forms show beside the picker: wh_type, area_sqft and location.\n\nThis is the first step of the cascade — warehouse → zone → rack → shelf."
+                        "description": "The dropdown shape: active rows only, ordered by name, no tabs and no paging.\n\nServed by the SAME method as the list — it is `?view=options` underneath, and every list filter works here too. `/options` is kept because the URL reads better from the frontend."
                     }
                 },
                 {
@@ -248,14 +256,23 @@
                                     "type": "text"
                                 },
                                 {
-                                    "key": "country",
-                                    "value": "India",
-                                    "type": "text"
+                                    "key": "country_id",
+                                    "value": "{{country_id}}",
+                                    "type": "text",
+                                    "description": "master_countries.id — 104 is India"
                                 },
                                 {
-                                    "key": "state",
-                                    "value": "Maharashtra",
-                                    "type": "text"
+                                    "key": "state_id",
+                                    "value": "{{state_id}}",
+                                    "type": "text",
+                                    "description": "master_states.id. Required FOR INDIA; send state_name instead for any other country"
+                                },
+                                {
+                                    "key": "state_name",
+                                    "value": "",
+                                    "type": "text",
+                                    "disabled": true,
+                                    "description": "The typed province for a non-India warehouse. Send this OR state_id, never both"
                                 },
                                 {
                                     "key": "city",
@@ -389,14 +406,23 @@
                                     "type": "text"
                                 },
                                 {
-                                    "key": "country",
-                                    "value": "India",
-                                    "type": "text"
+                                    "key": "country_id",
+                                    "value": "{{country_id}}",
+                                    "type": "text",
+                                    "description": "master_countries.id — 104 is India"
                                 },
                                 {
-                                    "key": "state",
-                                    "value": "Maharashtra",
-                                    "type": "text"
+                                    "key": "state_id",
+                                    "value": "{{state_id}}",
+                                    "type": "text",
+                                    "description": "master_states.id. Required FOR INDIA; send state_name instead for any other country"
+                                },
+                                {
+                                    "key": "state_name",
+                                    "value": "",
+                                    "type": "text",
+                                    "disabled": true,
+                                    "description": "The typed province for a non-India warehouse. Send this OR state_id, never both"
                                 },
                                 {
                                     "key": "city",
@@ -500,6 +526,56 @@
                         },
                         "description": "409 once it holds zones — the status toggle is how a warehouse is retired. Deleting one would orphan every rack and shelf beneath it.\n\nThe business card is removed from disk with the row."
                     }
+                },
+                {
+                    "name": "Preview label (QR + data)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses/{{warehouse_id}}/preview",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses",
+                                "{{warehouse_id}}",
+                                "preview"
+                            ]
+                        },
+                        "description": "The label as data, for the on-screen modal: kind, code, title, subtitle, a rows map, flags, a ready-to-use `qr` data URI and the `download_url` for the PDF button.\n\nShares labelData() with the PDF, so the modal and the paper cannot disagree."
+                    }
+                },
+                {
+                    "name": "Download label (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/warehouses/{{warehouse_id}}/label",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "warehouses",
+                                "{{warehouse_id}}",
+                                "label"
+                            ]
+                        },
+                        "description": "The same label as a 4x3in PDF, sized for the gate or the office wall.\n\nThe QR carries the CODE (not the row id): these codes are derived from the id, so they are already unique across every branch and client, and a human can read the same string."
+                    }
                 }
             ]
         },
@@ -578,7 +654,7 @@
                                 }
                             ]
                         },
-                        "description": "The Rack form's zone dropdown. rack_mode=rack because a rack can only go in a racked zone.\n\nSends the zone's cold_chain, hazardous and temperature range too — the Rack form shows all three as AUTO and validates its own toggles against them."
+                        "description": "The dropdown shape: active rows only, ordered by name, no tabs and no paging.\n\nServed by the SAME method as the list — it is `?view=options` underneath, and every list filter works here too. `/options` is kept because the URL reads better from the frontend."
                     }
                 },
                 {
@@ -837,6 +913,56 @@
                         },
                         "description": "409 once it holds racks."
                     }
+                },
+                {
+                    "name": "Preview label (QR + data)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones/{{zone_id}}/preview",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones",
+                                "{{zone_id}}",
+                                "preview"
+                            ]
+                        },
+                        "description": "The label as data, for the on-screen modal: kind, code, title, subtitle, a rows map, flags, a ready-to-use `qr` data URI and the `download_url` for the PDF button.\n\nShares labelData() with the PDF, so the modal and the paper cannot disagree."
+                    }
+                },
+                {
+                    "name": "Download label (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/zones/{{zone_id}}/label",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "zones",
+                                "{{zone_id}}",
+                                "label"
+                            ]
+                        },
+                        "description": "The same label as a 4x3in PDF, sized for the zone entrance.\n\nThe QR carries the CODE (not the row id): these codes are derived from the id, so they are already unique across every branch and client, and a human can read the same string."
+                    }
                 }
             ]
         },
@@ -911,7 +1037,7 @@
                                 }
                             ]
                         },
-                        "description": "Active racks by warehouse or by zone — pass at least one. Returns height_cm already converted, which is the unit every shelf comparison is made in."
+                        "description": "The dropdown shape: active rows only, ordered by name, no tabs and no paging.\n\nServed by the SAME method as the list — it is `?view=options` underneath, and every list filter works here too. `/options` is kept because the URL reads better from the frontend."
                     }
                 },
                 {
@@ -1073,6 +1199,56 @@
                             ]
                         },
                         "description": "409 once it holds shelves."
+                    }
+                },
+                {
+                    "name": "Preview label (QR + data)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/{{rack_id}}/preview",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "{{rack_id}}",
+                                "preview"
+                            ]
+                        },
+                        "description": "The label as data, for the on-screen modal: kind, code, title, subtitle, a rows map, flags, a ready-to-use `qr` data URI and the `download_url` for the PDF button.\n\nShares labelData() with the PDF, so the modal and the paper cannot disagree."
+                    }
+                },
+                {
+                    "name": "Download label (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/racks/{{rack_id}}/label",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "racks",
+                                "{{rack_id}}",
+                                "label"
+                            ]
+                        },
+                        "description": "The same label as a 4x3in PDF, sized for a rack upright.\n\nThe QR carries the CODE (not the row id): these codes are derived from the id, so they are already unique across every branch and client, and a human can read the same string."
                     }
                 }
             ]
@@ -1277,6 +1453,56 @@
                         },
                         "description": "409 while boxes are still on it."
                     }
+                },
+                {
+                    "name": "Preview label (QR + data)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/shelves/{{shelf_id}}/preview",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "shelves",
+                                "{{shelf_id}}",
+                                "preview"
+                            ]
+                        },
+                        "description": "The label as data, for the on-screen modal: kind, code, title, subtitle, a rows map, flags, a ready-to-use `qr` data URI and the `download_url` for the PDF button.\n\nShares labelData() with the PDF, so the modal and the paper cannot disagree."
+                    }
+                },
+                {
+                    "name": "Download label (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/inventory/shelves/{{shelf_id}}/label",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "inventory",
+                                "shelves",
+                                "{{shelf_id}}",
+                                "label"
+                            ]
+                        },
+                        "description": "The same label as a 4x3in PDF, sized for a shelf edge.\n\nThe QR carries the CODE (not the row id): these codes are derived from the id, so they are already unique across every branch and client, and a human can read the same string."
+                    }
                 }
             ]
         },
@@ -1341,7 +1567,7 @@
                                 "options"
                             ]
                         },
-                        "description": "Active flags for the picker on the SPI box-item form. That form holds its selection in a json column, so this master names and explains the labels — it does not own the assignment, and nothing cascades from here."
+                        "description": "The dropdown shape: active rows only, ordered by name, no tabs and no paging.\n\nServed by the SAME method as the list — it is `?view=options` underneath, and every list filter works here too. `/options` is kept because the URL reads better from the frontend."
                     }
                 },
                 {

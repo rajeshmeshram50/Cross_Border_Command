@@ -18,7 +18,8 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
-  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor, type ProductLine,
+  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor,
+  type ProductLine, type SpiPoOpen,
 } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
 import { STORAGE_WAREHOUSES } from './data';
@@ -103,8 +104,14 @@ export default function InvoiceForm({
           poApi.show(poId),
           spiApi.poLines(poId, existing?.id).catch(() => []),
         ]);
-        const open: Record<number, number> = {};
-        for (const l of openLines) open[l.po_item_id] = l.qty_open;
+        /* exclude_spi is already passed above, so an invoice being edited does
+           not count its own quantity as billed by someone else. */
+        const open: Record<number, SpiPoOpen> = {};
+        for (const l of openLines) {
+          open[l.po_item_id] = {
+            qty_open: l.qty_open, qty_billed: l.qty_billed, qty_over: l.qty_over, closed: l.closed,
+          };
+        }
         const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
         if (!live) return;
         set(draftFromPo(po, sup));

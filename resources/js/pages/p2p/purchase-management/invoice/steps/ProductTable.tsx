@@ -5,7 +5,7 @@ import { useToast } from '../../../../../contexts/ToastContext';
 import { IcoPencil, IcoPlus } from '../../../icons';
 const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
-import { formatProductCode, lineTotals, tableTotals, type ProductLine, type TaxMode } from '../invoice-products';
+import { formatProductCode, lineTotals, openQtyOf, tableTotals, type ProductLine, type TaxMode } from '../invoice-products';
 import { spiApi } from '../spi-api';
 
 const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -253,7 +253,20 @@ const Row = memo(function Row({
       </td>
 
       <td className="cpd-c">{line.piQty}</td>
-      <td className="cpd-c">{line.poQty}</td>
+      {/* What is still open, not what the order asked for once — a line an
+          earlier invoice already covered must not read as outstanding here.
+          An over-supply from an earlier invoice shows as 0 open and is named
+          in the title: it belongs to the invoice that caused it, not to this
+          one. */}
+      <td
+        className="cpd-c"
+        title={line.poOpenQty !== undefined && line.poBilledQty
+          ? `${line.poQty} ordered, ${line.poBilledQty} billed on earlier invoices`
+            + (line.poOverQty ? ` — ${line.poOverQty} over` : '')
+          : undefined}
+      >
+        {openQtyOf(line)}
+      </td>
       <td className="cpd-c cpd-ed">
         <input
           className="cpd-in cpd-in--num" type="number" min={0} readOnly={readOnly}

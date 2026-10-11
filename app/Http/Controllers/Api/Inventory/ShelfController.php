@@ -237,6 +237,103 @@ class ShelfController extends BaseInventoryController
         }
     }
 
+    /**
+     * GET /inventory/shelves/{id}/preview — the label as data.
+     *
+     * The screen shows the QR and the details first; the download comes after,
+     * from the same numbers. Both read labelData(), so the modal and the paper
+     * can never disagree.
+     */
+    public function preview(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $data = $this->labelData($request, $id);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $data + [
+                'qr'           => $this->qr($data['code']),
+                'download_url' => url("/api/inventory/shelves/{$id}/label"),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /** GET /inventory/shelves/{id}/label — the same label, as a 4x3in PDF. */
+    public function label(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $data = $this->labelData($request, $id);
+            $pdf  = $this->labelPdf($data, $data['code']);
+
+            DB::commit();
+
+            return $pdf;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * What the shelf label prints. Scanned at put-away as scan_type 'shelf' —
+     * the last link, and the one that records where the box actually went.
+     */
+    private function labelData(Request $request, int $id): array
+    {
+        $user = $this->tenantUser($request);
+        $s = $this->scopeTenant(Shelf::query(), $user, $this->branchScope($request, $user))
+            ->with('rack.zone:id,zone_name,temp_min_c,temp_max_c')
+            ->findOrFail($id);
+
+        $zone = $s->rack?->zone;
+        $temp = $s->cold_chain && $zone?->temp_min_c !== null
+            ? ((float) $zone->temp_min_c) . ' to ' . ((float) $zone->temp_max_c) . ' C'
+            : null;
+
+        return [
+            'kind'     => 'SHELF',
+            'code'     => $s->shelf_code,
+            'title'    => $s->shelf_name,
+            'subtitle' => trim(implode('  /  ', array_filter([$zone?->zone_name, $s->rack?->rack_name]))) ?: null,
+            'rows'     => array_filter([
+                'Level'    => $s->level_no,
+                'Type'     => $s->shelf_type,
+                'Purpose'  => $s->purpose,
+                'Max Load' => $s->max_weight_kg ? number_format((float) $s->max_weight_kg) . ' kg' : null,
+                'Clear Ht' => $s->height_cm ? ((float) $s->height_cm) . ' cm' : null,
+                'Temp'     => $temp,
+            ], fn ($v) => $v !== null && $v !== ''),
+            'flags'    => array_values(array_filter([
+                $this->flag((bool) $s->cold_chain, 'COLD CHAIN', 'cold'),
+                $this->flag((bool) $s->hazardous, 'HAZARDOUS', 'haz'),
+                $this->flag(!$s->isActive(), 'INACTIVE', 'off'),
+            ])),
+        ];
+    }
+
+    /**
+     * GET /inventory/shelves/{id}/qr — the QR and nothing else.
+     *
+     * A bare PNG, served inline so it drops straight into an <img src>. The
+     * label endpoint wraps the same code in a printable card; this one is for
+     * a screen that places it itself.
+     *
+     * ?scale=10 sets pixels per module (1-20).
+     */
+    public function qrImage(Request $request, int $id)
+    {
+        $data = $this->labelData($request, $id);
+
+        return $this->qrPng($data['code'], (int) $request->input('scale', 10));
+    }
+
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
 
     private function rules(): array

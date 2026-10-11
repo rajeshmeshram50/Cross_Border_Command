@@ -239,6 +239,95 @@ class WarehouseController extends BaseInventoryController
         }
     }
 
+    /**
+     * GET /inventory/warehouses/{id}/preview — the label as data.
+     *
+     * The screen shows the QR and the details first; the download comes after,
+     * from the same numbers. Both read labelData(), so the modal and the paper
+     * can never disagree.
+     */
+    public function preview(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $data = $this->labelData($request, $id);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $data + [
+                'qr'           => $this->qr($data['code']),
+                'download_url' => url("/api/inventory/warehouses/{$id}/label"),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /** GET /inventory/warehouses/{id}/label — the same label, as a 4x3in PDF. */
+    public function label(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $data = $this->labelData($request, $id);
+            $pdf  = $this->labelPdf($data, $data['code']);
+
+            DB::commit();
+
+            return $pdf;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * What the warehouse label prints. Never scanned at put-away — Stage 04
+     * picks the warehouse on screen — so this one is for the gate.
+     */
+    private function labelData(Request $request, int $id): array
+    {
+        $user = $this->tenantUser($request);
+        $w = $this->scopeTenant(Warehouse::query(), $user, $this->branchScope($request, $user))
+            ->with(['country:id,name', 'state:id,name'])
+            ->withCount(['zones', 'racks'])
+            ->findOrFail($id);
+
+        return [
+            'kind'     => 'WAREHOUSE',
+            'code'     => $w->wh_code,
+            'title'    => $w->wh_name,
+            'subtitle' => trim(implode(', ', array_filter([$w->city, $w->stateLabel(), $w->country?->name]))) ?: null,
+            'rows'     => array_filter([
+                'Type'  => $w->isOwn() ? 'Own Warehouse' : 'Third Party',
+                'Area'  => $w->area_sqft ? number_format((float) $w->area_sqft) . ' Sq. Ft' : null,
+                'Zones' => $w->zones_count,
+                'Racks' => $w->racks_count,
+            ], fn ($v) => $v !== null && $v !== ''),
+            'flags'    => array_values(array_filter([
+                $this->flag(!$w->isActive(), 'INACTIVE', 'off'),
+            ])),
+        ];
+    }
+
+    /**
+     * GET /inventory/warehouses/{id}/qr — the QR and nothing else.
+     *
+     * A bare PNG, served inline so it drops straight into an <img src>. The
+     * label endpoint wraps the same code in a printable card; this one is for
+     * a screen that places it itself.
+     *
+     * ?scale=10 sets pixels per module (1-20).
+     */
+    public function qrImage(Request $request, int $id)
+    {
+        $data = $this->labelData($request, $id);
+
+        return $this->qrPng($data['code'], (int) $request->input('scale', 10));
+    }
+
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
 
     private function rules(): array

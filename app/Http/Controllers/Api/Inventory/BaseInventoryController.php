@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api\Inventory;
 
 use App\Http\Controllers\Controller;
+use Barryvdh\DomPDF\Facade\Pdf;
+use chillerlan\QRCode\QRCode;
+use chillerlan\QRCode\QROptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 
@@ -167,6 +170,76 @@ abstract class BaseInventoryController extends Controller
                 'last_page' => $page->lastPage(),
             ],
         ];
+    }
+
+    /**
+     * The printable location label, 4in x 3in.
+     *
+     * The QR carries the derived CODE (ZN-003, RK-001, RK-001-SH-01), not the
+     * raw id. Unlike a box code these are already unique across every branch
+     * and client — they are built from the row id — so the string a scanner
+     * reads is both unique and readable to the person holding the label.
+     *
+     * @param array{kind:string,code:string,title:string,subtitle:?string,rows:array,flags:array} $data
+     */
+    protected function labelPdf(array $data, string $filename)
+    {
+        $pdf = Pdf::loadView('pdf.inventory-label', $data + [
+            'qr'        => $this->qr($data['code']),
+            'printedOn' => now()->format('d M Y H:i'),
+        ])
+            // Points, because the blade is laid out in points: 4in x 3in.
+            ->setPaper([0, 0, 288, 216]);
+
+        return $pdf->download($filename . '.pdf');
+    }
+
+    /**
+     * The QR on its own, as a PNG — no card, no text, nothing else.
+     *
+     * For a screen that wants to place the code itself, or a sheet of codes
+     * printed without the label around them. $size is the module scale, so the
+     * image grows in whole pixels per module and never resamples blurry.
+     */
+    protected function qrPng(string $code, int $scale = 10)
+    {
+        $png = (new QRCode(new QROptions([
+            'eccLevel'    => 3,        // H — a scuffed warehouse label still reads
+            'scale'       => max(1, min($scale, 20)),
+            'imageBase64' => false,
+            'outputType'  => 'png',
+        ])))->render($code);
+
+        return response($png, 200, [
+            'Content-Type'        => 'image/png',
+            // inline: the browser shows it in an <img>, rather than saving it.
+            'Content-Disposition' => 'inline; filename="' . $code . '.png"',
+            'Cache-Control'       => 'private, max-age=86400',
+        ]);
+    }
+
+    /** A base64 PNG dompdf can embed. Null when it cannot be built — the label
+     *  still prints, with the code in text, rather than failing outright. */
+    protected function qr(?string $value): ?string
+    {
+        if (!$value) return null;
+
+        try {
+            return (new QRCode(new QROptions([
+                'eccLevel'    => 3,        // H — a scuffed warehouse label still reads
+                'scale'       => 6,
+                'imageBase64' => true,
+                'outputType'  => 'png',
+            ])))->render($value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** Yes / No as a label chip, or nothing at all when the flag is off. */
+    protected function flag(bool $on, string $text, string $tone): ?array
+    {
+        return $on ? ['text' => $text, 'tone' => $tone] : null;
     }
 
     /** The filters every list accepts, so the five validate() calls agree. */

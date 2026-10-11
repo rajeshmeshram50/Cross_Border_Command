@@ -581,6 +581,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/warehouses/options',       [WarehouseController::class, 'options']);     // before /{id}
         Route::post  ('/warehouses',               [WarehouseController::class, 'store']);
         Route::get   ('/warehouses/{id}',          [WarehouseController::class, 'show'])->whereNumber('id');
+        Route::get   ('/warehouses/{id}/qr',       [WarehouseController::class, 'qrImage'])->whereNumber('id');
+        Route::get   ('/warehouses/{id}/preview',    [WarehouseController::class, 'preview'])->whereNumber('id');
+        Route::get   ('/warehouses/{id}/label',    [WarehouseController::class, 'label'])->whereNumber('id');
         Route::post  ('/warehouses/{id}',          [WarehouseController::class, 'update'])->whereNumber('id');
         Route::put   ('/warehouses/{id}/status',   [WarehouseController::class, 'setStatus'])->whereNumber('id');
         Route::delete('/warehouses/{id}',          [WarehouseController::class, 'destroy'])->whereNumber('id');
@@ -590,6 +593,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/zones/options',            [ZoneController::class, 'options']);
         Route::post  ('/zones',                    [ZoneController::class, 'store']);
         Route::get   ('/zones/{id}',               [ZoneController::class, 'show'])->whereNumber('id');
+        Route::get   ('/zones/{id}/qr',            [ZoneController::class, 'qrImage'])->whereNumber('id');
+        Route::get   ('/zones/{id}/preview',         [ZoneController::class, 'preview'])->whereNumber('id');
+        Route::get   ('/zones/{id}/label',         [ZoneController::class, 'label'])->whereNumber('id');
         Route::put   ('/zones/{id}',               [ZoneController::class, 'update'])->whereNumber('id');
         Route::put   ('/zones/{id}/status',        [ZoneController::class, 'setStatus'])->whereNumber('id');
         Route::delete('/zones/{id}',               [ZoneController::class, 'destroy'])->whereNumber('id');
@@ -599,6 +605,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/racks/options',            [RackController::class, 'options']);
         Route::post  ('/racks',                    [RackController::class, 'store']);
         Route::get   ('/racks/{id}',               [RackController::class, 'show'])->whereNumber('id');
+        Route::get   ('/racks/{id}/qr',            [RackController::class, 'qrImage'])->whereNumber('id');
+        Route::get   ('/racks/{id}/preview',         [RackController::class, 'preview'])->whereNumber('id');
+        Route::get   ('/racks/{id}/label',         [RackController::class, 'label'])->whereNumber('id');
         Route::put   ('/racks/{id}',               [RackController::class, 'update'])->whereNumber('id');
         Route::put   ('/racks/{id}/status',        [RackController::class, 'setStatus'])->whereNumber('id');
         Route::delete('/racks/{id}',               [RackController::class, 'destroy'])->whereNumber('id');
@@ -608,6 +617,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/racks/{rack}/shelves',     [ShelfController::class, 'index'])->whereNumber('rack');
         Route::post  ('/racks/{rack}/shelves',     [ShelfController::class, 'store'])->whereNumber('rack');
         Route::get   ('/shelves/{id}',             [ShelfController::class, 'show'])->whereNumber('id');
+        Route::get   ('/shelves/{id}/qr',          [ShelfController::class, 'qrImage'])->whereNumber('id');
+        Route::get   ('/shelves/{id}/preview',       [ShelfController::class, 'preview'])->whereNumber('id');
+        Route::get   ('/shelves/{id}/label',       [ShelfController::class, 'label'])->whereNumber('id');
         Route::put   ('/shelves/{id}',             [ShelfController::class, 'update'])->whereNumber('id');
         Route::put   ('/shelves/{id}/status',      [ShelfController::class, 'setStatus'])->whereNumber('id');
         Route::delete('/shelves/{id}',             [ShelfController::class, 'destroy'])->whereNumber('id');
