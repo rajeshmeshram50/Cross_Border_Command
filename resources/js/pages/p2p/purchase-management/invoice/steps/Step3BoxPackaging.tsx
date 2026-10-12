@@ -13,8 +13,6 @@ import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
 import type { ProductFlagOption, SpiBox, SpiBoxBody, SpiBoxItem } from '../spi-api';
 
-/* Checkbox, product, code, description, qty, qty-to-pack, missing, extra,
-   mode, sub-box count, actions. The drawer rows span all of them. */
 const BOX_TABLE_COLUMNS = 11;
 
 type Packing =
@@ -45,6 +43,9 @@ const SCENARIOS: Array<{ id: Scenario; no: string; title: string; arrow: string;
   },
 ];
 
+const BUILTIN_FLAGS: Record<string, string> = { hazardous: 'Hazardous', coldchain: 'Cold Chain', fragile: 'Fragile' };
+const normFlag = (name: string | null | undefined) => (name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+
 const FLAG_PALETTE = ['#0891b2', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#2563eb', '#ca8a04'];
 
 const EDIT_MODE: Record<Scenario, string> = {
@@ -57,7 +58,7 @@ const todayIso = () => {
 };
 
 export default function Step3BoxPackaging({
-  draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes,
+  draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
 }: {
   draft: InvoiceDraft;
   lines: ProductLine[];
@@ -68,6 +69,7 @@ export default function Step3BoxPackaging({
   onCreateBox?: (body: SpiBoxBody) => Promise<SpiBox | null>;
   onUpdateBox?: (boxId: number, body: SpiBoxBody) => Promise<SpiBox | null>;
   onDeleteBoxes?: (ids: number[]) => Promise<boolean>;
+  onFlagsChanged?: () => void;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -119,9 +121,11 @@ export default function Step3BoxPackaging({
   }, []);
 
   const customFlags = useMemo<CustomFlag[]>(
-    () => flagMaster.map((f, i) => ({
-      id: `m${f.id}`, name: f.flag_name || `Flag ${f.id}`, color: FLAG_PALETTE[i % FLAG_PALETTE.length],
-    })),
+    () => flagMaster
+      .filter(f => !BUILTIN_FLAGS[normFlag(f.flag_name)])
+      .map((f, i) => ({
+        id: `m${f.id}`, name: f.flag_name || `Flag ${f.id}`, color: FLAG_PALETTE[i % FLAG_PALETTE.length],
+      })),
     [flagMaster],
   );
 
@@ -132,9 +136,6 @@ export default function Step3BoxPackaging({
 
   const pendingLines = lines.filter(l => remainingOf(l) > 0).map(viewOf);
 
-  /* Whether a box drawer is open inside the table below — a single box, a
-     split, or the mixed carton being built. The table's height cap lifts while
-     one is, since the drawer is a row of that same table. */
   const drawerOpen = pendingLines.some(l => !!packing[l.code]) || !!mixedBox?.length;
   const selectable = pendingLines.filter(l => !packing[l.code]).map(l => l.code);
   const allSelected = selectable.length > 0 && selectable.every(c => selected.includes(c));
@@ -154,14 +155,6 @@ export default function Step3BoxPackaging({
     s2: ['Scenario 02', '1 Product → Multiple Boxes'],
     s3: ['Scenario 03', 'Multiple Products → 1 Box'],
   };
-  /**
-   * One entry per CARTON, with what is inside it.
-   *
-   * Built from `boxes` rather than from the lines, because the question the
-   * table answers is "what is in this box" — a product-first list has to say
-   * "and its five boxes", which is the same carton repeated down the column
-   * with nothing to act on.
-   */
   const packedBoxes: PackedBox[] = boxes
     .map(b => ({
       code: b.box_code,
@@ -176,8 +169,6 @@ export default function Step3BoxPackaging({
         .filter((x): x is { line: ProductLine; qty: number } => !!x),
     }))
     .filter(b => b.items.length > 0)
-    /* By code, so B-002 follows B-001 however the server ordered them — the
-       column is read down, and a jumbled sequence reads as missing boxes. */
     .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 
   const scenarioUse: Record<Scenario, number> = {
@@ -237,12 +228,11 @@ export default function Step3BoxPackaging({
   const flagIdsFor = (data: BoxSaveData) => {
     const ids: number[] = [];
     const missing: string[] = [];
-    data.flagIds.forEach((id, i) => {
-      if (id.startsWith('m') && Number(id.slice(1))) { ids.push(Number(id.slice(1))); return; }
-      const name = (data.flagNames[i] ?? id).toLowerCase();
-      const hit = flagMaster.find(f => (f.flag_name ?? '').trim().toLowerCase() === name);
-      if (hit) ids.push(hit.id); else missing.push(data.flagNames[i] ?? id);
-    });
+    for (const id of data.flagIds) {
+      if (id.startsWith('m') && Number(id.slice(1))) { ids.push(Number(id.slice(1))); continue; }
+      const hit = flagMaster.find(f => normFlag(f.flag_name) === normFlag(id));
+      if (hit) ids.push(hit.id); else missing.push(BUILTIN_FLAGS[normFlag(id)] ?? id);
+    }
     return { ids: [...new Set(ids)], missing };
   };
 
@@ -474,8 +464,7 @@ export default function Step3BoxPackaging({
 
     const flagIds = (first?.flags ?? []).map(id => {
       const name = (flagMaster.find(f => f.id === id)?.flag_name ?? '').trim().toLowerCase();
-      const builtIn = ['hazardous', 'coldchain', 'fragile']
-        .find(b => b === name.replace(/\s+/g, ''));
+      const builtIn = BUILTIN_FLAGS[normFlag(name)] ? normFlag(name) : undefined;
       return builtIn ?? `m${id}`;
     });
 
@@ -676,11 +665,6 @@ export default function Step3BoxPackaging({
           </div>
         )}
 
-        {/* Five rows, then scroll — but only while nothing is open inside it.
-            A box drawer renders as a row of this very table and is taller than
-            the cap, so holding the cap would put a 600px drawer in a 500px
-            window and make the thing you are filling in the thing you have to
-            scroll to see. */}
         <div className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}>
           <table className="vti-table">
             <thead>
@@ -699,11 +683,6 @@ export default function Step3BoxPackaging({
                 <th>Product (SPI)</th>
                 <th>Code</th>
                 <th className="vti-desc-h">Description</th>
-                {/* Invoiced, and how many of them still have to go in a box.
-                    "Pending" rather than "to pack" because the card's own
-                    header already counts products that way — "11 Pending" up
-                    there, this many units pending down here, one word doing
-                    the same job in both places. */}
                 <th>Qty (SPI)</th>
                 <th>
                   <Tooltip label="Units of this product still waiting to go into a box. It drops as you pack, and the product leaves this table when it reaches zero.">
@@ -721,9 +700,6 @@ export default function Step3BoxPackaging({
               {pendingLines.map((line, i) => {
                 const full = fullOf(line.code);
                 const { missing, extra } = lineTotals(full ?? line);
-                /* What is already in cartons, and what is still to go. Both
-                   from the saved boxes rather than from the row, which the
-                   generator rewrites while a scenario is being set up. */
                 const packed = Math.round((packedQty[line.code] ?? 0) * 1000) / 1000;
                 const left = full ? remainingOf(full) : line.spiQty;
                 const pack = packing[line.code];
@@ -788,13 +764,7 @@ export default function Step3BoxPackaging({
                         <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
                       </Tooltip>
                     </td>
-                    {/* The invoiced quantity, not what is left: `line` is the
-                        view the generator works in, where spiQty has already
-                        been reduced to the remainder. */}
                     <td><span className="vti-qty-badge">{full?.spiQty ?? line.spiQty}</span></td>
-                    {/* Amber only once some of it is packed — on an untouched
-                        product the figure is the same as the one beside it,
-                        and colouring it would imply a shortfall. */}
                     <td>
                       <Tooltip
                         label={packed > 0
@@ -865,7 +835,7 @@ export default function Step3BoxPackaging({
                           onQuantityChange={readOnly ? undefined : (q: number) => setSingleQty(line, q)}
                           onSave={readOnly ? undefined : (d: BoxSaveData) => saveSingle(line, d)}
                           saving={savingKey === line.code}
-                          customFlags={customFlags}
+                          customFlags={customFlags} onFlagCreated={onFlagsChanged}
                         />
                       </td>
                     </tr>
@@ -881,7 +851,7 @@ export default function Step3BoxPackaging({
                           previewCodes={previewCodesOf(line.code)}
                           savingNo={savingKey?.startsWith(`${line.code}#`) ? Number(savingKey.split('#')[1]) : null}
                           readOnly={readOnly}
-                          customFlags={customFlags}
+                          customFlags={customFlags} onFlagCreated={onFlagsChanged}
                           onBoxQty={(no, q) => setBoxQty(line.code, no, q)} />
                       </td>
                     </tr>
@@ -918,7 +888,7 @@ export default function Step3BoxPackaging({
             onClearContents={() => { setMixedBox(null); setMixedQty({}); }}
             onSave={readOnly ? undefined : (d: BoxSaveData) => void saveMixedBox(d)}
             saving={savingKey === 'mixed'}
-            customFlags={customFlags}
+            customFlags={customFlags} onFlagCreated={onFlagsChanged}
           />
       )}
 
@@ -942,7 +912,7 @@ export default function Step3BoxPackaging({
               ...(editContents.length > 1 ? { onRemoveContent: (code: string) => void dropFromBox(code) } : {}),
             }
             : {})}
-          customFlags={customFlags}
+          customFlags={customFlags} onFlagCreated={onFlagsChanged}
           saving={savingKey === `edit:${editingBox.id}`}
           saved
           onSave={data => void saveEdit(data)}

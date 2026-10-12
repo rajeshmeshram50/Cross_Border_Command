@@ -21,7 +21,7 @@ export function splitQuantity(total: number, boxes: number): SplitBox[] {
 }
 
 export default function MultiBoxPanel({
-  line, boxes, onClose, onSaveBox, savedCodes = {}, previewCodes = {}, savingNo = null, readOnly = false, customFlags, onBoxQty,
+  line, boxes, onClose, onSaveBox, savedCodes = {}, previewCodes = {}, savingNo = null, readOnly = false, customFlags, onFlagCreated, onBoxQty,
 }: {
   line: ProductLine;
   boxes: SplitBox[];
@@ -32,6 +32,7 @@ export default function MultiBoxPanel({
   savingNo?: number | null;
   readOnly?: boolean;
   customFlags?: CustomFlag[];
+  onFlagCreated?: () => void;
   onBoxQty?: (boxNo: number, qty: number) => void;
 }) {
   const [active, setActive] = useState(1);
@@ -89,6 +90,7 @@ export default function MultiBoxPanel({
               saving={savingNo === b.no}
               saved={!!savedCodes[b.no]}
               customFlags={customFlags}
+              onFlagCreated={onFlagCreated}
               onQuantityChange={onBoxQty && !savedCodes[b.no] && !readOnly ? q => onBoxQty(b.no, q) : undefined}
             />
           </div>
