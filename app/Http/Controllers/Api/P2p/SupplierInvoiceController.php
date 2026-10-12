@@ -90,6 +90,8 @@ class SupplierInvoiceController extends Controller
                     // reason about a negative quantity.
                     $balance = (float) ($open[$l->id] ?? $ordered);
                     $billed  = round($ordered - $balance, 3);
+                    // One method decides what a negative balance means.
+                    $split   = $this->svc->splitBalance($balance);
 
                     return [
                         'po_item_id'  => $l->id,
@@ -104,21 +106,16 @@ class SupplierInvoiceController extends Controller
                         // What every OTHER invoice on this PO has taken.
                         'qty_billed'  => $billed,
 
-                        /* What THIS invoice may still bill. Never negative: an
-                           over-supplied line has nothing left to give, so it
-                           opens at zero rather than at a quantity that reads
-                           as a credit. This is what the grid's PO column shows. */
-                        'qty_open'    => max(0.0, $balance),
-
-                        /* How far the PO is ALREADY over, from earlier invoices.
-                           Deliberately not called extra_qty: that name is taken
-                           by the invoice item, where it means what THIS invoice
-                           billed over — and an over-supply caused by SPI 2 is
-                           not something SPI 3 did. Context for a tooltip, not a
+                        /* What THIS invoice may still bill, and how far earlier
+                           invoices already went past the order. qty_over is
+                           deliberately not called extra_qty: that name is taken
+                           by the invoice item, where it means what THAT invoice
+                           billed over — an over-supply caused by SPI 2 is not
+                           something SPI 3 did. Context for a tooltip, not a
                            column. */
-                        'qty_over'    => max(0.0, -$balance),
-                        // Nothing left to invoice: fully billed, or already over.
-                        'closed'      => $balance <= 0,
+                        'qty_open'    => $split['open'],
+                        'qty_over'    => $split['over'],
+                        'closed'      => $split['closed'],
 
                         'rate'        => (float) $l->rate,
                         'gst_pct'     => $l->gst_pct === null ? null : (float) $l->gst_pct,
@@ -447,7 +444,12 @@ class SupplierInvoiceController extends Controller
 
             // An international supplier charges no Indian GST: the four tax columns
             // stay NULL, which is a different fact from "charged at zero rate".
-            $rows = $this->priceLines($data['items'], $spi->isInternational());
+            $rows = $this->priceLines(
+                $data['items'],
+                $spi->isInternational(),
+                $spi->purchase_order_id ? (int) $spi->purchase_order_id : null,
+                $spi->id,
+            );
 
             // Over-supply is accepted, not refused — the goods arrived. It comes
             // back as a warning beside the saved invoice.
@@ -1088,11 +1090,22 @@ class SupplierInvoiceController extends Controller
      * cannot tell a wrong total from a right one, so a crafted request is
      * accepted as sent.
      */
-    private function priceLines(array $items, bool $international): array
+    /**
+     * @param int|null $spiId The invoice being saved, excluded from the open
+     *                        calculation so its own old quantity is not counted
+     *                        against the line it is replacing.
+     */
+    private function priceLines(array $items, bool $international, ?int $poId = null, ?int $spiId = null): array
     {
         $poLines = DB::table('p2p_purchase_order_items')
             ->whereIn('id', collect($items)->pluck('po_item_id')->filter())
             ->get()->keyBy('id');
+
+        /* extra_qty is worked out here rather than taken from the payload: the
+           browser can only see its own grid, and whether a line is over depends
+           on every OTHER invoice on the order. It stays a SNAPSHOT — correct at
+           save time, and not revisited when a sibling invoice later changes. */
+        $open = $poId ? $this->svc->openQtyByPoItem($poId, $spiId) : [];
 
         $products = DB::table('products as p')
             ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
@@ -1100,9 +1113,17 @@ class SupplierInvoiceController extends Controller
             ->whereIn('p.id', collect($items)->pluck('product_id'))
             ->get(['p.id', 'p.name', 'p.description', 'p.gst_amount'])->keyBy('id');
 
-        return collect($items)->map(function ($r) use ($international, $poLines, $products) {
+        return collect($items)->map(function ($r) use ($international, $poLines, $products, $open) {
             $po   = $r['po_item_id'] ? ($poLines[$r['po_item_id']] ?? null) : null;
             $prod = $products[$r['product_id']] ?? null;
+
+            /* How much of THIS line goes past what the order still had open.
+               No PO behind it (a standalone invoice) means nothing to exceed,
+               and the payload's own figure is the fallback when the open
+               quantity could not be read. */
+            $extra = $po && array_key_exists($r['po_item_id'], $open)
+                ? $this->svc->splitBalance((float) $open[$r['po_item_id']] - (float) $r['qty_spi'])['over']
+                : (float) ($r['extra_qty'] ?? 0);
 
             return [
                 'po_item_id'  => $r['po_item_id'] ?? null,
@@ -1114,7 +1135,7 @@ class SupplierInvoiceController extends Controller
 
                 'qty_spi'   => (float) $r['qty_spi'],
                 'rate'      => (float) $r['rate'],
-                'extra_qty' => (float) ($r['extra_qty'] ?? 0),
+                'extra_qty' => $extra,
 
                 'taxable_amount' => (float) $r['taxable_amount'],
                 // NULL, not 0, on an international invoice: a foreign supplier

@@ -159,7 +159,7 @@ class SpiBoxController extends Controller
                 ], 422));
             }
 
-            $data = $this->validateBox($request);
+            $data = $this->validateBox($request, (int) $user->client_id, (int) $spi->id);
             $this->guardOverPacking($spi, $data['items'], null);
 
             /* The invoice row is locked for the length of the allocation, so
@@ -203,7 +203,7 @@ class SpiBoxController extends Controller
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
+            $user = $this->tenantUser($request);
             $spi = $this->findSpi($id);
             $box = $this->findBox($id, $boxId);
 
@@ -214,7 +214,7 @@ class SpiBoxController extends Controller
                 ], 422));
             }
 
-            $data = $this->validateBox($request);
+            $data = $this->validateBox($request, (int) $user->client_id, (int) $spi->id);
             $this->guardOverPacking($spi, $data['items'], $box->id);
 
             $box->forceFill(collect($data)->except('items')->all())->save();
@@ -439,33 +439,123 @@ class SpiBoxController extends Controller
         }
     }
 
-    private function validateBox(Request $request): array
+    private function validateBox(Request $request, int $clientId, int $spiId): array
     {
-        return $request->validate([
-            'scenario'        => ['required', Rule::in(SpiBox::SCENARIOS)],
-            'length_cm'       => ['nullable', 'numeric', 'min:0'],
-            'width_cm'        => ['nullable', 'numeric', 'min:0'],
-            'height_cm'       => ['nullable', 'numeric', 'min:0'],
-            'weight_kg'       => ['nullable', 'numeric', 'min:0'],
-            'net_weight_kg'   => ['nullable', 'numeric', 'min:0'],
-            'gross_weight_kg' => ['nullable', 'numeric', 'min:0'],
-            'condition'       => ['required', Rule::in(SpiBox::CONDITIONS)],
+        $data = $request->validate($this->boxRules('', $clientId, $spiId));
+        $this->assertBoxConsistent($data);
 
-            'items'                            => ['required', 'array', 'min:1'],
-            'items.*.supplier_invoice_item_id' => ['required', 'integer'],
-            'items.*.quantity'                 => ['required', 'numeric', 'gt:0'],
-            'items.*.is_stackable'             => ['nullable', 'boolean'],
-            'items.*.remark'                   => ['nullable', Rule::in(SpiBoxItem::REMARKS)],
-            'items.*.remark_note'              => ['nullable', 'string'],
-            'items.*.flags'                    => ['nullable', 'array'],
-            'items.*.flags.*'                  => ['integer'],
-            'items.*.serial_no'                => ['nullable', 'string', 'max:60'],
-            'items.*.lot_no'                   => ['nullable', 'string', 'max:60'],
-            'items.*.batch_no'                 => ['nullable', 'string', 'max:60'],
-            'items.*.cat_no'                   => ['nullable', 'string', 'max:60'],
-            'items.*.expiry_date'              => ['nullable', 'date'],
-            'items.*.mfg_date'                 => ['nullable', 'date'],
-        ]);
+        return $data;
+    }
+
+    /**
+     * One box's rules.
+     *
+     * The ids are checked against the DATABASE, not just for being integers:
+     * a payload may name any number it likes, and an invoice item from another
+     * invoice or a flag from another tenant must fail here as a field error,
+     * not reach the insert. Quantities are capped at 3 decimals because the
+     * column is decimal(_,3) — Postgres would round 10.1234 silently and the
+     * packed total would then never match what the packer typed.
+     */
+    private function boxRules(string $p = '', ?int $clientId = null, ?int $spiId = null): array
+    {
+        $itemExists = $spiId
+            ? Rule::exists('p2p_supplier_invoice_items', 'id')
+                ->where('supplier_invoice_id', $spiId)->whereNull('deleted_at')
+            : 'integer';
+
+        $flagExists = $clientId
+            ? Rule::exists('inventory_product_flags', 'id')->where('client_id', $clientId)
+            : 'integer';
+
+        return [
+            "{$p}scenario"        => ['required', Rule::in(SpiBox::SCENARIOS)],
+            "{$p}length_cm"       => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
+            "{$p}width_cm"        => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
+            "{$p}height_cm"       => ['nullable', 'numeric', 'min:0', 'max:9999.99'],
+            "{$p}weight_kg"       => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
+            "{$p}net_weight_kg"   => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
+            "{$p}gross_weight_kg" => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
+            "{$p}condition"       => ['required', Rule::in(SpiBox::CONDITIONS)],
+
+            "{$p}items"                            => ['required', 'array', 'min:1', 'max:200'],
+            "{$p}items.*.supplier_invoice_item_id" => ['required', 'integer', $itemExists],
+            "{$p}items.*.quantity"                 => ['required', 'numeric', 'gt:0', 'decimal:0,3'],
+            "{$p}items.*.is_stackable"             => ['nullable', 'boolean'],
+            "{$p}items.*.remark"                   => ['nullable', Rule::in(SpiBoxItem::REMARKS)],
+            "{$p}items.*.remark_note"              => ['nullable', 'string', 'max:500'],
+            "{$p}items.*.flags"                    => ['nullable', 'array', 'max:20'],
+            "{$p}items.*.flags.*"                  => ['integer', 'distinct', $flagExists],
+            "{$p}items.*.serial_no"                => ['nullable', 'string', 'max:60'],
+            "{$p}items.*.lot_no"                   => ['nullable', 'string', 'max:60'],
+            "{$p}items.*.batch_no"                 => ['nullable', 'string', 'max:60'],
+            "{$p}items.*.cat_no"                   => ['nullable', 'string', 'max:60'],
+            "{$p}items.*.expiry_date"              => ['nullable', 'date'],
+            "{$p}items.*.mfg_date"                 => ['nullable', 'date'],
+        ];
+    }
+
+    /**
+     * The rules a validator cannot state: they compare two fields of the same
+     * box, or the box against its own contents.
+     *
+     * The key is returned beside the message so the form can highlight the
+     * field, the way a validation failure does.
+     */
+    private function assertBoxConsistent(array $box): void
+    {
+        $fail = function (string $key, string $message) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => $message,
+                'errors'  => [$key => [$message]],
+            ], 422));
+        };
+
+        /* The scenario is not decoration: s1 and s2 are both ONE product in the
+           box, s3 is the mixed carton. Stored unchecked, a box labelled s3 with
+           a single line makes the Stage 03 counters and the packing list
+           disagree with the cartons on the floor. */
+        $products = collect($box['items'])->pluck('supplier_invoice_item_id')->unique()->count();
+
+        if ($box['scenario'] === 's3' && $products < 2) {
+            $fail('scenario', 'Scenario 03 is a mixed box — it needs at least two different products.');
+        }
+        if (in_array($box['scenario'], ['s1', 's2'], true) && $products > 1) {
+            $fail('scenario', 'Scenario 01 and 02 hold one product per box. Use Scenario 03 for a mixed box.');
+        }
+
+        /* Volumetric weight is computed from all three dimensions, so two of
+           them is not a smaller answer — it is no answer, and the label would
+           print a blank where the freight figure belongs. */
+        $dims = collect(['length_cm', 'width_cm', 'height_cm'])
+            ->filter(fn ($k) => ($box[$k] ?? null) !== null && $box[$k] !== '');
+        if ($dims->isNotEmpty() && $dims->count() < 3) {
+            $fail('length_cm', 'Give all three dimensions, or none — volumetric weight needs length, width and height.');
+        }
+
+        $net   = $box['net_weight_kg'] ?? null;
+        $gross = $box['gross_weight_kg'] ?? null;
+        if ($net !== null && $gross !== null && (float) $net > (float) $gross + 0.001) {
+            $fail('net_weight_kg', 'Net weight cannot be more than gross weight.');
+        }
+
+        foreach ($box['items'] as $i => $row) {
+            $line = "items.{$i}";
+
+            // A damaged or mismatched line is a claim against the supplier. It
+            // has to say what happened, or the vault holds a flag nobody can act on.
+            $remark = $row['remark'] ?? null;
+            if ($remark && $remark !== 'correct' && trim((string) ($row['remark_note'] ?? '')) === '') {
+                $fail("{$line}.remark_note", "A '{$remark}' line needs a note saying what was found.");
+            }
+
+            $mfg    = $row['mfg_date'] ?? null;
+            $expiry = $row['expiry_date'] ?? null;
+            if ($mfg && $expiry && strtotime($expiry) <= strtotime($mfg)) {
+                $fail("{$line}.expiry_date", 'Expiry date must be after the manufacturing date.');
+            }
+        }
     }
 
     private function writeItems(SpiBox $box, array $items): void
@@ -476,7 +566,8 @@ class SpiBoxController extends Controller
     }
 
     /**
-     * B-001 … B-nnn, per invoice. A code is issued once and never again.
+     * The next $count codes in sequence: B-001 … B-nnn, per invoice. A code is
+     * issued once and never again.
      *
      * withTrashed() is the whole point: the unique index on
      * (supplier_invoice_id, box_code) covers soft-deleted rows, so a deleted
@@ -490,18 +581,16 @@ class SpiBoxController extends Controller
      * Three digits, not two, precisely because of those gaps: the sequence is
      * the highest ever issued, not the live count, so an invoice that packs and
      * repacks runs past 99 long before it holds 99 cartons.
+     *
+     * One query whatever the count, since the codes after the highest ever
+     * issued are arithmetic, not lookups.
      */
     private function nextBoxCode(int $spiId): string
     {
         return $this->nextBoxCodes($spiId, 1)[0];
     }
 
-    /**
-     * The next $count codes in sequence, as an array.
-     *
-     * One query whatever the count: the sequence is the highest number ever
-     * issued on the invoice, so the codes after it are arithmetic, not lookups.
-     */
+    /** @see nextBoxCode() — the next $count codes in sequence, as an array. */
     private function nextBoxCodes(int $spiId, int $count): array
     {
         $max = 0;
@@ -543,12 +632,30 @@ class SpiBoxController extends Controller
             }
 
             $left = $row['qty_pending'] + (float) ($own[$itemId] ?? 0);
-            if ($qty > $left + 0.001) {
+            if ($this->milli((float) $qty) > $this->milli($left)) {
                 abort(response()->json([
                     'status'  => false,
                     'message' => 'Only ' . number_format($left, 3) . ' of that product is left to pack.',
                 ], 422));
             }
         }
+    }
+
+    /**
+     * A quantity as whole thousandths, for comparing two of them exactly.
+     *
+     * Both guards used to allow a 0.001 slack so that 0.1 + 0.2 reading as
+     * 0.30000000000000004 would not refuse a legitimate exact fill. But the
+     * slack is applied per line per box, so a trolley of fifty boxes could
+     * over-pack by 0.05 and the invoice would sit at a negative pending — the
+     * same silent over-supply the SPI balance was fixed for.
+     *
+     * Quantities are validated to three decimals and pending is rounded to
+     * three, so scaling both sides to integers compares them exactly and needs
+     * no slack at all.
+     */
+    private function milli(float $qty): int
+    {
+        return (int) round($qty * 1000);
     }
 }
