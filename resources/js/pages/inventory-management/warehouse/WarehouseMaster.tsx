@@ -1,10 +1,7 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useServerList } from '../../../hooks/useServerList';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import type { ReactNode } from 'react';
-/* The P2P page chrome, whole. `p2p-common.css` carries the teal head strip,
-   the "What We Are Doing Here" panel with its step cards, the segmented tabs
-   and the search box. `order.css` carries the table, its scroller and the
-   pager band — and this page is a list exactly like the ones it already
-   dresses, so it is the same table here. Only the cells are ours. */
 import '../../p2p/p2p-common.css';
 import '../../p2p/purchase-management/order/po-list/order.css';
 import './warehouse-master.css';
@@ -12,18 +9,12 @@ import SearchClear from '../../../components/ui/SearchClear';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
 import { useToast } from '../../../contexts/ToastContext';
-import { WAREHOUSES, type Warehouse, type WarehouseType } from './warehouse-data';
-/* Lazy: it pulls in the QR encoder, which a visit that never opens a code
-   should not pay for. */
+import { WarehouseApiError, warehouseApi, type Warehouse, type WarehouseCounts, type WarehouseTab } from './warehouse-data';
 const WarehouseQrModal = lazy(() => import('./WarehouseQrModal'));
-/* Lazy too: a large form that most visits to the list never open. */
 const AddWarehouseModal = lazy(() => import('./AddWarehouseModal'));
 
-/* Built once: `Intl.NumberFormat` is costly to construct and the table formats
-   one area per row. */
 const inGrouping = new Intl.NumberFormat('en-IN');
 
-/** `2025-04-12` → `12 Apr 2025`, the way the design writes a date. */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function formatDate(iso: string): string {
   const [y, m, d] = iso.split('-');
@@ -33,9 +24,6 @@ function formatDate(iso: string): string {
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
-/* ── Icons ────────────────────────────────────────────────────────────────
-   Inline rather than from a set: these are the prototype's own paths, and a
-   nearby lookalike from an icon library would quietly change the drawing. */
 const svg = (d: ReactNode, size = 14, width = 2.2) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -92,7 +80,6 @@ const IcoUser = () => svg(
 );
 const IcoChevron = () => svg(<polyline points="6 9 12 15 18 9" />, 10);
 
-/* ── The four things this screen is for ─────────────────────────────────── */
 const STEPS: Array<{ no: string; icon: ReactNode; title: string; desc: string }> = [
   {
     no: '01', icon: <IcoGrid />, title: 'Create Warehouse Record',
@@ -112,7 +99,7 @@ const STEPS: Array<{ no: string; icon: ReactNode; title: string; desc: string }>
   },
 ];
 
-type Tab = 'all' | WarehouseType;
+type Tab = WarehouseTab;
 
 const TABS: Array<{ key: Tab; label: string; icon: ReactNode }> = [
   { key: 'all', label: 'All Warehouses', icon: <IcoWarehouse size={15} /> },
@@ -120,103 +107,73 @@ const TABS: Array<{ key: Tab; label: string; icon: ReactNode }> = [
   { key: 'tpl', label: 'Third Party Warehouses', icon: <IcoTpl size={15} /> },
 ];
 
-/** The nine columns, in the design's order. */
 const COLUMNS = [
   'Sr. No', 'Warehouse ID', 'Warehouse', 'Warehouse Type', 'Warehouse Area (Sq. Ft)',
   'Google Location', 'Contact Person', 'Warehouse Status', 'Action',
 ];
 
-/**
- * Warehouse Master.
- *
- * Design only, on static rows — this screen is being drawn before it is
- * wired, so nothing here calls an API and the toggle changes what you see
- * rather than what is stored. Everything it needs from the server arrives
- * later by replacing `warehouse-data.ts`; the page only ever reads it.
- */
 export default function WarehouseMaster() {
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
-  /* Collapsed on arrival, as the SPI list opens: the four steps explain the
-     screen once, and after that they are four cards between you and the
-     table. The header stays, so it is one click back. */
   const [briefOpen, setBriefOpen] = useState(false);
 
-  /* Held here rather than in the data module: the switch is part of what this
-     screen demonstrates, so a flip has to survive a re-render, and a static
-     module is not somewhere to write to. */
-  const [inactive, setInactive] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(WAREHOUSES.filter(w => w.status === 'inactive').map(w => [w.id, true])),
-  );
   const toast = useToast();
-  const toggle = useCallback((id: string) => {
-    const next = !inactive[id];
-    setInactive(m => ({ ...m, [id]: next }));
-    /* Outside the updater on purpose: React may run an updater twice, and a
-       toast fired from inside one would appear twice with it.
+  const debouncedQuery = useDebouncedValue(query.trim(), 400);
 
-       Through the app's own toast, which has a single place on screen for
-       every message. The prototype drew its own and it landed in the middle
-       of the table, over the rows you had just been reading. */
-    if (next) toast.warning(`${id} marked Inactive`, 'It stays in the list, dimmed.');
-    else toast.success(`${id} marked Active`);
-  }, [inactive, toast]);
-  const isOff = useCallback((w: Warehouse) => !!inactive[w.id], [inactive]);
+  const [counts, setCounts] = useState<WarehouseCounts>({ all: 0, own: 0, tpl: 0 });
+  const loadCounts = useCallback(() => {
+    warehouseApi.counts().then(setCounts).catch(() => {});
+  }, []);
+  useEffect(() => { loadCounts(); }, [loadCounts]);
 
-  /* Which warehouse's code is open. The row itself, not its id: the modal
-     needs every field it prints, and null is closed. */
-  const [qrFor, setQrFor] = useState<Warehouse | null>(null);
-
-  /* The form, in its two modes. 'new' is Add; a row is Edit. Null is
-     closed — one piece of state rather than an open flag that could
-     disagree with the row beside it. */
-  const [formFor, setFormFor] = useState<Warehouse | 'new' | null>(null);
-
-  /* Counts come from the whole set, never the searched one — a tab count that
-     shrinks as you type reads as data disappearing. */
-  const counts = useMemo(() => ({
-    all: WAREHOUSES.length,
-    own: WAREHOUSES.filter(w => w.type === 'own').length,
-    tpl: WAREHOUSES.filter(w => w.type === 'tpl').length,
-  }), []);
-
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return WAREHOUSES.filter(w => {
-      if (tab !== 'all' && w.type !== tab) return false;
-      if (!q) return true;
-      /* The same haystack the prototype searches, so a query that worked in
-         the design works here: ids, names, the whole address, the contact and
-         the two labels that are never stored as written. */
-      return [
-        w.id, w.name, w.address, w.city, w.state, w.pin, w.country,
-        w.contact, w.mobile, w.email,
-        w.type === 'own' ? 'own warehouse' : 'third party warehouse 3pl',
-        inactive[w.id] ? 'inactive' : 'active',
-      ].join(' ').toLowerCase().includes(q);
-    });
-  }, [tab, query, inactive]);
-
-  /* ── Paging, as every P2P list pages ──────────────────────────────────── */
-  const [page, setPage] = useState(1);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pageSize, choosePageSize, refitPageSize] = useFitPageSize(scrollRef);
-  useEffect(() => { if (rows.length) refitPageSize(); }, [rows.length, refitPageSize]);
-  /* A tab or a search leaves page 4 of a list that may now have one. */
-  useEffect(() => { setPage(1); }, [tab, query]);
 
-  const total = rows.length;
+  const list = useServerList(
+    (q) => warehouseApi.list({ tab: (q.tab as Tab) ?? 'all', search: q.search, page: q.page, per_page: q.per_page }),
+    { perPage: pageSize, search: debouncedQuery, tab },
+    (e) => toast.error('Could not load warehouses', e instanceof WarehouseApiError ? e.message : 'Please refresh the page.'),
+  );
+  const reload = list.reload;
+
+  const rowCount = list.rows.length;
+  useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
+
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const toggle = useCallback(async (w: Warehouse) => {
+    if (busyId || !w.apiId) return;
+    const activate = w.status !== 'active';
+    setBusyId(w.apiId);
+    try {
+      await warehouseApi.setStatus(w.apiId, activate);
+      if (activate) toast.success(`${w.id} marked Active`, 'Its zones and racks stay inactive until you switch them back on.');
+      else toast.warning(`${w.id} marked Inactive`, 'It stays in the list, dimmed. Its zones and racks are deactivated with it.');
+      reload();
+    } catch (e) {
+      toast.error('Could not change the status', e instanceof WarehouseApiError ? e.message : 'Please try again.');
+    } finally {
+      setBusyId(null);
+    }
+  }, [busyId, reload, toast]);
+
+  const [qrFor, setQrFor] = useState<Warehouse | null>(null);
+  const [formFor, setFormFor] = useState<Warehouse | 'new' | null>(null);
+
+  const onSaved = useCallback(() => {
+    reload();
+    loadCounts();
+  }, [reload, loadCounts]);
+
+  const rows = list.rows;
+  const total = list.meta?.total ?? 0;
+  const page = list.page;
   const start = (page - 1) * pageSize;
-  const paged = useMemo(() => rows.slice(start, start + pageSize), [rows, start, pageSize]);
-  const changePageSize = useCallback((n: number) => { choosePageSize(n); setPage(1); }, [choosePageSize]);
+  const changePageSize = useCallback((n: number) => choosePageSize(n), [choosePageSize]);
+  const loading = list.loading || list.replacing;
 
   return (
-    /* `ord-page` and `ord-list` are not decoration: order.css scopes its
-       Figma-exact sizing to them — the 40px head button, the 38px tabs and the
-       44px search. `whm-page` scopes this screen's own cells. */
     <div className="spi-root ord-page whm-page">
 
-      {/* ── Head strip ─────────────────────────────────────────────────── */}
       <div className="spi-head">
         <div className="spi-head-left">
           <div className="spi-head-icon"><IcoWarehouse size={17} /></div>
@@ -227,15 +184,11 @@ export default function WarehouseMaster() {
             </div>
           </div>
         </div>
-        {/* Inert while this screen is a design: the Add Warehouse form is the
-            next piece, and a button that opens nothing is better than one
-            that half-opens something. */}
         <button type="button" className="spi-head-btn" onClick={() => setFormFor('new')}>
           <IcoPlus /> Add Warehouse
         </button>
       </div>
 
-      {/* ── What We Are Doing Here ─────────────────────────────────────── */}
       <div className={`spi-bref ${briefOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-bref-head" onClick={() => setBriefOpen(o => !o)}>
           <div className="spi-bref-ico"><IcoWarehouse size={14} /></div>
@@ -265,7 +218,6 @@ export default function WarehouseMaster() {
         </div>
       </div>
 
-      {/* ── Tabs, search, table, pager ─────────────────────────────────── */}
       <div className="spi-card ord-list">
         <div className="spi-segrow">
           <div className="spi-seg" role="tablist" aria-label="Warehouse type">
@@ -292,21 +244,19 @@ export default function WarehouseMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by warehouse ID, name, city, state or contact person..."
+              placeholder="Search by name, city, state or contact person..."
               aria-label="Search warehouses"
-              /* Browsers autofill anything that looks like a form field; a
-                 list filter is not one. */
               autoComplete="off"
             />
             <SearchClear show={query} onClear={() => setQuery('')} />
           </div>
         </div>
 
-        {total === 0 ? (
-          /* In place of the table, not inside it: a centred colSpan cell in a
-             table wider than the viewport sits off-screen. */
+        {loading && rows.length === 0 ? (
+          <div className="ord-empty">Loading warehouses…</div>
+        ) : total === 0 ? (
           <div className="ord-empty">
-            {query.trim() ? 'No warehouses match your search.' : 'No warehouses in this view yet.'}
+            {debouncedQuery ? 'No warehouses match your search.' : 'No warehouses in this view yet.'}
           </div>
         ) : (
           <div className="ord-table-scroll" ref={scrollRef}>
@@ -314,11 +264,10 @@ export default function WarehouseMaster() {
               <thead>
                 <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
               </thead>
-              {paged.map((w, i) => (
-                /* One tbody per row, which is how this table stripes:
-                   order.css shades alternate tbody groups. */
-                <tbody key={w.id}>
-                  <Row w={w} sr={start + i + 1} off={isOff(w)} onToggle={toggle} onQr={setQrFor} onEdit={setFormFor} />
+              {rows.map((w, i) => (
+                <tbody key={w.apiId ?? w.id}>
+                  <Row w={w} sr={start + i + 1} off={w.status !== 'active'} busy={busyId === w.apiId}
+                    onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={setFormFor} />
                 </tbody>
               ))}
             </table>
@@ -330,7 +279,7 @@ export default function WarehouseMaster() {
           total={total}
           page={page}
           pageSize={pageSize}
-          onPage={setPage}
+          onPage={list.goTo}
           onPageSize={changePageSize}
           pageSizeOptions={PAGE_SIZE_OPTIONS}
         />
@@ -341,6 +290,7 @@ export default function WarehouseMaster() {
           <AddWarehouseModal
             warehouse={formFor === 'new' ? undefined : formFor}
             onClose={() => setFormFor(null)}
+            onSaved={onSaved}
           />
         </Suspense>
       )}
@@ -354,25 +304,19 @@ export default function WarehouseMaster() {
   );
 }
 
-/** One warehouse. */
-function Row({ w, sr, off, onToggle, onQr, onEdit }: {
+function Row({ w, sr, off, busy, onToggle, onQr, onEdit }: {
   w: Warehouse;
   sr: number;
   off: boolean;
-  onToggle: (id: string) => void;
+  busy: boolean;
+  onToggle: (w: Warehouse) => void;
   onQr: (w: Warehouse) => void;
   onEdit: (w: Warehouse) => void;
 }) {
-  /* The country is left off unless it is not India — on a list that is almost
-     entirely Indian, printing it on every row says nothing. */
   const place = [w.city, w.state, w.pin].filter(Boolean).join(', ')
     + (w.country && w.country !== 'India' ? `, ${w.country}` : '');
 
   return (
-    /* No `is-first is-last` here. Those mark the ends of a GROUP on the PO
-       list, where one tbody is a purchase order holding several document
-       rows, and they carry a 2.5px separator. A warehouse is one row, so
-       every row would have been drawn with the heavy group line. */
     <tr className={off ? 'is-off' : undefined}>
       <td><span className="whm-sr">{sr}</span></td>
 
@@ -409,7 +353,7 @@ function Row({ w, sr, off, onToggle, onQr, onEdit }: {
 
       <td>
         <div className="whm-loc">
-          <div className="whm-loc__city"><b>{w.city}</b>, {w.state}</div>
+          <div className="whm-loc__city"><b>{w.city}</b>{w.state ? `, ${w.state}` : ''}</div>
           <div className="whm-loc__row">
             <span className="whm-loc__pin">{w.pin}</span>
             {w.map ? (
@@ -427,7 +371,7 @@ function Row({ w, sr, off, onToggle, onQr, onEdit }: {
       <td>
         <div className="whm-contact">
           <b>{w.contact}</b>
-          <span><IcoPhone />{w.mobile}</span>
+          <span><IcoPhone />{[w.dial, w.mobile].filter(Boolean).join(' ')}</span>
           <span><IcoMail /><a href={`mailto:${w.email}`}>{w.email}</a></span>
         </div>
       </td>
@@ -444,15 +388,14 @@ function Row({ w, sr, off, onToggle, onQr, onEdit }: {
             title="Edit this warehouse" onClick={() => onEdit(w)}>
             <IcoEdit />
           </button>
-          {/* The one control that does something: it flips what the row says,
-              which is as far as a design on static rows can honestly go. */}
           <button
             type="button"
             className={`whm-toggle${off ? '' : ' is-on'}`}
             role="switch" aria-checked={!off}
             aria-label={`Toggle status of ${w.id}`}
             title={off ? 'Inactive — click to activate' : 'Active — click to deactivate'}
-            onClick={() => onToggle(w.id)}
+            disabled={busy}
+            onClick={() => onToggle(w)}
           >
             <span />
           </button>
