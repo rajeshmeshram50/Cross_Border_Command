@@ -226,6 +226,11 @@ export const zoneApi = {
 
   setStatus: (apiId: number, active: boolean) =>
     call(() => api.put(`/inventory/zones/${apiId}/status`, { status: active ? 1 : 0 }), one),
+
+  nextCode: () => call(
+    () => api.get('/inventory/zones/next-code'),
+    (b) => String((b as { data?: { next_code?: string } } | null)?.data?.next_code ?? ''),
+  ),
 };
 
 export const ZONES: Zone[] = [

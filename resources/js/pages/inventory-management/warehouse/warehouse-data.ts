@@ -179,6 +179,11 @@ export const warehouseApi = {
 
   setStatus: (apiId: number, active: boolean) =>
     call(() => api.put(`/inventory/warehouses/${apiId}/status`, { status: active ? 1 : 0 }), one),
+
+  nextCode: () => call(
+    () => api.get('/inventory/warehouses/next-code'),
+    (b) => String((b as { data?: { next_code?: string } } | null)?.data?.next_code ?? ''),
+  ),
 };
 
 export const WAREHOUSES: Warehouse[] = [
