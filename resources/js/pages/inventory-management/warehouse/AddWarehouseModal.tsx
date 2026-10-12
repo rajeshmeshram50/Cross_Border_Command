@@ -208,7 +208,17 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, pickAt, camOpen, saving]);
 
-  const id = editing ? warehouse!.id : 'Assigned on save';
+  const [nextCode, setNextCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (editing) return;
+    let live = true;
+    warehouseApi.nextCode()
+      .then(code => { if (live) setNextCode(code || 'Assigned on save'); })
+      .catch(() => { if (live) setNextCode('Assigned on save'); });
+    return () => { live = false; };
+  }, [editing]);
+
+  const id = editing ? warehouse!.id : (nextCode ?? 'Loading…');
   const india = d.country === 'India';
 
   const save = async () => {

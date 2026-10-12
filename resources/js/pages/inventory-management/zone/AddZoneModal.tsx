@@ -193,7 +193,17 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose, tempOpen, saving]);
 
-  const id = editing ? zone!.id : 'Assigned on save';
+  const [nextCode, setNextCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (editing) return;
+    let live = true;
+    zoneApi.nextCode()
+      .then(code => { if (live) setNextCode(code || 'Assigned on save'); })
+      .catch(() => { if (live) setNextCode('Assigned on save'); });
+    return () => { live = false; };
+  }, [editing]);
+
+  const id = editing ? zone!.id : (nextCode ?? 'Loading…');
   const picked = activeWarehouses.find(w => WAREHOUSE_LABEL(w.id, w.name) === d.wh);
   const type: ZoneType | '' = d.type === TYPE_LABEL.rack ? 'rack' : d.type === TYPE_LABEL.norack ? 'norack' : '';
   const noRack = type === 'norack';
