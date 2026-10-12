@@ -42,12 +42,11 @@
   box-shadow: 0 10px 22px -8px rgba(15, 58, 77, .4), inset 0 1px 0 rgba(255, 255, 255, .2);
 }
 
-/* The icon on a tab that is NOT selected.
-   It used to be the same saturated teal the active tab's gradient is, which
-   put the loudest thing on the tab next to its quietest: a solid teal tile
-   beside a grey label, decoration out-shouting the word that says what the
-   tab is for. Pale tile, teal glyph — the label leads, and the icon is still
-   there to be recognised by shape. */
+/* The design's own values: every tile is the saturated teal, and the ACTIVE
+   one steps back to translucent white because by then the tab itself carries
+   the gradient. I had this inverted for a while — pale tiles on the
+   unselected tabs — on the reasoning that the icon was out-shouting its
+   label. The design disagrees, and the design is the brief. */
 .whm-page .spi-seg-ico {
   width: 28px;
   height: 28px;
@@ -55,23 +54,15 @@
   align-items: center;
   justify-content: center;
   border-radius: 9px;
-  color: #0891b2;
-  background: #e8f8fc;
-  box-shadow: inset 0 0 0 1px rgba(8, 145, 178, .16);
+  color: #fff;
+  background: linear-gradient(135deg, #67e8f9, #0891b2 70%, #0e7490);
+  box-shadow: 0 3px 9px -2px rgba(8, 145, 178, .45);
   transition: background .22s cubic-bezier(.22, 1, .36, 1),
-              color .22s cubic-bezier(.22, 1, .36, 1),
               box-shadow .22s cubic-bezier(.22, 1, .36, 1),
               transform .22s cubic-bezier(.22, 1, .36, 1);
 }
 .whm-page .spi-seg-ico svg { width: 13px; height: 13px; }
-/* Hovering is the moment the tab is a candidate, so the icon takes the
-   saturated fill it would have carried all along. */
-.whm-page .spi-seg-btn:hover .spi-seg-ico {
-  transform: scale(1.06);
-  color: #fff;
-  background: linear-gradient(135deg, #67e8f9, #0891b2 70%, #0e7490);
-  box-shadow: 0 3px 9px -2px rgba(8, 145, 178, .45);
-}
+.whm-page .spi-seg-btn:hover .spi-seg-ico { transform: scale(1.06); }
 /* On the active tab the gradient belongs to the tab, so the square steps
    back to a pane of white over it rather than competing. */
 .whm-page .spi-seg-btn.is-active .spi-seg-ico {
@@ -82,11 +73,9 @@
 
 /* The pale tile is pale against white; on a dark card it would be the one
    bright thing on an unselected tab, which is the problem this was fixing. */
-[data-bs-theme="dark"] .whm-page .spi-seg-ico {
-  color: #67e8f9;
-  background: rgba(34, 211, 238, .12);
-  box-shadow: inset 0 0 0 1px rgba(34, 211, 238, .24);
-}
+/* The tile is a saturated teal in both themes — it reads the same on a dark
+   card as on a light one, so there is nothing to restate. Only the ACTIVE
+   tile's translucent white needs a nudge, below. */
 /* The active tab keeps its own gradient, so the translucent-white tile over
    it reads the same either way. */
 [data-bs-theme="dark"] .whm-page .spi-seg-btn.is-active .spi-seg-ico {
@@ -101,6 +90,27 @@
    Measured side by side, that is what made this table read as bold. These
    are the prototype's own numbers, scoped to `.whm-page` so the PO list
    keeps every one of its own. */
+
+/* `.ord-table` is `table-layout: fixed`, which the PO list can afford because
+   it ships a <colgroup> of pixel widths. None of these four masters does, and
+   fixed with no colgroup splits the width equally — so every column came out
+   the same size whatever it held, and Warehouse, which carries a name, an
+   address and a location on three lines, got the same room as the status
+   pill. The design sizes these to their content. */
+.whm-page .ord-table { table-layout: auto; }
+
+/* Most columns are centred, header and cell alike. Three are not: the ones
+   holding a block of several lines — a name over an address, a city over a
+   pin code, a person over their phone and email. Measured off the design,
+   its header and its content both start at the column's left edge.
+
+   That is the right call: a ragged block centred in its column has no edge
+   to read down, and these are the columns the eye scans. So the header goes
+   left to meet the content, rather than the content being pushed to the
+   middle to meet the header. */
+.whm-page .ord-table th.whm-th-l,
+.whm-page .ord-table td.whm-td-l { text-align: left; }
+
 .whm-page .ord-table thead th {
   padding: 11px 12px;
   font-size: 9.5px;
@@ -194,17 +204,21 @@
   align-items: flex-start;
   text-align: left;
 }
+/* The design's own tile: solid teal with a white glyph, 32px at radius 10.
+   Ours was a pale box with a teal glyph, which made the one thing that tells
+   an Own warehouse from a Third-Party one at a glance the faintest mark in
+   the row. */
 .whm-page .whm-namecell__ico {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
-  border-radius: 9px;
-  color: #0891b2;
-  background: #e0f7fb;
-  border: 1px solid #c4ecf4;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(140deg, #22d3ee, #0891b2);
+  box-shadow: 0 4px 10px -4px rgba(8, 145, 178, .6);
 }
 .whm-page .whm-namecell__t {
   display: flex;
@@ -437,7 +451,9 @@
    lift so the colour behind stays alive rather than going grey. Its own
    class, so every other dialog keeps the shared wash. */
 .spi-mdl-backdrop.whm-backdrop {
-  background: rgba(8, 47, 73, .5);
+  /* The design tints the wash teal from the top edge down rather than dimming
+     it flat, so the dialog's own teal header reads as lit from above. */
+  background: radial-gradient(1200px 600px at 50% 0%, rgba(8, 145, 178, .35), rgba(8, 47, 73, .55));
   backdrop-filter: blur(8px) saturate(1.05);
   -webkit-backdrop-filter: blur(8px) saturate(1.05);
 }
@@ -581,22 +597,22 @@
   align-items: center;
   gap: 10px;
   margin: 0 0 10px;
-  padding-bottom: 9px;
+  padding-bottom: 10px;
   border-bottom: 1px solid #edf5f8;
 }
 .whm-sec__ico {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  border-radius: 11px;
+  border-radius: 9px;
   color: #0891b2;
   background: #e0f7fb;
   border: 1px solid #c4ecf4;
 }
-.whm-sec__ico svg { width: 15px; height: 15px; }
+.whm-sec__ico svg { width: 14px; height: 14px; }
 .whm-sec b {
   font-size: 11.5px;
   font-weight: 800;
@@ -888,7 +904,9 @@
 [data-bs-theme="dark"] .whm-page .whm-loc__city b,
 [data-bs-theme="dark"] .whm-page .whm-area b { color: #e2e8f0; }
 [data-bs-theme="dark"] .whm-page .whm-loc__pin { color: #cbd5e1; }
-[data-bs-theme="dark"] .whm-page .whm-namecell__ico,
+/* `.whm-namecell__ico` is deliberately not in this group any more: it is a
+   solid teal tile with a white glyph, which reads the same on a dark card as
+   on a light one. The pale treatment here is for the chips beside it. */
 [data-bs-theme="dark"] .whm-page .whm-type--own,
 [data-bs-theme="dark"] .whm-page .whm-maplink {
   color: #67e8f9;
