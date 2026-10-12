@@ -1,0 +1,366 @@
+/* Shelves in a rack — the prototype's own values.
+   The id pill, name cell, flag chips, action buttons and toggle come from
+   `warehouse-master.css` and `zone.css`; the dimension line and the box tile
+   come from `rack.css`. Everything below is this dialog's own. */
+
+/* Wider than any other dialog in the app: thirteen columns, and the one thing
+   worse than a wide table is the same table with a horizontal scrollbar. */
+.spi-mdl.rks-mdl {
+  width: min(1680px, calc(100vw - 32px));
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+.rks-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+
+/* Add Shelf sits in the header band, so it is white-on-teal rather than
+   teal-on-white — the inverse of the page's primary button. */
+.rks-add {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px;
+  margin-left: auto;
+  margin-right: 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, .9);
+  background: #fff;
+  color: #0b6f86;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 8px 18px -8px rgba(8, 47, 73, .55);
+  transition: transform .15s, box-shadow .15s, background .15s;
+}
+.rks-add:hover:not(:disabled) {
+  background: #ecfeff;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px -8px rgba(8, 47, 73, .6);
+}
+.rks-add:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+/* ── The six figures above the table ──────────────────────────────────── */
+.rks-kpis {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+/* Six across is only readable while each card can hold its number on one
+   line; below that they go to three, then two. */
+@media (max-width: 1400px) { .rks-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .rks-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.rks-k {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 13px 12px 12px;
+  border-radius: 14px;
+  min-width: 0;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(34, 211, 238, .16) 0%, rgba(34, 211, 238, 0) 55%),
+    linear-gradient(160deg, #ffffff 0%, #f2fcfe 100%);
+  border: 1px solid #c6eef5;
+  box-shadow: 0 1px 0 #fff inset, 0 8px 20px -14px rgba(8, 145, 178, .55);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.rks-k::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #22d3ee, #0891b2 55%, #0e7490);
+}
+.rks-k:hover {
+  transform: translateY(-2px);
+  border-color: #9fe3ee;
+  box-shadow: 0 1px 0 #fff inset, 0 14px 26px -14px rgba(8, 145, 178, .65);
+}
+/* The card's own icon again at 64px, bleeding off the corner at 7% and
+   tipped slightly, so the six cards are told apart by shape from across the
+   room. Behind everything and out of the a11y tree — it says nothing the
+   label does not. */
+.rks-k__wm {
+  position: absolute;
+  right: -10px;
+  bottom: -14px;
+  color: #0891b2;
+  opacity: .07;
+  pointer-events: none;
+  transform: rotate(-8deg);
+}
+.rks-k--util .rks-k__wm { display: none; }
+
+.rks-k__ico {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 8px 16px -8px rgba(8, 145, 178, .85), 0 0 0 4px rgba(34, 211, 238, .14), inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+.rks-k__b { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.rks-k__l {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .7px; text-transform: uppercase;
+  color: #0e7490; opacity: .85;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rks-k__v {
+  font-size: 20px; font-weight: 800; color: #0b3a49; line-height: 1.1; letter-spacing: -.2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The unit rides the number at a third its size: it never changes, so it
+   should not be read again every time the figure is. */
+.rks-k__v em { font-style: normal; font-size: 11.5px; font-weight: 700; color: #5f8794; margin-left: 1px; }
+.rks-k__mono { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 18px; letter-spacing: .02em; color: #0e7490; }
+.rks-k__s { font-size: 10.5px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rks-k__s b { color: #0b4f63; font-weight: 700; font-size: 11.5px; }
+
+/* The utilisation ring. A conic gradient with a white disc punched out of the
+   middle, so there is no SVG and no library for one arc. */
+.rks-k__ring {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 14px -8px rgba(8, 145, 178, .7);
+}
+.rks-k__ring::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 1px 3px rgba(8, 47, 73, .08);
+}
+.rks-k__ring span { position: relative; font-size: 12.5px; font-weight: 800; color: #0e7490; }
+.rks-k__ring em { font-style: normal; font-size: 9px; font-weight: 700; }
+.rks-k__ring--full span { color: #d97706; }
+.rks-k__ring--max span { color: #dc2626; }
+
+/* ── The table ────────────────────────────────────────────────────────── */
+.rks-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #e3eef3;
+  border-radius: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: #bfe3ec transparent;
+}
+.rks-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.rks-scroll::-webkit-scrollbar-track { background: transparent; }
+.rks-scroll::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 999px; }
+
+.rks-table { width: 100%; min-width: max(1280px, 100%); }
+.rks-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.3;
+  background: linear-gradient(180deg, #f8feff, #eff9fc);
+}
+.rks-table tbody td { text-align: center; }
+/* The shelf's own cell is the one that reads as a label rather than a figure. */
+.rks-table thead th:nth-child(3),
+.rks-table tbody td:nth-child(3) { text-align: left; }
+.rks-table tbody td:nth-child(5),
+.rks-table tbody td:nth-child(7),
+.rks-table tbody td:nth-child(8) { white-space: nowrap; }
+.rks-table .whm-idcell,
+.rks-table .znm-flagcell,
+.rks-table .whm-acts { justify-content: center; align-items: center; margin: 0 auto; }
+.rks-table .whm-namecell { min-width: 150px; }
+.rks-table .whm-namecell__t { display: flex; flex-direction: column; align-items: flex-start; }
+/* An inactive shelf dims, but not its controls — switching it back on is the
+   one thing left to do with it. */
+.rks-table tr.is-off td:last-child { opacity: 1; }
+
+.rks-typetxt { margin-top: 2px; font-size: 11px; font-weight: 500; color: #64748b; }
+.rks-num { color: #0b3a49; font-weight: 800; }
+.rks-u { color: #64748b; font-weight: 600; }
+
+.rks-lvlb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+  color: #0e7490;
+  font-weight: 800;
+  font-size: 12.5px;
+}
+/* The box count borrows the rack list's tile, one size down. */
+.rks-boxb { width: 30px; height: 30px; font-size: 12.5px; cursor: default; }
+.rks-boxb:hover { transform: none; box-shadow: 0 4px 10px -3px rgba(14, 143, 166, .55), inset 0 1px 0 rgba(255, 255, 255, .35); }
+
+/* ── Utilisation: a chip, a percentage, a bar, and the two weights ────── */
+.rks-ut { display: flex; flex-direction: column; gap: 6px; min-width: 190px; max-width: 220px; margin: 0 auto; }
+.rks-ut__top { display: flex; align-items: center; justify-content: space-between; }
+.rks-ut__top b { font-size: 13px; font-weight: 800; color: #0e7490; }
+.rks-ut--full .rks-ut__top b { color: #d97706; }
+.rks-ut--max .rks-ut__top b { color: #dc2626; }
+.rks-ut--empty .rks-ut__top b,
+.rks-ut--off .rks-ut__top b { color: #94a3b8; }
+
+.rks-ut__bar { height: 8px; border-radius: 999px; background: #e3f1f5; overflow: hidden; }
+.rks-ut__bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #22d3ee, #0891b2 60%, #0e7490);
+  transition: width .25s ease;
+}
+/* Amber past 90%, because the bar is the thing read at a glance and a full
+   shelf should not look like a healthy one. */
+.rks-ut--full .rks-ut__bar i { background: linear-gradient(90deg, #fbbf24, #f59e0b 60%, #d97706); }
+.rks-ut--max .rks-ut__bar i { background: linear-gradient(90deg, #f87171, #ef4444 60%, #dc2626); }
+
+.rks-ut__leg {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 10.5px; font-weight: 600; white-space: nowrap;
+}
+.rks-ut__leg span { display: inline-flex; align-items: center; gap: 4px; }
+.rks-ut__leg i { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.rks-ut__u { color: #0e7490; }
+.rks-ut__u i { background: #0891b2; }
+.rks-ut--full .rks-ut__u { color: #b45309; }
+.rks-ut--full .rks-ut__u i { background: #f59e0b; }
+.rks-ut--max .rks-ut__u { color: #b91c1c; }
+.rks-ut--max .rks-ut__u i { background: #ef4444; }
+.rks-ut__f { color: #64748b; }
+.rks-ut__f i { background: #cbd5e1; }
+
+.rks-st {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.rks-st i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.rks-st--ok { background: #e6fbf3; color: #047857; }
+.rks-st--near { background: #ecfeff; color: #0e7490; }
+.rks-st--full { background: #fff7e6; color: #b45309; }
+.rks-st--max { background: #fef2f2; color: #dc2626; }
+.rks-st--empty { background: #ecfbfe; color: #0e7490; }
+.rks-st--off { background: #f1f5f9; color: #64748b; }
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+.rks-foot__info { font-size: 11.5px; font-weight: 600; color: #64748b; }
+.rks-foot__info b { color: #0b3a49; font-weight: 800; }
+
+.rks-pg { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
+.rks-pg__n {
+  min-width: 28px; height: 28px; padding: 0 7px;
+  border-radius: 8px; border: 1px solid #d7eaf1;
+  background: #fff; color: #0e7490;
+  font-family: inherit; font-size: 11.5px; font-weight: 800;
+  cursor: pointer; transition: background .14s, color .14s, border-color .14s;
+}
+.rks-pg__n:hover { background: #ecfeff; }
+.rks-pg__n.is-active {
+  background: linear-gradient(140deg, #22d3ee, #0891b2 60%, #0e7490);
+  border-color: transparent; color: #fff;
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .rks-k {
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(34, 211, 238, .1) 0%, rgba(34, 211, 238, 0) 55%),
+    linear-gradient(160deg, #13242e 0%, #0e1b24 100%);
+  border-color: rgba(34, 211, 238, .2);
+  box-shadow: 0 8px 20px -14px rgba(0, 0, 0, .8);
+}
+[data-bs-theme="dark"] .rks-k:hover {
+  border-color: rgba(34, 211, 238, .38);
+  box-shadow: 0 14px 26px -14px rgba(0, 0, 0, .9);
+}
+/* The watermark is already a 7% tint; on a dark card that reads as a smudge
+   rather than a shape, so it comes up slightly and turns to the accent. */
+[data-bs-theme="dark"] .rks-k__wm { color: #22d3ee; opacity: .09; }
+[data-bs-theme="dark"] .rks-k__l { color: #67e8f9; }
+[data-bs-theme="dark"] .rks-k__v { color: #e8f2f6; }
+[data-bs-theme="dark"] .rks-k__v em { color: #7c93a8; }
+[data-bs-theme="dark"] .rks-k__mono { color: #7dd3fc; }
+[data-bs-theme="dark"] .rks-k__s { color: #94a3b8; }
+[data-bs-theme="dark"] .rks-k__s b { color: #cbd5e1; }
+/* The disc punched out of the ring has to match the card it sits on, or the
+   ring reads as a white donut floating over a dark panel. */
+[data-bs-theme="dark"] .rks-k__ring::before { background: #13242e; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .5); }
+[data-bs-theme="dark"] .rks-k__ring span { color: #67e8f9; }
+[data-bs-theme="dark"] .rks-k__ring--full span { color: #fbbf24; }
+[data-bs-theme="dark"] .rks-k__ring--max span { color: #f87171; }
+
+[data-bs-theme="dark"] .rks-add {
+  background: rgba(255, 255, 255, .14);
+  border-color: rgba(255, 255, 255, .3);
+  color: #fff;
+}
+[data-bs-theme="dark"] .rks-add:hover:not(:disabled) { background: rgba(255, 255, 255, .24); }
+
+[data-bs-theme="dark"] .rks-scroll {
+  border-color: rgba(34, 211, 238, .18);
+  scrollbar-color: rgba(34, 211, 238, .3) transparent;
+}
+[data-bs-theme="dark"] .rks-scroll::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
+[data-bs-theme="dark"] .rks-table thead th {
+  background: linear-gradient(180deg, #13242e, #0e1b24);
+  color: #a5e9f5;
+}
+[data-bs-theme="dark"] .rks-typetxt,
+[data-bs-theme="dark"] .rks-u,
+[data-bs-theme="dark"] .rks-foot__info { color: #94a3b8; }
+[data-bs-theme="dark"] .rks-num,
+[data-bs-theme="dark"] .rks-foot__info b { color: #e2e8f0; }
+
+[data-bs-theme="dark"] .rks-lvlb {
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .3);
+  color: #7dd3fc;
+}
+
+[data-bs-theme="dark"] .rks-ut__bar { background: rgba(148, 163, 184, .18); }
+[data-bs-theme="dark"] .rks-ut__top b { color: #67e8f9; }
+[data-bs-theme="dark"] .rks-ut--full .rks-ut__top b { color: #fbbf24; }
+[data-bs-theme="dark"] .rks-ut--max .rks-ut__top b { color: #f87171; }
+[data-bs-theme="dark"] .rks-ut__u { color: #67e8f9; }
+[data-bs-theme="dark"] .rks-ut--full .rks-ut__u { color: #fcd34d; }
+[data-bs-theme="dark"] .rks-ut--max .rks-ut__u { color: #fca5a5; }
+[data-bs-theme="dark"] .rks-ut__f { color: #94a3b8; }
+[data-bs-theme="dark"] .rks-ut__f i { background: #475569; }
+
+[data-bs-theme="dark"] .rks-st--ok { background: rgba(16, 185, 129, .15); color: #6ee7b7; }
+[data-bs-theme="dark"] .rks-st--near,
+[data-bs-theme="dark"] .rks-st--empty { background: rgba(34, 211, 238, .13); color: #7dd3fc; }
+[data-bs-theme="dark"] .rks-st--full { background: rgba(245, 158, 11, .15); color: #fcd34d; }
+[data-bs-theme="dark"] .rks-st--max { background: rgba(239, 68, 68, .15); color: #fca5a5; }
+[data-bs-theme="dark"] .rks-st--off { background: rgba(148, 163, 184, .13); color: #94a3b8; }
+
+[data-bs-theme="dark"] .rks-pg__n {
+  background: rgba(148, 163, 184, .1);
+  border-color: rgba(148, 163, 184, .24);
+  color: #94a3b8;
+}
+[data-bs-theme="dark"] .rks-pg__n:hover { background: rgba(34, 211, 238, .14); color: #7dd3fc; }
+[data-bs-theme="dark"] .rks-pg__n.is-active { color: #fff; }

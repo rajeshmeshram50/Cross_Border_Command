@@ -3,7 +3,7 @@ import { IcoBox, IcoCheck, IcoChevron, IcoLock, IcoShip } from '../../../icons';
 import StageSummary from './StageSummary';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import BoxDrawer, { type BoxInitial, type BoxSaveData } from './BoxDrawer';
-import PackedProducts, { type PackedRow } from './PackedProducts';
+import PackedProducts, { type PackedBox } from './PackedProducts';
 import type { CustomFlag } from './ProductFlagsModal';
 import MultiBoxPanel, { splitQuantity, type SplitBox } from './MultiBoxPanel';
 import { lineTotals, truncateDesc, DESC_MAX, type ProductLine } from '../invoice-products';
@@ -147,21 +147,31 @@ export default function Step3BoxPackaging({
     s2: ['Scenario 02', '1 Product → Multiple Boxes'],
     s3: ['Scenario 03', 'Multiple Products → 1 Box'],
   };
-  const packedRows: PackedRow[] = lines.filter(l => (packedQty[l.code] ?? 0) > 0).map(line => {
-    const bs = boxesOf(line.code);
-    const sc = bs[0]?.scenario ?? 's1';
-    return {
-      line: { ...line, spiQty: Math.round((packedQty[line.code] ?? 0) * 1000) / 1000 },
-      scenarioNo: SCN_LABEL[sc][0], scenario: SCN_LABEL[sc][1],
-      boxes: bs.map(b => ({
-        id: b.box_code,
-        qty: qtyIn(b, line.code),
-        ...(b.scenario === 's3'
-          ? { sharedWith: b.items.map(i => codeOfItem.get(i.supplier_invoice_item_id)).filter((c): c is string => !!c && c !== line.code) }
-          : {}),
-      })),
-    };
-  });
+  /**
+   * One entry per CARTON, with what is inside it.
+   *
+   * Built from `boxes` rather than from the lines, because the question the
+   * table answers is "what is in this box" — a product-first list has to say
+   * "and its five boxes", which is the same carton repeated down the column
+   * with nothing to act on.
+   */
+  const packedBoxes: PackedBox[] = boxes
+    .map(b => ({
+      code: b.box_code,
+      scenarioNo: SCN_LABEL[b.scenario][0],
+      scenario: SCN_LABEL[b.scenario][1],
+      items: b.items
+        .map(i => {
+          const code = codeOfItem.get(i.supplier_invoice_item_id);
+          const line = code ? lines.find(l => l.code === code) : undefined;
+          return line ? { line, qty: Number(i.quantity) || 0 } : null;
+        })
+        .filter((x): x is { line: ProductLine; qty: number } => !!x),
+    }))
+    .filter(b => b.items.length > 0)
+    /* By code, so B-002 follows B-001 however the server ordered them — the
+       column is read down, and a jumbled sequence reads as missing boxes. */
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 
   const scenarioUse: Record<Scenario, number> = {
     s1: Object.values(packing).filter(p => p.scenario === 's1').length,
@@ -891,7 +901,7 @@ export default function Step3BoxPackaging({
       )}
 
       <PackedProducts
-        rows={packedRows}
+        boxes={packedBoxes}
         onEditBox={readOnly ? undefined : openEdit}
         editingBoxId={editingBox?.box_code ?? null}
       />

@@ -121,6 +121,7 @@ const ModuleStubPage = lazyPage(() => import('../pages/ModuleStubPage'));
 /* Inventory Management — designed one master at a time; the rest are still stubs. */
 const WarehouseMaster = lazyPage(() => import('../pages/inventory-management/warehouse/WarehouseMaster'));
 const ZoneMaster = lazyPage(() => import('../pages/inventory-management/zone/ZoneMaster'));
+const RackMaster = lazyPage(() => import('../pages/inventory-management/rack/RackMaster'));
 const ProductFlagMaster = lazyPage(() => import('../pages/inventory-management/product-flag/ProductFlagMaster'));
 const P2pBulkSourcing = lazyPage(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
@@ -963,7 +964,7 @@ function DashboardRoutes({ user }: { user: any }) {
                   Point a route at its real component as that one ships. */}
               <Route path="/inventory-management/warehouse-master" element={<WarehouseMaster />} />
               <Route path="/inventory-management/zone-master" element={<ZoneMaster />} />
-              <Route path="/inventory-management/rack-master" element={<ModuleStubPage />} />
+              <Route path="/inventory-management/rack-master" element={<RackMaster />} />
               <Route path="/inventory-management/product-flags" element={<ProductFlagMaster />} />
               <Route path="/p2p/supplier-purchase-invoice" element={<Invoice />} />
               {/* The screen used to live at /p2p/invoice. Kept as a redirect so

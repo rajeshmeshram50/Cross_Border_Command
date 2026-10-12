@@ -56,7 +56,11 @@ export function FitInput({ tooltip, ...props }: React.InputHTMLAttributes<HTMLIn
 /* Label + control, one cell of a wizard field grid. */
 /* `error` shows under the control (the control itself is flagged by its own invalid prop). */
 export function Field({ label, children, full, req, error, hint, labelEnd }: {
-  label: string; children: ReactNode; full?: boolean; req?: boolean; error?: string;
+  /** Text, or text with a qualifying chip in it — the chip then sits before
+   *  the asterisk, which is where a qualifier belongs: it narrows the label,
+   *  not the control. `labelEnd` is the other slot, at the far end. */
+  label: ReactNode;
+  children: ReactNode; full?: boolean; req?: boolean; error?: string;
   /** Said under the field when it is constrained — an error takes its place. */
   hint?: string;
   /** Sits at the far end of the label's own row, after the asterisk — a
