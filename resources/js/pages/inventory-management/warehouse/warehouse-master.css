@@ -361,9 +361,15 @@
 }
 .whm-page .whm-act svg { width: 15px; height: 15px; }
 .whm-page .whm-act:focus-visible,
-.whm-page .whm-toggle:focus-visible { outline: 2px solid #0891b2; outline-offset: 2px; }
+.whm-toggle:focus-visible { outline: 2px solid #0891b2; outline-offset: 2px; }
 
-.whm-page .whm-toggle {
+/* Unscoped from `.whm-page`, unlike the cells around it.
+   A switch is a self-contained control, not a cell of this page's table, and
+   the scope cost three bugs: every form that opened in a portalled dialog —
+   Add Rack, Add Shelf, Add Zone — rendered its flags as bare buttons, because
+   a portal has no page root above it. Keyed to its own class, it works
+   wherever it is used. */
+.whm-toggle {
   position: relative;
   width: 42px;
   height: 24px;
@@ -376,7 +382,7 @@
   box-shadow: inset 0 1px 3px rgba(15, 23, 42, .18);
   transition: background .2s;
 }
-.whm-page .whm-toggle span {
+.whm-toggle span {
   position: absolute;
   top: 3px;
   left: 3px;
@@ -390,19 +396,19 @@
   box-shadow: 0 2px 4px rgba(15, 23, 42, .25);
   transition: transform .2s;
 }
-.whm-page .whm-toggle span::after {
+.whm-toggle span::after {
   content: '';
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: #94a3b8;
 }
-.whm-page .whm-toggle.is-on {
+.whm-toggle.is-on {
   background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15), 0 0 0 3px rgba(34, 211, 238, .15);
 }
-.whm-page .whm-toggle.is-on span { transform: translateX(18px); }
-.whm-page .whm-toggle.is-on span::after { background: #0891b2; }
+.whm-toggle.is-on span { transform: translateX(18px); }
+.whm-toggle.is-on span::after { background: #0891b2; }
 
 /* An inactive warehouse is dimmed — except its status and its controls, which
    are the two things you would be looking at it to change. */
@@ -904,6 +910,6 @@
   background: rgba(148, 163, 184, .12);
   border-color: rgba(148, 163, 184, .24);
 }
-[data-bs-theme="dark"] .whm-page .whm-toggle {
+[data-bs-theme="dark"] .whm-toggle {
   background: linear-gradient(180deg, #334155, #1e293b);
 }

@@ -207,9 +207,20 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   }, [d.len, d.wid, d.ht, d.use]);
 
   const areaFromFloor = noRack && d.storage === 'regular' && calc.area > 0;
-  const shownArea = areaFromFloor
-    ? String(Math.round(unit === 'm' ? calc.area * SQFT_PER_SQM : calc.area))
-    : d.area;
+  const derivedArea = String(Math.round(unit === 'm' ? calc.area * SQFT_PER_SQM : calc.area));
+
+  /* A measured floor IS the zone's area, so it is written into the draft
+     rather than only displayed over it.
+     Before this there were two areas: the one the field showed and the one
+     `d.area` held. They agreed while the floor was being measured and parted
+     company the moment the zone type changed — the field fell back to a
+     `d.area` that had not been updated in between, so the same zone showed one
+     number as a rack zone and another as a floor zone, with nothing edited. */
+  useEffect(() => {
+    if (areaFromFloor && derivedArea !== d.area) set({ area: derivedArea });
+  }, [areaFromFloor, derivedArea, d.area]);
+
+  const shownArea = d.area;
 
   const other: Unit = unit === 'm' ? 'ft' : 'm';
   const k = unit === 'm' ? FEET_PER_METRE : 1 / FEET_PER_METRE;
@@ -313,7 +324,11 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
     <div className="spi-mdl-backdrop whm-backdrop"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div
-        className="spi-mdl whm-addmdl znm-addmdl"
+        /* `whm-page` carries the shared toggle style, which is scoped to it
+           and so never reached this portalled dialog — the Cold Chain and
+           Hazardous switches were rendering as bare buttons, leaving the two
+           flags as plain boxes of text. */
+        className="spi-mdl whm-addmdl znm-addmdl whm-page"
         role="dialog" aria-modal="true" aria-labelledby="znm-add-title"
         tabIndex={-1} ref={cardRef}
         style={{ position: 'relative' }}
@@ -551,7 +566,11 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
               </div>
             </Field>
 
-            <Field label="Zone Purpose" req error={errors.purpose}>
+            {/* Two columns, as the design has it: the row is Cold Chain ·
+                Hazardous · Purpose and fills its four. At one column the
+                purpose sat beside an empty fourth, and a zone purpose is the
+                longest text on the row. */}
+            <Field label="Zone Purpose" req error={errors.purpose} wide>
               <div className="znm-purp">
                 {d.purpose === 'Other' ? (
                   <>
