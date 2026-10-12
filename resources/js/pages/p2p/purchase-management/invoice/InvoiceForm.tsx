@@ -1,29 +1,29 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
-/* The shared P2P wizard chrome, and nothing of our own.
-   `p2p-detail.css` carries the spi-dt-* shell — overlay, head
-   strip, pills, step cards, body and footer. `create-po.css` is imported for
-   `.cpf-steps4`, the four-column step grid: the shared grid is two columns
-   because the old SPI wizard has two stages, and the Create PO form already
-   solved this exact problem. Between them there is nothing left for this form
-   to define, which is why there is no invoice-form.css. */
 import '../../p2p-detail.css';
 import '../order/create-po/create-po.css';
-/* Last, so it wins: the few places this form is deliberately not the PO. */
 import './invoice-form.css';
 import { HeadPill } from '../order/create-po/CreatePoForm';
 import {
-  IcoCard, IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoUser, IcoWarehouse, IcoX,
+  IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoLock, IcoUser, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
-import { useInvoiceDraft } from './invoice-draft';
-import { PRODUCT_LINES, type ProductLine } from './invoice-products';
+import { draftFromPo, useInvoiceDraft } from './invoice-draft';
+import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
+import { legalFromVault } from '../order/create-po/supplier-checks';
+import { useToast } from '../../../../contexts/ToastContext';
+import { spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody } from './spi-api';
+import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
+import {
+  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor,
+  type ProductLine, type SpiPoOpen,
+} from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
+import { STORAGE_WAREHOUSES } from './data';
 
-/** The four stages of raising a supplier purchase invoice. */
 const STAGES = [
   { title: 'Supplier Details', desc: 'Link the PO and confirm supplier details' },
   { title: 'Invoice & Product Details (3-Way Match)', desc: 'Enter invoice details & match products against the PO & GRN' },
@@ -31,90 +31,329 @@ const STAGES = [
   { title: 'Temporary Putaway Allocation', desc: 'Assign a temporary putaway location for each product' },
 ] as const;
 
-/** Two digits, as every label on this screen is written: "01", not "1". */
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** What the storage wizard hands this form once it finishes. */
 export interface InvoiceFormInput {
-  /** The PO this invoice is matched against, when there is one. */
+  spiId?: number;
+  status?: string;
+  statusLabel?: string;
+  poId?: number;
   poNo?: string;
-  /** The supplier it belongs to. Always known: a standalone invoice is
-   *  anchored to a supplier instead of a PO. */
   supplier: string;
   storage: StorageChoice;
+  invoiceNo?: string;
 }
 
-/**
- * Supplier Purchase Invoice — the four-step form.
- *
- * Opens once the storage wizard completes. Every class is `spi-dt-*` from the
- * shared P2P wizard chrome, laid out exactly as the Create PO form lays out
- * its own four stages, so the two wizards are the same object with different
- * words rather than two implementations of one design.
- *
- * Portalled to document.body: it is a full-screen overlay, and anything
- * rendered inside the list page would sit within `.ord-table-scroll` and be
- * clipped at the table's edge.
- */
 export default function InvoiceForm({
   input, invoiceNo, onClose,
 }: {
   input: InvoiceFormInput;
-  /** The code this invoice will carry. Allocated by the server in the end;
-   *  passed in so the form never invents one. */
   invoiceNo: string;
   onClose: () => void;
 }) {
-  /* Everything the four steps collect. Held here, not inside a step, because
-     Step 02 opens with a read-only recap of Step 01 — a step cannot summarise
-     state it does not own. */
-  const { draft, set } = useInvoiceDraft({ supplier: input.supplier, invoiceNo, poNo: input.poNo });
+  const { draft, set } = useInvoiceDraft({ supplier: input.supplier, poNo: input.poNo });
+  const toast = useToast();
 
-  /* The invoice's product lines. Step 02 edits them and Step 03 turns them
-     into boxes, so they belong to the form rather than to either step. Kept
-     out of the draft because they are a list edited in place — threading
-     every keystroke through one draft object would re-render every field in
-     the wizard. */
-  const [lines, setLines] = useState<ProductLine[]>(PRODUCT_LINES);
+  const [poLoading, setPoLoading] = useState(!!(input.poId || input.spiId));
+  const [poError, setPoError] = useState<string | null>(null);
+  const [lines, setLines] = useState<ProductLine[]>(input.poId || input.spiId ? [] : PRODUCT_LINES);
+  const [files, setFiles] = useState<{ invoice_file?: File | null; eway_file?: File | null }>({});
+  const [uploaded, setUploaded] = useState<{ invoice?: string | null; eway?: string | null }>({});
+  const [spiId, setSpiId] = useState<number | null>(null);
+  const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
+  const [saving, setSaving] = useState(false);
+  const [boxes, setBoxes] = useState<SpiBox[]>([]);
+  const [flagMaster, setFlagMaster] = useState<ProductFlagOption[]>([]);
+  const [boxesLoading, setBoxesLoading] = useState(false);
+  const [savedWarehouse, setSavedWarehouse] = useState<string | null>(null);
+  const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
+    status: input.status, label: input.statusLabel,
+  });
+  const viewOnly = !!spiViewOnlyReason(spiStatus.status, spiStatus.label);
+  const editing = !!input.spiId;
 
-  /* Stable, which is what makes `memo` on the table row worth having: a fresh
-     function each render would re-render every row on every keystroke. */
+  useEffect(() => {
+    if (input.invoiceNo) return;
+    let live = true;
+    spiApi.nextCode().then(c => { if (live && c) setSpiCode(cur => cur ?? c.code); }).catch(() => {});
+    return () => { live = false; };
+  }, [input.invoiceNo]);
+
+  useEffect(() => {
+    if (!input.poId && !input.spiId) return;
+    let live = true;
+    setPoLoading(true);
+    setPoError(null);
+    (async () => {
+      try {
+        const existing = input.spiId ? (await spiApi.show(input.spiId)).invoice : null;
+        const poId = input.poId ?? existing?.purchase_order_id ?? null;
+        if (!live) return;
+        if (existing) {
+          setSpiId(existing.id);
+          setSpiCode(existing.code);
+          if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
+          setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
+          setReached(Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1));
+        }
+        if (!poId) {
+          setPoError('This invoice is not linked to a purchase order.');
+          return;
+        }
+        const [po, openLines] = await Promise.all([
+          poApi.show(poId),
+          spiApi.poLines(poId, existing?.id).catch(() => []),
+        ]);
+        /* exclude_spi is already passed above, so an invoice being edited does
+           not count its own quantity as billed by someone else. */
+        const open: Record<number, SpiPoOpen> = {};
+        for (const l of openLines) {
+          open[l.po_item_id] = {
+            qty_open: l.qty_open, qty_billed: l.qty_billed, qty_over: l.qty_over, closed: l.closed,
+          };
+        }
+        const sup = po.vendor_id ? await poLookupApi.supplier(po.vendor_id).catch(() => null) : null;
+        if (!live) return;
+        set(draftFromPo(po, sup));
+
+        let rows = linesFromPo(po.items ?? [], open);
+        if (existing) {
+          const saved = new Map(existing.items.filter(i => i.po_item_id != null).map(i => [i.po_item_id!, i]));
+          if (saved.size) {
+            rows = rows.map(l => {
+              const it = l.poItemId != null ? saved.get(l.poItemId) : undefined;
+              return it
+                ? { ...l, spiQty: Number(it.qty_spi) || 0, spiRate: Number(it.rate) || 0, productId: it.product_id, spiItemId: it.id }
+                : { ...l, spiQty: 0 };
+            });
+          }
+          set({
+            invoiceNumber: existing.invoice_no ?? '',
+            ...(existing.invoice_date ? { invoiceDate: existing.invoice_date.slice(0, 10) } : {}),
+            invoiceFile: existing.invoice_file_name ?? '',
+            ewayBillFile: existing.eway_file_name ?? '',
+          });
+          setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
+        }
+        setLines(rows);
+
+        if (po.vendor_id) {
+          poLookupApi.supplierVault(po.vendor_id)
+            .then(v => { if (live) set({ legal: legalFromVault(v) }); })
+            .catch(() => { if (live) set({ legal: legalFromVault(null) }); });
+        }
+      } catch (e) {
+        if (!live) return;
+        const msg = e instanceof PoApiError ? e.firstError : 'Please try again.';
+        setPoError(msg);
+        toast.error(input.spiId ? 'Could not load the invoice' : 'Could not load the purchase order', msg);
+      } finally {
+        if (live) setPoLoading(false);
+      }
+    })();
+    return () => { live = false; };
+  }, [input.poId, input.spiId, set, toast]);
+
   const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }, []);
-  const removeLine = useCallback((index: number) => {
-    setLines(ls => ls.filter((_, i) => i !== index));
-  }, []);
 
   const [stage, setStage] = useState(0);
-  /* The furthest step reached. The stepper is clickable backwards but not
-     forwards — jumping ahead would skip the save the next step depends on. */
   const [reached, setReached] = useState(0);
 
-  /* `.spi-dt-overlay` scrolls its own body, so the page behind it is locked
-     while that one element stays scrollable. */
   useScrollLock(true, '.spi-dt-overlay');
 
   const goTo = (i: number) => { if (i <= reached) setStage(i); };
-  const goNext = () => {
-    if (stage >= STAGES.length - 1) return;
+  const advance = () => {
     const next = stage + 1;
     setStage(next);
     setReached(r => Math.max(r, next));
   };
-  /* Back off step 01 leaves the form entirely — that is where the storage
-     wizard was, which is why the label says "Change Selection" rather than
-     "Back". */
+
+  const saveStage1 = async () => {
+    if (spiId) { advance(); return; }
+    if (!draft.vendorId) {
+      toast.warning('Supplier not loaded', 'The purchase order has no supplier to raise this invoice against.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const spi = await spiApi.create({
+        purchase_order_id: input.poId ?? null,
+        vendor_id: draft.vendorId,
+        document_type: draft.docType === 'International' ? 'international' : 'domestic',
+      });
+      setSpiId(spi.id);
+      setSpiCode(spi.code);
+      toast.success(`${spi.code} created`, 'Saved as a draft — continue with the invoice details.');
+      advance();
+    } catch (e) {
+      toast.error('Could not save Stage 01', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const taxMode = draft.taxMode ?? taxModeFor(draft.country, draft.stateCode, DEFAULT_HOME_STATE_CODE);
+
+  const pickFile = useCallback((kind: 'invoice' | 'eway', file: File) => {
+    setFiles(f => ({ ...f, [`${kind}_file`]: file }));
+    set(kind === 'invoice' ? { invoiceFile: file.name } : { ewayBillFile: file.name });
+  }, [set]);
+
+  const saveStage2 = async () => {
+    if (!spiId) { toast.warning('Save Stage 01 first', 'The invoice has not been created yet.'); return; }
+    const missing = [
+      !draft.invoiceNumber.trim() && 'the purchase invoice number',
+      !draft.invoiceDate && 'the purchase invoice date',
+      !files.invoice_file && !uploaded.invoice && 'the purchase invoice attachment',
+    ].filter(Boolean);
+    if (missing.length) {
+      toast.warning('Fill in the invoice details', `Enter ${missing.join(', ')} before saving.`);
+      return;
+    }
+    const payload = itemsPayload(lines, taxMode);
+    if (payload.items.length === 0) {
+      toast.warning('Nothing to invoice', 'Enter a quantity above zero on at least one product line.');
+      return;
+    }
+    const international = draft.docType === 'International';
+    setSaving(true);
+    try {
+      const res = await spiApi.saveItems(spiId, {
+        ...payload,
+        invoice_no: draft.invoiceNumber.trim(),
+        invoice_date: draft.invoiceDate,
+        ...(international ? { currency_code: draft.currency || null, exchange_rate: draft.exchangeRate || null } : {}),
+      }, files);
+      const saved = [...(res.invoice.items ?? [])].sort((a, b) => a.line_no - b.line_no);
+      let n = 0;
+      const withIds = lines.map(l => (l.spiQty > 0 && l.productId != null
+        ? { ...l, spiItemId: saved[n++]?.id }
+        : { ...l, spiItemId: undefined }));
+      setLines(withIds);
+      setUploaded({ invoice: res.invoice.invoice_file_name, eway: res.invoice.eway_file_name });
+      setFiles({});
+      if (res.warnings?.length) toast.warning('Billed above the order', res.warnings.join(' '));
+      else toast.success('Invoice details saved', `${saved.length} product line${saved.length === 1 ? '' : 's'} matched against ${draft.poNumber || 'the order'}.`);
+      advance();
+    } catch (e) {
+      toast.error('Could not save Stage 02', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const boxLines = lines.filter(l => l.spiItemId != null && l.spiQty > 0);
+
+  const [nextBoxCodes, setNextBoxCodes] = useState<string[]>([]);
+
+  const reloadBoxes = useCallback(async (id: number) => {
+    const [list, codes] = await Promise.all([
+      spiApi.boxes(id),
+      spiApi.nextBoxCodes(id, 50).catch(() => [] as string[]),
+    ]);
+    setBoxes(list);
+    setNextBoxCodes(codes);
+    return list;
+  }, []);
+
+  useEffect(() => {
+    if (stage !== 2 || !spiId) return;
+    let live = true;
+    setBoxesLoading(true);
+    Promise.all([
+      reloadBoxes(spiId),
+      spiApi.productFlags().then(f => { if (live) setFlagMaster(f); }).catch(() => {}),
+    ])
+      .catch(e => { if (live) toast.error('Could not load the boxes', e instanceof PoApiError ? e.firstError : 'Please try again.'); })
+      .finally(() => { if (live) setBoxesLoading(false); });
+    return () => { live = false; };
+  }, [stage, spiId, reloadBoxes, toast]);
+
+  const boxError = (e: unknown) => {
+    if (!(e instanceof PoApiError)) return 'Please try again.';
+    return (e.status ?? 0) >= 500 ? 'The server could not save it — nothing was changed. Please try again.' : e.firstError;
+  };
+
+  const createBox = useCallback(async (body: SpiBoxBody): Promise<SpiBox | null> => {
+    if (!spiId) return null;
+    try {
+      const box = await spiApi.createBox(spiId, body);
+      await reloadBoxes(spiId);
+      toast.success(`${box.box_code} saved`, `${body.items.length} product${body.items.length === 1 ? '' : 's'} packed in this box.`);
+      return box;
+    } catch (e) {
+      toast.error('Could not save the box', boxError(e));
+      return null;
+    }
+  }, [spiId, reloadBoxes, toast]);
+
+  /* Edit a box in place. The box keeps its code and its sticker stays valid,
+     which is the whole reason this is not a delete followed by a create: a
+     rebuilt carton would come back as a new code and the label on the shelf
+     would be wrong. */
+  const updateBox = useCallback(async (boxId: number, body: SpiBoxBody): Promise<SpiBox | null> => {
+    if (!spiId) return null;
+    try {
+      const box = await spiApi.updateBox(spiId, boxId, body);
+      await reloadBoxes(spiId);
+      toast.success(`${box.box_code} updated`, `It now holds ${body.items.length} product${body.items.length === 1 ? '' : 's'}.`);
+      return box;
+    } catch (e) {
+      toast.error('Could not update the box', boxError(e));
+      return null;
+    }
+  }, [spiId, reloadBoxes, toast]);
+
+  const deleteBoxes = useCallback(async (ids: number[]): Promise<boolean> => {
+    if (!spiId) return false;
+    let removed = 0;
+    try {
+      for (const id of ids) { await spiApi.deleteBox(spiId, id); removed++; }
+      toast.success(`${removed} box${removed === 1 ? '' : 'es'} removed`, 'The product is back to Pending.');
+      return true;
+    } catch (e) {
+      toast.error('Could not remove the box', boxError(e));
+      return false;
+    } finally {
+      await reloadBoxes(spiId).catch(() => {});
+    }
+  }, [spiId, reloadBoxes, toast]);
+
+  const unboxed = () => boxLines.filter(l => {
+    const packed = boxes.reduce((n, b) => n + b.items
+      .filter(i => i.supplier_invoice_item_id === l.spiItemId)
+      .reduce((m, i) => m + (Number(i.quantity) || 0), 0), 0);
+    return packed < l.spiQty - 0.0005;
+  });
+
+  const goNext = () => {
+    if (viewOnly) {
+      if (stage >= STAGES.length - 1) onClose(); else advance();
+      return;
+    }
+    if (stage >= STAGES.length - 1) return;
+    if (stage === 0) { void saveStage1(); return; }
+    if (stage === 1) { void saveStage2(); return; }
+    if (stage === 2) {
+      const left = unboxed();
+      if (left.length) {
+        toast.warning(
+          `${left.length} product${left.length === 1 ? ' is' : 's are'} not fully boxed`,
+          `Box every unit before moving on: ${left.map(l => l.spiName).join(', ')}.`,
+        );
+        return;
+      }
+    }
+    advance();
+  };
+  const nextBlocked = viewOnly ? poLoading : saving || (stage === 0 && (poLoading || !!poError)) || (stage === 2 && boxesLoading);
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
 
   return createPortal(
-    /* `cpf-form` is not decoration: create-po.css scopes SIXTY refinements
-       under it — the overlay's own layout, and the real look of the legal bar,
-       the risk rows, the guideline block and the GST banner. Without it the
-       page falls back to the unscoped base rules and renders a thicker bar and
-       flatter badges than the design. The PO form carries the same class. */
     <div className="spi-dt-overlay cpf-form">
       <div className="spi-dt">
         <div className="spi-dt-topcard">
@@ -123,26 +362,27 @@ export default function InvoiceForm({
               <div className="spi-dt-head-ico"><IcoDoc /><span className="spi-dt-head-dot" /></div>
               <div>
                 <div className="spi-dt-head-title">Supplier Purchase Invoice</div>
-                <div className="spi-dt-head-sub">Draft · not yet mapped</div>
+                <div className="spi-dt-head-sub">
+                  {viewOnly
+                    ? `Viewing ${spiCode ?? invoiceNo} · view only`
+                    : editing
+                      ? `Editing ${spiCode ?? invoiceNo}${spiStatus.label ? ` · ${spiStatus.label}` : ''}`
+                      : 'Draft · not yet mapped'}
+                </div>
               </div>
             </div>
 
-            {/* The four references this invoice is being raised against. The
-                ⋮ between them is the chrome's own separator, not a character
-                in any value. */}
             <div className="spi-dt-pills">
-              <HeadPill icon={<IcoLines />} label="INVOICE NO" value={invoiceNo} mono />
+              <HeadPill icon={<IcoLines />} label="INVOICE NO" value={spiCode ?? invoiceNo} mono />
               <span className="spi-dt-dots">⋮</span>
               <HeadPill icon={<IcoLines />} label="PO NUMBER" value={input.poNo ?? '—'} alt mono />
               <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoUser />} label="SUPPLIER" value={input.supplier} />
+              <HeadPill icon={<IcoUser />} label="SUPPLIER" value={draft.supplier || input.supplier} />
               <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={warehouseLabel(input.storage)} alt />
+              <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={savedWarehouse ?? warehouseLabel(input.storage)} alt />
             </div>
 
             <div className="spi-dt-head-r">
-              <button type="button" className="spi-dt-btn-pay"><IcoCard /> SPI Payment</button>
-              <span className="spi-dt-divider" />
               <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
             </div>
           </div>
@@ -166,22 +406,46 @@ export default function InvoiceForm({
                 <div className="spi-dt-step-big">{pad2(i + 1)}</div>
                 <div className="spi-dt-step-title">{s.title}</div>
                 <div className="spi-dt-step-desc">{s.desc}</div>
-                {/* The oversized number bled into the card's corner. */}
                 <span className="spi-dt-step-ghost">{pad2(i + 1)}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="spi-dt-body">
-          {/* Step 04 is the next piece of work. Each step is its own file
-              under steps/, the way the Create PO form splits its four. */}
-          {stage === 0 && <Step1SupplierDetails draft={draft} set={set} />}
-          {stage === 1 && (
-            <Step2InvoiceProducts draft={draft} set={set} lines={lines}
-              onChangeLine={changeLine} onRemoveLine={removeLine} />
+        <div className="spi-dt-body" inert={saving}>
+          {poLoading || (stage === 2 && boxesLoading) ? (
+            <StageSkeleton stage={stage} />
+          ) : (
+            <>
+              {saving && <StageSkeleton stage={stage + 1} />}
+              <div className="cpf-stepwrap" hidden={saving}>
+                {viewOnly && (
+                  <div className="cpf-viewonly-banner">
+                    <IcoLock /> <b>View only.</b>{' '}
+                    This invoice is {spiStatus.label || spiStatus.status}, so it can no longer be changed — every step is still here to read.
+                  </div>
+                )}
+                {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} />}
+                {stage === 1 && (
+                  <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly}
+                    onChangeLine={changeLine} />
+                )}
+                {stage === 2 && (
+                  <Step3BoxPackaging
+                    draft={draft}
+                    lines={spiId ? boxLines : lines}
+                    boxes={boxes}
+                    nextBoxCodes={nextBoxCodes}
+                    flagMaster={flagMaster}
+                    readOnly={viewOnly}
+                    onCreateBox={spiId ? createBox : undefined}
+                    onUpdateBox={spiId ? updateBox : undefined}
+                    onDeleteBoxes={spiId ? deleteBoxes : undefined}
+                  />
+                )}
+              </div>
+            </>
           )}
-          {stage === 2 && <Step3BoxPackaging draft={draft} lines={lines} />}
         </div>
 
         <div className="spi-dt-foot">
@@ -200,16 +464,14 @@ export default function InvoiceForm({
             <button type="button" className="spi-dt-btn-ghost" onClick={goBack}>
               <IcoChevronL /> {stage === 0 ? 'Change Selection' : 'Back'}
             </button>
-            {/* The last step maps the invoice rather than moving on, so it is
-                the green button with a tick — every other step is teal. This is
-                how the Create PO form marks its own submit. */}
             <button
               type="button"
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
+              disabled={nextBlocked}
             >
               {isLast && <IcoCheck />}
-              {isLast ? 'Map Invoice' : 'Save & Next'}
+              {viewOnly ? (isLast ? 'Close' : 'Next') : isLast ? 'Map Invoice' : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
               {!isLast && <IcoChevronR />}
             </button>
           </div>
@@ -220,8 +482,103 @@ export default function InvoiceForm({
   );
 }
 
-/** What the WAREHOUSE pill shows: our chosen site, or that it is external. */
+function SkHead() {
+  return (
+    <div className="spi-dt-sec-head" style={{ cursor: 'default' }}>
+      <div className="spi-dt-sk spi-dt-sk-ico" />
+      <div className="spi-dt-sec-mid">
+        <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 200 }} />
+        <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 280, height: 8, marginTop: 7 }} />
+      </div>
+    </div>
+  );
+}
+
+function SkFields({ count }: { count: number }) {
+  return (
+    <div className="spi-dt-grid4">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i}>
+          <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 84, height: 8, marginBottom: 9 }} />
+          <div className="spi-dt-sk spi-dt-sk-field" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkRows({ count }: { count: number }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="spi-dt-sk spi-dt-sk-field" style={{ height: 34 }} />
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="spi-dt-sk spi-dt-sk-field" style={{ height: 52 }} />
+      ))}
+    </div>
+  );
+}
+
+function SkSection({ children }: { children: ReactNode }) {
+  return (
+    <div className="spi-dt-sec" aria-busy="true">
+      <SkHead />
+      <div className="spi-dt-sec-body">{children}</div>
+    </div>
+  );
+}
+
+function SkRecap() {
+  return (
+    <div className="spi-dt-sec" aria-busy="true">
+      <SkHead />
+    </div>
+  );
+}
+
+function StageSkeleton({ stage }: { stage: number }) {
+  if (stage === 1) {
+    return (
+      <>
+        <SkRecap />
+        <SkSection><SkFields count={4} /></SkSection>
+        <SkSection><SkRows count={3} /></SkSection>
+      </>
+    );
+  }
+  if (stage === 2) {
+    return (
+      <>
+        <SkRecap />
+        <SkSection>
+          <div className="spi-dt-grid4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            {[0, 1, 2].map(i => <div key={i} className="spi-dt-sk spi-dt-sk-field" style={{ height: 120 }} />)}
+          </div>
+        </SkSection>
+        <SkSection><SkRows count={3} /></SkSection>
+      </>
+    );
+  }
+  if (stage >= 3) {
+    return (
+      <>
+        <SkRecap />
+        <SkSection><SkRows count={4} /></SkSection>
+      </>
+    );
+  }
+  return (
+    <>
+      <SkSection><SkFields count={8} /></SkSection>
+      <SkSection>
+        <SkFields count={5} />
+        <div style={{ height: 16 }} />
+        <SkFields count={8} />
+      </SkSection>
+    </>
+  );
+}
+
 function warehouseLabel(storage: StorageChoice): string {
   if (storage.type === 'third-party') return 'Third Party Warehouse';
-  return storage.warehouse?.name ?? '—';
+  return storage.warehouse?.name ?? STORAGE_WAREHOUSES[0]?.name ?? '—';
 }

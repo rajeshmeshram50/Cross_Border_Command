@@ -55,14 +55,24 @@ export function FitInput({ tooltip, ...props }: React.InputHTMLAttributes<HTMLIn
 
 /* Label + control, one cell of a wizard field grid. */
 /* `error` shows under the control (the control itself is flagged by its own invalid prop). */
-export function Field({ label, children, full, req, error, hint }: {
-  label: string; children: ReactNode; full?: boolean; req?: boolean; error?: string;
+export function Field({ label, children, full, req, error, hint, labelEnd }: {
+  /** Text, or text with a qualifying chip in it — the chip then sits before
+   *  the asterisk, which is where a qualifier belongs: it narrows the label,
+   *  not the control. `labelEnd` is the other slot, at the far end. */
+  label: ReactNode;
+  children: ReactNode; full?: boolean; req?: boolean; error?: string;
   /** Said under the field when it is constrained — an error takes its place. */
   hint?: string;
+  /** Sits at the far end of the label's own row, after the asterisk — a
+   *  character count or anything else that belongs to the label rather than
+   *  under the control, where an error would displace it. */
+  labelEnd?: ReactNode;
 }) {
   return (
     <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}>
-      <label className="spi-dt-field-lbl">{label}{req && <span className="spi-dt-req">*</span>}</label>
+      <label className={`spi-dt-field-lbl${labelEnd ? ' spi-dt-field-lbl--split' : ''}`}>
+        {label}{req && <span className="spi-dt-req">*</span>}{labelEnd}
+      </label>
       {children}
       {error ? <div className="cpf-err" role="alert">{error}</div> : hint && <div className="cpf-hint">{hint}</div>}
     </div>

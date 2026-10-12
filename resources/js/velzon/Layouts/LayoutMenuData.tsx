@@ -232,7 +232,7 @@ const p2pLeafLink = (leafId: string): string => {
     case "p2p.diagnosis":     return "/p2p/diagnosis";
     case "p2p.bulk_sourcing": return "/p2p/bulk-sourcing";
     case "p2p.case_to_case":  return "/p2p/case-to-case";
-    case "p2p.invoice":       return "/p2p/invoice";
+    case "p2p.invoice":       return "/p2p/supplier-purchase-invoice";
     case "p2p.order":         return "/p2p/order";
     case "p2p.payment_request": return "/p2p/payment-request";
     case "p2p.advance_refund":  return "/p2p/advance-refund-adjustment";

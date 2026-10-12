@@ -17,22 +17,12 @@ const PeopleIcon = () => (
   </svg>
 );
 
-/**
- * Where the goods landed: the warehouse name, with who owns it beneath.
- *
- * The ownership badge is not decoration — an own warehouse and a third-party
- * one carry different liability, so it is shown on every row rather than being
- * something you go and look up.
- */
 function WarehouseCellBase({
   name, kind,
-}: { name: string; kind: InvoiceWarehouseKind }) {
+}: { name?: string; kind?: InvoiceWarehouseKind }) {
+  if (!name) return <span className="ord-dash">—</span>;
   const third = kind === 'third-party';
   return (
-    /* `.ord-supplier` — the PO list's supplier cell is exactly this shape: a
-       name that truncates, with a standing badge underneath. PO has no
-       warehouse column of its own, so rather than invent one this borrows the
-       cell that already solves the same layout. */
     <div className="ord-supplier">
       <span className="ord-supplier__name" title={name}>{name}</span>
       <Badge

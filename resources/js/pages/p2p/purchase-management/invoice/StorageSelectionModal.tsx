@@ -171,7 +171,12 @@ export default function StorageSelectionModal({
                 [true, 'Live putaway status tracking'],
               ]}
             />
+            {/* Not built yet: the 3PL flow has no warehouse step and no
+                summary behind it, so choosing it would lead nowhere. Shown
+                greyed rather than removed, so the option is known to be
+                coming. */}
             <StorageCard
+              disabled
               selected={type === 'third-party'}
               onSelect={() => setType('third-party')}
               /* Slate, not teal. A 3PL is someone else's building, and the
@@ -351,7 +356,7 @@ function WarehouseRow({
 
 /** One storage option. */
 function StorageCard({
-  selected, onSelect, icon, iconStyle, title, sub, features,
+  selected, onSelect, icon, iconStyle, title, sub, features, disabled,
 }: {
   selected: boolean;
   onSelect: () => void;
@@ -361,24 +366,30 @@ function StorageCard({
   sub: string;
   /** [provided, label] — a tick when this type offers it, a cross when it does not. */
   features: Array<[boolean, string]>;
+  /** Not built yet. The card still shows what it will offer, greyed, with a
+   *  "Coming soon" tag — hiding it would leave no sign the option exists. */
+  disabled?: boolean;
 }) {
   return (
     <div
-      className={`smod-card${selected ? ' is-selected' : ''}`}
-      onClick={onSelect}
+      className={`smod-card${selected ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}`}
+      onClick={() => { if (!disabled) onSelect(); }}
       role="radio"
       aria-checked={selected}
-      tabIndex={0}
+      aria-disabled={disabled}
+      title={disabled ? `${title} is not available yet` : undefined}
+      tabIndex={disabled ? -1 : 0}
       /* A div with a click handler is invisible to the keyboard. These two keys
          make it behave like the radio it is standing in for; the card cannot be
          a real <input> because the whole tile is the hit area. */
       onKeyDown={e => {
+        if (disabled) return;
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
       }}
     >
       <div className="smod-card-top">
         <div className="smod-card-ico" style={iconStyle}>{icon}</div>
-        <div className="smod-card-radio" />
+        {disabled ? <span className="smod-soon">Coming soon</span> : <div className="smod-card-radio" />}
       </div>
       <div className="smod-card-title">{title}</div>
       <div className="smod-card-sub">{sub}</div>

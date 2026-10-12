@@ -55,6 +55,28 @@ const STUB_META: Record<string, { title: string; group: string; blurb: string; s
     blurb: 'Manage request-based, one-off procurement sourcing.',
   },
 
+  /* Inventory Management — each master gets a blank page of its own, to be
+     designed one at a time. Deliberately NOT pointed at /master/*: those are
+     the existing master screens with their existing data, and these are being
+     built fresh. As each one ships, point its <Route> at the real component
+     and drop the entry here. */
+  'inventory-management/warehouse-master': {
+    title: 'Warehouse Master', group: 'Inventory Management', slug: 'master.warehouse_master',
+    blurb: 'Set up and manage warehouses.',
+  },
+  'inventory-management/zone-master': {
+    title: 'Zone Master', group: 'Inventory Management', slug: 'master.zone_master',
+    blurb: 'Define storage zones within each warehouse.',
+  },
+  'inventory-management/rack-master': {
+    title: 'Rack Master', group: 'Inventory Management', slug: 'master.racks',
+    blurb: 'Configure racks and bin locations in each zone.',
+  },
+  'inventory-management/product-flags': {
+    title: 'Product Flags Master', group: 'Inventory Management', slug: 'master.warehouse_master',
+    blurb: 'Manage handling and storage flags for products.',
+  },
+
 };
 
 export default function ModuleStubPage() {

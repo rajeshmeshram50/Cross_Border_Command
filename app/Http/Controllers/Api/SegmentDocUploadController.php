@@ -952,6 +952,12 @@ class SegmentDocUploadController extends Controller
             ->get()
             ->groupBy('purchase_order_id');
 
+        /* What the SUPPLIER sent back against each PO: their invoice, the e-way
+           bill, and any photo taken while unpacking a box. The vault is the one
+           place a buyer looks for "what paperwork exists on this order", and
+           until now it showed only what WE generated. */
+        $spiDocs = $this->buildSpiDocs($pos->pluck('id')->all());
+
         /* Where a document stands is decided by its signature request, not by the
            row: a decline lands on the request, and Stage 04 re-reads it on every
            open. This list did not, so a declined document went on reading
@@ -992,6 +998,11 @@ class SegmentDocUploadController extends Controller
                 'currency'   => $po->currency_code,
                 'docs'       => $td,
                 'agreements' => $agr,
+                /* What the supplier sent back — their invoice, the e-way bill
+                   and any unpacking photo. Kept in its own list rather than
+                   merged into `docs`: nothing here is signed or required, so a
+                   signed/total ratio over it would be meaningless. */
+                'spi_docs'   => $spiDocs[$po->id] ?? [],
                 // Trade documents and agreements are counted apart, as the table shows them.
                 'ratios'     => array_merge($ratios, ['td' => $ratio($td), 'agr' => $ratio($agr)]),
             ];
@@ -1026,12 +1037,16 @@ class SegmentDocUploadController extends Controller
             foreach ($groups as $g) {
                 $docs = array_merge(...array_map(fn ($r) => $r['docs'], $g['pos'])) ?: [];
                 $agrs = array_merge(...array_map(fn ($r) => $r['agreements'], $g['pos'])) ?: [];
+                // Supplier paperwork joins the union too, so the export and the
+                // shipment row read one list like everything else.
+                $spis = array_merge(...array_map(fn ($r) => $r['spi_docs'] ?? [], $g['pos'])) ?: [];
                 $signed = fn (array $set) => count(array_filter($set, fn ($r) => $r['status'] === 'Signed'));
                 $out[] = $g + [
                     'sr'         => ++$sr,
                     'po_count'   => count($g['pos']),
                     'docs'       => $docs,
                     'agreements' => $agrs,
+                    'spi_docs'   => $spis,
                     'ratios'     => array_merge($ratios, [
                         'td'  => ['d' => $signed($docs), 't' => count($docs)],
                         'agr' => ['d' => $signed($agrs), 't' => count($agrs)],
@@ -1105,6 +1120,80 @@ class SegmentDocUploadController extends Controller
                tell them apart, and only this says which row it is. */
             'doc_kind'             => (string) ($d->doc_kind ?? ''),
         ];
+    }
+
+    /**
+     * Supplier paperwork received against each purchase order, keyed by PO id.
+     *
+     * Three kinds, and all of them arrive AFTER the PO is out — which is why
+     * they were missing: everything else in this vault is something we
+     * generated and sent.
+     *
+     *   invoice   p2p_supplier_invoices.invoice_file_*
+     *   e-way     p2p_supplier_invoices.eway_file_*
+     *   photo     p2p_spi_box_attachments — taken while unpacking
+     *
+     * Two queries whatever the number of invoices or boxes. Nothing here is
+     * signed or required, so these rows carry no signature state and no
+     * requirement flag; a status is just whether the file is there.
+     *
+     * @param  int[] $poIds
+     * @return array<int, array<int, array<string, mixed>>>
+     */
+    private function buildSpiDocs(array $poIds): array
+    {
+        if (!$poIds) return [];
+
+        $invoices = DB::table('p2p_supplier_invoices')
+            ->whereIn('purchase_order_id', $poIds)
+            ->whereNull('deleted_at')
+            ->orderBy('id')
+            ->get(['id', 'purchase_order_id', 'code', 'invoice_no', 'invoice_date',
+                'invoice_file_path', 'invoice_file_name', 'eway_no', 'eway_file_path', 'eway_file_name']);
+        if ($invoices->isEmpty()) return [];
+
+        // Unpacking photos, reached through the boxes of those invoices.
+        $photos = DB::table('p2p_spi_box_attachments as a')
+            ->join('p2p_spi_boxes as b', 'b.id', '=', 'a.box_id')
+            ->whereIn('b.supplier_invoice_id', $invoices->pluck('id'))
+            ->whereNull('a.deleted_at')
+            ->whereNull('b.deleted_at')
+            ->orderBy('a.id')
+            ->get(['a.id', 'a.file_path', 'a.file_name', 'a.created_at', 'b.supplier_invoice_id', 'b.box_code'])
+            ->groupBy('supplier_invoice_id');
+
+        $row = fn (string $kind, string $name, ?string $path, ?string $file, $spi, ?string $ref = null) => [
+            'id'             => $spi->id . ':' . $kind,
+            'spi_id'         => (int) $spi->id,
+            'spi_code'       => $spi->code,
+            'po_id'          => (int) $spi->purchase_order_id,
+            'party'          => 'Supplier',
+            'kind'           => $kind,                    // invoice · eway · photo
+            'name'           => $name,
+            'reference'      => $ref,
+            'issue_date'     => $spi->invoice_date ? Carbon::parse($spi->invoice_date)->format('d-M-Y') : null,
+            'attachment'     => $file,
+            'attachment_url' => $path ? file_url($path) : null,
+            // Received or not — there is nothing to sign and nothing to require.
+            'status'         => $path ? 'Received' : 'Awaited',
+        ];
+
+        $out = [];
+
+        foreach ($invoices as $spi) {
+            $list = [
+                $row('invoice', 'Supplier Invoice', $spi->invoice_file_path, $spi->invoice_file_name, $spi, $spi->invoice_no),
+                $row('eway', 'E-Way Bill', $spi->eway_file_path, $spi->eway_file_name, $spi, $spi->eway_no),
+            ];
+
+            foreach ($photos[$spi->id] ?? [] as $p) {
+                $list[] = $row('photo', 'Unpacking photo — ' . $p->box_code, $p->file_path, $p->file_name, $spi, $p->box_code);
+            }
+
+            $out[$spi->purchase_order_id] = array_merge($out[$spi->purchase_order_id] ?? [], $list);
+        }
+
+        return $out;
     }
 
     private function buildVendorDeals(Model $owner, int $cid, array $companyDd, array $ownerKyc, array $tradeLicenses, array $tradeDocuments): array

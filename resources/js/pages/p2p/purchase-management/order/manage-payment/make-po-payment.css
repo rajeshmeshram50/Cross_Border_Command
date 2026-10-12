@@ -100,6 +100,15 @@
   box-shadow: inset 0 0 0 1px rgba(8, 145, 178, .28);
 }
 
+/* The pale cyan fill is near-white, so on a dark panel it read as a lit chip.
+   Same hue, carried as a translucent tint with the text taking over the job
+   the fill was doing in the light theme. */
+[data-bs-theme="dark"] .cpay-id {
+  color: #a5f3fc;
+  background: rgba(6, 182, 212, .16);
+  box-shadow: inset 0 0 0 1px rgba(6, 182, 212, .32);
+}
+
 .cpay-type {
   padding: 4px 10px;
   border-radius: 8px;
@@ -113,11 +122,25 @@
   text-overflow: ellipsis;
 }
 
+/* Indigo keeps its own hue here rather than joining the teal: the payment type
+   is deliberately not the same kind of thing as the request id beside it. */
+[data-bs-theme="dark"] .cpay-type {
+  color: #c7d2fe;
+  background: rgba(129, 140, 248, .16);
+  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, .32);
+}
+
 .cpay-pct {
   font-size: 14px;
   font-weight: 800;
   letter-spacing: -.3px;
   color: #0c4a6e;
+}
+
+/* Deep navy on a dark panel is all but unreadable — this is the headline
+   figure of its field, so it takes the brightest ink here. */
+[data-bs-theme="dark"] .cpay-pct {
+  color: #e0f7ff;
 }
 
 .cpay-f--pct .cpay-v {
@@ -132,6 +155,13 @@
   overflow: hidden;
   background: rgba(12, 74, 110, .1);
   box-shadow: inset 0 1px 1px rgba(9, 43, 61, .1);
+}
+
+/* A dark track on a dark panel is no track at all: the bar lost its unfilled
+   half and the percentage stopped being readable as a proportion. */
+[data-bs-theme="dark"] .cpay-bar {
+  background: rgba(255, 255, 255, .1);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, .3);
 }
 
 .cpay-bar i {
@@ -176,6 +206,16 @@
 
 [data-bs-theme="dark"] .cpay-whotxt {
   color: #e2e8f0;
+}
+
+/* Muted blue-greys chosen against white: both sit too close to the panel on
+   dark, so each lifts a step while staying secondary to the value above it. */
+[data-bs-theme="dark"] .cpay-role {
+  color: #94b2c4;
+}
+
+[data-bs-theme="dark"] .cpay-none {
+  color: #7e9aab;
 }
 
 .cpay-role {
@@ -270,6 +310,13 @@
   box-shadow: none;
   cursor: not-allowed;
   transform: none;
+}
+
+/* The light disabled fill is all but white, which read as a lit button on a
+   dark panel rather than a dead one. */
+[data-bs-theme="dark"] .cpay-add:disabled {
+  background: rgba(6, 182, 212, .07);
+  color: #5d7f8f;
 }
 
 .cpay-add svg {

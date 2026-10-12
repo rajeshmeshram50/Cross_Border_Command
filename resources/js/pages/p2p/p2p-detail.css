@@ -483,6 +483,12 @@
 .spi-dt-sec.is-collapsed .spi-dt-sec-head { border-bottom-color:transparent; }
 [data-bs-theme="dark"] .spi-dt-sec-head { background: linear-gradient(110deg,#0c2630,#103642 60%,#0c2c38); border-bottom-color: rgba(34,211,238,.2); }
 [data-bs-theme="dark"] .spi-dt-sec-head::before { background-image: radial-gradient(ellipse at 10% 50%,rgba(34,211,238,.18) 0%,transparent 55%),radial-gradient(ellipse at 90% 50%,rgba(34,211,238,.1) 0%,transparent 55%); }
+/* The ::after above lays a 50% white gloss over the top half of every section
+   header. The header itself and its ::before were darkened; this was not, so
+   the band rendered as a silver strip — measured at the pixel as
+   rgb(119,137,143) while its own computed background was rgb(12,38,48).
+   Dimmed rather than removed, so the header keeps its curvature. */
+[data-bs-theme="dark"] .spi-dt-sec-head::after { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent); }
 .spi-dt-sec-ico { width:36px; height:36px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff;
   background: linear-gradient(135deg,#06b6d4,#0891b2); box-shadow: 0 3px 8px rgba(8,145,178,.3); }
 .spi-dt-sec-ico-2 { background: linear-gradient(135deg,#22d3ee,#0e7490); }
@@ -502,6 +508,9 @@
 .spi-dt-grid4 { display:grid; grid-template-columns: repeat(4,1fr); gap:11px 12px; }
 .spi-dt-field { display:flex; flex-direction:column; gap:4px; min-width:0; }
 .spi-dt-field-lbl { font-size:10px; font-weight:800; letter-spacing:.04em; color:#64748b; margin-bottom:0; line-height:1; }
+/* A label carrying something at its far end (a character count) becomes a row;
+   the asterisk stays with the text and the extra is pushed away from it. */
+.spi-dt-field-lbl--split { display:flex; align-items:center; gap:4px; }
 .spi-dt-inp { width:100%; height:40px; padding:0 12px; border-radius:9px; border:1.5px solid #e6eef3; background:#fff;
   font-family:inherit; font-size:12.5px; font-weight:600; color:#0f172a; outline:none; box-shadow: 0 1px 2px rgba(15,23,42,.04);
   transition: border-color .15s, box-shadow .15s, background .15s; }
@@ -772,7 +781,21 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 [data-bs-theme="dark"] .spi-dt-fields-badge { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.28); color:#7fe6f8; }
 [data-bs-theme="dark"] .spi-dt-minus { color:#38d6f0; background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.28); }
 [data-bs-theme="dark"] .spi-dt-toggle-txt { color:#cbd5e1; }
-[data-bs-theme="dark"] .spi-dt-auto { color:#7dd3e8; }
+/* AUTO / MANDATORY sit INSIDE a field, so only their text was given a dark
+   colour and the #ecfeff pill behind it was left -- a near-white lozenge on a
+   dark field, brighter than the value it annotates. */
+[data-bs-theme="dark"] .spi-dt-auto {
+  color:#7dd3e8;
+  background: rgba(34,211,238,.12);
+  box-shadow: inset 0 0 0 1px rgba(34,211,238,.26);
+}
+/* The collapse caret was a 75%-white square for the same reason: on a light
+   card it reads as a recessed button, on a dark one as a lit tile. */
+[data-bs-theme="dark"] .spi-dt-sec-toggle {
+  background: rgba(34,211,238,.1);
+  border-color: rgba(34,211,238,.28);
+  color:#67e8f9;
+}
 [data-bs-theme="dark"] .spi-dt-chg-f label, [data-bs-theme="dark"] .spi-dt-sum-hd { color:#8ea8b8; }
 /* Footer (both steps) */
 [data-bs-theme="dark"] .spi-dt-foot-name { color:#e8f2f6; }

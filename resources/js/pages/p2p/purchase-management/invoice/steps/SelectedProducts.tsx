@@ -1,16 +1,9 @@
 import { memo, useCallback } from 'react';
+import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { IcoCheck, IcoX } from '../../../icons';
-import { DESC_MAX, truncateDesc, type ProductLine } from '../invoice-products';
+import { DESC_MAX, NAME_MAX, truncateDesc, truncateName, type ProductLine } from '../invoice-products';
 
-/**
- * The identifiers printed on one product inside a mixed carton.
- *
- * Per product, not per box. A master carton holding four SKUs holds four
- * batches, four expiry dates and four lot numbers, so one set of box-level
- * fields could only ever describe one of them — and on a recall the other
- * three would be untraceable. The prototype keeps these at box level; this is
- * a deliberate difference, and the reason the table is this wide.
- */
 export interface ProductIdentity {
   serial: string;
   lot: string;
@@ -25,7 +18,11 @@ export const EMPTY_IDENTITY: ProductIdentity = {
   serial: '', lot: '', batch: '', cat: '', expiry: '', mfg: '', remarks: '',
 };
 
-/** The identity columns, in the order the prototype's Advanced Details lists them. */
+export interface BoxContent {
+  line: ProductLine;
+  qty: number;
+}
+
 const IDENTITY_COLUMNS: {
   key: keyof ProductIdentity; label: string; placeholder: string; type: 'text' | 'date';
 }[] = [
@@ -35,48 +32,48 @@ const IDENTITY_COLUMNS: {
   { key: 'cat', label: 'Cat No.', placeholder: 'e.g. CT-001', type: 'text' },
   { key: 'expiry', label: 'Expiry Date', placeholder: '', type: 'date' },
   { key: 'mfg', label: 'MFG Date', placeholder: '', type: 'date' },
-  /* Last, and wider: it is a sentence rather than a code, and it is the one
-     field here whose length is not known in advance. */
-  { key: 'remarks', label: 'Remarks', placeholder: 'Any note about this product…', type: 'text' },
+  /* Short enough to fit the same box as the codes beside it — the field still
+     takes a full sentence, it just no longer asks for a wider column to say
+     so while empty. */
+  { key: 'remarks', label: 'Remarks', placeholder: 'Add a note…', type: 'text' },
 ];
 
-/**
- * Selected Products — what is going into one mixed carton.
- *
- * Scenario 03 packs several SKUs into a single master carton under one shared
- * label, so this table is the carton's contents list: what is inside, how many
- * of each, and the identifiers that belong to each one.
- */
 function SelectedProducts({
-  lines, identities, onIdentityChange, onRemove, onClear,
+  rows, identities, onIdentityChange, onRemove, onClear, onQtyChange,
 }: {
-  /** The ticked products, in the order they were ticked. */
-  lines: ProductLine[];
+  rows: BoxContent[];
+  onQtyChange?: (code: string, qty: number) => void;
   identities: Record<string, ProductIdentity>;
   onIdentityChange: (code: string, patch: Partial<ProductIdentity>) => void;
-  /** Takes one product back out of the carton. */
-  onRemove: (code: string) => void;
-  onClear: () => void;
+  onRemove?: (code: string) => void;
+  onClear?: () => void;
 }) {
-  const totalUnits = lines.reduce((n, l) => n + l.spiQty, 0);
+  const isSelection = !!onClear;
+
+  const totalUnits = rows.reduce((n, r) => n + r.qty, 0);
 
   return (
     <div className="vti-box invf-selprod">
       <div className="vti-header">
         <div className="vti-header-ico"><IcoCheck size={18} stroke={2.6} /></div>
         <div className="vti-header-text">
-          <div className="vti-header-title">Selected Products ({lines.length})</div>
+          <div className="vti-header-title">
+            {isSelection ? `Selected Products (${rows.length})` : 'Box Contents'}
+          </div>
           <div className="vti-header-sub">
-            Everything going into this carton &nbsp;·&nbsp; identifiers are per product
+            {isSelection ? 'Everything going into this carton' : 'What this box holds'}
+            &nbsp;·&nbsp; identifiers are per product
           </div>
         </div>
         <div className="vti-header-stats">
           <div className="vti-stat-pill total">
             <div className="vti-stat-dot" />Total: {totalUnits} unit{totalUnits === 1 ? '' : 's'}
           </div>
-          <button type="button" className="invf-selprod__clear" onClick={onClear}>
-            <IcoX size={11} stroke={2.6} /> Clear Selection
-          </button>
+          {onClear && (
+            <button type="button" className="invf-selprod__clear" onClick={onClear}>
+              <IcoX size={11} stroke={2.6} /> Clear Selection
+            </button>
+          )}
         </div>
       </div>
 
@@ -84,24 +81,28 @@ function SelectedProducts({
         <table className="vti-table">
           <thead>
             <tr>
-              <th>#</th>
+              {/* "Sr No", not "#": every other table in the flow names this
+                  column, and a lone glyph is the only header you have to
+                  work out. */}
+              <th>Sr No</th>
               <th>Product</th>
               <th>Code</th>
               <th className="vti-desc-h">Description</th>
-              <th>SPI Qty</th>
+              <th>Qty in Box</th>
               {IDENTITY_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}
-              <th>Remove</th>
+              {onRemove && <th>Remove</th>}
             </tr>
           </thead>
           <tbody>
-            {lines.map((line, i) => (
+            {rows.map((row, i) => (
               <IdentityRow
-                key={line.code}
+                key={row.line.code}
                 index={i}
-                line={line}
-                identity={identities[line.code] ?? EMPTY_IDENTITY}
+                row={row}
+                identity={identities[row.line.code] ?? EMPTY_IDENTITY}
                 onChange={onIdentityChange}
                 onRemove={onRemove}
+                onQtyChange={onQtyChange}
               />
             ))}
           </tbody>
@@ -111,22 +112,18 @@ function SelectedProducts({
   );
 }
 
-/**
- * One product in the carton.
- *
- * Memoised: there are six inputs per row, and without this every keystroke in
- * any of them would re-render every other row's six as well.
- */
 const IdentityRow = memo(function IdentityRow({
-  index, line, identity, onChange, onRemove,
+  index, row, identity, onChange, onRemove, onQtyChange,
 }: {
   index: number;
-  line: ProductLine;
+  row: BoxContent;
+  onQtyChange?: (code: string, qty: number) => void;
   identity: ProductIdentity;
   onChange: (code: string, patch: Partial<ProductIdentity>) => void;
-  onRemove: (code: string) => void;
+  onRemove?: (code: string) => void;
 }) {
-  /* Bound to this row's code, so each cell below passes only its own value. */
+  const { line, qty } = row;
+
   const patch = useCallback(
     (p: Partial<ProductIdentity>) => onChange(line.code, p),
     [line.code, onChange],
@@ -138,41 +135,67 @@ const IdentityRow = memo(function IdentityRow({
       <td>
         <div className="vti-prod-cell">
           <div>
-            <div className="vti-prod-name">{line.spiName}</div>
+            <Tooltip label={line.spiName} disabled={line.spiName.length <= NAME_MAX}>
+              <div className="vti-prod-name">{truncateName(line.spiName)}</div>
+            </Tooltip>
             <div className="vti-prod-sku">HSN {line.hsn}</div>
           </div>
         </div>
       </td>
       <td><span className="vti-code">{line.code}</span></td>
-      <td className="vti-desc" title={line.description.length > DESC_MAX ? line.description : undefined}>
-        <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
+      <td className="vti-desc">
+        <Tooltip label={line.description} disabled={line.description.length <= DESC_MAX}>
+          <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
+        </Tooltip>
       </td>
-      <td><span className="vti-qty-badge">{line.spiQty}</span></td>
+      <td>
+        {onQtyChange ? (
+          <input
+            type="number" min={0} step="any" className="vti-subbox-inp"
+            aria-label={`Units of ${line.spiName} in this carton`}
+            value={qty}
+            onChange={e => onQtyChange(line.code, Math.max(0, Number(e.target.value) || 0))}
+          />
+        ) : (
+          <span className="vti-qty-badge">{qty}</span>
+        )}
+      </td>
 
       {IDENTITY_COLUMNS.map(c => (
         <td key={c.key}>
-          <input
-            className={`cpd-in invf-selprod__in${c.key === 'remarks' ? ' invf-selprod__in--note' : ''}`}
-            type={c.type}
-            placeholder={c.placeholder}
-            value={identity[c.key]}
-            onChange={e => patch({ [c.key]: e.target.value })}
-            aria-label={`${c.label} for ${line.spiName}`}
-          />
+          {c.type === 'date' ? (
+            <MasterDatePicker
+              value={identity[c.key]}
+              onChange={v => patch({ [c.key]: v })}
+              placeholder={c.label}
+            />
+          ) : (
+            <input
+              className={`cpd-in invf-selprod__in${c.key === 'remarks' ? ' invf-selprod__in--note' : ''}`}
+              type={c.type}
+              placeholder={c.placeholder}
+              value={identity[c.key]}
+              onChange={e => patch({ [c.key]: e.target.value })}
+              aria-label={`${c.label} for ${line.spiName}`}
+            />
+          )}
         </td>
       ))}
 
-      <td>
-        <button
-          type="button"
-          className="invf-selprod__rm"
-          onClick={() => onRemove(line.code)}
-          title={`Take ${line.spiName} out of this carton`}
-          aria-label={`Remove ${line.spiName}`}
-        >
-          <IcoX size={12} stroke={2.6} />
-        </button>
-      </td>
+      {onRemove && (
+        <td>
+          <Tooltip label={`Take ${line.spiName} out of this carton`}>
+            <button
+              type="button"
+              className="invf-selprod__rm"
+              onClick={() => onRemove(line.code)}
+              aria-label={`Remove ${line.spiName}`}
+            >
+              <IcoX size={12} stroke={2.6} />
+            </button>
+          </Tooltip>
+        </td>
+      )}
     </tr>
   );
 });

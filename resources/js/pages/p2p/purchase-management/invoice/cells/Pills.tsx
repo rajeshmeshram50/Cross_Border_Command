@@ -5,28 +5,6 @@ import type {
   InvoiceZohoStatus, InvoiceInspectionStatus, InvoiceSupplierCategory,
 } from '../types';
 
-/**
- * The display chips, built on what the PO list already uses.
- *
- * Nothing in invoice.css styles any of these:
- *   · PO Type        -> .ord-typepill + .ord-typepill__ico
- *   · Document Type  -> .ord-doctype--dom / --intl
- *   · Zoho / Physical Inspection -> .ord-status--ok / --bad / --na
- *   · Risk, supplier category, inspection flag -> the shared <Badge>, with
- *     .ord-risk / .ord-supplier__cat / .ord-physinsp for the per-column tweak,
- *     exactly as Order.tsx does it.
- *
- * What stays here is the LABELS and ICONS — content, not styling. Order.tsx's
- * own maps are mostly not exported, and importing a sibling page component for
- * a lookup table would pull that whole module into this page's chunk.
- *
- * Every one is `memo`'d. Props are a string or two, so React's shallow compare
- * is exactly right, and at 60 rows that is a few hundred components skipped on
- * every filter.
- */
-
-/* ── Icons ────────────────────────────────────────────────────────────────── */
-
 const Warn = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"
     strokeLinecap="round" strokeLinejoin="round">
@@ -71,9 +49,6 @@ const Wrench = () => (
   </svg>
 );
 
-/* ── PO Type ──────────────────────────────────────────────────────────────── */
-
-/** `.ord-typepill--materials` — PO's own suffix, which is plural. */
 const PO_TYPE_CLASS: Record<InvoicePoType, string> = {
   material: 'materials',
   services: 'services',
@@ -95,8 +70,6 @@ function PoTypePillBase({ type }: { type?: InvoicePoType }) {
 }
 export const PoTypePill = memo(PoTypePillBase);
 
-/* ── Document Type ────────────────────────────────────────────────────────── */
-
 const DOC: Record<InvoiceDocumentType, { cls: string; label: string }> = {
   domestic: { cls: 'dom', label: 'Domestics' },
   international: { cls: 'intl', label: 'International' },
@@ -107,17 +80,15 @@ function DocTypePillBase({ type }: { type: InvoiceDocumentType }) {
 }
 export const DocTypePill = memo(DocTypePillBase);
 
-/* ── Risk Alert ───────────────────────────────────────────────────────────── */
-
 const RISK: Record<InvoiceRiskLevel, { label: string; variant: BadgeVariant; icon: React.ReactNode }> = {
   high:   { label: 'High',   variant: 'danger',  icon: <Warn /> },
   medium: { label: 'Medium', variant: 'warning', icon: <Clock /> },
   low:    { label: 'Low',    variant: 'success', icon: <Check /> },
 };
 
-function RiskPillBase({ level }: { level: InvoiceRiskLevel }) {
+function RiskPillBase({ level }: { level?: InvoiceRiskLevel }) {
+  if (!level) return <span className="ord-dash">—</span>;
   const r = RISK[level];
-  /* `title` carries the long form, because the chip shows only "High". */
   return (
     <Badge appearance="outline" variant={r.variant} icon={r.icon}
       className="ord-risk" title={`${r.label} Risk`}>
@@ -126,8 +97,6 @@ function RiskPillBase({ level }: { level: InvoiceRiskLevel }) {
   );
 }
 export const RiskPill = memo(RiskPillBase);
-
-/* ── Supplier category ────────────────────────────────────────────────────── */
 
 const CATEGORY: Record<InvoiceSupplierCategory, { label: string; variant: BadgeVariant; icon: React.ReactNode }> = {
   star:          { label: 'Star Supplier',       variant: 'gold',   icon: <Star /> },
@@ -147,8 +116,6 @@ function SupplierCategoryBadgeBase({ category }: { category: InvoiceSupplierCate
 }
 export const SupplierCategoryBadge = memo(SupplierCategoryBadgeBase);
 
-/* ── Physical-inspection flag, under the PO number ────────────────────────── */
-
 function PhysInspBadgeBase() {
   return (
     <Badge appearance="outline" variant="danger" icon={<Warn />}
@@ -160,11 +127,6 @@ function PhysInspBadgeBase() {
 }
 export const PhysInspBadge = memo(PhysInspBadgeBase);
 
-/* ── Status pills ─────────────────────────────────────────────────────────────
-   Zohobook and Physical Inspection are the same object — a coloured dot and a
-   word — so they share one component and differ by tone. The three tones are
-   PO's own: ok / bad / na. */
-
 type StatusTone = 'ok' | 'bad' | 'na';
 
 function StatusPillBase({ tone, label, title }: { tone: StatusTone; label: string; title?: string }) {
@@ -175,9 +137,6 @@ function StatusPillBase({ tone, label, title }: { tone: StatusTone; label: strin
   );
 }
 export const StatusPill = memo(StatusPillBase);
-
-/* Thin wrappers so the table does not carry the status->tone mapping itself.
-   The table should say WHAT the value is, not how it is coloured. */
 
 export const ZohoStatusPill = memo(({ status }: { status: InvoiceZohoStatus }) => (
   <StatusPill tone={status === 'synced' ? 'ok' : 'bad'}

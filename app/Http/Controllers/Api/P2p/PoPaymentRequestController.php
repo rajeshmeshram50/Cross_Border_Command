@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\P2p\PoPayment;
 use App\Models\P2p\PoPaymentRequest;
 use App\Models\P2p\PurchaseOrder;
+use App\Models\P2p\SupplierInvoice;
 use App\Services\P2p\PurchaseOrderService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -150,6 +151,13 @@ class PoPaymentRequestController extends Controller
             'percentage'       => 'nullable|numeric|min:0|max:100',
             'requested_amount' => 'required|numeric|min:1|max:9999999999999.99',
             'reason'           => 'required|string|max:300',
+            /* Which supplier invoice this release is for. Records the link
+               only — the ceiling, the deduction and the balance all stay on
+               the PO. NULL on an advance raised before any invoice exists. */
+            'supplier_invoice_id' => [
+                'nullable', 'integer',
+                Rule::exists('p2p_supplier_invoices', 'id')->where('purchase_order_id', $order->id),
+            ],
             'requested_to'     => 'required|integer',
         ], [
             'payment_type.required'     => 'Select a payment type.',
@@ -188,7 +196,8 @@ class PoPaymentRequestController extends Controller
             return PoPaymentRequest::create([
                 'client_id'         => $locked->client_id,
                 'branch_id'         => $locked->branch_id,
-                'purchase_order_id' => $locked->id,
+                'purchase_order_id'   => $locked->id,
+                'supplier_invoice_id' => $data['supplier_invoice_id'] ?? null,
                 'code'              => $this->svc->nextPaymentRequestCode((int) $locked->client_id),
                 'payment_type'      => $data['payment_type'],
                 'percentage'        => $this->requestPct($locked, $amount, $data['percentage'] ?? null),
@@ -583,8 +592,62 @@ class PoPaymentRequestController extends Controller
             ->leftJoin('users as rt', 'rt.id', '=', 'r.requested_to')
             ->leftJoin('shipment_orders as sh', 'sh.id', '=', 'po.shipment_order_id')
             ->leftJoin('proforma_invoices as pi', 'pi.id', '=', 'po.proforma_invoice_id')
+            /* The invoice the request was raised FROM. LEFT, because a PO-level
+               advance is raised before any invoice exists and has none. */
+            ->leftJoin('p2p_supplier_invoices as spi', 'spi.id', '=', 'r.supplier_invoice_id')
             ->where('r.client_id', $user->client_id)
             ->whereNull('po.deleted_at');
+    }
+
+    /**
+     * POST /p2p/spi/{spi}/payment-requests — raise a request FROM the invoice.
+     *
+     * A thin door onto store(): it finds the invoice's purchase order and
+     * hands over. The request still belongs to the PO — same ceiling, same
+     * approver rules, same deduction — the invoice is only recorded as what it
+     * was raised against. The SPI screen therefore never needs to know the PO id.
+     */
+    public function storeFromSpi(Request $request, int $spi): JsonResponse
+    {
+        $invoice = SupplierInvoice::findOrFail($spi);
+
+        if (!$invoice->purchase_order_id) {
+            return $this->fail(
+                "{$invoice->code} is a standalone invoice — it has no purchase order to pay against."
+            );
+        }
+
+        // The invoice is implied by the route, so the body does not carry it.
+        $request->merge(['supplier_invoice_id' => $invoice->id]);
+
+        return $this->store($request, (int) $invoice->purchase_order_id);
+    }
+
+    /**
+     * POST /p2p/spi/{spi}/payment-requests/{req}/payments — the "Make SPI
+     * Payment" button.
+     *
+     * The same door as storeFromSpi(): the invoice names its purchase order and
+     * the existing logic takes over. The payment is still recorded against the
+     * PO and still reduces its balance — the invoice is where it was released
+     * from, not what it is measured against.
+     */
+    public function storePaymentFromSpi(Request $request, int $spi, int $req): JsonResponse
+    {
+        $invoice = SupplierInvoice::findOrFail($spi);
+
+        if (!$invoice->purchase_order_id) {
+            return $this->fail("{$invoice->code} is a standalone invoice — it has no purchase order to pay against.");
+        }
+
+        // The request must belong to this invoice, or the button on one SPI
+        // could pay a request raised from another.
+        $belongs = PoPaymentRequest::where('id', $req)->where('supplier_invoice_id', $invoice->id)->exists();
+        if (!$belongs) {
+            return $this->fail("That payment request was not raised against {$invoice->code}.", 404);
+        }
+
+        return $this->storePayment($request, (int) $invoice->purchase_order_id, $req);
     }
 
     private function listColumns(): array
@@ -593,6 +656,9 @@ class PoPaymentRequestController extends Controller
             'r.id', 'r.code', 'r.purchase_order_id', 'r.payment_type', 'r.percentage', 'r.requested_amount',
             'r.status', 'r.approved_amount', 'r.paid_amount', 'r.requested_at', 'r.decided_at',
             'r.requested_by', 'r.requested_to', 'r.decision_note',
+            // Raised FROM this invoice. The money still moves on the PO.
+            'r.supplier_invoice_id', 'spi.code as spi_code', 'spi.invoice_date as spi_date',
+            'spi.invoice_no as spi_invoice_no', 'spi.grand_total as spi_total',
             'po.vendor_id', 'po.physical_inspection', 'po.inspection_status', 'po.procurement_request_code',
             'sh.shipment_code', 'sh.created_at as shipment_date', 'pi.opp_code', 'pi.created_at as pi_date',
             'po.code as po_code', 'po.po_date', 'po.status as po_status', 'po.grand_total', 'po.tds_amount',
@@ -624,6 +690,16 @@ class PoPaymentRequestController extends Controller
             'opportunity_code' => $r->opp_code, 'opportunity_date' => $r->pi_date ? substr((string) $r->pi_date, 0, 10) : null,
             'procurement_code' => $r->procurement_request_code,
             'po_code' => $r->po_code, 'po_date' => $r->po_date, 'po_status' => $r->po_status, 'link_type' => $r->link_type,
+            /* Which invoice this request was raised from, so the management
+               list can say "against PO/2026-27/033, via SPI/2026-27/003".
+               NULL on a PO-level advance raised before any invoice existed. */
+            'spi' => $r->supplier_invoice_id ? [
+                'id'         => $r->supplier_invoice_id,
+                'code'       => $r->spi_code,
+                'invoice_no' => $r->spi_invoice_no,
+                'date'       => $r->spi_date ? substr((string) $r->spi_date, 0, 10) : null,
+                'total'      => (float) $r->spi_total,
+            ] : null,
             'currency_code' => $r->currency_code ?: 'INR', 'document_type' => $r->document_type,
             'po_total' => (float) $r->grand_total, 'po_net' => round((float) $r->grand_total - (float) $r->tds_amount, 2),
             'po_paid' => (float) $r->po_paid, 'po_balance' => (float) $r->po_balance,
@@ -711,6 +787,9 @@ class PoPaymentRequestController extends Controller
                others could only be decided by opening each one (CS-436). */
             'can_decide' => $r->status === PoPaymentRequest::STATUS_PENDING && $me !== null && (int) $r->requested_to === (int) $me,
             'id' => $r->id, 'code' => $r->code, 'payment_type' => $r->payment_type,
+            // Which invoice this release was raised against, for the SPI-scoped
+            // history popup. NULL on a PO-level advance.
+            'supplier_invoice_id' => $r->supplier_invoice_id,
             'percentage' => $r->percentage !== null ? (float) $r->percentage : null,
             'requested_amount' => (float) $r->requested_amount, 'reason' => $r->reason,
             'requested_by' => ['id' => $r->requested_by, 'name' => $names[$r->requested_by]['name'] ?? null, 'role' => $names[$r->requested_by]['role'] ?? null],

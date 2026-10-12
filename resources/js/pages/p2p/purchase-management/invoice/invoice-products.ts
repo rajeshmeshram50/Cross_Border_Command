@@ -1,97 +1,136 @@
-/**
- * One line of the 3-way match: the same product as the PI named it, as the PO
- * named it, and as the supplier invoiced it.
- *
- * The three names are separate fields rather than one, because the whole point
- * of the screen is that they can disagree.
- */
+import type { PoItem } from '../order/api/po-api';
+
+/** What /p2p/spi/orders/{po}/lines reports per line, as the grid needs it. */
+export type SpiPoOpen = { qty_open: number; qty_billed: number; qty_over: number; closed: boolean };
 export interface ProductLine {
+  key?: string;
+  piCode?: string;
+  poProductId?: number;
+  poItemId?: number;
+  piItemId?: number | null;
+  spiItemId?: number;
+  uom?: string;
   code: string;
   hsn: string;
   piName: string;
   poName: string;
-  /** The only identity on the row the user may change. */
   spiName: string;
   description: string;
-  /**
-   * The product master record behind the line, for the detail view "Read more"
-   * opens. Optional because a line can name a product the master does not hold
-   * yet, and there is then nothing to open.
-   */
   productId?: number;
   piQty: number;
   poQty: number;
-  /** Editable: what the supplier actually billed. */
+  /**
+   * What THIS invoice may still bill on the line, from the server.
+   *
+   * Not the same as poQty once a second invoice exists: poQty is what the order
+   * asked for once, this is what is left after every other invoice took its
+   * share. Never negative — an over-supplied line has nothing left to give.
+   *
+   * Absent on the demo rows, which have no PO behind them; openQtyOf() falls
+   * back to poQty there.
+   */
+  poOpenQty?: number;
+  /** How much every OTHER invoice on this PO has already billed. */
+  poBilledQty?: number;
+  /** How far earlier invoices already went past the order. Shown as context,
+   *  never as this invoice EXTRA — that over-supply belongs to the invoice
+   *  that caused it. */
+  poOverQty?: number;
+  /** Nothing left to invoice: the line is done, or already over-supplied. */
+  poClosed?: boolean;
   spiQty: number;
-  /** Editable: the rate on the supplier's invoice. */
   spiRate: number;
-  /** The rate the PO agreed, for the cost being matched against. */
   poRate: number;
   gst: number;
 }
 
-/** Everything derived from a line. Nothing here is stored. */
+/** The quantity this invoice is actually working against. */
+export const openQtyOf = (l: ProductLine): number => l.poOpenQty ?? l.poQty;
+
+export type TaxMode = 'intra' | 'inter' | 'export';
+
+export function taxModeFor(country: string, supplierState: string, homeState: string): TaxMode {
+  const name = country.trim().toLowerCase();
+  if (name !== '' && name !== 'india') return 'export';
+  if (!supplierState || !homeState) return 'intra';
+  return supplierState === homeState ? 'intra' : 'inter';
+}
+
+export const DEFAULT_HOME_STATE_CODE = '27';
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export interface LineTotals {
-  /** What the PO committed to, with GST — the figure being matched. */
   poCost: number;
-  /** The invoice's own value before tax. */
   base: number;
   gstAmount: number;
-  /** base + GST. */
+  cgst: number;
+  sgst: number;
+  igst: number;
+  cgstPct: number;
+  sgstPct: number;
+  igstPct: number;
   cost: number;
-  /** Short of the PO, never negative — the overage is `extra`. */
   missing: number;
   extra: number;
 }
 
-/**
- * The derived figures for one line.
- *
- * A plain function, not a memo: it is six multiplications, and the table calls
- * it once per row per render. Caching it would cost more in bookkeeping than
- * the arithmetic it saves.
- */
-export function lineTotals(l: ProductLine): LineTotals {
-  const base = l.spiQty * l.spiRate;
-  const gstAmount = (base * l.gst) / 100;
-  const poBase = l.poQty * l.poRate;
+export function lineTotals(l: ProductLine, mode: TaxMode = 'intra'): LineTotals {
+  const base = round2(l.spiQty * l.spiRate);
+  const rate = mode === 'export' ? 0 : l.gst;
+  const gstAmount = round2((base * rate) / 100);
+  const poBase = round2(l.poQty * l.poRate);
+
+  const inter = mode === 'inter' || mode === 'export';
+
+  const cgst = inter ? 0 : round2(gstAmount / 2);
+  const sgst = inter ? 0 : round2(gstAmount - cgst);
+  const igst = inter ? gstAmount : 0;
+
   return {
-    poCost: poBase + (poBase * l.gst) / 100,
+    cgstPct: inter ? 0 : rate / 2,
+    sgstPct: inter ? 0 : rate / 2,
+    igstPct: inter ? rate : 0,
+    poCost: round2(poBase + round2((poBase * rate) / 100)),
     base,
     gstAmount,
-    cost: base + gstAmount,
-    /* Clamped at zero on both sides: a line is either short or over, never
-       both, and a negative "missing" would read as an overage in disguise. */
-    missing: Math.max(0, l.poQty - l.spiQty),
-    extra: Math.max(0, l.spiQty - l.poQty),
+    cgst,
+    sgst,
+    igst,
+    cost: round2(base + gstAmount),
+    /* Measured against what is OPEN, not against the original order, and not
+       against what earlier invoices over-supplied. A line the previous invoice
+       covered is not missing again here; one it over-supplied opens at zero and
+       only counts as extra if THIS invoice bills against it. */
+    missing: Math.max(0, openQtyOf(l) - l.spiQty),
+    extra: Math.max(0, l.spiQty - openQtyOf(l)),
   };
 }
 
-/** The column totals, summed from the same function the rows display. */
-export function tableTotals(lines: ProductLine[]) {
+export function tableTotals(lines: ProductLine[], mode: TaxMode = 'intra') {
   return lines.reduce((t, l) => {
-    const c = lineTotals(l);
+    const c = lineTotals(l, mode);
     return {
       piQty: t.piQty + l.piQty,
-      poQty: t.poQty + l.poQty,
+      // The open column, so the footer adds up to what the rows show.
+      poQty: t.poQty + openQtyOf(l),
       spiQty: t.spiQty + l.spiQty,
       missing: t.missing + c.missing,
       extra: t.extra + c.extra,
       poCost: t.poCost + c.poCost,
       base: t.base + c.base,
       gstAmount: t.gstAmount + c.gstAmount,
+      cgst: t.cgst + c.cgst,
+      sgst: t.sgst + c.sgst,
+      igst: t.igst + c.igst,
       cost: t.cost + c.cost,
     };
-  }, { piQty: 0, poQty: 0, spiQty: 0, missing: 0, extra: 0, poCost: 0, base: 0, gstAmount: 0, cost: 0 });
+  }, {
+    piQty: 0, poQty: 0, spiQty: 0, missing: 0, extra: 0,
+    poCost: 0, base: 0, gstAmount: 0, cgst: 0, sgst: 0, igst: 0, cost: 0,
+  });
 }
 
-/**
- * The lines this invoice starts with, copied from the purchase order.
- *
- * Stand-in data until the endpoint exists. Quantities and rates match the PO
- * exactly, so the table opens on a clean match and any mismatch on screen is
- * one the user created by editing.
- */
 export const PRODUCT_LINES: ProductLine[] = [
   {
     code: 'P-104',
@@ -121,26 +160,135 @@ export const PRODUCT_LINES: ProductLine[] = [
   },
 ];
 
-/** How much of a description a table shows before cutting it. */
-export const DESC_MAX = 30;
+const num = (v: string | number | null | undefined) => {
+  const n = typeof v === 'number' ? v : parseFloat(v ?? '');
+  return Number.isFinite(n) ? n : 0;
+};
+
+export function formatProductCode(code: string | null | undefined): string {
+  const raw = (code ?? '').trim();
+  const m = /^([A-Za-z]+)-?(\d+)$/.exec(raw);
+  return m ? `${m[1].toUpperCase()}-${m[2].padStart(3, '0')}` : raw;
+}
+
+const withoutCodePrefix = (name: string, code: string | null | undefined) => {
+  if (!code) return name;
+  const esc = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return name.replace(new RegExp(`^\\s*${esc}\\s*[–—-]\\s*`), '') || name;
+};
 
 /**
- * Cuts a description to `DESC_MAX` characters.
- *
- * A character count, not a CSS clamp: the column has to hold the same width
- * whatever the viewport, and a clamp cuts at whatever happens to fit — which
- * is how a column grows under one description and shrinks under the next.
- * Trailing space is dropped first so the ellipsis sits against the last word
- * rather than floating away from it.
- *
- * Shared by all three tables that show a description, so a line reads the same
- * in the 3-way match, the box table and Packed Products.
+ * @param open  Per PO line, what the server says is left after every OTHER
+ *              invoice on this order. Keyed by po_item_id. Empty when the PO
+ *              has no invoices yet, and the row then opens on its full quantity.
  */
+export function linesFromPo(items: PoItem[], open: Record<number, SpiPoOpen>): ProductLine[] {
+  return items.map(it => {
+    const poQty = num(it.quantity);
+    const o = open[it.id];
+    // No entry at all means nothing is invoiced yet, so the whole line is open.
+    const poOpenQty = o ? o.qty_open : poQty;
+    // Pre-fill with what is left; a closed or over-supplied line opens at zero.
+    const spiQty = Math.max(0, poOpenQty);
+    const name = it.product_name ?? it.description ?? `Line ${it.line_no}`;
+    return {
+      key: `po-${it.id}`,
+      poItemId: it.id,
+      piItemId: it.pi_item_id,
+      productId: it.product_id ?? undefined,
+      poProductId: it.product_id ?? undefined,
+      uom: it.uom ?? undefined,
+      code: formatProductCode(it.product_code) || `L-${it.line_no}`,
+      piCode: it.pi_product_code ? formatProductCode(it.pi_product_code) : undefined,
+      hsn: it.hsn_code ?? '—',
+      piName: it.pi_product_name
+        ? withoutCodePrefix(it.pi_product_name, it.pi_product_code)
+        : (it.pi_item_id ? name : '—'),
+      poName: name,
+      spiName: name,
+      description: it.description ?? '',
+      piQty: num(it.pi_quantity ?? (it.pi_item_id ? poQty : 0)),
+      poQty,
+      poOpenQty,
+      poBilledQty: o ? o.qty_billed : 0,
+      poOverQty: o ? o.qty_over : 0,
+      poClosed: o ? o.closed : false,
+      spiQty,
+      spiRate: num(it.rate),
+      poRate: num(it.rate),
+      gst: num(it.gst_pct),
+    };
+  });
+}
+
+export type SpiItemsPayload = {
+  items: Array<{
+    po_item_id: number | null;
+    product_id: number;
+    qty_spi: number;
+    rate: number;
+    extra_qty: number;
+    gst_pct: number | null;
+    taxable_amount: number;
+    cgst_amount: number | null;
+    sgst_amount: number | null;
+    igst_amount: number | null;
+    line_total: number;
+  }>;
+  taxable_total: number;
+  total_cgst: number;
+  total_sgst: number;
+  total_igst: number;
+  grand_total: number;
+};
+
+export function itemsPayload(lines: ProductLine[], mode: TaxMode): SpiItemsPayload {
+  const billed = lines.filter(l => l.spiQty > 0 && l.productId != null);
+  const t = tableTotals(billed, mode);
+  const exportSpi = mode === 'export';
+  return {
+    items: billed.map(l => {
+      const c = lineTotals(l, mode);
+      return {
+        po_item_id: l.poItemId ?? null,
+        product_id: l.productId!,
+        qty_spi: l.spiQty,
+        rate: l.spiRate,
+        extra_qty: c.extra,
+        gst_pct: exportSpi ? null : l.gst,
+        taxable_amount: c.base,
+        cgst_amount: exportSpi ? null : c.cgst,
+        sgst_amount: exportSpi ? null : c.sgst,
+        igst_amount: exportSpi ? null : c.igst,
+        line_total: c.cost,
+      };
+    }),
+    taxable_total: round2(t.base),
+    total_cgst: round2(t.cgst),
+    total_sgst: round2(t.sgst),
+    total_igst: round2(t.igst),
+    grand_total: round2(t.cost),
+  };
+}
+
+export const DESC_MAX = 30;
+
 export function truncateDesc(text: string): string {
   return text.length <= DESC_MAX ? text : `${text.slice(0, DESC_MAX).trimEnd()}…`;
 }
 
-/** The catalogue the Product (SPI) picker offers. */
+/**
+ * Product names are free text and some are very long — a 60-character name
+ * widens the column it sits in and pushes every control on the row off the
+ * screen. Shorter than the description's 30: a name sits in a narrow column
+ * with its HSN beneath it, where prose gets the width of a sentence.
+ */
+export const NAME_MAX = 20;
+
+export function truncateName(text: string): string {
+  return text.length <= NAME_MAX ? text : `${text.slice(0, NAME_MAX).trimEnd()}…`;
+}
+
 export const PRODUCT_CATALOGUE = PRODUCT_LINES.map(l => ({
   value: l.code,
   label: `${l.code} — ${l.spiName}`,

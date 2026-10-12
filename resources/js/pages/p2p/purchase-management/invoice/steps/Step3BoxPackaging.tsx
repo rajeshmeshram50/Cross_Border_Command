@@ -1,35 +1,29 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IcoBox, IcoCheck, IcoChevron, IcoLock, IcoShip } from '../../../icons';
 import StageSummary from './StageSummary';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import BoxDrawer from './BoxDrawer';
-import SelectedProducts, { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
-import PackedProducts, { type PackedRow } from './PackedProducts';
+import BoxDrawer, { type BoxInitial, type BoxSaveData } from './BoxDrawer';
+import PackedProducts, { type PackedBox } from './PackedProducts';
 import type { CustomFlag } from './ProductFlagsModal';
 import MultiBoxPanel, { splitQuantity, type SplitBox } from './MultiBoxPanel';
-import { lineTotals, truncateDesc, DESC_MAX, type ProductLine } from '../invoice-products';
+import { lineTotals, truncateDesc, truncateName, DESC_MAX, NAME_MAX, type ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
+import { useToast } from '../../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../../contexts/ConfirmContext';
+import { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
+import type { ProductFlagOption, SpiBox, SpiBoxBody, SpiBoxItem } from '../spi-api';
 
-/* The box table's column count. The drawer rows span the whole table, and a
-   literal in two places is how a new column silently breaks their width. */
-const BOX_TABLE_COLUMNS = 10;
+/* Checkbox, product, code, description, qty, qty-to-pack, missing, extra,
+   mode, sub-box count, actions. The drawer rows span all of them. */
+const BOX_TABLE_COLUMNS = 11;
 
-/** What a product row has been committed to. One scenario at a time. */
 type Packing =
-  | { scenario: 's1' }
-  | { scenario: 's2'; boxes: SplitBox[] }
-  /** Packed into a shared master carton with the other 's3' rows. */
+  | { scenario: 's1'; qty: number }
+  | { scenario: 's2'; boxes: SplitBox[]; of: number }
   | { scenario: 's3' };
 
-/** Which packaging shape the goods arrived in. */
 export type Scenario = 's1' | 's2' | 's3';
 
-/**
- * The three ways a delivery can be packed.
- *
- * At module scope: the copy never changes, and rebuilding three objects on
- * every keystroke in a sub-box field would be waste.
- */
 const SCENARIOS: Array<{ id: Scenario; no: string; title: string; arrow: string; tail: string; desc: string; tag: string }> = [
   {
     id: 's1', no: 'Scenario 01',
@@ -51,46 +45,72 @@ const SCENARIOS: Array<{ id: Scenario; no: string; title: string; arrow: string;
   },
 ];
 
-/**
- * Step 03 — Temporary Box Packaging.
- *
- * The scenario cards explain the three packing shapes; the table below turns
- * the invoice's products into labelled boxes.
- *
- * `pkg-*` and `vti-*` are this stage's own namespaces, ported from the
- * prototype — nothing in the repo had a box-generation screen to borrow from,
- * unlike every step before it.
- */
-export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraft; lines: ProductLine[] }) {
-  const [pkgOpen, setPkgOpen] = useState(true);
-  /* Per product rather than per screen: the design lets one delivery mix
-     scenarios, so a row carries its own choice. Keyed by product code. */
-  const [subBox, setSubBox] = useState<Record<string, string>>({});
-  /* What a row is committed to. `s1` is one box; `s2` is a split, and carries
-     the boxes it was split into. A row holds one scenario at a time, which is
-     why this is a single value and not a set of flags. */
-  const [packing, setPacking] = useState<Record<string, Packing>>({});
-  /* A row whose count failed validation, so the input can say so. */
-  const [invalid, setInvalid] = useState<string | null>(null);
-  /* Products ticked for Scenario 03, before they are packed. Selection is not
-     a commitment — the row is only committed when "Pack into 1 Box" is used. */
-  const [selected, setSelected] = useState<string[]>([]);
-  /* Products whose boxes have been saved. These leave the table above. */
-  const [saved, setSaved] = useState<Record<string, true>>({});
-  /* The mixed carton being filled, once "Pack into 1 Box" has been used: the
-     product codes it holds. Null means no carton is open. Separate from
-     `selected` because ticking is not packing — the carton can have products
-     taken back out of it before it is saved. */
-  const [mixedBox, setMixedBox] = useState<string[] | null>(null);
-  /* The identifiers printed on each product in that carton, keyed by code.
-     Per product, not per box: four SKUs in one carton means four batches. */
-  const [identities, setIdentities] = useState<Record<string, ProductIdentity>>({});
+const FLAG_PALETTE = ['#0891b2', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#2563eb', '#ca8a04'];
 
-  const patchIdentity = useCallback((code: string, patch: Partial<ProductIdentity>) => {
-    setIdentities(m => ({ ...m, [code]: { ...(m[code] ?? EMPTY_IDENTITY), ...patch } }));
-  }, []);
-  /* Taking the last product out closes the carton: an empty master carton is
-     not a thing to save. */
+const EDIT_MODE: Record<Scenario, string> = {
+  s1: 'Single Box', s2: 'Split Carton', s3: 'Mixed Carton',
+};
+
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+export default function Step3BoxPackaging({
+  draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes,
+}: {
+  draft: InvoiceDraft;
+  lines: ProductLine[];
+  boxes?: SpiBox[];
+  nextBoxCodes?: string[];
+  flagMaster?: ProductFlagOption[];
+  readOnly?: boolean;
+  onCreateBox?: (body: SpiBoxBody) => Promise<SpiBox | null>;
+  onUpdateBox?: (boxId: number, body: SpiBoxBody) => Promise<SpiBox | null>;
+  onDeleteBoxes?: (ids: number[]) => Promise<boolean>;
+}) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [pkgOpen, setPkgOpen] = useState(true);
+  const [subBox, setSubBox] = useState<Record<string, string>>({});
+
+  const codeOfItem = useMemo(
+    () => new Map(lines.filter(l => l.spiItemId != null).map(l => [l.spiItemId!, l.code])),
+    [lines],
+  );
+  const boxesOf = (code: string) =>
+    boxes.filter(b => b.items.some(i => codeOfItem.get(i.supplier_invoice_item_id) === code));
+  const qtyIn = (b: SpiBox, code: string) => b.items
+    .filter(i => codeOfItem.get(i.supplier_invoice_item_id) === code)
+    .reduce((n, i) => n + (Number(i.quantity) || 0), 0);
+
+  const packedQty: Record<string, number> = {};
+  for (const b of boxes) {
+    for (const i of b.items) {
+      const c = codeOfItem.get(i.supplier_invoice_item_id);
+      if (c) packedQty[c] = (packedQty[c] ?? 0) + (Number(i.quantity) || 0);
+    }
+  }
+  const saved: Record<string, boolean> = Object.fromEntries(
+    lines.map(l => [l.code, l.spiQty > 0 && (packedQty[l.code] ?? 0) >= l.spiQty - 0.0005]),
+  );
+
+  const [packing, setPacking] = useState<Record<string, Packing>>({});
+  const [splitCodes, setSplitCodes] = useState<Record<string, Record<number, string>>>({});
+
+  const fullOf = (code: string) => lines.find(l => l.code === code);
+  const remainingOf = (l: ProductLine) =>
+    Math.max(0, Math.round((l.spiQty - (packedQty[l.code] ?? 0)) * 1000) / 1000);
+  const viewOf = (l: ProductLine): ProductLine => {
+    const p = packing[l.code];
+    return { ...l, spiQty: p?.scenario === 's2' ? p.of : remainingOf(l) };
+  };
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  const [invalid, setInvalid] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [mixedBox, setMixedBox] = useState<string[] | null>(null);
+  const [mixedQty, setMixedQty] = useState<Record<string, number>>({});
   const takeOutOfBox = useCallback((code: string) => {
     setMixedBox(b => {
       const next = (b ?? []).filter(c => c !== code);
@@ -98,111 +118,113 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
     });
   }, []);
 
-  const saveRow = (code: string) => setSaved(s => ({ ...s, [code]: true }));
+  const customFlags = useMemo<CustomFlag[]>(
+    () => flagMaster.map((f, i) => ({
+      id: `m${f.id}`, name: f.flag_name || `Flag ${f.id}`, color: FLAG_PALETTE[i % FLAG_PALETTE.length],
+    })),
+    [flagMaster],
+  );
 
-  /* Custom product flags belong to the step, not to a box: one created on a
-     carton should be offered on every other carton too. */
-  const [customFlags, setCustomFlags] = useState<CustomFlag[]>([]);
-  const addFlag = (f: CustomFlag) => setCustomFlags(fs => [...fs, f]);
-  const removeFlag = (id: string) => setCustomFlags(fs => fs.filter(f => f.id !== id));
-
-  /* A split contributes its own boxes; a single contributes one; and every
-     Scenario 03 row shares ONE master carton between them, so the group is
-     counted once rather than per product. */
   const s3Rows = Object.values(packing).filter(p => p.scenario === 's3').length;
-  const totalBoxes = Object.entries(packing).reduce((n, [, p]) => {
-    if (p.scenario === 's3') return n;
-    return n + (p.scenario === 's2' ? p.boxes.length : 1);
-  }, 0) + (s3Rows > 0 ? 1 : 0);
-  const boxedCount = Object.keys(packing).length;
+  const totalBoxes = boxes.length;
+  const boxedCount = lines.filter(l => saved[l.code]).length;
   const pending = lines.length - boxedCount;
 
-  /* Only a row with no scenario can be ticked — one row cannot be in a master
-     carton and a split at the same time. */
-  const selectable = lines.filter(l => !packing[l.code]).map(l => l.code);
+  const pendingLines = lines.filter(l => remainingOf(l) > 0).map(viewOf);
+
+  /* Whether a box drawer is open inside the table below — a single box, a
+     split, or the mixed carton being built. The table's height cap lifts while
+     one is, since the drawer is a row of that same table. */
+  const drawerOpen = pendingLines.some(l => !!packing[l.code]) || !!mixedBox?.length;
+  const selectable = pendingLines.filter(l => !packing[l.code]).map(l => l.code);
   const allSelected = selectable.length > 0 && selectable.every(c => selected.includes(c));
 
-  const toggleSelect = (code: string) =>
+  const toggleSelect = (code: string) => {
+    if (readOnly) return;
     setSelected(s => (s.includes(code) ? s.filter(c => c !== code) : [...s, code]));
+  };
 
-  const toggleSelectAll = () =>
+  const toggleSelectAll = () => {
+    if (readOnly) return;
     setSelected(allSelected ? [] : selectable);
+  };
 
-  /* The top table shows only what is still to pack; a SAVED row moves to the
-     Packed Products table below. One product is never in both.
+  const SCN_LABEL: Record<Scenario, [string, string]> = {
+    s1: ['Scenario 01', '1 Product → 1 Box'],
+    s2: ['Scenario 02', '1 Product → Multiple Boxes'],
+    s3: ['Scenario 03', 'Multiple Products → 1 Box'],
+  };
+  /**
+   * One entry per CARTON, with what is inside it.
+   *
+   * Built from `boxes` rather than from the lines, because the question the
+   * table answers is "what is in this box" — a product-first list has to say
+   * "and its five boxes", which is the same carton repeated down the column
+   * with nothing to act on.
+   */
+  const packedBoxes: PackedBox[] = boxes
+    .map(b => ({
+      code: b.box_code,
+      scenarioNo: SCN_LABEL[b.scenario][0],
+      scenario: SCN_LABEL[b.scenario][1],
+      items: b.items
+        .map(i => {
+          const code = codeOfItem.get(i.supplier_invoice_item_id);
+          const line = code ? lines.find(l => l.code === code) : undefined;
+          return line ? { line, qty: Number(i.quantity) || 0 } : null;
+        })
+        .filter((x): x is { line: ProductLine; qty: number } => !!x),
+    }))
+    .filter(b => b.items.length > 0)
+    /* By code, so B-002 follows B-001 however the server ordered them — the
+       column is read down, and a jumbled sequence reads as missing boxes. */
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
 
-     Saved, not merely committed: committing opens the drawer, and the drawer
-     is where the dimensions are entered. A row that left the table the moment
-     it was committed would take its own dimension form with it. */
-  const pendingLines = lines.filter(l => !saved[l.code]);
-
-  /* The packed rows, with the boxes each one produced.
-     Scenario 03 is the interesting case: its products SHARE one carton, so
-     every such row reports the same box id rather than one of its own, and
-     names the others it is sharing with. */
-  const s3Codes = lines.filter(l => packing[l.code]?.scenario === 's3').map(l => l.code);
-  const packedRows: PackedRow[] = lines.flatMap((line, i) => {
-    const p = packing[line.code];
-    if (!p || !saved[line.code]) return [];
-    if (p.scenario === 's1') {
-      return [{
-        line, scenarioNo: 'Scenario 01', scenario: '1 Product → 1 Box',
-        boxes: [{ id: `PUT-B-${String(i + 1).padStart(3, '0')}`, qty: line.spiQty }],
-      }];
-    }
-    if (p.scenario === 's2') {
-      return [{
-        line, scenarioNo: 'Scenario 02', scenario: '1 Product → Multiple Boxes',
-        boxes: p.boxes.map(b => ({ id: `B-${String(b.no).padStart(3, '0')}`, qty: b.qty })),
-      }];
-    }
-    return [{
-      line, scenarioNo: 'Scenario 03', scenario: 'Multiple Products → 1 Box',
-      boxes: [{
-        id: 'MC-001',
-        qty: line.spiQty,
-        sharedWith: s3Codes.filter(c => c !== line.code),
-      }],
-    }];
-  });
-
-  /* How many rows each scenario is holding, for the badge on its card. The
-     ticked-but-not-yet-packed rows count towards Scenario 03 as well, so the
-     card reacts while the selection is still being made. */
   const scenarioUse: Record<Scenario, number> = {
     s1: Object.values(packing).filter(p => p.scenario === 's1').length,
     s2: Object.values(packing).filter(p => p.scenario === 's2').length,
     s3: s3Rows + selected.length,
   };
 
-  /**
-   * Open the shared carton on every ticked row.
-   *
-   * Packing is not the save: one carton holding several SKUs still needs its
-   * dimensions, its condition and an identifier set for each product inside,
-   * so this opens the carton and `saveMixedBox` is what commits it.
-   */
+  const slotKeys: string[] = [];
+  for (const l of pendingLines) {
+    const p = packing[l.code];
+    if (p?.scenario === 's1') slotKeys.push(l.code);
+    if (p?.scenario === 's2') {
+      for (const b of p.boxes) if (!splitCodes[l.code]?.[b.no]) slotKeys.push(`${l.code}#${b.no}`);
+    }
+  }
+  if (mixedBox?.length) slotKeys.push('mixed');
+  const codeFor = (key: string) => {
+    const i = slotKeys.indexOf(key);
+    return (i >= 0 ? nextBoxCodes[i] : undefined) ?? 'New box';
+  };
+  const previewCodesOf = (code: string): Record<number, string> => {
+    const p = packing[code];
+    if (p?.scenario !== 's2') return {};
+    return Object.fromEntries(p.boxes
+      .map(b => [b.no, codeFor(`${code}#${b.no}`)] as const)
+      .filter(([, c]) => c !== 'New box'));
+  };
+
   const packSelected = () => {
+    if (selected.length < 2) {
+      toast.warning('Pick at least 2 products', 'A mixed carton holds two or more products — use a single box for one.');
+      return;
+    }
     setMixedBox(selected);
-    setIdentities(m => {
-      const next = { ...m };
-      for (const code of selected) next[code] ??= { ...EMPTY_IDENTITY };
-      return next;
-    });
+    setMixedQty(Object.fromEntries(selected.map(c => [c, pendingLines.find(l => l.code === c)?.spiQty ?? 0])));
     setSelected([]);
   };
 
-  /* The carton's contents, resolved once for the panel below. */
   const mixedLines = (mixedBox ?? [])
-    .map(c => lines.find(l => l.code === c))
+    .map(c => pendingLines.find(l => l.code === c))
     .filter((l): l is ProductLine => !!l);
-  const mixedCartonQty = mixedLines.reduce((n, l) => n + l.spiQty, 0);
-  /* BoxDrawer's strip describes one product; a mixed carton has no single one,
-     so it is given the carton itself — named for what it is, with the SKU count
-     where a product's HSN would go. The contents are listed in the table above
-     it, which is where a mixed carton's products actually belong. */
+  const mixedQtyOf = (l: ProductLine) => mixedQty[l.code] ?? l.spiQty;
+  const mixedContents = mixedLines.map(l => ({ line: l, qty: mixedQtyOf(l) }));
+  const mixedCartonQty = mixedContents.reduce((n, c) => n + c.qty, 0);
   const mixedCartonLine: ProductLine = {
-    code: 'PUT-MB-001',
+    code: 'MIXED-CARTON',
     hsn: `${mixedLines.length} SKUs`,
     piName: 'Mixed Master Carton',
     poName: 'Mixed Master Carton',
@@ -212,66 +234,369 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
     spiRate: 0, poRate: 0, gst: 0,
   };
 
-  /** Commit the mixed carton. Its products then leave the table above. */
-  const saveMixedBox = () => {
-    const codes = mixedBox ?? [];
-    setPacking(p => {
-      const next = { ...p };
-      for (const code of codes) next[code] = { scenario: 's3' };
-      return next;
+  const flagIdsFor = (data: BoxSaveData) => {
+    const ids: number[] = [];
+    const missing: string[] = [];
+    data.flagIds.forEach((id, i) => {
+      if (id.startsWith('m') && Number(id.slice(1))) { ids.push(Number(id.slice(1))); return; }
+      const name = (data.flagNames[i] ?? id).toLowerCase();
+      const hit = flagMaster.find(f => (f.flag_name ?? '').trim().toLowerCase() === name);
+      if (hit) ids.push(hit.id); else missing.push(data.flagNames[i] ?? id);
     });
-    setSaved(s => {
-      const next = { ...s };
-      for (const code of codes) next[code] = true;
-      return next;
-    });
-    setMixedBox(null);
+    return { ids: [...new Set(ids)], missing };
   };
 
-  /** Commit a row to one box. */
-  const singleBox = (line: ProductLine) =>
-    setPacking(p => {
-      const next = { ...p };
-      if (next[line.code]) delete next[line.code];
-      else next[line.code] = { scenario: 's1' };
-      return next;
-    });
+  const packedElsewhere = (code: string, exclude?: SpiBox | null) =>
+    Math.round(((packedQty[code] ?? 0) - (exclude ? qtyIn(exclude, code) : 0)) * 1000) / 1000;
 
-  /**
-   * Commit a row to a split.
-   *
-   * Any whole number from 1 upwards. There is deliberately no upper bound:
-   * asking for more boxes than there are units is allowed, and simply leaves
-   * the surplus boxes empty — a packer may well want the cartons counted and
-   * labelled before they are filled.
-   */
-  const applySplit = (line: ProductLine) => {
-    const count = parseInt(subBox[line.code] ?? '', 10);
-    if (!Number.isFinite(count) || count < 1) {
-      setInvalid(line.code);
-      window.setTimeout(() => setInvalid(null), 2000);
+  const validate = (
+    scenario: Scenario,
+    data: BoxSaveData,
+    contents: Array<{ line: ProductLine; qty: number }>,
+    exclude?: SpiBox | null,
+  ) => {
+    const d = data.dims;
+    const need = [
+      d.length_cm == null && 'Length', d.width_cm == null && 'Width', d.height_cm == null && 'Height',
+      d.gross_weight_kg == null && 'Gross Weight',
+    ].filter(Boolean);
+    if (need.length) return `Enter ${need.join(', ')} before saving the box.`;
+    const nonPositive = Object.entries(d).filter(([, v]) => v != null && v <= 0);
+    if (nonPositive.length) return 'Dimensions and weights must be greater than 0.';
+    if (d.net_weight_kg != null && d.gross_weight_kg != null && d.net_weight_kg > d.gross_weight_kg) {
+      return 'Net weight cannot be more than the gross weight.';
+    }
+    if (contents.some(c => !(c.qty > 0))) return 'Every box must hold at least one unit.';
+    const units = (n: number) => `${Math.round(n * 1000) / 1000} unit${n === 1 ? '' : 's'}`;
+    if (scenario === 's1' || scenario === 's3') {
+      for (const c of contents) {
+        const full = fullOf(c.line.code) ?? c.line;
+        const left = Math.round((full.spiQty - packedElsewhere(c.line.code, exclude)) * 1000) / 1000;
+        if (c.qty > left + 0.0005) {
+          return `${exclude ? exclude.box_code : 'This box'} can hold at most ${units(left)} of ${c.line.spiName} — `
+            + (left < full.spiQty ? 'the rest is already in other boxes.' : 'that is its SPI quantity.');
+        }
+      }
+    }
+    if (scenario === 's2') {
+      const c = contents[0];
+      const left = c ? remainingOf(fullOf(c.line.code) ?? c.line) : 0;
+      if (c && c.qty > left + 0.0005) {
+        return `This box can hold at most ${units(left)} of ${c.line.spiName} — the rest is already in other boxes.`;
+      }
+    }
+    const today = todayIso();
+    for (const c of contents) {
+      const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
+      if (id.expiry && id.mfg && id.expiry < id.mfg) return `${c.line.spiName}: the expiry date is before the MFG date.`;
+      if (id.expiry && id.expiry < today) return `${c.line.spiName}: the expiry date is already in the past.`;
+      if (id.mfg && id.mfg > today) return `${c.line.spiName}: the MFG date is in the future.`;
+    }
+    if (data.remark === 'damaged') {
+      const reasons = scenario === 's3'
+        ? contents.every(c => (data.identities[c.line.code]?.remarks ?? '').trim())
+        : !!data.boxIdentity.remarks.trim();
+      if (!reasons) return 'Damaged / Rejected needs a reason — add it in Remarks.';
+    }
+    if (data.remark === 'extra' && !contents.some(c => lineTotals(c.line).extra > 0)) {
+      return 'Extra Quantity applies only to a product billed above its PO quantity.';
+    }
+    return null;
+  };
+
+  const bodyFor = (scenario: Scenario, data: BoxSaveData, contents: Array<{ line: ProductLine; qty: number }>): SpiBoxBody => {
+    const { ids } = flagIdsFor(data);
+    return {
+      scenario,
+      ...data.dims,
+      condition: data.condition,
+      items: contents.map(c => {
+        const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
+        const note = scenario === 's3'
+          ? [id.remarks.trim(), data.note && data.note.startsWith('Cold chain') ? data.note : ''].filter(Boolean).join(' · ')
+          : data.note ?? '';
+        return {
+          supplier_invoice_item_id: c.line.spiItemId!,
+          quantity: c.qty,
+          is_stackable: data.stackable,
+          remark: data.remark,
+          remark_note: note || null,
+          flags: ids,
+          serial_no: id.serial || null,
+          lot_no: id.lot || null,
+          batch_no: id.batch || null,
+          cat_no: id.cat || null,
+          expiry_date: id.expiry || null,
+          mfg_date: id.mfg || null,
+        };
+      }),
+    };
+  };
+
+  const persist = async (key: string, scenario: Scenario, data: BoxSaveData, contents: Array<{ line: ProductLine; qty: number }>) => {
+    if (readOnly || !onCreateBox) return null;
+    if (contents.some(c => c.line.spiItemId == null)) {
+      toast.warning('Save Stage 02 first', 'This product is not on the saved invoice yet.');
+      return null;
+    }
+    const err = validate(scenario, data, contents);
+    if (err) { toast.warning('Box not saved', err); return null; }
+    const { missing } = flagIdsFor(data);
+    if (missing.length) {
+      toast.info('Some flags were not saved', `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not in the Product Flag master yet.`);
+    }
+    setSavingKey(key);
+    try {
+      return await onCreateBox(bodyFor(scenario, data, contents));
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const capTo = (line: ProductLine, wanted: number, what: string) => {
+    const left = line.spiQty;
+    const q = Math.max(0, wanted);
+    if (q > left + 0.0005) {
+      toast.warning(`${what} can hold at most ${left} unit${left === 1 ? '' : 's'}`,
+        `${left} of ${line.spiName} ${left === (fullOf(line.code)?.spiQty ?? left) ? 'are on the SPI' : 'are still unboxed'}.`);
+    }
+    return Math.min(q, left);
+  };
+
+  const setSingleQty = (line: ProductLine, qty: number) =>
+    setPacking(p => (p[line.code]?.scenario === 's1'
+      ? { ...p, [line.code]: { scenario: 's1', qty: capTo(line, qty, 'This box') } }
+      : p));
+
+  const setMixedLineQty = (code: string, qty: number) => {
+    const line = pendingLines.find(l => l.code === code);
+    if (!line) return;
+    setMixedQty(m => ({ ...m, [code]: capTo(line, qty, 'The carton') }));
+  };
+
+  const saveSingle = async (line: ProductLine, data: BoxSaveData) => {
+    const p = packing[line.code];
+    const qty = p?.scenario === 's1' ? p.qty : line.spiQty;
+    const box = await persist(line.code, 's1', data, [{ line, qty }]);
+    if (box) clearLocal([line.code]);
+  };
+
+  const saveSplitBox = async (line: ProductLine, no: number, qty: number, data: BoxSaveData) => {
+    const box = await persist(`${line.code}#${no}`, 's2', data, [{ line, qty }]);
+    if (!box) return;
+    const codes = { ...(splitCodes[line.code] ?? {}), [no]: box.box_code };
+    const pack = packing[line.code];
+    if (pack?.scenario === 's2' && pack.boxes.every(b => codes[b.no] || !(b.qty > 0))) clearLocal([line.code]);
+    else setSplitCodes(m => ({ ...m, [line.code]: codes }));
+  };
+
+  const saveMixedBox = async (data: BoxSaveData) => {
+    if (mixedLines.length < 2) {
+      toast.warning('Pick at least 2 products', 'A mixed carton holds two or more products — use a single box for one.');
       return;
     }
-    setInvalid(null);
-    setPacking(p => ({ ...p, [line.code]: { scenario: 's2', boxes: splitQuantity(line.spiQty, count) } }));
+    const box = await persist('mixed', 's3', data, mixedContents);
+    if (!box) return;
+    clearLocal(mixedLines.map(l => l.code));
+    setMixedBox(null);
+    setMixedQty({});
   };
 
-  /** Move units into or out of one carton of a split. */
-  const setBoxQty = (code: string, boxNo: number, qty: number) =>
+  const singleBox = (line: ProductLine) => {
+    if (readOnly) return;
+    if (packing[line.code]) {
+      toast.info('Already in a box', `${line.spiName} is already set up — use ✕ on its scenario chip to change it.`);
+      return;
+    }
+    setPacking(p => ({ ...p, [line.code]: { scenario: 's1', qty: line.spiQty } }));
+  };
+
+  const applySplit = (line: ProductLine) => {
+    if (readOnly || packing[line.code]) return;
+    const raw = (subBox[line.code] ?? '').trim();
+    const maxBoxes = Math.max(1, Math.floor(line.spiQty));
+    const fail = (msg: string) => {
+      setInvalid(line.code);
+      window.setTimeout(() => setInvalid(null), 2000);
+      toast.warning('Sub-box count not valid', msg);
+    };
+    if (!/^\d+$/.test(raw)) { fail('Enter a whole number of boxes, like 3.'); return; }
+    const count = parseInt(raw, 10);
+    if (count < 1) { fail('A split needs at least 1 box.'); return; }
+    if (count > maxBoxes) { fail(`${line.spiName} has ${line.spiQty} units — it cannot fill more than ${maxBoxes} boxes.`); return; }
+    setInvalid(null);
+    setPacking(p => ({ ...p, [line.code]: { scenario: 's2', boxes: splitQuantity(line.spiQty, count), of: line.spiQty } }));
+  };
+
+  const setBoxQty = (code: string, boxNo: number, qty: number) => {
+    const pack = packing[code];
+    if (!pack || pack.scenario !== 's2') return;
+    const line = lines.find(l => l.code === code);
+    const total = pack.of;
+    const others = pack.boxes.reduce((n, b) => (b.no === boxNo ? n : n + b.qty), 0);
+    const max = Math.max(0, total - others);
+    const wanted = Math.max(0, qty);
+    if (wanted > max) {
+      toast.warning(
+        `Box ${boxNo} can hold at most ${max} unit${max === 1 ? '' : 's'}`,
+        `${total} units of ${line?.spiName ?? 'this product'} are being split, and the other boxes already hold ${others}.`,
+      );
+    }
+    const next = Math.min(wanted, max);
     setPacking(p => {
-      const pack = p[code];
-      if (!pack || pack.scenario !== 's2') return p;
-      return { ...p, [code]: { ...pack, boxes: pack.boxes.map(b => (b.no === boxNo ? { ...b, qty } : b)) } };
+      const cur = p[code];
+      if (!cur || cur.scenario !== 's2') return p;
+      return { ...p, [code]: { ...cur, boxes: cur.boxes.map(b => (b.no === boxNo ? { ...b, qty: next } : b)) } };
+    });
+  };
+
+  const clearLocal = (codes: string[]) => {
+    setPacking(p => { const next = { ...p }; for (const c of codes) delete next[c]; return next; });
+    setSplitCodes(m => { const next = { ...m }; for (const c of codes) delete next[c]; return next; });
+  };
+
+  const readBox = (box: SpiBox): BoxInitial => {
+    const first = box.items[0];
+    const parts = (first?.remark_note ?? '').split(' · ').map(s => s.trim()).filter(Boolean);
+    const cold = parts.find(p => p.startsWith('Cold chain'));
+    const range = cold?.replace('Cold chain', '').replace('°C', '').trim().split('…') ?? [];
+
+    const identity = (i?: SpiBoxItem): ProductIdentity => ({
+      serial: i?.serial_no ?? '',
+      lot: i?.lot_no ?? '',
+      batch: i?.batch_no ?? '',
+      cat: i?.cat_no ?? '',
+      expiry: (i?.expiry_date ?? '').slice(0, 10),
+      mfg: (i?.mfg_date ?? '').slice(0, 10),
+      remarks: (i?.remark_note ?? '').split(' · ').filter(p => !p.trim().startsWith('Cold chain')).join(' · ').trim(),
     });
 
-  const reset = (code: string) =>
-    setPacking(p => { const next = { ...p }; delete next[code]; return next; });
+    const flagIds = (first?.flags ?? []).map(id => {
+      const name = (flagMaster.find(f => f.id === id)?.flag_name ?? '').trim().toLowerCase();
+      const builtIn = ['hazardous', 'coldchain', 'fragile']
+        .find(b => b === name.replace(/\s+/g, ''));
+      return builtIn ?? `m${id}`;
+    });
+
+    const num = (v: string | number | null | undefined) => {
+      const n = typeof v === 'number' ? v : parseFloat(v ?? '');
+      return Number.isFinite(n) ? n : null;
+    };
+
+    return {
+      dims: {
+        length_cm: num(box.length_cm), width_cm: num(box.width_cm), height_cm: num(box.height_cm),
+        weight_kg: num(box.weight_kg), net_weight_kg: num(box.net_weight_kg),
+        gross_weight_kg: num(box.gross_weight_kg),
+      },
+      condition: (box.condition === 'major' ? 'severe' : box.condition) as BoxInitial['condition'],
+      remark: first?.remark ?? 'correct',
+      flagIds,
+      stackable: first?.is_stackable ?? true,
+      boxIdentity: identity(first),
+      identities: Object.fromEntries(
+        box.items
+          .map(i => [codeOfItem.get(i.supplier_invoice_item_id), identity(i)] as const)
+          .filter((e): e is [string, ProductIdentity] => !!e[0]),
+      ),
+      ...(range.length === 2 ? { temp: { min: range[0], max: range[1] } } : {}),
+    };
+  };
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const editRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (editingId != null) editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [editingId]);
+  const [dropped, setDropped] = useState<string[]>([]);
+  const editingBox = boxes.find(b => b.id === editingId) ?? null;
+
+  const openEdit = (boxCode: string) => {
+    if (readOnly) return;
+    const box = boxes.find(b => b.box_code === boxCode);
+    if (!box) return;
+    if (!onUpdateBox) {
+      toast.info('Save the invoice first', 'A box can be edited once Stage 02 is saved.');
+      return;
+    }
+    setDropped([]);
+    setEditingId(box.id);
+  };
+
+  const closeEdit = () => { setEditingId(null); setDropped([]); };
+
+  const editContents = (editingBox?.items ?? [])
+    .map(i => {
+      const code = codeOfItem.get(i.supplier_invoice_item_id);
+      const line = code ? lines.find(l => l.code === code) : undefined;
+      return line && !dropped.includes(line.code)
+        ? { line, qty: Number(i.quantity) || 0 }
+        : null;
+    })
+    .filter((c): c is { line: ProductLine; qty: number } => !!c);
+
+  const saveEdit = async (data: BoxSaveData) => {
+    if (!editingBox || !onUpdateBox) return;
+    if (!editContents.length) {
+      toast.warning('A box cannot be empty', `Delete ${editingBox.box_code} instead of taking everything out of it.`);
+      return;
+    }
+    const err = validate(editingBox.scenario, data, editContents, editingBox);
+    if (err) { toast.warning('Box not updated', err); return; }
+    const { missing } = flagIdsFor(data);
+    if (missing.length) {
+      toast.info('Some flags were not saved', `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not in the Product Flag master yet.`);
+    }
+    setSavingKey(`edit:${editingBox.id}`);
+    try {
+      const saved = await onUpdateBox(editingBox.id, bodyFor(editingBox.scenario, data, editContents));
+      if (!saved) return;
+      if (dropped.length) clearLocal(dropped);
+      closeEdit();
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
+  const dropFromBox = async (code: string) => {
+    if (!editingBox) return;
+    if (editContents.length <= 1) {
+      toast.warning('A box cannot be empty', `Delete ${editingBox.box_code} instead of taking everything out of it.`);
+      return;
+    }
+    const line = lines.find(l => l.code === code);
+    const ok = await confirm({
+      title: `Take ${line?.spiName ?? code} out of ${editingBox.box_code}?`,
+      message: 'It goes back to Pending and can be packed again. The box keeps its code and the rest of its contents.',
+      tone: 'danger',
+      confirmLabel: 'Take it out',
+    });
+    if (ok) setDropped(d => (d.includes(code) ? d : [...d, code]));
+  };
+
+  const reset = async (code: string) => {
+    if (readOnly) return;
+    const bs = boxesOf(code);
+    if (!bs.length) { clearLocal([code]); return; }
+    const affected = [...new Set(bs.flatMap(b => b.items.map(i => codeOfItem.get(i.supplier_invoice_item_id)).filter((c): c is string => !!c)))];
+    const line = lines.find(l => l.code === code);
+    const ok = await confirm({
+      title: 'Remove these boxes?',
+      message: `${bs.map(b => b.box_code).join(', ')} will be deleted and ${affected.length > 1
+        ? `${affected.length} products (${affected.join(', ')})`
+        : line?.spiName ?? code} will go back to Pending.`,
+      tone: 'danger',
+      confirmLabel: `Remove ${bs.length === 1 ? 'box' : `${bs.length} boxes`}`,
+    });
+    if (!ok || !onDeleteBoxes) return;
+    const ordered = [...bs].sort((a, b) => b.box_code.localeCompare(a.box_code, undefined, { numeric: true }));
+    if (await onDeleteBoxes(ordered.map(b => b.id))) clearLocal(affected);
+  };
 
   return (
     <>
       <StageSummary draft={draft} upto={2} />
 
-      {/* ── Packaging Scenarios ────────────────────────────────────────── */}
       <div className={`pkg-box ${pkgOpen ? '' : 'is-collapsed'}`}>
         <div className="pkg-box__header" onClick={() => setPkgOpen(o => !o)}>
           <div className="pkg-box__header-ico"><IcoBox size={18} stroke={2.2} /></div>
@@ -290,17 +615,12 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
               <div className="pkg-card__scenario">
                 <div className="pkg-card__scenario-line" />
                 {s.no}
-                {/* How many rows this scenario is holding, on the card that
-                    describes it. Scenario 03 counts products in the carton;
-                    the other two count the rows committed to them. */}
                 {scenarioUse[s.id] > 0 && (
                   <span className="pkg-card__use is-on">
                     {scenarioUse[s.id]} Product{scenarioUse[s.id] === 1 ? '' : 's'}
                   </span>
                 )}
               </div>
-              {/* The arrow is its own span: the stylesheet tints it, so it
-                  cannot be part of the surrounding text. */}
               <div className="pkg-card__title">{s.title} <span>{s.arrow}</span> {s.tail}</div>
               <div className="pkg-card__desc">{s.desc}</div>
               <span className="pkg-card__tag">{s.tag}</span>
@@ -309,7 +629,6 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
         </div>
       </div>
 
-      {/* ── SPI Box Generation System ──────────────────────────────────── */}
       <div className="vti-box">
         <div className="vti-header">
           <div className="vti-header-ico"><IcoShip size={18} stroke={2.2} /></div>
@@ -319,8 +638,6 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
               Products — {draft.invoiceNumber || 'this invoice'} &nbsp;·&nbsp; Create boxes with dimensions &amp; stickers
             </div>
           </div>
-          {/* Counted from the rows, not stored: three numbers that must always
-              agree with the table beneath them. */}
           <div className="vti-header-stats">
             <div className="vti-stat-pill boxed">
               <div className="vti-stat-dot" /><IcoCheck size={11} stroke={2.8} />{boxedCount} Boxed
@@ -334,9 +651,6 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
           </div>
         </div>
 
-        {/* Appears only once something is ticked. It is the only place the
-            Scenario 03 action lives, because packing several products into one
-            carton is an action on the selection, not on any single row. */}
         {selected.length > 0 && (
           <div className="vti-selection-bar is-visible">
             <div className="vti-sel-left">
@@ -356,17 +670,16 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
           </div>
         )}
 
-        <div className="vti-table-wrap">
+        {/* Five rows, then scroll — but only while nothing is open inside it.
+            A box drawer renders as a row of this very table and is taller than
+            the cap, so holding the cap would put a 600px drawer in a 500px
+            window and make the thing you are filling in the thing you have to
+            scroll to see. */}
+        <div className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}>
           <table className="vti-table">
             <thead>
-              {/* Description, Missing Qty and Extra Qty are carried over from
-                  step 02's 3-way match, so the row being packed reads the same
-                  here as it did when it was matched. They are the invoice's
-                  own figures, not new ones. */}
               <tr>
                 <th>
-                  {/* Ticks every row that is still free to be packed, not
-                      every row — a committed one cannot join the carton. */}
                   <div
                     className={`vti-cb${allSelected ? ' is-checked' : ''}`}
                     role="checkbox"
@@ -380,7 +693,17 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                 <th>Product (SPI)</th>
                 <th>Code</th>
                 <th className="vti-desc-h">Description</th>
+                {/* Invoiced, and how many of them still have to go in a box.
+                    "Pending" rather than "to pack" because the card's own
+                    header already counts products that way — "11 Pending" up
+                    there, this many units pending down here, one word doing
+                    the same job in both places. */}
                 <th>Qty (SPI)</th>
+                <th>
+                  <Tooltip label="Units of this product still waiting to go into a box. It drops as you pack, and the product leaves this table when it reaches zero.">
+                    <span className="vti-th-help">Pending to Pack</span>
+                  </Tooltip>
+                </th>
                 <th>Missing Qty</th>
                 <th>Extra Qty</th>
                 <th>Mode</th>
@@ -390,12 +713,13 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
             </thead>
             <tbody>
               {pendingLines.map((line, i) => {
-                const { missing, extra } = lineTotals(line);
-                /* A committed row closes the routes it did not take: the
-                   checkbox (Scenario 03 picks several products) and, on the
-                   single-box path, the sub-box count. The design shows them
-                   locked rather than hidden, so it stays clear what was given
-                   up and how to undo it. */
+                const full = fullOf(line.code);
+                const { missing, extra } = lineTotals(full ?? line);
+                /* What is already in cartons, and what is still to go. Both
+                   from the saved boxes rather than from the row, which the
+                   generator rewrites while a scenario is being set up. */
+                const packed = Math.round((packedQty[line.code] ?? 0) * 1000) / 1000;
+                const left = full ? remainingOf(full) : line.spiQty;
                 const pack = packing[line.code];
                 const single = pack?.scenario === 's1';
                 const split = pack?.scenario === 's2';
@@ -411,16 +735,15 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                   <Fragmentish key={line.code}>
                   <tr className={`vti-prod-row${pack ? ' is-open' : ''}${isTicked ? ' is-selected' : ''}`}>
                     <td>
-                      {/* A committed row shows a lock instead of a tick — except
-                          a Scenario 03 one, which stays ticked because the tick
-                          is what put it in the carton. */}
                       {mixed ? (
                         <div className="vti-cb is-checked" role="checkbox" aria-checked
                           aria-label={`${line.spiName} is in the master carton`} />
                       ) : pack ? (
-                        <div className="vti-scn-lock is-cb" title={`Locked by ${scenarioNo}`}>
-                          <IcoLock size={10} stroke={2.6} />
-                        </div>
+                        <Tooltip label={`Locked by ${scenarioNo}`}>
+                          <div className="vti-scn-lock is-cb">
+                            <IcoLock size={10} stroke={2.6} />
+                          </div>
+                        </Tooltip>
                       ) : (
                         <div
                           className={`vti-cb${isTicked ? ' is-checked' : ''}`}
@@ -436,33 +759,45 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                     <td>
                       <div className="vti-prod-cell">
                         <div>
-                          <div className="vti-prod-name">{line.spiName}</div>
+                          <Tooltip label={line.spiName} disabled={line.spiName.length <= NAME_MAX}>
+                            <div className="vti-prod-name">{truncateName(line.spiName)}</div>
+                          </Tooltip>
                           <div className="vti-prod-sku">HSN {line.hsn}</div>
                           {pack && (
-                            <span className="vti-scn-chip is-on" title="Reset the packaging scenario for this product"
-                              onClick={() => reset(line.code)}>
-                              <span className="vti-scn-chip-dot" />
-                              {scenarioLabel}
-                              <span className="vti-scn-chip-x">✕</span>
-                            </span>
+                            <Tooltip label="Reset the packaging scenario for this product">
+                              <span className="vti-scn-chip is-on"
+                                onClick={() => void reset(line.code)}>
+                                <span className="vti-scn-chip-dot" />
+                                {scenarioLabel}
+                                <span className="vti-scn-chip-x">✕</span>
+                              </span>
+                            </Tooltip>
                           )}
                         </div>
                       </div>
                     </td>
                     <td><span className="vti-code">{line.code}</span></td>
                     <td className="vti-desc">
-                      {/* Cut at 30 characters, with the whole thing in the
-                          tooltip so nothing is lost. The app's own Tooltip,
-                          not the native `title`: that ignores the theme, waits
-                          a second, and is clipped inside a scroller. */}
                       <Tooltip label={line.description} disabled={line.description.length <= DESC_MAX}>
                         <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
                       </Tooltip>
                     </td>
-                    <td><span className="vti-qty-badge">{line.spiQty}</span></td>
-                    {/* The same pills step 02 uses, so a shortfall looks the
-                        same on both screens. Neutral at zero — a column of
-                        zeroes should not read as a column of warnings. */}
+                    {/* The invoiced quantity, not what is left: `line` is the
+                        view the generator works in, where spiQty has already
+                        been reduced to the remainder. */}
+                    <td><span className="vti-qty-badge">{full?.spiQty ?? line.spiQty}</span></td>
+                    {/* Amber only once some of it is packed — on an untouched
+                        product the figure is the same as the one beside it,
+                        and colouring it would imply a shortfall. */}
+                    <td>
+                      <Tooltip
+                        label={packed > 0
+                          ? `${left} of ${full?.spiQty ?? line.spiQty} still to pack — ${packed} already in a box`
+                          : `Nothing packed yet — all ${left} still to go`}
+                      >
+                        <span className={`vti-qty-badge${packed > 0 ? ' is-left' : ''}`}>{left}</span>
+                      </Tooltip>
+                    </td>
                     <td>
                       <span className={`cpd-qtypill${missing > 0 ? ' cpd-qtypill--miss' : ''}`}>{missing}</span>
                     </td>
@@ -483,22 +818,17 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                       ) : (
                         <div className="vti-subbox-cell">
                           <input
-                            /* No `max`: the count is unbounded, and a max
-                               attribute marks the field invalid and fights the
-                               spinner the moment it is exceeded. */
                             className="vti-subbox-inp" type="number" min={1}
                             placeholder="e.g. 3"
                             style={invalid === line.code ? { borderColor: '#ef4444' } : undefined}
                             value={split ? String(pack.boxes.length) : (subBox[line.code] ?? '')}
                             readOnly={split}
                             onChange={e => setSubBox(s => ({ ...s, [line.code]: e.target.value }))}
-                            /* Enter applies, so a count can be typed and
-                               committed without reaching for the mouse. */
                             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applySplit(line); } }}
                           />
                           <button type="button"
                             className={`vti-btn-apply${split ? ' is-done' : ''}`}
-                            onClick={() => (split ? reset(line.code) : applySplit(line))}>
+                            onClick={() => (split ? void reset(line.code) : applySplit(line))}>
                             {split ? `✓ ${pack.boxes.length} Boxes` : 'Apply'}
                           </button>
                         </div>
@@ -519,24 +849,17 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                     </td>
                   </tr>
 
-                  {/* The drawer is a row of its own spanning every column —
-                      a table cannot nest a panel inside a cell without
-                      breaking the column widths above it.
-
-                      `is-open` is load-bearing and belongs HERE, not on the
-                      product row: `.vti-drawer-inner` is max-height 0 and
-                      opacity 0 until `.vti-drawer-row.is-open` expands it.
-                      Without it the drawer renders, measures, and is entirely
-                      invisible and unclickable. */}
                   {single && (
                     <tr className="vti-drawer-row is-open">
                       <td colSpan={BOX_TABLE_COLUMNS} className="vti-drawer-td">
                         <BoxDrawer
-                          boxId={`PUT-B-${String(i + 1).padStart(3, '0')}`}
+                          boxId={codeFor(line.code)}
                           line={line}
-                          quantity={line.spiQty}
-                          onSave={() => saveRow(line.code)}
-                          customFlags={customFlags} onAddFlag={addFlag} onRemoveFlag={removeFlag}
+                          quantity={pack?.scenario === 's1' ? pack.qty : line.spiQty}
+                          onQuantityChange={readOnly ? undefined : (q: number) => setSingleQty(line, q)}
+                          onSave={readOnly ? undefined : (d: BoxSaveData) => saveSingle(line, d)}
+                          saving={savingKey === line.code}
+                          customFlags={customFlags}
                         />
                       </td>
                     </tr>
@@ -546,8 +869,13 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                     <tr className="vti-multibox-container-row">
                       <td colSpan={BOX_TABLE_COLUMNS} style={{ padding: 0, border: 'none', background: 'transparent' }}>
                         <MultiBoxPanel line={line} boxes={pack.boxes}
-                          onClose={() => reset(line.code)} onSave={() => saveRow(line.code)}
-                          customFlags={customFlags} onAddFlag={addFlag} onRemoveFlag={removeFlag}
+                          onClose={() => void reset(line.code)}
+                          onSaveBox={(no, qty, d) => void saveSplitBox(line, no, qty, d)}
+                          savedCodes={splitCodes[line.code]}
+                          previewCodes={previewCodesOf(line.code)}
+                          savingNo={savingKey?.startsWith(`${line.code}#`) ? Number(savingKey.split('#')[1]) : null}
+                          readOnly={readOnly}
+                          customFlags={customFlags}
                           onBoxQty={(no, q) => setBoxQty(line.code, no, q)} />
                       </td>
                     </tr>
@@ -555,55 +883,77 @@ export default function Step3BoxPackaging({ draft, lines }: { draft: InvoiceDraf
                   </Fragmentish>
                 );
               })}
+              {pendingLines.length === 0 && (
+                <tr className="invf-allpacked-row">
+                  <td colSpan={BOX_TABLE_COLUMNS}>
+                    <div className="invf-allpacked">
+                      All {lines.length} product{lines.length === 1 ? '' : 's'} packed in {totalBoxes} box{totalBoxes === 1 ? '' : 'es'} — see Packed Boxes below.
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* The mixed carton, once products have been packed into it. It sits
-          below the table rather than inside a row: it belongs to several rows
-          at once, so there is no one row to open it from. */}
       {mixedBox && mixedBox.length > 0 && (
-        <>
-          <SelectedProducts
-            lines={mixedLines}
-            identities={identities}
-            onIdentityChange={patchIdentity}
-            onRemove={takeOutOfBox}
-            onClear={() => setMixedBox(null)}
-          />
           <BoxDrawer
-            /* MB for "mixed box", the prototype's own id for this carton —
-               a single box reads PUT-B-001. */
-            boxId="PUT-MB-001"
-            /* The carton's own figures, not one product's: every SKU inside it
-               shares these dimensions and this condition. */
+            boxId={codeFor('mixed')}
             line={mixedCartonLine}
             quantity={mixedCartonQty}
             scenario="Multiple Products → 1 Box"
             modeKey="Products"
             modeLabel={`${mixedBox.length} SKU${mixedBox.length === 1 ? '' : 's'}`}
             variant="panel"
-            /* The identifiers are per product here, in the table above, so the
-               box-level set would be a second place to answer the same
-               question — and nothing to say which one counts. */
-            showAdvanced={false}
-            onSave={saveMixedBox}
+            contents={mixedContents}
+            onContentQtyChange={readOnly ? undefined : setMixedLineQty}
+            onRemoveContent={takeOutOfBox}
+            onClearContents={() => { setMixedBox(null); setMixedQty({}); }}
+            onSave={readOnly ? undefined : (d: BoxSaveData) => void saveMixedBox(d)}
+            saving={savingKey === 'mixed'}
             customFlags={customFlags}
-            onAddFlag={addFlag}
-            onRemoveFlag={removeFlag}
           />
-        </>
       )}
 
-      <PackedProducts rows={packedRows} />
+      {editingBox && editContents.length > 0 && (
+        <div ref={editRef}>
+        <BoxDrawer
+          key={editingBox.id}
+          boxId={editingBox.box_code}
+          line={editContents[0].line}
+          quantity={editContents[0].qty}
+          scenario={SCN_LABEL[editingBox.scenario][1]}
+          modeKey={editingBox.scenario === 's3' ? 'Products' : 'Mode'}
+          modeLabel={editingBox.scenario === 's3'
+            ? `${editContents.length} SKU${editContents.length === 1 ? '' : 's'}`
+            : EDIT_MODE[editingBox.scenario]}
+          variant="panel"
+          initial={readBox(editingBox)}
+          {...(editingBox.scenario === 's3'
+            ? {
+              contents: editContents,
+              ...(editContents.length > 1 ? { onRemoveContent: (code: string) => void dropFromBox(code) } : {}),
+            }
+            : {})}
+          customFlags={customFlags}
+          saving={savingKey === `edit:${editingBox.id}`}
+          saved
+          onSave={data => void saveEdit(data)}
+          onClose={closeEdit}
+        />
+        </div>
+      )}
+
+      <PackedProducts
+        boxes={packedBoxes}
+        onEditBox={readOnly ? undefined : openEdit}
+        editingBoxId={editingBox?.box_code ?? null}
+      />
     </>
   );
 }
 
-/* A product row and its drawer are two sibling <tr>s, so the pair needs one
-   parent that renders nothing — anything real between them would be invalid
-   inside a <tbody>. A shorthand fragment cannot take a key, hence this. */
 function Fragmentish({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }

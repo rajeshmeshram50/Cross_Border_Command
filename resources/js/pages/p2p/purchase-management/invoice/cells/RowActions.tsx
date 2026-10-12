@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import type { InvoiceRow } from '../types';
+import { spiViewOnlyReason, type InvoiceRow } from '../types';
 
 /**
  * What a row can be asked to do.
@@ -46,6 +46,7 @@ function RowActionsBase({
   row: InvoiceRow;
   onAction: (action: InvoiceAction, row: InvoiceRow) => void;
 }) {
+  const viewOnly = spiViewOnlyReason(row.status, row.statusLabel);
   return (
     /* The shared <Tooltip>, not the native `title` attribute. The Order module
        — the in-repo standard for a P2P row-action button — uses it, and it is
@@ -53,9 +54,9 @@ function RowActionsBase({
        second's delay. It also portals to document.body, so it is never clipped
        by the table's overflow-x. */
     <span className="ord-actions">
-      <Tooltip label={`Edit ${row.invoiceNo}`}>
+      <Tooltip label={viewOnly ?? `Edit ${row.invoiceNo}`}>
         <button type="button" className="ord-btn ord-btn--edit" onClick={() => onAction('edit', row)}>
-          <EditIcon /><span>Edit SPI</span>
+          {viewOnly ? <EyeIcon /> : <EditIcon />}<span>{viewOnly ? 'View SPI' : 'Edit SPI'}</span>
         </button>
       </Tooltip>
 
