@@ -66,6 +66,10 @@ export default function InvoiceForm({
   const [flagMaster, setFlagMaster] = useState<ProductFlagOption[]>([]);
   const [boxesLoading, setBoxesLoading] = useState(false);
   const [savedWarehouse, setSavedWarehouse] = useState<string | null>(null);
+  /* The invoice's own branch. Branch-scoped masters (product flags) must be
+     fetched for THIS branch, or their ids will not be ones the invoice's boxes
+     are allowed to carry. */
+  const [spiBranchId, setSpiBranchId] = useState<number | null>(null);
   const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
     status: input.status, label: input.statusLabel,
   });
@@ -94,6 +98,9 @@ export default function InvoiceForm({
           setSpiCode(existing.code);
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
+          // Masters are per branch, and the one that matters is the INVOICE'S
+          // branch, not whichever the switcher happens to be on.
+          setSpiBranchId(existing.branch_id ?? null);
           setReached(Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1));
         }
         if (!poId) {
@@ -264,12 +271,12 @@ export default function InvoiceForm({
     setBoxesLoading(true);
     Promise.all([
       reloadBoxes(spiId),
-      spiApi.productFlags().then(f => { if (live) setFlagMaster(f); }).catch(() => {}),
+      spiApi.productFlags(spiBranchId).then(f => { if (live) setFlagMaster(f); }).catch(() => {}),
     ])
       .catch(e => { if (live) toast.error('Could not load the boxes', e instanceof PoApiError ? e.firstError : 'Please try again.'); })
       .finally(() => { if (live) setBoxesLoading(false); });
     return () => { live = false; };
-  }, [stage, spiId, reloadBoxes, toast]);
+  }, [stage, spiId, spiBranchId, reloadBoxes, toast]);
 
   const boxError = (e: unknown) => {
     if (!(e instanceof PoApiError)) return 'Please try again.';

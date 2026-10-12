@@ -63,6 +63,11 @@ export interface BoxSaveData {
   flagIds: string[];
   flagNames: string[];
   stackable: boolean;
+  /* The cold-chain range as numbers, null when the box is not cold chain or
+     no range has been set. `note` still carries the human sentence for the
+     remark line; these two are what anything can actually compare. */
+  tempMin: number | null;
+  tempMax: number | null;
   note: string | null;
   boxIdentity: ProductIdentity;
   identities: Record<string, ProductIdentity>;
@@ -187,7 +192,12 @@ export default function BoxDrawer({
     };
     const dimF = unit === 'm' ? 100 : 1;
     const wtF = wUnit === 'g' ? 0.001 : 1;
-    const range = flags.includes('coldchain') ? formatRange(temp) : '';
+    const isCold = flags.includes('coldchain');
+    const numOrNull = (v: string | number | null | undefined) => {
+      const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+      return Number.isFinite(n) ? n : null;
+    };
+    const range = isCold ? formatRange(temp) : '';
     const note = [boxIdentity.remarks?.trim(), range ? `Cold chain ${range}` : ''].filter(Boolean).join(' · ');
     return {
       dims: {
@@ -201,6 +211,10 @@ export default function BoxDrawer({
         .map(id => FLAGS.find(f => f.id === id)?.label ?? customFlags.find(c => c.id === id)?.name)
         .filter((n): n is string => !!n),
       stackable,
+      // Only a cold-chain box carries a range; anything else sends nulls so a
+      // flag turned off does not leave its temperatures behind.
+      tempMin: isCold ? numOrNull(temp.min) : null,
+      tempMax: isCold ? numOrNull(temp.max) : null,
       note: note || null,
       boxIdentity: {
         serial: boxIdentity.serial ?? '', lot: boxIdentity.lot ?? '', batch: boxIdentity.batch ?? '',

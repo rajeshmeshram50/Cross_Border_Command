@@ -87,7 +87,11 @@ export type SpiStage1Body = {
   document_type: 'domestic' | 'international';
 };
 
-export type SpiHeader = { id: number; code: string; status: string; stage_completed: number };
+export type SpiHeader = {
+  id: number; code: string; status: string; stage_completed: number;
+  /** The branch the invoice belongs to — which decides whose masters apply. */
+  branch_id?: number | null;
+};
 
 /**
  * A PO line as Stage 02 needs it.
@@ -177,6 +181,11 @@ export type SpiBoxBody = {
   net_weight_kg: number | null;
   gross_weight_kg: number | null;
   condition: 'perfect' | 'minor' | 'major' | 'severe';
+  /** 0 or 1 — whether another carton may sit on this one. */
+  is_stackable: 0 | 1;
+  /** Cold-chain range in °C; null when the box is not cold chain. */
+  temp_min_c: number | null;
+  temp_max_c: number | null;
   items: SpiBoxItemBody[];
 };
 
@@ -205,6 +214,11 @@ export type SpiBox = {
   box_code: string;
   scenario: SpiBoxScenario;
   condition: string;
+  /** 0 or 1. Absent on boxes saved before the column existed. */
+  is_stackable?: number | null;
+  /** Decimal-cast, so these arrive as strings like "2.00". */
+  temp_min_c?: string | number | null;
+  temp_max_c?: string | number | null;
   sticker_printed_at: string | null;
   /** Decimal-cast, so these arrive as strings like "40.00". */
   length_cm?: string | number | null;
@@ -249,8 +263,16 @@ export const spiApi = {
     call('SPI packing summary', () => api.get(`/p2p/spi/${spiId}/packing-summary`),
       (b) => (b as { data?: { totals?: SpiPackingTotals } } | null)?.data?.totals ?? null),
 
-  productFlags: () =>
-    call('Product flags', () => api.get('/inventory/product-flags/options'),
+  /* The flag master of the INVOICE'S branch, not the switcher's.
+     Flag ids are per branch — branch 1's "Cold Chain" and branch 2's are
+     different rows — and the options endpoint answers for whichever branch the
+     switcher is on. Editing another branch's invoice therefore resolved the
+     Cold Chain chip to the wrong branch's id, which the server now refuses as
+     a flag that branch has never heard of. Asking for the invoice's own branch
+     is what makes the chip resolve to an id the box may actually carry. */
+  productFlags: (branchId?: number | null) =>
+    call('Product flags', () => api.get('/inventory/product-flags/options',
+      branchId ? { params: { branch_id: branchId } } : undefined),
       (b) => ((b as { data?: ProductFlagOption[] } | null)?.data ?? [])),
 
   product: (id: number) =>

@@ -40,10 +40,18 @@ class SpiBox extends Model
         'scenario', 'box_code',
         'length_cm', 'width_cm', 'height_cm',
         'weight_kg', 'net_weight_kg', 'gross_weight_kg',
-        'condition', 'sticker_printed_at', 'created_by',
+        'condition', 'is_stackable',
+        // Cold-chain range, in the same units and names inventory_zones uses.
+        'temp_min_c', 'temp_max_c',
+        'sticker_printed_at', 'created_by',
     ];
 
     protected $casts = [
+        // 0/1, not a boolean: a carton is not stackable until someone says so,
+        // and the column is the 0/1 flag convention the masters use.
+        'is_stackable'       => 'integer',
+        'temp_min_c'         => 'decimal:2',
+        'temp_max_c'         => 'decimal:2',
         'length_cm'          => 'decimal:2',
         'width_cm'           => 'decimal:2',
         'height_cm'          => 'decimal:2',
