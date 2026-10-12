@@ -34,6 +34,33 @@ class ShelfController extends BaseInventoryController
      * The shelf drawer: the levels, plus the KPI strip above them and the room
      * left, so the Add Shelf form opens already knowing its limits.
      */
+    /**
+     * GET /inventory/racks/{rack}/shelves/next-code
+     *
+     * A shelf code is not built from the shelf's own id — it is
+     * RK-003-SH-02, the RACK's code plus the shelf's level within it. So the
+     * next code is the next LEVEL in this rack, not the next sequence value,
+     * and unlike the other three it is contiguous: levels are counted, not
+     * handed out, so a deleted shelf's level is reused by the next one.
+     *
+     * Still a preview — two people adding a shelf to the same rack are both
+     * shown this, and the second will get the level after.
+     */
+    public function nextCode(Request $request, int $rackId)
+    {
+        $this->tenantUser($request);
+        $rack = Rack::findOrFail($rackId);
+
+        $next = (int) Shelf::where('rack_id', $rack->id)->max('level_no') + 1;
+
+        return response()->json(['status' => true, 'data' => [
+            'rack_id'   => $rack->id,
+            'next_level' => $next,
+            'next_code' => $rack->rack_code . '-SH-' . str_pad((string) $next, 2, '0', STR_PAD_LEFT),
+            'preview'   => true,
+        ]], 200);
+    }
+
     public function index(Request $request, int $rackId)
     {
         try {

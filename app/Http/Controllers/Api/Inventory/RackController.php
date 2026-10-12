@@ -91,6 +91,14 @@ class RackController extends BaseInventoryController
         return $this->index($request->merge(['view' => 'options']));
     }
 
+    /** GET /inventory/racks/next-code — preview of the next rack's code. */
+    public function nextCode(Request $request)
+    {
+        $this->tenantUser($request);
+
+        return response()->json($this->nextCodeBody('inventory_racks', 'RK-'), 200);
+    }
+
     /** GET /inventory/racks/{id} */
     public function show(Request $request, int $id)
     {

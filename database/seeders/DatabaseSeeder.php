@@ -37,7 +37,10 @@ class DatabaseSeeder extends Seeder
             OrganizationTypeSeeder::class => fn() => $this->call(OrganizationTypeSeeder::class),
             'SuperAdminUser'              => fn() => $this->seedSuperAdmin(),
             GeographySeeder::class        => fn() => $this->call(GeographySeeder::class),
-
+            /* Last: it seeds per BRANCH, so it needs the branches to exist.
+               Harmless on a database with none — it inserts nothing and says
+               so, and is re-run on demand once branches are created. */
+            InventoryProductFlagSeeder::class => fn() => $this->call(InventoryProductFlagSeeder::class),
         ];
 
         $hasLedger   = Schema::hasTable('seeder_runs');

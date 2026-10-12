@@ -104,6 +104,18 @@ class WarehouseController extends BaseInventoryController
         return $this->index($request->merge(['view' => 'options']));
     }
 
+    /**
+     * GET /inventory/warehouses/next-code — what the next warehouse would be
+     * called, for the placeholder on an empty Add form. Preview only; the code
+     * is derived from the row id, so it is settled when the row is inserted.
+     */
+    public function nextCode(Request $request)
+    {
+        $this->tenantUser($request);
+
+        return response()->json($this->nextCodeBody('inventory_warehouses', 'WH-'), 200);
+    }
+
     /** GET /inventory/warehouses/{id} */
     public function show(Request $request, int $id)
     {
