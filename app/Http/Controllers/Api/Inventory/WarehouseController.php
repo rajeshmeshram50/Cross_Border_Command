@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Inventory;
 use App\Models\Inventory\Rack;
 use App\Models\Inventory\Warehouse;
 use App\Models\Inventory\Zone;
+use App\Services\Inventory\InventoryCodeAllocator;
 use App\Services\Inventory\InventoryMasterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +24,10 @@ use Illuminate\Validation\Rule;
  */
 class WarehouseController extends BaseInventoryController
 {
-    public function __construct(private InventoryMasterService $svc) {}
+    public function __construct(
+        private InventoryMasterService $svc,
+        private InventoryCodeAllocator $codes,
+    ) {}
 
     /* ══════════════════════════ READ ══════════════════════════ */
 
@@ -111,9 +115,17 @@ class WarehouseController extends BaseInventoryController
      */
     public function nextCode(Request $request)
     {
-        $this->tenantUser($request);
+        $user = $this->tenantUser($request);
 
-        return response()->json($this->nextCodeBody('inventory_warehouses', 'WH-'), 200);
+        return response()->json(['status' => true, 'data' => [
+            'next_code' => $this->codes->peek(
+                'inventory_warehouses',
+                $user->client_id,
+                $this->branchScope($request, $user),
+            ),
+            // Nothing is reserved: whoever saves first takes it.
+            'preview'   => true,
+        ]], 200);
     }
 
     /** GET /inventory/warehouses/{id} */
@@ -153,6 +165,15 @@ class WarehouseController extends BaseInventoryController
 
             $warehouse = new Warehouse($data);
             $warehouse->created_by = $user->id;
+            /* Allocated under a lock, inside this transaction — so a save that
+               fails below gives the number back, which is the whole reason the
+               code no longer rides on the id. Same scoping as vendor_code and
+               emp_code: each branch runs its own 001, 002, 003. */
+            $warehouse->code = $this->codes->next(
+                'inventory_warehouses',
+                $user->client_id,
+                $warehouse->branch_id ?: $user->branch_id,
+            );
             $warehouse->save();
             // Needs the id for the storage path, so the card lands after the insert.
             $warehouse->forceFill($this->storeCard($request, $warehouse))->save();
@@ -268,7 +289,7 @@ class WarehouseController extends BaseInventoryController
             DB::commit();
 
             return response()->json(['status' => true, 'data' => $data + [
-                'qr'           => $this->qr($data['code']),
+                'qr'           => $this->qr($data['scan'] ?? $data['code']),
                 'download_url' => url("/api/inventory/warehouses/{$id}/label"),
             ]], 200);
         } catch (\Throwable $e) {
@@ -310,6 +331,8 @@ class WarehouseController extends BaseInventoryController
         return [
             'kind'     => 'WAREHOUSE',
             'code'     => $w->wh_code,
+            // The scanner's value: the code repeats per branch, the id does not.
+            'scan'     => $this->scanValue('WH', (int) $w->id),
             'title'    => $w->wh_name,
             'subtitle' => trim(implode(', ', array_filter([$w->city, $w->stateLabel(), $w->country?->name]))) ?: null,
             'rows'     => array_filter([

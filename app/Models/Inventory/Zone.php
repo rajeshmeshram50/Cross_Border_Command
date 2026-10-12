@@ -68,9 +68,12 @@ class Zone extends Model
 
     protected $appends = ['zone_code'];
 
+    /** The stored code — ZN-001, counted within this zone's own branch. See
+     *  Warehouse::getWhCodeAttribute() for why it is no longer the id. */
     public function getZoneCodeAttribute(): string
     {
-        return 'ZN-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
+        return $this->attributes['code']
+            ?: 'ZN-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
     }
 
     public static function idFromCode(?string $code): ?int

@@ -8,7 +8,6 @@ use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Shared plumbing for the five Inventory master controllers.
@@ -208,17 +207,23 @@ abstract class BaseInventoryController extends Controller
     /**
      * The printable location label, 4in x 3in.
      *
-     * The QR carries the derived CODE (ZN-003, RK-001, RK-001-SH-01), not the
-     * raw id. Unlike a box code these are already unique across every branch
-     * and client — they are built from the row id — so the string a scanner
-     * reads is both unique and readable to the person holding the label.
+     * The QR carries `$data['scan']` when the caller supplies one, and the
+     * code otherwise.
      *
-     * @param array{kind:string,code:string,title:string,subtitle:?string,rows:array,flags:array} $data
+     * That distinction matters now. Codes are numbered PER BRANCH, so three
+     * branches each have a WH-001 and the code alone no longer identifies a
+     * row — a scanner reading "WH-001" off a shelf cannot tell which of the
+     * three it is holding. The printed code stays as it is, because that is
+     * what the person reads; the scan value carries the id, which does not
+     * repeat. Previously both were the same string, back when the code was
+     * built from the id and was therefore globally unique.
+     *
+     * @param array{kind:string,code:string,scan?:string,title:string,subtitle:?string,rows:array,flags:array} $data
      */
     protected function labelPdf(array $data, string $filename)
     {
         $pdf = Pdf::loadView('pdf.inventory-label', $data + [
-            'qr'        => $this->qr($data['code']),
+            'qr'        => $this->qr($data['scan'] ?? $data['code']),
             'printedOn' => now()->format('d M Y H:i'),
         ])
             // Points, because the blade is laid out in points: 4in x 3in.
@@ -228,55 +233,25 @@ abstract class BaseInventoryController extends Controller
     }
 
     /**
+     * What a scanner should read off this label: the kind and the row id.
+     *
+     * Not the code. Codes restart at 001 in every branch, so "WH-001" names
+     * three different warehouses in a three-branch client — fine printed under
+     * the QR where a person reads it in context, useless to a scanner that has
+     * only the sticker to go on. The id does not repeat.
+     */
+    protected function scanValue(string $kind, int $id): string
+    {
+        return strtoupper($kind) . ':' . $id;
+    }
+
+    /**
      * The QR on its own, as a PNG — no card, no text, nothing else.
      *
      * For a screen that wants to place the code itself, or a sheet of codes
      * printed without the label around them. $size is the module scale, so the
      * image grows in whole pixels per module and never resamples blurry.
      */
-    /**
-     * What the NEXT row's code would be — WH-003, ZN-004, RK-012.
-     *
-     * These codes are not stored: every one is derived from the row id
-     * (`'WH-' . str_pad($id, 3, '0')`). So the next code is the next id, and
-     * the only thing that knows that is the table's sequence.
-     *
-     * A PREVIEW, and it says so. Nothing is reserved: Postgres hands out
-     * sequence values outside transactions, so the number returned here is
-     * claimed by whoever inserts first, and this caller may get the one after.
-     * Treat it as the placeholder on an empty form, never as the code to
-     * store — the row's own id decides that once it exists.
-     *
-     * Reading the sequence rather than max(id) + 1 on purpose: a sequence that
-     * has run ahead of the table (a failed insert, a rolled-back save, a
-     * TRUNCATE without RESTART IDENTITY) will not hand back the numbers it
-     * skipped, so max(id) + 1 would promise a code the row cannot get.
-     */
-    protected function nextCodeBody(string $table, string $prefix, int $pad = 3): array
-    {
-        $sequence = "{$table}_id_seq";
-
-        /* last_value is the number already handed out when is_called is true,
-           and the one about to be handed out when it is false — which is the
-           state of a fresh or just-restarted sequence. */
-        $row = DB::selectOne("select last_value, is_called from {$sequence}");
-
-        $next = $row
-            ? (int) $row->last_value + ($row->is_called ? 1 : 0)
-            : 1;
-
-        return [
-            'status'     => true,
-            'data'       => [
-                'next_id'   => $next,
-                'next_code' => $prefix . str_pad((string) $next, $pad, '0', STR_PAD_LEFT),
-                // Says out loud that nothing is held: two people opening the
-                // form at once are both shown this, and only one will get it.
-                'preview'   => true,
-            ],
-        ];
-    }
-
     protected function qrPng(string $code, int $scale = 10)
     {
         $png = (new QRCode(new QROptions([

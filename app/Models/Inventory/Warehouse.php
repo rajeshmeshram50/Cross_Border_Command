@@ -60,9 +60,19 @@ class Warehouse extends Model
     /** The screen's WH-014. Derived, so it can never drift from the row. */
     protected $appends = ['wh_code'];
 
+    /**
+     * The stored code — WH-001, counted within this warehouse's own branch.
+     *
+     * The fallback to the id is for rows created before the column existed and
+     * for a model built in memory that has not been saved. It is only a
+     * fallback: the id is a database counter shared by every client and
+     * branch, so deriving a code from it produced numbers that counted the
+     * whole platform and left permanent gaps whenever a save failed.
+     */
     public function getWhCodeAttribute(): string
     {
-        return 'WH-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
+        return $this->attributes['code']
+            ?: 'WH-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
     }
 
     /** 'WH-014' or '14' back to 14; anything else is not a warehouse code. */

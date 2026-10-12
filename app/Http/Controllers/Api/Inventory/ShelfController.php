@@ -281,7 +281,7 @@ class ShelfController extends BaseInventoryController
             DB::commit();
 
             return response()->json(['status' => true, 'data' => $data + [
-                'qr'           => $this->qr($data['code']),
+                'qr'           => $this->qr($data['scan'] ?? $data['code']),
                 'download_url' => url("/api/inventory/shelves/{$id}/label"),
             ]], 200);
         } catch (\Throwable $e) {
@@ -327,6 +327,7 @@ class ShelfController extends BaseInventoryController
         return [
             'kind'     => 'SHELF',
             'code'     => $s->shelf_code,
+            'scan'     => $this->scanValue('SH', (int) $s->id),
             'title'    => $s->shelf_name,
             'subtitle' => trim(implode('  /  ', array_filter([$zone?->zone_name, $s->rack?->rack_name]))) ?: null,
             'rows'     => array_filter([

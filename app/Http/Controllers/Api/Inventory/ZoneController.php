@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Inventory;
 use App\Models\Inventory\Rack;
 use App\Models\Inventory\Warehouse;
 use App\Models\Inventory\Zone;
+use App\Services\Inventory\InventoryCodeAllocator;
 use App\Services\Inventory\InventoryMasterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +28,10 @@ use Illuminate\Validation\Rule;
  */
 class ZoneController extends BaseInventoryController
 {
-    public function __construct(private InventoryMasterService $svc) {}
+    public function __construct(
+        private InventoryMasterService $svc,
+        private InventoryCodeAllocator $codes,
+    ) {}
 
     /* ══════════════════════════ READ ══════════════════════════ */
 
@@ -93,9 +97,12 @@ class ZoneController extends BaseInventoryController
     /** GET /inventory/zones/next-code — preview of the next zone's code. */
     public function nextCode(Request $request)
     {
-        $this->tenantUser($request);
+        $user = $this->tenantUser($request);
 
-        return response()->json($this->nextCodeBody('inventory_zones', 'ZN-'), 200);
+        return response()->json(['status' => true, 'data' => [
+            'next_code' => $this->codes->peek('inventory_zones', $user->client_id, $this->branchScope($request, $user)),
+            'preview'   => true,
+        ]], 200);
     }
 
     /** GET /inventory/zones/{id} */
@@ -133,6 +140,12 @@ class ZoneController extends BaseInventoryController
 
             $zone = new Zone($this->shape($data));
             $zone->created_by = $user->id;
+            // Per branch, under a lock, inside this transaction — see Warehouse.
+            $zone->code = $this->codes->next(
+                'inventory_zones',
+                $user->client_id,
+                $zone->branch_id ?: $user->branch_id,
+            );
             $zone->save();
 
             DB::commit();
@@ -255,7 +268,7 @@ class ZoneController extends BaseInventoryController
             DB::commit();
 
             return response()->json(['status' => true, 'data' => $data + [
-                'qr'           => $this->qr($data['code']),
+                'qr'           => $this->qr($data['scan'] ?? $data['code']),
                 'download_url' => url("/api/inventory/zones/{$id}/label"),
             ]], 200);
         } catch (\Throwable $e) {
@@ -301,6 +314,7 @@ class ZoneController extends BaseInventoryController
         return [
             'kind'     => 'ZONE',
             'code'     => $z->zone_code,
+            'scan'     => $this->scanValue('ZN', (int) $z->id),
             'title'    => $z->zone_name,
             'subtitle' => $z->warehouse?->wh_name,
             'rows'     => array_filter([

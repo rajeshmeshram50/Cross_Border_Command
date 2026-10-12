@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Inventory;
 use App\Models\Inventory\Rack;
 use App\Models\Inventory\Shelf;
 use App\Models\Inventory\Zone;
+use App\Services\Inventory\InventoryCodeAllocator;
 use App\Services\Inventory\InventoryMasterService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,10 @@ use Illuminate\Support\Facades\DB;
  */
 class RackController extends BaseInventoryController
 {
-    public function __construct(private InventoryMasterService $svc) {}
+    public function __construct(
+        private InventoryMasterService $svc,
+        private InventoryCodeAllocator $codes,
+    ) {}
 
     /* ══════════════════════════ READ ══════════════════════════ */
 
@@ -94,9 +98,12 @@ class RackController extends BaseInventoryController
     /** GET /inventory/racks/next-code — preview of the next rack's code. */
     public function nextCode(Request $request)
     {
-        $this->tenantUser($request);
+        $user = $this->tenantUser($request);
 
-        return response()->json($this->nextCodeBody('inventory_racks', 'RK-'), 200);
+        return response()->json(['status' => true, 'data' => [
+            'next_code' => $this->codes->peek('inventory_racks', $user->client_id, $this->branchScope($request, $user)),
+            'preview'   => true,
+        ]], 200);
     }
 
     /** GET /inventory/racks/{id} */
@@ -146,6 +153,12 @@ class RackController extends BaseInventoryController
             $rack->cold_chain   = (int) ($data['cold_chain'] ?? 0);
             $rack->hazardous    = (int) ($data['hazardous'] ?? 0);
             $rack->created_by   = $user->id;
+            // Per branch, under a lock, inside this transaction — see Warehouse.
+            $rack->code = $this->codes->next(
+                'inventory_racks',
+                $user->client_id,
+                $rack->branch_id ?: $user->branch_id,
+            );
             $rack->save();
 
             DB::commit();
@@ -283,7 +296,7 @@ class RackController extends BaseInventoryController
             DB::commit();
 
             return response()->json(['status' => true, 'data' => $data + [
-                'qr'           => $this->qr($data['code']),
+                'qr'           => $this->qr($data['scan'] ?? $data['code']),
                 'download_url' => url("/api/inventory/racks/{$id}/label"),
             ]], 200);
         } catch (\Throwable $e) {
@@ -333,6 +346,7 @@ class RackController extends BaseInventoryController
         return [
             'kind'     => 'RACK',
             'code'     => $r->rack_code,
+            'scan'     => $this->scanValue('RK', (int) $r->id),
             'title'    => $r->rack_name,
             'subtitle' => trim(implode('  /  ', array_filter([$r->warehouse?->wh_name, $r->zone?->zone_name]))) ?: null,
             'rows'     => array_filter([
