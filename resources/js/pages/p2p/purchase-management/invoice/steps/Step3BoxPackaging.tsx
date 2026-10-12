@@ -288,17 +288,18 @@ export default function Step3BoxPackaging({
     const today = todayIso();
     for (const c of contents) {
       const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
-      if (id.expiry && id.mfg && id.expiry < id.mfg) return `${c.line.spiName}: the expiry date is before the MFG date.`;
+      if (id.expiry && id.mfg && id.expiry <= id.mfg) return `${c.line.spiName}: the expiry date must be after the MFG date.`;
       if (id.expiry && id.expiry < today) return `${c.line.spiName}: the expiry date is already in the past.`;
       if (id.mfg && id.mfg > today) return `${c.line.spiName}: the MFG date is in the future.`;
     }
-    if (data.remark === 'damaged') {
+    if (data.remark !== 'correct') {
       const reasons = scenario === 's3'
         ? contents.every(c => (data.identities[c.line.code]?.remarks ?? '').trim())
         : !!data.boxIdentity.remarks.trim();
-      if (!reasons) return 'Damaged / Rejected needs a reason — add it in Remarks.';
+      const label = { damaged: 'Damaged / Rejected', mismatched: 'Mismatched', extra: 'Extra Quantity' }[data.remark];
+      if (!reasons) return `${label} needs a note saying what was found — add it in Remarks.`;
     }
-    if (data.remark === 'extra' && !contents.some(c => lineTotals(c.line).extra > 0)) {
+    if (data.remark === 'extra' && !contents.some(c => lineTotals(fullOf(c.line.code) ?? c.line).extra > 0)) {
       return 'Extra Quantity applies only to a product billed above its PO quantity.';
     }
     return null;
@@ -355,7 +356,7 @@ export default function Step3BoxPackaging({
 
   const capTo = (line: ProductLine, wanted: number, what: string) => {
     const left = line.spiQty;
-    const q = Math.max(0, wanted);
+    const q = Math.max(0, Math.round(wanted * 1000) / 1000);
     if (q > left + 0.0005) {
       toast.warning(`${what} can hold at most ${left} unit${left === 1 ? '' : 's'}`,
         `${left} of ${line.spiName} ${left === (fullOf(line.code)?.spiQty ?? left) ? 'are on the SPI' : 'are still unboxed'}.`);
@@ -562,6 +563,11 @@ export default function Step3BoxPackaging({
     if (!editingBox) return;
     if (editContents.length <= 1) {
       toast.warning('A box cannot be empty', `Delete ${editingBox.box_code} instead of taking everything out of it.`);
+      return;
+    }
+    if (editingBox.scenario === 's3' && editContents.length <= 2) {
+      toast.warning('A mixed carton needs two products',
+        `${editingBox.box_code} would be left with one product. Delete the box and pack that product on its own instead.`);
       return;
     }
     const line = lines.find(l => l.code === code);
