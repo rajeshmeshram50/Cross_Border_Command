@@ -1,0 +1,65 @@
+/* Add Rack — only what the zone form does not already give.
+   The card, the section head, the AUTO field, the unit toggle, the suffix box
+   and the footer all come from `warehouse-master.css` and `zone-form.css`. */
+
+/* Three cards instead of the zone form's two, so the dialog is taller and
+   wants the extra width to keep four fields on a row. */
+.spi-mdl.whm-addmdl.rkm-addmdl { width: min(1180px, calc(100vw - 32px)); }
+
+/* The qualifier inside a label: "With Rack only", "Length × Width". It sits
+   right after the words and before the asterisk, because it narrows the LABEL
+   — "Zone, of the with-rack kind" — rather than qualifying the control.
+   Sentence case, not uppercase: it is a phrase, and the label around it is
+   already shouting. */
+.rkm-lbltag {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid #bfe9f1;
+  background: #e0f7fb;
+  color: #0e7490;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+/* A flag the zone has closed off. Dashed rather than merely greyed: a solid
+   box that does nothing reads as broken, where a dashed one reads as a slot
+   that is not available yet. */
+.whm-addmdl .znm-tg.is-locked {
+  cursor: not-allowed;
+  background: #f6fafb;
+  border-style: dashed;
+}
+.whm-addmdl .znm-tg.is-locked .whm-toggle { opacity: .55; cursor: not-allowed; }
+.whm-addmdl .znm-tg.is-locked .znm-tg__st { color: #94a3b8; }
+
+/* The dimensions block spans the grid, like the zone form's own sub-block. */
+.rkm-sub {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding: 12px 13px 13px;
+  border-radius: 12px;
+  border: 1.5px solid #e2f1f6;
+  background: linear-gradient(180deg, #fbfeff, #f4fbfd);
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .rkm-lbltag {
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .28);
+  color: #7fe6f8;
+}
+
+[data-bs-theme="dark"] .whm-addmdl .znm-tg.is-locked {
+  background: #0a1820;
+  border-color: #17323d;
+}
+[data-bs-theme="dark"] .whm-addmdl .znm-tg.is-locked .znm-tg__st { color: #64748b; }
+
+[data-bs-theme="dark"] .rkm-sub {
+  background: rgba(6, 182, 212, .06);
+  border-color: rgba(34, 211, 238, .18);
+}

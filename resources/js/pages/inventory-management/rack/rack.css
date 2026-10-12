@@ -1,0 +1,134 @@
+/* Rack Master — only what the warehouse and zone sheets do not already give.
+   The id pill, name cell, area block, flag chips, warehouse cell, status pill,
+   row actions and toggle all come from `warehouse-master.css` and `zone.css`;
+   this file holds the four cells that are the rack's own. */
+
+/* Length × width × height on one line, with the unit said once at the end.
+   The design's own type: 12.5px in the page face, the figures at 700 rather
+   than the 800 the other numeric cells use. It is three numbers read as one
+   measurement, and bolding each of them breaks it into three. */
+.rkm-dimcell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: #0f3d4c;
+}
+.rkm-dimcell b { font-weight: 700; }
+/* The multiplication signs are punctuation, not data — they recede. */
+.rkm-dimcell i {
+  font-style: normal;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.rkm-dimcell small {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #64748b;
+  margin-left: 2px;
+}
+
+/* The warehouse's city, under its name. A third line in the cell the zone
+   master gives two, because a rack is found by walking to a building first. */
+.rkm-whcity {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #64748b;
+}
+.rkm-whcity svg { color: #0e8fa6; }
+
+/* The shelf count, and the way into the shelves it counts.
+
+   The prototype's own values: a filled teal tile the same 32px as the action
+   buttons beside it, not an outlined badge. The whole Action group reads as
+   one row of controls, and a pale chip in the middle of it breaks that. */
+.rkm-lvl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #22c3d6 0%, #0e8fa6 55%, #0b6f86 100%);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  box-shadow: 0 4px 10px -3px rgba(14, 143, 166, .55), inset 0 1px 0 rgba(255, 255, 255, .35);
+  transition: transform .15s, box-shadow .15s;
+}
+.rkm-lvl:hover {
+  transform: translateY(-2px) scale(1.06);
+  box-shadow: 0 8px 16px -6px rgba(14, 143, 166, .7), 0 0 0 3px rgba(34, 211, 238, .25);
+}
+.rkm-lvl:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+
+/* Shelves/Levels — the row's one worded action, wearing the same fill as the
+   icon buttons it sits with so the group stays one object. */
+.rkm-shelfbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: linear-gradient(140deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  color: #fff;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 6px 12px -6px rgba(8, 145, 178, .75), inset 0 1px 0 rgba(255, 255, 255, .3);
+  transition: background .15s, transform .15s;
+}
+.rkm-shelfbtn:hover {
+  background: linear-gradient(140deg, #0891b2, #0e7490 60%, #0b4f63);
+  transform: translateY(-1px);
+}
+.rkm-shelfbtn:focus-visible { outline: 2px solid #22d3ee; outline-offset: 2px; }
+
+/* Four actions instead of three, one of them a worded button — the group
+   needs to stay on one line or the row grows a second. */
+.rkm-page .whm-acts { flex-wrap: nowrap; }
+
+/* Twelve columns, so the headers wrap rather than forcing the table wider —
+   "Total Shelves" over two lines costs one row of height once, where keeping
+   it on one line costs width on every row. */
+.rkm-page .ord-table thead th {
+  white-space: normal;
+  line-height: 1.3;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+/* Tighter than the zone list's 190px: this table carries a warehouse name AND
+   a zone name, where that one carries only the warehouse. */
+.rkm-page .znm-whcell b { max-width: 170px; }
+
+/* ── Dark ────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .rkm-dimcell { color: #e2e8f0; }
+[data-bs-theme="dark"] .rkm-dimcell i { color: #64748b; }
+[data-bs-theme="dark"] .rkm-dimcell small,
+[data-bs-theme="dark"] .rkm-whcity { color: #94a3b8; }
+[data-bs-theme="dark"] .rkm-whcity svg { color: #38d6f0; }
+
+/* Both keep their fill on dark — they are the same teal as the action buttons
+   beside them, which already read correctly there. Only the glow comes down,
+   since a coloured shadow on a dark page is a halo rather than depth. */
+[data-bs-theme="dark"] .rkm-lvl {
+  box-shadow: 0 4px 10px -3px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+[data-bs-theme="dark"] .rkm-shelfbtn {
+  box-shadow: 0 6px 12px -6px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .2);
+}

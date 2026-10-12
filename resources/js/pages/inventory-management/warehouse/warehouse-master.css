@@ -458,6 +458,40 @@
 }
 /* Both layers are painted behind the title and the close button. */
 .whm-addmdl .spi-mdl-head > * { position: relative; z-index: 1; }
+
+/* The add forms' own type, scoped here exactly as the design scopes it to its
+   add-modal overlay — so the SPI and PO dialogs keep the shared 16.5px title
+   and 10px field label they were built against.
+
+   Bigger here because these dialogs open on their own, with no wizard step
+   rail above them to say what you are looking at: the title is the only thing
+   naming the form. */
+.whm-addmdl .spi-mdl-title {
+  font-size: 19px;
+  letter-spacing: -.3px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .15);
+}
+.whm-addmdl .spi-mdl-sub { color: rgba(255, 255, 255, .85); }
+/* Smaller and bluer than the shared label: these forms are mostly read-only
+   fetched fields, and a label that competes with its value makes a wall of
+   grey text harder to scan, not easier. */
+.whm-addmdl .spi-dt-field-lbl {
+  font-size: 9.5px;
+  letter-spacing: .07em;
+  color: #45707f;
+}
+/* The shared dark rule for this label is `[data-bs-theme="dark"]
+   .spi-dt-field-lbl` — the same specificity as the line above, and this
+   stylesheet loads later, so without this the labels would stay slate-blue on
+   a dark card. */
+[data-bs-theme="dark"] .whm-addmdl .spi-dt-field-lbl { color: #7c93a8; }
+
+/* In these forms the unit toggle sits beside the block it belongs to, not out
+   at the right margin — the sub-block's heading is short, and a toggle a hand
+   away from its own label reads as belonging to the card instead. The design
+   scopes this to its add-modal overlay, so it covers Add Zone as well. */
+.whm-addmdl .znm-sub__hd .znm-unit { margin-left: 6px; }
+
 .whm-addbody { display: flex; flex-direction: column; gap: 12px; }
 
 /* One section: a white card with a gradient bar down its whole left edge. */
