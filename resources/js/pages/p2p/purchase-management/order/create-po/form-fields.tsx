@@ -55,12 +55,18 @@ export function FitInput({ tooltip, ...props }: React.InputHTMLAttributes<HTMLIn
 
 /* Label + control, one cell of a wizard field grid. */
 /* `error` shows under the control (the control itself is flagged by its own invalid prop). */
-export function Field({ label, children, full, req, error, hint, labelEnd }: {
+export function Field({ label, children, full, wide, req, error, hint, labelEnd }: {
   /** Text, or text with a qualifying chip in it — the chip then sits before
    *  the asterisk, which is where a qualifier belongs: it narrows the label,
    *  not the control. `labelEnd` is the other slot, at the far end. */
   label: ReactNode;
-  children: ReactNode; full?: boolean; req?: boolean; error?: string;
+  children: ReactNode;
+  /** The whole row. */
+  full?: boolean;
+  /** Two columns of it — for a field that needs more room than its
+   *  neighbours but should still share their row. */
+  wide?: boolean;
+  req?: boolean; error?: string;
   /** Said under the field when it is constrained — an error takes its place. */
   hint?: string;
   /** Sits at the far end of the label's own row, after the asterisk — a
@@ -69,7 +75,7 @@ export function Field({ label, children, full, req, error, hint, labelEnd }: {
   labelEnd?: ReactNode;
 }) {
   return (
-    <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}>
+    <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}${wide ? ' spi-dt-field-w2' : ''}`}>
       <label className={`spi-dt-field-lbl${labelEnd ? ' spi-dt-field-lbl--split' : ''}`}>
         {label}{req && <span className="spi-dt-req">*</span>}{labelEnd}
       </label>

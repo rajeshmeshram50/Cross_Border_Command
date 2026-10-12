@@ -2,17 +2,16 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
-/* The stylesheets this form is dressed by. It carries its own rather than
-   relying on the page that opens it. */
 import '../../p2p/p2p-detail.css';
 import '../../p2p/purchase-management/order/create-po/create-po.css';
 import '../warehouse/warehouse-master.css';
 import './zone-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
-import { WAREHOUSES } from '../warehouse/warehouse-data';
-import { ZONES, type Zone, type ZoneStorage, type ZoneType } from './zone-data';
+import {
+  ZoneApiError, zoneApi,
+  type Zone, type ZonePayload, type ZoneStorage, type ZoneType, type ZoneWarehouse,
+} from './zone-data';
 
-/* ── Lists ────────────────────────────────────────────────────────────── */
 const PURPOSES = [
   'Receiving / Inward', 'Bulk Storage', 'Pick Face / Forward Picking',
   'Quarantine / QA Hold', 'Returns', 'Dispatch / Staging', 'Other',
@@ -23,7 +22,6 @@ const TYPE_LABEL: Record<ZoneType, string> = {
 };
 const TYPE_OPTIONS = [TYPE_LABEL.rack, TYPE_LABEL.norack];
 
-/** The ranges a cold zone is usually set to, as the design names them. */
 const TEMP_PRESETS = [
   { k: 'Chilled', min: 2, max: 8 },
   { k: 'Cool', min: 8, max: 15 },
@@ -31,19 +29,15 @@ const TEMP_PRESETS = [
   { k: 'Deep Frozen', min: -40, max: -25 },
 ];
 
-/* Only an active warehouse can take a new zone. */
-const ACTIVE_WAREHOUSES = WAREHOUSES.filter(w => w.status !== 'inactive');
 const WAREHOUSE_LABEL = (id: string, name: string) => `${id} · ${name}`;
 
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 
-/** One foot is 0.3048 m, so a metre is this many feet. */
 const FEET_PER_METRE = 3.28084;
-/** A square metre in square feet — used to carry the floor area into Sq. Ft. */
+const METRES_PER_FOOT = 0.3048;
 const SQFT_PER_SQM = 10.7639;
 
-/* ── Icons: the prototype's own paths ─────────────────────────────────── */
 const Ico = (d: ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -108,7 +102,6 @@ interface Draft {
   cold: boolean;
   haz: boolean;
   purpose: string;
-  /** Typed in when the purpose is "Other". */
   purposeOther: string;
 }
 
@@ -118,54 +111,71 @@ const EMPTY: Draft = {
   purpose: '', purposeOther: '',
 };
 
-/** One past the highest zone id. */
-function nextId(): string {
-  const max = ZONES.reduce((n, z) => Math.max(n, Number(z.id.replace(/\D/g, '')) || 0), 0);
-  return `ZN-${String(max + 1).padStart(3, '0')}`;
+const round = (v: number, dp: number) => Math.round(v * 10 ** dp) / 10 ** dp;
+
+const FIELD_FOR: Record<string, keyof Draft> = {
+  warehouse_id: 'wh', zone_name: 'name', area_sqft: 'area', rack_mode: 'type', purpose: 'purpose',
+  storage_mode: 'storage', capacity_litres: 'litres', length: 'len', width: 'wid', height: 'ht',
+  usable_pct: 'use', cold_chain: 'cold', temp_min_c: 'cold', temp_max_c: 'cold',
+};
+
+function fieldForMessage(msg: string): keyof Draft | null {
+  const m = msg.toLowerCase();
+  if (m.includes('zone with this name')) return 'name';
+  if (m.includes('sq. ft is still free')) return 'area';
+  if (m.includes('warehouse')) return 'wh';
+  if (m.includes('temperature')) return 'cold';
+  if (m.includes('refrigerator storage or regular')) return 'storage';
+  if (m.includes('litres')) return 'litres';
+  if (m.includes('length, width')) return 'len';
+  if (m.includes('already has racks')) return 'type';
+  return null;
 }
 
-/** `+8` / `-25` — a temperature always carries its sign. */
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 
-/**
- * Add / Edit Zone.
- *
- * Design only: it validates, calculates and reports, and does not persist.
- * Three sections, with a branch — a without-rack zone is either a refrigerator
- * measured in litres or a floor measured in three dimensions, and the floor
- * case works out its own usable volume as you type.
- */
-export default function AddZoneModal({ zone, onClose }: {
-  /** Present when the pencil opened it. */
+export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   zone?: Zone;
+  warehouses: ZoneWarehouse[];
   onClose: () => void;
+  onSaved?: (zone: Zone) => void;
 }) {
   const editing = !!zone;
   const toast = useToast();
   useScrollLock(true, '.znm-addmdl');
 
+  const activeWarehouses = useMemo(() => warehouses.filter(w => w.active), [warehouses]);
+  const zoneWarehouse = zone?.warehouseId ? warehouses.find(w => w.apiId === zone.warehouseId) : undefined;
+  const cm = zone?.dims?.unit === 'cm';
+  const fromCm = (v: number) => String(cm ? round(v / 100, 3) : v);
+
   const [d, setD] = useState<Draft>(() => (zone
     ? {
-      wh: WAREHOUSE_LABEL(zone.wh, WAREHOUSES.find(w => w.id === zone.wh)?.name ?? ''),
+      wh: zoneWarehouse ? WAREHOUSE_LABEL(zoneWarehouse.id, zoneWarehouse.name) : '',
       name: zone.name,
       area: String(zone.area),
       type: TYPE_LABEL[zone.type],
       storage: zone.storage,
       litres: zone.litres != null ? String(zone.litres) : '',
-      len: zone.dims ? String(zone.dims.length) : '',
-      wid: zone.dims ? String(zone.dims.width) : '',
-      ht: zone.dims ? String(zone.dims.height) : '',
+      len: zone.dims ? fromCm(zone.dims.length) : '',
+      wid: zone.dims ? fromCm(zone.dims.width) : '',
+      ht: zone.dims ? fromCm(zone.dims.height) : '',
       use: zone.dims ? String(zone.dims.usablePct) : '80',
       cold: zone.cold,
       haz: zone.haz,
-      /* A stored purpose outside the list is one someone typed. */
       purpose: PURPOSES.includes(zone.purpose) ? zone.purpose : 'Other',
       purposeOther: PURPOSES.includes(zone.purpose) ? '' : zone.purpose,
     }
     : EMPTY));
   const set = (p: Partial<Draft>) => setD(prev => ({ ...prev, ...p }));
 
-  const [unit, setUnit] = useState<Unit>(() => (zone?.dims?.unit === 'cm' ? 'm' : 'm'));
+  useEffect(() => {
+    if (zoneWarehouse && !d.wh) set({ wh: WAREHOUSE_LABEL(zoneWarehouse.id, zoneWarehouse.name) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoneWarehouse]);
+
+  const [unit, setUnit] = useState<Unit>('m');
+  const [saving, setSaving] = useState(false);
   const [temp, setTemp] = useState<{ min: number; max: number } | null>(zone?.tempRange ?? null);
   const [tempOpen, setTempOpen] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({});
@@ -175,21 +185,19 @@ export default function AddZoneModal({ zone, onClose }: {
   useEffect(() => { cardRef.current?.focus(); }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      /* One layer at a time: the temperature popup closes before the form. */
+      if (e.key !== 'Escape' || saving) return;
       if (tempOpen) { setTempOpen(false); return; }
       onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, tempOpen]);
+  }, [onClose, tempOpen, saving]);
 
-  const id = editing ? zone!.id : nextId();
-  const picked = ACTIVE_WAREHOUSES.find(w => WAREHOUSE_LABEL(w.id, w.name) === d.wh);
+  const id = editing ? zone!.id : 'Assigned on save';
+  const picked = activeWarehouses.find(w => WAREHOUSE_LABEL(w.id, w.name) === d.wh);
   const type: ZoneType | '' = d.type === TYPE_LABEL.rack ? 'rack' : d.type === TYPE_LABEL.norack ? 'norack' : '';
   const noRack = type === 'norack';
 
-  /* ── The floor calculation ───────────────────────────────────────────── */
   const calc = useMemo(() => {
     const L = parseFloat(d.len), W = parseFloat(d.wid), H = parseFloat(d.ht), U = parseFloat(d.use);
     const area = L > 0 && W > 0 ? L * W : NaN;
@@ -198,27 +206,35 @@ export default function AddZoneModal({ zone, onClose }: {
     return { L, W, H, U, area, vol, uvol };
   }, [d.len, d.wid, d.ht, d.use]);
 
-  /* A measured floor decides its own area, so the Sq. Ft field follows it
-     rather than being typed twice and disagreeing. */
   const areaFromFloor = noRack && d.storage === 'regular' && calc.area > 0;
-  const shownArea = areaFromFloor
-    ? String(Math.round(unit === 'm' ? calc.area * SQFT_PER_SQM : calc.area))
-    : d.area;
+  const derivedArea = String(Math.round(unit === 'm' ? calc.area * SQFT_PER_SQM : calc.area));
 
-  /* The same figure in the other unit, which is what the small line shows. */
+  /* A measured floor IS the zone's area, so it is written into the draft
+     rather than only displayed over it.
+     Before this there were two areas: the one the field showed and the one
+     `d.area` held. They agreed while the floor was being measured and parted
+     company the moment the zone type changed — the field fell back to a
+     `d.area` that had not been updated in between, so the same zone showed one
+     number as a rack zone and another as a floor zone, with nothing edited. */
+  useEffect(() => {
+    if (areaFromFloor && derivedArea !== d.area) set({ area: derivedArea });
+  }, [areaFromFloor, derivedArea, d.area]);
+
+  const shownArea = d.area;
+
   const other: Unit = unit === 'm' ? 'ft' : 'm';
   const k = unit === 'm' ? FEET_PER_METRE : 1 / FEET_PER_METRE;
   const fmt = (v: number, dp = 2) =>
     (Number.isFinite(v) ? new Intl.NumberFormat('en-IN', { maximumFractionDigits: dp }).format(v) : '—');
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return;
     const e: Partial<Record<keyof Draft, string>> = {};
     if (!d.wh) e.wh = 'Choose the warehouse this zone is in.';
     if (!d.name.trim()) e.name = 'Give the zone a name.';
     const areaNum = Number(shownArea);
     if (!shownArea.trim()) e.area = 'Enter the zone area.';
     else if (!(areaNum > 0)) e.area = 'Area must be more than zero.';
-    /* A zone cannot be bigger than the warehouse holding it. */
     else if (picked && areaNum > picked.area) {
       e.area = `Larger than ${picked.id}, which is ${inWhole.format(picked.area)} Sq. Ft.`;
     }
@@ -235,7 +251,6 @@ export default function AddZoneModal({ zone, onClose }: {
     }
     const purpose = d.purpose === 'Other' ? d.purposeOther.trim() : d.purpose;
     if (!purpose) e.purpose = 'Choose or enter the zone purpose.';
-    /* Cold chain without a range is a flag that says nothing. */
     if (d.cold && !temp) e.cold = 'Set the temperature range for this zone.';
 
     setErrors(e);
@@ -249,21 +264,73 @@ export default function AddZoneModal({ zone, onClose }: {
         ?.closest('.spi-dt-field')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    toast.info(
-      editing ? `${id} would be updated` : `${id} would be saved`,
-      'The form is complete. Saving arrives with the zone endpoint.',
-    );
-    onClose();
+    if (!picked || !type) return;
+
+    const toM = (v: number) => (unit === 'ft' ? round(v * METRES_PER_FOOT, 2) : round(v, 2));
+    const regular = noRack && d.storage === 'regular';
+    const Lm = toM(calc.L), Wm = toM(calc.W), Hm = toM(calc.H);
+    const payload: ZonePayload = {
+      warehouse_id: picked.apiId,
+      zone_name: d.name.trim(),
+      rack_mode: type,
+      area_sqft: round(areaNum, 2),
+      purpose,
+      cold_chain: d.cold ? 1 : 0,
+      temp_min_c: d.cold && temp ? temp.min : null,
+      temp_max_c: d.cold && temp ? temp.max : null,
+      hazardous: d.haz ? 1 : 0,
+      storage_mode: noRack && d.storage ? d.storage : null,
+      capacity_litres: noRack && d.storage === 'fridge' ? Number(d.litres) : null,
+      dim_unit: regular ? 'm' : null,
+      length: regular ? Lm : null,
+      width: regular ? Wm : null,
+      height: regular ? Hm : null,
+      usable_pct: regular ? calc.U : null,
+      floor_area: regular ? round(Lm * Wm, 2) : null,
+      volume: regular ? round(Lm * Wm * Hm, 3) : null,
+      usable_volume: regular ? round((Lm * Wm * Hm * calc.U) / 100, 3) : null,
+    };
+
+    setSaving(true);
+    try {
+      const saved = editing && zone!.apiId
+        ? await zoneApi.update(zone!.apiId, payload)
+        : await zoneApi.create(payload);
+      toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, saved.name);
+      onSaved?.(saved);
+      onClose();
+    } catch (err) {
+      if (err instanceof ZoneApiError) {
+        const next: Partial<Record<keyof Draft, string>> = {};
+        for (const [k, msgs] of Object.entries(err.fieldErrors)) {
+          const f = FIELD_FOR[k];
+          if (f && !next[f]) next[f] = msgs[0];
+        }
+        if (!Object.keys(next).length) {
+          const f = fieldForMessage(err.message);
+          if (f) next[f] = err.message;
+        }
+        setErrors(next);
+        toast.error(editing ? 'Could not update the zone' : 'Could not create the zone', Object.values(next)[0] ?? err.message);
+      } else {
+        toast.error('Could not save the zone', 'Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
     <div className="spi-mdl-backdrop whm-backdrop"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div
-        className="spi-mdl whm-addmdl znm-addmdl"
+        /* `whm-page` carries the shared toggle style, which is scoped to it
+           and so never reached this portalled dialog — the Cold Chain and
+           Hazardous switches were rendering as bare buttons, leaving the two
+           flags as plain boxes of text. */
+        className="spi-mdl whm-addmdl znm-addmdl whm-page"
         role="dialog" aria-modal="true" aria-labelledby="znm-add-title"
         tabIndex={-1} ref={cardRef}
-        /* The temperature popup is absolutely positioned inside this card. */
         style={{ position: 'relative' }}
       >
         <div className="spi-mdl-head">
@@ -283,18 +350,16 @@ export default function AddZoneModal({ zone, onClose }: {
 
         <div className="spi-mdl-body whm-addbody">
 
-          {/* ── Warehouse ─────────────────────────────────────────────── */}
           <Card icon={<IcoWarehouse />} title="Warehouse Details">
             <Field label="Warehouse" req error={errors.wh} hint="Only active warehouses are listed">
               <EditSelect
                 value={d.wh}
-                options={ACTIVE_WAREHOUSES.map(w => WAREHOUSE_LABEL(w.id, w.name))}
+                options={activeWarehouses.map(w => WAREHOUSE_LABEL(w.id, w.name))}
                 placeholder="Select warehouse"
                 invalid={!!errors.wh}
                 onChange={v => { set({ wh: v }); clear('wh'); clear('area'); }}
               />
             </Field>
-            {/* Read-only, and they say where they came from. */}
             <AutoField label="Warehouse Type"
               value={picked ? (picked.type === 'own' ? 'Own Warehouse' : 'Third Party (3PL)') : ''} />
             <AutoField label="Warehouse Area (Sq. Ft)"
@@ -303,7 +368,6 @@ export default function AddZoneModal({ zone, onClose }: {
               value={picked ? [picked.city, picked.state].filter(Boolean).join(', ') : ''} />
           </Card>
 
-          {/* ── Zone ──────────────────────────────────────────────────── */}
           <Card icon={<IcoZone />} title="Zone Details">
             <Field label="Zone ID" hint="Generated automatically">
               <div className="whm-auto">
@@ -329,8 +393,6 @@ export default function AddZoneModal({ zone, onClose }: {
                 <input
                   className={`spi-dt-inp${errors.area ? ' is-invalid' : ''}`}
                   type="number" min={1} placeholder="e.g. 5000"
-                  /* Read-only once a floor has been measured: two numbers for
-                     one area can only ever disagree. */
                   readOnly={areaFromFloor}
                   value={shownArea}
                   onChange={e => { set({ area: e.target.value }); clear('area'); }}
@@ -343,8 +405,6 @@ export default function AddZoneModal({ zone, onClose }: {
                 value={d.type} options={TYPE_OPTIONS} placeholder="Select zone type"
                 invalid={!!errors.type}
                 onChange={v => {
-                  /* Going back to racked clears the storage branch, so a
-                     hidden litres value cannot be saved with it. */
                   set(v === TYPE_LABEL.rack
                     ? { type: v, storage: '', litres: '', len: '', wid: '', ht: '' }
                     : { type: v });
@@ -463,13 +523,10 @@ export default function AddZoneModal({ zone, onClose }: {
             )}
           </Card>
 
-          {/* ── Flags ─────────────────────────────────────────────────── */}
           <Card icon={<IcoFlag />} title="Zone Flags Details">
             <Field label="Cold Chain Allowed" error={errors.cold}>
               <div
                 className={`znm-tg${d.cold ? ' is-on' : ''}`}
-                /* Turning it on asks for the range straight away — the flag
-                   on its own does not say what the zone must hold. */
                 onClick={() => {
                   const next = !d.cold;
                   set({ cold: next });
@@ -509,7 +566,11 @@ export default function AddZoneModal({ zone, onClose }: {
               </div>
             </Field>
 
-            <Field label="Zone Purpose" req error={errors.purpose}>
+            {/* Two columns, as the design has it: the row is Cold Chain ·
+                Hazardous · Purpose and fills its four. At one column the
+                purpose sat beside an empty fourth, and a zone purpose is the
+                longest text on the row. */}
+            <Field label="Zone Purpose" req error={errors.purpose} wide>
               <div className="znm-purp">
                 {d.purpose === 'Other' ? (
                   <>
@@ -540,9 +601,9 @@ export default function AddZoneModal({ zone, onClose }: {
         <div className="spi-mdl-foot">
           <span className="whm-footnote"><IcoInfo /> Fields marked * are required</span>
           <div className="spi-mdl-foot-btns">
-            <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm" onClick={save}>
-              <IcoCheck /> {editing ? 'Update Zone' : 'Save Zone'}
+            <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
+              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Zone' : 'Save Zone'}
             </button>
           </div>
         </div>
@@ -552,8 +613,6 @@ export default function AddZoneModal({ zone, onClose }: {
             value={temp}
             onCancel={() => {
               setTempOpen(false);
-              /* Backing out without a range leaves the flag off rather than
-                 on and meaningless. */
               if (!temp) set({ cold: false });
             }}
             onSave={(range) => { setTemp(range); setTempOpen(false); clear('cold'); }}
@@ -565,7 +624,6 @@ export default function AddZoneModal({ zone, onClose }: {
   );
 }
 
-/** One section: a white card with the gradient bar down its left edge. */
 function Card({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <div className="whm-card">
@@ -578,7 +636,6 @@ function Card({ icon, title, children }: { icon: ReactNode; title: string; child
   );
 }
 
-/** A field the warehouse fills in: read-only, and it shows whether it has. */
 function AutoField({ label, value }: { label: string; value: string }) {
   return (
     <Field label={label}>
@@ -590,7 +647,6 @@ function AutoField({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Refrigerator or regular floor. */
 function StoreOption({ on, icon, title, desc, onPick }: {
   on: boolean; icon: ReactNode; title: string; desc: string; onPick: () => void;
 }) {
@@ -604,7 +660,6 @@ function StoreOption({ on, icon, title, desc, onPick }: {
   );
 }
 
-/** One worked-out figure. */
 function Kpi({ label, value, sub, hi }: { label: string; value: string; sub: string; hi?: boolean }) {
   return (
     <div className={`znm-kpi${hi ? ' znm-kpi--hi' : ''}`}>
@@ -615,12 +670,6 @@ function Kpi({ label, value, sub, hi }: { label: string; value: string; sub: str
   );
 }
 
-/**
- * The cold-chain range.
- *
- * Inside the form rather than over the page: it sets one field on the card
- * behind it, and a second full-screen layer would read as a second task.
- */
 function TemperatureSheet({ value, onCancel, onSave }: {
   value: { min: number; max: number } | null;
   onCancel: () => void;
@@ -638,9 +687,8 @@ function TemperatureSheet({ value, onCancel, onSave }: {
       setErr('Enter both a minimum and a maximum.');
       return;
     }
-    /* Equal is allowed — a zone held at exactly one temperature is a real
-       setting; the minimum above the maximum is not. */
-    if (nMin > nMax) { setErr('The minimum cannot be above the maximum.'); return; }
+    if (nMin < -80 || nMax > 60) { setErr('Temperatures must be between -80 and +60 °C.'); return; }
+    if (nMin >= nMax) { setErr('The minimum must be lower than the maximum.'); return; }
     onSave({ min: nMin, max: nMax });
   };
 

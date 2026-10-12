@@ -1,9 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { IcoBox, IcoCheck, IcoEye, IcoPencil, IcoX } from '../../../icons';
-import { lineTotals, truncateDesc, DESC_MAX, type ProductLine } from '../invoice-products';
+import { lineTotals, truncateDesc, truncateName, DESC_MAX, NAME_MAX, type ProductLine } from '../invoice-products';
 
 /** One product inside a carton, and how much of it is in THIS carton. */
 export interface PackedItem {
@@ -57,18 +57,23 @@ export default function PackedProducts({
     <div className="vti-box invf-packed">
       <div className="vti-header">
         <div className="vti-header-ico"><IcoCheck size={18} stroke={2.6} /></div>
+        {/* "Packed Boxes", not "Packed Products": a row here is a carton with
+            its contents listed inside it, so the table is a list of boxes.
+            The old name survived from when the row was a product. */}
         <div className="vti-header-text">
-          <div className="vti-header-title">Packed Products</div>
+          <div className="vti-header-title">Packed Boxes</div>
           <div className="vti-header-sub">
             Boxed and labelled &nbsp;·&nbsp; {boxes.length} box{boxes.length === 1 ? '' : 'es'} holding {productCount} product{productCount === 1 ? '' : 's'}
           </div>
         </div>
+        {/* Boxes first, then what is in them — the same order the title and
+            the rows read in. */}
         <div className="vti-header-stats">
           <div className="vti-stat-pill boxed">
-            <div className="vti-stat-dot" /><IcoCheck size={11} stroke={2.8} />{productCount} Packed
+            <div className="vti-stat-dot" /><IcoBox size={11} stroke={2.2} />{boxes.length} Box{boxes.length === 1 ? '' : 'es'}
           </div>
           <div className="vti-stat-pill total">
-            <div className="vti-stat-dot" /><IcoBox size={11} stroke={2.2} />{boxes.length} Box{boxes.length === 1 ? '' : 'es'}
+            <div className="vti-stat-dot" /><IcoCheck size={11} stroke={2.8} />{productCount} Packed
           </div>
         </div>
       </div>
@@ -79,133 +84,144 @@ export default function PackedProducts({
             <tr>
               <th>Sr No</th>
               <th>Box ID</th>
-              <th>Product (SPI)</th>
-              <th>Code</th>
-              <th className="vti-desc-h">Description</th>
-              <th>Qty in Box</th>
-              <th>Missing Qty</th>
-              <th>Extra Qty</th>
+              {/* These six are the per-product block, bracketed by a dashed
+                  rule so a carton's repeating part is visible as one thing —
+                  the same bracket the PO list puts round its SPI/GRN/QA
+                  group. */}
+              <th className="invf-c-id invf-c-prod">Product (SPI)</th>
+              <th className="invf-c-id">Code</th>
+              <th className="invf-c-id vti-desc-h">Description</th>
+              <th className="invf-c-qty">Qty in Box</th>
+              <th className="invf-c-qty">Missing Qty</th>
+              <th className="invf-c-qty invf-c-end">Extra Qty</th>
               <th>Box Packaging Scenario</th>
               <th>Products in Box</th>
               <th>Action</th>
             </tr>
           </thead>
-          <tbody>
-            {boxes.map((b, i) => {
-              const open = b.code === editingBoxId;
-              const mixed = b.items.length > 1;
-              return (
-                <tr className={`vti-prod-row invf-grp-row${open ? ' is-open' : ''}`} key={b.code}>
-                  <td><span className="invf-sr">{String(i + 1).padStart(2, '0')}</span></td>
+          {/* One tbody per carton, one row per product in it, with the box's
+              own cells spanning them.
 
-                  {/* The id is the way in: pressing it opens this carton. */}
-                  <td>
-                    <span className="invf-boxids">
-                      <Tooltip label={onEditBox
-                        ? `Open ${b.code} — its size, weight, flags and the ${mixed ? 'products' : 'product'} inside it`
-                        : `Carton ${b.code}`}>
-                        {onEditBox ? (
-                          <button
-                            type="button"
-                            className="vti-code invf-boxid-btn"
-                            onClick={() => onEditBox(b.code)}
-                            aria-label={`Open box ${b.code}`}
-                          >
-                            {b.code}
-                          </button>
-                        ) : (
-                          <span className="vti-code">{b.code}</span>
-                        )}
-                      </Tooltip>
-                    </span>
-                  </td>
-
-                  {/* The contents stack inside the row, because the row is the
-                      box and what is in it is a list. */}
-                  <td>
-                    <Stack items={b.items} render={it => (
-                      <div className="vti-prod-cell">
-                        <div>
-                          <div className="vti-prod-name">{it.line.spiName}</div>
-                          <div className="vti-prod-sku">HSN {it.line.hsn}</div>
-                        </div>
-                      </div>
-                    )} />
-                  </td>
-                  <td>
-                    <Stack items={b.items} render={it => <span className="vti-code">{it.line.code}</span>} />
-                  </td>
-                  <td className="vti-desc">
-                    <Stack items={b.items} render={it => (
-                      <Tooltip label={it.line.description} disabled={it.line.description.length <= DESC_MAX}>
-                        <span className="vti-desc__wrap">{truncateDesc(it.line.description)}</span>
-                      </Tooltip>
-                    )} />
-                  </td>
-                  {/* This carton's share, not the product's whole SPI quantity:
-                      a split puts 48 of 96 in each box, and showing 96 on both
-                      rows would double the invoice. */}
-                  <td>
-                    <Stack items={b.items} render={it => <span className="vti-qty-badge">{it.qty}</span>} />
-                  </td>
-                  <td>
-                    <Stack items={b.items} render={it => {
-                      const { missing } = lineTotals(it.line);
-                      return <span className={`cpd-qtypill${missing > 0 ? ' cpd-qtypill--miss' : ''}`}>{missing}</span>;
-                    }} />
-                  </td>
-                  <td>
-                    <Stack items={b.items} render={it => {
-                      const { extra } = lineTotals(it.line);
-                      return <span className={`cpd-qtypill${extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{extra}</span>;
-                    }} />
-                  </td>
-                  <td><span className="invf-scn-tag">{b.scenario}</span></td>
-                  <td><span className="vti-qty-badge">{b.items.length}</span></td>
-                  <td>
-                    <span className="vti-packed-acts">
-                      <Tooltip label={`See what is inside ${b.code}`}>
-                        <button
-                          type="button"
-                          className="vti-btn-single vti-btn-single--ico"
-                          onClick={() => setShowing(b)}
-                          aria-label={`View the contents of ${b.code}`}
-                        >
-                          <IcoEye size={14} />
-                        </button>
-                      </Tooltip>
-                      {onEditBox && (
-                        <Tooltip label={`Edit ${b.code} — its size, weight, flags${mixed ? ', and which products stay in it' : ''}`}>
-                          <button
-                            type="button"
-                            className={`vti-btn-single vti-btn-single--ico vti-btn-single--edit${open ? ' is-on' : ''}`}
-                            onClick={() => onEditBox(b.code)}
-                            aria-label={`Edit ${b.code}`}
-                          >
-                            <IcoPencil size={14} />
-                          </button>
-                        </Tooltip>
+              Real rows rather than stacked divs in one cell — the same thing
+              the PO list does for its mapped SPI / GRN / QA groups. A div
+              stack draws its dividers inside each cell, so they stop at every
+              column edge; row borders run the width of the table, which is
+              what makes a four-product carton read as one block. */}
+          {boxes.map((b, i) => {
+            const open = b.code === editingBoxId;
+            const mixed = b.items.length > 1;
+            const n = b.items.length;
+            return (
+              <tbody key={b.code} className={open ? 'invf-grp is-open' : 'invf-grp'}>
+                {b.items.map((it, k) => {
+                  const { missing, extra } = lineTotals(it.line);
+                  const first = k === 0;
+                  return (
+                    <tr
+                      key={it.line.code}
+                      className={`vti-prod-row invf-grp-row${k === n - 1 ? ' is-last' : ''}`}
+                    >
+                      {first && (
+                        <td className="invf-c-sr" rowSpan={n}>
+                          <span className="invf-sr">{String(i + 1).padStart(2, '0')}</span>
+                        </td>
                       )}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+                      {/* The id is the way in: pressing it opens this carton. */}
+                      {first && (
+                        <td className="invf-c-box" rowSpan={n}>
+                          <span className="invf-boxids">
+                            <Tooltip label={onEditBox
+                              ? `Open ${b.code} — its size, weight, flags and the ${mixed ? 'products' : 'product'} inside it`
+                              : `Carton ${b.code}`}>
+                              {onEditBox ? (
+                                <button
+                                  type="button"
+                                  className="vti-code invf-boxid-btn"
+                                  onClick={() => onEditBox(b.code)}
+                                  aria-label={`Open box ${b.code}`}
+                                >
+                                  {b.code}
+                                </button>
+                              ) : (
+                                <span className="vti-code">{b.code}</span>
+                              )}
+                            </Tooltip>
+                          </span>
+                        </td>
+                      )}
+
+                      <td className="invf-c-grp invf-c-id invf-c-prod">
+                        <div className="vti-prod-cell">
+                          <div>
+                            {/* "1/2" only when there is more than one — on a
+                                single-product carton it would be noise. */}
+                            {mixed && <span className="invf-seq">Item {k + 1}/{n}</span>}
+                            <Tooltip label={it.line.spiName} disabled={it.line.spiName.length <= NAME_MAX}>
+                              <div className="vti-prod-name">{truncateName(it.line.spiName)}</div>
+                            </Tooltip>
+                            <div className="vti-prod-sku">HSN {it.line.hsn}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="invf-c-grp invf-c-id"><span className="vti-code">{it.line.code}</span></td>
+                      <td className="invf-c-grp invf-c-id vti-desc">
+                        <Tooltip label={it.line.description} disabled={it.line.description.length <= DESC_MAX}>
+                          <span className="vti-desc__wrap">{truncateDesc(it.line.description)}</span>
+                        </Tooltip>
+                      </td>
+                      {/* This carton's share, not the product's whole SPI
+                          quantity: a split puts 48 of 96 in each box, and
+                          showing 96 on both rows would double the invoice. */}
+                      <td className="invf-c-grp invf-c-qty"><span className="vti-qty-badge">{it.qty}</span></td>
+                      <td className="invf-c-grp invf-c-qty"><span className={`cpd-qtypill${missing > 0 ? ' cpd-qtypill--miss' : ''}`}>{missing}</span></td>
+                      <td className="invf-c-grp invf-c-qty invf-c-end">
+                        <span className={`cpd-qtypill${extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{extra}</span>
+                      </td>
+
+                      {first && (
+                        <td rowSpan={n}><span className="invf-scn-tag">{b.scenario}</span></td>
+                      )}
+                      {first && (
+                        <td rowSpan={n}><span className="vti-qty-badge">{n}</span></td>
+                      )}
+                      {first && (
+                        <td rowSpan={n}>
+                          <span className="vti-packed-acts">
+                            <Tooltip label={`See what is inside ${b.code}`}>
+                              <button
+                                type="button"
+                                className="vti-btn-single vti-btn-single--ico"
+                                onClick={() => setShowing(b)}
+                                aria-label={`View the contents of ${b.code}`}
+                              >
+                                <IcoEye size={14} />
+                              </button>
+                            </Tooltip>
+                            {onEditBox && (
+                              <Tooltip label={`Edit ${b.code} — its size, weight, flags${mixed ? ', and which products stay in it' : ''}`}>
+                                <button
+                                  type="button"
+                                  className={`vti-btn-single vti-btn-single--ico vti-btn-single--edit${open ? ' is-on' : ''}`}
+                                  onClick={() => onEditBox(b.code)}
+                                  aria-label={`Edit ${b.code}`}
+                                >
+                                  <IcoPencil size={14} />
+                                </button>
+                              </Tooltip>
+                            )}
+                          </span>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            );
+          })}
         </table>
       </div>
 
       {showing && <BoxContentsModal box={showing} onClose={() => setShowing(null)} />}
-    </div>
-  );
-}
-
-/** One cell's worth of a carton's contents: a value per product, divided. */
-function Stack({ items, render }: { items: PackedItem[]; render: (it: PackedItem) => ReactNode }) {
-  if (items.length === 1) return <>{render(items[0])}</>;
-  return (
-    <div className="invf-stack">
-      {items.map(it => <div className="invf-stack__cell" key={it.line.code}>{render(it)}</div>)}
     </div>
   );
 }

@@ -111,8 +111,6 @@ export default function InvoiceForm({
           poApi.show(poId),
           spiApi.poLines(poId, existing?.id).catch(() => []),
         ]);
-        /* exclude_spi is already passed above, so an invoice being edited does
-           not count its own quantity as billed by someone else. */
         const open: Record<number, SpiPoOpen> = {};
         for (const l of openLines) {
           open[l.po_item_id] = {
@@ -296,10 +294,6 @@ export default function InvoiceForm({
     }
   }, [spiId, reloadBoxes, toast]);
 
-  /* Edit a box in place. The box keeps its code and its sticker stays valid,
-     which is the whole reason this is not a delete followed by a create: a
-     rebuilt carton would come back as a new code and the label on the shelf
-     would be wrong. */
   const updateBox = useCallback(async (boxId: number, body: SpiBoxBody): Promise<SpiBox | null> => {
     if (!spiId) return null;
     try {
@@ -444,6 +438,7 @@ export default function InvoiceForm({
                     boxes={boxes}
                     nextBoxCodes={nextBoxCodes}
                     flagMaster={flagMaster}
+                    onFlagsChanged={() => { spiApi.productFlags().then(setFlagMaster).catch(() => {}); }}
                     readOnly={viewOnly}
                     onCreateBox={spiId ? createBox : undefined}
                     onUpdateBox={spiId ? updateBox : undefined}

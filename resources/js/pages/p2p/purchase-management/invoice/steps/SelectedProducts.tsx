@@ -2,7 +2,7 @@ import { memo, useCallback } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { IcoCheck, IcoX } from '../../../icons';
-import { DESC_MAX, truncateDesc, type ProductLine } from '../invoice-products';
+import { DESC_MAX, NAME_MAX, truncateDesc, truncateName, type ProductLine } from '../invoice-products';
 
 export interface ProductIdentity {
   serial: string;
@@ -32,7 +32,10 @@ const IDENTITY_COLUMNS: {
   { key: 'cat', label: 'Cat No.', placeholder: 'e.g. CT-001', type: 'text' },
   { key: 'expiry', label: 'Expiry Date', placeholder: '', type: 'date' },
   { key: 'mfg', label: 'MFG Date', placeholder: '', type: 'date' },
-  { key: 'remarks', label: 'Remarks', placeholder: 'Any note about this product…', type: 'text' },
+  /* Short enough to fit the same box as the codes beside it — the field still
+     takes a full sentence, it just no longer asks for a wider column to say
+     so while empty. */
+  { key: 'remarks', label: 'Remarks', placeholder: 'Add a note…', type: 'text' },
 ];
 
 function SelectedProducts({
@@ -78,7 +81,10 @@ function SelectedProducts({
         <table className="vti-table">
           <thead>
             <tr>
-              <th>#</th>
+              {/* "Sr No", not "#": every other table in the flow names this
+                  column, and a lone glyph is the only header you have to
+                  work out. */}
+              <th>Sr No</th>
               <th>Product</th>
               <th>Code</th>
               <th className="vti-desc-h">Description</th>
@@ -129,7 +135,9 @@ const IdentityRow = memo(function IdentityRow({
       <td>
         <div className="vti-prod-cell">
           <div>
-            <div className="vti-prod-name">{line.spiName}</div>
+            <Tooltip label={line.spiName} disabled={line.spiName.length <= NAME_MAX}>
+              <div className="vti-prod-name">{truncateName(line.spiName)}</div>
+            </Tooltip>
             <div className="vti-prod-sku">HSN {line.hsn}</div>
           </div>
         </div>

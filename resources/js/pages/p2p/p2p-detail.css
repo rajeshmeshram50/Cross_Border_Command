@@ -654,6 +654,11 @@
 
 /* full-width field + textarea + native date */
 .spi-dt-field-full { grid-column: 1 / -1; }
+/* Two columns, not the whole row: a field that needs more room than the ones
+   beside it but still belongs on their line. Taking the whole row instead
+   leaves the row above it short, which is a worse answer than a wide field. */
+.spi-dt-field-w2 { grid-column: span 2; }
+@media (max-width: 1100px) { .spi-dt-field-w2 { grid-column: 1 / -1; } }
 .spi-dt-textarea { width:100%; min-height:74px; padding:11px 13px; border-radius:11px; border:1.5px solid #dce9ef; background:#fff;
   font-family:inherit; font-size:13px; color:#0f172a; outline:none; resize:vertical; transition: border-color .15s, box-shadow .15s; }
 .spi-dt-textarea:focus { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.15); }

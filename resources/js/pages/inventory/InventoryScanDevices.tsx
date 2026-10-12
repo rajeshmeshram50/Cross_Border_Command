@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 import {
   Card, CardBody, Button, Badge, Modal, ModalHeader, ModalBody, ModalFooter,
   Form, FormGroup, Label, Input, FormFeedback, Alert,
@@ -8,8 +9,8 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { useToast } from '../../contexts/ToastContext';
 import InventoryTabs from './InventoryTabs';
 import {
-  listDevices, enrollDevice, serialExists, setDeviceStatus, rotateToken,
-  getActiveDeviceId, setActiveDeviceId,
+  listDevices, enrollDevice, setDeviceStatus, rotateToken,
+  verifyDevice, makeEnrollUrl,
   type ScanDevice, type DeviceStatus,
 } from './putAwayStore';
 import '../../../css/inventory-scan.css';
@@ -27,10 +28,26 @@ const statusBadge = (s: DeviceStatus) =>
   s === 'suspended' ? <Badge color="warning">Suspended</Badge> :
                       <Badge color="dark">Retired</Badge>;
 
+/** Enrollment QR — scanned BY the handheld so its own browser gets the credential. */
+function EnrollQr({ url }: { url: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (ref.current) QRCode.toCanvas(ref.current, url, { width: 220, margin: 1, errorCorrectionLevel: 'M' }).catch(() => {});
+  }, [url]);
+  return <canvas ref={ref} width={220} height={220} />;
+}
+
+const apiError = (e: unknown, fallback: string) => {
+  const r = (e as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
+  return r?.errors ? Object.values(r.errors)[0]?.[0] ?? fallback : r?.message ?? fallback;
+};
+
 export default function InventoryScanDevices() {
   const toast = useToast();
-  const [rows, setRows] = useState<ScanDevice[]>(() => listDevices());
-  const [activeId, setActiveId] = useState<string | null>(() => getActiveDeviceId());
+  const [rows, setRows] = useState<ScanDevice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [activeId, setActiveId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -38,30 +55,46 @@ export default function InventoryScanDevices() {
      the same rule the technical document sets out. */
   const [issued, setIssued] = useState<{ label: string; token: string } | null>(null);
 
-  const refresh = useCallback(() => {
-    setRows(listDevices());
-    setActiveId(getActiveDeviceId());
-  }, []);
+  const refresh = useCallback(async () => {
+    try {
+      const [list, me] = await Promise.all([listDevices(), verifyDevice()]);
+      setRows(list);
+      setActiveId(me?.id ?? null);
+    } catch (e) {
+      toast.error('Could not load devices', apiError(e, 'Please try again.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { refresh(); }, [refresh]);
 
   const openNew = () => { setForm(emptyForm); setErrors({}); setModalOpen(true); };
 
   const validate = () => {
     const e: Record<string, string> = {};
     if (!form.serial.trim()) e.serial = 'Serial number is required.';
-    else if (serialExists(form.serial)) e.serial = 'This serial is already enrolled.';
+    else if (rows.some(r => r.serial === form.serial.trim())) e.serial = 'This serial is already enrolled.';
     if (!form.label.trim()) e.label = 'Give the device a name operators will recognise.';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const onSubmit = (ev: React.FormEvent) => {
+  const onSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!validate()) return;
-    const { device, token } = enrollDevice(form);
-    setModalOpen(false);
-    setIssued({ label: device.label, token });
-    refresh();
-    toast.success('Device enrolled', `${device.label} can now scan company stickers.`);
+    setSaving(true);
+    try {
+      const { device, token } = await enrollDevice(form);
+      setModalOpen(false);
+      setIssued({ label: device.label, token });
+      refresh();
+      toast.success('Device enrolled', 'Scan the QR with the handheld to install its credential.');
+    } catch (e) {
+      setErrors({ serial: apiError(e, 'Could not enroll the device.') });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const changeStatus = async (d: ScanDevice, status: DeviceStatus) => {
@@ -77,9 +110,13 @@ export default function InventoryScanDevices() {
       confirmButtonText: verb,
     });
     if (!res.isConfirmed) return;
-    setDeviceStatus(d.id, status);
-    refresh();
-    toast.success(`Device ${status}`, d.label);
+    try {
+      await setDeviceStatus(d.id, status);
+      refresh();
+      toast.success(`Device ${status}`, d.label);
+    } catch (e) {
+      toast.error('Update failed', apiError(e, 'Please try again.'));
+    }
   };
 
   const onRotate = async (d: ScanDevice) => {
@@ -92,15 +129,13 @@ export default function InventoryScanDevices() {
       confirmButtonText: 'Rotate',
     });
     if (!res.isConfirmed) return;
-    const token = rotateToken(d.id);
-    setIssued({ label: d.label, token });
-    refresh();
-  };
-
-  const useAsThisDevice = (id: string) => {
-    setActiveDeviceId(id);
-    refresh();
-    toast.info('Handheld switched', 'The Put-Away screen now scans as this device.');
+    try {
+      const token = await rotateToken(d.id);
+      setIssued({ label: d.label, token });
+      refresh();
+    } catch (e) {
+      toast.error('Rotate failed', apiError(e, 'Please try again.'));
+    }
   };
 
   const counts = useMemo(() => ({
@@ -144,7 +179,10 @@ export default function InventoryScanDevices() {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 && (
+                {loading && (
+                  <tr><td colSpan={7} className="text-center text-muted py-4">Loading…</td></tr>
+                )}
+                {!loading && rows.length === 0 && (
                   <tr><td colSpan={7} className="text-center text-muted py-4">
                     No devices enrolled yet.
                   </td></tr>
@@ -164,12 +202,6 @@ export default function InventoryScanDevices() {
                     <td className="inv-mono text-muted">{fmt(d.last_seen_at)}</td>
                     <td className="text-end">
                       <div className="d-inline-flex gap-1">
-                        {d.id !== activeId && d.status === 'active' && (
-                          <Button size="sm" color="light" title="Scan as this device"
-                            onClick={() => useAsThisDevice(d.id)}>
-                            <i className="ri-smartphone-line" />
-                          </Button>
-                        )}
                         <Button size="sm" color="light" title="Rotate credential"
                           onClick={() => onRotate(d)}>
                           <i className="ri-key-2-line" />
@@ -186,6 +218,7 @@ export default function InventoryScanDevices() {
                           </Button>
                         )}
                         <Button size="sm" color="light" title="Retire"
+                          disabled={d.status === 'retired'}
                           onClick={() => changeStatus(d, 'retired')}>
                           <i className="ri-delete-bin-line text-danger" />
                         </Button>
@@ -240,7 +273,7 @@ export default function InventoryScanDevices() {
           </ModalBody>
           <ModalFooter>
             <Button color="light" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button color="primary" type="submit">Enroll &amp; issue credential</Button>
+            <Button color="primary" type="submit" disabled={saving}>Enroll &amp; issue credential</Button>
           </ModalFooter>
         </Form>
       </Modal>
@@ -250,25 +283,34 @@ export default function InventoryScanDevices() {
         <ModalHeader>Credential for {issued?.label}</ModalHeader>
         <ModalBody>
           <Alert color="warning" className="mb-3">
-            <strong>Copy this now.</strong> It is shown once and cannot be retrieved
+            <strong>Install it now.</strong> It is shown once and cannot be retrieved
             afterwards. If it is lost, rotate the credential and install the new one.
           </Alert>
-          <div className="inv-token">{issued?.token}</div>
+          <ol className="fs-13 ps-3">
+            <li>Pick up <strong>{issued?.label}</strong> and scan this QR with its scanner
+              (the same way you scan stickers).</li>
+            <li>It opens the enrollment page and shows <em>Handheld enrolled</em>.</li>
+          </ol>
+          {issued && (
+            <div className="text-center my-3"><EnrollQr url={makeEnrollUrl(issued.token)} /></div>
+          )}
+          <p className="text-muted fs-12 mb-1">Or open this link on the handheld:</p>
+          <div className="inv-token" style={{ wordBreak: 'break-all' }}>{issued ? makeEnrollUrl(issued.token) : ''}</div>
           <p className="text-muted fs-12 mt-3 mb-0">
-            Install it on the handheld during setup. The device sends it with every
-            scan; the server refuses anything without it.
+            Only a browser holding this credential can read company stickers; every other
+            phone or PC is shown <span className="inv-mono">rejected_unauthorized_device</span>.
           </p>
         </ModalBody>
         <ModalFooter>
           <Button
             color="light"
             onClick={() => {
-              if (issued) navigator.clipboard?.writeText(issued.token)
+              if (issued) navigator.clipboard?.writeText(makeEnrollUrl(issued.token))
                 .then(() => toast.success('Copied', 'Credential copied to clipboard.'))
                 .catch(() => toast.error('Copy failed', 'Select and copy it manually.'));
             }}
           >
-            <i className="ri-file-copy-line me-1" />Copy
+            <i className="ri-file-copy-line me-1" />Copy link
           </Button>
           <Button color="primary" onClick={() => setIssued(null)}>I&apos;ve saved it</Button>
         </ModalFooter>
