@@ -1,6 +1,5 @@
 import type {
   InvoiceRow, InvoiceRiskLevel, InvoiceSupplierCategory, InvoicePoType,
-  StorageWarehouse,
 } from './types';
 import type { LegalView } from '../order/create-po/supplier-checks';
 
@@ -168,15 +167,3 @@ export const SUPPLIER_LEGAL: LegalView = {
   done: 18, total: 18, pct: 100,
 };
 
-/**
- * The warehouses step 2 of the storage wizard offers.
- *
- * Only our OWN sites are listed. A third-party warehouse is the other branch
- * of step 1, so it can never be an option here — if it were, the two steps
- * would be asking the same question twice.
- */
-export const STORAGE_WAREHOUSES: StorageWarehouse[] = [
-  { id: 'mum', name: 'Mumbai Central Warehouse', location: 'MIDC, Andheri East · Zone A–D' },
-  { id: 'pun', name: 'Pune Phase 2 Warehouse',   location: 'Hinjewadi Phase 2 · Zone B–C' },
-  { id: 'del', name: 'Delhi North Warehouse',    location: 'Okhla Industrial Area · Zone A' },
-];

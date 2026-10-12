@@ -5,7 +5,7 @@ import { PoApiError } from '../order/api/po-api';
 import type { ServerPageMeta } from '../../../../hooks/useServerList';
 import type {
   InvoiceInspectionStatus, InvoicePoType, InvoiceRiskLevel, InvoiceRow,
-  InvoiceScope, InvoiceShipmentScope, InvoiceSupplierCategory,
+  InvoiceScope, InvoiceShipmentScope, InvoiceSupplierCategory, StorageWarehouse,
 } from './types';
 
 async function call<T>(action: string, run: () => Promise<{ data: unknown }>, pick: (body: unknown) => T): Promise<T> {
@@ -270,6 +270,18 @@ export const spiApi = {
      Cold Chain chip to the wrong branch's id, which the server now refuses as
      a flag that branch has never heard of. Asking for the invoice's own branch
      is what makes the chip resolve to an id the box may actually carry. */
+  warehouses: () =>
+    call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
+      ((b as { data?: Array<{ id: number; wh_code: string | null; wh_name: string | null; wh_type: string; location: string | null }> } | null)?.data ?? [])
+        .filter(w => w.wh_type === 'own')
+        .map((w): StorageWarehouse => ({
+          id: String(w.id),
+          apiId: w.id,
+          code: w.wh_code ?? undefined,
+          name: w.wh_name ?? `Warehouse ${w.id}`,
+          location: [w.wh_code, w.location].filter(Boolean).join(' · ') || '—',
+        }))),
+
   productFlags: (branchId?: number | null) =>
     call('Product flags', () => api.get('/inventory/product-flags/options',
       branchId ? { params: { branch_id: branchId } } : undefined),

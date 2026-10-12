@@ -76,6 +76,8 @@ export interface StorageWarehouse {
   id: string;
   name: string;
   location: string;
+  apiId?: number;
+  code?: string;
 }
 
 export const SPI_EDITABLE_STATUSES = ['draft', 'mapped'];

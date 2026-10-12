@@ -40,7 +40,7 @@ const STORAGE_LABEL: Record<StorageType, string> = {
  * scroll sideways with the columns.
  */
 export default function StorageSelectionModal({
-  reference, referenceKind, warehouses, onClose, onNext,
+  reference, referenceKind, warehouses, warehousesState = 'ready', onClose, onNext,
 }: {
   /** The PO or supplier the invoice was mapped to — the head chip. */
   reference: string;
@@ -52,6 +52,7 @@ export default function StorageSelectionModal({
    *  holds no data of its own and swapping the fixture for an API response
    *  touches the page, not this file. */
   warehouses: StorageWarehouse[];
+  warehousesState?: 'idle' | 'loading' | 'ready' | 'failed';
   onClose: () => void;
   onNext: (choice: StorageChoice) => void;
 }) {
@@ -206,7 +207,15 @@ export default function StorageSelectionModal({
           </div>
 
           <div className="smod-wh-list" role="radiogroup" aria-label="Warehouse">
-            {warehouses.map(w => (
+            {warehousesState === 'loading' || warehousesState === 'idle' ? (
+              <div className="smod-desc">Loading warehouses…</div>
+            ) : warehousesState === 'failed' ? (
+              <div className="smod-desc">Could not load warehouses. Close this window and try again.</div>
+            ) : warehouses.length === 0 ? (
+              <div className="smod-desc">
+                No active own warehouses yet. Add one in Inventory Management → Warehouse Master.
+              </div>
+            ) : warehouses.map(w => (
               <WarehouseRow
                 key={w.id}
                 warehouse={w}
