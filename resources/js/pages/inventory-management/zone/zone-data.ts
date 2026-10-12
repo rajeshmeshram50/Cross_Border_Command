@@ -227,6 +227,13 @@ export const zoneApi = {
   setStatus: (apiId: number, active: boolean) =>
     call(() => api.put(`/inventory/zones/${apiId}/status`, { status: active ? 1 : 0 }), one),
 
+  show: (apiId: number) => call(() => api.get(`/inventory/zones/${apiId}`), one),
+
+  previewCode: (apiId: number) => call(
+    () => api.get(`/inventory/zones/${apiId}/preview`),
+    (b) => String((b as { data?: { code?: string } } | null)?.data?.code ?? ''),
+  ),
+
   nextCode: () => call(
     () => api.get('/inventory/zones/next-code'),
     (b) => String((b as { data?: { next_code?: string } } | null)?.data?.next_code ?? ''),

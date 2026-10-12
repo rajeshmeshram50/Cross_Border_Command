@@ -178,6 +178,19 @@ export default function ZoneMaster() {
   const [qrFor, setQrFor] = useState<Zone | null>(null);
   const [formFor, setFormFor] = useState<Zone | 'new' | null>(null);
 
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const openEdit = useCallback(async (z: Zone) => {
+    if (!z.apiId || openingId) return;
+    setOpeningId(z.apiId);
+    try {
+      setFormFor(await zoneApi.show(z.apiId));
+    } catch (e) {
+      toast.error('Could not open the zone', e instanceof ZoneApiError ? e.message : 'Please try again.');
+    } finally {
+      setOpeningId(null);
+    }
+  }, [openingId, toast]);
+
   const onSaved = useCallback(() => {
     reload();
     loadCounts();
@@ -287,7 +300,8 @@ export default function ZoneMaster() {
                 <tbody key={z.apiId ?? z.id}>
                   <Row z={z} sr={start + i + 1} off={z.status !== 'active'} busy={busyId === z.apiId}
                     w={z.warehouseId ? warehouseById.get(z.warehouseId) : undefined}
-                    onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={setFormFor} />
+                    opening={openingId === z.apiId}
+                    onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={t => void openEdit(t)} />
                 </tbody>
               ))}
             </table>
@@ -327,11 +341,12 @@ export default function ZoneMaster() {
   );
 }
 
-function Row({ z, sr, off, busy, w, onToggle, onQr, onEdit }: {
+function Row({ z, sr, off, busy, opening, w, onToggle, onQr, onEdit }: {
   z: Zone;
   sr: number;
   off: boolean;
   busy: boolean;
+  opening: boolean;
   w: ZoneWarehouse | undefined;
   onToggle: (z: Zone) => void;
   onQr: (z: Zone) => void;
@@ -449,7 +464,7 @@ function Row({ z, sr, off, busy, w, onToggle, onQr, onEdit }: {
         <div className="whm-acts">
           <Tooltip label="Edit this zone">
             <button type="button" className="whm-act" aria-label={`Edit ${z.id}`}
-              onClick={() => onEdit(z)}>
+              disabled={opening} onClick={() => onEdit(z)}>
               <IcoEdit />
             </button>
           </Tooltip>
