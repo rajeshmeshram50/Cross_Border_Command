@@ -1,24 +1,16 @@
-/**
- * Zones — the prototype's own 81, verbatim.
- *
- * Static, like the warehouses and the flags: the screen is designed before it
- * is wired. Replace what this module exports when an endpoint lands; the page
- * only ever reads ZONES.
- */
+import axios from 'axios';
+import api from '../../../api';
+import type { ServerPageMeta } from '../../../hooks/useServerList';
 
-/** With racking, or an open floor / refrigerated room. */
 export type ZoneType = 'rack' | 'norack';
 
-/** How a without-rack zone stores: an open floor, or a refrigerator. */
 export type ZoneStorage = '' | 'regular' | 'fridge';
 
-/** The measured box of a regular-floor zone, and what it works out to. */
 export interface ZoneDims {
   unit: 'm' | 'cm';
   length: number;
   width: number;
   height: number;
-  /** How much of the volume is actually usable, as a percentage. */
   usablePct: number;
   floorArea: number;
   volume: number;
@@ -26,31 +18,215 @@ export interface ZoneDims {
 }
 
 export interface Zone {
-  /** ZN-001 … */
+  apiId?: number;
+  warehouseId?: number | null;
+  whName?: string;
   id: string;
-  /** Created on. ISO; formatted on render. */
   date: string;
   type: ZoneType;
   name: string;
-  /** The warehouse this zone is inside, by its WH- code. */
   wh: string;
-  /** Square feet. */
   area: number;
-  /** What the zone is for — receiving, bulk storage, dispatch and so on. */
   purpose: string;
-  /** Cold chain allowed, and between which temperatures. */
   cold: boolean;
   tempRange: { min: number; max: number } | null;
-  /** Hazardous goods allowed. */
   haz: boolean;
-  /** Only set on a without-rack zone. */
   storage: ZoneStorage;
-  /** A refrigerator's capacity in litres; null unless storage is 'fridge'. */
   litres: number | null;
-  /** A regular floor's measurements; null unless storage is 'regular'. */
   dims: ZoneDims | null;
   status: 'active' | 'inactive';
 }
+
+export interface ZoneWarehouse {
+  apiId: number;
+  id: string;
+  name: string;
+  type: 'own' | 'tpl';
+  area: number;
+  city: string;
+  state: string;
+  pin: string;
+  map: string;
+  active: boolean;
+}
+
+export type ZoneTab = 'all' | ZoneType;
+export type ZoneCounts = Record<ZoneTab, number>;
+
+export interface ZonePayload {
+  warehouse_id: number;
+  zone_name: string;
+  rack_mode: ZoneType;
+  area_sqft: number;
+  purpose: string;
+  cold_chain: 0 | 1;
+  temp_min_c: number | null;
+  temp_max_c: number | null;
+  hazardous: 0 | 1;
+  storage_mode: 'regular' | 'fridge' | null;
+  capacity_litres: number | null;
+  dim_unit: 'm' | 'cm' | null;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  usable_pct: number | null;
+  floor_area: number | null;
+  volume: number | null;
+  usable_volume: number | null;
+}
+
+type ZoneRow = {
+  id: number;
+  zone_code: string | null;
+  zone_name: string | null;
+  warehouse_id: number | null;
+  warehouse_name: string | null;
+  rack_mode: ZoneType;
+  area_sqft: number | null;
+  purpose: string | null;
+  cold_chain: number;
+  temp_min_c: number | null;
+  temp_max_c: number | null;
+  hazardous: number;
+  storage_mode: 'regular' | 'fridge' | null;
+  capacity_litres: number | null;
+  dim_unit: 'm' | 'cm' | null;
+  length: number | null;
+  width: number | null;
+  height: number | null;
+  usable_pct: number | null;
+  floor_area: number | null;
+  volume: number | null;
+  usable_volume: number | null;
+  status: number;
+  created_at: string | null;
+};
+
+type WarehouseRow = {
+  id: number;
+  wh_code: string | null;
+  wh_name: string | null;
+  wh_type: 'own' | 'tpl';
+  area_sqft: number | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  map_url: string | null;
+  status: number;
+};
+
+export class ZoneApiError extends Error {
+  constructor(message: string, public status: number | null, public fieldErrors: Record<string, string[]> = {}) {
+    super(message);
+    this.name = 'ZoneApiError';
+  }
+}
+
+async function call<T>(run: () => Promise<{ data: unknown }>, pick: (body: unknown) => T): Promise<T> {
+  try {
+    return pick((await run()).data);
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const body = err.response?.data as { message?: string; errors?: Record<string, string[]> } | undefined;
+      throw new ZoneApiError(body?.message || err.message || 'Request failed', err.response?.status ?? null, body?.errors ?? {});
+    }
+    throw err;
+  }
+}
+
+const num = (v: unknown) => (v == null || v === '' ? 0 : Number(v) || 0);
+
+const toZone = (r: ZoneRow): Zone => {
+  const storage: ZoneStorage = r.rack_mode === 'norack' && r.storage_mode ? r.storage_mode : '';
+  return {
+    apiId: r.id,
+    warehouseId: r.warehouse_id,
+    whName: r.warehouse_name ?? '',
+    id: r.zone_code || `ZN-${String(r.id).padStart(3, '0')}`,
+    date: r.created_at ?? '',
+    type: r.rack_mode === 'norack' ? 'norack' : 'rack',
+    name: r.zone_name ?? '',
+    wh: r.warehouse_id ? `WH-${String(r.warehouse_id).padStart(3, '0')}` : '',
+    area: num(r.area_sqft),
+    purpose: r.purpose ?? '',
+    cold: Number(r.cold_chain) === 1,
+    tempRange: Number(r.cold_chain) === 1 && r.temp_min_c != null && r.temp_max_c != null
+      ? { min: Number(r.temp_min_c), max: Number(r.temp_max_c) }
+      : null,
+    haz: Number(r.hazardous) === 1,
+    storage,
+    litres: storage === 'fridge' && r.capacity_litres != null ? Number(r.capacity_litres) : null,
+    dims: storage === 'regular' && r.length != null && r.width != null && r.height != null
+      ? {
+        unit: r.dim_unit === 'cm' ? 'cm' : 'm',
+        length: num(r.length),
+        width: num(r.width),
+        height: num(r.height),
+        usablePct: num(r.usable_pct),
+        floorArea: num(r.floor_area),
+        volume: num(r.volume),
+        usableVolume: num(r.usable_volume),
+      }
+      : null,
+    status: Number(r.status) === 1 ? 'active' : 'inactive',
+  };
+};
+
+const toWarehouse = (r: WarehouseRow): ZoneWarehouse => ({
+  apiId: r.id,
+  id: r.wh_code || `WH-${String(r.id).padStart(3, '0')}`,
+  name: r.wh_name ?? '',
+  type: r.wh_type === 'tpl' ? 'tpl' : 'own',
+  area: num(r.area_sqft),
+  city: r.city ?? '',
+  state: r.state ?? '',
+  pin: r.pincode ?? '',
+  map: r.map_url ?? '',
+  active: Number(r.status) === 1,
+});
+
+const one = (b: unknown) => toZone((b as { data: ZoneRow }).data);
+
+const listParams = (tab: ZoneTab | undefined) => (tab && tab !== 'all' ? { rack_mode: tab } : {});
+
+export const zoneApi = {
+  list: (q: { tab?: ZoneTab; search?: string; page?: number; per_page?: number }) =>
+    call(() => api.get('/inventory/zones', {
+      params: { ...listParams(q.tab), q: q.search || undefined, page: q.page, per_page: q.per_page },
+    }), (b) => {
+      const body = b as { data?: ZoneRow[]; meta?: ServerPageMeta } | null;
+      return { rows: (body?.data ?? []).map(toZone), meta: body?.meta ?? null };
+    }),
+
+  counts: async (): Promise<ZoneCounts> => {
+    const total = (tab: ZoneType) => call(
+      () => api.get('/inventory/zones', { params: { rack_mode: tab, per_page: 1 } }),
+      (b) => Number((b as { meta?: ServerPageMeta } | null)?.meta?.total ?? 0),
+    );
+    const [rack, norack] = await Promise.all([total('rack'), total('norack')]);
+    return { all: rack + norack, rack, norack };
+  },
+
+  warehouses: async (): Promise<ZoneWarehouse[]> => {
+    const out: ZoneWarehouse[] = [];
+    for (let page = 1, last = 1; page <= last; page++) {
+      const res = await call(
+        () => api.get('/inventory/warehouses', { params: { tab: 'all', page, per_page: 100 } }),
+        (b) => b as { data?: WarehouseRow[]; meta?: ServerPageMeta } | null,
+      );
+      out.push(...(res?.data ?? []).map(toWarehouse));
+      last = res?.meta?.last_page ?? 1;
+    }
+    return out;
+  },
+
+  create: (data: ZonePayload) => call(() => api.post('/inventory/zones', data), one),
+
+  update: (apiId: number, data: ZonePayload) => call(() => api.put(`/inventory/zones/${apiId}`, data), one),
+
+  setStatus: (apiId: number, active: boolean) =>
+    call(() => api.put(`/inventory/zones/${apiId}/status`, { status: active ? 1 : 0 }), one),
+};
 
 export const ZONES: Zone[] = [
   {

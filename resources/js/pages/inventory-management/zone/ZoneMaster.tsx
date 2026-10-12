@@ -1,8 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useServerList } from '../../../hooks/useServerList';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import type { ReactNode } from 'react';
-/* Page chrome, then the warehouse master's cells — the prototype shares those
-   between these masters and this page carries both roots, `whm-page znm-page`,
-   the same way the flags list does. */
 import '../../p2p/p2p-common.css';
 import '../../p2p/purchase-management/order/po-list/order.css';
 import '../warehouse/warehouse-master.css';
@@ -12,15 +11,13 @@ import WorklistPager from '../../../components/ui/WorklistPager';
 import Tooltip from '../../../components/ui/Tooltip';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
 import { useToast } from '../../../contexts/ToastContext';
-import { ZONES, type Zone, type ZoneType } from './zone-data';
-import { WAREHOUSES } from '../warehouse/warehouse-data';
+import { ZoneApiError, zoneApi, type Zone, type ZoneCounts, type ZoneTab, type ZoneWarehouse } from './zone-data';
 
 const ZoneQrModal = lazy(() => import('./ZoneQrModal'));
 const AddZoneModal = lazy(() => import('./AddZoneModal'));
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
-/* Built once at module scope — the table formats two figures per row. */
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -30,14 +27,8 @@ function formatDate(iso: string): string {
   return month ? `${d} ${month} ${y}` : iso;
 }
 
-/* The warehouse each zone sits in, by code. Built once: the list joins on it
-   for every row, and a linear search per row would be 81 × 24. */
-const WAREHOUSE_BY_CODE = new Map(WAREHOUSES.map(w => [w.id, w]));
-
-/** `+8 to +15 °C` — a signed range, as the design writes it. */
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 
-/* ── Icons: the prototype's own paths ─────────────────────────────────── */
 const svg = (d: ReactNode, size = 14, width = 2.2) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -118,7 +109,7 @@ const STEPS: Array<{ no: string; icon: ReactNode; title: string; desc: string }>
   },
 ];
 
-type Tab = 'all' | ZoneType;
+type Tab = ZoneTab;
 
 const TABS: Array<{ key: Tab; label: string; icon: ReactNode }> = [
   { key: 'all', label: 'All Zones', icon: <IcoZone size={15} /> },
@@ -131,69 +122,73 @@ const COLUMNS = [
   'Warehouse', 'Warehouse Location', 'Zone Status', 'Action',
 ];
 
-/**
- * Zone Master.
- *
- * Design only, on static rows, sharing its chrome with the warehouse and
- * product-flag lists. The status switch changes what the row says; nothing is
- * persisted.
- */
 export default function ZoneMaster() {
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
   const [briefOpen, setBriefOpen] = useState(false);
 
   const toast = useToast();
-  const [inactive, setInactive] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(ZONES.filter(z => z.status === 'inactive').map(z => [z.id, true])),
-  );
-  const toggle = useCallback((id: string) => {
-    const next = !inactive[id];
-    setInactive(m => ({ ...m, [id]: next }));
-    /* Outside the updater: React may run one twice, and the toast with it. */
-    if (next) toast.warning(`${id} marked Inactive`, 'It stays in the list, dimmed.');
-    else toast.success(`${id} marked Active`);
-  }, [inactive, toast]);
+  const debouncedQuery = useDebouncedValue(query.trim(), 400);
 
-  const [qrFor, setQrFor] = useState<Zone | null>(null);
-  /* 'new' is Add; a row is Edit; null is closed. */
-  const [formFor, setFormFor] = useState<Zone | 'new' | null>(null);
-
-  /* Counts come from the whole set, never the searched one — a count that
-     shrinks as you type reads as data disappearing. They split by type, which
-     the status switch cannot change, so they are fixed. */
-  const counts = useMemo(() => ({
-    all: ZONES.length,
-    rack: ZONES.filter(z => z.type === 'rack').length,
-    norack: ZONES.filter(z => z.type === 'norack').length,
-  }), []);
-
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return ZONES.filter(z => {
-      if (tab !== 'all' && z.type !== tab) return false;
-      if (!q) return true;
-      const w = WAREHOUSE_BY_CODE.get(z.wh);
-      return [
-        z.id, z.name, z.purpose, z.wh,
-        w?.name, w?.city, w?.state, w?.pin,
-        z.type === 'rack' ? 'with rack' : 'without rack',
-        z.storage === 'fridge' ? 'refrigerator' : z.storage === 'regular' ? 'regular floor' : '',
-        inactive[z.id] ? 'inactive' : 'active',
-      ].filter(Boolean).join(' ').toLowerCase().includes(q);
+  const [warehouses, setWarehouses] = useState<ZoneWarehouse[]>([]);
+  const loadWarehouses = useCallback(() => {
+    zoneApi.warehouses().then(setWarehouses).catch(() => {
+      toast.error('Could not load warehouses', 'Warehouse names and locations may be missing.');
     });
-  }, [tab, query, inactive]);
+  }, [toast]);
+  useEffect(() => { loadWarehouses(); }, [loadWarehouses]);
+  const warehouseById = useMemo(() => new Map(warehouses.map(w => [w.apiId, w])), [warehouses]);
 
-  const [page, setPage] = useState(1);
+  const [counts, setCounts] = useState<ZoneCounts>({ all: 0, rack: 0, norack: 0 });
+  const loadCounts = useCallback(() => {
+    zoneApi.counts().then(setCounts).catch(() => {});
+  }, []);
+  useEffect(() => { loadCounts(); }, [loadCounts]);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pageSize, choosePageSize, refitPageSize] = useFitPageSize(scrollRef);
-  useEffect(() => { if (rows.length) refitPageSize(); }, [rows.length, refitPageSize]);
-  useEffect(() => { setPage(1); }, [tab, query]);
 
-  const total = rows.length;
+  const list = useServerList(
+    (q) => zoneApi.list({ tab: (q.tab as Tab) ?? 'all', search: q.search, page: q.page, per_page: q.per_page }),
+    { perPage: pageSize, search: debouncedQuery, tab },
+    (e) => toast.error('Could not load zones', e instanceof ZoneApiError ? e.message : 'Please refresh the page.'),
+  );
+  const reload = list.reload;
+
+  const rowCount = list.rows.length;
+  useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
+
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const toggle = useCallback(async (z: Zone) => {
+    if (busyId || !z.apiId) return;
+    const activate = z.status !== 'active';
+    setBusyId(z.apiId);
+    try {
+      await zoneApi.setStatus(z.apiId, activate);
+      if (activate) toast.success(`${z.id} marked Active`);
+      else toast.warning(`${z.id} marked Inactive`, 'It stays in the list, dimmed. Its racks are deactivated with it.');
+      reload();
+    } catch (e) {
+      toast.error('Could not change the status', e instanceof ZoneApiError ? e.message : 'Please try again.');
+    } finally {
+      setBusyId(null);
+    }
+  }, [busyId, reload, toast]);
+
+  const [qrFor, setQrFor] = useState<Zone | null>(null);
+  const [formFor, setFormFor] = useState<Zone | 'new' | null>(null);
+
+  const onSaved = useCallback(() => {
+    reload();
+    loadCounts();
+  }, [reload, loadCounts]);
+
+  const rows = list.rows;
+  const total = list.meta?.total ?? 0;
+  const page = list.page;
   const start = (page - 1) * pageSize;
-  const paged = useMemo(() => rows.slice(start, start + pageSize), [rows, start, pageSize]);
-  const changePageSize = useCallback((n: number) => { choosePageSize(n); setPage(1); }, [choosePageSize]);
+  const changePageSize = useCallback((n: number) => choosePageSize(n), [choosePageSize]);
+  const loading = list.loading || list.replacing;
 
   return (
     <div className="spi-root ord-page whm-page znm-page">
@@ -268,7 +263,7 @@ export default function ZoneMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by zone ID, zone name, warehouse or purpose..."
+              placeholder="Search by zone name or purpose..."
               aria-label="Search zones"
               autoComplete="off"
             />
@@ -276,9 +271,11 @@ export default function ZoneMaster() {
           </div>
         </div>
 
-        {total === 0 ? (
+        {loading && rows.length === 0 ? (
+          <div className="ord-empty">Loading zones…</div>
+        ) : total === 0 ? (
           <div className="ord-empty">
-            {query.trim() ? 'No zones match your search.' : 'No zones in this view yet.'}
+            {debouncedQuery ? 'No zones match your search.' : 'No zones in this view yet.'}
           </div>
         ) : (
           <div className="ord-table-scroll" ref={scrollRef}>
@@ -286,9 +283,11 @@ export default function ZoneMaster() {
               <thead>
                 <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
               </thead>
-              {paged.map((z, i) => (
-                <tbody key={z.id}>
-                  <Row z={z} sr={start + i + 1} off={!!inactive[z.id]} onToggle={toggle} onQr={setQrFor} onEdit={setFormFor} />
+              {rows.map((z, i) => (
+                <tbody key={z.apiId ?? z.id}>
+                  <Row z={z} sr={start + i + 1} off={z.status !== 'active'} busy={busyId === z.apiId}
+                    w={z.warehouseId ? warehouseById.get(z.warehouseId) : undefined}
+                    onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={setFormFor} />
                 </tbody>
               ))}
             </table>
@@ -300,7 +299,7 @@ export default function ZoneMaster() {
           total={total}
           page={page}
           pageSize={pageSize}
-          onPage={setPage}
+          onPage={list.goTo}
           onPageSize={changePageSize}
           pageSizeOptions={PAGE_SIZE_OPTIONS}
         />
@@ -310,35 +309,36 @@ export default function ZoneMaster() {
         <Suspense fallback={null}>
           <AddZoneModal
             zone={formFor === 'new' ? undefined : formFor}
+            warehouses={warehouses}
             onClose={() => setFormFor(null)}
+            onSaved={onSaved}
           />
         </Suspense>
       )}
 
       {qrFor && (
         <Suspense fallback={null}>
-          <ZoneQrModal zone={qrFor} onClose={() => setQrFor(null)} />
+          <ZoneQrModal zone={qrFor}
+            warehouse={qrFor.warehouseId ? warehouseById.get(qrFor.warehouseId) : undefined}
+            onClose={() => setQrFor(null)} />
         </Suspense>
       )}
     </div>
   );
 }
 
-/** One zone. */
-function Row({ z, sr, off, onToggle, onQr, onEdit }: {
+function Row({ z, sr, off, busy, w, onToggle, onQr, onEdit }: {
   z: Zone;
   sr: number;
   off: boolean;
-  onToggle: (id: string) => void;
+  busy: boolean;
+  w: ZoneWarehouse | undefined;
+  onToggle: (z: Zone) => void;
   onQr: (z: Zone) => void;
   onEdit: (z: Zone) => void;
 }) {
-  const w = WAREHOUSE_BY_CODE.get(z.wh);
   const rack = z.type === 'rack';
 
-  /* The second line under the area: a refrigerator states its capacity, a
-     measured floor states the volume that is actually usable, and a racked
-     zone has neither — its area is the whole story. */
   const areaSub = z.storage === 'fridge' && z.litres != null
     ? `${inGrouping.format(z.litres)} L capacity`
     : z.dims
@@ -375,7 +375,6 @@ function Row({ z, sr, off, onToggle, onQr, onEdit }: {
             {rack ? <IcoRack size={12} /> : <IcoFloor size={12} />}
             {rack ? 'With Rack' : 'Without Rack'}
           </span>
-          {/* Only a without-rack zone says how it stores. */}
           {!rack && (
             <span className="znm-sub2">
               {z.storage === 'fridge' ? <><IcoFridge size={11} />Refrigerator</> : <><IcoFloor size={11} />Regular floor</>}
@@ -418,8 +417,8 @@ function Row({ z, sr, off, onToggle, onQr, onEdit }: {
 
       <td>
         <div className="znm-whcell">
-          <span className="whm-idpill znm-whid">{z.wh}</span>
-          <b title={w?.name}>{w?.name ?? '—'}</b>
+          <span className="whm-idpill znm-whid">{w?.id ?? z.wh}</span>
+          <b title={w?.name ?? z.whName}>{w?.name || z.whName || '—'}</b>
         </div>
       </td>
 
@@ -460,7 +459,8 @@ function Row({ z, sr, off, onToggle, onQr, onEdit }: {
               className={`whm-toggle${off ? '' : ' is-on'}`}
               role="switch" aria-checked={!off}
               aria-label={`Toggle status of ${z.id}`}
-              onClick={() => onToggle(z.id)}
+              disabled={busy}
+              onClick={() => onToggle(z)}
             >
               <span />
             </button>
