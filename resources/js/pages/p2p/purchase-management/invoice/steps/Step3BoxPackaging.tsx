@@ -6,14 +6,16 @@ import BoxDrawer, { type BoxInitial, type BoxSaveData } from './BoxDrawer';
 import PackedProducts, { type PackedBox } from './PackedProducts';
 import type { CustomFlag } from './ProductFlagsModal';
 import MultiBoxPanel, { splitQuantity, type SplitBox } from './MultiBoxPanel';
-import { lineTotals, truncateDesc, DESC_MAX, type ProductLine } from '../invoice-products';
+import { lineTotals, truncateDesc, truncateName, DESC_MAX, NAME_MAX, type ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
 import type { ProductFlagOption, SpiBox, SpiBoxBody, SpiBoxItem } from '../spi-api';
 
-const BOX_TABLE_COLUMNS = 10;
+/* Checkbox, product, code, description, qty, qty-to-pack, missing, extra,
+   mode, sub-box count, actions. The drawer rows span all of them. */
+const BOX_TABLE_COLUMNS = 11;
 
 type Packing =
   | { scenario: 's1'; qty: number }
@@ -129,6 +131,11 @@ export default function Step3BoxPackaging({
   const pending = lines.length - boxedCount;
 
   const pendingLines = lines.filter(l => remainingOf(l) > 0).map(viewOf);
+
+  /* Whether a box drawer is open inside the table below — a single box, a
+     split, or the mixed carton being built. The table's height cap lifts while
+     one is, since the drawer is a row of that same table. */
+  const drawerOpen = pendingLines.some(l => !!packing[l.code]) || !!mixedBox?.length;
   const selectable = pendingLines.filter(l => !packing[l.code]).map(l => l.code);
   const allSelected = selectable.length > 0 && selectable.every(c => selected.includes(c));
 
@@ -663,7 +670,12 @@ export default function Step3BoxPackaging({
           </div>
         )}
 
-        <div className="vti-table-wrap">
+        {/* Five rows, then scroll — but only while nothing is open inside it.
+            A box drawer renders as a row of this very table and is taller than
+            the cap, so holding the cap would put a 600px drawer in a 500px
+            window and make the thing you are filling in the thing you have to
+            scroll to see. */}
+        <div className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}>
           <table className="vti-table">
             <thead>
               <tr>
@@ -681,7 +693,17 @@ export default function Step3BoxPackaging({
                 <th>Product (SPI)</th>
                 <th>Code</th>
                 <th className="vti-desc-h">Description</th>
+                {/* Invoiced, and how many of them still have to go in a box.
+                    "Pending" rather than "to pack" because the card's own
+                    header already counts products that way — "11 Pending" up
+                    there, this many units pending down here, one word doing
+                    the same job in both places. */}
                 <th>Qty (SPI)</th>
+                <th>
+                  <Tooltip label="Units of this product still waiting to go into a box. It drops as you pack, and the product leaves this table when it reaches zero.">
+                    <span className="vti-th-help">Pending to Pack</span>
+                  </Tooltip>
+                </th>
                 <th>Missing Qty</th>
                 <th>Extra Qty</th>
                 <th>Mode</th>
@@ -691,7 +713,13 @@ export default function Step3BoxPackaging({
             </thead>
             <tbody>
               {pendingLines.map((line, i) => {
-                const { missing, extra } = lineTotals(fullOf(line.code) ?? line);
+                const full = fullOf(line.code);
+                const { missing, extra } = lineTotals(full ?? line);
+                /* What is already in cartons, and what is still to go. Both
+                   from the saved boxes rather than from the row, which the
+                   generator rewrites while a scenario is being set up. */
+                const packed = Math.round((packedQty[line.code] ?? 0) * 1000) / 1000;
+                const left = full ? remainingOf(full) : line.spiQty;
                 const pack = packing[line.code];
                 const single = pack?.scenario === 's1';
                 const split = pack?.scenario === 's2';
@@ -731,7 +759,9 @@ export default function Step3BoxPackaging({
                     <td>
                       <div className="vti-prod-cell">
                         <div>
-                          <div className="vti-prod-name">{line.spiName}</div>
+                          <Tooltip label={line.spiName} disabled={line.spiName.length <= NAME_MAX}>
+                            <div className="vti-prod-name">{truncateName(line.spiName)}</div>
+                          </Tooltip>
                           <div className="vti-prod-sku">HSN {line.hsn}</div>
                           {pack && (
                             <Tooltip label="Reset the packaging scenario for this product">
@@ -752,7 +782,22 @@ export default function Step3BoxPackaging({
                         <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
                       </Tooltip>
                     </td>
-                    <td><span className="vti-qty-badge">{line.spiQty}</span></td>
+                    {/* The invoiced quantity, not what is left: `line` is the
+                        view the generator works in, where spiQty has already
+                        been reduced to the remainder. */}
+                    <td><span className="vti-qty-badge">{full?.spiQty ?? line.spiQty}</span></td>
+                    {/* Amber only once some of it is packed — on an untouched
+                        product the figure is the same as the one beside it,
+                        and colouring it would imply a shortfall. */}
+                    <td>
+                      <Tooltip
+                        label={packed > 0
+                          ? `${left} of ${full?.spiQty ?? line.spiQty} still to pack — ${packed} already in a box`
+                          : `Nothing packed yet — all ${left} still to go`}
+                      >
+                        <span className={`vti-qty-badge${packed > 0 ? ' is-left' : ''}`}>{left}</span>
+                      </Tooltip>
+                    </td>
                     <td>
                       <span className={`cpd-qtypill${missing > 0 ? ' cpd-qtypill--miss' : ''}`}>{missing}</span>
                     </td>
@@ -842,7 +887,7 @@ export default function Step3BoxPackaging({
                 <tr className="invf-allpacked-row">
                   <td colSpan={BOX_TABLE_COLUMNS}>
                     <div className="invf-allpacked">
-                      All {lines.length} product{lines.length === 1 ? '' : 's'} packed in {totalBoxes} box{totalBoxes === 1 ? '' : 'es'} — see Packed Products below.
+                      All {lines.length} product{lines.length === 1 ? '' : 's'} packed in {totalBoxes} box{totalBoxes === 1 ? '' : 'es'} — see Packed Boxes below.
                     </div>
                   </td>
                 </tr>

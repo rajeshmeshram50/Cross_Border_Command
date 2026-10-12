@@ -277,6 +277,18 @@ export function truncateDesc(text: string): string {
   return text.length <= DESC_MAX ? text : `${text.slice(0, DESC_MAX).trimEnd()}…`;
 }
 
+/**
+ * Product names are free text and some are very long — a 60-character name
+ * widens the column it sits in and pushes every control on the row off the
+ * screen. Shorter than the description's 30: a name sits in a narrow column
+ * with its HSN beneath it, where prose gets the width of a sentence.
+ */
+export const NAME_MAX = 20;
+
+export function truncateName(text: string): string {
+  return text.length <= NAME_MAX ? text : `${text.slice(0, NAME_MAX).trimEnd()}…`;
+}
+
 export const PRODUCT_CATALOGUE = PRODUCT_LINES.map(l => ({
   value: l.code,
   label: `${l.code} — ${l.spiName}`,

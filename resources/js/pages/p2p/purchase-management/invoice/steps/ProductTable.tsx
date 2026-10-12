@@ -77,7 +77,10 @@ export default function ProductTable({
         carried from the PI or the PO, or calculated.
       </div>
 
-      <div className="cpd-scroll">
+      {/* `--rows` caps the height at about five lines and scrolls the rest.
+          Only the invoice's copy of this table takes it; the PO wizard's own
+          ProductTable shares the stylesheet but not this modifier. */}
+      <div className="cpd-scroll cpd-scroll--rows">
         <ProductDetailView productId={detailId} onClose={() => setDetailId(null)} />
 
         {(adding || editing != null) && (

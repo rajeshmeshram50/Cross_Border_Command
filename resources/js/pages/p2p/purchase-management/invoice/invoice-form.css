@@ -757,13 +757,95 @@
    table reserves for a checkbox and a product name are the wrong ones here:
    left as they were, the 190px floor meant for a product name sat under "01"
    and opened a gap the width of a product before the box id. */
+/* Keyed to classes, not to nth-child: a carton's second row has no Sr No and
+   no Box ID cell — they are spanned from the row above — so the positions
+   shift and nth-child(3) would start matching the description. */
 .invf-packed .invf-packed-table th:first-child,
-.invf-packed .invf-packed-table td:first-child { min-width: 0; width: 52px; }
+.invf-packed .invf-packed-table td.invf-c-sr { min-width: 0; width: 52px; }
 .invf-packed .invf-packed-table th:nth-child(2),
-.invf-packed .invf-packed-table td:nth-child(2) { min-width: 0; width: 1%; white-space: nowrap; }
-/* Third column is the product, and it is the one that needs the floor. */
+.invf-packed .invf-packed-table td.invf-c-box { min-width: 0; width: 1%; white-space: nowrap; }
+/* The product column is the one that needs the floor. */
 .invf-packed .invf-packed-table th:nth-child(3),
-.invf-packed .invf-packed-table td:nth-child(3) { min-width: 190px; text-align: left; }
+.invf-packed .invf-packed-table td.invf-c-prod { min-width: 190px; text-align: left; }
+/* A carton's own cells sit in the middle of the block they span, the way the
+   PO list centres its PO figures against a three-invoice group — they belong
+   to the whole carton, not to its first product. */
+.invf-packed-table td[rowspan] { vertical-align: middle; }
+
+/* "Item 1/2" — the same chip the PO list puts on a mapped SPI, so a stacked
+   group reads the same way in both places. */
+.invf-seq {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 7.5px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #93aebb;
+  background: #f2f8fa;
+  border: 1px solid #e6f1f5;
+}
+[data-bs-theme="dark"] .invf-seq {
+  color: #7c93a8;
+  background: rgba(148, 163, 184, .1);
+  border-color: rgba(148, 163, 184, .2);
+}
+
+/* The base table aligns by position: `td:first-child` and `td:nth-child(2)`
+   are left, everything else centred. A carton's continuation rows have no Sr
+   No and no Box ID cell — they are spanned from above — so those two rules
+   land on Product and CODE instead, and the second product's code sat left
+   while the first one's was centred.
+
+   Alignment is stated per class here, so it does not depend on how many cells
+   a given row happens to carry. */
+.invf-packed-table tbody.invf-grp td { text-align: center; padding-left: 10px; }
+/* Only the two that carry prose read from the left. The carton's own
+   columns — Sr No, Box ID, Scenario, Products in Box, Action — are centred,
+   which is also what keeps them under their centred headers. */
+.invf-packed-table tbody.invf-grp td.invf-c-prod,
+.invf-packed-table tbody.invf-grp td.vti-desc { text-align: left; }
+.invf-packed .invf-packed-table th:first-child,
+.invf-packed .invf-packed-table th:nth-child(2) { text-align: center; }
+
+/* The per-product block, bracketed left and right by a dashed rule and laid
+   on a faint tint — the PO list marks its mapped SPI/GRN/QA group the same
+   way. It is what says which columns repeat down a carton and which belong to
+   the carton as a whole, without a second header row to explain it. */
+.invf-packed-table th.invf-c-prod,
+.invf-packed-table td.invf-c-prod { border-left: 1.5px dashed #cdeef3; }
+.invf-packed-table th.invf-c-end,
+.invf-packed-table td.invf-c-end { border-right: 1.5px dashed #cdeef3; }
+/* Two shades inside the bracket, the way the PO list gives its SPI, GRN and
+   QA columns one each: what the product IS on a cool tint, and how much of it
+   is in the box on a warm one. The split is where the eye jumps anyway —
+   identity on the left, counting on the right.
+
+   Barely there on purpose. These sit behind every row, so anything stronger
+   stops being a background and starts being a highlight competing with the
+   open-carton state. Tagged on each cell rather than taken with `~`, which
+   would run past the block into the carton's own cells. */
+.invf-packed-table tbody.invf-grp td.invf-c-id { background: #fafdff; }
+.invf-packed-table tbody.invf-grp td.invf-c-qty { background: #fafefb; }
+
+[data-bs-theme="dark"] .invf-packed-table th.invf-c-prod,
+[data-bs-theme="dark"] .invf-packed-table td.invf-c-prod { border-left-color: rgba(34, 211, 238, .26); }
+[data-bs-theme="dark"] .invf-packed-table th.invf-c-end,
+[data-bs-theme="dark"] .invf-packed-table td.invf-c-end { border-right-color: rgba(34, 211, 238, .26); }
+[data-bs-theme="dark"] .invf-packed-table tbody.invf-grp td.invf-c-id { background: rgba(34, 211, 238, .045); }
+[data-bs-theme="dark"] .invf-packed-table tbody.invf-grp td.invf-c-qty { background: rgba(16, 185, 129, .045); }
+
+/* Inside a carton the rows are divided faintly; the carton itself closes with
+   the table's own rule. Same two weights the PO list uses on its groups. */
+.invf-packed-table tbody.invf-grp td { border-bottom: 1px dashed rgba(8, 145, 178, .22); }
+.invf-packed-table tbody.invf-grp tr.is-last td { border-bottom: 1px solid #f1f5f9; }
+.invf-packed-table tbody.invf-grp:last-child tr.is-last td { border-bottom: none; }
+
+[data-bs-theme="dark"] .invf-packed-table tbody.invf-grp td { border-bottom-color: rgba(34, 211, 238, .18); }
+[data-bs-theme="dark"] .invf-packed-table tbody.invf-grp tr.is-last td { border-bottom-color: rgba(148, 163, 184, .13); }
 /* Give the description room to earn its 30 characters in both tables. */
 .vti-table td.vti-desc { min-width: 210px; }
 
@@ -1028,18 +1110,33 @@
   font-variant-numeric: tabular-nums;
 }
 /* Narrow enough that eleven columns still fit, wide enough for "SN-00123". */
+/* The identity fields. Taller and edged more firmly than the shared
+   `.cpd-in`: there are eleven of them on a row, all empty, and at a 1.5px
+   #e6eef3 edge a row of them reads as a smear rather than as eleven things
+   you can type in. */
+/* One width for all eleven. Each kind used to set its own floor — 104 for a
+   code, 122 for a date, 190 for the note — and since the floor is what sizes
+   the column, the row came out as three different box widths. */
 .invf-selprod__in {
   width: 100%;
-  min-width: 104px;
-  height: 28px;
-  padding: 4px 7px;
-  font-size: 10.5px;
+  min-width: 130px;
+  height: 32px;
+  padding: 4px 9px;
+  border-color: #dbe7ee;
+  border-radius: 8px;
+  font-size: 11px;
   font-weight: 600;
+  background: #fcfeff;
 }
-/* A date input carries its own picker glyph, so it needs the extra room. */
-.invf-selprod__in[type="date"] { min-width: 122px; }
-/* Remarks is prose, not a code: room for a short sentence before it scrolls. */
-.invf-selprod__in--note { min-width: 190px; }
+.invf-selprod__in:hover { border-color: #bfe3ee; background: #fff; }
+/* A placeholder that is only slightly lighter than a value reads as a value.
+   This one is clearly an example — it says "e.g." and looks like it. */
+.invf-selprod__in::placeholder { color: #9fb3bf; font-weight: 500; }
+/* Remarks is prose, so it reads from the left, where a sentence starts. The
+   codes beside it stay centred — that column is scanned down, not read. It
+   takes no extra width: a note is typed and scrolls, where a box wider than
+   its neighbours is seen on every row that is empty. */
+.invf-selprod__in--note { text-align: left; }
 .invf-selprod .vti-table td { vertical-align: middle; }
 
 .invf-selprod__clear,
@@ -1341,6 +1438,11 @@
 [data-bs-theme="dark"] .vti-subbox-inp::placeholder,
 [data-bs-theme="dark"] .invf-selprod__in::placeholder,
 [data-bs-theme="dark"] .vti-dw-inp::placeholder { color: #5b7585; }
+/* The light hover lifts these to #fff, which on a dark card is a white box. */
+[data-bs-theme="dark"] .invf-selprod__in:hover {
+  background: #102630;
+  border-color: rgba(34, 211, 238, .42);
+}
 
 /* The drawer body under a box, and the sticker's own card. */
 [data-bs-theme="dark"] .vti-dw-body,
@@ -1917,6 +2019,90 @@
 [data-bs-theme="dark"] .vti-dw-shots-lbl { color: #67e8f9; }
 [data-bs-theme="dark"] .vti-dw-shot { background: #13242e; border-color: rgba(34, 211, 238, .26); }
 
+/* ── Stage 02's product table: five rows, then scroll ──────────────────
+   A thirteen-line invoice pushed the Update & Next button a page and a half
+   down, so the table was read by scrolling the whole screen and the footer
+   totals were never on screen with the rows they totalled.
+
+   The header sticks to the top and the totals to the bottom, so whichever
+   five lines you are looking at, you can still see what the columns are and
+   what they add up to. */
+.cpd-scroll--rows {
+  max-height: 500px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #bfe3ec transparent;
+}
+.cpd-scroll--rows::-webkit-scrollbar { width: 8px; height: 8px; }
+.cpd-scroll--rows::-webkit-scrollbar-track { background: transparent; }
+.cpd-scroll--rows::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 999px; }
+.cpd-scroll--rows::-webkit-scrollbar-thumb:hover { background: #8fd0e0; }
+
+/* Both header rows travel together, which is why this sits on `thead` rather
+   than on each `th` — per-cell sticky would need the group row's exact height
+   as the second row's offset, and that height is whatever the text makes it. */
+.cpd-scroll--rows .cpd-tbl thead { position: sticky; top: 0; z-index: 4; }
+.cpd-scroll--rows .cpd-tbl tfoot { position: sticky; bottom: 0; z-index: 4; }
+
+/* The header's teal is painted on `thead`, and its cells are transparent. In a
+   `border-collapse: collapse` table only CELL backgrounds paint over scrolled
+   content — a row's background on `thead` does not — so the rows were showing
+   straight through the header. The two left columns looked fine precisely
+   because they already carry their own background.
+
+   So the cells take the colour. Flat rather than the 110deg gradient: a
+   gradient restarts inside every cell, which banded the header into columns.
+   The two that already set their own are left alone.
+
+   The footer needs nothing: its cells already set their own background, which
+   is why the totals row stuck cleanly from the start. */
+.cpd-scroll--rows .cpd-tbl thead th:not(.cpd-stick):not(.cpd-edh) { background: #0b7c9b; }
+
+[data-bs-theme="dark"] .cpd-scroll--rows { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
+[data-bs-theme="dark"] .cpd-scroll--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
+
+/* A header that carries an explanation. Dotted underline rather than an info
+   icon: the icon would need its own space in a cell that is already the
+   narrowest thing in the row. */
+.vti-th-help {
+  border-bottom: 1px dotted currentColor;
+  cursor: help;
+  padding-bottom: 1px;
+}
+
+/* Pending to Pack, beside the invoiced quantity. Amber only where it differs from
+   what was invoiced — that is the whole signal: a part-packed product, with
+   this much of it still loose. Where the two match there is nothing to say,
+   and a second coloured badge would imply a shortfall. */
+.vti-qty-badge.is-left { color: #b45309; background: #fef3c7; }
+
+[data-bs-theme="dark"] .vti-qty-badge.is-left { color: #fcd34d; background: rgba(245, 158, 11, .18); }
+
+/* ── Stage 03's product table: five rows, then scroll ──────────────────
+   Same cap as Stage 02's. The header sticks so the columns stay named while
+   you scroll — this table's rows carry controls, not just figures, and Mode
+   next to Sub-box Count is not guessable once the header has gone.
+
+   Applied by the step only while no box drawer is open; a drawer is a row of
+   this table and taller than the cap. */
+.vti-wrap--rows {
+  max-height: 500px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #bfe3ec transparent;
+}
+.vti-wrap--rows::-webkit-scrollbar { width: 8px; height: 8px; }
+.vti-wrap--rows::-webkit-scrollbar-track { background: transparent; }
+.vti-wrap--rows::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 999px; }
+.vti-wrap--rows::-webkit-scrollbar-thumb:hover { background: #8fd0e0; }
+.vti-wrap--rows .vti-table thead { position: sticky; top: 0; z-index: 4; }
+
+[data-bs-theme="dark"] .vti-wrap--rows { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
+[data-bs-theme="dark"] .vti-wrap--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
+/* The dark header is rgba(12,38,48,.5) — fine sitting on the card, but a
+   sticky header has rows passing under it, and they would show through. */
+[data-bs-theme="dark"] .vti-wrap--rows .vti-table thead th { background: #0b1d26; }
+
 /* The row number. Quiet and tabular, because it is there to be referred to
    ("row 2"), not to be read down the column. */
 .invf-sr {
@@ -2052,51 +2238,16 @@
 
 .vti-dw-strip .vti-dw-close-btn:disabled { opacity: .5; cursor: default; }
 
-/* The row whose carton is open in the drawer above, marked so the two are
-   visibly the same box. */
-.invf-grp-row.is-open > td { background: #f0fdff; }
-[data-bs-theme="dark"] .invf-grp-row.is-open > td { background: rgba(8, 145, 178, .1); }
+/* The carton that is open in the drawer above, marked so the two are visibly
+   the same box. On the tbody, which is the whole carton now — highlighting one
+   row of a four-product block would point at a product. */
+.invf-packed-table tbody.invf-grp.is-open td { background: #f0fdff; }
+[data-bs-theme="dark"] .invf-packed-table tbody.invf-grp.is-open td { background: rgba(8, 145, 178, .1); }
 .vti-btn-single--edit.is-on {
   color: #fff;
   background: linear-gradient(135deg, #22d3ee, #0891b2);
   border-color: transparent;
 }
-
-/* Several products in one carton: one row, their values stacked and divided,
-   rather than a row each pretending to be separate boxes. */
-.invf-stack {
-  display: flex;
-  flex-direction: column;
-}
-
-/* `justify-content: inherit` was the bug the headers exposed: a <td> is not a
-   flex container, so there was nothing to inherit and every stacked cell fell
-   back to flex-start -- centred headers over left-packed values, while the
-   un-stacked columns beside them stayed centred. Each cell now matches the
-   alignment its own column uses. */
-.invf-stack__cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 46px;
-  padding: 6px 0;
-}
-
-.invf-packed-table td:nth-child(3) .invf-stack__cell,
-.invf-packed-table td.vti-desc .invf-stack__cell { justify-content: flex-start; }
-
-.invf-stack__cell + .invf-stack__cell {
-  border-top: 1px dashed rgba(8, 145, 178, .26);
-}
-
-[data-bs-theme="dark"] .invf-stack__cell + .invf-stack__cell {
-  border-top-color: rgba(6, 182, 212, .24);
-}
-
-/* A grouped row's own cells sit against the top so the box id and the
-   scenario line up with the first product rather than floating in the middle
-   of a two-product row. */
-.invf-grp-row > td { vertical-align: middle; }
 
 /* What a mixed carton holds, under its unit count in the box list. */
 .invf-boxchip__mix {
