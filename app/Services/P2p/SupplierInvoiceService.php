@@ -93,6 +93,33 @@ class SupplierInvoiceService
     }
 
 
+    /**
+     * Split one PO line's balance into the two figures everything downstream
+     * actually wants.
+     *
+     * openQtyByPoItem() returns `ordered - billed`, which goes negative once a
+     * line is over-supplied. Every caller then has to decide what a negative
+     * quantity means, and they were each deciding it slightly differently —
+     * which is how an over-supply caused by one invoice ended up reported as
+     * the NEXT invoice's shortfall. One method, one answer.
+     *
+     *   open    what may still be billed. Never negative: an over-supplied
+     *           line has nothing left to give.
+     *   over    how far the order has ALREADY been passed. Belongs to the
+     *           invoices that caused it, not to the one being written now.
+     *   closed  nothing left to bill — fully met, or already over.
+     *
+     * @return array{open: float, over: float, closed: bool}
+     */
+    public function splitBalance(float $balance): array
+    {
+        return [
+            'open'   => max(0.0, round($balance, 3)),
+            'over'   => max(0.0, round(-$balance, 3)),
+            'closed' => $balance <= 0,
+        ];
+    }
+
     public function openQtyByPoItem(int $poId, ?int $ignoreSpiId = null): array
     {
         // No deleted_at filter: p2p_purchase_order_items is hard-deleted, it has
@@ -183,8 +210,15 @@ class SupplierInvoiceService
         if ($item->po_item_id === null) return;   // standalone or unmapped: consumes no PO quantity
 
         $poQty = (float) DB::table('p2p_purchase_order_items')->where('id', $item->po_item_id)->value('quantity');
-        $open  = $this->openQtyByPoItem((int) $item->invoice->purchase_order_id)[$item->po_item_id] ?? 0;
         $now   = $event === SpiPoFulfilment::EVENT_CANCELLED ? 0.0 : (float) $item->qty_spi;
+
+        /* The balance the moment this row is written — a historical reading,
+           not a live figure. It is deliberately left signed: negative means the
+           order was already past its quantity at that point, and the ledger is
+           the one place where the raw difference is worth keeping, because a
+           reader can diff two rows to see what a change did. splitBalance()
+           turns it into open / over wherever it is displayed. */
+        $balance = $this->openQtyByPoItem((int) $item->invoice->purchase_order_id)[$item->po_item_id] ?? 0;
 
         SpiPoFulfilment::create([
             'purchase_order_id'        => $item->invoice->purchase_order_id,
@@ -197,7 +231,7 @@ class SupplierInvoiceService
             'previous_qty'             => $previous,
             'current_qty'              => $now,
             'change_qty'               => round($now - (float) ($previous ?? 0), 3),
-            'pending_after'            => $open,
+            'pending_after'            => $balance,
             'changed_by'               => TenantContext::active() ? auth()->id() : null,
             'created_at'               => now(),
         ]);
