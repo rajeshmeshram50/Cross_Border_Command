@@ -22,7 +22,6 @@ import {
   type ProductLine, type SpiPoOpen,
 } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
-import { STORAGE_WAREHOUSES } from './data';
 
 const STAGES = [
   { title: 'Supplier Details', desc: 'Link the PO and confirm supplier details' },
@@ -582,5 +581,5 @@ function StageSkeleton({ stage }: { stage: number }) {
 
 function warehouseLabel(storage: StorageChoice): string {
   if (storage.type === 'third-party') return 'Third Party Warehouse';
-  return storage.warehouse?.name ?? STORAGE_WAREHOUSES[0]?.name ?? '—';
+  return storage.warehouse?.name ?? '—';
 }

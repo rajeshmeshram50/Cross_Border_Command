@@ -170,6 +170,19 @@ export default function WarehouseMaster() {
   const [qrFor, setQrFor] = useState<Warehouse | null>(null);
   const [formFor, setFormFor] = useState<Warehouse | 'new' | null>(null);
 
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const openEdit = useCallback(async (w: Warehouse) => {
+    if (!w.apiId || openingId) return;
+    setOpeningId(w.apiId);
+    try {
+      setFormFor(await warehouseApi.show(w.apiId));
+    } catch (e) {
+      toast.error('Could not open the warehouse', e instanceof WarehouseApiError ? e.message : 'Please try again.');
+    } finally {
+      setOpeningId(null);
+    }
+  }, [openingId, toast]);
+
   const onSaved = useCallback(() => {
     reload();
     loadCounts();
@@ -284,7 +297,8 @@ export default function WarehouseMaster() {
               {rows.map((w, i) => (
                 <tbody key={w.apiId ?? w.id}>
                   <Row w={w} sr={start + i + 1} off={w.status !== 'active'} busy={busyId === w.apiId}
-                    onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={setFormFor} />
+                    opening={openingId === w.apiId}
+                    onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={t => void openEdit(t)} />
                 </tbody>
               ))}
             </table>
@@ -321,11 +335,12 @@ export default function WarehouseMaster() {
   );
 }
 
-function Row({ w, sr, off, busy, onToggle, onQr, onEdit }: {
+function Row({ w, sr, off, busy, opening, onToggle, onQr, onEdit }: {
   w: Warehouse;
   sr: number;
   off: boolean;
   busy: boolean;
+  opening: boolean;
   onToggle: (w: Warehouse) => void;
   onQr: (w: Warehouse) => void;
   onEdit: (w: Warehouse) => void;
@@ -402,7 +417,7 @@ function Row({ w, sr, off, busy, onToggle, onQr, onEdit }: {
       <td>
         <div className="whm-acts">
           <button type="button" className="whm-act" aria-label={`Edit ${w.id}`}
-            title="Edit this warehouse" onClick={() => onEdit(w)}>
+            title="Edit this warehouse" disabled={opening} onClick={() => onEdit(w)}>
             <IcoEdit />
           </button>
           <button

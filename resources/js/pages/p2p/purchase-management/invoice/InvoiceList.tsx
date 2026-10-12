@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import '../../p2p-common.css';
 import '../order/po-list/order.css';
 import { INVOICE_STEPS } from './steps';
-import { NEXT_INVOICE_NO, STORAGE_WAREHOUSES } from './data';
+import { NEXT_INVOICE_NO } from './data';
+import type { StorageWarehouse } from './types';
 import { InvoiceTable } from './InvoiceTable';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import SearchClear from '../../../../components/ui/SearchClear';
@@ -64,6 +65,18 @@ export default function InvoiceList() {
   const [storageFor, setStorageFor] = useState<InvoiceMapChoice | null>(null);
   const closeStorage = useCallback(() => setStorageFor(null), []);
 
+  const [storageWarehouses, setStorageWarehouses] = useState<StorageWarehouse[]>([]);
+  const [warehousesState, setWarehousesState] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle');
+  useEffect(() => {
+    if (!storageFor) return;
+    let live = true;
+    setWarehousesState('loading');
+    spiApi.warehouses()
+      .then(list => { if (live) { setStorageWarehouses(list); setWarehousesState('ready'); } })
+      .catch(() => { if (live) setWarehousesState('failed'); });
+    return () => { live = false; };
+  }, [storageFor]);
+
   const confirmMap = useCallback((choice: InvoiceMapChoice) => {
     setMapOpen(false);
     setStorageFor(choice);
@@ -104,9 +117,8 @@ export default function InvoiceList() {
           : {
             type: 'own',
             warehouse: row.warehouseName
-              ? STORAGE_WAREHOUSES.find(w => w.name === row.warehouseName)
-                ?? { id: row.warehouseName, name: row.warehouseName, location: '—' }
-              : STORAGE_WAREHOUSES[0],
+              ? { id: row.warehouseName, name: row.warehouseName, location: '—' }
+              : undefined,
           },
         invoiceNo: row.invoiceNo,
       });
@@ -292,7 +304,8 @@ export default function InvoiceList() {
         <StorageSelectionModal
           reference={storageFor.poNo ?? storageFor.supplier ?? '—'}
           referenceKind={storageFor.mode === 'with-po' ? 'po' : 'supplier'}
-          warehouses={STORAGE_WAREHOUSES}
+          warehouses={storageWarehouses}
+          warehousesState={warehousesState}
           onClose={closeStorage}
           onNext={confirmStorage}
         />

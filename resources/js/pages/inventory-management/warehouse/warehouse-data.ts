@@ -79,6 +79,15 @@ type WarehouseRow = {
   created_at: string | null;
 };
 
+export interface WarehouseLabel {
+  code: string;
+  title: string;
+  subtitle: string | null;
+  rows: Array<[string, string]>;
+  flags: Array<{ text: string; tone: string }>;
+  qr: string | null;
+}
+
 export class WarehouseApiError extends Error {
   constructor(message: string, public status: number | null, public fieldErrors: Record<string, string[]> = {}) {
     super(message);
@@ -179,6 +188,21 @@ export const warehouseApi = {
 
   setStatus: (apiId: number, active: boolean) =>
     call(() => api.put(`/inventory/warehouses/${apiId}/status`, { status: active ? 1 : 0 }), one),
+
+  show: (apiId: number) => call(() => api.get(`/inventory/warehouses/${apiId}`), one),
+
+  preview: (apiId: number) => call(() => api.get(`/inventory/warehouses/${apiId}/preview`), (b): WarehouseLabel => {
+    const d = (b as { data?: Record<string, unknown> } | null)?.data ?? {};
+    const rows = (d.rows && typeof d.rows === 'object' ? d.rows : {}) as Record<string, unknown>;
+    return {
+      code: String(d.code ?? ''),
+      title: String(d.title ?? ''),
+      subtitle: d.subtitle ? String(d.subtitle) : null,
+      rows: Object.entries(rows).map(([k, v]) => [k, String(v)] as [string, string]),
+      flags: Array.isArray(d.flags) ? (d.flags as Array<{ text: string; tone: string }>) : [],
+      qr: typeof d.qr === 'string' ? d.qr : null,
+    };
+  }),
 
   nextCode: () => call(
     () => api.get('/inventory/warehouses/next-code'),

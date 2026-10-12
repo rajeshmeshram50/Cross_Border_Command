@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import '../warehouse/warehouse-master.css';
-import type { Zone, ZoneWarehouse } from './zone-data';
+import { ZoneApiError, zoneApi, type Zone, type ZoneWarehouse } from './zone-data';
 
 const Ico = (d: React.ReactNode, size: number) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -31,6 +31,8 @@ export default function ZoneQrModal({ zone: z, warehouse: w, onClose }: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<'painting' | 'ready' | 'failed'>('painting');
+  const [code, setCode] = useState<string | null>(null);
+  const [error, setError] = useState('');
 
   useEffect(() => { cardRef.current?.focus(); }, []);
   useEffect(() => {
@@ -40,22 +42,38 @@ export default function ZoneQrModal({ zone: z, warehouse: w, onClose }: {
   }, [onClose]);
 
   useEffect(() => {
+    if (!z.apiId) { setState('failed'); setError('This zone has not been saved yet.'); return; }
+    let live = true;
+    setState('painting');
+    zoneApi.previewCode(z.apiId)
+      .then(c => { if (live) setCode(c || z.id); })
+      .catch(e => {
+        if (!live) return;
+        setState('failed');
+        setError(e instanceof ZoneApiError ? e.message : 'QR could not be loaded.');
+      });
+    return () => { live = false; };
+  }, [z.apiId, z.id]);
+
+  useEffect(() => {
     const c = canvasRef.current;
-    if (!c) return;
-    QRCode.toCanvas(c, z.id, {
-      width: 196, margin: 0, errorCorrectionLevel: 'M',
+    if (!c || !code) return;
+    QRCode.toCanvas(c, code, {
+      width: 196, margin: 0, errorCorrectionLevel: 'H',
       color: { dark: '#0c4a6e', light: '#ffffff' },
     })
       .then(() => setState('ready'))
-      .catch(() => setState('failed'));
-  }, [z]);
+      .catch(() => { setState('failed'); setError('QR could not be generated.'); });
+  }, [code]);
+
+  const shownCode = code || z.id;
 
   const download = () => {
     const c = canvasRef.current;
     if (!c || state !== 'ready') return;
     const a = document.createElement('a');
     a.href = c.toDataURL('image/png');
-    a.download = `${z.id}-QR.png`;
+    a.download = `${shownCode}-QR.png`;
     a.click();
   };
 
@@ -84,9 +102,9 @@ export default function ZoneQrModal({ zone: z, warehouse: w, onClose }: {
               <canvas ref={canvasRef} width={196} height={196}
                 style={{ display: state === 'ready' ? 'block' : 'none' }} />
               {state === 'painting' && <span className="whm-qr__load">Generating QR…</span>}
-              {state === 'failed' && <span className="whm-qr__load">QR could not be generated.</span>}
+              {state === 'failed' && <span className="whm-qr__load">{error || 'QR could not be generated.'}</span>}
             </div>
-            <div className="whm-qr__id">{z.id}</div>
+            <div className="whm-qr__id">{shownCode}</div>
             <div className="whm-qr__name">{z.name}</div>
             <div className="whm-qr__addr">
               {[w?.id ?? z.wh, w?.name || z.whName].filter(Boolean).join(' · ')}
