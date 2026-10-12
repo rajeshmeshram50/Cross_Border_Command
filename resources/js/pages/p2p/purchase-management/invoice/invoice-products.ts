@@ -1,4 +1,7 @@
 import type { PoItem } from '../order/api/po-api';
+
+/** What /p2p/spi/orders/{po}/lines reports per line, as the grid needs it. */
+export type SpiPoOpen = { qty_open: number; qty_billed: number; qty_over: number; closed: boolean };
 export interface ProductLine {
   key?: string;
   piCode?: string;
@@ -16,11 +19,33 @@ export interface ProductLine {
   productId?: number;
   piQty: number;
   poQty: number;
+  /**
+   * What THIS invoice may still bill on the line, from the server.
+   *
+   * Not the same as poQty once a second invoice exists: poQty is what the order
+   * asked for once, this is what is left after every other invoice took its
+   * share. Never negative — an over-supplied line has nothing left to give.
+   *
+   * Absent on the demo rows, which have no PO behind them; openQtyOf() falls
+   * back to poQty there.
+   */
+  poOpenQty?: number;
+  /** How much every OTHER invoice on this PO has already billed. */
+  poBilledQty?: number;
+  /** How far earlier invoices already went past the order. Shown as context,
+   *  never as this invoice EXTRA — that over-supply belongs to the invoice
+   *  that caused it. */
+  poOverQty?: number;
+  /** Nothing left to invoice: the line is done, or already over-supplied. */
+  poClosed?: boolean;
   spiQty: number;
   spiRate: number;
   poRate: number;
   gst: number;
 }
+
+/** The quantity this invoice is actually working against. */
+export const openQtyOf = (l: ProductLine): number => l.poOpenQty ?? l.poQty;
 
 export type TaxMode = 'intra' | 'inter' | 'export';
 
@@ -73,8 +98,12 @@ export function lineTotals(l: ProductLine, mode: TaxMode = 'intra'): LineTotals 
     sgst,
     igst,
     cost: round2(base + gstAmount),
-    missing: Math.max(0, l.poQty - l.spiQty),
-    extra: Math.max(0, l.spiQty - l.poQty),
+    /* Measured against what is OPEN, not against the original order, and not
+       against what earlier invoices over-supplied. A line the previous invoice
+       covered is not missing again here; one it over-supplied opens at zero and
+       only counts as extra if THIS invoice bills against it. */
+    missing: Math.max(0, openQtyOf(l) - l.spiQty),
+    extra: Math.max(0, l.spiQty - openQtyOf(l)),
   };
 }
 
@@ -83,7 +112,8 @@ export function tableTotals(lines: ProductLine[], mode: TaxMode = 'intra') {
     const c = lineTotals(l, mode);
     return {
       piQty: t.piQty + l.piQty,
-      poQty: t.poQty + l.poQty,
+      // The open column, so the footer adds up to what the rows show.
+      poQty: t.poQty + openQtyOf(l),
       spiQty: t.spiQty + l.spiQty,
       missing: t.missing + c.missing,
       extra: t.extra + c.extra,
@@ -147,11 +177,19 @@ const withoutCodePrefix = (name: string, code: string | null | undefined) => {
   return name.replace(new RegExp(`^\\s*${esc}\\s*[–—-]\\s*`), '') || name;
 };
 
-export function linesFromPo(items: PoItem[], open: Record<number, number>): ProductLine[] {
+/**
+ * @param open  Per PO line, what the server says is left after every OTHER
+ *              invoice on this order. Keyed by po_item_id. Empty when the PO
+ *              has no invoices yet, and the row then opens on its full quantity.
+ */
+export function linesFromPo(items: PoItem[], open: Record<number, SpiPoOpen>): ProductLine[] {
   return items.map(it => {
     const poQty = num(it.quantity);
-    const left = open[it.id];
-    const spiQty = left === undefined ? poQty : Math.max(0, left);
+    const o = open[it.id];
+    // No entry at all means nothing is invoiced yet, so the whole line is open.
+    const poOpenQty = o ? o.qty_open : poQty;
+    // Pre-fill with what is left; a closed or over-supplied line opens at zero.
+    const spiQty = Math.max(0, poOpenQty);
     const name = it.product_name ?? it.description ?? `Line ${it.line_no}`;
     return {
       key: `po-${it.id}`,
@@ -171,6 +209,10 @@ export function linesFromPo(items: PoItem[], open: Record<number, number>): Prod
       description: it.description ?? '',
       piQty: num(it.pi_quantity ?? (it.pi_item_id ? poQty : 0)),
       poQty,
+      poOpenQty,
+      poBilledQty: o ? o.qty_billed : 0,
+      poOverQty: o ? o.qty_over : 0,
+      poClosed: o ? o.closed : false,
       spiQty,
       spiRate: num(it.rate),
       poRate: num(it.rate),

@@ -6,11 +6,8 @@ import {
 } from '../../../icons';
 import { type CustomFlag } from './ProductFlagsModal';
 const AddProductFlagModal = lazy(() => import('../../../../inventory-management/product-flag/AddProductFlagModal'));
-/* The same camera Physical Inspection uses. Lazy because it carries its own
-   stylesheet and most boxes are saved without a photo. */
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
 
-/** A photo of the carton, with the preview URL it is shown by. */
 type Shot = { file: File; url: string };
 import TemperatureModal, { formatRange, type TempRange } from './TemperatureModal';
 import SelectedProducts, {
@@ -71,16 +68,6 @@ export interface BoxSaveData {
   identities: Record<string, ProductIdentity>;
 }
 
-/**
- * A saved box, read back into the fields that made it.
- *
- * The same shape `collect()` produces, so editing is the drawer's own output
- * handed back to it -- anything it can save, it can reopen.
- *
- * Lengths are centimetres and weights kilograms, which is how the server
- * stores them; the drawer's CM/M and KG/G toggles start at those units on an
- * edit so the numbers shown are the numbers saved.
- */
 export interface BoxInitial {
   dims: BoxSaveData['dims'];
   condition: BoxSaveData['condition'];
@@ -94,7 +81,6 @@ export interface BoxInitial {
 
 const VOLUMETRIC_DIVISOR = 5000;
 
-/** A stored number back into a field: null and 0 both mean "not entered". */
 const dimStr = (v: number | null | undefined) => (v == null ? '' : String(v));
 
 export default function BoxDrawer({
@@ -105,6 +91,7 @@ export default function BoxDrawer({
   variant = 'accordion',
   contents,
   onRemoveContent,
+  onContentQtyChange,
   onClearContents,
   onSave,
   onClose,
@@ -116,7 +103,6 @@ export default function BoxDrawer({
   boxId: string;
   line: ProductLine;
   quantity: number;
-  /** Open the drawer on a box that already exists, with its saved values. */
   initial?: BoxInitial;
   scenario?: string;
   modeKey?: string;
@@ -124,18 +110,15 @@ export default function BoxDrawer({
   variant?: 'accordion' | 'panel';
   contents?: BoxContent[];
   onRemoveContent?: (code: string) => void;
+  onContentQtyChange?: (code: string, qty: number) => void;
   onClearContents?: () => void;
   onSave?: (data: BoxSaveData) => void;
-  /** Close the drawer without saving. Only the edit route has one. */
   onClose?: () => void;
   saving?: boolean;
   saved?: boolean;
   customFlags?: CustomFlag[];
   onQuantityChange?: (qty: number) => void;
 }) {
-  /* Seeded lazily rather than through an effect: the drawer is mounted fresh
-     per box (keyed on its id), so the first render already has the right
-     values and there is no moment where an edit shows an empty form. */
   const [unit, setUnit] = useState<'cm' | 'm'>('cm');
   const [wUnit, setWUnit] = useState<'kg' | 'g'>('kg');
   const [dims, setDims] = useState<Record<string, string>>((): Record<string, string> => (initial ? {
@@ -146,8 +129,6 @@ export default function BoxDrawer({
     netWeight: dimStr(initial.dims.net_weight_kg),
     grossWeight: dimStr(initial.dims.gross_weight_kg),
   } : {}));
-  /* The drawer's chip is "mismatch"; the server's value is "mismatched".
-     collect() maps one way, this maps the other. */
   const [remark, setRemark] = useState<string>(
     initial ? (initial.remark === 'mismatched' ? 'mismatch' : initial.remark) : 'correct',
   );
@@ -167,9 +148,6 @@ export default function BoxDrawer({
     () => initial?.identities ?? {},
   );
 
-  /* Photos of the carton. Held with their preview URL so a shot can be checked
-     and dropped before it is kept -- and revoked on unmount, or the drawer
-     leaks a blob per photo for the life of the tab. */
   const [photos, setPhotos] = useState<Shot[]>([]);
   const [camOpen, setCamOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -185,8 +163,6 @@ export default function BoxDrawer({
     setPhotos(p => p.filter(s => s.url !== url));
   };
 
-  /* Revokes on unmount only -- a dependency on `photos` would revoke the URL
-     of every photo still on screen each time one is added. */
   const photosRef = useRef(photos);
   photosRef.current = photos;
   useEffect(() => () => { photosRef.current.forEach(s => URL.revokeObjectURL(s.url)); }, []);
@@ -317,26 +293,17 @@ export default function BoxDrawer({
                 <IcoUpload size={13} stroke={2.3} /> Upload
               </button>
             </Tooltip>
-            {/* The device camera, not `<input capture>`: on a desktop that
-                attribute falls back to the file picker, and a box is
-                photographed at a packing bench. */}
             <Tooltip label="Photograph this box with the camera">
               <button type="button" className="vti-dw-icon-btn" onClick={() => setCamOpen(true)}>
                 <IcoCamera size={13} stroke={2.3} /> Camera
               </button>
             </Tooltip>
-            {/* On an edit the box is already saved, so `saved` must not lock
-                the button -- that is what would make an edit read-only the
-                moment it opened. */}
             <button type="button" className="vti-dw-save-btn"
               disabled={saving || (!initial && saved) || !onSave}
               onClick={() => onSave?.(collect())}>
               <IcoSave size={12} stroke={2.5} />
               {saving ? 'Saving…' : initial ? 'Update Box' : saved ? 'Saved' : 'Save'}
             </button>
-            {/* Beside Save rather than at the far right: the drawer opened out
-                of the row above it, and the way out belongs next to the way
-                to commit. */}
             {onClose && (
               <button type="button" className="vti-dw-close-btn" onClick={onClose} disabled={saving}>
                 × Close
@@ -352,9 +319,6 @@ export default function BoxDrawer({
         </div>
 
         <div className="vti-dw-body">
-          {/* Photos sit at the top of the body, under the buttons that took
-              them, rather than in a section of their own -- they are evidence
-              about the carton, not another field to fill in. */}
           {photos.length > 0 && (
             <div className="vti-dw-shots">
               <div className="vti-dw-shots-lbl">
@@ -385,6 +349,7 @@ export default function BoxDrawer({
               onIdentityChange={patchIdentity}
               onRemove={onRemoveContent}
               onClear={onClearContents}
+              onQtyChange={onContentQtyChange}
             />
           )}
 
@@ -519,7 +484,6 @@ export default function BoxDrawer({
                       {ADVANCED.map(f => (
                         <div className="vti-dw-field" key={f.key}>
                           <label className="vti-dw-field-lbl">{f.label}</label>
-                          {/* Same here: the app's picker, not the browser's. */}
                           {f.type === 'date' ? (
                             <MasterDatePicker
                               value={boxIdentity[f.key] ?? ''}
@@ -594,8 +558,6 @@ export default function BoxDrawer({
         </Suspense>
       )}
 
-      {/* The Upload twin of the camera. Hidden rather than styled, because the
-          button beside Camera is the control. */}
       <input
         ref={fileRef}
         type="file"

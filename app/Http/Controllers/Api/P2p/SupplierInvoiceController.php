@@ -83,16 +83,47 @@ class SupplierInvoiceController extends Controller
                 ->where('purchase_order_id', $po)
                 ->orderBy('line_no')
                 ->get()
-                ->map(fn($l) => [
-                    'po_item_id'   => $l->id,
-                    'pi_item_id'   => $l->pi_item_id,
-                    'product_id'   => $l->product_id,
-                    'description'  => $l->description,
-                    'qty_po'       => (float) $l->quantity,
-                    'qty_open'     => (float) ($open[$l->id] ?? 0),
-                    'rate'         => (float) $l->rate,
-                    'gst_pct'      => $l->gst_pct === null ? null : (float) $l->gst_pct,
-                ]);
+                ->map(function ($l) use ($open) {
+                    $ordered = (float) $l->quantity;
+                    // ordered - billed, which goes negative once a line is
+                    // over-supplied. Split below so nothing downstream has to
+                    // reason about a negative quantity.
+                    $balance = (float) ($open[$l->id] ?? $ordered);
+                    $billed  = round($ordered - $balance, 3);
+
+                    return [
+                        'po_item_id'  => $l->id,
+                        'pi_item_id'  => $l->pi_item_id,
+                        'product_id'  => $l->product_id,
+                        'description' => $l->description,
+
+                        // What the order asked for, once. Reference only — a
+                        // second invoice that worked from this would re-claim
+                        // quantity the first one already covered.
+                        'qty_po'      => $ordered,
+                        // What every OTHER invoice on this PO has taken.
+                        'qty_billed'  => $billed,
+
+                        /* What THIS invoice may still bill. Never negative: an
+                           over-supplied line has nothing left to give, so it
+                           opens at zero rather than at a quantity that reads
+                           as a credit. This is what the grid's PO column shows. */
+                        'qty_open'    => max(0.0, $balance),
+
+                        /* How far the PO is ALREADY over, from earlier invoices.
+                           Deliberately not called extra_qty: that name is taken
+                           by the invoice item, where it means what THIS invoice
+                           billed over — and an over-supply caused by SPI 2 is
+                           not something SPI 3 did. Context for a tooltip, not a
+                           column. */
+                        'qty_over'    => max(0.0, -$balance),
+                        // Nothing left to invoice: fully billed, or already over.
+                        'closed'      => $balance <= 0,
+
+                        'rate'        => (float) $l->rate,
+                        'gst_pct'     => $l->gst_pct === null ? null : (float) $l->gst_pct,
+                    ];
+                });
 
             DB::commit();
 

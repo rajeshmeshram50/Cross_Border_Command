@@ -16,7 +16,7 @@ import type { ProductFlagOption, SpiBox, SpiBoxBody, SpiBoxItem } from '../spi-a
 const BOX_TABLE_COLUMNS = 10;
 
 type Packing =
-  | { scenario: 's1' }
+  | { scenario: 's1'; qty: number }
   | { scenario: 's2'; boxes: SplitBox[]; of: number }
   | { scenario: 's3' };
 
@@ -45,7 +45,6 @@ const SCENARIOS: Array<{ id: Scenario; no: string; title: string; arrow: string;
 
 const FLAG_PALETTE = ['#0891b2', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#2563eb', '#ca8a04'];
 
-/** What the drawer's Mode reads when it is open on a box that already exists. */
 const EDIT_MODE: Record<Scenario, string> = {
   s1: 'Single Box', s2: 'Split Carton', s3: 'Mixed Carton',
 };
@@ -65,7 +64,6 @@ export default function Step3BoxPackaging({
   flagMaster?: ProductFlagOption[];
   readOnly?: boolean;
   onCreateBox?: (body: SpiBoxBody) => Promise<SpiBox | null>;
-  /** Save a box that already exists, keeping its code. */
   onUpdateBox?: (boxId: number, body: SpiBoxBody) => Promise<SpiBox | null>;
   onDeleteBoxes?: (ids: number[]) => Promise<boolean>;
 }) {
@@ -110,6 +108,7 @@ export default function Step3BoxPackaging({
   const [invalid, setInvalid] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [mixedBox, setMixedBox] = useState<string[] | null>(null);
+  const [mixedQty, setMixedQty] = useState<Record<string, number>>({});
   const takeOutOfBox = useCallback((code: string) => {
     setMixedBox(b => {
       const next = (b ?? []).filter(c => c !== code);
@@ -142,7 +141,6 @@ export default function Step3BoxPackaging({
     if (readOnly) return;
     setSelected(allSelected ? [] : selectable);
   };
-
 
   const SCN_LABEL: Record<Scenario, [string, string]> = {
     s1: ['Scenario 01', '1 Product → 1 Box'],
@@ -208,13 +206,16 @@ export default function Step3BoxPackaging({
       return;
     }
     setMixedBox(selected);
+    setMixedQty(Object.fromEntries(selected.map(c => [c, pendingLines.find(l => l.code === c)?.spiQty ?? 0])));
     setSelected([]);
   };
 
   const mixedLines = (mixedBox ?? [])
     .map(c => pendingLines.find(l => l.code === c))
     .filter((l): l is ProductLine => !!l);
-  const mixedCartonQty = mixedLines.reduce((n, l) => n + l.spiQty, 0);
+  const mixedQtyOf = (l: ProductLine) => mixedQty[l.code] ?? l.spiQty;
+  const mixedContents = mixedLines.map(l => ({ line: l, qty: mixedQtyOf(l) }));
+  const mixedCartonQty = mixedContents.reduce((n, c) => n + c.qty, 0);
   const mixedCartonLine: ProductLine = {
     code: 'MIXED-CARTON',
     hsn: `${mixedLines.length} SKUs`,
@@ -238,13 +239,6 @@ export default function Step3BoxPackaging({
     return { ids: [...new Set(ids)], missing };
   };
 
-  /**
-   * How much of a product is packed elsewhere.
-   *
-   * `exclude` is the box being edited: its own units are already in packedQty,
-   * so without this an edit would look like double-packing and every "a single
-   * box must hold all N units" check would fail on a box that was correct.
-   */
   const packedElsewhere = (code: string, exclude?: SpiBox | null) =>
     Math.round(((packedQty[code] ?? 0) - (exclude ? qtyIn(exclude, code) : 0)) * 1000) / 1000;
 
@@ -271,26 +265,17 @@ export default function Step3BoxPackaging({
       for (const c of contents) {
         const full = fullOf(c.line.code) ?? c.line;
         const left = Math.round((full.spiQty - packedElsewhere(c.line.code, exclude)) * 1000) / 1000;
-        if (exclude && c.qty > left + 0.0005) {
-          return `${exclude.box_code} can hold at most ${units(left)} of ${c.line.spiName} — the rest is packed in other boxes.`;
-        }
-        if (!exclude && Math.abs(c.qty - left) > 0.0005) {
-          return scenario === 's1'
-            ? `A single box must hold all ${units(left)} of ${c.line.spiName} — it holds ${units(c.qty)}.`
-            : `The mixed carton must hold all ${units(left)} of ${c.line.spiName} — it holds ${units(c.qty)}.`;
+        if (c.qty > left + 0.0005) {
+          return `${exclude ? exclude.box_code : 'This box'} can hold at most ${units(left)} of ${c.line.spiName} — `
+            + (left < full.spiQty ? 'the rest is already in other boxes.' : 'that is its SPI quantity.');
         }
       }
     }
     if (scenario === 's2') {
-      const line = contents[0]?.line;
-      const pack = line ? packing[line.code] : undefined;
-      if (line && pack?.scenario === 's2') {
-        const allocated = Math.round(pack.boxes.reduce((n, b) => n + b.qty, 0) * 1000) / 1000;
-        if (Math.abs(allocated - pack.of) > 0.0005) {
-          const gap = Math.round((pack.of - allocated) * 1000) / 1000;
-          return `The boxes hold ${units(allocated)} of the ${units(pack.of)} of ${line.spiName} being split — `
-            + (gap > 0 ? `assign the other ${units(gap)} to a box` : `take ${units(-gap)} out`) + ' before saving.';
-        }
+      const c = contents[0];
+      const left = c ? remainingOf(fullOf(c.line.code) ?? c.line) : 0;
+      if (c && c.qty > left + 0.0005) {
+        return `This box can hold at most ${units(left)} of ${c.line.spiName} — the rest is already in other boxes.`;
       }
     }
     const today = todayIso();
@@ -361,12 +346,41 @@ export default function Step3BoxPackaging({
     }
   };
 
-  const saveSingle = (line: ProductLine, data: BoxSaveData) =>
-    void persist(line.code, 's1', data, [{ line, qty: line.spiQty }]);
+  const capTo = (line: ProductLine, wanted: number, what: string) => {
+    const left = line.spiQty;
+    const q = Math.max(0, wanted);
+    if (q > left + 0.0005) {
+      toast.warning(`${what} can hold at most ${left} unit${left === 1 ? '' : 's'}`,
+        `${left} of ${line.spiName} ${left === (fullOf(line.code)?.spiQty ?? left) ? 'are on the SPI' : 'are still unboxed'}.`);
+    }
+    return Math.min(q, left);
+  };
+
+  const setSingleQty = (line: ProductLine, qty: number) =>
+    setPacking(p => (p[line.code]?.scenario === 's1'
+      ? { ...p, [line.code]: { scenario: 's1', qty: capTo(line, qty, 'This box') } }
+      : p));
+
+  const setMixedLineQty = (code: string, qty: number) => {
+    const line = pendingLines.find(l => l.code === code);
+    if (!line) return;
+    setMixedQty(m => ({ ...m, [code]: capTo(line, qty, 'The carton') }));
+  };
+
+  const saveSingle = async (line: ProductLine, data: BoxSaveData) => {
+    const p = packing[line.code];
+    const qty = p?.scenario === 's1' ? p.qty : line.spiQty;
+    const box = await persist(line.code, 's1', data, [{ line, qty }]);
+    if (box) clearLocal([line.code]);
+  };
 
   const saveSplitBox = async (line: ProductLine, no: number, qty: number, data: BoxSaveData) => {
     const box = await persist(`${line.code}#${no}`, 's2', data, [{ line, qty }]);
-    if (box) setSplitCodes(m => ({ ...m, [line.code]: { ...(m[line.code] ?? {}), [no]: box.box_code } }));
+    if (!box) return;
+    const codes = { ...(splitCodes[line.code] ?? {}), [no]: box.box_code };
+    const pack = packing[line.code];
+    if (pack?.scenario === 's2' && pack.boxes.every(b => codes[b.no] || !(b.qty > 0))) clearLocal([line.code]);
+    else setSplitCodes(m => ({ ...m, [line.code]: codes }));
   };
 
   const saveMixedBox = async (data: BoxSaveData) => {
@@ -374,14 +388,11 @@ export default function Step3BoxPackaging({
       toast.warning('Pick at least 2 products', 'A mixed carton holds two or more products — use a single box for one.');
       return;
     }
-    const box = await persist('mixed', 's3', data, mixedLines.map(l => ({ line: l, qty: l.spiQty })));
+    const box = await persist('mixed', 's3', data, mixedContents);
     if (!box) return;
-    setPacking(p => {
-      const next = { ...p };
-      for (const l of mixedLines) next[l.code] = { scenario: 's3' };
-      return next;
-    });
+    clearLocal(mixedLines.map(l => l.code));
     setMixedBox(null);
+    setMixedQty({});
   };
 
   const singleBox = (line: ProductLine) => {
@@ -390,7 +401,7 @@ export default function Step3BoxPackaging({
       toast.info('Already in a box', `${line.spiName} is already set up — use ✕ on its scenario chip to change it.`);
       return;
     }
-    setPacking(p => ({ ...p, [line.code]: { scenario: 's1' } }));
+    setPacking(p => ({ ...p, [line.code]: { scenario: 's1', qty: line.spiQty } }));
   };
 
   const applySplit = (line: ProductLine) => {
@@ -437,20 +448,8 @@ export default function Step3BoxPackaging({
     setSplitCodes(m => { const next = { ...m }; for (const c of codes) delete next[c]; return next; });
   };
 
-  /* ── Editing a box that is already saved ─────────────────────────────── */
-
-  /**
-   * A saved box read back into the values the drawer was filled with.
-   *
-   * The inverse of `bodyFor`, and it has to stay that way: anything added to
-   * one and forgotten in the other is a field that silently empties itself the
-   * first time somebody edits a box.
-   */
   const readBox = (box: SpiBox): BoxInitial => {
     const first = box.items[0];
-    /* The note is a joined string, not two columns: bodyFor writes
-       "remarks · Cold chain -4…4°C". Split it back so the remark does not
-       grow a temperature on every save. */
     const parts = (first?.remark_note ?? '').split(' · ').map(s => s.trim()).filter(Boolean);
     const cold = parts.find(p => p.startsWith('Cold chain'));
     const range = cold?.replace('Cold chain', '').replace('°C', '').trim().split('…') ?? [];
@@ -460,15 +459,11 @@ export default function Step3BoxPackaging({
       lot: i?.lot_no ?? '',
       batch: i?.batch_no ?? '',
       cat: i?.cat_no ?? '',
-      /* Date-cast on the server, so it arrives as a timestamp and the date
-         inputs need the calendar day alone. */
       expiry: (i?.expiry_date ?? '').slice(0, 10),
       mfg: (i?.mfg_date ?? '').slice(0, 10),
       remarks: (i?.remark_note ?? '').split(' · ').filter(p => !p.trim().startsWith('Cold chain')).join(' · ').trim(),
     });
 
-    /* Stored flag ids are the master's numbers; the drawer speaks "m<id>" for
-       a master flag and a plain word for its three built-ins. */
     const flagIds = (first?.flags ?? []).map(id => {
       const name = (flagMaster.find(f => f.id === id)?.flag_name ?? '').trim().toLowerCase();
       const builtIn = ['hazardous', 'coldchain', 'fragile']
@@ -501,18 +496,11 @@ export default function Step3BoxPackaging({
     };
   };
 
-  /* Which box the drawer is open on, held as an id rather than the box
-     itself: `boxes` is replaced on every reload, and a captured object would
-     go stale the moment the edit saved. */
   const [editingId, setEditingId] = useState<number | null>(null);
-  /* The drawer opens ABOVE the row that was pressed, so without this the page
-     does not move and the click reads as having done nothing. */
   const editRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (editingId != null) editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [editingId]);
-  /* Products taken out of the carton during this edit. Kept apart from the
-     box so Cancel really cancels -- nothing is sent until Update Box. */
   const [dropped, setDropped] = useState<string[]>([]);
   const editingBox = boxes.find(b => b.id === editingId) ?? null;
 
@@ -530,8 +518,6 @@ export default function Step3BoxPackaging({
 
   const closeEdit = () => { setEditingId(null); setDropped([]); };
 
-  /* What the carton holds right now in the drawer: its saved items, minus
-     anything removed in this sitting. */
   const editContents = (editingBox?.items ?? [])
     .map(i => {
       const code = codeOfItem.get(i.supplier_invoice_item_id);
@@ -558,8 +544,6 @@ export default function Step3BoxPackaging({
     try {
       const saved = await onUpdateBox(editingBox.id, bodyFor(editingBox.scenario, data, editContents));
       if (!saved) return;
-      /* A product taken out of the carton is unpacked again, so its scenario
-         chip has to go with it or the row above would come back pre-set. */
       if (dropped.length) clearLocal(dropped);
       closeEdit();
     } finally {
@@ -826,7 +810,8 @@ export default function Step3BoxPackaging({
                         <BoxDrawer
                           boxId={codeFor(line.code)}
                           line={line}
-                          quantity={line.spiQty}
+                          quantity={pack?.scenario === 's1' ? pack.qty : line.spiQty}
+                          onQuantityChange={readOnly ? undefined : (q: number) => setSingleQty(line, q)}
                           onSave={readOnly ? undefined : (d: BoxSaveData) => saveSingle(line, d)}
                           saving={savingKey === line.code}
                           customFlags={customFlags}
@@ -853,10 +838,6 @@ export default function Step3BoxPackaging({
                   </Fragmentish>
                 );
               })}
-              {/* Nothing left to pack. A table of headings over an empty strip
-                  reads as a screen that failed to load, so it says what
-                  happened instead -- and names where the boxes went, since the
-                  products did not disappear, they moved down the page. */}
               {pendingLines.length === 0 && (
                 <tr className="invf-allpacked-row">
                   <td colSpan={BOX_TABLE_COLUMNS}>
@@ -880,24 +861,19 @@ export default function Step3BoxPackaging({
             modeKey="Products"
             modeLabel={`${mixedBox.length} SKU${mixedBox.length === 1 ? '' : 's'}`}
             variant="panel"
-            contents={mixedLines.map(l => ({ line: l, qty: l.spiQty }))}
+            contents={mixedContents}
+            onContentQtyChange={readOnly ? undefined : setMixedLineQty}
             onRemoveContent={takeOutOfBox}
-            onClearContents={() => setMixedBox(null)}
+            onClearContents={() => { setMixedBox(null); setMixedQty({}); }}
             onSave={readOnly ? undefined : (d: BoxSaveData) => void saveMixedBox(d)}
             saving={savingKey === 'mixed'}
             customFlags={customFlags}
           />
       )}
 
-      {/* The edit drawer opens in the same slot the mixed carton is built in:
-          between the products table and Packed Products. One place on this
-          page where a box is worked on, whether it is being made or changed. */}
       {editingBox && editContents.length > 0 && (
         <div ref={editRef}>
         <BoxDrawer
-          /* Keyed on the box so the drawer remounts -- its fields seed from
-             `initial` on first render, and a shared instance would keep the
-             previous box's values. */
           key={editingBox.id}
           boxId={editingBox.box_code}
           line={editContents[0].line}
@@ -909,10 +885,6 @@ export default function Step3BoxPackaging({
             : EDIT_MODE[editingBox.scenario]}
           variant="panel"
           initial={readBox(editingBox)}
-          /* A mixed carton lists its contents, and that list is where one
-             product is taken out without the others being unpacked. A
-             single-product box would show a one-row table saying what the
-             strip above it already says. */
           {...(editingBox.scenario === 's3'
             ? {
               contents: editContents,

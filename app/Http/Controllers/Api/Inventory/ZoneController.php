@@ -230,6 +230,103 @@ class ZoneController extends BaseInventoryController
         }
     }
 
+    /**
+     * GET /inventory/zones/{id}/preview — the label as data.
+     *
+     * The screen shows the QR and the details first; the download comes after,
+     * from the same numbers. Both read labelData(), so the modal and the paper
+     * can never disagree.
+     */
+    public function preview(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $data = $this->labelData($request, $id);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $data + [
+                'qr'           => $this->qr($data['code']),
+                'download_url' => url("/api/inventory/zones/{$id}/label"),
+            ]], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /** GET /inventory/zones/{id}/label — the same label, as a 4x3in PDF. */
+    public function label(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $data = $this->labelData($request, $id);
+            $pdf  = $this->labelPdf($data, $data['code']);
+
+            DB::commit();
+
+            return $pdf;
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * What the zone label prints. Scanned at put-away as scan_type 'location',
+     * so the code on it is what the operator's second scan must match.
+     */
+    private function labelData(Request $request, int $id): array
+    {
+        $user = $this->tenantUser($request);
+        $z = $this->scopeTenant(Zone::query(), $user, $this->branchScope($request, $user))
+            ->with('warehouse:id,wh_name')
+            ->withCount('racks')
+            ->findOrFail($id);
+
+        $temp = $z->cold_chain && $z->temp_min_c !== null
+            ? ((float) $z->temp_min_c) . ' to ' . ((float) $z->temp_max_c) . ' C'
+            : null;
+
+        return [
+            'kind'     => 'ZONE',
+            'code'     => $z->zone_code,
+            'title'    => $z->zone_name,
+            'subtitle' => $z->warehouse?->wh_name,
+            'rows'     => array_filter([
+                'Purpose'  => $z->purpose,
+                'Type'     => $z->isRacked() ? 'With Rack' : 'Without Rack',
+                'Area'     => $z->area_sqft ? number_format((float) $z->area_sqft) . ' Sq. Ft' : null,
+                'Racks'    => $z->isRacked() ? $z->racks_count : null,
+                'Capacity' => $z->capacity_litres ? number_format((float) $z->capacity_litres) . ' L' : null,
+                'Temp'     => $temp,
+            ], fn ($v) => $v !== null && $v !== ''),
+            'flags'    => array_values(array_filter([
+                $this->flag((bool) $z->cold_chain, 'COLD CHAIN', 'cold'),
+                $this->flag((bool) $z->hazardous, 'HAZARDOUS', 'haz'),
+                $this->flag(!$z->isActive(), 'INACTIVE', 'off'),
+            ])),
+        ];
+    }
+
+    /**
+     * GET /inventory/zones/{id}/qr — the QR and nothing else.
+     *
+     * A bare PNG, served inline so it drops straight into an <img src>. The
+     * label endpoint wraps the same code in a printable card; this one is for
+     * a screen that places it itself.
+     *
+     * ?scale=10 sets pixels per module (1-20).
+     */
+    public function qrImage(Request $request, int $id)
+    {
+        $data = $this->labelData($request, $id);
+
+        return $this->qrPng($data['code'], (int) $request->input('scale', 10));
+    }
+
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
 
     private function rules(): array

@@ -89,9 +89,18 @@ export type SpiStage1Body = {
 
 export type SpiHeader = { id: number; code: string; status: string; stage_completed: number };
 
+/**
+ * A PO line as Stage 02 needs it.
+ *
+ * qty_po is what the order asked for ONCE. The grid works from qty_open — what
+ * is left after every other invoice on this PO — because only the server can see
+ * those other invoices. qty_open never goes negative; qty_over carries how far
+ * earlier invoices already went past the order, which is context, not a column.
+ */
 export type SpiPoLine = {
   po_item_id: number; pi_item_id: number | null; product_id: number | null; description: string | null;
-  qty_po: number; qty_open: number; rate: number; gst_pct: number | null;
+  qty_po: number; qty_billed: number; qty_open: number; qty_over: number; closed: boolean;
+  rate: number; gst_pct: number | null;
 };
 
 export type SpiInvoiceDetails = {
