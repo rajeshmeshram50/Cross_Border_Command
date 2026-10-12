@@ -5,9 +5,16 @@ namespace App\Models;
 use App\Models\Masters\TriggerPoints;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class HrDocumentTemplate extends Model
 {
+    /* A deleted template keeps its row so its CODE is never handed out again
+       (#67). The trait filters trashed rows from every ordinary query, so a
+       delete still reads as gone everywhere except the code allocator, which
+       counts withTrashed() on purpose. */
+    use SoftDeletes;
+
     protected $table = 'hr_document_templates';
 
     protected $fillable = [

@@ -55,6 +55,10 @@ interface TemplateRow {
   employee_category?: string;
   content_html: string | null;
   status: string;
+  /* Which version is being generated from. A generated document outlives the
+     template it came from, so "which one did this come out of" has to be
+     answerable on the screen that produced it. Already "v3" — no prefix. */
+  version?: string | null;
   header_config?: HeaderConfig | null;
   footer_config?: FooterConfig | null;
 }
@@ -518,7 +522,7 @@ export default function GenerateDocument() {
                 {generated.length} document{generated.length === 1 ? '' : 's'} generated
               </h4>
               <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)', marginTop: 4 }}>
-                {template.name} · {template.code}
+                {template.name} · {template.code}{template.version ? ` · ${template.version}` : ''}
               </div>
             </div>
           </div>
@@ -571,7 +575,7 @@ export default function GenerateDocument() {
                 <h4 className="fw-bold mb-0" style={{ color: '#fff' }}>Generate Document</h4>
                 {/* The three steps are the stepper's whole job, just below. */}
                 <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.85)' }}>
-                  {template.name}{template.code ? ` · ${template.code}` : ''}
+                  {template.name}{template.code ? ` · ${template.code}` : ''}{template.version ? ` · ${template.version}` : ''}
                 </div>
               </div>
             </div>
@@ -1215,7 +1219,7 @@ function Step3(props: {
                   <span className="gd-preview-pill"><i className="ri-file-text-line" /></span>
                   <span style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
                     <span style={{ fontWeight: 700, fontSize: 13, color: '#fff' }}>{empName(active)}</span>
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.78)' }}>{template.name} · {template.code}</span>
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.78)' }}>{template.name} · {template.code}{template.version ? ` · ${template.version}` : ''}</span>
                   </span>
                 </span>
                 <span style={{ fontSize: 11.5, opacity: 0.9, display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff' }}>
