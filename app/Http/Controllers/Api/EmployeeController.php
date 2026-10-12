@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\EmployeeEmailChangedMail;
 use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
 use App\Models\Branch;
@@ -2479,7 +2480,11 @@ class EmployeeController extends Controller
             : null;
 
         $authId = $request->user()?->id;
-        DB::transaction(function () use ($row, $data, $newStep, $newMacro, $oldStatus, $authId) {
+        // [old, new] when the login email moved, null otherwise. Filled inside
+        // the transaction, acted on after it commits.
+        $emailChange = null;
+
+        DB::transaction(function () use ($row, $data, $newStep, $newMacro, $oldStatus, $authId, &$emailChange) {
             // first_name might not be in $data on a partial step-3/step-4
             // PATCH (the frontend only sends the fields for the step it
             // just saved). Fall back to the existing row value so
@@ -2537,6 +2542,9 @@ class EmployeeController extends Controller
             // should land on the login account too.
             if ($row->user) {
                 $newEmail = $data['email'] ?? $row->user->email;
+                // Captured before the save: once update() runs, Eloquent has
+                // resynced the original and getOriginal('email') is the new one.
+                $oldEmail = (string) $row->user->email;
                 // Changing the login email is an identity-level change, so the
                 // OLD password must stop working: flag a forced reset and revoke
                 // any live tokens. The user can't sign in again until they set a
@@ -2555,6 +2563,9 @@ class EmployeeController extends Controller
                 if ($emailChanged) {
                     $row->user->update(['must_reset_password' => true]);
                     $row->user->tokens()->delete();
+                    // Recorded here, sent after the commit: a message cannot be
+                    // unsent, so nothing leaves until the change is durable.
+                    $emailChange = [$oldEmail, (string) $newEmail];
                 }
 
                 // Cascade employee.status → users.status when it actually
@@ -2578,6 +2589,13 @@ class EmployeeController extends Controller
         });
 
         $row->load(self::fullWith());
+
+        // The login email moved and the change is committed — now tell both
+        // addresses. Outside the transaction on purpose: an email cannot be
+        // recalled, so a later rollback must not leave one already delivered.
+        if ($emailChange) {
+            $this->notifyEmailChanged($row, $emailChange[0], $emailChange[1], $request);
+        }
 
         // Payroll connection — if this edit touched a field the payroll engine
         // reads (salary / PF / gender / state / bank / joining / status), push
@@ -4397,6 +4415,58 @@ class EmployeeController extends Controller
             }
         }
         return 'EMP-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Tell BOTH addresses that the login email moved.
+     *
+     * The old inbox is the one that matters. Changing the email is the first
+     * thing someone does with a stolen account, and if only the new address is
+     * told, the real owner finds out when they next try to sign in and can't.
+     * The old address is still theirs at this moment, so it gets the warning
+     * and the address mail now goes to.
+     *
+     * Never fatal: the employee record is already saved by the time we get
+     * here, and a bounced notification must not fail the edit or roll it back.
+     * Each send is isolated so a dead old mailbox — common, it is often why the
+     * address is being changed — still lets the new one through.
+     */
+    private function notifyEmailChanged(Employee $row, string $oldEmail, string $newEmail, Request $request): void
+    {
+        $branding = \App\Support\BrandingResolver::forUser($row->user);
+        $name     = $row->display_name ?: ($row->user->name ?? 'there');
+        /* The origin the admin is acting from, so the button lands on the host
+           they actually use — localhost in dev, the live site in production.
+           preg_replace, not rtrim: rtrim's second argument is a CHARACTER SET,
+           so rtrim($url, '/login') eats every trailing /, l, o, g, i and n and
+           turns https://crossborder.in/login into https://crossborder. */
+        $origin   = preg_replace('#/login$#', '', PasswordChangedMail::resolveLoginUrl($request));
+        $profile  = $origin . '/profile';
+        // The office the employee reports to, which is the name they recognise.
+        // Blank falls back to the organisation inside the template.
+        $branch   = (string) ($row->branch?->name ?: $row->branch?->code ?: '');
+
+        $targets = [
+            [$newEmail, EmployeeEmailChangedMail::VARIANT_NEW],
+            [$oldEmail, EmployeeEmailChangedMail::VARIANT_OLD],
+        ];
+
+        foreach ($targets as [$to, $variant]) {
+            if (!filter_var($to, FILTER_VALIDATE_EMAIL)) continue;
+
+            try {
+                Mail::to($to)->send(new EmployeeEmailChangedMail(
+                    $name, $oldEmail, $newEmail, $variant, $profile, $branding, $branch,
+                ));
+            } catch (\Throwable $e) {
+                Log::warning('Employee email-change notice failed', [
+                    'employee_id' => $row->id,
+                    'variant'     => $variant,
+                    'to'          => $to,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /** 12-char URL-safe random — no ambiguous chars (0/O, 1/l). */

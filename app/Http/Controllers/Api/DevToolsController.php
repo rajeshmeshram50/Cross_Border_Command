@@ -31,6 +31,47 @@ class DevToolsController extends Controller
      * Same gate zoho() uses. Extracted so a second Dev Tools endpoint cannot
      * drift from the first — a third copy is how one of them ends up open.
      */
+    /**
+     * GET /dev/mail-preview/{template} — render a transactional email as a web
+     * page, for checking the design.
+     *
+     * Renders the blade and returns it. Nothing is sent, nothing is queued and
+     * no mail transport is touched, so it answers on a machine with no SMTP
+     * configured and leaves no row in the jobs table.
+     *
+     * LOCAL ONLY. It takes its sample data from the query string, so on a live
+     * host it would let anyone render a branded message with text of their
+     * choosing — a ready-made phishing page on your own domain. Hence the 404
+     * rather than a 403: outside local the route does not exist.
+     */
+    public function mailPreview(Request $request, string $template)
+    {
+        abort_unless(app()->environment('local'), 404);
+
+        $views = [
+            'employee-email-changed' => 'emails.employee-email-changed',
+        ];
+
+        abort_unless(isset($views[$template]), 404, 'Unknown template.');
+
+        $mail = new \App\Mail\EmployeeEmailChangedMail(
+            employeeName: (string) $request->query('name', 'Rahul Sharma'),
+            oldEmail:     (string) $request->query('old', 'rahul.sharma@oldcompany.com'),
+            newEmail:     (string) $request->query('new', 'rahul.sharma@newcompany.com'),
+            variant:      $request->query('variant') === 'old' ? 'old' : 'new',
+            profileUrl:   $request->query('profile') ?: null,
+            branding:     array_filter([
+                'brandName'    => $request->query('brand') ?: null,
+                'supportEmail' => $request->query('support') ?: null,
+            ]),
+            branchName:   (string) $request->query('branch', 'Mumbai Central Warehouse'),
+        );
+
+        return response()
+            ->view($views[$template], $mail->data() + $mail->branding)
+            ->header('Content-Type', 'text/html; charset=utf-8');
+    }
+
     private function guardDevTools(Request $request): void
     {
         $this->guardPermission($request);
