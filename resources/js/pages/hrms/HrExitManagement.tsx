@@ -4505,6 +4505,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       {exitTemplates.map(tpl => {
                         const signers = parseSigners(tpl.signers);
                         const run = runByTemplateId.get(tpl.id) || null;
+                        /* A run keeps the chain it was sent under, so editing a
+                         * template's signers looked like it had done nothing
+                         * here (#66). Compared on role + action, which is what a
+                         * send resolves people from. */
+                        const chainOf = (list: Array<{ role_name?: string | null; designation_name?: string | null; action?: string | null }>) =>
+                          list.map(s => `${(s.role_name || s.designation_name || '').trim()}:${(s.action || '').trim()}`)
+                              .filter(v => v !== ':');
+                        const chainChanged = !!run && signers.length > 0
+                          && chainOf(signers).join('|') !== chainOf(run.signers as any).join('|');
                         const canGenerate = tpl.status === 'Active';
                         const runInFlight = !!run && (run.status === 'Pending' || run.status === 'In Progress');
                         const runCompleted = run?.status === 'Completed';
@@ -4645,6 +4654,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   {(run ? run.signers.map((s, i) => ({
                                         name: s.name || s.role_name || `Signer ${i + 1}`,
                                         role: s.role_name,
+                                        // Job title, falling back to the role (#23).
+                                        desig: (s as any).designation || (s.name ? s.role_name : null) || null,
                                         action: s.action,
                                         status: s.status === 'Done' ? 'Completed' : s.status === 'Rejected' ? 'Rejected' : run.status === 'Completed' ? 'Completed' : (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel' || i === run.current_index) ? 'Awaiting' : 'Pending',
                                         active: (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel' ? (s.status !== 'Done' && s.status !== 'Rejected') : i === run.current_index) && (run.status === 'Pending' || run.status === 'In Progress'),
@@ -4657,6 +4668,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                       : signers.map((s, i) => ({
                                         name: s.role_name || s.designation_name || `Signer ${i + 1}`,
                                         role: s.role_name,
+                                        desig: s.designation_name || null,
                                         action: s.action,
                                         status: 'Pending' as string,
                                         active: i === 0,
@@ -4673,6 +4685,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                             ({sg.action})
                                           </span>
                                         )}
+                                        {sg.desig && <span className="ep-signer-desig">{sg.desig}</span>}
                                         {sg.status === 'Rejected' && (
                                           <>
                                             <span className="ep-signer-rejected-at">Rejected</span>
@@ -4688,6 +4701,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                     </div>
                                   ))}
                                 </div>
+                                {/* The template's chain was edited after this run
+                                    froze its own — show it, or the edit reads as
+                                    having done nothing here (#66). */}
+                                {chainChanged && (
+                                  <p className="ep-signing-stale">
+                                    <i className="ri-information-line" />
+                                    <span>
+                                      Sent under an earlier signing workflow. The template now reads{' '}
+                                      <strong>{signers.map(s => s.role_name || s.designation_name).filter(Boolean).join(' \u2192 ')}</strong>
+                                      {' '}&mdash; the next send will use it.
+                                    </span>
+                                  </p>
+                                )}
                               </div>
                             )}
                           </div>

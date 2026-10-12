@@ -1072,6 +1072,7 @@ export type SignedDocRun = {
   trigger_point_name?: string | null;
   signers?: Array<{
     name?: string | null; role_name?: string | null; action?: string | null;
+    designation?: string | null;
     status?: string; acted_at?: string | null; signed_name?: string | null;
     signature_url?: string | null;
   }> | null;
@@ -6055,6 +6056,7 @@ function Stage5Policies({ emp, onProgress }: {
 
   type RunSigner = {
     name?: string | null; role_name?: string | null; action?: string | null;
+    designation?: string | null;
     status?: string; acted_at?: string | null; signed_name?: string | null;
     signature_url?: string | null;
     note?: string | null;
@@ -6213,6 +6215,22 @@ function Stage5Policies({ emp, onProgress }: {
           const signers = parseSigners(tpl.signers);
           const toggle = () => setExpandedId(prev => prev === tpl.id ? null : tpl.id);
           const run = runByTemplateId.get(tpl.id) || null;
+          /* The workflow the TEMPLATE now configures, against the one this run
+           * was frozen with at send time.
+           *
+           * A run keeps the chain it was sent under on purpose — a signature
+           * already given must not be relabelled by a later edit. But the
+           * stepper drew only that frozen copy, so editing the signers on a
+           * template that had ever been sent looked like it had done nothing
+           * at all in Onboarding and Exit (#66). The edit IS stored; what was
+           * missing was anywhere to see it. Compared on role + action, which
+           * is what a send actually resolves people from. */
+          const chainOf = (list: Array<{ role_name?: string | null; designation_name?: string | null; action?: string | null }>) =>
+            list.map(s => `${(s.role_name || s.designation_name || '').trim()}:${(s.action || '').trim()}`)
+                .filter(v => v !== ':');
+          const tplChain = chainOf(signers);
+          const chainChanged = !!run && tplChain.length > 0
+            && tplChain.join('|') !== chainOf(run.signers as any).join('|');
           const isSending = sendingId === tpl.id;
           const runActive = !!run && (run.status === 'Pending' || run.status === 'In Progress');
           const signedRuns = completedRunsByTpl.get(tpl.id) || [];
@@ -6392,6 +6410,10 @@ function Stage5Policies({ emp, onProgress }: {
                         ? run.signers.map((s, i) => ({
                             name:   s.name || s.role_name || `Signer ${i + 1}`,
                             action: s.action,
+                            // Job title when the backend could resolve one,
+                            // else the workflow role — the stepper must say
+                            // who this person is either way (#23).
+                            desig:  s.designation || (s.name ? s.role_name : null) || null,
                             state:  s.status === 'Done' ? 'Completed'
                                   : s.status === 'Rejected' ? 'Rejected'
                                   : (i === run.current_index ? 'Awaiting' : 'Pending'),
@@ -6402,6 +6424,7 @@ function Stage5Policies({ emp, onProgress }: {
                         : signers.map((s, i) => ({
                             name:   s.role_name || s.designation_name || `Signer ${i + 1}`,
                             action: s.action,
+                            desig:  s.designation_name || null,
                             state:  'Pending' as string,
                             active: i === 0,
                             at:     null as string | null,
@@ -6417,6 +6440,7 @@ function Stage5Policies({ emp, onProgress }: {
                                 ({sg.action})
                               </span>
                             )}
+                            {sg.desig && <span className="ep-signer-desig">{sg.desig}</span>}
                             {sg.state === 'Completed' && sg.at && (
                               <span style={{ display: 'block', fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 500, marginTop: 1 }}>
                                 Signed · {fmtSignedAt(sg.at)}
@@ -6443,6 +6467,16 @@ function Stage5Policies({ emp, onProgress }: {
                         </div>
                       ))}
                     </div>
+                    {chainChanged && (
+                      <p className="ep-signing-stale">
+                        <i className="ri-information-line" />
+                        <span>
+                          Sent under an earlier signing workflow. The template now reads{' '}
+                          <strong>{signers.map(s => s.role_name || s.designation_name).filter(Boolean).join(' \u2192 ')}</strong>
+                          {' '}&mdash; the next send will use it.
+                        </span>
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <p className="onb-pol-doc-help" style={{ paddingLeft: 16 }}>

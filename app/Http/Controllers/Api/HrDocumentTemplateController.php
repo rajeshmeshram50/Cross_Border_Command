@@ -1785,6 +1785,18 @@ class HrDocumentTemplateController extends Controller
         $q->whereRaw('1 = 0');
     }
 
+    /**
+     * Narrow a client-tier user to the branch their switcher is on.
+     *
+     * A CLIENT-WIDE template (branch_id null) belongs to every branch, so the
+     * filter has to let it through — the branch_user arm of applyScope already
+     * does, and this one did not. The effect was a library that changed shape
+     * with who was looking: a client admin with a branch selected (Axios sends
+     * branch_id on every GET) lost every client-wide template, while HR in that
+     * same branch still saw them. Editing one then looked like it had not
+     * reached Onboarding or Exit at all, because the row the admin was reading
+     * the trigger point from was a different template (#66).
+     */
     private function applySwitcherBranchFilter($q, $user, ?int $branchFilter): void
     {
         if ($branchFilter === null) return;
@@ -1792,7 +1804,7 @@ class HrDocumentTemplateController extends Controller
             ->where('client_id', $user->client_id)
             ->exists();
         if (!$belongsToClient) return;
-        $q->where('branch_id', $branchFilter);
+        $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $branchFilter));
     }
 
     private function resolveRow(Request $request, int $id): HrDocumentTemplate

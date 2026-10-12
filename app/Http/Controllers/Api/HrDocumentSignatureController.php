@@ -105,7 +105,7 @@ class HrDocumentSignatureController extends Controller
         if ($status = $request->query('status'))          $q->where('status', $status);
         if ($tplId  = $request->integer('template_id'))   $q->where('template_id', $tplId);
 
-        $rows = $q->orderByDesc('id')->get();
+        $rows = $this->fillSignerDesignations($q->orderByDesc('id')->get());
         return response()->json($rows->map(function ($row) {
             $triggerPointName = $row->template?->triggerPoint?->module_name ?? null;
             $triggerKeyword = $this->inferTriggerKeyword($triggerPointName, $row->template?->doc_type);
@@ -145,7 +145,7 @@ class HrDocumentSignatureController extends Controller
                 }
                 return false;
             })->values();
-            return response()->json($rows);
+            return response()->json($this->fillSignerDesignations($rows));
         }
 
         // Filter in PHP since signer matching is JSON-shape-specific.
@@ -170,7 +170,7 @@ class HrDocumentSignatureController extends Controller
                 && ($current['status'] ?? 'Pending') !== 'Done';
         })->values();
 
-        return response()->json($rows);
+        return response()->json($this->fillSignerDesignations($rows));
     }
 
     public function show(Request $request, $id)
@@ -179,6 +179,7 @@ class HrDocumentSignatureController extends Controller
         $this->applyScope($q, $request->user());
         $row = $q->findOrFail((int) $id);
         $this->assertEmployeeMayRead($request->user(), $row);
+        $this->fillSignerDesignations(collect([$row]));
         return response()->json($row);
     }
 
@@ -241,10 +242,14 @@ class HrDocumentSignatureController extends Controller
             $resolved = [];
             foreach ($signersTpl as $i => $s) {
                 $roleName = (string) ($s['role_name'] ?? '');
-                [$userId, $displayName] = $this->resolveSignerUser($roleName, $emp);
+                [$userId, $displayName, $designation] = $this->resolveSignerUser($roleName, $emp);
                 $resolved[] = [
                     'index'        => $i,
                     'role_name'    => $roleName,
+                    // The job title, frozen with everything else at send time —
+                    // a promotion mid-flight must not relabel a signature that
+                    // was already given under the old designation (#23).
+                    'designation'  => $designation,
                     'action'       => (string) ($s['action'] ?? 'Sign'),
                     'days'         => (int)    ($s['days']   ?? 3),
                     'user_id'      => $userId,
@@ -837,7 +842,7 @@ class HrDocumentSignatureController extends Controller
         if ($status !== 'all') $q->where('status', $status);
 
         $this->applyScope($q, $request->user());
-        $rows = $q->orderByDesc('id')->get();
+        $rows = $this->fillSignerDesignations($q->orderByDesc('id')->get());
 
         return response()->json($rows->map(function ($row) {
             $triggerPointName = $row->template?->triggerPoint?->module_name
@@ -1230,7 +1235,7 @@ class HrDocumentSignatureController extends Controller
      * needs the same answer, and two copies of these rules is how two
      * screens end up naming different people for one document.
      *
-     * @return array{0: int|null, 1: string}
+     * @return array{0: int|null, 1: string, 2: string|null}
      */
     private function resolveSignerUser(string $roleName, Employee $emp): array
     {
@@ -1438,6 +1443,52 @@ class HrDocumentSignatureController extends Controller
     }
 
     /** Same tenant-scope rules as the template controller. */
+    /**
+     * Fill `designation` on signer slots recorded before it was stored (#23).
+     *
+     * store() freezes the job title now, but every run sent before that has
+     * signers with no `designation` key at all, and the stepper would read
+     * blank for them forever. Resolved live off the signer's user_id instead,
+     * in ONE query for the whole page rather than one per signer.
+     *
+     * Reads only — nothing is written back, so a historic run keeps naming the
+     * title it was actually signed under the moment it gets re-sent.
+     *
+     * @param  \Illuminate\Support\Collection<int, HrDocumentSignature>  $rows
+     */
+    private function fillSignerDesignations($rows)
+    {
+        $missing = [];
+        foreach ($rows as $row) {
+            foreach ((array) $row->signers as $s) {
+                if (empty($s['designation']) && (int) ($s['user_id'] ?? 0) > 0) {
+                    $missing[(int) $s['user_id']] = true;
+                }
+            }
+        }
+        if (!$missing) return $rows;
+
+        $titles = Employee::with('designation:id,name')
+            ->whereIn('user_id', array_keys($missing))
+            ->get(['id', 'user_id', 'designation_id'])
+            ->mapWithKeys(fn ($e) => [(int) $e->user_id => $e->designation?->name])
+            ->filter()
+            ->all();
+        if (!$titles) return $rows;
+
+        foreach ($rows as $row) {
+            $signers = (array) $row->signers;
+            foreach ($signers as $i => $s) {
+                if (empty($s['designation'])) {
+                    $signers[$i]['designation'] = $titles[(int) ($s['user_id'] ?? 0)] ?? null;
+                }
+            }
+            $row->signers = $signers;
+        }
+
+        return $rows;
+    }
+
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if (!$user) return;

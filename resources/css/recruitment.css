@@ -6271,6 +6271,40 @@
    the reason is width-capped instead, so a wrapped line reads as a block under
    the name rather than as a ragged edge. (#141) */
 .ep-signer:has(.ep-signer-note) { align-items: center; }
+/* The template's workflow changed after this document was sent.
+   Sits under the stepper rather than replacing it: the frozen chain is what
+   the document was signed under and must stay, while the configured chain is
+   what the next send will use (#66). */
+.ep-signing-stale {
+  display: flex; align-items: flex-start; gap: 6px;
+  margin: 10px 0 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  background: rgba(124, 92, 252, 0.08);
+  border: 1px solid rgba(124, 92, 252, 0.22);
+  color: #5b21b6;
+}
+.ep-signing-stale i { font-size: 12px; margin-top: 1px; flex-shrink: 0; }
+.ep-signing-stale strong { font-weight: 700; }
+[data-bs-theme="dark"] .ep-signing-stale {
+  background: rgba(124, 92, 252, 0.14);
+  border-color: rgba(124, 92, 252, 0.34);
+  color: #ddd6fe;
+}
+
+/* The signer's job title under their name.
+   The stepper named the person and their state but never said who they are in
+   the org, so an approval chain of three names gave no clue why those three
+   (#23). Falls back to the workflow role when no designation resolves. */
+.ep-signer-desig {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--vz-secondary-color);
+  margin-top: 1px;
+}
 .ep-signer-rejected-at { display: block; font-size: 10px; font-weight: 600; color: #ef4444; margin-top: 1px; }
 .ep-signer-state {
   font-size: 9.5px;
