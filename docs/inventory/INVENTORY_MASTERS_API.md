@@ -105,6 +105,7 @@ cold-chain in a rack that is not.
 |---|---|---|
 | GET | `/warehouses` | + `wh_type`, `city`, `state_id`, `country_id`. Rows carry `zones_count`, `racks_count` |
 | GET | `/warehouses/options` | active only; `wh_type`, `area_sqft`, `location` for the AUTO fields |
+| GET | `/warehouses/next-code` | preview of the next code (`WH-003`); reads the sequence, reserves nothing |
 | POST | `/warehouses` | **multipart** — the business card |
 | GET | `/warehouses/{id}` | adds `free_area_sqft` |
 | POST | `/warehouses/{id}` | POST, not PUT: PHP does not populate `$_FILES` on a PUT |
@@ -117,6 +118,7 @@ cold-chain in a rack that is not.
 |---|---|---|
 | GET | `/zones` | + `warehouse_id`, `rack_mode`, `cold_chain`, `hazardous` |
 | GET | `/zones/options` | `warehouse_id` required; pass `rack_mode=rack` for the Rack form |
+| GET | `/zones/next-code` | preview of the next code (`ZN-004`) |
 | POST | `/zones` | |
 | GET | `/zones/{id}` | adds `free_area_sqft` |
 | PUT | `/zones/{id}` | 409 if switched to `norack` while it has racks |
@@ -129,6 +131,7 @@ cold-chain in a rack that is not.
 |---|---|---|
 | GET | `/racks` | + `warehouse_id`, `zone_id`, `cold_chain`, `hazardous`. Rows carry `shelves_count`, `capacity_kg`, `used_kg`, `load_pct` |
 | GET | `/racks/options` | `warehouse_id` or `zone_id`; returns `height_cm` converted |
+| GET | `/racks/next-code` | preview of the next code (`RK-012`) |
 | POST | `/racks` | `warehouse_id` is **not** sent — taken from the zone |
 | GET | `/racks/{id}` | adds `free_height_cm`, `next_level_no` |
 | PUT | `/racks/{id}` | refuses a height below what its shelves already use |
@@ -140,6 +143,7 @@ cold-chain in a rack that is not.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/racks/{rack}/shelves` | levels + KPI strip + the rack's limits, in one call. Not paginated — a rack has levels, not pages |
+| GET | `/racks/{rack}/shelves/next-code` | next LEVEL in this rack (`RK-003-SH-02`): counted, not sequenced, so levels are contiguous |
 | POST | `/racks/{rack}/shelves` | |
 | GET | `/shelves/{id}` | |
 | PUT | `/shelves/{id}` | `max_weight_kg` cannot drop below what is stored |

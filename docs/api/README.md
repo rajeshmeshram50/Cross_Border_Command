@@ -1,7 +1,7 @@
 # Cross-Border Command — API Collection
 
 Postman/Insomnia collection for the CBC Laravel API, generated from the app's
-actual routes (`php artisan route:list`). **605 requests** across **21 module
+actual routes (`php artisan route:list`). **868 requests** across **21 module
 folders**, each request carrying a realistic sample payload (164 are the exact
 hand-written example bodies from `payload-overrides.json`).
 
