@@ -2,27 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../hooks/useScrollLock';
-/* Carries its own styling: the QR card, the backdrop and the modal's edge all
-   live there, and the list page is not always what opened it. */
 import '../warehouse/warehouse-master.css';
-import { WAREHOUSES } from '../warehouse/warehouse-data';
-import type { Zone } from './zone-data';
-
-const WAREHOUSE_BY_CODE = new Map(WAREHOUSES.map(w => [w.id, w]));
-
-/**
- * What the code carries: enough to identify the zone off a phone with no app
- * and no network — the zone, its warehouse, and where that warehouse is.
- */
-const payloadFor = (z: Zone) => {
-  const w = WAREHOUSE_BY_CODE.get(z.wh);
-  return [
-    z.id,
-    z.name,
-    [z.wh, w?.name].filter(Boolean).join(' · '),
-    [w?.city, w?.state].filter(Boolean).join(', '),
-  ].filter(Boolean).join('\n');
-};
+import type { Zone, ZoneWarehouse } from './zone-data';
 
 const Ico = (d: React.ReactNode, size: number) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -40,14 +21,9 @@ const IcoDownload = () => Ico(
     <line x1="12" y1="15" x2="12" y2="3" /></>, 14,
 );
 
-/**
- * Zone QR — the code for one zone, with what it identifies.
- *
- * Painted in the browser with the `qrcode` package the sticker modals use, so
- * it needs nothing from the server and works on the page's static rows.
- */
-export default function ZoneQrModal({ zone: z, onClose }: {
+export default function ZoneQrModal({ zone: z, warehouse: w, onClose }: {
   zone: Zone;
+  warehouse?: ZoneWarehouse;
   onClose: () => void;
 }) {
   useScrollLock(true, '.whm-qrmodal');
@@ -66,9 +42,7 @@ export default function ZoneQrModal({ zone: z, onClose }: {
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
-    /* 'M' recovers from about 15% damage — what a label stuck to a rack and
-       scuffed in a warehouse actually needs. */
-    QRCode.toCanvas(c, payloadFor(z), {
+    QRCode.toCanvas(c, z.id, {
       width: 196, margin: 0, errorCorrectionLevel: 'M',
       color: { dark: '#0c4a6e', light: '#ffffff' },
     })
@@ -84,8 +58,6 @@ export default function ZoneQrModal({ zone: z, onClose }: {
     a.download = `${z.id}-QR.png`;
     a.click();
   };
-
-  const w = WAREHOUSE_BY_CODE.get(z.wh);
 
   return createPortal(
     <div className="spi-mdl-backdrop whm-backdrop"
@@ -109,9 +81,6 @@ export default function ZoneQrModal({ zone: z, onClose }: {
         <div className="spi-mdl-body">
           <div className="whm-qr">
             <div className="whm-qr__code">
-              {/* Kept mounted while it paints — the effect needs the canvas to
-                  draw into, so swapping it for a message would mean it never
-                  appears. The message sits over it instead. */}
               <canvas ref={canvasRef} width={196} height={196}
                 style={{ display: state === 'ready' ? 'block' : 'none' }} />
               {state === 'painting' && <span className="whm-qr__load">Generating QR…</span>}
@@ -120,7 +89,7 @@ export default function ZoneQrModal({ zone: z, onClose }: {
             <div className="whm-qr__id">{z.id}</div>
             <div className="whm-qr__name">{z.name}</div>
             <div className="whm-qr__addr">
-              {[z.wh, w?.name].filter(Boolean).join(' · ')}
+              {[w?.id ?? z.wh, w?.name || z.whName].filter(Boolean).join(' · ')}
               {w?.city ? `, ${w.city}` : ''}
             </div>
           </div>

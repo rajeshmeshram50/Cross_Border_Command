@@ -133,6 +133,14 @@ def main() -> None:
             else:
                 log("No new punches.")
         except requests.HTTPError as e:
+            code = getattr(e.response, "status_code", None)
+            if code in (401, 403):
+                # A bad/revoked token never fixes itself — retrying every cycle just
+                # spams the server. Stop and make the operator mint a token on the
+                # server named in api_base_url (tokens are per-database).
+                log(f"API rejected the token ({code}) at {api_base}. Mint a new token ON THAT "
+                    f"SERVER, put it in config.ini as api_token, then restart. Stopping.")
+                raise SystemExit(1)
             log(f"API error: {e} — {getattr(e.response, 'text', '')[:200]} (will retry)")
         except Exception as e:  # device offline, network blip, etc.
             log(f"Poll failed: {e} (will retry next cycle)")

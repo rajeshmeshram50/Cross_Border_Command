@@ -98,6 +98,7 @@ export default function BoxDrawer({
   saving = false,
   saved = false,
   customFlags = [],
+  onFlagCreated,
   onQuantityChange,
 }: {
   boxId: string;
@@ -117,6 +118,7 @@ export default function BoxDrawer({
   saving?: boolean;
   saved?: boolean;
   customFlags?: CustomFlag[];
+  onFlagCreated?: () => void;
   onQuantityChange?: (qty: number) => void;
 }) {
   const [unit, setUnit] = useState<'cm' | 'm'>('cm');
@@ -542,7 +544,7 @@ export default function BoxDrawer({
 
       {flagsOpen && (
         <Suspense fallback={null}>
-          <AddProductFlagModal onClose={() => setFlagsOpen(false)} />
+          <AddProductFlagModal onClose={() => setFlagsOpen(false)} onSaved={() => onFlagCreated?.()} />
         </Suspense>
       )}
 

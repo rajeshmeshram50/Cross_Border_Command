@@ -47,7 +47,7 @@ export default function InventoryScanLog() {
   const onReset = async () => {
     const res = await Swal.fire({
       title: 'Reset the simulation?',
-      text: 'Clears enrolled devices, the scan log and every allocation on this browser.',
+      text: 'Clears the scan log and every allocation on this browser. Enrolled devices are kept (they live on the server).',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: 'Reset everything',

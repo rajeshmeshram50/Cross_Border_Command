@@ -1,104 +1,77 @@
-/**
- * Product Flags — the prototype's own twelve, verbatim.
- *
- * Static, like the warehouse rows: this screen is being designed before it
- * is wired. Replace what this module exports when an endpoint lands; the
- * page only ever reads PRODUCT_FLAGS.
- */
+import axios from 'axios';
+import api from '../../../api';
+import type { ServerPageMeta } from '../../../hooks/useServerList';
+
 export interface ProductFlag {
-  /** PF-001 … */
+  apiId: number;
   id: string;
-  /** Created on. ISO; the list does not show it, the form does. */
   date: string;
   name: string;
-  /** What the flag means for handling and storage. */
   purpose: string;
   status: 'active' | 'inactive';
 }
 
-export const PRODUCT_FLAGS: ProductFlag[] = [
-  {
-    id: 'PF-001',
-    date: '2025-04-08',
-    name: 'Standard',
-    purpose: 'Normal product with no special handling',
-    status: 'active',
-  },
-  {
-    id: 'PF-002',
-    date: '2025-04-17',
-    name: 'Fragile',
-    purpose: 'Requires careful handling',
-    status: 'active',
-  },
-  {
-    id: 'PF-003',
-    date: '2025-04-26',
-    name: 'Hazardous',
-    purpose: 'Dangerous or regulated material',
-    status: 'active',
-  },
-  {
-    id: 'PF-004',
-    date: '2025-05-05',
-    name: 'Cold Chain',
-    purpose: 'Requires controlled cold temperature',
-    status: 'active',
-  },
-  {
-    id: 'PF-005',
-    date: '2025-05-14',
-    name: 'Temperature Sensitive',
-    purpose: 'Requires a specified temperature range',
-    status: 'active',
-  },
-  {
-    id: 'PF-006',
-    date: '2025-05-23',
-    name: 'Humidity Sensitive',
-    purpose: 'Requires humidity control',
-    status: 'active',
-  },
-  {
-    id: 'PF-007',
-    date: '2025-06-01',
-    name: 'Flammable',
-    purpose: 'Fire-risk material requiring suitable storage',
-    status: 'active',
-  },
-  {
-    id: 'PF-008',
-    date: '2025-06-10',
-    name: 'Heavy Load',
-    purpose: 'Requires suitable rack load capacity',
-    status: 'active',
-  },
-  {
-    id: 'PF-009',
-    date: '2025-06-19',
-    name: 'Oversized / Bulky',
-    purpose: 'May require floor storage instead of a rack',
-    status: 'active',
-  },
-  {
-    id: 'PF-010',
-    date: '2025-06-28',
-    name: 'Non-Stackable',
-    purpose: 'Cannot have other boxes stacked on top',
-    status: 'active',
-  },
-  {
-    id: 'PF-011',
-    date: '2025-07-07',
-    name: 'Perishable',
-    purpose: 'Requires expiry and shelf-life controls',
-    status: 'active',
-  },
-  {
-    id: 'PF-012',
-    date: '2025-07-16',
-    name: 'Keep Upright',
-    purpose: 'Must remain in a specified orientation',
-    status: 'active',
-  },
-];
+export type ProductFlagTab = 'all' | 'active' | 'inactive';
+export type ProductFlagTabs = Record<ProductFlagTab, number>;
+export type ProductFlagMeta = ServerPageMeta & { tabs: ProductFlagTabs };
+
+type ApiRow = {
+  id: number;
+  flag_code: string | null;
+  flag_name: string | null;
+  purpose: string | null;
+  status: number;
+  created_at: string | null;
+};
+
+export class ProductFlagApiError extends Error {
+  constructor(message: string, public status: number | null, public fieldErrors: Record<string, string[]> = {}) {
+    super(message);
+    this.name = 'ProductFlagApiError';
+  }
+}
+
+async function call<T>(run: () => Promise<{ data: unknown }>, pick: (body: unknown) => T): Promise<T> {
+  try {
+    return pick((await run()).data);
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const body = err.response?.data as { message?: string; errors?: Record<string, string[]> } | undefined;
+      throw new ProductFlagApiError(body?.message || err.message || 'Request failed', err.response?.status ?? null, body?.errors ?? {});
+    }
+    throw err;
+  }
+}
+
+const toFlag = (r: ApiRow): ProductFlag => ({
+  apiId: r.id,
+  id: r.flag_code || `PF-${String(r.id).padStart(3, '0')}`,
+  date: r.created_at ?? '',
+  name: r.flag_name ?? '',
+  purpose: r.purpose ?? '',
+  status: Number(r.status) === 1 ? 'active' : 'inactive',
+});
+
+const one = (b: unknown) => toFlag((b as { data: ApiRow }).data);
+
+export const productFlagApi = {
+  list: (q: { tab?: ProductFlagTab; search?: string; page?: number; per_page?: number }) =>
+    call(() => api.get('/inventory/product-flags', {
+      params: { tab: q.tab ?? 'all', q: q.search || undefined, page: q.page, per_page: q.per_page },
+    }), (b) => {
+      const body = b as { data?: ApiRow[]; tabs?: ProductFlagTabs; meta?: ServerPageMeta } | null;
+      return {
+        rows: (body?.data ?? []).map(toFlag),
+        meta: body?.meta && body.tabs ? { ...body.meta, tabs: body.tabs } : null,
+      };
+    }),
+
+  create: (data: { flag_name: string; purpose: string }) =>
+    call(() => api.post('/inventory/product-flags', data), one),
+
+  update: (apiId: number, data: { flag_name: string; purpose: string }) =>
+    call(() => api.put(`/inventory/product-flags/${apiId}`, data), one),
+
+  setStatus: (apiId: number, active: boolean) =>
+    call(() => api.put(`/inventory/product-flags/${apiId}/status`, { status: active ? 1 : 0 }), one),
+};

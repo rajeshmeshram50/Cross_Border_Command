@@ -7,7 +7,7 @@ import {
   BOXES, RACKS, SHELVES, EXPECTED, WORD,
   findEntity, makeSticker, makeTamperedSticker,
   ingestScan, confirmAllocation, cancelSession,
-  getSession, getActiveDevice, listDevices, setActiveDeviceId,
+  getSession, getActiveDevice, verifyDevice, setDeviceToken, getDeviceToken,
   type ScanResult, type PutAwaySession, type ScanDevice,
 } from './putAwayStore';
 import '../../../css/inventory-scan.css';
@@ -66,7 +66,8 @@ function StickerButton({ title, desc, payload, bad, disabled, onScan }: {
 export default function InventoryPutAway() {
   const [session, setSession] = useState<PutAwaySession | null>(() => getSession());
   const [device, setDevice] = useState<ScanDevice | null>(() => getActiveDevice());
-  const [devices, setDevices] = useState<ScanDevice[]>(() => listDevices());
+  const [checking, setChecking] = useState(true);
+  const [credential, setCredential] = useState('');
   const [result, setResult] = useState<ScanResult | null>(null);
   const [resumed, setResumed] = useState(() => !!getSession());
   const [typed, setTyped] = useState('');
@@ -101,8 +102,19 @@ export default function InventoryPutAway() {
   const refresh = useCallback(() => {
     setSession(getSession());
     setDevice(getActiveDevice());
-    setDevices(listDevices());
   }, []);
+
+  /* Who is this browser? Asked of the server on every visit — a suspension
+     or retirement takes effect on the next page load, not whenever the
+     handheld happens to clear its storage. */
+  const recheck = useCallback(async () => {
+    setChecking(true);
+    await verifyDevice();
+    setChecking(false);
+    refresh();
+  }, [refresh]);
+
+  useEffect(() => { recheck(); }, [recheck]);
 
   const submit = useCallback((payload: string) => {
     if (!payload.trim()) return;
@@ -115,11 +127,22 @@ export default function InventoryPutAway() {
   const onConfirm = () => { setResult(confirmAllocation()); refresh(); };
   const onCancel  = () => { setResult(cancelSession());   refresh(); };
 
-  const onSwitchDevice = (id: string) => {
-    setActiveDeviceId(id || null);
+  const onInstallCredential = async () => {
+    const raw = credential.trim();
+    if (!raw) return;
+    // Accept either the bare credential or the whole enrollment link.
+    setDeviceToken(raw.includes('#') ? raw.slice(raw.indexOf('#') + 1) : raw);
+    setCredential('');
     setResult(null);
     setResumed(false);
-    refresh();
+    await recheck();
+  };
+
+  const onForgetCredential = async () => {
+    setDeviceToken(null);
+    setResult(null);
+    setResumed(false);
+    await recheck();
   };
 
   const box   = session?.box   ? (findEntity('BOX',   session.box)   as { name: string; sub: string }) : null;
@@ -173,14 +196,14 @@ export default function InventoryPutAway() {
                   </div>
                 </Alert>
               )}
-              {!device && (
+              {!device && !checking && (
                 <Alert color="danger" className="mb-3">
                   <strong>Unauthorised device.</strong><br />
                   This device isn&apos;t registered with Cross_Border_Command, so it
                   cannot scan.
                   <div className="mt-2 fs-12">
-                    Testing? Pick a handheld under <em>Which handheld am I?</em> to
-                    stand in for an enrolled device.
+                    On a Zebra handheld, scan its enrollment QR from <em>Scan Devices</em>,
+                    or paste the credential under <em>This handheld</em>.
                   </div>
                   <div className="inv-mono mt-1">rejected_unauthorized_device</div>
                 </Alert>
@@ -261,26 +284,45 @@ export default function InventoryPutAway() {
         <Col xl={7} lg={6}>
           <Card className="mb-3">
             <CardHeader className="d-flex align-items-center justify-content-between flex-wrap gap-2">
-              <h5 className="card-title mb-0 fs-14">Which handheld am I?</h5>
-              <span className="text-muted fs-11">Stands in for the enrolled device credential</span>
+              <h5 className="card-title mb-0 fs-14">This handheld</h5>
+              <span className="text-muted fs-11">Verified by the server on every visit</span>
             </CardHeader>
             <CardBody>
-              <select
-                className="form-select"
-                value={device?.id ?? ''}
-                onChange={e => onSwitchDevice(e.target.value)}
-              >
-                <option value="">— Unregistered device (personal phone) —</option>
-                {devices.map(d => (
-                  <option key={d.id} value={d.id}>
-                    {d.label} · {d.serial}{d.status !== 'active' ? ` (${d.status})` : ''}
-                  </option>
-                ))}
-              </select>
-              <p className="text-muted fs-12 mb-0 mt-2">
-                On a real TC27 this is not a choice — the credential is installed once at
-                setup and sent with every scan. Switching here ends any run in progress.
-              </p>
+              {checking ? (
+                <p className="text-muted fs-12 mb-0">Checking device credential…</p>
+              ) : device ? (
+                <div className="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                  <div>
+                    <strong>{device.label}</strong>
+                    <div className="inv-mono text-muted fs-12">{device.serial} · {device.model}</div>
+                  </div>
+                  <Button size="sm" color="light" onClick={onForgetCredential}>
+                    <i className="ri-logout-box-r-line me-1" />Forget on this browser
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className="d-flex gap-2">
+                    <input
+                      className="form-control inv-mono"
+                      placeholder="CBCD-… or the enrollment link"
+                      value={credential}
+                      onChange={e => setCredential(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') onInstallCredential(); }}
+                    />
+                    <Button color="primary" onClick={onInstallCredential} disabled={!credential.trim()}>
+                      Install
+                    </Button>
+                  </div>
+                  <p className="text-muted fs-12 mb-0 mt-2">
+                    {getDeviceToken()
+                      ? 'The credential stored on this browser was not accepted. '
+                      : ''}
+                    Only enrolled handhelds can scan. Enroll the device under <em>Scan Devices</em>,
+                    then scan its QR with the handheld — or paste the credential here.
+                  </p>
+                </>
+              )}
             </CardBody>
           </Card>
 

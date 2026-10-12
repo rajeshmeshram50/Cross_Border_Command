@@ -4,15 +4,10 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
 import '../../p2p/p2p-detail.css';
 import '../../p2p/purchase-management/order/create-po/create-po.css';
-/* Its own two, not the page's. The Product Flags list imports these, so the
-   form looked right when opened from there — and arrived unstyled when the
-   SPI's box drawer opened it instead: no section card, no grid, labels
-   wrapping beside a textarea an inch tall. A component that travels has to
-   carry its stylesheets with it. */
 import '../warehouse/warehouse-master.css';
 import './product-flag.css';
 import { Field } from '../../p2p/purchase-management/order/create-po/form-fields';
-import { PRODUCT_FLAGS, type ProductFlag } from './product-flag-data';
+import { ProductFlagApiError, productFlagApi, type ProductFlag } from './product-flag-data';
 
 const Ico = (d: ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -33,22 +28,10 @@ const IcoInfo = () => Ico(
 const NAME_MAX = 40;
 const PURPOSE_MAX = 200;
 
-/** One past the highest id in the list. */
-function nextId(): string {
-  const max = PRODUCT_FLAGS.reduce((n, f) => Math.max(n, Number(f.id.replace(/\D/g, '')) || 0), 0);
-  return `PF-${String(max + 1).padStart(3, '0')}`;
-}
-
-/**
- * Add / Edit Product Flag.
- *
- * Two fields in one column — the design's shape for this master. Design only:
- * it validates and reports, and does not persist.
- */
-export default function AddProductFlagModal({ flag, onClose }: {
-  /** Present when the pencil opened it. */
+export default function AddProductFlagModal({ flag, onClose, onSaved }: {
   flag?: ProductFlag;
   onClose: () => void;
+  onSaved?: (flag: ProductFlag) => void;
 }) {
   const editing = !!flag;
   const toast = useToast();
@@ -57,6 +40,7 @@ export default function AddProductFlagModal({ flag, onClose }: {
   const [name, setName] = useState(flag?.name ?? '');
   const [purpose, setPurpose] = useState(flag?.purpose ?? '');
   const [errors, setErrors] = useState<{ name?: string; purpose?: string }>({});
+  const [saving, setSaving] = useState(false);
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -66,27 +50,40 @@ export default function AddProductFlagModal({ flag, onClose }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const id = editing ? flag!.id : nextId();
+  const id = editing ? flag!.id : 'Assigned on save';
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return;
     const e: { name?: string; purpose?: string } = {};
     if (!name.trim()) e.name = 'Give the flag a name.';
-    /* Compared case-insensitively, and against every flag but this one: two
-       flags reading the same is two rows nobody can tell apart. */
-    else if (PRODUCT_FLAGS.some(f => f.id !== id && f.name.toLowerCase() === name.trim().toLowerCase())) {
-      e.name = 'A flag with that name already exists.';
-    }
     if (!purpose.trim()) e.purpose = 'Say what this flag means for handling or storage.';
     setErrors(e);
     if (e.name || e.purpose) {
       toast.error('Check the form', 'Each problem is marked below.');
       return;
     }
-    toast.info(
-      editing ? `${id} would be updated` : `${id} would be saved`,
-      'The form is complete. Saving arrives with the product-flag endpoint.',
-    );
-    onClose();
+    setSaving(true);
+    try {
+      const body = { flag_name: name.trim(), purpose: purpose.trim() };
+      const saved = editing ? await productFlagApi.update(flag!.apiId, body) : await productFlagApi.create(body);
+      toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, saved.name);
+      onSaved?.(saved);
+      onClose();
+    } catch (err) {
+      if (err instanceof ProductFlagApiError) {
+        const fe = err.fieldErrors;
+        const next: { name?: string; purpose?: string } = {
+          name: fe.flag_name?.[0] ?? (/name/i.test(err.message) && !fe.purpose ? err.message : undefined),
+          purpose: fe.purpose?.[0],
+        };
+        setErrors(next);
+        toast.error(editing ? 'Could not update the flag' : 'Could not create the flag', next.name ?? next.purpose ?? err.message);
+      } else {
+        toast.error('Could not save the flag', 'Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
@@ -130,9 +127,6 @@ export default function AddProductFlagModal({ flag, onClose }: {
               </Field>
               <Field
                 label="Flag Purpose" req error={errors.purpose}
-                /* At the end of the label's row, where the design puts it.
-                   Under the control it would be displaced by an error — the
-                   moment the count matters most. */
                 labelEnd={<span className="pfm-cnt">{purpose.length} / {PURPOSE_MAX}</span>}
               >
                 <textarea
@@ -151,8 +145,8 @@ export default function AddProductFlagModal({ flag, onClose }: {
           <span className="whm-footnote"><IcoInfo /> Fields marked * are required</span>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm" onClick={save}>
-              <IcoCheck /> {editing ? 'Update Flag' : 'Save Flag'}
+            <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
+              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Flag' : 'Save Flag'}
             </button>
           </div>
         </div>

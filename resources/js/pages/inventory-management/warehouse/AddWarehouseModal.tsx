@@ -1,30 +1,18 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
-/* The P2P form chrome, whole: `Field` is the shared label + control + error
-   cell, `EditSelect` is the app's standard dropdown, and the input, textarea
-   and grid classes come from the wizard stylesheet. Only the handful of
-   controls this form has that no other does are defined here. */
-/* The stylesheet those classes live in. The list page does not load it — it
-   is a table, not a form — so the modal brings its own. Without it `Field`
-   renders label and control side by side with no grid at all. */
 import '../../p2p/p2p-detail.css';
-/* And the one `Field`'s own hint and error live in. Without it they fall back
-   to the page's body text — full size, near-black in light and near-white in
-   dark, where they should be small and muted in both. */
 import '../../p2p/purchase-management/order/create-po/create-po.css';
-/* And its own, so it is dressed wherever it is opened from rather than only
-   on the page that happens to import them. */
 import './warehouse-master.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
-import { WAREHOUSES, type Warehouse, type WarehouseType } from './warehouse-data';
-/* Loaded only when someone picks "Take photo": it pulls in getUserMedia
-   handling that opening this form should not pay for. */
+import {
+  WarehouseApiError, warehouseApi,
+  type LookupOption, type Warehouse, type WarehousePayload, type WarehouseType,
+} from './warehouse-data';
 const CameraCaptureModal = lazy(() =>
   import('../../p2p/purchase-management/order/physical-inspection/CameraCaptureModal'));
 
-/* ── Icons: the prototype's own paths ─────────────────────────────────── */
 const Ico = (d: ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -59,24 +47,12 @@ const ICON_CAMERA = Ico(
     <circle cx="12" cy="13" r="4" /></>, 15,
 );
 
-/* ── The lists the two location dropdowns offer ───────────────────────── */
-const COUNTRIES = ['India', 'United Arab Emirates', 'Singapore', 'United Kingdom', 'United States', 'Other'];
-const STATES = [
-  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',
-  'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh',
-  'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan',
-  'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
-  'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu',
-  'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
-];
-
 const TYPE_LABEL: Record<WarehouseType, string> = {
   own: 'Own Warehouse',
   tpl: 'Third-Party Warehouse',
 };
 const TYPE_OPTIONS = [TYPE_LABEL.own, TYPE_LABEL.tpl];
 
-/** Everything the form collects. Strings throughout — it is a form. */
 interface Draft {
   type: string;
   name: string;
@@ -98,14 +74,13 @@ const EMPTY: Draft = {
   city: '', pin: '', map: '', contact: '', mobile: '', email: '', card: '',
 };
 
-/** The id the next warehouse takes: one past the highest in the list. */
-function nextId(): string {
-  const max = WAREHOUSES.reduce((n, w) => Math.max(n, Number(w.id.replace(/\D/g, '')) || 0), 0);
-  return `WH-${String(max + 1).padStart(3, '0')}`;
-}
+const FIELD_FOR: Record<string, keyof Draft> = {
+  wh_name: 'name', wh_type: 'type', area_sqft: 'area', address: 'address', country_id: 'country',
+  state_id: 'state', state_name: 'state', city: 'city', pincode: 'pin', map_url: 'map',
+  contact_person: 'contact', contact_dial: 'mobile', contact_mobile: 'mobile', contact_email: 'email', card: 'card',
+};
 
-/** Which fields are wrong, and why. Empty means the form can be saved. */
-function validate(d: Draft): Partial<Record<keyof Draft, string>> {
+function validate(d: Draft, hasStates: boolean): Partial<Record<keyof Draft, string>> {
   const e: Partial<Record<keyof Draft, string>> = {};
   const india = d.country === 'India';
   if (!d.type) e.type = 'Choose the ownership type.';
@@ -114,9 +89,7 @@ function validate(d: Draft): Partial<Record<keyof Draft, string>> {
   else if (!(Number(d.area) > 0)) e.area = 'Area must be more than zero.';
   if (!d.address.trim()) e.address = 'Enter the address.';
   if (!d.country) e.country = 'Choose a country.';
-  /* States are an Indian list, so the field is only required where that list
-     applies — elsewhere it has nothing right to offer. */
-  if (india && !d.state) e.state = 'Choose a state.';
+  if (!d.state.trim()) e.state = hasStates ? 'Choose a state.' : 'Enter the state or province.';
   if (!d.city.trim()) e.city = 'Enter the city.';
   if (!d.pin.trim()) e.pin = india ? 'Enter the 6-digit pin code.' : 'Enter the postal code.';
   else if (india && !/^\d{6}$/.test(d.pin)) e.pin = 'A pin code is 6 digits.';
@@ -124,24 +97,15 @@ function validate(d: Draft): Partial<Record<keyof Draft, string>> {
   if (!d.mobile.trim()) e.mobile = 'Enter the mobile number.';
   else if (india && !/^\d{10}$/.test(d.mobile)) e.mobile = 'A mobile number is 10 digits.';
   if (!d.email.trim()) e.email = 'Enter the email.';
-  /* Deliberately loose: the shape of an address, not a spec. Anything
-     stricter rejects addresses that work. */
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) e.email = 'That does not look like an email.';
   if (d.map.trim() && !/^https?:\/\//i.test(d.map.trim())) e.map = 'Paste the full link, starting with https://';
   return e;
 }
 
-/**
- * Add Warehouse — the form behind the list's Add button and its edit pencil.
- *
- * Design only: it validates and reports, and does not persist. The page it
- * opens from reads a static module, so a saved warehouse has nowhere to go
- * until there is an endpoint; Save says so rather than pretending.
- */
-export default function AddWarehouseModal({ warehouse, onClose }: {
-  /** Present when the pencil opened it — the form then edits that record. */
+export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
   warehouse?: Warehouse;
   onClose: () => void;
+  onSaved?: (warehouse: Warehouse) => void;
 }) {
   const editing = !!warehouse;
   const toast = useToast();
@@ -153,13 +117,39 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
       address: warehouse.address, country: warehouse.country, state: warehouse.state,
       city: warehouse.city, pin: warehouse.pin, map: warehouse.map,
       contact: warehouse.contact, mobile: warehouse.mobile.replace(/^\+91\s*/, ''),
-      email: warehouse.email, card: '',
+      email: warehouse.email, card: warehouse.cardName ?? '',
     }
     : EMPTY));
   const set = (p: Partial<Draft>) => setD(prev => ({ ...prev, ...p }));
 
-  /* Errors appear on save, not while typing: flagging a field the moment it
-     is touched tells someone their half-typed email is wrong. */
+  const [cardFile, setCardFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const [countries, setCountries] = useState<LookupOption[]>([]);
+  useEffect(() => {
+    warehouseApi.countries().then(setCountries).catch(() => {
+      toast.error('Could not load countries', 'Close the form and open it again.');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const countryId = useMemo(
+    () => countries.find(c => c.name === d.country)?.id
+      ?? (warehouse && warehouse.country === d.country ? warehouse.countryId ?? undefined : undefined),
+    [countries, d.country, warehouse],
+  );
+
+  const [states, setStates] = useState<LookupOption[]>([]);
+  const [statesFor, setStatesFor] = useState<number | null>(null);
+  useEffect(() => {
+    if (!countryId) { setStates([]); setStatesFor(null); return; }
+    let live = true;
+    warehouseApi.states(countryId)
+      .then(list => { if (live) { setStates(list); setStatesFor(countryId); } })
+      .catch(() => { if (live) { setStates([]); setStatesFor(countryId); } });
+    return () => { live = false; };
+  }, [countryId]);
+  const hasStates = states.length > 0;
+
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({});
   const clear = (k: keyof Draft) => setErrors(e => (e[k] ? { ...e, [k]: undefined } : e));
 
@@ -207,7 +197,7 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
   useEffect(() => { cardRef.current?.focus(); }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || saving) return;
       /* The menu and the camera close first — Escape should back out one
          layer at a time, not throw the whole form away. */
       if (pickAt) { setPickAt(null); return; }
@@ -216,13 +206,17 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, pickAt, camOpen]);
+  }, [onClose, pickAt, camOpen, saving]);
 
-  const id = editing ? warehouse!.id : nextId();
+  const id = editing ? warehouse!.id : 'Assigned on save';
   const india = d.country === 'India';
 
-  const save = () => {
-    const e = validate(d);
+  const save = async () => {
+    if (saving) return;
+    const e = validate(d, hasStates);
+    if (!e.country && !countryId) e.country = 'Choose a country from the list.';
+    const stateId = hasStates ? states.find(x => x.name === d.state)?.id : undefined;
+    if (!e.state && hasStates && !stateId) e.state = 'Choose a state from the list.';
     setErrors(e);
     const bad = Object.keys(e).filter(k => e[k as keyof Draft]);
     if (bad.length) {
@@ -230,16 +224,52 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
         bad.length === 1 ? 'One field needs attention' : `${bad.length} fields need attention`,
         'Each one is marked below.',
       );
-      /* Put them on the first problem rather than making them hunt. */
       document.querySelector('.whm-addmdl .cpf-err')
         ?.closest('.spi-dt-field')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
-    toast.info(
-      editing ? `${id} would be updated` : `${id} would be saved`,
-      'The form is complete. Saving arrives with the warehouse endpoint.',
-    );
-    onClose();
+    const payload: WarehousePayload = {
+      wh_name: d.name.trim(),
+      wh_type: d.type === TYPE_LABEL.tpl ? 'tpl' : 'own',
+      area_sqft: Number(d.area),
+      address: d.address.trim(),
+      country_id: countryId!,
+      state_id: stateId ?? null,
+      state_name: stateId ? null : d.state.trim(),
+      city: d.city.trim(),
+      pincode: d.pin.trim(),
+      map_url: d.map.trim() || null,
+      contact_person: d.contact.trim(),
+      contact_dial: india ? '+91' : (warehouse?.dial || null),
+      contact_mobile: d.mobile.trim(),
+      contact_email: d.email.trim(),
+      card: cardFile,
+    };
+
+    setSaving(true);
+    try {
+      const saved = editing && warehouse!.apiId
+        ? await warehouseApi.update(warehouse!.apiId, payload)
+        : await warehouseApi.create(payload);
+      toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, saved.name);
+      onSaved?.(saved);
+      onClose();
+    } catch (err) {
+      if (err instanceof WarehouseApiError) {
+        const next: Partial<Record<keyof Draft, string>> = {};
+        for (const [k, msgs] of Object.entries(err.fieldErrors)) {
+          const f = FIELD_FOR[k];
+          if (f && !next[f]) next[f] = msgs[0];
+        }
+        setErrors(next);
+        toast.error(editing ? 'Could not update the warehouse' : 'Could not create the warehouse',
+          Object.values(next)[0] ?? err.message);
+      } else {
+        toast.error('Could not save the warehouse', 'Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
@@ -266,7 +296,6 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
 
         <div className="spi-mdl-body whm-addbody">
 
-          {/* ── Warehouse details ───────────────────────────────────── */}
           <Card icon={<IcoWarehouse size={15} />} title="Warehouse Details">
             <Field label="Warehouse ID" hint="Generated automatically">
               <div className="whm-auto">
@@ -300,7 +329,6 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
             </Field>
           </Card>
 
-          {/* ── Location ────────────────────────────────────────────── */}
           <Card icon={<IcoPin />} title="Location Details">
             <Field label="Warehouse Address" req full error={errors.address}>
               <textarea
@@ -311,23 +339,29 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
             </Field>
             <Field label="Country" req error={errors.country}>
               <EditSelect
-                value={d.country} options={COUNTRIES} invalid={!!errors.country}
-                placeholder="Select country"
-                /* Changing country clears the state: an Indian state under a
-                   different country is worse than an empty field. */
-                onChange={v => { set({ country: v, state: v === 'India' ? d.state : '' }); clear('country'); }}
+                value={d.country} options={countries.map(c => c.name)} invalid={!!errors.country}
+                placeholder={countries.length ? 'Select country' : 'Loading countries…'}
+                onChange={v => { set({ country: v, state: v === d.country ? d.state : '' }); clear('country'); clear('state'); }}
               />
             </Field>
             <Field
-              label="State" req={india} error={errors.state}
-              hint={india ? undefined : 'States are listed for India only.'}
+              label={hasStates || statesFor !== countryId ? 'State' : 'State / Province'} req error={errors.state}
+              hint={!hasStates && statesFor === countryId && countryId ? 'No states are listed for this country — type it.' : undefined}
             >
-              <EditSelect
-                value={d.state} options={india ? STATES : []} invalid={!!errors.state}
-                placeholder={india ? 'Select state' : 'Not applicable'}
-                readOnly={!india}
-                onChange={v => { set({ state: v }); clear('state'); }}
-              />
+              {hasStates || statesFor !== countryId ? (
+                <EditSelect
+                  value={d.state} options={states.map(x => x.name)} invalid={!!errors.state}
+                  placeholder={countryId ? (statesFor === countryId ? 'Select state' : 'Loading states…') : 'Choose a country first'}
+                  readOnly={!hasStates}
+                  onChange={v => { set({ state: v }); clear('state'); }}
+                />
+              ) : (
+                <input
+                  className={`spi-dt-inp${errors.state ? ' is-invalid' : ''}`}
+                  placeholder="State or province" maxLength={100}
+                  value={d.state} onChange={e => { set({ state: e.target.value }); clear('state'); }}
+                />
+              )}
             </Field>
             <Field label="City" req error={errors.city}>
               <input
@@ -358,7 +392,6 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
             </Field>
           </Card>
 
-          {/* ── Contact person ──────────────────────────────────────── */}
           <Card icon={<IcoUser />} title="Contact Person Details">
             <Field label="Contact Person" req error={errors.contact}>
               <input
@@ -369,8 +402,6 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
             </Field>
             <Field label="Mobile Number" req error={errors.mobile}>
               <div className="whm-pre">
-                {/* The dial code is fixed to the country rather than typed, so
-                    the number itself is stored without one. */}
                 <span>{india ? '+91' : '+'}</span>
                 <input
                   className={`spi-dt-inp${errors.mobile ? ' is-invalid' : ''}`}
@@ -388,16 +419,16 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
                 value={d.email} onChange={e => { set({ email: e.target.value }); clear('email'); }}
               />
             </Field>
-            <Field label="Attachment (Business Card)" hint="JPG, PNG or PDF · up to 5 MB">
+            <Field label="Attachment (Business Card)" hint="JPG, PNG or PDF · up to 5 MB" error={errors.card}>
               <div className={`whm-file${d.card ? ' has-file' : ''}`} ref={dropRef}>
                 <span className="whm-file__ico"><IcoClip /></span>
                 <button type="button" className="whm-file__txt" onClick={() => (pickAt ? setPickAt(null) : openPicker())}
                   title={d.card || 'Add the contact’s business card'}>
                   {d.card || 'Upload business card'}
                 </button>
-                {d.card && (
+                {cardFile && (
                   <button type="button" className="whm-file__x" aria-label="Remove file"
-                    onClick={() => set({ card: '' })}>
+                    onClick={() => { setCardFile(null); set({ card: warehouse?.cardName ?? '' }); }}>
                     <IcoX size={12} />
                   </button>
                 )}
@@ -427,11 +458,12 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
                   ref={fileRef} type="file" accept="image/*,.pdf" hidden
                   onChange={e => {
                     const f = e.target.files?.[0];
-                    /* 5 MB, as the hint under the field promises. */
                     if (f && f.size > 5 * 1024 * 1024) {
                       toast.error('That file is too large', `${f.name} is over the 5 MB limit.`);
                     } else if (f) {
+                      setCardFile(f);
                       set({ card: f.name });
+                      clear('card');
                     }
                     e.target.value = '';
                   }}
@@ -444,9 +476,9 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
         <div className="spi-mdl-foot">
           <span className="whm-footnote"><IcoInfo /> Fields marked * are required</span>
           <div className="spi-mdl-foot-btns">
-            <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm" onClick={save}>
-              <IcoCheck /> {editing ? 'Update Warehouse' : 'Save Warehouse'}
+            <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
+              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Warehouse' : 'Save Warehouse'}
             </button>
           </div>
         </div>
@@ -459,7 +491,10 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
             subject="Business card"
             namePrefix="business-card"
             max={1}
-            onAttach={shots => { if (shots[0]) set({ card: shots[0].name }); setCamOpen(false); }}
+            onAttach={shots => {
+              if (shots[0]) { setCardFile(shots[0]); set({ card: shots[0].name }); clear('card'); }
+              setCamOpen(false);
+            }}
             onClose={() => setCamOpen(false)}
           />
         </Suspense>
@@ -469,14 +504,6 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
   );
 }
 
-/**
- * One section: a white card carrying a gradient bar down its left edge, its
- * title, and the fields under it.
- *
- * The title alone, with no line of description beneath it — the design drops
- * that here. Three cards of explanation above fields that already say what
- * they are is noise, and it pushes the form past a laptop screen.
- */
 function Card({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <div className="whm-card">

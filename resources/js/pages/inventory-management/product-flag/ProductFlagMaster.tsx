@@ -1,10 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-/* The P2P page chrome, then the warehouse master's cells. The prototype shares
-   those between these two screens the same way — its root here is
-   `whm-page pfm-page` — so this page carries both classes and adds only what a
-   four-column list of flags needs that a nine-column list of warehouses did
-   not. */
 import '../../p2p/p2p-common.css';
 import '../../p2p/purchase-management/order/po-list/order.css';
 import '../warehouse/warehouse-master.css';
@@ -13,13 +8,14 @@ import SearchClear from '../../../components/ui/SearchClear';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
 import { useToast } from '../../../contexts/ToastContext';
-import { PRODUCT_FLAGS, type ProductFlag } from './product-flag-data';
+import { useServerList } from '../../../hooks/useServerList';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
+import { ProductFlagApiError, productFlagApi, type ProductFlag, type ProductFlagTab } from './product-flag-data';
 
 const AddProductFlagModal = lazy(() => import('./AddProductFlagModal'));
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
-/* ── Icons: the prototype's own paths ─────────────────────────────────── */
 const svg = (d: ReactNode, size = 14, width = 2.2) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -56,7 +52,6 @@ const IcoPlus = () => svg(
 );
 const IcoChevron = () => svg(<polyline points="6 9 12 15 18 9" />, 10);
 
-/* ── What this screen is for ──────────────────────────────────────────── */
 const STEPS: Array<{ no: string; icon: ReactNode; title: string; desc: string }> = [
   {
     no: '01', icon: <IcoFlag size={11} />, title: 'Create Flag Record',
@@ -76,7 +71,7 @@ const STEPS: Array<{ no: string; icon: ReactNode; title: string; desc: string }>
   },
 ];
 
-type Tab = 'all' | 'active' | 'inactive';
+type Tab = ProductFlagTab;
 
 const TABS: Array<{ key: Tab; label: string; icon: ReactNode }> = [
   { key: 'all', label: 'All Product Flags', icon: <IcoFlag size={15} /> },
@@ -86,63 +81,55 @@ const TABS: Array<{ key: Tab; label: string; icon: ReactNode }> = [
 
 const COLUMNS = ['No.', 'Product Flag', 'Purpose', 'Action'];
 
-/**
- * Product Flags Master.
- *
- * Design only, on static rows, like the warehouse list it shares its chrome
- * with. The status switch changes what the row says; nothing is persisted.
- */
 export default function ProductFlagMaster() {
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
-  /* Collapsed on arrival: the four steps explain the screen once, and after
-     that they are four cards between you and the table. */
   const [briefOpen, setBriefOpen] = useState(false);
 
   const toast = useToast();
-  const [inactive, setInactive] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(PRODUCT_FLAGS.filter(f => f.status === 'inactive').map(f => [f.id, true])),
+  const debouncedQuery = useDebouncedValue(query.trim(), 400);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [pageSize, choosePageSize, refitPageSize] = useFitPageSize(scrollRef);
+
+  const list = useServerList(
+    (q) => productFlagApi.list({ tab: (q.tab as Tab) ?? 'all', search: q.search, page: q.page, per_page: q.per_page }),
+    { perPage: pageSize, search: debouncedQuery, tab },
+    (e) => toast.error('Could not load product flags', e instanceof ProductFlagApiError ? e.message : 'Please refresh the page.'),
   );
-  const toggle = useCallback((id: string) => {
-    const next = !inactive[id];
-    setInactive(m => ({ ...m, [id]: next }));
-    /* Outside the updater: React may run one twice, and the toast with it. */
-    if (next) toast.warning(`${id} marked Inactive`, 'It stays in the list, dimmed.');
-    else toast.success(`${id} marked Active`);
-  }, [inactive, toast]);
-  const isOff = useCallback((f: ProductFlag) => !!inactive[f.id], [inactive]);
+  const reload = list.reload;
+
+  const rowCount = list.rows.length;
+  useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
+
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const toggle = useCallback(async (f: ProductFlag) => {
+    if (busyId) return;
+    const activate = f.status !== 'active';
+    setBusyId(f.apiId);
+    try {
+      await productFlagApi.setStatus(f.apiId, activate);
+      if (activate) toast.success(`${f.id} marked Active`);
+      else toast.warning(`${f.id} marked Inactive`, 'It stays in the list, dimmed, and is no longer offered when packing boxes.');
+      reload();
+    } catch (e) {
+      toast.error('Could not change the status', e instanceof ProductFlagApiError ? e.message : 'Please try again.');
+    } finally {
+      setBusyId(null);
+    }
+  }, [busyId, reload, toast]);
 
   const [formFor, setFormFor] = useState<ProductFlag | 'new' | null>(null);
 
-  /* Counts follow the switch, because Active and Inactive are what the switch
-     changes — a count that ignored it would contradict the row beside it. */
-  const counts = useMemo(() => {
-    const act = PRODUCT_FLAGS.filter(f => !inactive[f.id]).length;
-    return { all: PRODUCT_FLAGS.length, active: act, inactive: PRODUCT_FLAGS.length - act };
-  }, [inactive]);
+  const tabs = list.meta?.tabs;
+  const counts: Record<Tab, number> = { all: tabs?.all ?? 0, active: tabs?.active ?? 0, inactive: tabs?.inactive ?? 0 };
 
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return PRODUCT_FLAGS.filter(f => {
-      const off = !!inactive[f.id];
-      if (tab === 'active' && off) return false;
-      if (tab === 'inactive' && !off) return false;
-      if (!q) return true;
-      return [f.id, f.name, f.purpose, off ? 'inactive' : 'active']
-        .join(' ').toLowerCase().includes(q);
-    });
-  }, [tab, query, inactive]);
-
-  const [page, setPage] = useState(1);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [pageSize, choosePageSize, refitPageSize] = useFitPageSize(scrollRef);
-  useEffect(() => { if (rows.length) refitPageSize(); }, [rows.length, refitPageSize]);
-  useEffect(() => { setPage(1); }, [tab, query]);
-
-  const total = rows.length;
+  const rows = list.rows;
+  const total = list.meta?.total ?? 0;
+  const page = list.page;
   const start = (page - 1) * pageSize;
-  const paged = useMemo(() => rows.slice(start, start + pageSize), [rows, start, pageSize]);
-  const changePageSize = useCallback((n: number) => { choosePageSize(n); setPage(1); }, [choosePageSize]);
+  const changePageSize = useCallback((n: number) => choosePageSize(n), [choosePageSize]);
+  const loading = list.loading || list.replacing;
 
   return (
     <div className="spi-root ord-page whm-page pfm-page">
@@ -227,9 +214,11 @@ export default function ProductFlagMaster() {
           </div>
         </div>
 
-        {total === 0 ? (
+        {loading && rows.length === 0 ? (
+          <div className="ord-empty">Loading product flags…</div>
+        ) : total === 0 ? (
           <div className="ord-empty">
-            {query.trim() ? 'No product flags match your search.' : 'No product flags in this view yet.'}
+            {debouncedQuery ? 'No product flags match your search.' : 'No product flags in this view yet.'}
           </div>
         ) : (
           <div className="ord-table-scroll" ref={scrollRef}>
@@ -237,9 +226,10 @@ export default function ProductFlagMaster() {
               <thead>
                 <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
               </thead>
-              {paged.map((f, i) => (
-                <tbody key={f.id}>
-                  <Row f={f} no={start + i + 1} off={isOff(f)} onToggle={toggle} onEdit={setFormFor} />
+              {rows.map((f, i) => (
+                <tbody key={f.apiId}>
+                  <Row f={f} no={start + i + 1} off={f.status !== 'active'} busy={busyId === f.apiId}
+                    onToggle={t => void toggle(t)} onEdit={setFormFor} />
                 </tbody>
               ))}
             </table>
@@ -251,7 +241,7 @@ export default function ProductFlagMaster() {
           total={total}
           page={page}
           pageSize={pageSize}
-          onPage={setPage}
+          onPage={list.goTo}
           onPageSize={changePageSize}
           pageSizeOptions={PAGE_SIZE_OPTIONS}
         />
@@ -262,6 +252,7 @@ export default function ProductFlagMaster() {
           <AddProductFlagModal
             flag={formFor === 'new' ? undefined : formFor}
             onClose={() => setFormFor(null)}
+            onSaved={() => reload()}
           />
         </Suspense>
       )}
@@ -269,12 +260,12 @@ export default function ProductFlagMaster() {
   );
 }
 
-/** One flag. */
-function Row({ f, no, off, onToggle, onEdit }: {
+function Row({ f, no, off, busy, onToggle, onEdit }: {
   f: ProductFlag;
   no: number;
   off: boolean;
-  onToggle: (id: string) => void;
+  busy: boolean;
+  onToggle: (f: ProductFlag) => void;
   onEdit: (f: ProductFlag) => void;
 }) {
   return (
@@ -284,7 +275,7 @@ function Row({ f, no, off, onToggle, onEdit }: {
       <td>
         <div className="whm-namecell">
           <span className="whm-namecell__ico"><IcoFlag size={15} /></span>
-          <div className="whm-namecell__t"><b>{f.name}</b></div>
+          <div className="whm-namecell__t"><b>{f.name}</b><span>{f.id}</span></div>
         </div>
       </td>
 
@@ -302,7 +293,8 @@ function Row({ f, no, off, onToggle, onEdit }: {
             role="switch" aria-checked={!off}
             aria-label={`Toggle status of ${f.id}`}
             title={off ? 'Inactive — click to activate' : 'Active — click to deactivate'}
-            onClick={() => onToggle(f.id)}
+            disabled={busy}
+            onClick={() => onToggle(f)}
           >
             <span />
           </button>
