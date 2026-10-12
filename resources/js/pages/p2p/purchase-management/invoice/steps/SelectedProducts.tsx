@@ -4,15 +4,6 @@ import Tooltip from '../../../../../components/ui/Tooltip';
 import { IcoCheck, IcoX } from '../../../icons';
 import { DESC_MAX, truncateDesc, type ProductLine } from '../invoice-products';
 
-/**
- * The identifiers printed on one product inside a box.
- *
- * Per product, not per box. A master carton holding four SKUs holds four
- * batches, four expiry dates and four lot numbers, so one box-level set could
- * only ever describe one of them — and on a recall the other three would be
- * untraceable. A box holding one product has exactly one of each, which is the
- * same rule with one row rather than a different rule.
- */
 export interface ProductIdentity {
   serial: string;
   lot: string;
@@ -27,14 +18,11 @@ export const EMPTY_IDENTITY: ProductIdentity = {
   serial: '', lot: '', batch: '', cat: '', expiry: '', mfg: '', remarks: '',
 };
 
-/** One line of a box's contents: the product, and how many of it are in THIS box. */
 export interface BoxContent {
   line: ProductLine;
-  /** This box's share, which in a split is not the product's full quantity. */
   qty: number;
 }
 
-/** The identity columns, in the order the prototype's Advanced Details listed them. */
 const IDENTITY_COLUMNS: {
   key: keyof ProductIdentity; label: string; placeholder: string; type: 'text' | 'date';
 }[] = [
@@ -44,33 +32,19 @@ const IDENTITY_COLUMNS: {
   { key: 'cat', label: 'Cat No.', placeholder: 'e.g. CT-001', type: 'text' },
   { key: 'expiry', label: 'Expiry Date', placeholder: '', type: 'date' },
   { key: 'mfg', label: 'MFG Date', placeholder: '', type: 'date' },
-  /* Last, and wider: it is a sentence rather than a code, and the one field
-     here whose length is not known in advance. */
   { key: 'remarks', label: 'Remarks', placeholder: 'Any note about this product…', type: 'text' },
 ];
 
-/**
- * What is inside one box, and the identifiers belonging to each thing in it.
- *
- * Every box panel shows this, whatever the scenario: one row for a box holding
- * a single product, several for a mixed carton. That is the point of it — the
- * identifiers used to live in a box-level "Advanced Details" panel, which a
- * mixed carton cannot answer, so there was one place to type a batch number
- * for some boxes and another for the rest.
- */
 function SelectedProducts({
-  rows, identities, onIdentityChange, onRemove, onClear,
+  rows, identities, onIdentityChange, onRemove, onClear, onQtyChange,
 }: {
   rows: BoxContent[];
+  onQtyChange?: (code: string, qty: number) => void;
   identities: Record<string, ProductIdentity>;
   onIdentityChange: (code: string, patch: Partial<ProductIdentity>) => void;
-  /** Given only where a product can be taken back out — a mixed carton. */
   onRemove?: (code: string) => void;
   onClear?: () => void;
 }) {
-  /* A selection, not a row count: packing ONE product into a mixed carton is
-     still a selection, and reading "Box Contents" there would deny the Clear
-     Selection button sitting beside it. */
   const isSelection = !!onClear;
 
   const totalUnits = rows.reduce((n, r) => n + r.qty, 0);
@@ -122,6 +96,7 @@ function SelectedProducts({
                 identity={identities[row.line.code] ?? EMPTY_IDENTITY}
                 onChange={onIdentityChange}
                 onRemove={onRemove}
+                onQtyChange={onQtyChange}
               />
             ))}
           </tbody>
@@ -131,24 +106,18 @@ function SelectedProducts({
   );
 }
 
-/**
- * One product in the box.
- *
- * Memoised: there are seven inputs per row, and without this every keystroke in
- * any of them would re-render every other row's seven as well.
- */
 const IdentityRow = memo(function IdentityRow({
-  index, row, identity, onChange, onRemove,
+  index, row, identity, onChange, onRemove, onQtyChange,
 }: {
   index: number;
   row: BoxContent;
+  onQtyChange?: (code: string, qty: number) => void;
   identity: ProductIdentity;
   onChange: (code: string, patch: Partial<ProductIdentity>) => void;
   onRemove?: (code: string) => void;
 }) {
   const { line, qty } = row;
 
-  /* Bound to this row's code, so each cell below passes only its own value. */
   const patch = useCallback(
     (p: Partial<ProductIdentity>) => onChange(line.code, p),
     [line.code, onChange],
@@ -167,19 +136,25 @@ const IdentityRow = memo(function IdentityRow({
       </td>
       <td><span className="vti-code">{line.code}</span></td>
       <td className="vti-desc">
-        {/* Only once it is actually cut — a tooltip repeating text you can
-            already read in full is noise. */}
         <Tooltip label={line.description} disabled={line.description.length <= DESC_MAX}>
           <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
         </Tooltip>
       </td>
-      <td><span className="vti-qty-badge">{qty}</span></td>
+      <td>
+        {onQtyChange ? (
+          <input
+            type="number" min={0} step="any" className="vti-subbox-inp"
+            aria-label={`Units of ${line.spiName} in this carton`}
+            value={qty}
+            onChange={e => onQtyChange(line.code, Math.max(0, Number(e.target.value) || 0))}
+          />
+        ) : (
+          <span className="vti-qty-badge">{qty}</span>
+        )}
+      </td>
 
       {IDENTITY_COLUMNS.map(c => (
         <td key={c.key}>
-          {/* A date is the app's own picker, not the browser's: the native
-              control renders mm/dd/yyyy in the OS locale and looks nothing
-              like the rest of the form. */}
           {c.type === 'date' ? (
             <MasterDatePicker
               value={identity[c.key]}
