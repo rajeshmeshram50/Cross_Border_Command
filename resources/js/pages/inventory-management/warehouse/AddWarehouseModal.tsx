@@ -22,10 +22,10 @@ const IcoWarehouse = (p: { size?: number }) => Ico(
   p.size ?? 14,
 );
 const IcoPin = () => Ico(
-  <><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></>, 13,
+  <><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></>, 14,
 );
 const IcoUser = () => Ico(
-  <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>, 13,
+  <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>, 14,
 );
 const IcoClip = () => Ico(
   <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />, 14,
@@ -287,7 +287,9 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
                 {editing ? 'Edit Warehouse' : 'Add Warehouse'}
               </div>
               <div className="spi-mdl-sub">
-                Create a warehouse record with its location, ownership type and contact details.
+                {editing
+                  ? `Update the location, ownership type and contact details of ${id}.`
+                  : 'Create a warehouse record with its location, ownership type and contact details.'}
               </div>
             </div>
           </div>
@@ -296,7 +298,7 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
 
         <div className="spi-mdl-body whm-addbody">
 
-          <Card icon={<IcoWarehouse size={15} />} title="Warehouse Details">
+          <Card icon={<IcoWarehouse />} title="Warehouse Details">
             <Field label="Warehouse ID" hint="Generated automatically">
               <div className="whm-auto">
                 <input className="spi-dt-inp" value={id} readOnly />

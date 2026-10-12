@@ -107,9 +107,20 @@ const TABS: Array<{ key: Tab; label: string; icon: ReactNode }> = [
   { key: 'tpl', label: 'Third Party Warehouses', icon: <IcoTpl size={15} /> },
 ];
 
-const COLUMNS = [
-  'Sr. No', 'Warehouse ID', 'Warehouse', 'Warehouse Type', 'Warehouse Area (Sq. Ft)',
-  'Google Location', 'Contact Person', 'Warehouse Status', 'Action',
+/* `left` marks the columns that hold a block of several lines — a name over
+   an address, a city over a pin code, a person over their phone and email.
+   The design aligns those to the column's left edge, header and all: a ragged
+   block centred in its column has no edge to read down. */
+const COLUMNS: Array<{ label: string; left?: boolean }> = [
+  { label: 'Sr. No' },
+  { label: 'Warehouse ID' },
+  { label: 'Warehouse', left: true },
+  { label: 'Warehouse Type' },
+  { label: 'Warehouse Area (Sq. Ft)' },
+  { label: 'Google Location', left: true },
+  { label: 'Contact Person', left: true },
+  { label: 'Warehouse Status' },
+  { label: 'Action' },
 ];
 
 export default function WarehouseMaster() {
@@ -262,7 +273,13 @@ export default function WarehouseMaster() {
           <div className="ord-table-scroll" ref={scrollRef}>
             <table className="ord-table">
               <thead>
-                <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
+                <tr>
+                  {COLUMNS.map(c => (
+                    <th key={c.label} scope="col" className={c.left ? 'whm-th-l' : undefined}>
+                      {c.label}
+                    </th>
+                  ))}
+                </tr>
               </thead>
               {rows.map((w, i) => (
                 <tbody key={w.apiId ?? w.id}>
@@ -327,7 +344,7 @@ function Row({ w, sr, off, busy, onToggle, onQr, onEdit }: {
         </div>
       </td>
 
-      <td>
+      <td className="whm-td-l">
         <div className="whm-namecell">
           <span className="whm-namecell__ico">
             {w.type === 'own' ? <IcoOwn size={15} /> : <IcoTpl size={15} />}
@@ -351,7 +368,7 @@ function Row({ w, sr, off, busy, onToggle, onQr, onEdit }: {
         <span className="whm-area"><b>{inGrouping.format(w.area)}</b><small>Sq. Ft</small></span>
       </td>
 
-      <td>
+      <td className="whm-td-l">
         <div className="whm-loc">
           <div className="whm-loc__city"><b>{w.city}</b>{w.state ? `, ${w.state}` : ''}</div>
           <div className="whm-loc__row">
@@ -368,7 +385,7 @@ function Row({ w, sr, off, busy, onToggle, onQr, onEdit }: {
         </div>
       </td>
 
-      <td>
+      <td className="whm-td-l">
         <div className="whm-contact">
           <b>{w.contact}</b>
           <span><IcoPhone />{[w.dial, w.mobile].filter(Boolean).join(' ')}</span>
