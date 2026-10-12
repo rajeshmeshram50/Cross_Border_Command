@@ -2,25 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../hooks/useScrollLock';
-import type { Warehouse } from './warehouse-data';
-/* Carries its own styling: the QR card, the backdrop and the modal's edge all
-   live here, and the list page is not always what opened it. */
+import { WarehouseApiError, warehouseApi, type Warehouse } from './warehouse-data';
 import './warehouse-master.css';
-
-/**
- * What the code carries.
- *
- * Enough to identify the warehouse off a phone with no app and no network:
- * the id, the name, the full address, then the map link when there is one.
- * Newline-separated, which is how a scanner shows it as readable lines
- * rather than one run-on string.
- */
-const payloadFor = (w: Warehouse) => [
-  w.id,
-  w.name,
-  `${w.address}, ${w.city}, ${w.state} ${w.pin}`,
-  w.map,
-].filter(Boolean).join('\n');
 
 const Ico = (d: React.ReactNode, size: number) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -39,13 +22,6 @@ const IcoDownload = () => Ico(
   14,
 );
 
-/**
- * Warehouse QR — the code for one warehouse, with what it identifies.
- *
- * Painted in the browser from the `qrcode` package the sticker modals already
- * use, so it needs nothing from the server and works with the page's static
- * rows. Download writes the canvas straight to a PNG.
- */
 export default function WarehouseQrModal({ warehouse: w, onClose }: {
   warehouse: Warehouse;
   onClose: () => void;
@@ -54,9 +30,9 @@ export default function WarehouseQrModal({ warehouse: w, onClose }: {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  /* 'painting' until the code is on the canvas: Download must not offer a
-     blank PNG, and a failure has to say so rather than show an empty box. */
+  const [code, setCode] = useState<string | null>(null);
   const [state, setState] = useState<'painting' | 'ready' | 'failed'>('painting');
+  const [error, setError] = useState('');
 
   useEffect(() => { cardRef.current?.focus(); }, []);
   useEffect(() => {
@@ -66,24 +42,39 @@ export default function WarehouseQrModal({ warehouse: w, onClose }: {
   }, [onClose]);
 
   useEffect(() => {
+    if (!w.apiId) { setState('failed'); setError('This warehouse has not been saved yet.'); return; }
+    let live = true;
+    setState('painting');
+    warehouseApi.preview(w.apiId)
+      .then(l => { if (live) setCode(l.code || w.id); })
+      .catch(e => {
+        if (!live) return;
+        setState('failed');
+        setError(e instanceof WarehouseApiError ? e.message : 'QR could not be loaded.');
+      });
+    return () => { live = false; };
+  }, [w.apiId, w.id]);
+
+  useEffect(() => {
     const c = canvasRef.current;
-    if (!c) return;
-    /* 'M' recovers from about 15% damage, which is what a label stuck on a
-        carton and scuffed in a warehouse actually needs. */
-    QRCode.toCanvas(c, payloadFor(w), {
-      width: 196, margin: 0, errorCorrectionLevel: 'M',
+    if (!c || !code) return;
+    QRCode.toCanvas(c, code, {
+      width: 196, margin: 0, errorCorrectionLevel: 'H',
       color: { dark: '#0c4a6e', light: '#ffffff' },
     })
       .then(() => setState('ready'))
-      .catch(() => setState('failed'));
-  }, [w]);
+      .catch(() => { setState('failed'); setError('QR could not be generated.'); });
+  }, [code]);
+
+  const shownCode = code || w.id;
+  const address = [w.address, w.city, [w.state, w.pin].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 
   const download = () => {
     const c = canvasRef.current;
     if (!c || state !== 'ready') return;
     const a = document.createElement('a');
     a.href = c.toDataURL('image/png');
-    a.download = `${w.id}-QR.png`;
+    a.download = `${shownCode}-QR.png`;
     a.click();
   };
 
@@ -108,17 +99,14 @@ export default function WarehouseQrModal({ warehouse: w, onClose }: {
         <div className="spi-mdl-body">
           <div className="whm-qr">
             <div className="whm-qr__code">
-              {/* Kept mounted while it paints — the effect needs the canvas to
-                  draw into, so swapping it for a message would mean it never
-                  appears. The message sits over it instead. */}
               <canvas ref={canvasRef} width={196} height={196}
                 style={{ display: state === 'ready' ? 'block' : 'none' }} />
               {state === 'painting' && <span className="whm-qr__load">Generating QR…</span>}
-              {state === 'failed' && <span className="whm-qr__load">QR could not be generated.</span>}
+              {state === 'failed' && <span className="whm-qr__load">{error || 'QR could not be generated.'}</span>}
             </div>
-            <div className="whm-qr__id">{w.id}</div>
+            <div className="whm-qr__id">{shownCode}</div>
             <div className="whm-qr__name">{w.name}</div>
-            <div className="whm-qr__addr">{w.address}, {w.city}, {w.state} {w.pin}</div>
+            {address && <div className="whm-qr__addr">{address}</div>}
           </div>
         </div>
 
