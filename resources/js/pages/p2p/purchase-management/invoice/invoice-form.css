@@ -758,7 +758,7 @@
    left as they were, the 190px floor meant for a product name sat under "01"
    and opened a gap the width of a product before the box id. */
 /* Keyed to classes, not to nth-child: a carton's second row has no Sr No and
-   no Box ID cell — they are spanned from the row above — so the positions
+   no Box ID cell -- they are spanned from the row above -- so the positions
    shift and nth-child(3) would start matching the description. */
 .invf-packed .invf-packed-table th:first-child,
 .invf-packed .invf-packed-table td.invf-c-sr { min-width: 0; width: 52px; }
@@ -2070,7 +2070,7 @@
   padding-bottom: 1px;
 }
 
-/* Pending to Pack, beside the invoiced quantity. Amber only where it differs from
+/* Remaining Qty, beside the invoiced quantity. Amber only where it differs from
    what was invoiced — that is the whole signal: a part-packed product, with
    this much of it still loose. Where the two match there is nothing to say,
    and a second coloured badge would imply a shortfall. */

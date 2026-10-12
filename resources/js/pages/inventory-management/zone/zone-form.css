@@ -403,6 +403,13 @@
 
 /* ── Dark ───────────────────────────────────────────────────────────────── */
 [data-bs-theme="dark"] .znm-auto .spi-dt-inp { background: #0b1626; color: #64748b; }
+/* The waiting AUTO tag is a light grey pill, which on a dark field is the
+   brightest thing in the row — the opposite of what it means. It stays quiet
+   until the field is filled, at which point `.is-filled` turns it teal. */
+[data-bs-theme="dark"] .znm-auto .whm-auto__tag {
+  background: rgba(148, 163, 184, .2);
+  color: #8aa3b0;
+}
 [data-bs-theme="dark"] .znm-auto.is-filled .spi-dt-inp {
   background: rgba(34, 211, 238, .08);
   border-color: rgba(34, 211, 238, .24);

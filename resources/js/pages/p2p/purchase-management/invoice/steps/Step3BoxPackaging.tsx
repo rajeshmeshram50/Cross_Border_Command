@@ -694,14 +694,12 @@ export default function Step3BoxPackaging({
                 <th>Code</th>
                 <th className="vti-desc-h">Description</th>
                 {/* Invoiced, and how many of them still have to go in a box.
-                    "Pending" rather than "to pack" because the card's own
-                    header already counts products that way — "11 Pending" up
-                    there, this many units pending down here, one word doing
-                    the same job in both places. */}
+                    The header carries the "still to pack" part, so the column
+                    name stays short. */}
                 <th>Qty (SPI)</th>
                 <th>
-                  <Tooltip label="Units of this product still waiting to go into a box. It drops as you pack, and the product leaves this table when it reaches zero.">
-                    <span className="vti-th-help">Pending to Pack</span>
+                  <Tooltip label="Units of this product still to be packed. It drops as you pack, and the product leaves this table when it reaches zero.">
+                    <span className="vti-th-help">Remaining Qty</span>
                   </Tooltip>
                 </th>
                 <th>Missing Qty</th>

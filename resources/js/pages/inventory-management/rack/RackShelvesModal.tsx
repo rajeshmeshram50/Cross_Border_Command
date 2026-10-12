@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
 import Tooltip from '../../../components/ui/Tooltip';
+import WorklistPager from '../../../components/ui/WorklistPager';
 /* Carries its own styling: the cells, flag chips and action buttons are shared
    with the three list pages, and the rack list is not always what opened it. */
 import '../../p2p/p2p-common.css';
@@ -17,6 +18,9 @@ import {
   rackHeightFreeCm, rackTotals, shelfPct, shelfState, shelfVolumeM3, shelvesOf,
   SHELF_STATE_LABEL, type Shelf,
 } from './shelf-data';
+
+const AddShelfModal = lazy(() => import('./AddShelfModal'));
+const ShelfQrModal = lazy(() => import('./ShelfQrModal'));
 
 const WAREHOUSE_BY_CODE = new Map(WAREHOUSES.map(w => [w.id, w]));
 const ZONE_BY_CODE = new Map(ZONES.map(z => [z.id, z]));
@@ -126,6 +130,10 @@ export default function RackShelvesModal({ rack: r, onClose }: {
     [base, off],
   );
 
+  /* 'new' is Add Shelf; a shelf is Edit; null is closed. */
+  const [formFor, setFormFor] = useState<Shelf | 'new' | null>(null);
+  const [qrFor, setQrFor] = useState<Shelf | null>(null);
+
   const rackOff = r.status === 'inactive';
   const toggle = (s: Shelf) => {
     if (rackOff) return;
@@ -187,7 +195,8 @@ export default function RackShelvesModal({ rack: r, onClose }: {
           <Tooltip label={canAdd
             ? `Add a shelf to ${r.id}`
             : rackOff ? 'Activate the rack to add shelves' : 'No rack height left for another shelf'}>
-            <button type="button" className="rks-add" disabled={!canAdd}>
+            <button type="button" className="rks-add" disabled={!canAdd}
+              onClick={() => setFormFor('new')}>
               <IcoPlus /> Add Shelf
             </button>
           </Tooltip>
@@ -233,32 +242,56 @@ export default function RackShelvesModal({ rack: r, onClose }: {
                   <ShelfRow
                     key={s.id} s={s} sr={start + i + 1}
                     rackOff={rackOff} onToggle={() => toggle(s)}
+                    onEdit={() => setFormFor(s)}
+                    onQr={() => setQrFor(s)}
                   />
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/* The app's own pager, as every other list in the flow uses. No
+              rows-per-page: five to a page is the design's figure here, and a
+              chooser would be a control whose only setting is the one it
+              already has. */}
+          <WorklistPager
+            className="wl-teal rks-pager"
+            total={shelves.length}
+            page={page}
+            pageSize={PAGE_SIZE}
+            onPage={setPage}
+          />
         </div>
 
         <div className="spi-mdl-foot rks-foot">
+          {/* The footer keeps the one fact the pager cannot know: how much of
+              the rack is still unspoken for. Everything about which rows are
+              on screen is the pager's job now. */}
           <span className="rks-foot__info">
-            Showing <b>{shelves.length ? start + 1 : 0}–{start + paged.length}</b> of <b>{shelves.length}</b>
-            {' '}shelf{shelves.length === 1 ? '' : 'ves'} · {freeCm} cm of rack height free
+            {freeCm} cm of rack height free
           </span>
           <div className="spi-mdl-foot-btns">
-            {pages > 1 && (
-              <div className="rks-pg" role="group" aria-label="Pages">
-                {Array.from({ length: pages }, (_, i) => i + 1).map(n => (
-                  <button key={n} type="button"
-                    className={`rks-pg__n${n === page ? ' is-active' : ''}`}
-                    onClick={() => setPage(n)}>{n}</button>
-                ))}
-              </div>
-            )}
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
           </div>
         </div>
       </div>
+
+      {formFor && (
+        <Suspense fallback={null}>
+          <AddShelfModal
+            rack={r}
+            shelves={shelves}
+            shelf={formFor === 'new' ? undefined : formFor}
+            onClose={() => setFormFor(null)}
+          />
+        </Suspense>
+      )}
+
+      {qrFor && (
+        <Suspense fallback={null}>
+          <ShelfQrModal shelf={qrFor} rack={r} onClose={() => setQrFor(null)} />
+        </Suspense>
+      )}
     </div>,
     document.body,
   );
@@ -290,8 +323,9 @@ function Kpi({ icon, mark, side, label, value, sub, className }: {
 }
 
 /** One shelf. */
-function ShelfRow({ s, sr, rackOff, onToggle }: {
-  s: Shelf; sr: number; rackOff: boolean; onToggle: () => void;
+function ShelfRow({ s, sr, rackOff, onToggle, onEdit, onQr }: {
+  s: Shelf; sr: number; rackOff: boolean;
+  onToggle: () => void; onEdit: () => void; onQr: () => void;
 }) {
   const st = shelfState(s);
   const p = shelfPct(s);
@@ -382,7 +416,8 @@ function ShelfRow({ s, sr, rackOff, onToggle }: {
       <td>
         <div className="whm-acts">
           <Tooltip label={rackOff ? 'Activate the rack to edit its shelves' : `Edit ${s.id}`}>
-            <button type="button" className="whm-act" disabled={rackOff} aria-label={`Edit ${s.id}`}>
+            <button type="button" className="whm-act" disabled={rackOff}
+              aria-label={`Edit ${s.id}`} onClick={onEdit}>
               <IcoEdit />
             </button>
           </Tooltip>
@@ -400,7 +435,8 @@ function ShelfRow({ s, sr, rackOff, onToggle }: {
             </button>
           </Tooltip>
           <Tooltip label={`Shelf QR for ${s.id}`}>
-            <button type="button" className="whm-act" aria-label={`Shelf QR for ${s.id}`}>
+            <button type="button" className="whm-act" aria-label={`Shelf QR for ${s.id}`}
+              onClick={onQr}>
               <IcoQr />
             </button>
           </Tooltip>

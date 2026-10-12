@@ -165,7 +165,43 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
 
   const cardRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [pickOpen, setPickOpen] = useState(false);
+  /* The attachment field, so the menu can be placed against it. */
+  const dropRef = useRef<HTMLDivElement>(null);
+  const [pickAt, setPickAt] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  /* Below the field when there is room, above it when there is not — in a
+     dialog this close to the bottom of the screen, there often is not. */
+  const openPicker = () => {
+    const r = dropRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const H = 158;
+    const below = r.bottom + 6 + H <= window.innerHeight - 12;
+    setPickAt({
+      top: below ? r.bottom + 6 : Math.max(12, r.top - H - 6),
+      left: r.left,
+      width: Math.min(320, Math.max(268, r.width)),
+    });
+  };
+
+  /* A portalled menu does not travel with its field, so it closes rather than
+     drifting away from it. */
+  useEffect(() => {
+    if (!pickAt) return;
+    const close = () => setPickAt(null);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element | null;
+      if (t?.closest?.('.arf-att') || (t && dropRef.current?.contains(t))) return;
+      close();
+    };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [pickAt]);
   const [camOpen, setCamOpen] = useState(false);
 
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -174,13 +210,13 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
       if (e.key !== 'Escape') return;
       /* The menu and the camera close first — Escape should back out one
          layer at a time, not throw the whole form away. */
-      if (pickOpen) { setPickOpen(false); return; }
+      if (pickAt) { setPickAt(null); return; }
       if (camOpen) return;
       onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose, pickOpen, camOpen]);
+  }, [onClose, pickAt, camOpen]);
 
   const id = editing ? warehouse!.id : nextId();
   const india = d.country === 'India';
@@ -353,9 +389,9 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
               />
             </Field>
             <Field label="Attachment (Business Card)" hint="JPG, PNG or PDF · up to 5 MB">
-              <div className={`whm-file${d.card ? ' has-file' : ''}`}>
+              <div className={`whm-file${d.card ? ' has-file' : ''}`} ref={dropRef}>
                 <span className="whm-file__ico"><IcoClip /></span>
-                <button type="button" className="whm-file__txt" onClick={() => setPickOpen(o => !o)}
+                <button type="button" className="whm-file__txt" onClick={() => (pickAt ? setPickAt(null) : openPicker())}
                   title={d.card || 'Add the contact’s business card'}>
                   {d.card || 'Upload business card'}
                 </button>
@@ -365,25 +401,27 @@ export default function AddWarehouseModal({ warehouse, onClose }: {
                     <IcoX size={12} />
                   </button>
                 )}
-                {pickOpen && (
-                  <>
-                    {/* Closes on a click anywhere else, including inside the
-                        form — a menu left open over the fields is in the way. */}
-                    <div className="whm-file__scrim" onClick={() => setPickOpen(false)} />
-                    <div className="arf-att whm-file__menu" role="menu">
-                      <div className="arf-att__hd">Add attachment</div>
-                      <button type="button" className="arf-att__opt" role="menuitem"
-                        onClick={() => { setPickOpen(false); fileRef.current?.click(); }}>
-                        <span className="arf-att__ico">{ICON_UPLOAD}</span>
-                        <span><b>Upload file</b><i>Choose from this device</i></span>
-                      </button>
-                      <button type="button" className="arf-att__opt" role="menuitem"
-                        onClick={() => { setPickOpen(false); setCamOpen(true); }}>
-                        <span className="arf-att__ico arf-att__ico--cam">{ICON_CAMERA}</span>
-                        <span><b>Take photo</b><i>Capture with the camera</i></span>
-                      </button>
-                    </div>
-                  </>
+                {/* Portalled and positioned from the field's own rect, the way
+                    Add Payment's attachment menu is. Absolute placement inside
+                    the field looked right until the dialog's body scrolled
+                    under it, at which point the menu stayed with the page and
+                    the field moved. */}
+                {pickAt && createPortal(
+                  <div className="arf-att" role="menu"
+                    style={{ top: pickAt.top, left: pickAt.left, width: pickAt.width }}>
+                    <div className="arf-att__hd">Add attachment</div>
+                    <button type="button" className="arf-att__opt" role="menuitem"
+                      onClick={() => { setPickAt(null); fileRef.current?.click(); }}>
+                      <span className="arf-att__ico">{ICON_UPLOAD}</span>
+                      <span><b>Upload file</b><i>Choose from this device</i></span>
+                    </button>
+                    <button type="button" className="arf-att__opt" role="menuitem"
+                      onClick={() => { setPickAt(null); setCamOpen(true); }}>
+                      <span className="arf-att__ico arf-att__ico--cam">{ICON_CAMERA}</span>
+                      <span><b>Take photo</b><i>Capture with the camera</i></span>
+                    </button>
+                  </div>,
+                  document.body,
                 )}
                 <input
                   ref={fileRef} type="file" accept="image/*,.pdf" hidden

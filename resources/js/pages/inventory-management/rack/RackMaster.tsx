@@ -11,6 +11,7 @@ import './rack.css';
 import SearchClear from '../../../components/ui/SearchClear';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import Tooltip from '../../../components/ui/Tooltip';
+import { useIsClipped } from '../../../components/ui/DataTable';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
 import { useToast } from '../../../contexts/ToastContext';
 import { RACKS, rackKind, rackLevels, type Rack } from './rack-data';
@@ -337,6 +338,28 @@ export default function RackMaster() {
   );
 }
 
+/**
+ * A warehouse or zone name, with the whole of it on hover when the column has
+ * cut it.
+ *
+ * The clip here comes from the column's width, not from a character count —
+ * `.znm-whcell b` caps at 170px and ellipsises — so whether to offer a tooltip
+ * is measured from the DOM rather than guessed from the string's length. A
+ * short name in a narrow column is cut; a long one in a wide column is not.
+ *
+ * `title` would have done the same job, but the app's own Tooltip is what
+ * every other truncation in this flow uses, and the two look nothing alike.
+ */
+function ClipName({ value, className }: { value?: string; className?: string }) {
+  const ref = useRef<HTMLElement>(null);
+  const clipped = useIsClipped(ref, value);
+  return (
+    <Tooltip label={value ?? ''} disabled={!clipped || !value}>
+      <b ref={ref} className={className}>{value ?? '—'}</b>
+    </Tooltip>
+  );
+}
+
 /** One rack. */
 function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
   r: Rack;
@@ -364,10 +387,10 @@ function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
       </td>
 
       <td>
-        <div className="whm-namecell" title={r.name}>
+        <div className="whm-namecell">
           <span className="whm-namecell__ico"><IcoRack size={15} /></span>
           <div className="whm-namecell__t">
-            <b className="pts-trunc">{r.name}</b>
+            <ClipName value={r.name} className="pts-trunc" />
             <span className="whm-namecell__loc">
               {r.cold ? <IcoSnow /> : r.haz ? <IcoHaz /> : <IcoRack size={11} />}
               {rackKind(r)}
@@ -422,7 +445,7 @@ function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
       <td>
         <div className="znm-whcell">
           <span className="whm-idpill znm-whid">{r.wh}</span>
-          <b title={w?.name}>{w?.name ?? '—'}</b>
+          <ClipName value={w?.name} />
           <span className="rkm-whcity">
             <IcoPin size={10} />{w?.city ?? ''}{w?.state ? `, ${w.state}` : ''}
           </span>
@@ -432,7 +455,7 @@ function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
       <td>
         <div className="znm-whcell">
           <span className="whm-idpill znm-whid">{r.zone}</span>
-          <b title={z?.name}>{z?.name ?? '—'}</b>
+          <ClipName value={z?.name} />
         </div>
       </td>
 
