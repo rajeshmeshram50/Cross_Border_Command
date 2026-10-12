@@ -1,3 +1,5 @@
+import api from '../../api';
+
 /**
  * Put-Away scan engine — SIMULATION LAYER.
  *
@@ -6,8 +8,10 @@
  * fake: the pages import `ingestScan`, `listDevices`, `enrollDevice` etc. and
  * never touch localStorage or the dummy tables directly.
  *
- * When the backend lands, replace the bodies here with `api.post('/scan/ingest')`
- * and friends — the page components keep working unchanged.
+ * EXCEPTION — the device allow-list is real: enrolled handhelds live in the
+ * `scan_devices` table and a browser proves it is one by presenting its
+ * credential to /api/scan/device-check. Scan sessions, the log and allocations
+ * are still local until the ingest endpoint lands.
  *
  * Sticker payload format (extends the format in the technical doc with an
  * ENTITY TYPE segment — without it the server cannot tell a box sticker from a
@@ -26,7 +30,7 @@ export type EntityType = 'BOX' | 'RACK' | 'SHELF';
 export type DeviceStatus = 'active' | 'suspended' | 'retired';
 
 export interface ScanDevice {
-  id: string;
+  id: number;
   serial: string;
   label: string;
   model: string;
@@ -34,8 +38,6 @@ export interface ScanDevice {
   status: DeviceStatus;
   enrolled_at: string;
   last_seen_at: string | null;
-  /** Never displayed after enrollment — mirrors "shown once" in the doc. */
-  token: string;
 }
 
 export interface BoxRow  { id: string; name: string; sub: string; }
@@ -188,16 +190,9 @@ export function makeTamperedSticker(): string {
   return makeSticker('BOX', '1041').slice(0, -7) + 'ZZZZZZZ';
 }
 
-/** True when this browser is an enrolled handheld that may scan right now. */
-export function isDeviceAuthorized(): boolean {
-  return getActiveDevice()?.status === 'active';
-}
-
 /* -------------------------------------------------------- local persistence */
 
 const K = {
-  devices: 'cbc_putaway_devices_v1',
-  active:  'cbc_putaway_active_device_v1',
   session: 'cbc_putaway_session_v1',
   logs:    'cbc_putaway_logs_v1',
   allocs:  'cbc_putaway_allocs_v1',
@@ -218,95 +213,85 @@ function write(key: string, value: unknown): void {
 const now = () => new Date().toISOString();
 const uid = () => Math.random().toString(36).slice(2, 10);
 
-/** Token the admin sees exactly once at enrollment. */
-function makeToken(): string {
-  const part = () => Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `CBCD-${part()}-${part()}-${part()}`;
-}
-
 /* ------------------------------------------------------------ device registry */
 
-const SEED_DEVICES: ScanDevice[] = [
-  {
-    id: 'dev-1', serial: '26013524701106', label: 'Warehouse A / Handheld 01',
-    model: 'TC27', branch: 'Nagpur', status: 'active',
-    enrolled_at: now(), last_seen_at: null, token: makeToken(),
-  },
-  {
-    id: 'dev-2', serial: '26013524701207', label: 'Warehouse A / Handheld 02',
-    model: 'TC27', branch: 'Nagpur', status: 'suspended',
-    enrolled_at: now(), last_seen_at: null, token: makeToken(),
-  },
-];
+/*
+ * The allow-list lives on the SERVER (scan_devices). A browser is a handheld
+ * only if it holds a credential the server recognises — installed once by
+ * scanning the enrollment QR on the Zebra. There is no "pick a device" fallback:
+ * a fresh browser, including a stranger's phone that opened a sticker URL, has
+ * no credential and is refused.
+ */
 
-export function listDevices(): ScanDevice[] {
-  const rows = read<ScanDevice[]>(K.devices, []);
-  if (rows.length) return rows;
-  write(K.devices, SEED_DEVICES);
-  return SEED_DEVICES;
+const TOKEN_KEY = 'cbc_scan_device_token_v1';
+
+/** Last verdict from the server for this browser's credential. */
+let current: ScanDevice | null = null;
+
+export function getDeviceToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
-
-function saveDevices(rows: ScanDevice[]): void { write(K.devices, rows); }
-
-export function enrollDevice(input: { serial: string; label: string; model: string; branch: string }): { device: ScanDevice; token: string } {
-  const rows = listDevices();
-  const token = makeToken();
-  const device: ScanDevice = {
-    id: `dev-${uid()}`,
-    serial: input.serial.trim(),
-    label: input.label.trim(),
-    model: input.model.trim() || 'TC27',
-    branch: input.branch.trim(),
-    status: 'active',
-    enrolled_at: now(),
-    last_seen_at: null,
-    token,
-  };
-  saveDevices([device, ...rows]);
-  return { device, token };
-}
-
-export function serialExists(serial: string, exceptId?: string): boolean {
-  return listDevices().some(d => d.serial === serial.trim() && d.id !== exceptId);
-}
-
-export function setDeviceStatus(id: string, status: DeviceStatus): void {
-  saveDevices(listDevices().map(d => (d.id === id ? { ...d, status } : d)));
-  // A device that can no longer scan must not keep a half-finished run alive.
-  if (status !== 'active' && getActiveDeviceId() === id) clearSession();
-}
-
-export function rotateToken(id: string): string {
-  const token = makeToken();
-  saveDevices(listDevices().map(d => (d.id === id ? { ...d, token } : d)));
-  return token;
+export function setDeviceToken(token: string | null): void {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token.trim());
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch { /* private mode */ }
+  current = null;
+  clearSession(); // a different credential is a different handheld
 }
 
 /**
- * A browser counts as a handheld ONLY if it has been explicitly claimed as one.
- *
- * There is deliberately no "fall back to the first enrolled device" here. That
- * fallback would make every fresh browser — including a stranger's phone that
- * just opened a sticker URL — look like an enrolled handheld, which is the
- * exact opposite of what the allow-list is for. Unclaimed means unauthorised.
+ * Ask the server who this browser is. Resolves to the device (any status) or
+ * null when there is no / an unknown credential. Network failure counts as
+ * unauthorised — never fail open.
  */
-export function getActiveDeviceId(): string | null {
-  let raw: string | null = null;
-  try { raw = localStorage.getItem(K.active); } catch { raw = null; }
-  if (raw === null) return null;
-  try { return JSON.parse(raw) as string | null; } catch { return null; }
-}
-export function setActiveDeviceId(id: string | null): void {
-  write(K.active, id);
-  clearSession(); // switching the handheld ends the current run
-}
-export function getActiveDevice(): ScanDevice | null {
-  const id = getActiveDeviceId();
-  return listDevices().find(d => d.id === id) ?? null;
+export async function verifyDevice(): Promise<ScanDevice | null> {
+  const token = getDeviceToken();
+  if (!token) { current = null; return null; }
+  try {
+    const { data } = await api.post('/scan/device-check', { token });
+    current = data?.device ?? null;
+  } catch {
+    current = null;
+  }
+  return current;
 }
 
-function touchDevice(id: string): void {
-  saveDevices(listDevices().map(d => (d.id === id ? { ...d, last_seen_at: now() } : d)));
+/** Synchronous read of the last verdict (call verifyDevice first). */
+export function getActiveDevice(): ScanDevice | null { return current; }
+
+/** True when this browser is an enrolled handheld that may scan right now. */
+export function isDeviceAuthorized(): boolean {
+  return current?.status === 'active';
+}
+
+/** URL the handheld opens (by scanning its QR) to install its credential. */
+export function makeEnrollUrl(token: string): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  // Fragment, not query: it never reaches server or proxy access logs.
+  return `${origin}${SCAN_PATH}enroll#${token}`;
+}
+
+/* Admin side — Inventory → Scan Devices. */
+
+export async function listDevices(): Promise<ScanDevice[]> {
+  const { data } = await api.get('/scan-devices');
+  return data?.data ?? [];
+}
+
+export async function enrollDevice(input: { serial: string; label: string; model: string; branch: string }): Promise<{ device: ScanDevice; token: string }> {
+  const { data } = await api.post('/scan-devices', input);
+  return { device: data.data, token: data.token };
+}
+
+export async function setDeviceStatus(id: ScanDevice['id'], status: DeviceStatus): Promise<void> {
+  await api.put(`/scan-devices/${id}`, { status });
+  if (current?.id === id) current = { ...current, status };
+}
+
+export async function rotateToken(id: ScanDevice['id']): Promise<string> {
+  const { data } = await api.post(`/scan-devices/${id}/rotate`);
+  return data.token;
 }
 
 /* ------------------------------------------------------------------ session */
@@ -315,7 +300,7 @@ export function getSession(): PutAwaySession | null {
   const s = read<PutAwaySession | null>(K.session, null);
   if (!s) return null;
   // A session belongs to one handheld. If the active device changed, drop it.
-  if (s.device_id !== getActiveDeviceId()) return null;
+  if (s.device_id !== String(current?.id ?? '')) return null;
   return s;
 }
 function saveSession(s: PutAwaySession | null): void { write(K.session, s); }
@@ -366,7 +351,6 @@ export function ingestScan(raw: string): ScanResult {
     return reject('rejected_unauthorized_device',
       'This device has been retired and can no longer scan.');
   }
-  touchDevice(device.id);
 
   /* 2 — structure. */
   const parts = payload.split('|');
@@ -393,7 +377,7 @@ export function ingestScan(raw: string): ScanResult {
 
   let session = getSession() ?? {
     step: 1 as const, box: null, rack: null, shelf: null,
-    device_id: device.id, started_at: now(),
+    device_id: String(device.id), started_at: now(),
   };
 
   /* 6 — right sticker for the current step. */
@@ -472,7 +456,7 @@ export function cancelSession(): ScanResult {
 
 /** Wipes every simulated table — the "start the demo over" button. */
 export function resetSimulation(): void {
-  [K.devices, K.active, K.session, K.logs, K.allocs].forEach(k => {
+  [K.session, K.logs, K.allocs].forEach(k => {
     try { localStorage.removeItem(k); } catch { /* ignore */ }
   });
 }

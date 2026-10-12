@@ -85,6 +85,11 @@ Route::middleware('throttle:20,1')->group(function () {
 });
 Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 
+// Public — a sticker-scanning handheld presents its device credential (no user
+// session). Throttled: the credential is long and random, but this is still a
+// guessing surface.
+Route::middleware('throttle:60,1')->post('/scan/device-check', [\App\Http\Controllers\Api\ScanDeviceController::class, 'check']);
+
 /* The one-off /tools/attendance-backfill route and its controller are gone.
    It generated four months of attendance for a fixed employee list, defaulting
    to client 10 / branch 27 — the only place in runtime code that hardcoded a
@@ -1133,6 +1138,11 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     // trusted and which tenant/branch they map to.
     Route::apiResource('device-terminals', \App\Http\Controllers\Api\DeviceTerminalController::class)
         ->only(['index', 'store', 'update', 'destroy']);
+
+    // Sticker-scanning handheld allow-list (Inventory → Scan Devices).
+    Route::apiResource('scan-devices', \App\Http\Controllers\Api\ScanDeviceController::class)
+        ->only(['index', 'store', 'update', 'destroy']);
+    Route::post('/scan-devices/{id}/rotate', [\App\Http\Controllers\Api\ScanDeviceController::class, 'rotate']);
 
 
     Route::get('/modules', [PermissionController::class, 'modules']);
