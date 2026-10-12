@@ -11,24 +11,19 @@ export default function ProfileTab() {
     profilePhotoSrc, profilePhotoFile, setProfilePhotoFile, savingPhoto,
     handleProfilePhotoChange, handleSaveProfilePhoto, restoreSavedProfilePhoto,
     profilePhotoInputRef, setFaceRegOpen, setPwOpen, resetPwForm,
-    authUser, isOwnProfile,
+    isOwnProfile,
   } = useEmployeeProfile();
 
-  /* Who may open the Change Password dialog (#209).
+  /* Self-service only (#232, narrowing #209).
    *
-   * On your OWN profile it is self-service — it asks for the current password
-   * and posts to /change-password, so everyone keeps it.
+   * On your OWN profile this is self-service — it asks for the current
+   * password and posts to /change-password.
    *
-   * On SOMEONE ELSE'S profile it is an admin reset: it sets a new password
-   * without knowing the old one. A Team Leader holds can_edit on hr.employee
-   * for ordinary record editing, and that flag alone used to be enough here,
-   * so a Team Leader could take over a colleague's login. Restrict it to the
-   * tenant login tiers, matching the check the endpoint now enforces.
-   *
-   * This mirrors server-side authorisation rather than replacing it — the
-   * endpoint refuses regardless of what the UI shows. */
-  const ADMIN_LOGIN_TYPES = ['branch_user', 'client_admin', 'client_user', 'super_admin'];
-  const canChangePassword = isOwnProfile || ADMIN_LOGIN_TYPES.includes(String(authUser?.user_type ?? ''));
+   * On SOMEONE ELSE'S profile it used to be an admin reset, setting a new
+   * password without knowing the old one. That is gone: nobody sets another
+   * person's login from the employee record. The endpoint still exists and
+   * still authorises, so this is a UI removal, not a loosening. */
+  const canChangePassword = isOwnProfile;
 
   /* QA #189 — skeleton while the profile is being fetched.
      Only the Personal Information block shimmered before; every other section

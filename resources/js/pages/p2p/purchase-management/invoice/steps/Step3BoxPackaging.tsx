@@ -301,6 +301,16 @@ export default function Step3BoxPackaging({
       scenario,
       ...data.dims,
       condition: data.condition,
+      /* Stackable is a fact about the CARTON — whether another may go on top
+         — so it rides on the box. It is still mirrored onto each item below
+         for the existing column, which nothing else reads. */
+      is_stackable: data.stackable ? 1 : 0,
+      /* The cold-chain range as NUMBERS. It used to travel inside remark_note
+         as "Cold chain 2…8 °C" and be parsed back by splitting on an ellipsis,
+         so the one fact that exists to be compared could not be compared
+         against a zone's own min and max. */
+      temp_min_c: data.tempMin,
+      temp_max_c: data.tempMax,
       items: contents.map(c => {
         const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
         const note = scenario === 's3'
@@ -448,6 +458,9 @@ export default function Step3BoxPackaging({
 
   const readBox = (box: SpiBox): BoxInitial => {
     const first = box.items[0];
+    /* The range comes off the box's own columns. The note is still read as a
+       fallback for boxes saved before those columns existed, where the only
+       copy of the range is the sentence inside remark_note. */
     const parts = (first?.remark_note ?? '').split(' · ').map(s => s.trim()).filter(Boolean);
     const cold = parts.find(p => p.startsWith('Cold chain'));
     const range = cold?.replace('Cold chain', '').replace('°C', '').trim().split('…') ?? [];
@@ -482,14 +495,20 @@ export default function Step3BoxPackaging({
       condition: (box.condition === 'major' ? 'severe' : box.condition) as BoxInitial['condition'],
       remark: first?.remark ?? 'correct',
       flagIds,
-      stackable: first?.is_stackable ?? true,
+      /* The box's own answer. Falls back to the first item's only for a box
+         saved before the column existed; a new box defaults to NOT stackable,
+         which is the safe assumption for a crate nobody has vouched for. */
+      stackable: box.is_stackable != null ? box.is_stackable === 1 : (first?.is_stackable ?? false),
       boxIdentity: identity(first),
       identities: Object.fromEntries(
         box.items
           .map(i => [codeOfItem.get(i.supplier_invoice_item_id), identity(i)] as const)
           .filter((e): e is [string, ProductIdentity] => !!e[0]),
       ),
-      ...(range.length === 2 ? { temp: { min: range[0], max: range[1] } } : {}),
+      /* Columns first, the parsed sentence only for boxes that predate them. */
+      ...(box.temp_min_c != null && box.temp_max_c != null
+        ? { temp: { min: String(box.temp_min_c), max: String(box.temp_max_c) } }
+        : range.length === 2 ? { temp: { min: range[0], max: range[1] } } : {}),
     };
   };
 

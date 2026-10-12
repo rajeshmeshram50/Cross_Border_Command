@@ -159,7 +159,7 @@ class SpiBoxController extends Controller
                 ], 422));
             }
 
-            $data = $this->validateBox($request, (int) $user->client_id, (int) $spi->id);
+            $data = $this->validateBox($request, (int) $user->client_id, (int) $spi->id, $spi->branch_id ? (int) $spi->branch_id : null);
             $this->guardOverPacking($spi, $data['items'], null);
 
             /* The invoice row is locked for the length of the allocation, so
@@ -214,7 +214,7 @@ class SpiBoxController extends Controller
                 ], 422));
             }
 
-            $data = $this->validateBox($request, (int) $user->client_id, (int) $spi->id);
+            $data = $this->validateBox($request, (int) $user->client_id, (int) $spi->id, $spi->branch_id ? (int) $spi->branch_id : null);
             $this->guardOverPacking($spi, $data['items'], $box->id);
 
             $box->forceFill(collect($data)->except('items')->all())->save();
@@ -439,10 +439,10 @@ class SpiBoxController extends Controller
         }
     }
 
-    private function validateBox(Request $request, int $clientId, int $spiId): array
+    private function validateBox(Request $request, int $clientId, int $spiId, ?int $branchId = null): array
     {
-        $data = $request->validate($this->boxRules('', $clientId, $spiId));
-        $this->assertBoxConsistent($data);
+        $data = $request->validate($this->boxRules('', $clientId, $spiId, $branchId));
+        $this->assertBoxConsistent($data, $clientId, $branchId);
 
         return $data;
     }
@@ -457,15 +457,30 @@ class SpiBoxController extends Controller
      * column is decimal(_,3) — Postgres would round 10.1234 silently and the
      * packed total would then never match what the packer typed.
      */
-    private function boxRules(string $p = '', ?int $clientId = null, ?int $spiId = null): array
+    private function boxRules(string $p = '', ?int $clientId = null, ?int $spiId = null, ?int $branchId = null): array
     {
         $itemExists = $spiId
             ? Rule::exists('p2p_supplier_invoice_items', 'id')
                 ->where('supplier_invoice_id', $spiId)->whereNull('deleted_at')
             : 'integer';
 
+        /* Scoped to the INVOICE'S branch, not just its client.
+           Flag ids are per branch — branch 1's "Cold Chain" and branch 2's are
+           different rows with different ids — while /product-flags/options
+           answers for whichever branch the SWITCHER is on. Edit an invoice
+           belonging to another branch and the screen resolves its Cold Chain
+           chip to the wrong branch's id; stored unchecked, the box would carry
+           a flag its own branch has never heard of, and the cold-chain guard
+           below would not find it — so a range would be refused on a carton
+           the packer did mark. Refused here instead, as a field error naming
+           the flag. A row with a NULL branch is the client's own, shared by
+           every branch, and stays valid. */
         $flagExists = $clientId
-            ? Rule::exists('inventory_product_flags', 'id')->where('client_id', $clientId)
+            ? Rule::exists('inventory_product_flags', 'id')
+                ->where('client_id', $clientId)
+                ->where(fn ($q) => $branchId
+                    ? $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $branchId))
+                    : $q)
             : 'integer';
 
         return [
@@ -477,6 +492,16 @@ class SpiBoxController extends Controller
             "{$p}net_weight_kg"   => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             "{$p}gross_weight_kg" => ['nullable', 'numeric', 'min:0', 'max:999999.999'],
             "{$p}condition"       => ['required', Rule::in(SpiBox::CONDITIONS)],
+            /* Whether another carton may sit on this one — a fact about the
+               BOX. Accepted as 0/1 and stored as 0/1; absent means 0, because
+               a crate nobody has vouched for is not one to put a pallet on. */
+            "{$p}is_stackable"    => ['nullable', 'integer', Rule::in([0, 1])],
+
+            /* Cold-chain range in °C. Floored at absolute zero because a
+               typo'd minus sign is the only way to reach it, and capped at 100
+               because a carton held above boiling is not a cold chain. */
+            "{$p}temp_min_c"      => ['nullable', 'numeric', 'min:-273.15', 'max:100'],
+            "{$p}temp_max_c"      => ['nullable', 'numeric', 'min:-273.15', 'max:100'],
 
             "{$p}items"                            => ['required', 'array', 'min:1', 'max:200'],
             "{$p}items.*.supplier_invoice_item_id" => ['required', 'integer', $itemExists],
@@ -502,7 +527,7 @@ class SpiBoxController extends Controller
      * The key is returned beside the message so the form can highlight the
      * field, the way a validation failure does.
      */
-    private function assertBoxConsistent(array $box): void
+    private function assertBoxConsistent(array $box, ?int $clientId = null, ?int $branchId = null): void
     {
         $fail = function (string $key, string $message) {
             abort(response()->json([
@@ -540,6 +565,36 @@ class SpiBoxController extends Controller
             $fail('net_weight_kg', 'Net weight cannot be more than gross weight.');
         }
 
+        /* A range needs both ends and the right way round. Half a range is
+           not a weaker answer, it is an unusable one: put-away compares a box
+           against a zone's own min and max, and a missing end makes the
+           comparison impossible rather than approximate. */
+        $tMin = $box['temp_min_c'] ?? null;
+        $tMax = $box['temp_max_c'] ?? null;
+        if (($tMin === null) !== ($tMax === null)) {
+            $fail($tMin === null ? 'temp_min_c' : 'temp_max_c',
+                'A temperature range needs both a minimum and a maximum.');
+        }
+        if ($tMin !== null && $tMax !== null && (float) $tMin > (float) $tMax) {
+            $fail('temp_max_c', 'The maximum temperature cannot be below the minimum.');
+        }
+
+        /* A range only means something on a box marked Cold Chain. The flag is
+           what says this carton is temperature-controlled at all; without it
+           the numbers are two figures nobody will act on, and put-away would
+           hold an ordinary carton to a range it was never meant to keep.
+           Checked against the FLAG MASTER rather than a constant, because the
+           ids are per tenant and the screen resolves the built-in chip to one
+           by name. */
+        if ($tMin !== null || $tMax !== null) {
+            $onBox = collect($box['items'])->pluck('flags')->filter()->flatten()
+                ->map(fn ($v) => (int) $v)->unique();
+
+            if ($onBox->intersect($this->coldChainFlagIds($clientId, $branchId))->isEmpty()) {
+                $fail('temp_min_c', 'Mark the box Cold Chain before setting a temperature range.');
+            }
+        }
+
         foreach ($box['items'] as $i => $row) {
             $line = "items.{$i}";
 
@@ -556,6 +611,37 @@ class SpiBoxController extends Controller
                 $fail("{$line}.expiry_date", 'Expiry date must be after the manufacturing date.');
             }
         }
+    }
+
+    /**
+     * The tenant's Cold Chain flag ids, from the master.
+     *
+     * Matched on the NAME with spaces squeezed out — "Cold Chain", "cold
+     * chain" and "ColdChain" are the same flag, and the screen already
+     * resolves its built-in chip to a master row the same way. Returns an
+     * empty list when the tenant has no such flag, which correctly refuses a
+     * temperature range: a box cannot be cold chain if cold chain does not
+     * exist to be selected.
+     *
+     * Memoised: one query per request however many boxes it carries.
+     */
+    private array $coldChainIds = [];
+
+    private function coldChainFlagIds(?int $clientId, ?int $branchId = null): array
+    {
+        $key = ($clientId ?? 'null') . ':' . ($branchId ?? 'null');
+
+        return $this->coldChainIds[$key] ??= DB::table('inventory_product_flags')
+            ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
+            /* The master is branch-scoped, so a box is checked against its own
+               branch's flag — plus any the client defined for every branch
+               (branch_id NULL), which the masters treat as shared. */
+            ->when($branchId, fn ($q) => $q->where(fn ($w) => $w
+                ->where('branch_id', $branchId)->orWhereNull('branch_id')))
+            ->whereRaw("lower(replace(flag_name, ' ', '')) = ?", ['coldchain'])
+            ->pluck('id')
+            ->map(fn ($v) => (int) $v)
+            ->all();
     }
 
     private function writeItems(SpiBox $box, array $items): void

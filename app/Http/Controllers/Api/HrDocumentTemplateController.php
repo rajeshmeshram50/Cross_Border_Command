@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\HrDocumentSignature;
 use App\Models\HrDocumentTemplate;
+use App\Models\HrDocumentTemplateVersion;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
@@ -389,6 +390,11 @@ class HrDocumentTemplateController extends Controller
                 $row->update(['docx_path' => $path, 'docx_original_name' => $orig, 'editor_mode' => 'word']);
             }
 
+            // v1 is a version like any other, so it gets its row too — without
+            // it the history would start at v2 and the original would be the
+            // one thing nobody could download.
+            $this->snapshotVersion($row, $auth?->id);
+
             $row->load(self::WITH);
             return response()->json($row, 201);
         });
@@ -419,9 +425,109 @@ class HrDocumentTemplateController extends Controller
             $data['editor_mode'] = 'word';
         }
 
+        /* Every successful save is a new version. (#34)
+         *
+         * Computed from the STORED value, never from the payload: the editor
+         * round-trips the version it loaded, so taking the client's number
+         * would freeze it at whatever was on screen — which is why it sat at
+         * v1 on every template in the table. */
+        $data['version'] = $this->nextVersion($row->version);
+
+        /* First edit of a template that predates version history: file what it
+           says NOW, before the overwrite, so its current version has a
+           snapshot too. Without this the history starts at the version AFTER
+           the first edit, and v1 — the only state the template has ever been
+           in — is the one thing nobody can read. Runs once per template; after
+           that a row always exists. */
+        if (!HrDocumentTemplateVersion::where('template_id', $row->id)->exists()) {
+            $this->snapshotVersion($row, $request->user()?->id);
+        }
+
         $row->update($data);
+        $this->snapshotVersion($row, $request->user()?->id);
+
         $row->load(self::WITH);
         return response()->json($row);
+    }
+
+    /**
+     * GET /hr-document-templates/{id}/versions — the save history.
+     *
+     * Newest first, because the question is almost always "what did it say
+     * before this change", and the body is left out: a list of versions is
+     * read, a version itself is downloaded.
+     */
+    public function versions(Request $request, $id)
+    {
+        $this->authorize($request, 'can_view');
+        $row = $this->resolveRow($request, (int) $id);
+
+        $rows = HrDocumentTemplateVersion::where('template_id', $row->id)
+            ->orderByDesc('id')
+            ->get(['id', 'version', 'code', 'name', 'status', 'editor_mode', 'docx_original_name', 'created_by', 'created_at']);
+
+        $names = User::whereIn('id', $rows->pluck('created_by')->filter()->unique())
+            ->pluck('name', 'id');
+
+        return response()->json([
+            'template_id' => $row->id,
+            'current'     => $row->version,
+            'versions'    => $rows->map(fn ($v) => [
+                'id'         => $v->id,
+                'version'    => $v->version,
+                'code'       => $v->code,
+                'name'       => $v->name,
+                'status'     => $v->status,
+                'source'     => $v->editor_mode === 'word' ? 'Word' : 'Editor',
+                'saved_by'   => $names[$v->created_by] ?? null,
+                'saved_at'   => $v->created_at?->toIso8601String(),
+                'is_current' => $v->version === $row->version,
+            ])->all(),
+        ]);
+    }
+
+    /**
+     * GET /hr-document-templates/{id}/versions/{versionId}/download
+     *
+     * Built from the SNAPSHOT, through the same renderer the current template
+     * uses — a transient model carrying that version's body and letterhead,
+     * never saved. Rendering rather than returning a stored file keeps an old
+     * version readable even though the letterhead is applied at render time.
+     */
+    public function downloadVersion(Request $request, $id, $versionId)
+    {
+        $this->authorize($request, 'can_view');
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(60);
+
+        $row = $this->resolveRow($request, (int) $id);
+
+        $v = HrDocumentTemplateVersion::where('template_id', $row->id)
+            ->where('id', (int) $versionId)
+            ->firstOrFail();
+
+        /* A throwaway model carrying that version's body and letterhead, never
+           saved. Both renderers already take a row, so the snapshot travels
+           through the same path as the live template and comes out looking the
+           way it did. */
+        $snapshot = new HrDocumentTemplate();
+        $snapshot->forceFill([
+            'id'            => $row->id,
+            'code'          => $v->code ?: $row->code,
+            'name'          => $v->name ?: $row->name,
+            'content_html'  => $v->content_html,
+            'header_config' => $v->header_config,
+            'footer_config' => $v->footer_config,
+            'editor_mode'   => $v->editor_mode,
+            'client_id'     => $v->client_id,
+            'branch_id'     => $v->branch_id,
+        ]);
+
+        $stem = ($v->code ?: 'template') . '-' . ($v->version ?: 'v1');
+
+        return strtolower((string) $request->query('format')) === 'pdf'
+            ? $this->pdfResponse($snapshot, $request, $stem . '.pdf')
+            : $this->renderDocx($snapshot, $stem . '.docx', true);
     }
 
     public function destroy(Request $request, $id)
@@ -489,6 +595,19 @@ class HrDocumentTemplateController extends Controller
 
         $row = $this->resolveRow($request, (int) $id);
 
+        return $this->pdfResponse($row, $request, ($row->code ?: 'template') . '.pdf');
+    }
+
+    /**
+     * Render a template — or a snapshot of one — to PDF.
+     *
+     * Takes the row loosely so a transient model carrying an old version's
+     * body and letterhead renders through exactly the same blade as the live
+     * template. Two renderers would be two things to keep in step, and the
+     * whole point of an archived version is that it still looks like itself.
+     */
+    private function pdfResponse($row, Request $request, string $filename)
+    {
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
 
@@ -511,7 +630,7 @@ class HrDocumentTemplateController extends Controller
             'bodyHtml'    => $this->inlineLocalImages($html),
         ])->setPaper('A4');
 
-        return $pdf->download(($row->code ?: 'template') . '.pdf');
+        return $pdf->download($filename);
     }
 
     /**
@@ -1831,6 +1950,60 @@ class HrDocumentTemplateController extends Controller
 
     /* ───── code allocation ───── */
 
+    /**
+     * Keep what this version says, so the number means something.
+     *
+     * Called after every successful write. A snapshot rather than a diff: the
+     * body and its letterhead are copied whole, so a download of v2 needs no
+     * reconstruction and survives any later change to how templates render.
+     *
+     * Never fatal. The template is already saved by the time we get here, and
+     * failing to file a history row must not undo the author's edit.
+     */
+    private function snapshotVersion(HrDocumentTemplate $row, ?int $userId): void
+    {
+        try {
+            HrDocumentTemplateVersion::create([
+                'client_id'          => $row->client_id,
+                'branch_id'          => $row->branch_id,
+                'template_id'        => $row->id,
+                'version'            => (string) ($row->version ?: 'v1'),
+                'code'               => $row->code,
+                'name'               => $row->name,
+                'status'             => $row->status,
+                'editor_mode'        => $row->editor_mode,
+                'content_html'       => $row->content_html,
+                'header_config'      => $row->header_config,
+                'footer_config'      => $row->footer_config,
+                'docx_path'          => $row->docx_path,
+                'docx_original_name' => $row->docx_original_name,
+                'created_by'         => $userId,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Document template version snapshot failed', [
+                'template_id' => $row->id,
+                'version'     => $row->version,
+                'error'       => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * v1 → v2, v9 → v10.
+     *
+     * The column is free text (varchar 10) and every row in it has always read
+     * "v1", so the trailing digits are the only thing worth trusting. Anything
+     * without a number — null, an empty string, a hand-typed label — counts as
+     * the first version and becomes v2 rather than refusing the save; a
+     * version label is not worth losing an edit over.
+     */
+    private function nextVersion(?string $current): string
+    {
+        $n = preg_match('/(\d+)\s*$/', (string) $current, $m) ? (int) $m[1] : 1;
+
+        return 'v' . ($n + 1);
+    }
+
     private function codePrefix(string $cat, string $role): string
     {
         $c = self::CAT_SHORT[$cat]  ?? 'GEN';
@@ -1838,22 +2011,37 @@ class HrDocumentTemplateController extends Controller
         return "{$c}-{$r}-";
     }
 
-    private function allocateCode($clientId, $branchId, string $cat, string $role): string
+    /**
+     * Every template in one code scope — INCLUDING deleted ones.
+     *
+     * withTrashed() is the whole point of #67. A code is issued once and never
+     * again: IT-INT-015 may already be on a signed document, quoted in an
+     * approval or filed by someone, so the next template must not answer to
+     * it. Counting only live rows handed the number straight back out, and the
+     * gap a delete leaves is therefore permanent and correct.
+     */
+    private function codeScope($clientId, $branchId, string $cat, string $role)
     {
-        $q = HrDocumentTemplate::query()->lockForUpdate();
+        $q = HrDocumentTemplate::withTrashed();
         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
         $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
-        $q->where('employee_category', $cat)->where('role_type', $role);
-        return $this->buildNext($q->pluck('code'), $this->codePrefix($cat, $role));
+
+        return $q->where('employee_category', $cat)->where('role_type', $role);
     }
 
+    private function allocateCode($clientId, $branchId, string $cat, string $role): string
+    {
+        $codes = $this->codeScope($clientId, $branchId, $cat, $role)->lockForUpdate()->pluck('code');
+
+        return $this->buildNext($codes, $this->codePrefix($cat, $role));
+    }
+
+    /** What the next code WOULD be. Read only — nothing locked or reserved. */
     private function peekNextCode($clientId, $branchId, string $cat, string $role): string
     {
-        $q = HrDocumentTemplate::query();
-        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
-        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
-        $q->where('employee_category', $cat)->where('role_type', $role);
-        return $this->buildNext($q->pluck('code'), $this->codePrefix($cat, $role));
+        $codes = $this->codeScope($clientId, $branchId, $cat, $role)->pluck('code');
+
+        return $this->buildNext($codes, $this->codePrefix($cat, $role));
     }
 
     private function buildNext($codes, string $prefix): string

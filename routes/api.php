@@ -122,6 +122,12 @@ Route::get('/announcements/{id}/attachment',     [AnnouncementController::class,
     ->whereNumber('id')
     ->name('announcements.attachment');
 
+/* Transactional email design preview — renders the blade as a page so a plain
+   curl or browser tab shows what the message looks like. Nothing is sent and
+   nothing is queued. The controller 404s outside the local environment, which
+   is why it can sit out here without auth. */
+Route::get('/dev/mail-preview/{template}', [\App\Http\Controllers\Api\DevToolsController::class, 'mailPreview']);
+
 // Protected
 Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
@@ -584,6 +590,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
            multipart and PHP does not populate $_FILES on a PUT. */
         Route::get   ('/warehouses',               [WarehouseController::class, 'index']);
         Route::get   ('/warehouses/options',       [WarehouseController::class, 'options']);     // before /{id}
+        /* The code the next row would get. Derived from the id, so this reads
+           the table's sequence — a preview, never a reservation. */
+        Route::get   ('/warehouses/next-code',     [WarehouseController::class, 'nextCode']);
         Route::post  ('/warehouses',               [WarehouseController::class, 'store']);
         Route::get   ('/warehouses/{id}',          [WarehouseController::class, 'show'])->whereNumber('id');
         Route::get   ('/warehouses/{id}/qr',       [WarehouseController::class, 'qrImage'])->whereNumber('id');
@@ -596,6 +605,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // Zone
         Route::get   ('/zones',                    [ZoneController::class, 'index']);
         Route::get   ('/zones/options',            [ZoneController::class, 'options']);
+        Route::get   ('/zones/next-code',          [ZoneController::class, 'nextCode']);
         Route::post  ('/zones',                    [ZoneController::class, 'store']);
         Route::get   ('/zones/{id}',               [ZoneController::class, 'show'])->whereNumber('id');
         Route::get   ('/zones/{id}/qr',            [ZoneController::class, 'qrImage'])->whereNumber('id');
@@ -608,6 +618,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // Rack
         Route::get   ('/racks',                    [RackController::class, 'index']);
         Route::get   ('/racks/options',            [RackController::class, 'options']);
+        Route::get   ('/racks/next-code',          [RackController::class, 'nextCode']);
         Route::post  ('/racks',                    [RackController::class, 'store']);
         Route::get   ('/racks/{id}',               [RackController::class, 'show'])->whereNumber('id');
         Route::get   ('/racks/{id}/qr',            [RackController::class, 'qrImage'])->whereNumber('id');
@@ -619,6 +630,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
         /* Shelf. Listed and created under its rack, because every rule it has
            to pass is a comparison against that rack; edited by its own id. */
+        Route::get   ('/racks/{rack}/shelves/next-code', [ShelfController::class, 'nextCode'])->whereNumber('rack');
         Route::get   ('/racks/{rack}/shelves',     [ShelfController::class, 'index'])->whereNumber('rack');
         Route::post  ('/racks/{rack}/shelves',     [ShelfController::class, 'store'])->whereNumber('rack');
         Route::get   ('/shelves/{id}',             [ShelfController::class, 'show'])->whereNumber('id');
@@ -1120,6 +1132,10 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
     Route::get ('/hr-document-templates/{id}/preview',         [HrDocumentTemplateController::class, 'previewForEmployee']);
     Route::post('/hr-document-templates/{id}/upload-docx',     [HrDocumentTemplateController::class, 'uploadDocx']);
+    /* Save history. Every write files a snapshot, so a version can be read
+       back as a DOCX long after the template moved on. (#34) */
+    Route::get ('/hr-document-templates/{id}/versions',        [HrDocumentTemplateController::class, 'versions']);
+    Route::get ('/hr-document-templates/{id}/versions/{versionId}/download', [HrDocumentTemplateController::class, 'downloadVersion']);
 
     Route::get ('/my-team/employees',                    [MyTeamController::class, 'employees']);
     Route::get ('/my-team/approvals',                    [MyTeamController::class, 'approvals']);

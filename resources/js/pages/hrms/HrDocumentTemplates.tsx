@@ -11,6 +11,7 @@ import { Shimmer } from '../../components/ui/Shimmer';
 import DataTable, { ActionCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import CtcLivePreview from '../clm/operations/CtcLivePreview';
+import TemplateVersionsModal from './doc-templates/TemplateVersionsModal';
 import '../../../css/recruitment.css';
 /* The .sl-refine-* panel styles, borrowed from Refine Suppliers rather than
    re-drawn here. One filter popover in the product, one look. The classes are
@@ -95,6 +96,9 @@ export default function HrDocumentTemplates() {
       setPdfBusyId(null);
     }
   };
+
+  // Version history — the modal fetches its own rows (#34).
+  const [versionsFor, setVersionsFor] = useState<TemplateRow | null>(null);
 
   const openView = async (r: TemplateRow) => {
     // Paint immediately from the list row — code, name, flags and dates are all
@@ -483,6 +487,13 @@ export default function HrDocumentTemplates() {
               onClick={() => void downloadPdf(r)}
               title={pdfBusyId === r.id ? 'Building the PDF…' : 'Download PDF'}
             />
+            {/* Version history — every save is downloadable from here (#34). */}
+            <ActionBtn
+              icon="ri-history-line"
+              tone="dark"
+              onClick={() => setVersionsFor(r)}
+              title={`Version history (current ${r.version || 'v1'})`}
+            />
             <ActionBtn icon="edit-svg" tone="info" onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
             <ActionBtn
               icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'}
@@ -723,6 +734,12 @@ export default function HrDocumentTemplates() {
         onEdit={id => { setViewTarget(null); navigate(`/hr/doc-templates/${id}/edit`); }}
       />
 
+      <TemplateVersionsModal
+        open={!!versionsFor}
+        template={versionsFor}
+        onClose={() => setVersionsFor(null)}
+      />
+
       <DeleteConfirmModal
         open={!!deleteTarget}
         title="Delete Template"
@@ -779,6 +796,18 @@ function TemplateViewModal({
      column beside the metadata grid. (#8) */
   return (
     <Modal isOpen toggle={onClose} centered size="xl" className="hdt-view-modal">
+      {/* The body is p-0 and the first child is a full-bleed gradient, so the
+          dialog has to clip: without overflow:hidden the header's square
+          corners sit proud of the rounded modal and the top edge reads as two
+          mismatched shapes. */}
+      <style>{`
+        .hdt-view-modal .modal-content {
+          border-radius: 16px;
+          overflow: hidden;
+          border: 0;
+          box-shadow: 0 24px 60px -18px rgba(15,23,42,.35);
+        }
+      `}</style>
       <ModalBody className="p-0">
         <div
           className="d-flex align-items-center gap-3 px-3 py-3"
@@ -787,7 +816,9 @@ function TemplateViewModal({
           <i className="ri-file-text-line" style={{ fontSize: 20 }} />
           <div className="min-w-0 flex-grow-1">
             <div className="fw-bold text-truncate" style={{ fontSize: 15, lineHeight: 1.25 }}>{row.name}</div>
-            <div style={{ fontSize: 11.5, opacity: 0.86 }}>{row.code}{row.version ? ` \u00b7 v${row.version}` : ''}</div>
+            {/* The stored value already carries its own "v" (v1, v2 \u2026), so
+                prefixing another produced "vv3". */}
+            <div style={{ fontSize: 11.5, opacity: 0.86 }}>{row.code}{row.version ? ` \u00b7 ${row.version}` : ''}</div>
           </div>
           <span
             className="fw-semibold flex-shrink-0"
@@ -901,10 +932,25 @@ function TemplateViewModal({
           </details>
         </div>
 
-        <div className="d-flex justify-content-end gap-2 px-3 py-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-          <button type="button" className="btn btn-light btn-sm" onClick={onClose}>Close</button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => onEdit(row.id)}>
-            <i className="ri-pencil-line me-1" />Edit
+        {/* Not btn-sm: this page shrinks the small button for its Actions
+            column, which left the dialog's only two controls looking like
+            disabled chips under a full-page preview. */}
+        <div className="d-flex justify-content-end gap-2 px-3 py-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+          <button
+            type="button"
+            className="btn btn-light"
+            style={{ minWidth: 104, fontWeight: 600, padding: '8px 18px', borderRadius: 10 }}
+            onClick={onClose}
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary d-inline-flex align-items-center justify-content-center gap-1"
+            style={{ minWidth: 104, fontWeight: 600, padding: '8px 18px', borderRadius: 10 }}
+            onClick={() => onEdit(row.id)}
+          >
+            <i className="ri-pencil-line" />Edit
           </button>
         </div>
       </ModalBody>
@@ -982,12 +1028,12 @@ function RefineTemplates(props: {
    * 11px); right: 0`) still places it exactly where it was designed to sit —
    * including the little arrow — without that CSS knowing anything changed.
    */
-  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number; height: number; vh: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number; height: number; vh: number; vw: number } | null>(null);
   useEffect(() => {
     if (!open) { setAnchor(null); return; }
     const measure = () => {
       const r = wrapRef.current?.getBoundingClientRect();
-      if (r) setAnchor({ top: r.top, left: r.left, width: r.width, height: r.height, vh: window.innerHeight });
+      if (r) setAnchor({ top: r.top, left: r.left, width: r.width, height: r.height, vh: window.innerHeight, vw: window.innerWidth });
     };
     measure();
     // `true` captures scrolls on inner containers too — the table scrolls, and
@@ -999,6 +1045,21 @@ function RefineTemplates(props: {
       window.removeEventListener('resize', measure);
     };
   }, [open]);
+
+  /* Keep the panel inside the window.
+     The panel is position:fixed with no left of its own, so it starts at the
+     button and runs 366px to the RIGHT — and the filter button sits at the
+     right end of the toolbar, so most of the panel fell off the screen. Pin it
+     to the viewport instead: aligned to the button where there is room, pushed
+     back from the right edge where there is not.
+     Left untouched below 720px, where the stylesheet already pins it to both
+     edges with left:12px;right:12px and an inline left would fight it. */
+  const PANEL_W = 366;
+  const popLeft: { left?: number } = (() => {
+    if (!anchor || anchor.vw <= 720) return {};
+    const width = Math.min(PANEL_W, anchor.vw - 24);
+    return { left: Math.max(12, Math.min(anchor.left, anchor.vw - 12 - width)) };
+  })();
 
   /* How tall the tile area may be before the footer falls off the screen.
      The panel is fixed-positioned under the button, so on a short viewport —
@@ -1054,7 +1115,7 @@ function RefineTemplates(props: {
           className="sup-fig"
           style={{ position: 'fixed', top: anchor.top, left: anchor.left, width: anchor.width, height: anchor.height, zIndex: 4000, pointerEvents: 'none' }}
         >
-        <div className="sl-refine-pop" role="dialog" aria-label="Refine Templates" ref={popRef} style={{ pointerEvents: 'auto' }}>
+        <div className="sl-refine-pop" role="dialog" aria-label="Refine Templates" ref={popRef} style={{ pointerEvents: 'auto', ...popLeft }}>
           <div className="sl-refine-sheet">
             <div className="sl-refine-head">
               <span className="sl-refine-head-ico">

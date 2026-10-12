@@ -90,6 +90,14 @@ class ZoneController extends BaseInventoryController
         return $this->index($request->merge(['view' => 'options']));
     }
 
+    /** GET /inventory/zones/next-code — preview of the next zone's code. */
+    public function nextCode(Request $request)
+    {
+        $this->tenantUser($request);
+
+        return response()->json($this->nextCodeBody('inventory_zones', 'ZN-'), 200);
+    }
+
     /** GET /inventory/zones/{id} */
     public function show(Request $request, int $id)
     {
