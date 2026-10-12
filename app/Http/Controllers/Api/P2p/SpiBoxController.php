@@ -477,7 +477,10 @@ class SpiBoxController extends Controller
            every branch, and stays valid. */
         $flagExists = $clientId
             ? Rule::exists('inventory_product_flags', 'id')
-                ->where('client_id', $clientId)
+                // A null client is a platform default — Hazardous, Cold Chain,
+                // Fragile — shared by everyone and valid on any box.
+                ->where(fn ($q) => $q->where(fn ($w) => $w
+                    ->whereNull('client_id')->orWhere('client_id', $clientId)))
                 ->where(fn ($q) => $branchId
                     ? $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $branchId))
                     : $q)
@@ -632,10 +635,14 @@ class SpiBoxController extends Controller
         $key = ($clientId ?? 'null') . ':' . ($branchId ?? 'null');
 
         return $this->coldChainIds[$key] ??= DB::table('inventory_product_flags')
-            ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
-            /* The master is branch-scoped, so a box is checked against its own
-               branch's flag — plus any the client defined for every branch
-               (branch_id NULL), which the masters treat as shared. */
+            /* Cold Chain is normally a PLATFORM row — client_id null, owned by
+               nobody, one id for everyone — so a null client must stay valid
+               here or the shared flag would never be found. A tenant that
+               defined its own is accepted alongside it. */
+            ->when($clientId, fn ($q) => $q->where(fn ($w) => $w
+                ->whereNull('client_id')->orWhere('client_id', $clientId)))
+            /* Same for the branch: a null branch_id row is shared across the
+               client's branches, and a branch's own flag is checked too. */
             ->when($branchId, fn ($q) => $q->where(fn ($w) => $w
                 ->where('branch_id', $branchId)->orWhereNull('branch_id')))
             ->whereRaw("lower(replace(flag_name, ' ', '')) = ?", ['coldchain'])

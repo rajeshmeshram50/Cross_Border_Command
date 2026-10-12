@@ -9,22 +9,32 @@ use Illuminate\Support\Facades\DB;
  * Inventory · The three product flags the SPI packing screen draws.
  *
  * Stage 03 shows Hazardous, Cold Chain and Fragile as built-in chips and then
- * resolves each to a row in inventory_product_flags BY NAME. On a branch whose
- * master is empty the chip resolves to nothing: it appears selected, sends no
+ * resolves each to a row in inventory_product_flags BY NAME. Where the master
+ * has no such row the chip resolves to nothing: it appears selected, sends no
  * id, and Cold Chain in particular loses its meaning — the temperature guard
  * has no flag to find, so a range is refused on a box the packer believes they
  * marked.
  *
- * Seeded per BRANCH, because the master is branch-scoped and each branch's
- * packers pick from their own list.
+ * Seeded ONCE, at platform level — client_id and branch_id both null — rather
+ * than copied into every branch. Three reasons, and the first is the one that
+ * matters:
  *
- * Idempotent on (client, branch, normalised name): running it again adds
- * nothing, and a branch that already defined its own "Cold Chain" keeps the
- * row it has — including its id, which packed box items already point at.
- * That matters more than tidiness: rewriting those rows would strip the flag
- * off cartons that are already packed.
+ *   · ONE ID EVERYWHERE. Per-branch copies give "Cold Chain" a different id in
+ *     every branch, and a box stores the id. A screen that fetched the flags
+ *     for the wrong branch then wrote an id the box's own branch has never
+ *     heard of, and the cold-chain check could not find it.
+ *   · A NEW BRANCH IS ALREADY DONE. Per-branch seeding leaves every branch
+ *     created afterwards with an empty master until somebody re-runs this.
+ *   · They are the same three flags for everyone. A per-tenant copy of a
+ *     constant is a copy that can drift.
  *
- * Re-run after adding a branch:
+ * Tenants SEE these (the list and options include platform rows) but cannot
+ * edit or delete them — the write scope does not reach a null client_id, so
+ * one tenant cannot rename or switch off a flag everyone else relies on. A
+ * tenant wanting something different adds a flag of its own.
+ *
+ * Idempotent on the normalised name, so running it again adds nothing.
+ *
  *   php artisan db:seed --class=InventoryProductFlagSeeder
  */
 class InventoryProductFlagSeeder extends Seeder
@@ -41,45 +51,37 @@ class InventoryProductFlagSeeder extends Seeder
         $now  = now();
         $rows = [];
 
-        $branches = DB::table('branches')->whereNull('deleted_at')->get(['id', 'client_id']);
+        foreach (self::DEFAULTS as $name => $purpose) {
+            if ($this->platformHas($name)) continue;
 
-        foreach ($branches as $b) {
-            foreach (self::DEFAULTS as $name => $purpose) {
-                if ($this->alreadyHas((int) $b->client_id, (int) $b->id, $name)) {
-                    continue;
-                }
-
-                $rows[] = [
-                    'client_id'  => $b->client_id,
-                    'branch_id'  => $b->id,
-                    'flag_name'  => $name,
-                    'purpose'    => $purpose,
-                    'status'     => 1,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ];
-            }
+            $rows[] = [
+                // Owned by nobody: that is what makes it shared.
+                'client_id'  => null,
+                'branch_id'  => null,
+                'flag_name'  => $name,
+                'purpose'    => $purpose,
+                'status'     => 1,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
         }
 
         if ($rows) {
             DB::table('inventory_product_flags')->insert($rows);
         }
 
-        $this->command?->info(
-            'Inventory product flags: ' . count($rows) . ' added across ' . $branches->count() . ' branch(es).'
-        );
+        $this->command?->info('Inventory product flags: ' . count($rows) . ' platform default(s) added.');
     }
 
     /**
      * Spaces squeezed and case folded, the same normalisation the cold-chain
-     * lookup uses — so a branch holding "ColdChain" is not given a second row
+     * lookup uses — so "ColdChain" already seeded is not given a second row
      * called "Cold Chain" that the guard would then have to choose between.
      */
-    private function alreadyHas(int $clientId, int $branchId, string $name): bool
+    private function platformHas(string $name): bool
     {
         return DB::table('inventory_product_flags')
-            ->where('client_id', $clientId)
-            ->where('branch_id', $branchId)
+            ->whereNull('client_id')
             ->whereRaw("lower(replace(flag_name, ' ', '')) = ?", [
                 strtolower(str_replace(' ', '', $name)),
             ])

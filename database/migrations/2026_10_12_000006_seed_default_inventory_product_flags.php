@@ -5,17 +5,20 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Inventory · Put the packing screen's three flags into every branch's master.
+ * Inventory · Put the packing screen's three flags in as platform defaults.
  *
  * The rules live in InventoryProductFlagSeeder, which this only calls: the
  * same list has to be reachable two ways — once here, so an existing install
- * gets it on migrate, and on demand afterwards, since a branch created later
- * starts with an empty master and needs the seeder run again:
+ * gets it on migrate, and on demand afterwards. Two copies of the list would
+ * be two things to keep in step, and the one that drifted would be the one
+ * nobody ran.
  *
  *   php artisan db:seed --class=InventoryProductFlagSeeder
  *
- * Two copies of the list would be two things to keep in step, and the one that
- * drifted would be the one nobody ran.
+ * Seeded once at platform level rather than per branch, so "Cold Chain" has
+ * ONE id everywhere. The seeder says why that matters; the short version is
+ * that a box stores the flag id, and per-branch copies gave the same flag a
+ * different id in every branch.
  */
 return new class extends Migration
 {
@@ -32,6 +35,9 @@ return new class extends Migration
            nothing to put back. */
         foreach (InventoryProductFlagSeeder::DEFAULTS as $name => $purpose) {
             DB::table('inventory_product_flags')
+                // Platform rows only — a tenant's own flag of the same name is
+                // theirs and is not this migration's to remove.
+                ->whereNull('client_id')
                 ->where('flag_name', $name)
                 ->where('purpose', $purpose)
                 ->where('status', 1)

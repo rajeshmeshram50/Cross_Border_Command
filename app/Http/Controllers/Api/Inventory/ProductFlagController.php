@@ -25,7 +25,9 @@ class ProductFlagController extends BaseInventoryController
             $branch = $this->branchScope($request, $user);
             $f      = $request->validate($this->listRules());
 
-            $base = $this->scopeTenant(ProductFlag::query(), $user, $branch);
+            // Reads include the platform defaults (Hazardous, Cold Chain, Fragile):
+            // the packing screen resolves its built-in chips against this list.
+            $base = $this->scopeTenant(ProductFlag::query(), $user, $branch, true);
             $tabs = $this->tabCounts(clone $base);
 
             // The dropdown leaves before the tabs, the counts and the paging.
@@ -69,7 +71,8 @@ class ProductFlagController extends BaseInventoryController
 
             $user   = $this->tenantUser($request);
             $branch = $this->branchScope($request, $user);
-            $flag = $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id);
+            // A read, so a platform default is visible like any other flag.
+            $flag = $this->scopeTenant(ProductFlag::query(), $user, $branch, true)->findOrFail($id);
 
             DB::commit();
 
@@ -118,6 +121,7 @@ class ProductFlagController extends BaseInventoryController
 
             $user   = $this->tenantUser($request);
             $branch = $this->branchScope($request, $user);
+            $this->refuseIfPlatformRow(ProductFlag::query(), $user, $id, 'flag');
             $flag = $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id);
             $data = $request->validate($this->rules());
 
@@ -149,6 +153,7 @@ class ProductFlagController extends BaseInventoryController
 
             $user   = $this->tenantUser($request);
             $branch = $this->branchScope($request, $user);
+            $this->refuseIfPlatformRow(ProductFlag::query(), $user, $id, 'flag');
             $flag = $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id);
             $data = $request->validate(['status' => ['required', 'integer', 'in:0,1']]);
 
@@ -171,6 +176,7 @@ class ProductFlagController extends BaseInventoryController
 
             $user   = $this->tenantUser($request);
             $branch = $this->branchScope($request, $user);
+            $this->refuseIfPlatformRow(ProductFlag::query(), $user, $id, 'flag');
             $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id)->delete();
 
             DB::commit();
@@ -197,10 +203,15 @@ class ProductFlagController extends BaseInventoryController
      * Two flags called "Fragile" would be indistinguishable on the box form.
      * Asked within the branch only: another branch having the name is no
      * clash, because the two never appear on the same picker.
+     *
+     * Platform defaults are counted, because they DO appear on that picker. A
+     * tenant adding a second "Cold Chain" beside the shared one would leave the
+     * packing screen — which resolves its built-in chip by name — choosing
+     * between two rows, and the box would carry whichever it happened to find.
      */
     private function nameTaken($user, ?int $branchId, string $name, ?int $exceptId): bool
     {
-        return $this->scopeTenant(ProductFlag::query(), $user, $branchId)->where('flag_name', 'ilike', $name)
+        return $this->scopeTenant(ProductFlag::query(), $user, $branchId, true)->where('flag_name', 'ilike', $name)
             ->when($exceptId, fn($q) => $q->where('id', '!=', $exceptId))
             ->exists();
     }

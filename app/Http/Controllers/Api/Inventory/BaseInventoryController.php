@@ -77,22 +77,54 @@ abstract class BaseInventoryController extends Controller
      * BelongsToTenant scope expects controllers to keep, and the one that still
      * holds if the tenant middleware is ever missing from a route.
      *
-     * Deliberately narrower than the global scope: it does NOT return rows with
-     * a null client_id, because these five masters have no shared defaults.
      * A null branch_id row IS returned — that is a client-wide master row, and
      * every branch can see it.
+     *
+     * A null CLIENT id is a platform row, owned by nobody and seeded for
+     * everyone. Four of these five masters have no such defaults — a warehouse
+     * belongs to somebody — so they are excluded unless $includePlatform says
+     * otherwise. Product flags are the exception: Hazardous, Cold Chain and
+     * Fragile are drawn as built-in chips by the packing screen, which resolves
+     * each to a master row by NAME, so every tenant must be able to see them.
+     *
+     * Reads pass true; WRITES deliberately do not. A platform row is then
+     * simply not found by an update or a delete, so one tenant cannot rename
+     * or switch off a flag every other tenant is relying on. A tenant that
+     * wants its own variant creates one of its own.
      */
-    protected function scopeTenant(Builder $q, $user, ?int $branchId = null): Builder
+    protected function scopeTenant(Builder $q, $user, ?int $branchId = null, bool $includePlatform = false): Builder
     {
         $table = $q->getModel()->getTable();
 
-        $q->where("$table.client_id", $user->client_id);
+        $includePlatform
+            ? $q->where(fn ($w) => $w->whereNull("$table.client_id")->orWhere("$table.client_id", $user->client_id))
+            : $q->where("$table.client_id", $user->client_id);
 
         if ($branchId !== null) {
             $q->where(fn ($w) => $w->whereNull("$table.branch_id")->orWhere("$table.branch_id", $branchId));
         }
 
         return $q;
+    }
+
+    /**
+     * 403 rather than a bare 404 when a tenant reaches for a platform row.
+     *
+     * The write scope already fails to find it, which is the protection; this
+     * only turns "no such flag" into an answer the user can act on, by telling
+     * them the row is shared and not theirs to change.
+     */
+    protected function refuseIfPlatformRow(Builder $q, $user, int $id, string $what): void
+    {
+        $exists = (clone $q)->newModelInstance()->newQuery()
+            ->whereKey($id)->whereNull('client_id')->exists();
+
+        if ($exists) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => "This {$what} is a shared default and cannot be changed. Create your own to use different settings.",
+            ], 403));
+        }
     }
 
     /**
