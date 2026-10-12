@@ -236,18 +236,28 @@ class ExitController extends Controller
          * and every figure built on it — days served / unserved, the
          * pay-in-lieu or recovery amount.
          *
-         * Two exemptions, both deliberate:
+         * Three exemptions, all deliberate:
          *  · the date ALREADY SAVED on this case is never re-judged, so an exit
          *    filed weeks ago still saves when HR edits some other field;
          *  · an employee for whom no notice period applies (probation, or an
          *    early exit inside the joining window) — the SPA freezes the field
          *    and auto-fills today for exactly that case, so rejecting it would
-         *    block a save on a field nobody can edit. */
+         *    block a save on a field nobody can edit;
+         *  · an exit TYPE that serves no notice at all. "Resignation without
+         *    notice period" is effective immediately and the form says so in
+         *    as many words, then auto-fills today — and the guard rejected it,
+         *    so the screen argued with itself and the stage could not be
+         *    saved. There is no period to understate when none is served. (#140)
+         */
         $incomingNotice = $data['notice_date'] ?? null;
         $storedNotice   = $row->notice_date?->toDateString();
+        // The type being saved, or the one already on the case when this save
+        // does not carry it (the picker locks it after the exit starts).
+        $exitTypeNow    = $data['exit_type'] ?? $row->exit_type;
         if (
             $incomingNotice
             && \Carbon\Carbon::parse($incomingNotice)->toDateString() !== $storedNotice
+            && !$this->servesNoNotice($exitTypeNow === null ? null : (string) $exitTypeNow)
             && \App\Support\ProbationGuard::noticePeriodApplies($employee, $incomingNotice)
             && \Carbon\Carbon::parse($incomingNotice)->startOfDay()->lte(\Carbon\Carbon::today())
         ) {
@@ -1768,9 +1778,25 @@ class ExitController extends Controller
         abort(422, "The exit type cannot be changed once the exit has started (this case is a \"{$locked}\"). Cancel this exit and start a new one if the type is wrong.");
     }
 
+    /**
+     * Exit types where no notice is served at all.
+     *
+     * The exit is effective immediately, so there is no period still to run:
+     * no unserved days to recover and no floor on the notice start date. Both
+     * the settlement mode and the start-date guard read this, so the two can
+     * never disagree about which types those are.
+     */
+    private const NO_NOTICE_TYPES = ['Resignation without notice period', 'Absconding'];
+
+    private function servesNoNotice(?string $exitType): bool
+    {
+        return $exitType !== null
+            && in_array($exitType, self::NO_NOTICE_TYPES, true);
+    }
+
     private function resolveSettlementMode(string $exitType, ?string $noticeChoice = null): string
     {
-        if ($exitType === 'Resignation without notice period' || $exitType === 'Absconding') {
+        if ($this->servesNoNotice($exitType)) {
             return 'recover';
         }
         if ($exitType === 'Termination') {

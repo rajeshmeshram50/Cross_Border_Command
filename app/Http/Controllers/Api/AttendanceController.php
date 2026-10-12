@@ -1869,11 +1869,21 @@ class AttendanceController extends Controller
             }
 
         
-            $holidayName = null;
+            /* The holiday is a fact about the DATE, so it is reported whenever
+               the date is one — not only when nobody worked. An employee who
+               punches in on a declared holiday stays Present and the holiday
+               rides alongside, which is exactly the case the screen has to
+               show: worked, on a holiday (#102).
+               holidaySet value is the holiday's name (see holidayDatesForGroups). */
+            $holidayName = $isHoliday && is_string($holidaySet[$iso] ?? null)
+                ? $holidaySet[$iso]
+                : null;
+
+            /* The STATUS only becomes Holiday when there is nothing else to
+               call the day. Someone who worked is Present first; overwriting
+               that would lose the fact that they turned up. */
             if ($isHoliday && in_array(strtolower((string) $status), ['absent', 'weekly off'], true)) {
                 $status = 'Holiday';
-                // holidaySet value is the holiday's name (see holidayDatesForGroups).
-                $holidayName = is_string($holidaySet[$iso] ?? null) ? $holidaySet[$iso] : null;
             }
 
            

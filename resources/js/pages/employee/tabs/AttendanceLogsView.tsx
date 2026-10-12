@@ -472,6 +472,12 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                        dashes across Effective / Gross / Break / Arrival / Late. */
                     const isLeaveDay = l.status === 'Leave' || l.status === 'Paid Leave' || l.status === 'Unpaid Leave';
                     const isOff   = l.status === 'Weekly Off' || isHolidayDay || isLeaveDay;
+                    /* The date is a declared holiday but the day has its own
+                       status — they worked. The server sends holidayName on
+                       every holiday date now, not only the ones nobody worked
+                       (#102), so this is simply "a holiday that isn't an off
+                       row". */
+                    const workedOnHoliday = !!l.holidayName && !isOff;
                     const isAbsent = l.status === 'Absent';
                     // A day with no punches at all (synthesised Absent / no record)
                     // should read as "No Time Entries Logged" rather than three
@@ -534,6 +540,20 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                               title={`${LEAVE_PORTION_LABEL[l.leavePortion!]} ${leaveToneOf(l).label}`}
                             >
                               {LEAVE_PORTION_PILL[l.leavePortion!]} {leaveToneOf(l).label.toUpperCase()}
+                            </span>
+                          )}
+                          {/* Worked on a declared holiday. The status stays
+                              Present — they did turn up — so the holiday rides
+                              beside the date the way a half-day leave does
+                              (#102). Only reached on non-off rows; a holiday
+                              nobody worked is the single-line row above. */}
+                          {workedOnHoliday && (
+                            <span
+                              className="att-log-woff-pill"
+                              style={{ color: '#0c63b0', background: '#dceefe' }}
+                              title={l.holidayName ? `Holiday — ${l.holidayName}` : 'Worked on a holiday'}
+                            >
+                              HOLIDAY
                             </span>
                           )}
                         </td>

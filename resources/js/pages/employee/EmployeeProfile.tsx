@@ -267,11 +267,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     never_logged_in?: boolean;
   } | null = empDetail?.password_status ?? null;
 
-  /* Nobody has replaced the onboarding password yet, so this dialog is a
-     first-time SET. Calling it "Reset" here is what left HR unable to tell the
-     two situations apart. */
-  const pwIsFirstTime = pwStatus?.state === 'never_changed';
-
   /* One sentence describing the current state, or null when there is no login
      account to describe (that case is already refused by the API with its own
      message, so a banner would only repeat it). */
@@ -758,18 +753,20 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     setPwErrors({});
   };
 
+  /* Self-service only (#232). The admin-reset path that posted to
+     /employees/{id}/set-password was removed: nobody sets another person's
+     login from the employee record. The dialog is unreachable on someone
+     else's profile, so there is no branch left to take. */
   const handleChangePassword = async () => {
-    const adminReset = !isOwnProfile;
-
     // Client-side guards first so the user sees mistakes without a round-trip.
     const errs: Record<string, string> = {};
-    if (!adminReset && !pwCurrent) errs.current_password = 'Current password is required';
+    if (!pwCurrent) errs.current_password = 'Current password is required';
     if (!pwNew) {
       errs.password = 'New password is required';
     } else {
       const failed = validatePwRules(pwNew);
       if (failed.length) errs.password = failed.join(', ');
-      else if (!adminReset && pwNew === pwCurrent) errs.password = 'New password must differ from the current one';
+      else if (pwNew === pwCurrent) errs.password = 'New password must differ from the current one';
     }
     if (!pwConfirm) errs.password_confirmation = 'Please re-enter the new password';
     else if (pwNew !== pwConfirm) errs.password_confirmation = 'Passwords do not match';
@@ -778,20 +775,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     setPwSaving(true);
     setPwErrors({});
     try {
-      if (adminReset) {
-        await api.post(`/employees/${employeeId}/set-password`, {
-          password: pwNew,
-          password_confirmation: pwConfirm,
-        });
-        toast.success('Password updated', `${employee?.name || 'The employee'}'s login password has been reset. A confirmation email has been sent to them.`);
-      } else {
-        await api.post('/change-password', {
-          current_password: pwCurrent,
-          password: pwNew,
-          password_confirmation: pwConfirm,
-        });
-        toast.success('Password updated', 'A confirmation email has been sent.');
-      }
+      await api.post('/change-password', {
+        current_password: pwCurrent,
+        password: pwNew,
+        password_confirmation: pwConfirm,
+      });
+      toast.success('Password updated', 'A confirmation email has been sent.');
       setPwOpen(false);
       resetPwForm();
       // Not awaited — the dialog is already closed and the toast has fired;
@@ -4667,16 +4656,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               {/* "Reset" implies a password already exists. When nobody has
                   replaced the onboarding one, this is a first-time SET — and
                   saying so is half of what HR was missing here. */}
-              <h6 className="mb-0 fw-bold ep-fs-14">
-                {isOwnProfile
-                  ? 'Change Password'
-                  : (pwIsFirstTime ? 'Set Employee Password' : 'Reset Employee Password')}
-              </h6>
-              <small className="text-muted ep-fs-11">
-                {isOwnProfile
-                  ? 'Pick a strong, unique password'
-                  : `${pwIsFirstTime ? 'Set the first' : 'Set a new'} login password for ${employee?.name || 'this employee'}`}
-              </small>
+              <h6 className="mb-0 fw-bold ep-fs-14">Change Password</h6>
+              <small className="text-muted ep-fs-11">Pick a strong, unique password</small>
             </div>
           </div>
           <button
@@ -4707,10 +4688,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
           )}
 
-          {/* Current Password — only for self-service. An admin resetting
-              another employee's password doesn't know (and shouldn't need)
-              their current one. */}
-          {isOwnProfile && (
+          {/* Current Password — always required: the dialog is self-service
+              only now (#232), so there is no caller who doesn't know it. */}
           <div className="mb-3">
             <label className="emp-label fw-semibold ep-fs-12">Current Password<span className="text-danger">*</span></label>
             <div className="position-relative">
@@ -4735,7 +4714,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             </div>
             {pwErrors.current_password && <small className="text-danger d-block mt-1 ep-fs-11">{pwErrors.current_password}</small>}
           </div>
-          )}
 
           {/* New Password */}
           <div className="mb-3">
