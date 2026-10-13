@@ -183,14 +183,21 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
               </div>
             </div>
           </div>
-          <Tooltip label={canAdd
-            ? `Add a shelf to ${r.id}`
-            : rackOff ? 'Activate the rack to add shelves' : 'No rack height left for another shelf'}>
-            <button type="button" className="rks-add" disabled={!canAdd}
-              onClick={() => setFormFor('new')}>
-              <IcoPlus /> Add Shelf
-            </button>
-          </Tooltip>
+          {/* The wrapper, not the button, is what the header flexes against.
+              Tooltip slips a span around a DISABLED trigger so the hover still
+              fires, and that span would become the flex item — leaving the
+              button's own auto margin with nothing to push against, so it
+              drifted out of the corner the moment it went disabled. */}
+          <div className="rks-addwrap">
+            <Tooltip label={canAdd
+              ? `Add a shelf to ${r.id}`
+              : rackOff ? 'Activate the rack to add shelves' : 'No rack height left for another shelf'}>
+              <button type="button" className="rks-add" disabled={!canAdd}
+                onClick={() => setFormFor('new')}>
+                <IcoPlus /> Add Shelf
+              </button>
+            </Tooltip>
+          </div>
           <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><IcoX /></button>
         </div>
 

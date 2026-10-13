@@ -80,11 +80,6 @@ const IcoInfo = () => Ico(
   <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" />
     <line x1="12" y1="16" x2="12.01" y2="16" /></>, 13,
 );
-const IcoList = () => Ico(
-  <><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
-    <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
-    <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>, 12,
-);
 
 type Unit = 'm' | 'ft';
 
@@ -595,7 +590,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                     <button type="button" className="znm-purp__back" title="Choose from the list"
                       aria-label="Choose from the list"
                       onClick={() => set({ purpose: '', purposeOther: '' })}>
-                      <IcoList />
+                      <IcoX size={12} />
                     </button>
                   </>
                 ) : (

@@ -51,7 +51,9 @@ const IcoFlag = (p: { size?: number }) => Ico(
   <><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
     <line x1="4" y1="22" x2="4" y2="15" /></>, p.size ?? 15,
 );
-const IcoX = () => Ico(<><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>, 16);
+const IcoX = (p: { size?: number }) => Ico(
+  <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>, p.size ?? 16,
+);
 const IcoCheck = () => Ico(<polyline points="20 6 9 17 4 12" />, 14);
 const IcoInfo = (p: { size?: number }) => Ico(
   <><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" />
@@ -71,6 +73,8 @@ interface Draft {
   cold: boolean;
   haz: boolean;
   purpose: string;
+  /** What the user typed once they picked "Other"; the saved purpose. */
+  purposeOther: string;
 }
 
 export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, shelf, onClose, onSaved }: {
@@ -105,10 +109,13 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
     ht: String(shelf.dims.height),
     cold: shelf.cold,
     haz: shelf.haz,
-    purpose: shelf.purpose,
+    /* A saved purpose that isn't one of the listed ones was typed, so the
+       form reopens on the free-text side with that text in it. */
+    purpose: PURPOSES.includes(shelf.purpose) ? shelf.purpose : 'Other',
+    purposeOther: PURPOSES.includes(shelf.purpose) ? '' : shelf.purpose,
   } : {
     level: String(nextLevel), name: '', type: '', max: '', len: '', wid: '', ht: '',
-    cold: false, haz: false, purpose: '',
+    cold: false, haz: false, purpose: '', purposeOther: '',
   }));
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({});
 
@@ -166,6 +173,7 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
       e.ht = `Only ${freeCm} cm of rack height is left`;
     }
     if (!d.purpose) e.purpose = 'Choose what the shelf is for';
+    else if (d.purpose === 'Other' && !d.purposeOther.trim()) e.purpose = 'Enter what the shelf is for';
 
     setErrors(e);
     const first = Object.keys(e)[0] as keyof Draft | undefined;
@@ -179,7 +187,7 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
       level_no: Number(d.level),
       shelf_type: d.type,
       max_weight_kg: parseFloat(d.max),
-      purpose: d.purpose,
+      purpose: d.purpose === 'Other' ? d.purposeOther.trim() : d.purpose,
       cold_chain: d.cold && r.cold ? 1 : 0,
       hazardous: d.haz && r.haz ? 1 : 0,
       dim_unit: unit,
@@ -385,14 +393,35 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
                 onToggle={() => set({ haz: !d.haz })}
               />
             </Field>
+            {/* "Other" swaps the list for a box you type in, with an × back to
+                the list — the same control the Zone form already uses, down to
+                its classes, so the two forms behave alike. */}
             <Field label="Shelf Purpose" req error={errors.purpose} wide>
-              <EditSelect
-                value={d.purpose}
-                options={PURPOSES}
-                placeholder="Select shelf purpose"
-                invalid={!!errors.purpose}
-                onChange={v => { set({ purpose: v }); clear('purpose'); }}
-              />
+              <div className="znm-purp">
+                {d.purpose === 'Other' ? (
+                  <>
+                    <input
+                      className={`spi-dt-inp znm-purp__other${errors.purpose ? ' is-invalid' : ''}`}
+                      maxLength={60} placeholder="Enter shelf purpose" autoFocus
+                      value={d.purposeOther}
+                      onChange={e => { set({ purposeOther: e.target.value }); clear('purpose'); }}
+                    />
+                    <button type="button" className="znm-purp__back" title="Choose from the list"
+                      aria-label="Choose from the list"
+                      onClick={() => set({ purpose: '', purposeOther: '' })}>
+                      <IcoX size={12} />
+                    </button>
+                  </>
+                ) : (
+                  <EditSelect
+                    value={d.purpose}
+                    options={PURPOSES}
+                    placeholder="Select shelf purpose"
+                    invalid={!!errors.purpose}
+                    onChange={v => { set({ purpose: v }); clear('purpose'); }}
+                  />
+                )}
+              </div>
             </Field>
           </Card>
         </div>
