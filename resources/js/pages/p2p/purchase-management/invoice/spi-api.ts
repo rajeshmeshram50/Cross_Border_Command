@@ -1,7 +1,7 @@
 import type { GstScrutinyRow } from './invoice-draft';
 import axios from 'axios';
 import api from '../../../../api';
-import { PoApiError } from '../order/api/po-api';
+import { PoApiError, type PoPaymentBody, type PoPaymentRow, type PoPaymentsPayload } from '../order/api/po-api';
 import type { ServerPageMeta } from '../../../../hooks/useServerList';
 import type {
   InvoiceInspectionStatus, InvoicePoType, InvoiceRiskLevel, InvoiceRow,
@@ -419,3 +419,42 @@ export function toInvoiceRow(r: SpiListRow): InvoiceRow {
     approvedForPayment: r.approved_unpaid_amount > 0 ? r.approved_unpaid_amount : undefined,
   };
 }
+
+export type SpiPaymentSummary = {
+  spi: { id: number; code: string; base_amount: number; gst_amount: number; grand_total: number; paid_amount: number; balance: number };
+  po: { id: number; code: string; grand_total: number; tds_amount: number; net_payable: number; paid_amount: number; balance_amount: number } | null;
+  requests: Array<{ id: number; status: string }>;
+};
+
+export type SpiRaiseBody = {
+  payment_type: string;
+  percentage?: number;
+  requested_amount: number;
+  reason: string;
+  requested_to: number;
+};
+
+const spiPaymentForm = (b: PoPaymentBody) => {
+  const f = new FormData();
+  f.append('amount', String(b.amount));
+  if (b.bank_name) f.append('bank_name', b.bank_name);
+  if (b.utr_cheque_number) f.append('utr_cheque_number', b.utr_cheque_number);
+  if (b.utr_cheque_date) f.append('utr_cheque_date', b.utr_cheque_date);
+  if (b.proof) f.append('proof', b.proof);
+  return f;
+};
+
+export const spiPaymentApi = {
+  summary: (spiId: number) =>
+    call('SPI payment requests', () => api.get(`/p2p/spi/${spiId}/payment-requests`),
+      (b) => (b as { data: SpiPaymentSummary }).data),
+
+  raise: (spiId: number, body: SpiRaiseBody) =>
+    call('Raise SPI payment request', () => api.post(`/p2p/spi/${spiId}/payment-requests`, body),
+      (b) => (b as { data: PoPaymentsPayload }).data),
+
+  addPayment: (spiId: number, requestId: number, body: PoPaymentBody) =>
+    call('Record SPI payment', () => api.post(`/p2p/spi/${spiId}/payment-requests/${requestId}/payments`,
+      spiPaymentForm(body), { headers: { 'Content-Type': 'multipart/form-data' } }),
+      (b) => (b as { data: { payment: PoPaymentRow; summary: PoPaymentsPayload } }).data),
+};

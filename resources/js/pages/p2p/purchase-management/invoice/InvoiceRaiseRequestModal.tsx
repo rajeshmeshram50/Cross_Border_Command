@@ -7,12 +7,11 @@ import {
   Box, Stat, STAT_ICONS, ICON_X, ICON_PENCIL, PAYMENT_TYPES, PaymentWait, money,
 } from '../order/manage-payment/payment-shared';
 import { InvoiceHeroChips } from './payment-chips';
-import { poApprovalApi, type GstApprover } from '../order/api/po-api';
-import { invoiceBalance, invoicePaidPercent, type InvoiceRow } from './types';
-import type { InvoicePaymentRequest } from './InvoicePaymentsModal';
+import { PoApiError, poApprovalApi, type GstApprover } from '../order/api/po-api';
+import type { InvoiceRow } from './types';
+import type { SpiPayFigures, SpiRequestTotals } from './InvoicePaymentsModal';
+import type { SpiRaiseBody } from './spi-api';
 
-/* No stylesheet of its own: this is the purchase order's own raise form with an
-   SPI where it has a PO, so it wears that form's markup and its CSS. */
 import '../../p2p-detail.css';
 import '../order/manage-payment/manage-payment-requests.css';
 import '../order/manage-payment/raise-payment-request.css';
@@ -31,31 +30,14 @@ const ICON_ALERT = (
 const TYPE_OPTIONS = PAYMENT_TYPES.map(t => ({ value: t, label: t }));
 const REASON_MAX = 300;
 
-/**
- * Request for SPI Payment — raising a new payment request on one invoice.
- *
- * Opened by "Raise New Request" in the footer of Payment Requests History. It
- * is the purchase order's own raise form pointed at an SPI: same hero, same
- * summary, same four fields and reason, same footer recap.
- */
-export default function InvoiceRaiseRequestModal({
-  row, nextId, requested, approvedTotal, pendingAmt, pendingCount, approvedUnpaid,
-  requestCount, available, onSubmit, onClose,
-}: {
+export default function InvoiceRaiseRequestModal({ row, figures, totals, onSubmit, onClose }: {
   row: InvoiceRow;
-  /** The code the new request will carry. Passed in so this form never invents one. */
-  nextId: string;
-  requested: number;
-  approvedTotal: number;
-  pendingAmt: number;
-  pendingCount: number;
-  approvedUnpaid: number;
-  requestCount: number;
-  /** What is still open to request: the net payable less everything already asked for. */
-  available: number;
-  onSubmit: (req: InvoicePaymentRequest) => void;
+  figures: SpiPayFigures;
+  totals: SpiRequestTotals;
+  onSubmit: (body: SpiRaiseBody, approverName: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const { requested, approvedTotal, pendingAmt, pendingCount, approvedUnpaid, requestCount, available } = totals;
   useScrollLock(true, '.mpr-card--raise');
 
   const cardRef = useRef<HTMLDivElement>(null);
@@ -74,8 +56,6 @@ export default function InvoiceRaiseRequestModal({
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
-  /* The real people this request can go to — this branch's staff plus client
-     admins, the same list the purchase order raises against. */
   const [approvers, setApprovers] = useState<GstApprover[]>([]);
   const [loadingApprovers, setLoadingApprovers] = useState(true);
   useEffect(() => {
@@ -96,17 +76,13 @@ export default function InvoiceRaiseRequestModal({
 
   const amount = Math.max(0, Math.round(parseFloat(amtText) || 0));
   const overBudget = amount > available;
-  const balance = invoiceBalance(row);
-  const pctPaid = invoicePaidPercent(row);
+  const { base, gst, extra, total, paid, balance, pctPaid } = figures;
   const complete = balance <= 0;
-  const progPct = row.totalPoAmount > 0 ? Math.round((row.totalPaid / row.totalPoAmount) * 100) : 0;
+  const progPct = total > 0 ? Math.round((paid / total) * 100) : 0;
 
-  /* Percentages are of the net payable — grand total less TDS — so 100% is the
-     whole of what can be released. */
-  const basis = row.netPayable > 0 ? row.netPayable : row.totalPoAmount;
+  const basis = total;
   const pctOf = (v: number) => (basis > 0 ? Math.round((v / basis) * 1000) / 10 : 0);
 
-  /** 0–100 with up to 2 decimals; anything else is refused as it is typed. */
   const fromPct = (v: string) => {
     if (v !== '' && (!/^\d{0,3}(\.\d{0,2})?$/.test(v) || parseFloat(v) > 100)) return;
     setPctText(v);
@@ -114,7 +90,6 @@ export default function InvoiceRaiseRequestModal({
     const a = Number.isNaN(p) || p < 0 ? 0 : Math.round((basis * p) / 100);
     setAmtText(a ? String(a) : '');
   };
-  /** Digits with up to 2 decimals, at most 13 digits before the point. */
   const fromAmt = (v: string) => {
     if (v !== '' && !/^\d{0,13}(\.\d{0,2})?$/.test(v)) return;
     setAmtText(v);
@@ -122,8 +97,6 @@ export default function InvoiceRaiseRequestModal({
     const clean = Number.isNaN(a) || a < 0 ? 0 : a;
     setPctText(clean ? String(pctOf(clean)) : '');
   };
-  /* "Balance Payment" means the balance: picking it fills both fields with what
-     is still open, rather than leaving them blank. */
   const pickType = (t: string) => {
     setType(t);
     if (t === 'Balance Payment' && available > 0) {
@@ -133,7 +106,8 @@ export default function InvoiceRaiseRequestModal({
     }
   };
 
-  const submit = () => {
+  const submit = async () => {
+    if (busy) return;
     if (complete) { setError('This SPI is paid in full — no further payment requests can be raised.'); return; }
     if (available <= 0) {
       setError('The remaining balance is already covered by open requests. Wait for a decision on those before raising another.');
@@ -148,45 +122,38 @@ export default function InvoiceRaiseRequestModal({
     if (!who) { setError('Select who this request goes to before submitting.'); return; }
 
     const pct = parseFloat(pctText);
+    setError('');
     setBusy(true);
-    onSubmit({
-      id: nextId,
-      date: new Date().toISOString().slice(0, 10),
-      type,
-      pct: pct > 0 ? pct : pctOf(amount),
-      amount,
-      approver: who.name,
-      role: [who.department, who.designation].filter(Boolean).join(' · ') || 'Approver',
-      /* Raised, not decided: it joins the list awaiting approval. */
-      status: 'pending',
-      approved: 0,
-      paid: 0,
-    });
+    try {
+      await onSubmit({
+        payment_type: type,
+        percentage: pct > 0 ? pct : undefined,
+        requested_amount: amount,
+        reason: reason.trim(),
+        requested_to: who.id,
+      }, who.name);
+    } catch (e) {
+      setError(e instanceof PoApiError ? e.firstError : 'Could not raise the request — please try again.');
+      setBusy(false);
+    }
   };
 
   const requestStats = useMemo(() => (
     <div className="mpr-stats">
-      <Stat icon={STAT_ICONS.doc} label="Total SPI Amount" value={money(row.totalPoAmount)}
-        sub={`${money(row.netPayable)} net payable`} />
+      <Stat icon={STAT_ICONS.doc} label="Total SPI Amount" value={money(total)}
+        sub={`${money(balance)} still to be released`} />
       <Stat mod="mpr-stat--base" icon={STAT_ICONS.send} label="Total Requested Amount" value={money(requested)}
         sub={`${requestCount} request${requestCount === 1 ? '' : 's'} raised to date`} />
       <Stat mod="mpr-stat--bal" icon={STAT_ICONS.clock} label="Awaiting For Approval" value={money(pendingAmt)}
         sub={`${pendingCount} with the approver now`} />
       <Stat mod="mpr-stat--gst" icon={STAT_ICONS.check} label="Total Approved Amount" value={money(approvedTotal)}
         sub={`${money(approvedUnpaid)} awaiting release`} />
-      <Stat mod="mpr-stat--paid" icon={STAT_ICONS.wallet} label="Total Paid Amount" value={money(row.totalPaid)}
-        sub={`${pctPaid}% of net payable released`} />
+      <Stat mod="mpr-stat--paid" icon={STAT_ICONS.wallet} label="Total Paid Amount" value={money(paid)}
+        sub={`${pctPaid}% of the SPI released`} />
       <Stat mod="mpr-stat--tds" icon={STAT_ICONS.trend} label="Balance Amount" value={money(available)}
         sub={complete ? 'Fully settled' : 'Open to request'} />
     </div>
-  ), [row, requested, requestCount, pendingAmt, pendingCount, approvedTotal, approvedUnpaid, pctPaid, available, complete]);
-
-  /* The invoice's value split, on the same 18% basis the rest of this screen
-     uses until the invoice carries its own figures. */
-  const GST_PCT = 18;
-  const extra = 0;
-  const base = Math.round((row.totalPoAmount - extra) / (1 + GST_PCT / 100));
-  const gst = row.totalPoAmount - extra - base;
+  ), [total, balance, paid, requested, requestCount, pendingAmt, pendingCount, approvedTotal, approvedUnpaid, pctPaid, available, complete]);
 
   return createPortal(
     <div className="spi-mdl-backdrop">
@@ -216,15 +183,15 @@ export default function InvoiceRaiseRequestModal({
           >
             <div className="mpr-stats">
               <Stat icon={STAT_ICONS.base} label="SPI Base Amount (Without GST)"
-                value={money(base)} sub="Pre-tax order value" />
+                value={money(base)} sub="Pre-tax invoice value" />
               <Stat mod="mpr-stat--base" icon={STAT_ICONS.trend} label="GST Amount"
-                value={money(gst)} sub={`${GST_PCT}% on the base amount`} />
+                value={money(gst)} sub={base > 0 ? `${Math.round((gst / base) * 1000) / 10}% on the base amount` : 'No GST'} />
               <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges"
-                value={money(extra)} sub={extra > 0 ? 'Handling & documentation' : 'None on this invoice'} />
+                value={money(extra)} sub={extra > 0 ? 'Freight, packing & other charges' : 'None on this invoice'} />
               <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label="Total SPI Amount (Grand Total)"
-                value={money(row.totalPoAmount)} sub={`${money(row.netPayable)} net payable`} />
+                value={money(total)} sub={figures.tds > 0 ? `${money(figures.tds)} TDS on the PO` : 'No TDS withheld'} />
               <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
-                value={money(row.totalPaid)} sub={`${pctPaid}% of net payable released`} />
+                value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
               <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"
                 value={money(balance)} sub={complete ? 'Settled in full' : 'Still to be released'} />
             </div>
@@ -232,7 +199,7 @@ export default function InvoiceRaiseRequestModal({
 
           <Box
             label="Request" title="Payment Request Details"
-            sub={`${money(row.totalPaid)} of ${money(row.totalPoAmount)} paid · ${progPct}% · ${money(available)} open for this request`}
+            sub={`${money(paid)} of ${money(total)} paid · ${progPct}% · ${money(available)} open for this request`}
             icon={ICON_PENCIL}
             className="rpr-details-box"
             headerExtra={<div className="rpr-hdstats">{requestStats}</div>}
@@ -310,7 +277,7 @@ export default function InvoiceRaiseRequestModal({
           </div>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={busy}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm mpr-raise" onClick={submit} disabled={busy}>
+            <button type="button" className="spi-mdl-confirm mpr-raise" onClick={() => void submit()} disabled={busy}>
               {busy ? <><span className="mpr-btnspin" aria-hidden="true" />Submitting…</> : 'Submit Payment Request'}
             </button>
           </div>
