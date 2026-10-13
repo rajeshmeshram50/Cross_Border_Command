@@ -163,8 +163,9 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
   const [ink, rest] = RING[ringState];
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close — the dialog closes only through the X or
+       Cancel, matching every other dialog in Inventory Management. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
         className="spi-mdl rks-mdl whm-page"
         role="dialog" aria-modal="true" aria-labelledby="rks-title"
