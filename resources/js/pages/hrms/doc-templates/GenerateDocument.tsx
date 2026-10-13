@@ -1044,10 +1044,19 @@ function Step2(props: {
                 <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: gridCols, gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
                   <div>Sr No</div>
                   <div>Employee</div>
+                  {/* The name is clamped to two lines with the full text on
+                      hover. Unclamped, one 45-character field name wrapped
+                      over four lines and set the height of the whole band —
+                      which the frozen Sr No and Employee cells stretch to, so
+                      they read as a tall empty box rather than two headings.
+                      The type hint sits on its own line so clamping the name
+                      can never eat it. */}
                   {customFields.map(cf => (
-                    <div key={cf.id}>
-                      {cf.name} <span style={{ color: '#ef4444' }}>*</span>{' '}
-                      <span style={{ fontWeight: 600, color: '#9ca3af' }}>({cf.type})</span>
+                    <div key={cf.id} className="gd-th" title={`${cf.name} (${cf.type})`}>
+                      <span className="gd-th-name">
+                        {cf.name} <span style={{ color: '#ef4444' }}>*</span>
+                      </span>
+                      <span className="gd-th-type">({cf.type})</span>
                     </div>
                   ))}
                 </div>
@@ -1567,6 +1576,25 @@ function ScopedStyles() {
         background: rgba(239,68,68,0.10) !important;
       }
 
+      /* Header cells line up at the top, so a two-line name and a one-line one
+         start on the same baseline instead of floating mid-band. */
+      .gd-page .gd-vars-table .gd-table-head { align-items: start; }
+      .gd-page .gd-th { min-width: 0; }
+      .gd-page .gd-th-name {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        /* anywhere, not break-word: these names arrive as one unbroken run of
+           characters with nowhere legal to break, and without it the clamp has
+           a single very long line to work with and overflows the column
+           instead of ellipsing. */
+        overflow-wrap: anywhere;
+      }
+      .gd-page .gd-th-type { display: block; font-weight: 600; color: #9ca3af; margin-top: 2px; }
+      [data-bs-theme="dark"] .gd-page .gd-th-type,
+      [data-layout-mode="dark"] .gd-page .gd-th-type { color: rgba(255,255,255,0.45); }
+
       /* Sr No + Employee stay put while the field columns scroll — a template
          with ten custom fields is ~2000px wide, and without this you end up
          typing into a row with no idea whose it is. */
@@ -1577,7 +1605,7 @@ function ScopedStyles() {
       .gd-page .gd-vars-table .gd-table-head > *:nth-child(1),
       .gd-page .gd-vars-table .gd-table-head > *:nth-child(2) { background: #f5f3ff; }
       .gd-page .gd-vars-table .gd-row > *:nth-child(1),
-      .gd-page .gd-vars-table .gd-row > *:nth-child(2) { background: #fff; }
+      .gd-page .gd-vars-table .gd-row > *:nth-child(2) { background: #fff; transition: background 140ms ease; }
       /* The shadow only appears once there is something scrolled under it. */
       .gd-page .gd-vars-table .gd-table-head > *:nth-child(2),
       .gd-page .gd-vars-table .gd-row > *:nth-child(2) { box-shadow: 6px 0 8px -6px rgba(15,23,42,0.12); }
@@ -1585,6 +1613,43 @@ function ScopedStyles() {
       [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(2),
       [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(1),
       [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(2) { background: #1f2937; }
+      /* The two sticky HEADER cells were missing from the dark override above,
+         so they kept the light #f5f3ff and sat as two near-white blocks over
+         Sr No and Employee.
+         Opaque, and not the band's own dark colour: the band is
+         rgba(99,102,241,0.12), which is fine for a strip lying on the card but
+         not for a cell that has to paint over the columns scrolling beneath
+         it — a translucent sticky cell shows them straight through. This is
+         that same indigo already flattened onto #1f2937, so it matches the
+         band while staying solid. */
+      [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-table-head > *:nth-child(1),
+      [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-table-head > *:nth-child(2),
+      [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-table-head > *:nth-child(1),
+      [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-table-head > *:nth-child(2) { background: #27304d; }
+      /* Hover has to reach the frozen columns too.
+         .gd-row:hover tints the ROW, but the two sticky cells carry their own
+         opaque background and so kept their resting colour while everything
+         to the right of them changed — the row came up in patches. They take
+         the hover colour explicitly, flattened rather than translucent for the
+         same reason their resting colour is: a see-through sticky cell shows
+         the columns sliding underneath it. #293251 is the dark hover indigo
+         already composited onto #1f2937. */
+      .gd-page .gd-vars-table .gd-row:hover > *:nth-child(1),
+      .gd-page .gd-vars-table .gd-row:hover > *:nth-child(2) { background: #eef2ff; }
+      [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-row:hover > *:nth-child(1),
+      [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-row:hover > *:nth-child(2),
+      [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-row:hover > *:nth-child(1),
+      [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-row:hover > *:nth-child(2) { background: #293251; }
+
+      /* No divider shadow on dark. The light card gets one because white on
+         white needs an edge; here the frozen cells already sit on a different
+         colour from the scrolling area, so the shadow added nothing — and a
+         black shadow on a dark surface does not fall off softly, it reads as
+         a band whose own edge draws a hard line beside the employee name. */
+      [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-table-head > *:nth-child(2),
+      [data-bs-theme="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(2),
+      [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-table-head > *:nth-child(2),
+      [data-layout-mode="dark"] .gd-page .gd-vars-table .gd-row > *:nth-child(2) { box-shadow: none; }
 
       /* Without this the browser's own focus ring shows — a hard black outline
          that looked like a validation error on a field the user just clicked. */

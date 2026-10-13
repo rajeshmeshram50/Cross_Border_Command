@@ -4018,7 +4018,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   <button
     type="button"
     className="onb-init-btn-ghost"
+    /* formLocked too. The busy veil covers .onb-init-body only, so while a
+       stage's data was loading these footer buttons sat outside it -- neither
+       dimmed nor disabled -- and could be clicked straight through the load.
+       (QA #20) */
     disabled={
+      formLocked ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving)
@@ -4040,6 +4045,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     }
     disabled={
       readOnly ||
+      formLocked ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving) ||
@@ -4065,6 +4071,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     disabled={
       readOnly ||
       nextLoading ||
+      formLocked ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving)
@@ -4189,7 +4196,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       <button
         type="button"
         className="onb-init-btn-complete"
-        disabled={nextLoading || blocked}
+        /* formLocked too — this is the button the bug reaches: once five
+           stages are done you are on stage 6, where this replaces Next
+           Stage, and it was clickable while the stage data was still
+           loading. (QA #20) */
+        disabled={nextLoading || blocked || formLocked}
         style={
           nextLoading
             ? { opacity: 0.85, cursor: 'progress' }

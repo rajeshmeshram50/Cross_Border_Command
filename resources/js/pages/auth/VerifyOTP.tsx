@@ -195,7 +195,10 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
           <div className="pt-2">
             <button
               disabled={loading}
-              className="w-full h-14 rounded-full bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+              /* rounded-[999px] — see ForgotPassword: Tailwind 4's
+                 rounded-full loses to the Velzon `button { border-radius: 0 }`
+                 reset, leaving a square button mid-flow. */
+              className="w-full h-14 rounded-[999px] bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
               type="submit"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : null}

@@ -106,7 +106,13 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
           <div className="pt-2">
             <button
               disabled={isDisabled}
-              className="w-full h-14 rounded-full bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              /* rounded-[999px], not rounded-full. Tailwind 4 compiles
+                 rounded-full to `border-radius: 3.40282e38px`, and the Velzon
+                 bundle carries a bare `button { border-radius: 0 }` — where
+                 that scientific-notation value is dropped the reset wins and
+                 the button renders square. A plain 999px is what the login
+                 page's own .kx-submit uses, so the two now match. */
+              className="w-full h-14 rounded-[999px] bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               type="submit"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : <Mail size={18} />}

@@ -1621,7 +1621,15 @@ export default function PublicOnboarding() {
           the wave/notch were rendering as tall vertical stripes
           extending way above + below the card. */}
       <div className="onb-shell">
-      <div className="onb-layout">
+      {/* Nothing is operable while the submit is in flight.
+          The Submit button disabled itself, but every field, the step rail and
+          PREVIOUS stayed live, so the form could be edited after the payload
+          had already been sent — what was saved and what was on screen then
+          disagreed. `inert` covers the whole pane in one attribute and,
+          unlike pointer-events, takes focus and the keyboard with it, so Tab
+          and typing are stopped too. setSubmitting(false) runs in a `finally`,
+          so a failed submit always hands the form back. */}
+      <div className="onb-layout" inert={submitting}>
         {/* SVG wave silhouette extending the sidebar's blue color into
             the form area along an S-curve. The two bulges + middle
             concave dent recreate the reference template's distinctive

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ComingSoon from '../../components/ui/ComingSoon';
 import { Card, CardBody, Col, Row, Modal, ModalBody, ModalFooter } from 'reactstrap';
 import { PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
@@ -344,7 +345,18 @@ function HeroChip({ icon, text }: { icon: string; text: string }) {
   );
 }
 
+/* The dashboard proper is still being designed, so the route shows the shared
+ * ComingSoon placeholder for now. The real implementation is left intact below
+ * as `EmployeeDashboardAnalytics` — delete this wrapper and re-export it to
+ * bring the analytics back; nothing else has to change. Same pattern as
+ * ClientDashboard, BranchDashboard and AdminDashboard. */
 export default function EmployeeDashboard() {
+  return (
+    <ComingSoon title="Your dashboard is being rebuilt" />
+  );
+}
+
+function EmployeeDashboardAnalytics() {
   const { user } = useAuth();
   const ct = useChartTheme();
   const [data, setData] = useState<OverviewData | null>(null);

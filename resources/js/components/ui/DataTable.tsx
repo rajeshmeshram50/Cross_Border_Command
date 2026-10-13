@@ -146,6 +146,23 @@ const bottomReserve = (): number => {
   return fh > 0 ? fh + 8 : 15;
 };
 
+/** How far down the VIEWPORT the card starts, for "the space left below it".
+ *
+ *  getBoundingClientRect().top is measured against the viewport, so on a
+ *  scrolled page a card whose top has gone above the screen reports a NEGATIVE
+ *  number — and `innerHeight - top` then comes out larger than the screen
+ *  itself. The card gets floored to a height nothing on the page justifies,
+ *  and the extra lands as a band of white between the last row and the pager.
+ *
+ *  It shows up when the rows-per-page goes DOWN after being high: 50 rows make
+ *  the page long enough to scroll, and the re-fit on the way back to 10 is
+ *  measured from that scrolled position.
+ *
+ *  Clamped into the viewport, the worst case is "the whole screen", which is
+ *  what the floor was ever meant to mean. */
+const viewportTop = (el: HTMLElement): number =>
+  Math.max(0, Math.min(el.getBoundingClientRect().top, window.innerHeight));
+
 const alignToCss = (a?: DataTableAlign): 'left' | 'center' | 'right' =>
   a === 'center' ? 'center' : a === 'right' || a === 'end' ? 'right' : 'left';
 const containsFilter: FilterFn<any> = (row, _columnId, value) => {
@@ -369,7 +386,7 @@ export default function DataTable<T extends object>({
   const fitRows = useCallback(() => {
     const el = rootRef.current;
     if (!el || !autoFitRows || manualSize !== null) return;
-    const top = el.getBoundingClientRect().top;
+    const top = viewportTop(el);
     const h = Math.max(240, window.innerHeight - top - bottomReserve());
     const px = (sel: string) => (el.querySelector(sel) as HTMLElement | null)?.offsetHeight || 0;
     const rowH = px('.dt-table tbody tr:not(.dt-empty-row)') || 44;
@@ -476,17 +493,23 @@ export default function DataTable<T extends object>({
      *  component's own decision and is bounded by `minAutoRows`. A table with a
      *  free-standing page size keeps the flat floor and its inner scrollbar —
      *  pinning 50 rows open would turn a short window into a very long page. */
-    const rowFloor = (): number => {
-      if (!autoFitRows) return 240;
+    /** Exactly as tall as what is on the page: the fixed chrome, the column
+     *  header, and the rows of the current page. Returns null when there is
+     *  nothing to measure yet (no rows, first paint), so callers fall back. */
+    const contentHeight = (): number | null => {
       const scrollBox = el.querySelector('.dt-scroll') as HTMLElement | null;
       const rowEl = el.querySelector('.dt-table tbody tr:not(.dt-empty-row)') as HTMLElement | null;
-      if (!scrollBox || !rowEl) return 240;
+      if (!scrollBox || !rowEl) return null;
       const chrome = el.offsetHeight - scrollBox.offsetHeight;
       const hBar = Math.max(0, scrollBox.offsetHeight - scrollBox.clientHeight);
       const headH = (el.querySelector('.dt-table thead') as HTMLElement | null)?.offsetHeight || 0;
       const rowH = rowEl.offsetHeight || 44;
       const onPage = el.querySelectorAll('.dt-table tbody tr:not(.dt-empty-row)').length;
-      return Math.max(240, chrome + hBar + headH + onPage * rowH);
+      return chrome + hBar + headH + onPage * rowH;
+    };
+    const rowFloor = (): number => {
+      if (!autoFitRows) return 240;
+      return Math.max(240, contentHeight() ?? 240);
     };
 
     const size = () => {
@@ -514,7 +537,7 @@ export default function DataTable<T extends object>({
         }
         return;
       }
-      const top = el.getBoundingClientRect().top;
+      const top = viewportTop(el);
       /* The shortest the card may be.
        *
        * A flat 240px assumed the rows would always get a usable share of it,
@@ -534,15 +557,58 @@ export default function DataTable<T extends object>({
        * where they do not, the card grows past the viewport and the PAGE
        * scrolls — the same resolution the manual branch below already relies
        * on when a picked size is taller than the window. */
-      const h = `${Math.max(rowFloor(), window.innerHeight - top - bottomReserve())}px`;
+      /* A rows-per-page the user picked is an instruction about how many rows
+       * to show, so the card is exactly as tall as those rows and no taller.
+       * Pick 10 where 20 would fit and you get ten rows and a pager under
+       * them, not ten rows and a band of white.
+       *
+       * This reverses the floor added for QA #59, which padded the card down
+       * to the viewport so a short page would not leave a gap between the
+       * pager and the page footer. QA has since filed the padding itself as
+       * the defect, four times over (Employee, Employee Onboarding, Leave,
+       * Holiday: "should display only 10 records without unnecessary blank
+       * space"). Both complaints are about empty space; this keeps it outside
+       * the card, on the page background, rather than inside a white panel
+       * where it reads as the table being broken.
+       *
+       * A picked size TALLER than the window still grows past it and lets the
+       * page scroll — natural height does that on its own. */
       if (manualSize !== null) {
-        if (el.style.minHeight === h && !el.style.height) return;
+        /* Measured, not released. Clearing the height outright would let
+         * `.dt-scroll` — `flex: 1; min-height: 0` — resolve against an
+         * auto-height parent, where there is no free space to grow into and
+         * nothing stopping it at zero: the rows would vanish. Pinning the card
+         * to the height its own rows need keeps that flex child doing exactly
+         * what it does today, with no leftover for it to absorb. */
+        /* Nothing to measure means no rows — a filter that matched nothing, or
+         * the first paint. The empty state still needs room to be read, so it
+         * falls back to the flat floor the card used before. */
+        const mh = `${contentHeight() ?? 240}px`;
+        if (el.style.height === mh && !el.style.minHeight) return;
         el.style.flex = 'none';
-        el.style.height = '';
-        el.style.maxHeight = '';
-        el.style.minHeight = h;
+        el.style.minHeight = '';
+        el.style.height = mh;
+        el.style.maxHeight = mh;
         return;
       }
+      /* The card is never taller than the rows it holds.
+       *
+       * Under the automatic fit the row count is measured to fill the card, so
+       * the two normally agree and this clamp does nothing. They come apart
+       * when the measurement is wrong: fitRows takes ONE reading per viewport
+       * and then sets settledRef, so a reading taken while the page above is
+       * still settling sticks — ten rows fitted for a card the viewport sizes
+       * at fourteen, and the four rows' worth of difference shows as a band of
+       * white between the last row and the pager. It is also what is left when
+       * a page simply has fewer records than fit.
+       *
+       * Clamping here rather than re-measuring: fitRows derives its count from
+       * the VIEWPORT (window.innerHeight - top), not from the card, so a
+       * shortened card cannot feed back into the row count, and a resize still
+       * grows the table to the new height. */
+      const viewportH = Math.max(rowFloor(), window.innerHeight - top - bottomReserve());
+      const ch = contentHeight();
+      const h = `${ch !== null ? Math.min(viewportH, ch) : viewportH}px`;
       if (el.style.height === h && !el.style.minHeight) return;
       el.style.flex = 'none';
       el.style.minHeight = '';
@@ -562,7 +628,11 @@ export default function DataTable<T extends object>({
       window.clearTimeout(t);
       ro?.disconnect();
     };
-  }, [fitToViewport, loading, manualSize, autoFitRows, pageSize]);
+    /* rows.length and pageIndex are dependencies because a picked size now
+       sizes the card to the rows actually on the page: the LAST page usually
+       holds fewer than a full page, and with the card pinned the observer on
+       the parent sees no size change to react to. */
+  }, [fitToViewport, loading, manualSize, autoFitRows, pageSize, pageIndex, rows.length]);
 
   useEffect(() => {
     if (!autoFitRows) return;

@@ -604,12 +604,11 @@ function ViewButton({ row, onOpen }: { row: ApiRegularization; onOpen: (r: ApiRe
       data-tooltip-pos="left"
       aria-label="View regularization details"
       onClick={() => onOpen(row)}
-      className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold ep-fs-11"
-      style={{
-        height: 28, padding: '0 11px',
-        background: '#eef2ff', color: '#4338ca',
-        border: '1px solid #c7d2fe', cursor: 'pointer',
-      }}
+      /* Colours live in CSS, not here. Inline styles cannot be overridden by a
+         stylesheet without !important, so this pill stayed on its light
+         indigo in dark mode while every other cell on the row darkened with
+         the table. (QA #36) */
+      className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold ep-fs-11 att-reg-view"
     >
       <i className="ri-eye-line" />View
     </button>

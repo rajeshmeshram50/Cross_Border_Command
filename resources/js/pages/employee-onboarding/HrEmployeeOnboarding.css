@@ -275,7 +275,7 @@
 
         .onb-cl-summary { margin-left: auto; padding: 6px 14px; border-radius: 999px; font-size: 11.5px; font-weight: 700; background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.22); }
 
-        .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+        .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
         [data-bs-theme="dark"] .onb-cl-body { background: #1f2630; }
 
         .onb-stage { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
@@ -616,7 +616,15 @@
         .onb-init-body { display: flex; gap: 0; background: #f7f5fc; max-height: 64vh; overflow: hidden; }
         [data-bs-theme="dark"] .onb-init-body { background: #1f2630; }
 
-        .onb-init-side { width: 270px; flex-shrink: 0; padding: 14px 14px 14px 18px; overflow-y: auto; border-right: 1px solid #ece9f6; }
+        /* overscroll-behavior: contain on both panes.
+           This dialog has two scrollers side by side inside a 64vh box, and
+           reactstrap locks `body` -- but the page in this app scrolls on
+           .main-content, so that lock frees nothing. Reaching the end of
+           either pane therefore handed the wheel to the page BEHIND the
+           dialog, which scrolled under it: a scroll, a stall at the boundary,
+           then the whole screen moving. That hand-off is what reads as lag.
+           `contain` ends the gesture at the pane that owns it. */
+        .onb-init-side { width: 270px; flex-shrink: 0; padding: 14px 14px 14px 18px; overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid #ece9f6; }
         [data-bs-theme="dark"] .onb-init-side { border-color: var(--vz-border-color); }
         .onb-init-side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
         .onb-init-side-title { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; text-transform: uppercase; color: var(--vz-secondary-color); margin: 0; }
@@ -643,7 +651,7 @@
         .onb-init-stage-pct { font-weight: 700; color: var(--vz-secondary-color); }
         .onb-init-stage-card.is-active .onb-init-stage-pct { color: #7c3aed; }
 
-        .onb-init-main { flex: 1; min-width: 0; padding: 16px 22px; overflow-y: auto; }
+        .onb-init-main { flex: 1; min-width: 0; padding: 16px 22px; overflow-y: auto; overscroll-behavior: contain; }
         .onb-init-stage-banner { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
         [data-bs-theme="dark"] .onb-init-stage-banner { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-init-banner-icon { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
