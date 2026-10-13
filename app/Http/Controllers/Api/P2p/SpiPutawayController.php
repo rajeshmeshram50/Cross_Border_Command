@@ -99,11 +99,19 @@ class SpiPutawayController extends Controller
             $spi  = $this->findSpi($id);
             $data = $request->validate(['warehouse_id' => ['required', 'integer']]);
 
-            /* Scoped to the invoice's client: an id alone is not proof of
-               ownership, and this column has no foreign key behind it. */
+            /* Scoped to the invoice's client AND BRANCH: an id alone is not
+               proof of ownership, and this column has no foreign key behind it.
+
+               The branch matters as much as the client. A warehouse is
+               branch-wise and so are the zones, racks and shelves under it, so
+               a warehouse from another branch would send the scanner looking
+               for locations this invoice's branch does not own. A null
+               branch_id is a client-wide site, which belongs to every branch —
+               the same rule BaseInventoryController::scopeTenant reads by. */
             $wh = DB::table('inventory_warehouses')
                 ->where('id', $data['warehouse_id'])
                 ->where('client_id', $spi->client_id)
+                ->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $spi->branch_id))
                 ->first();
             if (!$wh) {
                 abort(response()->json(['status' => false, 'message' => 'That warehouse does not exist.'], 422));
