@@ -250,26 +250,23 @@ export default function RackShelvesModal({ rack: r, onClose }: {
             </table>
           </div>
 
-          {/* The app's own pager, as every other list in the flow uses. No
-              rows-per-page: five to a page is the design's figure here, and a
-              chooser would be a control whose only setting is the one it
-              already has. */}
+        </div>
+
+        {/* One footer row, as the design has it: the count, the rack-height
+            fact and the page controls all share the line with Cancel, rather
+            than a pager band stacked on top of a second footer bar. The app's
+            own pager still does the counting — it just gives up its band and
+            drops its controls while everything fits on one page. */}
+        <div className="spi-mdl-foot rks-foot">
           <WorklistPager
             className="wl-teal rks-pager"
             total={shelves.length}
             page={page}
             pageSize={PAGE_SIZE}
             onPage={setPage}
+            note={`${freeCm} cm of rack height free`}
+            hideNavWhenSinglePage
           />
-        </div>
-
-        <div className="spi-mdl-foot rks-foot">
-          {/* The footer keeps the one fact the pager cannot know: how much of
-              the rack is still unspoken for. Everything about which rows are
-              on screen is the pager's job now. */}
-          <span className="rks-foot__info">
-            {freeCm} cm of rack height free
-          </span>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
           </div>

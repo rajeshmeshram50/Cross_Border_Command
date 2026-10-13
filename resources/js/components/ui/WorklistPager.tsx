@@ -5,6 +5,7 @@
  * violet band. Shares the global `.tc-wl-*` pill/button classes (app.css);
  * uses the non-bleed `.wl-pager` band so it drops cleanly into any card.
  */
+import type { ReactNode } from 'react';
 import RowsPerPageSelect from './RowsPerPageSelect';
 
 interface Props {
@@ -20,22 +21,31 @@ interface Props {
   onPageSize?: (n: number) => void;
   pageSizeOptions?: number[];
   className?: string;
+  /** Appended to the "Showing…" line after a middot — a fact about the whole
+   *  set that belongs beside the count rather than on a second line. */
+  note?: ReactNode;
+  /** Drop the page controls when everything already fits on one page, so the
+   *  footer doesn't carry a "1 / 1" and two dead arrows. */
+  hideNavWhenSinglePage?: boolean;
 }
 
 export default function WorklistPager({
   total, page, pageSize, onPage, onPageSize, pageSizeOptions = [10, 25, 50], className,
+  note, hideNavWhenSinglePage,
 }: Props) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(Math.max(1, page), pages);
   const start = (safePage - 1) * pageSize;
+  const showNav = !hideNavWhenSinglePage || pages > 1;
   return (
     <div className={`wl-pager${className ? ` ${className}` : ''}`}>
       <span className="tc-wl-info">
         {total === 0
           ? 'No records'
           : <>Showing <span className="tc-wl-hl">{start + 1}–{Math.min(start + pageSize, total)}</span> of <span className="tc-wl-hl">{total}</span></>}
+        {note != null && <> · {note}</>}
       </span>
-      <div className="tc-wl-right">
+      {showNav && <div className="tc-wl-right">
         {onPageSize && (
           <span className="tc-wl-rows">
             Rows per page:
@@ -51,7 +61,7 @@ export default function WorklistPager({
             <i className="ri-arrow-right-s-line"></i>
           </button>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
