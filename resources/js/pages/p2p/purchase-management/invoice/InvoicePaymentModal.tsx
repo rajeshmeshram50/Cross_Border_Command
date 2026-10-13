@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import {
@@ -6,39 +6,29 @@ import {
 } from '../order/manage-payment/payment-shared';
 import { InvoiceHeroChips } from './payment-chips';
 import { downloadFile } from '../../../../utils/downloadFile';
-import { invoiceBalance, invoicePaidPercent, type InvoiceRow } from './types';
-import type { InvoicePaymentRequest } from './InvoicePaymentsModal';
+import { useToast } from '../../../../contexts/ToastContext';
+import type { InvoiceRow } from './types';
+import type { InvoicePaymentRequest, SpiPayFigures } from './InvoicePaymentsModal';
 import type { ReleasePayment } from '../order/manage-payment/MakePoPaymentModal';
+import { PoApiError, poPaymentApi, type PoPaymentBody, type PoPaymentRow } from '../order/api/po-api';
+import { spiPaymentApi } from './spi-api';
 
-/* No stylesheet of its own: this is the purchase order's payment screen with
-   an SPI where it has a PO, so it wears that screen's markup and its CSS. */
 import '../../p2p-detail.css';
 import '../order/manage-payment/manage-payment-requests.css';
 import '../order/manage-payment/make-po-payment.css';
 
-const DeductTdsModal = lazy(() => import('../order/manage-payment/DeductTdsModal'));
-/* Add New Payment and the row's pencil open the same dialog — the purchase
-   order's own, which titles itself "Edit Payment" when handed an `initial`.
-   Its props are plain values, not an OrderRow, so it needed no changes. */
 const AddPaymentModal = lazy(() => import('../order/manage-payment/AddPaymentModal'));
 
-/**
- * The releases already recorded against a request.
- *
- * Derived from the request rather than hard-coded, so this table agrees with
- * the Paid Amount the requests list is already showing for it. The bank and
- * reference are stand-ins until the endpoint exists; the figure is real.
- */
-function releasesFor(request: InvoicePaymentRequest): ReleasePayment[] {
-  if (request.paid <= 0) return [];
-  return [{
-    amount: request.paid,
-    bank: 'Axis Bank',
-    utr: 'CHQ119852',
-    date: request.date,
-    file: `Payment_Proof_${request.id}.pdf`,
-  }];
-}
+const toRelease = (p: PoPaymentRow): ReleasePayment => ({
+  id: p.id, amount: p.amount, bank: p.bank_name ?? '', utr: p.utr_cheque_number ?? '',
+  date: p.utr_cheque_date ?? '', file: p.proof_name ?? undefined, fileUrl: p.proof_url,
+  zohoSynced: !!p.zoho_synced, zohoError: p.zoho_error ?? null,
+});
+
+const payBody = (p: ReleasePayment): PoPaymentBody => ({
+  amount: p.amount, bank_name: p.bank || undefined, utr_cheque_number: p.utr || undefined,
+  utr_cheque_date: p.date || undefined, proof: p.upload ?? null,
+});
 
 const ic = {
   viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2,
@@ -60,7 +50,6 @@ const REQ_STATUS = {
   declined: { cls: 'mpr-st--stop', label: 'Declined' },
 } as const;
 
-/** One labelled read-only value in the request grid. */
 function Field({ label, mod, children }: { label: string; mod?: string; children: ReactNode }) {
   return (
     <div className={`cpay-f${mod ? ' ' + mod : ''}`}>
@@ -70,19 +59,21 @@ function Field({ label, mod, children }: { label: string; mod?: string; children
   );
 }
 
-/**
- * Payment Against Request ID — releasing against one payment request.
- *
- * Opened by the eye on a row of Payment Requests History. It is the purchase
- * order's own payment screen pointed at an SPI: same hero, same read-only
- * request grid, same summary, same release table.
- */
-export default function InvoicePaymentModal({ row, request, onClose }: {
+export default function InvoicePaymentModal({
+  row, request, spiId, poId, figures, onChanged, onOpenTds, tdsSaved, onClose,
+}: {
   row: InvoiceRow;
   request: InvoicePaymentRequest;
+  spiId: number;
+  poId: number;
+  figures: SpiPayFigures;
+  onChanged: () => Promise<void> | void;
+  onOpenTds?: () => void;
+  tdsSaved: boolean;
   onClose: () => void;
 }) {
   useScrollLock(true, '.mpr-card--pay');
+  const toast = useToast();
 
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -92,37 +83,74 @@ export default function InvoicePaymentModal({ row, request, onClose }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const [releases, setReleases] = useState<ReleasePayment[]>(() => releasesFor(request));
-  /* Which release the dialog is on: `true` for a new one, an index to edit it.
-     One piece of state rather than two, so the two can never both be open. */
-  const [form, setForm] = useState<true | number | null>(null);
-  const [tds, setTds] = useState(0);
-  const [tdsOpen, setTdsOpen] = useState(false);
+  const [releases, setReleases] = useState<ReleasePayment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyIdx, setBusyIdx] = useState<number | null>(null);
 
-  const balance = invoiceBalance(row);
-  const pctPaid = invoicePaidPercent(row);
-  const GST_PCT = 18;
-  const extra = 0;
-  const base = Math.round((row.totalPoAmount - extra) / (1 + GST_PCT / 100));
-  const gst = row.totalPoAmount - extra - base;
+  const loadReleases = useCallback(async () => {
+    try {
+      const res = await poPaymentApi.payments(poId, request.rid);
+      setReleases(res.payments.map(toRelease));
+    } catch (e) {
+      toast.error('Could not load the payment history', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [poId, request.rid, toast]);
+  useEffect(() => { void loadReleases(); }, [loadReleases]);
+
+  const afterChange = async () => {
+    await loadReleases();
+    await onChanged();
+  };
+  const rethrowFieldErrors = (e: unknown) => {
+    if (e instanceof PoApiError && Object.keys(e.fieldErrors ?? {}).length) throw e;
+  };
+  const failToast = (what: string, e: unknown) =>
+    toast.error(what, e instanceof PoApiError ? e.firstError : 'Please try again.');
+
+  const record = async (p: ReleasePayment) => {
+    try {
+      await spiPaymentApi.addPayment(spiId, request.rid, payBody(p));
+      toast.success('Payment recorded', `${money(p.amount)} released against ${request.id}.`);
+      await afterChange();
+      return true;
+    } catch (e) { rethrowFieldErrors(e); failToast('Could not record the payment', e); return false; }
+  };
+  const update = async (i: number, p: ReleasePayment) => {
+    const target = releases[i];
+    if (!target?.id) return false;
+    try {
+      await poPaymentApi.updatePayment(poId, request.rid, target.id, payBody(p));
+      toast.success('Payment updated', `${request.id} now shows ${money(p.amount)} for this entry.`);
+      await afterChange();
+      return true;
+    } catch (e) { rethrowFieldErrors(e); failToast('Could not update the payment', e); return false; }
+  };
+  const remove = async (i: number) => {
+    const target = releases[i];
+    if (!target?.id || busyIdx !== null) return;
+    setBusyIdx(i);
+    try {
+      await poPaymentApi.deletePayment(poId, request.rid, target.id);
+      toast.success('Payment removed', `${money(target.amount)} is back in the balance.`);
+      await afterChange();
+    } catch (e) { failToast('Could not delete the payment', e); } finally { setBusyIdx(null); }
+  };
+  const [form, setForm] = useState<true | number | null>(null);
+  const { base, gst, extra, total, paid, balance, pctPaid, tds } = figures;
 
   const approvedRequest = request.status === 'approved';
   const paidHere = releases.reduce((n, r) => n + r.amount, 0);
   const room = approvedRequest ? Math.max(0, request.approved - paidHere) : 0;
   const settled = approvedRequest && request.approved > 0 && room <= 0;
-  /* Nothing can be released against a request that was never approved. A
-     settled one still allows its own releases to be corrected — the dialog
-     adds the row's own amount back when working out what is payable, which
-     is what the design shows on a fully-released request. */
   const canEdit = approvedRequest;
 
   return createPortal(
-    <div className="spi-mdl-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="spi-mdl-backdrop">
       {form !== null && (
         <Suspense fallback={null}>
           <AddPaymentModal
-            /* Remounts between rows, so the fields reload from the row being
-               edited instead of keeping the previous one's values. */
             key={form === true ? 'new' : form}
             requestId={request.id}
             supplier={row.supplierName}
@@ -130,15 +158,12 @@ export default function InvoicePaymentModal({ row, request, onClose }: {
             spiNumber={row.invoiceNo}
             spiCount={1}
             approved={request.approved}
-            /* Everything released so far, the row being edited included: the
-               dialog adds `initial.amount` back on itself when working out
-               what is payable, so subtracting it here counted it twice. */
             paid={paidHere}
             initial={form === true ? undefined : releases[form]}
             onClose={() => setForm(null)}
-            onSave={p => {
-              setReleases(rs => (form === true ? [...rs, p] : rs.map((r, n) => (n === form ? p : r))));
-              setForm(null);
+            onSave={async p => {
+              const ok = form === true ? await record(p) : await update(form, p);
+              if (ok !== false) setForm(null);
             }}
           />
         </Suspense>
@@ -201,34 +226,34 @@ export default function InvoicePaymentModal({ row, request, onClose }: {
           <Box
             label="Summary" title="SPI Payment Details Summary"
             sub="How this SPI's value is made up and where it stands today · read-only"
-            headerExtra={(
+            headerExtra={onOpenTds ? (
               <div className="mpr-tds" onClick={e => e.stopPropagation()}>
                 <button
                   type="button"
-                  className={`mpr-tdsbtn${tds > 0 ? ' mpr-tdsbtn--edit' : ''}`}
-                  title={tds > 0 ? 'Revise the tax deducted at source on this invoice'
-                    : 'Withhold tax at source against this invoice'}
-                  onClick={() => setTdsOpen(true)}
+                  className={`mpr-tdsbtn${tdsSaved ? ' mpr-tdsbtn--edit' : ''}`}
+                  title={tdsSaved ? 'Revise the TDS withheld on the purchase order'
+                    : 'Withhold tax at source on the purchase order'}
+                  onClick={onOpenTds}
                 >
                   <span className="mpr-tdsbtn__ico">
                     <svg {...ic}><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>
                   </span>
-                  <span>{tds > 0 ? 'Revise TDS' : 'Deduct TDS Here'}</span>
+                  <span>{tdsSaved ? 'Revise TDS' : 'Deduct TDS Here'}</span>
                 </button>
               </div>
-            )}
+            ) : undefined}
           >
             <div className="mpr-stats">
               <Stat icon={STAT_ICONS.base} label="SPI Base Amount (Without GST)"
-                value={money(base)} sub="Pre-tax order value" />
+                value={money(base)} sub="Pre-tax invoice value" />
               <Stat mod="mpr-stat--base" icon={STAT_ICONS.trend} label="GST Amount"
-                value={money(gst)} sub={`${GST_PCT}% on the base amount`} />
+                value={money(gst)} sub={base > 0 ? `${Math.round((gst / base) * 1000) / 10}% on the base amount` : 'No GST'} />
               <Stat mod="mpr-stat--bal" icon={STAT_ICONS.truck} label="Extra Charges"
-                value={money(extra)} sub={extra > 0 ? 'Handling & documentation' : 'None on this invoice'} />
+                value={money(extra)} sub={extra > 0 ? 'Freight, packing & other charges' : 'None on this invoice'} />
               <Stat mod="mpr-stat--gst" icon={STAT_ICONS.coin} label="Total SPI Amount (Grand Total)"
-                value={money(row.totalPoAmount)} sub={`${money(row.netPayable)} net payable`} />
+                value={money(total)} sub={tds > 0 ? `${money(tds)} TDS on the PO` : 'No TDS withheld'} />
               <Stat mod="mpr-stat--paid" icon={STAT_ICONS.rupee} label="Total Paid Amount"
-                value={money(row.totalPaid)} sub={`${pctPaid}% of net payable released`} />
+                value={money(paid)} sub={`${pctPaid}% of the SPI released`} />
               <Stat mod="mpr-stat--tds" icon={STAT_ICONS.wallet} label="Balance Amount"
                 value={money(balance)} sub={balance === 0 ? 'Settled in full' : 'Still to be released'} />
             </div>
@@ -269,25 +294,29 @@ export default function InvoicePaymentModal({ row, request, onClose }: {
                 <span>Action</span>
               </div>
 
-              {releases.length === 0 ? (
+              {loading ? (
+                <div className="cpay-empty">
+                  <div className="cpay-empty__t">Loading payment history…</div>
+                </div>
+              ) : releases.length === 0 ? (
                 <div className="cpay-empty">
                   <div className="cpay-empty__ico">{ICON_CARD}</div>
                   <div className="cpay-empty__t">No payments recorded yet</div>
                   <div className="cpay-empty__s">Use Add New Payment to record a release against this request.</div>
                 </div>
               ) : releases.map((p, i) => (
-                <div className="cpay-cols cpay-row" key={`${p.utr}-${i}`}>
+                <div className="cpay-cols cpay-row" key={p.id ?? `${p.utr}-${i}`}>
                   <span className="mpr-sr" data-l="Sr. No">{i + 1}</span>
                   <span data-l="Paid Against Request ID">
                     <span className="mpr-idcell">
                       <span className="mpr-idpill">{request.id}</span>
-                      <span className="mpr-iddate">{shortDate(request.date)}</span>
+                      <span className="mpr-iddate">{request.date ? shortDate(request.date) : '—'}</span>
                     </span>
                   </span>
                   <span data-l="Request Raised Against">
                     <span className="mpr-idcell">
                       <span className="mpr-idpill">{row.invoiceNo}</span>
-                      <span className="mpr-iddate">{shortDate(row.invoiceDate)}</span>
+                      <span className="mpr-iddate">{row.invoiceDate ? shortDate(row.invoiceDate) : '—'}</span>
                     </span>
                   </span>
                   <span data-l="Paid Amount"><b className="cpay-amt">{money(p.amount)}</b></span>
@@ -320,13 +349,15 @@ export default function InvoicePaymentModal({ row, request, onClose }: {
                         title={p.file ? `Send ${p.file} to the supplier by email`
                           : 'No proof attached to send — attach one first'}>{ICON_MAIL}</button>
                       <button type="button" className="cpay-act cpay-act--edit"
-                        disabled={!canEdit}
-                        title={canEdit ? 'Edit this payment' : 'This request is not open for payment'}
+                        disabled={!canEdit || p.zohoSynced}
+                        title={p.zohoSynced ? 'Posted to Zoho Books — it cannot be edited here'
+                          : canEdit ? 'Edit this payment' : 'This request is not open for payment'}
                         onClick={() => setForm(i)}>{ICON_EDIT}</button>
                       <button type="button" className="cpay-act cpay-act--del"
-                        disabled={!canEdit}
-                        title={canEdit ? 'Delete this payment' : 'This request is not open for payment'}
-                        onClick={() => setReleases(rs => rs.filter((_, n) => n !== i))}>{ICON_TRASH}</button>
+                        disabled={!canEdit || busyIdx !== null || p.zohoSynced}
+                        title={p.zohoSynced ? 'Posted to Zoho Books — it cannot be deleted here'
+                          : canEdit ? 'Delete this payment' : 'This request is not open for payment'}
+                        onClick={() => void remove(i)}>{ICON_TRASH}</button>
                     </span>
                   </span>
                 </div>
@@ -343,18 +374,6 @@ export default function InvoicePaymentModal({ row, request, onClose }: {
         </div>
       </div>
 
-      {tdsOpen && (
-        <Suspense fallback={null}>
-          <DeductTdsModal
-            po={row.invoiceNo}
-            docLabel="SPI"
-            base={base} gst={gst} extra={extra} total={row.totalPoAmount}
-            room={balance} saved={tds} firstSave={tds === 0}
-            onSave={amount => { setTds(amount); setTdsOpen(false); }}
-            onClose={() => setTdsOpen(false)}
-          />
-        </Suspense>
-      )}
     </div>,
     document.body,
   );
