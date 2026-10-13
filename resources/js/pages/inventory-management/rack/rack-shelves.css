@@ -296,13 +296,20 @@
 .rks-qrmdl .whm-qr__addr + .whm-qr__addr { margin-top: 1px; }
 
 /* ── Footer ───────────────────────────────────────────────────────────── */
-.rks-foot__info { font-size: 11.5px; font-weight: 600; color: #64748b; }
-.rks-foot__info b { color: #0b3a49; font-weight: 800; }
-
-/* The shared pager, sitting inside a dialog rather than at the foot of a
-   page: no top border to separate it from the table, since the table already
-   has one of its own, and it must not shrink when the rows do. */
-.rks-pager { flex-shrink: 0; border-top: 0; padding: 4px 2px 0; }
+/* The pager lives in the footer row here, so it gives up everything that
+   made it a band of its own — the tint, the top border, the padding and the
+   top margin — and becomes the row's stretching left half. The footer's own
+   border and background are the ones on screen. */
+.rks-foot .rks-pager {
+  flex: 1;
+  min-width: 0;
+  margin: 0 12px 0 0;
+  padding: 0;
+  border-top: 0;
+  border-radius: 0;
+  background: none;
+}
+[data-bs-theme="dark"] .rks-foot .rks-pager { background: none; }
 
 /* ── Dark ────────────────────────────────────────────────────────────── */
 [data-bs-theme="dark"] .rks-k {
@@ -354,10 +361,8 @@
   color: #a5e9f5;
 }
 [data-bs-theme="dark"] .rks-typetxt,
-[data-bs-theme="dark"] .rks-u,
-[data-bs-theme="dark"] .rks-foot__info { color: #94a3b8; }
-[data-bs-theme="dark"] .rks-num,
-[data-bs-theme="dark"] .rks-foot__info b { color: #e2e8f0; }
+[data-bs-theme="dark"] .rks-u { color: #94a3b8; }
+[data-bs-theme="dark"] .rks-num { color: #e2e8f0; }
 
 
 [data-bs-theme="dark"] .rks-lvlb {

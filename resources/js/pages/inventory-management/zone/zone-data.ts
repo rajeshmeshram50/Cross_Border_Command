@@ -229,9 +229,12 @@ export const zoneApi = {
 
   show: (apiId: number) => call(() => api.get(`/inventory/zones/${apiId}`), one),
 
-  previewCode: (apiId: number) => call(
+  preview: (apiId: number) => call(
     () => api.get(`/inventory/zones/${apiId}/preview`),
-    (b) => String((b as { data?: { code?: string } } | null)?.data?.code ?? ''),
+    (b) => {
+      const d = (b as { data?: { code?: string; scan?: string } } | null)?.data;
+      return { code: String(d?.code ?? ''), scan: String(d?.scan ?? d?.code ?? '') };
+    },
   ),
 
   nextCode: () => call(
