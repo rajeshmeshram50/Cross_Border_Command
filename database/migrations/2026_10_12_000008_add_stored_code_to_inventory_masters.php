@@ -76,12 +76,16 @@ return new class extends Migration
 
         foreach ($groups as $g) {
             $ids = DB::table($table)
-                ->when($g->client_id === null,
-                    fn ($q) => $q->whereNull('client_id'),
-                    fn ($q) => $q->where('client_id', $g->client_id))
-                ->when($g->branch_id === null,
-                    fn ($q) => $q->whereNull('branch_id'),
-                    fn ($q) => $q->where('branch_id', $g->branch_id))
+                ->when(
+                    $g->client_id === null,
+                    fn($q) => $q->whereNull('client_id'),
+                    fn($q) => $q->where('client_id', $g->client_id)
+                )
+                ->when(
+                    $g->branch_id === null,
+                    fn($q) => $q->whereNull('branch_id'),
+                    fn($q) => $q->where('branch_id', $g->branch_id)
+                )
                 ->orderBy('id')
                 ->pluck('id');
 

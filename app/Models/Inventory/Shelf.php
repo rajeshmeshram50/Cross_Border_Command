@@ -61,11 +61,11 @@ class Shelf extends Model
     protected $appends = ['shelf_code', 'load_pct', 'occupancy'];
 
     /**
-     * RK-001-SH-01 — the rack's STORED code plus the level.
+     * RC-001-SH-01 — the rack's STORED code plus the level.
      *
-     * This was 'RK-' . pad($this->rack_id), which produced the same string only
+     * This was built from $this->rack_id, which produced the same string only
      * while a rack's code WAS its id. Codes are counted per branch now, so a
-     * shelf on rack id 7 — RK-002 in its own branch — read RK-007-SH-01 and
+     * shelf on rack id 7 — RC-002 in its own branch — read RC-007-SH-01 and
      * named a rack code that exists nowhere. The next-code preview already
      * used $rack->rack_code, so the number the form promised and the one the
      * saved shelf reported disagreed.
@@ -78,7 +78,7 @@ class Shelf extends Model
     {
         $rack = $this->relationLoaded('rack') ? $this->rack : ($this->rack_id ? $this->rack()->first() : null);
 
-        $prefix = $rack?->rack_code ?: 'RK-' . str_pad((string) $this->rack_id, 3, '0', STR_PAD_LEFT);
+        $prefix = $rack?->rack_code ?: 'RC-' . str_pad((string) $this->rack_id, 3, '0', STR_PAD_LEFT);
 
         return $prefix . '-SH-' . str_pad((string) $this->level_no, 2, '0', STR_PAD_LEFT);
     }
