@@ -109,7 +109,7 @@ export default function ZoneQrModal({ zone: z, warehouse: w, onClose }: {
             <div className="whm-qr__id">{shownCode}</div>
             <div className="whm-qr__name">{z.name}</div>
             <div className="whm-qr__addr">
-              {[w?.id ?? z.wh, w?.name || z.whName].filter(Boolean).join(' · ')}
+              {[w?.id, w?.name || z.whName].filter(Boolean).join(' · ')}
               {w?.city ? `, ${w.city}` : ''}
             </div>
           </div>
