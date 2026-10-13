@@ -714,6 +714,89 @@
   box-shadow: 0 24px 60px rgba(8, 40, 60, .32);
 }
 
+/* The card's positioning context, and nothing else.
+   `.cgst-card` scrolls, so an overlay placed inside it is measured against the
+   CONTENT box — on a tall dialog the loader would scroll out of view with the
+   text behind it. The shell wraps the card instead, so `inset: 0` means "the
+   card as it appears on screen" however far it has been scrolled. */
+.cgst-shell {
+  position: relative;
+  display: flex;
+  max-width: 100%;
+}
+
+/* Send for Senior Approval, in flight.
+   Covers the WHOLE popup rather than relabelling the button: the request takes
+   a visible moment, and a single button saying "Sending…" left the note and the
+   approver picker looking editable while the send was already on its way
+   (QA #14). Being in front of them is what makes that true, not just said. */
+.cgst-busy {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .86);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  /* The card's own radius clips nothing here — the overlay is a sibling — so it
+     carries the same 16px itself. */
+  cursor: progress;
+}
+
+.cgst-busy__ring {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  border: 3px solid #fde68a;
+  border-top-color: #d97706;
+  animation: cgst-busy-spin 700ms linear infinite;
+}
+
+@keyframes cgst-busy-spin { to { transform: rotate(360deg); } }
+
+.cgst-busy__t {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #7c2d12;
+}
+
+.cgst-busy__s {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #92400e;
+}
+
+/* The ring keeps the amber of a senior-approval dialog in both themes — it is
+   the same action, and a colour that changes with the theme reads as a
+   different one. */
+[data-bs-theme="dark"] .cgst-busy {
+  background: rgba(15, 23, 42, .88);
+}
+[data-bs-theme="dark"] .cgst-busy__ring {
+  border-color: rgba(251, 191, 36, .25);
+  border-top-color: #fbbf24;
+}
+[data-bs-theme="dark"] .cgst-busy__t { color: #fde68a; }
+[data-bs-theme="dark"] .cgst-busy__s { color: #fcd34d; }
+
+/* A dialog that cannot be dismissed mid-send says so on the buttons too, or
+   they read as simply broken. */
+.cgst-x:disabled,
+.cgst-btn:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cgst-busy__ring { animation-duration: 2.4s; }
+}
+
 .cgst-hd {
   display: flex;
   align-items: center;

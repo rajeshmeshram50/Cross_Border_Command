@@ -80,11 +80,14 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
     }
   };
 
+  /* Escape is ignored while the request is in flight. The overlay already
+     blocks the mouse; without this the keyboard walked straight past it and
+     closed the dialog on a send that was still going. */
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !sending) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, sending]);
 
   // Name first, then department and designation as tags; the company admin has no employee record.
   const options = approvers.map((a) => {
@@ -103,6 +106,11 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
 
   return createPortal(
     <div className="cgst-backdrop">
+      {/* The shell exists so the busy overlay can cover the whole card: the card
+          itself scrolls (overflow: auto), and an overlay inside a scroll box is
+          measured against the CONTENT, so a tall dialog would scroll its own
+          loader out of view. */}
+      <div className="cgst-shell">
       <div className="cgst-card" role="dialog" aria-modal="true" aria-labelledby="cgst-title">
         <div className={`cgst-hd cgst-hd--${notice.tone}`}>
           <span className="cgst-hd__ico">{stop ? <IcoShieldAlert /> : <IcoUser />}</span>
@@ -112,7 +120,7 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
               {stop ? `${notice.supplier} · ${notice.code}` : `Overdue GST filing · ${notice.supplier}`}
             </span>
           </span>
-          <button type="button" className="cgst-x" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="cgst-x" onClick={onClose} aria-label="Close" disabled={sending}>✕</button>
         </div>
 
         <div className="cgst-bd">
@@ -195,16 +203,31 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
         </div>
 
         <div className="cgst-ft">
-          <button type="button" className="cgst-btn cgst-btn--ghost" onClick={onClose}>{canSend ? 'Cancel' : 'Close'}</button>
+          <button type="button" className="cgst-btn cgst-btn--ghost" onClick={onClose} disabled={sending}>{canSend ? 'Cancel' : 'Close'}</button>
           {stop && onOpenScrutiny && (
             <button type="button" className="cgst-btn cgst-btn--stop" onClick={() => { onClose(); onOpenScrutiny(); }}>Open Supplier GST Scrutiny</button>
           )}
           {canSend && (
             <button type="button" className="cgst-btn cgst-btn--warn" onClick={send} disabled={sending}>
-              {sending ? 'Sending…' : approval?.status === 'rejected' ? 'Send Again for Approval' : 'Send for Senior Approval'}
+              {/* No 'Sending…' label: the overlay in front of it is the progress
+                  now, and two things reporting the same state disagree the
+                  moment one of them is wrong (QA #14). */}
+              {approval?.status === 'rejected' ? 'Send Again for Approval' : 'Send for Senior Approval'}
             </button>
           )}
         </div>
+      </div>
+
+      {/* The whole popup goes busy, not one button. A request that takes a
+          second looked like a dead click, and the fields stayed editable
+          underneath while it was already on its way (QA #14). */}
+      {sending && (
+        <div className="cgst-busy" role="status" aria-live="polite">
+          <span className="cgst-busy__ring" aria-hidden="true" />
+          <span className="cgst-busy__t">Sending for senior approval</span>
+          <span className="cgst-busy__s">Don&rsquo;t close this window.</span>
+        </div>
+      )}
       </div>
     </div>,
     document.body,
