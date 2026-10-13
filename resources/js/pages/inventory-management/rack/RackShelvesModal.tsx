@@ -167,8 +167,9 @@ export default function RackShelvesModal({ rack: r, onClose }: {
   const [ink, rest] = RING[ringState];
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close — the dialog closes only through the X or
+       Cancel, matching every other dialog in Inventory Management. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
         /* `whm-page` is a scope marker with no rules of its own — 65 of the
            shared cell styles hang off it, and this dialog reuses the list's

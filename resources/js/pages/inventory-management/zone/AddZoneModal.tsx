@@ -331,8 +331,10 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   };
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close. The form holds unsaved input, and a stray
+       click outside it must not throw that away — the dialog closes only
+       through the X or Cancel. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
         /* `whm-page` carries the shared toggle style, which is scoped to it
            and so never reached this portalled dialog — the Cold Chain and
@@ -703,7 +705,9 @@ function TemperatureSheet({ value, onCancel, onSave }: {
   };
 
   return (
-    <div className="znm-tp-ov" onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
+    /* No backdrop-click close — the range popover closes only through its
+       X or Cancel, same as the dialog behind it. */
+    <div className="znm-tp-ov">
       <div className="znm-tp" role="dialog" aria-modal="true" aria-labelledby="znm-tp-title">
         <div className="znm-tp__hd">
           <span className="znm-tp__ico"><IcoThermo size={18} /></span>

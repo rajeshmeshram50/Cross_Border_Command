@@ -96,8 +96,9 @@ export default function RackQrModal({ rack: r, onClose }: {
   const levels = rackLevels(r);
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close — the dialog closes only through the X or
+       Cancel, matching every other dialog in Inventory Management. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
         className="spi-mdl whm-qrmodal"
         role="dialog" aria-modal="true" aria-labelledby="rkm-qr-title"

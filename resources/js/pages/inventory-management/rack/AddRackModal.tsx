@@ -194,8 +194,10 @@ export default function AddRackModal({ rack, onClose }: {
   };
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close. The form holds unsaved input, and a stray
+       click outside it must not throw that away — the dialog closes only
+       through the X or Cancel. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
         /* `whm-page` carries the shared toggle style, which is scoped to it
            and so never reached this portalled dialog — the two flag switches

@@ -283,7 +283,10 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
   };
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close. The form holds unsaved input, and a stray
+       click outside it must not throw that away — the dialog closes only
+       through the X or Cancel. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
         className="spi-mdl whm-addmdl"
         role="dialog" aria-modal="true" aria-labelledby="whm-add-title"
