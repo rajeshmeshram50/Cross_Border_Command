@@ -2162,8 +2162,29 @@
 .cand-toolbar .rec-req-search .form-control {
   height: 48px;
 }
+/* Centred the way Velzon centres it — a full-height flex box — not by
+   top:50% + translateY(-50%).
+
+   The two rules are the same specificity (.search-box .search-icon vs
+   .rec-req-search .search-icon), so which one wins `top` comes down to the
+   order their stylesheets happen to land in, and lazy chunks change that
+   between loads. When this rule won, its top:50% paired with its own
+   transform and the icon centred. When Velzon's won the `top`, this rule's
+   transform still applied — nothing in Velzon's rule overrides it — so the
+   icon sat full-height at top:0 and was then dragged UP by half the field's
+   height, which is the icon hovering above the search box until a reload
+   shuffled the order back. (QA #48)
+
+   Using the same mechanism means neither order can produce a wrong result;
+   the only thing this rule still changes is the 12px inset and the colour. */
 .rec-req-search .search-icon {
-  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  position: absolute;
+  left: 12px;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  transform: none;
   color: #7c5cfc; font-size: 15px; pointer-events: none;
 }
 [data-bs-theme="dark"] .rec-req-search .form-control {
@@ -8404,6 +8425,25 @@
   }
   .att-emplist-col .att-emplist-scroll { min-height: 0; }
 
+  /* Short or zoomed screens.
+
+     The cap above, calc(100vh - 200px), is a guess at the chrome standing
+     over the card — the app header and the hero strip — and it is only right
+     on a full-height window. On a short screen the card starts lower relative
+     to the viewport, so that same constant lets it run off the bottom and the
+     last row is cut by the SCREEN rather than held by the scroller: the list
+     looks truncated with no way to tell there is more.
+
+     Below 820px of viewport height the roster stops trying to reach the
+     bottom of the screen. It takes a fixed inner scroll instead and the page
+     scrolls for the rest, which cannot cut anything off whatever the chrome
+     above happens to measure. The detail column still stretches to match, so
+     the two panes stay level. */
+  @media (max-height: 820px) {
+    .att-emplist-col .att-emplist { max-height: none; }
+    .att-emplist-col .att-emplist-scroll { max-height: 380px; }
+  }
+
   /* Stretching the roster alone only levelled the two sides when the roster
      was the SHORTER one. With a few employees it is the taller, so the row
      grew to fit it and the detail cards beside it stopped short — the roster
@@ -12553,6 +12593,24 @@
     flex: 1 1 calc(50% - 8px);
     justify-content: center;
   }
+}
+
+/* This page's toolbar wraps at every width, not only below 768px.
+   It carries eight items — the Group, Type and Year filters plus Template,
+   Import Excel, Groups and Add Holiday — which is more than the shared
+   toolbar's single line can hold. Above 1200px that toolbar switches to
+   flex-wrap: nowrap and .dt-toolbar-actions is flex-shrink: 0, on the
+   principle that the search gives up width instead; with eight items the
+   search reaches its minimum and there is still nothing left to give, so the
+   row went over-full and Add Holiday was clipped by the container's edge
+   instead of moving to a new line. (QA #49)
+   Letting it wrap keeps the 8px the toolbar already pads with on the right,
+   and puts the same 8px between the two rows.
+   Scoped to this page: the one-line rule is right for toolbars that do fit,
+   which is every other one. */
+.holiday-page .dt-toolbar {
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
 /* Holiday toolbar — one set of metrics for every button in the row. (#60)

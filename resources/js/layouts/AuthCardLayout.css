@@ -670,12 +670,25 @@
    carries its own eye button. */
 .kx-input::-ms-reveal,
 .kx-input::-ms-clear { display: none !important; width: 0; height: 0; }
-/* Autofill paints a white box over the glass — keep it on the dark field. */
+/* Autofill paints its own box over the glass. It is held off by the 9999s
+   transition below, NOT by an opaque inset shadow.
+
+   The inset that used to be here was #17263f, a solid navy. But .kx-field is
+   rgba(36,52,78,.70) over the artwork and .kx-input is transparent so that
+   glass shows through — so an autofilled value turned the input's own box
+   solid while the icon and the padding around it stayed translucent, which
+   read as a darker rectangle inside the field. (QA #38) No fixed colour can
+   match a translucent field sitting over a photograph, so the fix is to leave
+   the input transparent and let the field render the whole width itself.
+
+   The transition does the work: Chrome applies its autofill background as a
+   transition, so a long enough delay means it never arrives. That was already
+   here, under the shadow. */
 .kx-input:-webkit-autofill,
 .kx-input:-webkit-autofill:hover,
 .kx-input:-webkit-autofill:focus {
   -webkit-text-fill-color: #f1f5f9;
-  -webkit-box-shadow: 0 0 0 1000px #17263f inset;
+  background-color: transparent !important;
   caret-color: #f1f5f9;
   transition: background-color 9999s ease-out 0s;
   /* An autofilled value is drawn by the browser, not by the field: Chrome
