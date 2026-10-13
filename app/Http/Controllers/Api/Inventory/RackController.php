@@ -73,7 +73,15 @@ class RackController extends BaseInventoryController
                 ->orderByDesc('id');
 
             $this->applyTab($q, $f['tab'] ?? null);
-            $this->applySearch($q, $f['q'] ?? null, ['rack_name']);
+            /* The screen's placeholder has always read "rack ID, rack name,
+               zone or warehouse" while only rack_name was searched — three of
+               the four did nothing. The code is a column now, and the other
+               two are one whereHas each. */
+            $this->applySearch($q, $f['q'] ?? null, ['code', 'rack_name'], function ($w, $term) {
+                $like = '%' . $term . '%';
+                $w->orWhereHas('zone', fn ($h) => $h->where('zone_name', 'ilike', $like))
+                  ->orWhereHas('warehouse', fn ($h) => $h->where('wh_name', 'ilike', $like));
+            });
 
             $body = $this->listBody($q, $request, $tabs, fn (Rack $r) => $this->row($r));
 

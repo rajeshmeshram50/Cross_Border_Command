@@ -71,12 +71,24 @@ class ShelfController extends BaseInventoryController
 
             $f = $request->validate($this->listRules());
 
-            $base = Shelf::where('rack_id', $rack->id);
+            // `rack` for the shelf_code accessor — one query for the page
+            // rather than one per shelf.
+            $base = Shelf::where('rack_id', $rack->id)->with('rack:id,code,rack_name,height,dim_unit');
             $tabs = $this->tabCounts(clone $base);
 
             $q = $base->orderBy('level_no');
             $this->applyTab($q, $f['tab'] ?? null);
-            $this->applySearch($q, $f['q'] ?? null, ['shelf_name', 'shelf_type', 'purpose']);
+            /* The shelf code is derived, so it is not a column to search.
+               Every shelf here belongs to $rack, so a term carrying a level —
+               "SH-03", or the whole "RK-002-SH-03" — is answered by matching
+               the level, once any rack-code part names THIS rack. */
+            $this->applySearch($q, $f['q'] ?? null, ['shelf_name', 'shelf_type', 'purpose'],
+                function ($w, $term) use ($rack) {
+                    if (!preg_match('/^(.*?)-?sh-?(\d+)$/i', $term, $m)) return;
+                    $rackPart = trim($m[1], ' -');
+                    if ($rackPart !== '' && stripos((string) $rack->rack_code, $rackPart) === false) return;
+                    $w->orWhere('level_no', (int) $m[2]);
+                });
 
             $shelves  = $q->get();
             $active   = $shelves->where('status', 1);

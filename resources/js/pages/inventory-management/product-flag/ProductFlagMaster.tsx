@@ -206,7 +206,7 @@ export default function ProductFlagMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by product flag or purpose..."
+              placeholder="Search by flag ID, product flag or purpose..."
               aria-label="Search product flags"
               autoComplete="off"
             />

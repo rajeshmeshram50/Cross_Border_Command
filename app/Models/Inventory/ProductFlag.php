@@ -22,7 +22,7 @@ class ProductFlag extends Model
     protected $table = 'inventory_product_flags';
 
     protected $fillable = [
-        'client_id', 'branch_id',
+        'client_id', 'branch_id', 'code',
         'flag_name', 'purpose',
         'status', 'created_by', 'updated_by',
     ];
@@ -31,9 +31,18 @@ class ProductFlag extends Model
 
     protected $appends = ['flag_code'];
 
+    /**
+     * The stored, per-branch code — the same rule the other four masters follow.
+     *
+     * It was 'PF-' . pad($this->id), and that id comes from one platform-wide
+     * sequence: a branch's first flag of its own could read PF-007, and a
+     * rolled-back save burned the number for good. The column is written by
+     * InventoryCodeAllocator instead. The id fallback covers a row saved
+     * outside the allocator; nothing in the app does that today.
+     */
     public function getFlagCodeAttribute(): string
     {
-        return 'PF-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
+        return $this->code ?: 'PF-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
     }
 
     public function client(): BelongsTo    { return $this->belongsTo(Client::class); }
