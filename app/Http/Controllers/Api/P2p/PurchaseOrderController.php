@@ -55,7 +55,9 @@ class PurchaseOrderController extends Controller
             DB::beginTransaction();
 
             $user = $this->tenantUser($request);
-            $code = $this->svc->previewPoCode((int) $user->client_id);
+            // The SAME branch store() will file the order under, so the number
+            // the form shows is the number it gets.
+            $code = $this->svc->previewPoCode((int) $user->client_id, $user->branch_id ? (int) $user->branch_id : null);
 
             DB::commit();
 
@@ -441,7 +443,7 @@ class PurchaseOrderController extends Controller
             $po = PurchaseOrder::create($this->stage1Attributes($data, $resolved) + [
                 'client_id'    => $user->client_id,
                 'branch_id'    => $user->branch_id,
-                'code'         => $this->svc->nextPoCode((int) $user->client_id),
+                'code'         => $this->svc->nextPoCode((int) $user->client_id, $user->branch_id ? (int) $user->branch_id : null),
                 'po_date'      => now()->toDateString(),
                 'status'       => PurchaseOrder::STATUS_DRAFT,
                 'current_step' => 1,
