@@ -32,6 +32,7 @@ export default function ZoneQrModal({ zone: z, warehouse: w, onClose }: {
   const cardRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<'painting' | 'ready' | 'failed'>('painting');
   const [code, setCode] = useState<string | null>(null);
+  const [scan, setScan] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => { cardRef.current?.focus(); }, []);
@@ -45,8 +46,8 @@ export default function ZoneQrModal({ zone: z, warehouse: w, onClose }: {
     if (!z.apiId) { setState('failed'); setError('This zone has not been saved yet.'); return; }
     let live = true;
     setState('painting');
-    zoneApi.previewCode(z.apiId)
-      .then(c => { if (live) setCode(c || z.id); })
+    zoneApi.preview(z.apiId)
+      .then(l => { if (live) { setCode(l.code || z.id); setScan(l.scan || l.code || z.id); } })
       .catch(e => {
         if (!live) return;
         setState('failed');
@@ -57,14 +58,14 @@ export default function ZoneQrModal({ zone: z, warehouse: w, onClose }: {
 
   useEffect(() => {
     const c = canvasRef.current;
-    if (!c || !code) return;
-    QRCode.toCanvas(c, code, {
+    if (!c || !scan) return;
+    QRCode.toCanvas(c, scan, {
       width: 196, margin: 0, errorCorrectionLevel: 'H',
       color: { dark: '#0c4a6e', light: '#ffffff' },
     })
       .then(() => setState('ready'))
       .catch(() => { setState('failed'); setError('QR could not be generated.'); });
-  }, [code]);
+  }, [scan]);
 
   const shownCode = code || z.id;
 
