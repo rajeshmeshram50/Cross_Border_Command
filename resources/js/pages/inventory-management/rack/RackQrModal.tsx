@@ -2,33 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../hooks/useScrollLock';
-/* Carries its own styling: the QR card, the backdrop and the modal's edge all
-   live there, and the list page is not always what opened it. */
 import '../warehouse/warehouse-master.css';
-import { WAREHOUSES } from '../warehouse/warehouse-data';
-import { ZONES } from '../zone/zone-data';
-import { rackLevels, type Rack } from './rack-data';
-
-const WAREHOUSE_BY_CODE = new Map(WAREHOUSES.map(w => [w.id, w]));
-const ZONE_BY_CODE = new Map(ZONES.map(z => [z.id, z]));
-
-/**
- * What the code carries: enough to walk to the rack off a phone with no app
- * and no network — the rack, the zone it stands in, the warehouse, and where
- * that warehouse is. The zone is in the payload where the zone's own code
- * stops, because a rack id alone does not say which aisle to walk down.
- */
-const payloadFor = (r: Rack) => {
-  const w = WAREHOUSE_BY_CODE.get(r.wh);
-  const z = ZONE_BY_CODE.get(r.zone);
-  return [
-    r.id,
-    r.name,
-    [r.zone, z?.name].filter(Boolean).join(' · '),
-    [r.wh, w?.name].filter(Boolean).join(' · '),
-    [w?.city, w?.state].filter(Boolean).join(', '),
-  ].filter(Boolean).join('\n');
-};
+import type { Zone, ZoneWarehouse } from '../zone/zone-data';
+import { InventoryApiError, rackApi, type Rack } from './rack-data';
 
 const Ico = (d: React.ReactNode, size: number) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -46,14 +22,10 @@ const IcoDownload = () => Ico(
     <line x1="12" y1="15" x2="12" y2="3" /></>, 14,
 );
 
-/**
- * Rack QR — the code for one rack, with what it identifies.
- *
- * Painted in the browser with the `qrcode` package the sticker modals use, so
- * it needs nothing from the server and works on the page's static rows.
- */
-export default function RackQrModal({ rack: r, onClose }: {
+export default function RackQrModal({ rack: r, warehouse: w, zone: z, onClose }: {
   rack: Rack;
+  warehouse?: ZoneWarehouse;
+  zone?: Zone;
   onClose: () => void;
 }) {
   useScrollLock(true, '.whm-qrmodal');
@@ -69,35 +41,51 @@ export default function RackQrModal({ rack: r, onClose }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const [code, setCode] = useState<string | null>(null);
+  const [scan, setScan] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    setState('painting');
+    rackApi.preview(r.apiId)
+      .then(l => { if (live) { setCode(l.code || r.id); setScan(l.scan || l.code || r.id); } })
+      .catch(e => {
+        if (!live) return;
+        setState('failed');
+        setError(e instanceof InventoryApiError ? e.message : 'QR could not be loaded.');
+      });
+    return () => { live = false; };
+  }, [r.apiId, r.id]);
+
   useEffect(() => {
     const c = canvasRef.current;
-    if (!c) return;
-    /* 'M' recovers from about 15% damage — what a label stuck to a rack and
-       scuffed in a warehouse actually needs. */
-    QRCode.toCanvas(c, payloadFor(r), {
-      width: 196, margin: 0, errorCorrectionLevel: 'M',
+    if (!c || !scan) return;
+    QRCode.toCanvas(c, scan, {
+      width: 196, margin: 0, errorCorrectionLevel: 'H',
       color: { dark: '#0c4a6e', light: '#ffffff' },
     })
       .then(() => setState('ready'))
-      .catch(() => setState('failed'));
-  }, [r]);
+      .catch(() => { setState('failed'); setError('QR could not be generated.'); });
+  }, [scan]);
+
+  const shownCode = code || r.id;
 
   const download = () => {
     const c = canvasRef.current;
     if (!c || state !== 'ready') return;
     const a = document.createElement('a');
     a.href = c.toDataURL('image/png');
-    a.download = `${r.id}-QR.png`;
+    a.download = `${shownCode}-QR.png`;
     a.click();
   };
 
-  const w = WAREHOUSE_BY_CODE.get(r.wh);
-  const z = ZONE_BY_CODE.get(r.zone);
-  const levels = rackLevels(r);
+  const levels = r.shelves;
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close — the dialog closes only through the X or
+       Cancel, matching every other dialog in Inventory Management. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
         className="spi-mdl whm-qrmodal"
         role="dialog" aria-modal="true" aria-labelledby="rkm-qr-title"
@@ -117,19 +105,16 @@ export default function RackQrModal({ rack: r, onClose }: {
         <div className="spi-mdl-body">
           <div className="whm-qr">
             <div className="whm-qr__code">
-              {/* Kept mounted while it paints — the effect needs the canvas to
-                  draw into, so swapping it for a message would mean it never
-                  appears. The message sits over it instead. */}
               <canvas ref={canvasRef} width={196} height={196}
                 style={{ display: state === 'ready' ? 'block' : 'none' }} />
               {state === 'painting' && <span className="whm-qr__load">Generating QR…</span>}
-              {state === 'failed' && <span className="whm-qr__load">QR could not be generated.</span>}
+              {state === 'failed' && <span className="whm-qr__load">{error || 'QR could not be generated.'}</span>}
             </div>
-            <div className="whm-qr__id">{r.id}</div>
+            <div className="whm-qr__id">{shownCode}</div>
             <div className="whm-qr__name">{r.name}</div>
             <div className="whm-qr__addr">
-              {[r.zone, z?.name].filter(Boolean).join(' · ')}
-              {w?.name ? ` · ${w.name}` : ''}
+              {[z?.id, z?.name || r.zoneName].filter(Boolean).join(' · ')}
+              {(w?.name || r.whName) ? ` · ${w?.name || r.whName}` : ''}
               {w?.city ? `, ${w.city}` : ''}
             </div>
           </div>
@@ -137,7 +122,7 @@ export default function RackQrModal({ rack: r, onClose }: {
 
         <div className="spi-mdl-foot">
           <span className="whm-qr__note">
-            {levels} shelf levels · {r.dims.length} × {r.dims.width} × {r.dims.height} {r.dims.unit}
+            {levels} shel{levels === 1 ? 'f' : 'ves'} · {r.dims.length} × {r.dims.width} × {r.dims.height} {r.dims.unit}
           </span>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Close</button>

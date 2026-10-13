@@ -2,36 +2,39 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
-/* The stylesheets this form is dressed by. It carries its own rather than
-   relying on the page that opens it — the grid, the hints and the field errors
-   all live in these two, and a form that borrows them without importing them
-   loses its layout silently. */
 import '../../p2p/p2p-detail.css';
 import '../../p2p/purchase-management/order/create-po/create-po.css';
 import '../warehouse/warehouse-master.css';
 import '../zone/zone-form.css';
 import './rack-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
-import { WAREHOUSES } from '../warehouse/warehouse-data';
-import { ZONES } from '../zone/zone-data';
-import { RACKS, type Rack } from './rack-data';
+import {
+  InventoryApiError, rackApi, type InventoryLookups, type Rack, type RackPayload,
+} from './rack-data';
 
-/* Only an active warehouse can take a new rack. */
-const ACTIVE_WAREHOUSES = WAREHOUSES.filter(w => w.status !== 'inactive');
 const LABEL = (id: string, name: string) => `${id} · ${name}`;
-/** The code back out of a "WH-002 · Pune Phase 2 Warehouse" label. */
 const codeOf = (label: string) => label.split('·')[0].trim();
 
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 
-/** A square metre in square feet, for carrying the footprint into Sq. Ft. */
 const SQFT_PER_SQM = 10.7639;
 
-/** `+15 to +25 °C`, as the design writes a range. */
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 
-/* ── Icons: the prototype's own paths ─────────────────────────────────── */
+const FIELD_FOR: Record<string, 'wh' | 'zone' | 'name' | 'len' | 'wid' | 'ht'> = {
+  zone_id: 'zone', rack_name: 'name', length: 'len', width: 'wid', height: 'ht', dim_unit: 'len',
+};
+
+function fieldForMessage(msg: string): 'zone' | 'name' | 'len' | 'ht' | null {
+  const m = msg.toLowerCase();
+  if (m.includes('rack with this name')) return 'name';
+  if (m.includes('footprint')) return 'len';
+  if (m.includes('cannot be shorter')) return 'ht';
+  if (m.includes('zone')) return 'zone';
+  return null;
+}
+
 const Ico = (d: ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -72,22 +75,11 @@ interface Draft {
 
 const EMPTY: Draft = { wh: '', zone: '', name: '', cold: false, haz: false, len: '', wid: '', ht: '' };
 
-/**
- * Add / Edit Rack.
- *
- * Design only, on the static rows: nothing is persisted, and Save reports what
- * it would have written.
- *
- * The form is a cascade — warehouse, then zone, then the rack. Everything in
- * the first two cards is read-only and fetched, because a rack does not get to
- * redescribe the building it stands in. The two flags are the one place the
- * cascade bites: a rack can only be cold or hazardous if its ZONE allows it,
- * so the switches are disabled by the zone rather than validated after the
- * fact.
- */
-export default function AddRackModal({ rack, onClose }: {
+export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
   rack?: Rack;
+  lookups: InventoryLookups;
   onClose: () => void;
+  onSaved?: (rack: Rack) => void;
 }) {
   useScrollLock(true, '.whm-addmdl');
   const toast = useToast();
@@ -96,19 +88,22 @@ export default function AddRackModal({ rack, onClose }: {
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  });
+
+  const [saving, setSaving] = useState(false);
+  const activeWarehouses = useMemo(() => lookups.warehouses.filter(w => w.active), [lookups]);
+  const rackWarehouse = rack?.warehouseId ? lookups.warehouses.find(w => w.apiId === rack.warehouseId) : undefined;
+  const rackZone = rack?.zoneId ? lookups.zones.find(z => z.apiId === rack.zoneId) : undefined;
 
   const [unit, setUnit] = useState<Unit>(rack?.dims.unit ?? 'cm');
   const [d, setD] = useState<Draft>(() => {
     if (!rack) return EMPTY;
-    const w = WAREHOUSES.find(x => x.id === rack.wh);
-    const z = ZONES.find(x => x.id === rack.zone);
     return {
-      wh: w ? LABEL(w.id, w.name) : '',
-      zone: z ? LABEL(z.id, z.name) : '',
+      wh: rackWarehouse ? LABEL(rackWarehouse.id, rackWarehouse.name) : '',
+      zone: rackZone ? LABEL(rackZone.id, rackZone.name) : '',
       name: rack.name,
       cold: rack.cold,
       haz: rack.haz,
@@ -120,35 +115,42 @@ export default function AddRackModal({ rack, onClose }: {
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({});
 
   const set = (p: Partial<Draft>) => setD(s => ({ ...s, ...p }));
+
+  useEffect(() => {
+    if (rackWarehouse && !d.wh) set({ wh: LABEL(rackWarehouse.id, rackWarehouse.name) });
+    if (rackZone && !d.zone) set({ zone: LABEL(rackZone.id, rackZone.name) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rackWarehouse, rackZone]);
   const clear = (k: keyof Draft) => setErrors(e => (e[k] ? { ...e, [k]: undefined } : e));
 
   const picked = useMemo(
-    () => (d.wh ? WAREHOUSES.find(w => w.id === codeOf(d.wh)) ?? null : null),
-    [d.wh],
+    () => (d.wh ? lookups.warehouses.find(w => w.id === codeOf(d.wh)) ?? null : null),
+    [d.wh, lookups],
   );
 
-  /* Racks only stand in rack-based zones, so the list is filtered rather than
-     validated — offering a floor zone and then refusing it is a worse way to
-     say the same thing. */
   const zoneChoices = useMemo(
-    () => (picked ? ZONES.filter(z => z.wh === picked.id && z.type === 'rack' && z.status !== 'inactive') : []),
-    [picked],
+    () => (picked
+      ? lookups.zones.filter(z => z.warehouseId === picked.apiId && z.type === 'rack'
+        && (z.status !== 'inactive' || z.apiId === rack?.zoneId))
+      : []),
+    [picked, lookups, rack],
   );
   const zone = useMemo(
-    () => (d.zone ? ZONES.find(z => z.id === codeOf(d.zone)) ?? null : null),
-    [d.zone],
+    () => (d.zone ? zoneChoices.find(z => z.id === codeOf(d.zone)) ?? null : null),
+    [d.zone, zoneChoices],
   );
 
-  /* The next free code. In the prototype this is the server's job; here it is
-     one past the highest, so it does not repeat a code already on screen. */
-  const id = useMemo(() => {
-    if (rack) return rack.id;
-    const top = RACKS.reduce((n, r) => Math.max(n, Number(r.id.slice(3)) || 0), 0);
-    return `RC-${String(top + 1).padStart(3, '0')}`;
-  }, [rack]);
+  const [nextCode, setNextCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (editing) return;
+    let live = true;
+    rackApi.nextCode()
+      .then(code => { if (live) setNextCode(code || 'Assigned on save'); })
+      .catch(() => { if (live) setNextCode('Assigned on save'); });
+    return () => { live = false; };
+  }, [editing]);
+  const id = editing ? rack!.id : (nextCode ?? 'Loading…');
 
-  /* The footprint, in the unit being typed in and in square feet. Recomputed
-     rather than stored: two numbers for one area can only ever disagree. */
   const area = useMemo(() => {
     const L = parseFloat(d.len), W = parseFloat(d.wid);
     if (!(L > 0) || !(W > 0)) return null;
@@ -157,9 +159,6 @@ export default function AddRackModal({ rack, onClose }: {
     return { raw: a, sqft: sqm * SQFT_PER_SQM };
   }, [d.len, d.wid, unit]);
 
-  /* Switching Cm ⇄ Metres converts what is typed rather than clearing it:
-     the figures are the same rack either way, and retyping three numbers to
-     change a label is work the form can do. */
   const switchUnit = (next: Unit) => {
     if (next === unit) return;
     const k = next === 'm' ? 0.01 : 100;
@@ -171,7 +170,8 @@ export default function AddRackModal({ rack, onClose }: {
     setUnit(next);
   };
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return;
     const e: Partial<Record<keyof Draft, string>> = {};
     if (!d.wh) e.wh = 'Choose a warehouse';
     if (!d.zone) e.zone = picked ? 'Choose a zone' : 'Choose a warehouse first';
@@ -186,20 +186,52 @@ export default function AddRackModal({ rack, onClose }: {
       toast.warning('Rack not saved', e[first as keyof Draft] ?? 'Check the highlighted fields.');
       return;
     }
-    toast.success(
-      editing ? `${id} updated` : `${id} saved`,
-      `${d.name} in ${codeOf(d.zone)} · ${codeOf(d.wh)}. Nothing is stored yet — this screen is design only.`,
-    );
-    onClose();
+    if (!zone?.apiId) return;
+
+    const payload: RackPayload = {
+      zone_id: zone.apiId,
+      rack_name: d.name.trim(),
+      cold_chain: d.cold && zone.cold ? 1 : 0,
+      hazardous: d.haz && zone.haz ? 1 : 0,
+      dim_unit: unit,
+      length: parseFloat(d.len),
+      width: parseFloat(d.wid),
+      height: parseFloat(d.ht),
+    };
+
+    setSaving(true);
+    try {
+      const saved = editing ? await rackApi.update(rack!.apiId, payload) : await rackApi.create(payload);
+      toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, `${saved.name} in ${zone.id} · ${picked?.id ?? ''}`);
+      onSaved?.(saved);
+      onClose();
+    } catch (err) {
+      if (err instanceof InventoryApiError) {
+        const next: Partial<Record<keyof Draft, string>> = {};
+        for (const [k, msgs] of Object.entries(err.fieldErrors)) {
+          const f = FIELD_FOR[k];
+          if (f && !next[f]) next[f] = msgs[0];
+        }
+        if (!Object.keys(next).length) {
+          const f = fieldForMessage(err.message);
+          if (f) next[f] = err.message;
+        }
+        setErrors(next);
+        toast.error(editing ? 'Could not update the rack' : 'Could not create the rack', Object.values(next)[0] ?? err.message);
+      } else {
+        toast.error('Could not save the rack', 'Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close. The form holds unsaved input, and a stray
+       click outside it must not throw that away — the dialog closes only
+       through the X or Cancel. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
-        /* `whm-page` carries the shared toggle style, which is scoped to it
-           and so never reached this portalled dialog — the two flag switches
-           were rendering as bare buttons. */
         className="spi-mdl whm-addmdl rkm-addmdl whm-page"
         role="dialog" aria-modal="true" aria-labelledby="rkm-add-title"
         tabIndex={-1} ref={cardRef}
@@ -221,20 +253,13 @@ export default function AddRackModal({ rack, onClose }: {
 
         <div className="spi-mdl-body whm-addbody">
 
-          {/* ── Warehouse ─────────────────────────────────────────────── */}
           <Card icon={<IcoWarehouse />} title="Warehouse Details">
-            {/* No hints anywhere in this form: the design passes none, and in
-                a grid of four columns a hint under one field lifts the whole
-                row's height for a sentence that is true of every warehouse
-                list in the app. Errors still take that slot. */}
             <Field label="Warehouse" req error={errors.wh}>
               <EditSelect
                 value={d.wh}
-                options={ACTIVE_WAREHOUSES.map(w => LABEL(w.id, w.name))}
+                options={activeWarehouses.map(w => LABEL(w.id, w.name))}
                 placeholder="Select warehouse"
                 invalid={!!errors.wh}
-                /* Changing the building invalidates the zone under it, so the
-                   zone is dropped rather than left pointing elsewhere. */
                 onChange={v => { set({ wh: v, zone: '', cold: false, haz: false }); clear('wh'); clear('zone'); }}
               />
             </Field>
@@ -246,14 +271,10 @@ export default function AddRackModal({ rack, onClose }: {
               value={picked ? [picked.city, picked.state, picked.pin].filter(Boolean).join(', ') : ''} />
           </Card>
 
-          {/* ── Zone ──────────────────────────────────────────────────── */}
           <Card icon={<IcoZone />} title="Zone Details">
             <Field
               label={<>Zone <span className="rkm-lbltag">With Rack only</span></>}
               req
-              /* "No rack zones in WH-002" is not a hint, it is why the list
-                 is empty — so it goes in the error slot, which is the one the
-                 design keeps. */
               error={errors.zone ?? (picked && !zoneChoices.length
                 ? `${picked.id} has no rack-based zones`
                 : undefined)}
@@ -263,8 +284,6 @@ export default function AddRackModal({ rack, onClose }: {
                 options={zoneChoices.map(z => LABEL(z.id, z.name))}
                 placeholder={picked ? 'Select zone' : 'Select warehouse first'}
                 invalid={!!errors.zone}
-                /* A rack cannot be colder or more hazardous than the zone
-                   around it, so the flags reset with the zone. */
                 onChange={v => { set({ zone: v, cold: false, haz: false }); clear('zone'); }}
               />
             </Field>
@@ -278,12 +297,8 @@ export default function AddRackModal({ rack, onClose }: {
               value={zone ? (zone.haz ? 'Allowed' : 'Not Allowed') : ''} />
           </Card>
 
-          {/* ── Rack ──────────────────────────────────────────────────── */}
           <Card icon={<IcoRack />} title="Rack Details">
             <Field label="Rack ID">
-              {/* Plain `whm-auto`, as the design has it: the AUTO pill already
-                  goes teal when there is a value, which is the same signal
-                  `is-filled` would tint the whole box to give. */}
               <div className="whm-auto">
                 <input className="spi-dt-inp" value={id} readOnly tabIndex={-1} />
                 <span className="whm-auto__tag">AUTO</span>
@@ -296,8 +311,6 @@ export default function AddRackModal({ rack, onClose }: {
                 value={d.name} onChange={e => { set({ name: e.target.value }); clear('name'); }}
               />
             </Field>
-            {/* Gated by the zone, and the switch says so where it is off —
-                a disabled control with no reason beside it is a dead end. */}
             <Field label="Cold Chain">
               <Switch
                 on={d.cold}
@@ -367,9 +380,9 @@ export default function AddRackModal({ rack, onClose }: {
         <div className="spi-mdl-foot">
           <span className="whm-footnote"><IcoInfo /> Fields marked * are required</span>
           <div className="spi-mdl-foot-btns">
-            <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm" onClick={save}>
-              <IcoCheck /> {editing ? 'Update Rack' : 'Save Rack'}
+            <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
+              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Rack' : 'Save Rack'}
             </button>
           </div>
         </div>
@@ -379,7 +392,6 @@ export default function AddRackModal({ rack, onClose }: {
   );
 }
 
-/** One titled card of fields. */
 function Card({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <div className="whm-card">
@@ -392,7 +404,6 @@ function Card({ icon, title, children }: { icon: ReactNode; title: string; child
   );
 }
 
-/** A field the warehouse or the zone fills in: read-only, and it says which. */
 function AutoField({ label, value, from }: { label: string; value: string; from: 'warehouse' | 'zone' }) {
   return (
     <Field label={label}>
@@ -404,14 +415,6 @@ function AutoField({ label, value, from }: { label: string; value: string; from:
   );
 }
 
-/**
- * A handling flag, with the reason it cannot be set written beside it.
- *
- * Wears the zone form's own `.znm-tg` row rather than a rack-only copy of it —
- * the two forms ask the same question and should answer it the same way. Only
- * the locked state is added here, dashed, which is how the design marks a
- * control the zone has closed off.
- */
 function Switch({ on, disabled, label, onToggle }: {
   on: boolean; disabled?: boolean; label: string; onToggle: () => void;
 }) {

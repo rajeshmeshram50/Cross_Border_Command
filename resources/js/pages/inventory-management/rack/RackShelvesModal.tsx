@@ -1,29 +1,23 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
 import Tooltip from '../../../components/ui/Tooltip';
 import WorklistPager from '../../../components/ui/WorklistPager';
-/* Carries its own styling: the cells, flag chips and action buttons are shared
-   with the three list pages, and the rack list is not always what opened it. */
 import '../../p2p/p2p-common.css';
 import '../warehouse/warehouse-master.css';
 import '../zone/zone.css';
 import './rack.css';
 import './rack-shelves.css';
-import { WAREHOUSES } from '../warehouse/warehouse-data';
-import { ZONES } from '../zone/zone-data';
-import { rackHeightCm, type Rack } from './rack-data';
+import type { Zone, ZoneWarehouse } from '../zone/zone-data';
+import { InventoryApiError, type Rack } from './rack-data';
 import {
-  rackHeightFreeCm, rackTotals, shelfPct, shelfState, shelfVolumeM3, shelvesOf,
+  rackTotals, shelfApi, shelfPct, shelfState, shelfVolumeM3,
   SHELF_STATE_LABEL, type Shelf,
 } from './shelf-data';
 
 const AddShelfModal = lazy(() => import('./AddShelfModal'));
 const ShelfQrModal = lazy(() => import('./ShelfQrModal'));
-
-const WAREHOUSE_BY_CODE = new Map(WAREHOUSES.map(w => [w.id, w]));
-const ZONE_BY_CODE = new Map(ZONES.map(z => [z.id, z]));
 
 const nf = (v: number, dp = 0) => v.toLocaleString('en-IN', { maximumFractionDigits: dp });
 
@@ -35,10 +29,8 @@ const formatDate = (iso: string) => {
 
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 
-/** Five to a page, as the prototype pages them. */
 const PAGE_SIZE = 5;
 
-/* ── Icons: the prototype's own paths ─────────────────────────────────── */
 const svg = (d: ReactNode, size = 14, width = 2.2) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -96,18 +88,10 @@ const COLUMNS = [
   'Shelf Area', 'Shelf Volume', 'Cold Chain', 'Hazardous', 'Total Boxes', 'Utilization Status', 'Action',
 ];
 
-/**
- * Shelves in one rack.
- *
- * Design only, on shelves derived from the rack rather than stored — see
- * `shelf-data.ts`. The status switch changes what a row says and the totals
- * above it; nothing is persisted.
- *
- * Wide and its own dialog rather than a page, because it is a drill-down: you
- * arrive from one rack's row and leave back to it.
- */
-export default function RackShelvesModal({ rack: r, onClose }: {
+export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClose }: {
   rack: Rack;
+  warehouse?: ZoneWarehouse;
+  zone?: Zone;
   onClose: () => void;
 }) {
   useScrollLock(true, '.rks-mdl');
@@ -121,45 +105,57 @@ export default function RackShelvesModal({ rack: r, onClose }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const base = useMemo(() => shelvesOf(r), [r]);
-  /* Switched-off shelves, held here rather than in the derived list: the
-     derivation is the rack's shape, and a switch is a thing the user did. */
-  const [off, setOff] = useState<Record<string, boolean>>({});
-  const shelves = useMemo(
-    () => base.map(s => (off[s.id] ? { ...s, status: 'inactive' as const } : s)),
-    [base, off],
-  );
+  const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [freeCm, setFreeCm] = useState(0);
+  const [nextLevel, setNextLevel] = useState(1);
+  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
 
-  /* 'new' is Add Shelf; a shelf is Edit; null is closed. */
+  const load = useCallback(() => {
+    shelfApi.list(r.apiId)
+      .then(res => {
+        setShelves(res.shelves);
+        setFreeCm(res.freeHeightCm);
+        setNextLevel(res.nextLevel);
+        setState('ready');
+      })
+      .catch(e => {
+        setState(st => (st === 'ready' ? st : 'failed'));
+        toast.error('Could not load the shelves', e instanceof InventoryApiError ? e.message : 'Please try again.');
+      });
+  }, [r.apiId, toast]);
+  useEffect(() => { load(); }, [load]);
+
   const [formFor, setFormFor] = useState<Shelf | 'new' | null>(null);
   const [qrFor, setQrFor] = useState<Shelf | null>(null);
 
   const rackOff = r.status === 'inactive';
-  const toggle = (s: Shelf) => {
-    if (rackOff) return;
-    const next = !off[s.id];
-    setOff(m => ({ ...m, [s.id]: next }));
-    if (next) toast.warning(`${s.id} marked Inactive`, 'Its capacity leaves the rack totals above.');
-    else toast.success(`${s.id} marked Active`);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const toggle = async (s: Shelf) => {
+    if (rackOff || busyId) return;
+    const activate = s.status !== 'active';
+    setBusyId(s.apiId);
+    try {
+      await shelfApi.setStatus(s.apiId, activate);
+      if (activate) toast.success(`${s.id} marked Active`);
+      else toast.warning(`${s.id} marked Inactive`, 'Its capacity leaves the rack totals above.');
+      load();
+    } catch (e) {
+      toast.error('Could not change the status', e instanceof InventoryApiError ? e.message : 'Please try again.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const t = useMemo(() => rackTotals(shelves), [shelves]);
-  const freeCm = rackHeightFreeCm(r);
-  /* A shelf needs its own clear height; with none left the rack is full in
-     the dimension that matters, whatever its weight says. */
-  const canAdd = !rackOff && freeCm >= 40;
+  const canAdd = state === 'ready' && !rackOff && freeCm > 0;
 
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(shelves.length / PAGE_SIZE));
   const start = (Math.min(page, pages) - 1) * PAGE_SIZE;
   const paged = shelves.slice(start, start + PAGE_SIZE);
 
-  const w = WAREHOUSE_BY_CODE.get(r.wh);
-  const z = ZONE_BY_CODE.get(r.zone);
   const u = r.dims.unit;
 
-  /* The ring's colour follows the same thresholds a shelf uses, so a rack
-     reading 95% and a shelf reading 95% are the same amber. */
   const ringState = t.pct >= 100 ? 'max' : t.pct >= 90 ? 'full' : 'ok';
   const RING: Record<string, [string, string]> = {
     ok: ['#0891b2', '#dff3f7'], full: ['#f59e0b', '#fdf0d5'], max: ['#ef4444', '#fde2e2'],
@@ -167,13 +163,10 @@ export default function RackShelvesModal({ rack: r, onClose }: {
   const [ink, rest] = RING[ringState];
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close — the dialog closes only through the X or
+       Cancel, matching every other dialog in Inventory Management. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
-        /* `whm-page` is a scope marker with no rules of its own — 65 of the
-           shared cell styles hang off it, and this dialog reuses the list's
-           id pill, name cell, actions and toggle. Portalled to body, it has
-           no page ancestor to inherit them from. */
         className="spi-mdl rks-mdl whm-page"
         role="dialog" aria-modal="true" aria-labelledby="rks-title"
         tabIndex={-1} ref={cardRef}
@@ -186,12 +179,10 @@ export default function RackShelvesModal({ rack: r, onClose }: {
                 Shelves in {r.id} | {r.name}
               </div>
               <div className="spi-mdl-sub">
-                {r.wh} {w?.name ?? ''} · {r.zone} {z?.name ?? ''}
+                {w?.id ?? ''} {w?.name || r.whName} · {z?.id ?? ''} {z?.name || r.zoneName}
               </div>
             </div>
           </div>
-          {/* Disabled says why: a rack with no height left is a different
-              problem from one that is switched off. */}
           <Tooltip label={canAdd
             ? `Add a shelf to ${r.id}`
             : rackOff ? 'Activate the rack to add shelves' : 'No rack height left for another shelf'}>
@@ -217,8 +208,6 @@ export default function RackShelvesModal({ rack: r, onClose }: {
               sub={`Across ${t.active} active shelf${t.active === 1 ? '' : 'ves'}`} />
             <Kpi
               className="rks-k--util"
-              /* A ring instead of the icon: this is the one card whose number
-                 has a ceiling, and the ring is what shows how near it is. */
               side={
                 <div className={`rks-k__ring rks-k__ring--${ringState}`}
                   style={{ backgroundImage: `conic-gradient(${ink} 0 ${Math.min(100, t.pct)}%, ${rest} ${Math.min(100, t.pct)}% 100%)` }}>
@@ -238,10 +227,20 @@ export default function RackShelvesModal({ rack: r, onClose }: {
                 <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
               </thead>
               <tbody>
-                {paged.map((s, i) => (
+                {state !== 'ready' || paged.length === 0 ? (
+                  <tr>
+                    <td colSpan={COLUMNS.length}>
+                      <div className="ord-empty">
+                        {state === 'loading' ? 'Loading shelves…'
+                          : state === 'failed' ? 'Could not load the shelves.'
+                            : 'No shelves in this rack yet.'}
+                      </div>
+                    </td>
+                  </tr>
+                ) : paged.map((s, i) => (
                   <ShelfRow
-                    key={s.id} s={s} sr={start + i + 1}
-                    rackOff={rackOff} onToggle={() => toggle(s)}
+                    key={s.apiId} s={s} sr={start + i + 1}
+                    rackOff={rackOff} busy={busyId === s.apiId} onToggle={() => void toggle(s)}
                     onEdit={() => setFormFor(s)}
                     onQr={() => setQrFor(s)}
                   />
@@ -252,11 +251,6 @@ export default function RackShelvesModal({ rack: r, onClose }: {
 
         </div>
 
-        {/* One footer row, as the design has it: the count, the rack-height
-            fact and the page controls all share the line with Cancel, rather
-            than a pager band stacked on top of a second footer bar. The app's
-            own pager still does the counting — it just gives up its band and
-            drops its controls while everything fits on one page. */}
         <div className="spi-mdl-foot rks-foot">
           <WorklistPager
             className="wl-teal rks-pager"
@@ -277,16 +271,18 @@ export default function RackShelvesModal({ rack: r, onClose }: {
         <Suspense fallback={null}>
           <AddShelfModal
             rack={r}
-            shelves={shelves}
+            freeCm={freeCm}
+            nextLevel={nextLevel}
             shelf={formFor === 'new' ? undefined : formFor}
             onClose={() => setFormFor(null)}
+            onSaved={load}
           />
         </Suspense>
       )}
 
       {qrFor && (
         <Suspense fallback={null}>
-          <ShelfQrModal shelf={qrFor} rack={r} onClose={() => setQrFor(null)} />
+          <ShelfQrModal shelf={qrFor} rack={r} warehouse={w} zone={z} onClose={() => setQrFor(null)} />
         </Suspense>
       )}
     </div>,
@@ -294,14 +290,6 @@ export default function RackShelvesModal({ rack: r, onClose }: {
   );
 }
 
-/**
- * One figure about the rack, above the shelves it is computed from.
- *
- * `mark` is the same icon again at 64px, bleeding off the bottom-right corner
- * at 7% — it tells the six cards apart at a glance, from further away than the
- * 40px tile can be read. The utilisation card drops it: its corner is already
- * carrying a ring.
- */
 function Kpi({ icon, mark, side, label, value, sub, className }: {
   icon?: ReactNode; mark?: ReactNode; side?: ReactNode; label: string;
   value: ReactNode; sub: ReactNode; className?: string;
@@ -319,9 +307,8 @@ function Kpi({ icon, mark, side, label, value, sub, className }: {
   );
 }
 
-/** One shelf. */
-function ShelfRow({ s, sr, rackOff, onToggle, onEdit, onQr }: {
-  s: Shelf; sr: number; rackOff: boolean;
+function ShelfRow({ s, sr, rackOff, busy, onToggle, onEdit, onQr }: {
+  s: Shelf; sr: number; rackOff: boolean; busy: boolean;
   onToggle: () => void; onEdit: () => void; onQr: () => void;
 }) {
   const st = shelfState(s);
@@ -365,8 +352,6 @@ function ShelfRow({ s, sr, rackOff, onToggle, onEdit, onQr }: {
 
       <td><b className="rks-num">{nf(s.dims.area, 2)}</b> <small className="rks-u">{u}²</small></td>
 
-      {/* Cubic metres whatever the rack was measured in — a shelf in cm³ reads
-          as 1,440,000, which is a number nobody can picture. */}
       <td><b className="rks-num">{nf(shelfVolumeM3(s), 3)}</b> <small className="rks-u">m³</small></td>
 
       <td>
@@ -400,8 +385,6 @@ function ShelfRow({ s, sr, rackOff, onToggle, onEdit, onQr }: {
             <span className={`rks-st rks-st--${st}`}><i />{SHELF_STATE_LABEL[st]}</span>
             <b>{soff ? '—' : `${p}%`}</b>
           </div>
-          {/* A 1% bar is invisible, so anything above zero gets at least 2% of
-              the track — the point is "some", not the exact width. */}
           <div className="rks-ut__bar"><i style={{ width: `${soff ? 0 : Math.max(p, p ? 2 : 0)}%` }} /></div>
           <div className="rks-ut__leg">
             <span className="rks-ut__u"><i />{nf(s.used)} kg used</span>
@@ -424,7 +407,7 @@ function ShelfRow({ s, sr, rackOff, onToggle, onEdit, onQr }: {
             <button
               type="button"
               className={`whm-toggle${soff ? '' : ' is-on'}`}
-              role="switch" aria-checked={!soff} disabled={rackOff}
+              role="switch" aria-checked={!soff} disabled={rackOff || busy}
               aria-label={`Toggle status of ${s.id}`}
               onClick={onToggle}
             >

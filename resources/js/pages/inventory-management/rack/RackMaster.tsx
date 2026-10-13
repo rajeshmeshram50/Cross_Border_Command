@@ -1,8 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-/* Page chrome, then the warehouse master's cells and the zone master's flag
-   and warehouse cells — the prototype shares those across these four masters,
-   so this page carries all three roots the way the zone list carries two. */
 import '../../p2p/p2p-common.css';
 import '../../p2p/purchase-management/order/po-list/order.css';
 import '../warehouse/warehouse-master.css';
@@ -13,10 +10,14 @@ import WorklistPager from '../../../components/ui/WorklistPager';
 import Tooltip from '../../../components/ui/Tooltip';
 import { useIsClipped } from '../../../components/ui/DataTable';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
+import { useServerList } from '../../../hooks/useServerList';
+import { useDebouncedValue } from '../../../hooks/useDebouncedValue';
 import { useToast } from '../../../contexts/ToastContext';
-import { RACKS, rackKind, rackLevels, type Rack } from './rack-data';
-import { ZONES } from '../zone/zone-data';
-import { WAREHOUSES } from '../warehouse/warehouse-data';
+import {
+  InventoryApiError, loadInventoryLookups, rackApi, rackKind,
+  type InventoryLookups, type Rack, type RackTab,
+} from './rack-data';
+import type { Zone, ZoneWarehouse } from '../zone/zone-data';
 
 const RackQrModal = lazy(() => import('./RackQrModal'));
 const AddRackModal = lazy(() => import('./AddRackModal'));
@@ -24,7 +25,6 @@ const RackShelvesModal = lazy(() => import('./RackShelvesModal'));
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
-/* Built once at module scope — the table formats three figures per row. */
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -34,16 +34,8 @@ function formatDate(iso: string): string {
   return month ? `${d} ${month} ${y}` : iso;
 }
 
-/* The warehouse and zone each rack sits in, by code. Built once: the list
-   joins on both for every row, and a linear search per row would be 50 × 24
-   and 50 × 81. */
-const WAREHOUSE_BY_CODE = new Map(WAREHOUSES.map(w => [w.id, w]));
-const ZONE_BY_CODE = new Map(ZONES.map(z => [z.id, z]));
-
-/** `+15 to +25 °C` — a signed range, as the design writes it. */
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 
-/* ── Icons: the prototype's own paths ─────────────────────────────────── */
 const svg = (d: ReactNode, size = 14, width = 2.2) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -118,7 +110,7 @@ const STEPS: Array<{ no: string; icon: ReactNode; title: string; desc: string }>
   },
 ];
 
-type Tab = 'all' | 'active' | 'inactive';
+type Tab = RackTab;
 
 const TABS: Array<{ key: Tab; label: string; icon: ReactNode }> = [
   { key: 'all', label: 'All Racks', icon: <IcoRack size={15} /> },
@@ -131,74 +123,85 @@ const COLUMNS = [
   'Warehouse', 'Zone', 'Total Shelves', 'Rack Status', 'Action',
 ];
 
-/**
- * Rack Master.
- *
- * Design only, on static rows, sharing its chrome with the warehouse, zone and
- * product-flag lists. The status switch changes what the row says; nothing is
- * persisted.
- *
- * Unlike the other three, its tabs split on STATUS rather than on a fixed
- * property — so the counts move as rows are switched, and they are computed
- * from the live map rather than once at mount.
- */
 export default function RackMaster() {
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
   const [briefOpen, setBriefOpen] = useState(false);
 
   const toast = useToast();
-  const [inactive, setInactive] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(RACKS.filter(r => r.status === 'inactive').map(r => [r.id, true])),
+  const debouncedQuery = useDebouncedValue(query.trim(), 400);
+
+  const [lookups, setLookups] = useState<InventoryLookups>({ warehouses: [], zones: [] });
+  const loadLookups = useCallback(() => {
+    loadInventoryLookups().then(setLookups).catch(() => {
+      toast.error('Could not load warehouses and zones', 'Names and locations may be missing.');
+    });
+  }, [toast]);
+  useEffect(() => { loadLookups(); }, [loadLookups]);
+  const warehouseById = useMemo(() => new Map(lookups.warehouses.map(w => [w.apiId, w])), [lookups]);
+  const zoneById = useMemo(() => new Map(lookups.zones.filter(z => z.apiId).map(z => [z.apiId as number, z])), [lookups]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [pageSize, choosePageSize, refitPageSize] = useFitPageSize(scrollRef);
+
+  const list = useServerList(
+    (q) => rackApi.list({ tab: (q.tab as Tab) ?? 'all', search: q.search, page: q.page, per_page: q.per_page }),
+    { perPage: pageSize, search: debouncedQuery, tab },
+    (e) => toast.error('Could not load racks', e instanceof InventoryApiError ? e.message : 'Please refresh the page.'),
   );
-  const toggle = useCallback((id: string) => {
-    const next = !inactive[id];
-    setInactive(m => ({ ...m, [id]: next }));
-    /* Outside the updater: React may run one twice, and the toast with it. */
-    if (next) toast.warning(`${id} marked Inactive`, 'It stays in the list, dimmed.');
-    else toast.success(`${id} marked Active`);
-  }, [inactive, toast]);
+  const reload = list.reload;
+
+  const rowCount = list.rows.length;
+  useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
+
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const toggle = useCallback(async (rk: Rack) => {
+    if (busyId) return;
+    const activate = rk.status !== 'active';
+    setBusyId(rk.apiId);
+    try {
+      await rackApi.setStatus(rk.apiId, activate);
+      if (activate) toast.success(`${rk.id} marked Active`, 'Its shelves stay inactive until you switch them back on.');
+      else toast.warning(`${rk.id} marked Inactive`, 'It stays in the list, dimmed. Its shelves are deactivated with it.');
+      reload();
+    } catch (e) {
+      toast.error('Could not change the status', e instanceof InventoryApiError ? e.message : 'Please try again.');
+    } finally {
+      setBusyId(null);
+    }
+  }, [busyId, reload, toast]);
 
   const [qrFor, setQrFor] = useState<Rack | null>(null);
-  /* 'new' is Add; a row is Edit; null is closed. */
   const [formFor, setFormFor] = useState<Rack | 'new' | null>(null);
   const [shelvesFor, setShelvesFor] = useState<Rack | null>(null);
 
-  /* Counts come from the whole set, never the searched one — a count that
-     shrinks as you type reads as data disappearing. They DO follow the status
-     switch, because that is what the tabs split on. */
-  const counts = useMemo(() => {
-    const off = RACKS.filter(r => inactive[r.id]).length;
-    return { all: RACKS.length, active: RACKS.length - off, inactive: off };
-  }, [inactive]);
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  const openEdit = useCallback(async (rk: Rack) => {
+    if (openingId) return;
+    setOpeningId(rk.apiId);
+    try {
+      setFormFor(await rackApi.show(rk.apiId));
+    } catch (e) {
+      toast.error('Could not open the rack', e instanceof InventoryApiError ? e.message : 'Please try again.');
+    } finally {
+      setOpeningId(null);
+    }
+  }, [openingId, toast]);
 
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return RACKS.filter(r => {
-      const off = !!inactive[r.id];
-      if (tab === 'active' && off) return false;
-      if (tab === 'inactive' && !off) return false;
-      if (!q) return true;
-      const w = WAREHOUSE_BY_CODE.get(r.wh);
-      const z = ZONE_BY_CODE.get(r.zone);
-      return [
-        r.id, r.name, r.wh, r.zone, z?.name,
-        w?.name, w?.city, w?.state, w?.pin,
-        rackKind(r), off ? 'inactive' : 'active',
-      ].filter(Boolean).join(' ').toLowerCase().includes(q);
-    });
-  }, [tab, query, inactive]);
+  const onSaved = useCallback(() => {
+    reload();
+    loadLookups();
+  }, [reload, loadLookups]);
 
-  const [page, setPage] = useState(1);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [pageSize, choosePageSize, refitPageSize] = useFitPageSize(scrollRef);
-  useEffect(() => { if (rows.length) refitPageSize(); }, [rows.length, refitPageSize]);
-  useEffect(() => { setPage(1); }, [tab, query]);
+  const tabs = list.meta?.tabs;
+  const counts: Record<Tab, number> = { all: tabs?.all ?? 0, active: tabs?.active ?? 0, inactive: tabs?.inactive ?? 0 };
 
-  const total = rows.length;
+  const rows = list.rows;
+  const total = list.meta?.total ?? 0;
+  const page = list.page;
   const start = (page - 1) * pageSize;
-  const paged = useMemo(() => rows.slice(start, start + pageSize), [rows, start, pageSize]);
-  const changePageSize = useCallback((n: number) => { choosePageSize(n); setPage(1); }, [choosePageSize]);
+  const changePageSize = useCallback((n: number) => choosePageSize(n), [choosePageSize]);
+  const loading = list.loading || list.replacing;
 
   return (
     <div className="spi-root ord-page whm-page znm-page rkm-page">
@@ -273,7 +276,7 @@ export default function RackMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by rack ID, rack name, zone or warehouse..."
+              placeholder="Search by rack name..."
               aria-label="Search racks"
               autoComplete="off"
             />
@@ -281,9 +284,11 @@ export default function RackMaster() {
           </div>
         </div>
 
-        {total === 0 ? (
+        {loading && rows.length === 0 ? (
+          <div className="ord-empty">Loading racks…</div>
+        ) : total === 0 ? (
           <div className="ord-empty">
-            {query.trim() ? 'No racks match your search.' : 'No racks in this view yet.'}
+            {debouncedQuery ? 'No racks match your search.' : 'No racks in this view yet.'}
           </div>
         ) : (
           <div className="ord-table-scroll" ref={scrollRef}>
@@ -291,11 +296,15 @@ export default function RackMaster() {
               <thead>
                 <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
               </thead>
-              {paged.map((r, i) => (
-                <tbody key={r.id}>
+              {rows.map((r, i) => (
+                <tbody key={r.apiId}>
                   <Row
-                    r={r} sr={start + i + 1} off={!!inactive[r.id]}
-                    onToggle={toggle} onQr={setQrFor} onEdit={setFormFor} onShelves={setShelvesFor}
+                    r={r} sr={start + i + 1} off={r.status !== 'active'}
+                    busy={busyId === r.apiId} opening={openingId === r.apiId}
+                    w={r.warehouseId ? warehouseById.get(r.warehouseId) : undefined}
+                    z={r.zoneId ? zoneById.get(r.zoneId) : undefined}
+                    onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={t => void openEdit(t)}
+                    onShelves={setShelvesFor}
                   />
                 </tbody>
               ))}
@@ -308,7 +317,7 @@ export default function RackMaster() {
           total={total}
           page={page}
           pageSize={pageSize}
-          onPage={setPage}
+          onPage={list.goTo}
           onPageSize={changePageSize}
           pageSizeOptions={PAGE_SIZE_OPTIONS}
         />
@@ -318,38 +327,38 @@ export default function RackMaster() {
         <Suspense fallback={null}>
           <AddRackModal
             rack={formFor === 'new' ? undefined : formFor}
+            lookups={lookups}
             onClose={() => setFormFor(null)}
+            onSaved={onSaved}
           />
         </Suspense>
       )}
 
       {shelvesFor && (
         <Suspense fallback={null}>
-          <RackShelvesModal rack={shelvesFor} onClose={() => setShelvesFor(null)} />
+          <RackShelvesModal
+            rack={shelvesFor}
+            warehouse={shelvesFor.warehouseId ? warehouseById.get(shelvesFor.warehouseId) : undefined}
+            zone={shelvesFor.zoneId ? zoneById.get(shelvesFor.zoneId) : undefined}
+            onClose={() => { setShelvesFor(null); reload(); }}
+          />
         </Suspense>
       )}
 
       {qrFor && (
         <Suspense fallback={null}>
-          <RackQrModal rack={qrFor} onClose={() => setQrFor(null)} />
+          <RackQrModal
+            rack={qrFor}
+            warehouse={qrFor.warehouseId ? warehouseById.get(qrFor.warehouseId) : undefined}
+            zone={qrFor.zoneId ? zoneById.get(qrFor.zoneId) : undefined}
+            onClose={() => setQrFor(null)}
+          />
         </Suspense>
       )}
     </div>
   );
 }
 
-/**
- * A warehouse or zone name, with the whole of it on hover when the column has
- * cut it.
- *
- * The clip here comes from the column's width, not from a character count —
- * `.znm-whcell b` caps at 170px and ellipsises — so whether to offer a tooltip
- * is measured from the DOM rather than guessed from the string's length. A
- * short name in a narrow column is cut; a long one in a wide column is not.
- *
- * `title` would have done the same job, but the app's own Tooltip is what
- * every other truncation in this flow uses, and the two look nothing alike.
- */
 function ClipName({ value, className }: { value?: string; className?: string }) {
   const ref = useRef<HTMLElement>(null);
   const clipped = useIsClipped(ref, value);
@@ -360,20 +369,21 @@ function ClipName({ value, className }: { value?: string; className?: string }) 
   );
 }
 
-/** One rack. */
-function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
+function Row({ r, sr, off, busy, opening, w, z, onToggle, onQr, onEdit, onShelves }: {
   r: Rack;
   sr: number;
   off: boolean;
-  onToggle: (id: string) => void;
+  busy: boolean;
+  opening: boolean;
+  w: ZoneWarehouse | undefined;
+  z: Zone | undefined;
+  onToggle: (r: Rack) => void;
   onQr: (r: Rack) => void;
   onEdit: (r: Rack) => void;
   onShelves: (r: Rack) => void;
 }) {
-  const w = WAREHOUSE_BY_CODE.get(r.wh);
-  const z = ZONE_BY_CODE.get(r.zone);
   const u = r.dims.unit;
-  const levels = rackLevels(r);
+  const levels = r.shelves;
 
   return (
     <tr className={off ? 'is-off' : undefined}>
@@ -399,8 +409,6 @@ function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
         </div>
       </td>
 
-      {/* Length × width × height, with the unit said once at the end — three
-          units on one line is the same word three times. */}
       <td>
         <span className="rkm-dimcell">
           <b>{inGrouping.format(r.dims.length)}</b><i>×</i>
@@ -444,8 +452,8 @@ function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
 
       <td>
         <div className="znm-whcell">
-          <span className="whm-idpill znm-whid">{r.wh}</span>
-          <ClipName value={w?.name} />
+          <span className="whm-idpill znm-whid">{w?.id ?? '—'}</span>
+          <ClipName value={w?.name || r.whName || undefined} />
           <span className="rkm-whcity">
             <IcoPin size={10} />{w?.city ?? ''}{w?.state ? `, ${w.state}` : ''}
           </span>
@@ -454,15 +462,13 @@ function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
 
       <td>
         <div className="znm-whcell">
-          <span className="whm-idpill znm-whid">{r.zone}</span>
-          <ClipName value={z?.name} />
+          <span className="whm-idpill znm-whid">{z?.id ?? '—'}</span>
+          <ClipName value={z?.name || r.zoneName || undefined} />
         </div>
       </td>
 
-      {/* Derived from the rack's height, not stored — so it is a count, and
-          the button is the way into the shelves it counts. */}
       <td>
-        <Tooltip label={`View the ${levels} shelves in ${r.id}`}>
+        <Tooltip label={`View the ${levels} shel${levels === 1 ? 'f' : 'ves'} in ${r.id}`}>
           <button type="button" className="rkm-lvl" aria-label={`View shelves in ${r.id}`}
             onClick={() => onShelves(r)}>
             {levels}
@@ -480,7 +486,7 @@ function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
         <div className="whm-acts">
           <Tooltip label="Edit this rack">
             <button type="button" className="whm-act" aria-label={`Edit ${r.id}`}
-              onClick={() => onEdit(r)}>
+              disabled={opening} onClick={() => onEdit(r)}>
               <IcoEdit />
             </button>
           </Tooltip>
@@ -490,7 +496,8 @@ function Row({ r, sr, off, onToggle, onQr, onEdit, onShelves }: {
               className={`whm-toggle${off ? '' : ' is-on'}`}
               role="switch" aria-checked={!off}
               aria-label={`Toggle status of ${r.id}`}
-              onClick={() => onToggle(r.id)}
+              disabled={busy}
+              onClick={() => onToggle(r)}
             >
               <span />
             </button>

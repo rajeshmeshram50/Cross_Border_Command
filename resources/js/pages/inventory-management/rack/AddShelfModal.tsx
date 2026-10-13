@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
-/* The stylesheets this form is dressed by — it carries its own rather than
-   relying on the dialog that opened it. */
 import '../../p2p/p2p-detail.css';
 import '../../p2p/purchase-management/order/create-po/create-po.css';
 import '../warehouse/warehouse-master.css';
@@ -11,22 +9,32 @@ import '../zone/zone-form.css';
 import './rack-form.css';
 import './shelf-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
-import { rackHeightCm, type Rack } from './rack-data';
-import { shelfCode, type Shelf, type ShelfType } from './shelf-data';
+import { InventoryApiError, type Rack } from './rack-data';
+import { SHELF_PURPOSES, SHELF_TYPES, shelfApi, type Shelf, type ShelfPayload } from './shelf-data';
 
-const SHELF_TYPES: ShelfType[] = [
-  'Standard Shelf', 'Heavy Duty Shelf', 'Pallet Level', 'Bin Shelf', 'Wire Mesh Shelf',
-];
+const PURPOSES = SHELF_PURPOSES;
 
-const PURPOSES = [
-  'Fast-Moving Picking', 'Bulk / Reserve Storage', 'Small Parts & Bins', 'Cold Chain Stock',
-  'Hazardous Goods', 'Returns / QC Hold', 'Kitting & Assembly', 'Dispatch Staging', 'Other',
-];
+type ShelfField = 'level' | 'name' | 'type' | 'max' | 'len' | 'wid' | 'ht' | 'purpose';
+
+const FIELD_FOR: Record<string, ShelfField> = {
+  level_no: 'level', shelf_name: 'name', shelf_type: 'type', max_weight_kg: 'max',
+  length: 'len', width: 'wid', height: 'ht', purpose: 'purpose',
+};
+
+function fieldForMessage(msg: string): ShelfField | null {
+  const m = msg.toLowerCase();
+  if (m.includes('level')) return 'level';
+  if (m.includes('shelf with this name')) return 'name';
+  if (m.includes('rack length')) return 'len';
+  if (m.includes('rack width')) return 'wid';
+  if (m.includes('rack height')) return 'ht';
+  if (m.includes('kg already stored')) return 'max';
+  return null;
+}
 
 const nf = (v: number, dp = 2) => v.toLocaleString('en-IN', { maximumFractionDigits: dp });
 const signed = (n: number) => (n > 0 ? `+${n}` : String(n));
 
-/* ── Icons: the prototype's own paths ─────────────────────────────────── */
 const Ico = (d: ReactNode, size = 14) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>
@@ -65,24 +73,13 @@ interface Draft {
   purpose: string;
 }
 
-/**
- * Add / Edit Shelf.
- *
- * Design only, on the derived shelves: nothing is persisted, and Save reports
- * what it would have written.
- *
- * The rack above is read-only throughout — a shelf does not get to restate the
- * rack it sits in. What the rack DOES constrain is live: its flags gate the
- * shelf's flags, and its unused height is the ceiling on this shelf's height,
- * stated above the field rather than enforced after the fact.
- */
-export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
+export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, shelf, onClose, onSaved }: {
   rack: Rack;
-  /** The shelves already in the rack — what is left of its height comes from these. */
-  shelves: Shelf[];
-  /** Editing an existing shelf, or undefined to add one. */
+  freeCm: number;
+  nextLevel: number;
   shelf?: Shelf;
   onClose: () => void;
+  onSaved?: (shelf: Shelf) => void;
 }) {
   useScrollLock(true, '.rks-addmdl');
   const toast = useToast();
@@ -91,12 +88,13 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  });
 
-  const [unit, setUnit] = useState<Unit>('cm');
+  const [saving, setSaving] = useState(false);
+  const [unit, setUnit] = useState<Unit>(shelf?.dims.unit ?? 'cm');
   const [d, setD] = useState<Draft>(() => (shelf ? {
     level: String(shelf.level),
     name: shelf.name,
@@ -109,7 +107,7 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
     haz: shelf.haz,
     purpose: shelf.purpose,
   } : {
-    level: '', name: '', type: '', max: '', len: '', wid: '', ht: '',
+    level: String(nextLevel), name: '', type: '', max: '', len: '', wid: '', ht: '',
     cold: false, haz: false, purpose: '',
   }));
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({});
@@ -117,30 +115,28 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
   const set = (p: Partial<Draft>) => setD(s => ({ ...s, ...p }));
   const clear = (k: keyof Draft) => setErrors(e => (e[k] ? { ...e, [k]: undefined } : e));
 
-  const next = shelves.length + 1;
-  const id = editing ? shelf!.id : shelfCode(r, next);
+  const next = nextLevel;
+  const [nextCode, setNextCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (editing) return;
+    let live = true;
+    shelfApi.nextCode(r.apiId)
+      .then(code => { if (live) setNextCode(code || 'Assigned on save'); })
+      .catch(() => { if (live) setNextCode('Assigned on save'); });
+    return () => { live = false; };
+  }, [editing, r.apiId]);
+  const id = editing ? shelf!.id : (nextCode ?? 'Loading…');
 
-  /* Height the rack has not given to a shelf yet. The one being edited gives
-     its own back, or editing a shelf would look like it no longer fits. */
-  const freeCm = useMemo(() => {
-    const used = shelves.reduce((t, s) => t + (s === shelf ? 0 : s.dims.heightCm), 0);
-    return Math.max(0, Math.round(rackHeightCm(r) - used));
-  }, [shelves, shelf, r]);
+  const freeCm = Math.max(0, Math.round((rackFreeCm + (shelf ? shelf.dims.heightCm : 0)) * 100) / 100);
 
-  /* Area and volume, recomputed rather than stored: two numbers for one box
-     can only ever disagree. */
   const calc = useMemo(() => {
     const L = parseFloat(d.len), W = parseFloat(d.wid), H = parseFloat(d.ht);
     const area = L > 0 && W > 0 ? L * W : null;
     const vol = area != null && H > 0 ? area * H : null;
-    /* Volume reads in cubic metres whatever the box was measured in — 1,440,000
-       cm³ is a number nobody can picture. */
     const m3 = vol == null ? null : unit === 'm' ? vol : vol / 1e6;
     return { area, m3 };
   }, [d.len, d.wid, d.ht, unit]);
 
-  /* Switching Cm ⇄ Metres converts what is typed rather than clearing it: the
-     figures are the same shelf either way. */
   const switchUnit = (to: Unit) => {
     if (to === unit) return;
     const k = to === 'm' ? 0.01 : 100;
@@ -155,7 +151,8 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
   const rackDims = r.dims;
   const ru = rackDims.unit;
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return;
     const e: Partial<Record<keyof Draft, string>> = {};
     if (!/^\d+$/.test(d.level.trim()) || Number(d.level) < 1) e.level = 'Enter a level, 1 or more';
     if (!d.name.trim()) e.name = 'Enter a shelf name';
@@ -164,8 +161,6 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
     (['len', 'wid', 'ht'] as const).forEach(k => {
       if (!(parseFloat(d[k]) > 0)) e[k] = 'Required';
     });
-    /* The one constraint the rack really imposes: a shelf taller than the
-       height left over does not fit in it. */
     const hCm = unit === 'm' ? parseFloat(d.ht) * 100 : parseFloat(d.ht);
     if (Number.isFinite(hCm) && hCm > freeCm) {
       e.ht = `Only ${freeCm} cm of rack height is left`;
@@ -178,16 +173,55 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
       toast.warning('Shelf not saved', e[first] ?? 'Check the highlighted fields.');
       return;
     }
-    toast.success(
-      editing ? `${id} updated` : `${id} saved`,
-      `${d.name} on level ${d.level} of ${r.id}. Nothing is stored yet — this screen is design only.`,
-    );
-    onClose();
+    const L = parseFloat(d.len), W = parseFloat(d.wid), H = parseFloat(d.ht);
+    const payload: ShelfPayload = {
+      shelf_name: d.name.trim(),
+      level_no: Number(d.level),
+      shelf_type: d.type,
+      max_weight_kg: parseFloat(d.max),
+      purpose: d.purpose,
+      cold_chain: d.cold && r.cold ? 1 : 0,
+      hazardous: d.haz && r.haz ? 1 : 0,
+      dim_unit: unit,
+      length: L,
+      width: W,
+      height: H,
+      area: Math.round(L * W * 1e4) / 1e4,
+      volume: Math.round(L * W * H * 1e6) / 1e6,
+    };
+
+    setSaving(true);
+    try {
+      const saved = editing ? await shelfApi.update(shelf!.apiId, payload) : await shelfApi.create(r.apiId, payload);
+      toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, `${saved.name} on level ${saved.level} of ${r.id}`);
+      onSaved?.(saved);
+      onClose();
+    } catch (err) {
+      if (err instanceof InventoryApiError) {
+        const nextErr: Partial<Record<keyof Draft, string>> = {};
+        for (const [k, msgs] of Object.entries(err.fieldErrors)) {
+          const f = FIELD_FOR[k];
+          if (f && !nextErr[f]) nextErr[f] = msgs[0];
+        }
+        if (!Object.keys(nextErr).length) {
+          const f = fieldForMessage(err.message);
+          if (f) nextErr[f] = err.message;
+        }
+        setErrors(nextErr);
+        toast.error(editing ? 'Could not update the shelf' : 'Could not create the shelf', Object.values(nextErr)[0] ?? err.message);
+      } else {
+        toast.error('Could not save the shelf', 'Please try again.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
-    <div className="spi-mdl-backdrop whm-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    /* No backdrop-click close. The form holds unsaved input, and a stray
+       click outside it must not throw that away — the dialog closes only
+       through the X or Cancel. */
+    <div className="spi-mdl-backdrop whm-backdrop">
       <div
         className="spi-mdl whm-addmdl rks-addmdl whm-page"
         role="dialog" aria-modal="true" aria-labelledby="rks-add-title"
@@ -211,7 +245,6 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
 
         <div className="spi-mdl-body whm-addbody">
 
-          {/* ── The rack, read-only ───────────────────────────────────── */}
           <Card icon={<IcoRack />} title="Rack Details">
             <AutoField label="Rack ID" value={r.id} mono />
             <AutoField label="Rack Name" value={r.name} />
@@ -237,10 +270,8 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
             </div>
           </Card>
 
-          {/* ── The shelf ─────────────────────────────────────────────── */}
           <Card icon={<IcoShelf />} title="Shelf Details" five>
             <Field label="Shelf ID">
-              {/* The one field that IS an id, so it keeps `.whm-auto`'s mono. */}
               <div className="whm-auto is-filled">
                 <input className="spi-dt-inp" value={id} readOnly tabIndex={-1} />
                 <span className="whm-auto__tag">AUTO</span>
@@ -291,10 +322,6 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
                     </button>
                   ))}
                 </div>
-                {/* Stated, not just enforced: the height a shelf may take is
-                    the one number here that depends on the other shelves, and
-                    finding that out by being refused is a poor way to learn
-                    it. */}
                 <span className="rks-hint">
                   <IcoInfo size={12} />Free rack height: <b>{freeCm} cm</b>
                 </span>
@@ -341,7 +368,6 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
             </div>
           </Card>
 
-          {/* ── Flags ─────────────────────────────────────────────────── */}
           <Card icon={<IcoFlag />} title="Shelf Flag Details">
             <Field label="Cold Chain">
               <Switch
@@ -359,9 +385,6 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
                 onToggle={() => set({ haz: !d.haz })}
               />
             </Field>
-            {/* Two columns, so the row is Cold Chain · Hazardous · Purpose and
-                fills its four. On the whole row it would sit alone under two
-                toggles and two empty columns. */}
             <Field label="Shelf Purpose" req error={errors.purpose} wide>
               <EditSelect
                 value={d.purpose}
@@ -377,9 +400,9 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
         <div className="spi-mdl-foot">
           <span className="whm-footnote"><IcoInfo /> Fields marked * are required</span>
           <div className="spi-mdl-foot-btns">
-            <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm" onClick={save}>
-              <IcoCheck /> {editing ? 'Update Shelf' : 'Save Shelf'}
+            <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
+              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Shelf' : 'Save Shelf'}
             </button>
           </div>
         </div>
@@ -389,7 +412,6 @@ export default function AddShelfModal({ rack: r, shelves, shelf, onClose }: {
   );
 }
 
-/** One titled card of fields. `five` is the shelf row, which has five. */
 function Card({ icon, title, five, children }: {
   icon: ReactNode; title: string; five?: boolean; children: ReactNode;
 }) {
@@ -404,13 +426,6 @@ function Card({ icon, title, five, children }: {
   );
 }
 
-/**
- * A field the rack fills in: read-only, and it shows that it is filled.
- *
- * `mono` is the exception rather than the rule — `.whm-auto` is monospaced
- * because it was written for generated ids, and most of what it carries here
- * is ordinary text that should not look like a code.
- */
 function AutoField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <Field label={label}>
@@ -422,7 +437,6 @@ function AutoField({ label, value, mono }: { label: string; value: string; mono?
   );
 }
 
-/** A handling flag the rack can close off, with the reason written beside it. */
 function Switch({ on, disabled, label, onToggle }: {
   on: boolean; disabled?: boolean; label: string; onToggle: () => void;
 }) {
