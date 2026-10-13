@@ -445,6 +445,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::put   ('/{id}/items',                     [$po, 'updateItems'])->whereNumber('id');  // Stage 02
         Route::put   ('/{id}/terms',                     [$po, 'updateTerms'])->whereNumber('id');  // Stage 03 (+ submit)
         Route::get   ('/{id}/qty-history',               [$po, 'qtyHistory'])->whereNumber('id');
+        // Stage 04's T&C panel: typed + global + segment, composed as the PDF does.
+        Route::get   ('/{id}/terms',                     [$po, 'terms'])->whereNumber('id');
         // Payments: TDS, payment requests and payments against them (Manage Payment Requests),
         // plus the all-PO list and decisions (Payment Request Management).
         $pay = \App\Http\Controllers\Api\P2p\PoPaymentRequestController::class;
@@ -546,6 +548,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // code that lands in the database is allocated on save.
         Route::get   ('/{id}/boxes/next-codes',    [SpiBoxController::class, 'nextCodes'])->whereNumber('id');
         Route::get   ('/{id}/packing-summary',     [SpiBoxController::class, 'packingSummary'])->whereNumber('id');
+        // Temporary Putaway Summary — the whole dialog in one read.
+        Route::get   ('/{id}/summary',             [SupplierInvoiceController::class, 'summary'])->whereNumber('id');
         Route::post  ('/{id}/boxes',               [SpiBoxController::class, 'store'])->whereNumber('id');
         Route::put   ('/{id}/boxes/{box}',         [SpiBoxController::class, 'update'])->whereNumber('id')->whereNumber('box');
         Route::delete('/{id}/boxes/{box}',         [SpiBoxController::class, 'destroy'])->whereNumber('id')->whereNumber('box');

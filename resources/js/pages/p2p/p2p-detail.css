@@ -280,6 +280,35 @@
 .spi-dt-rogrid { display:grid; grid-template-columns: repeat(4,1fr); }
 .spi-dt-ro { padding:11px 14px; border-right:1px solid #f1f5f9; border-bottom:1px solid #f1f5f9; min-width:0; }
 .spi-dt-ro-full { grid-column:1 / -1; }
+/* A full-width value is the long one — terms, an address, a reason — and it is
+   the only one typed into a textarea, where the line breaks ARE the formatting.
+   HTML collapses them, so Stage 03's neatly split clauses arrived in Stage 04's
+   recap as a single unreadable paragraph (QA #9). pre-wrap keeps the breaks and
+   still wraps long lines; the short grid fields are left alone, since collapsing
+   whitespace is right for them. */
+.spi-dt-ro-full .spi-dt-ro-val { white-space: pre-wrap; }
+
+/* The global / segment T&C blocks under the typed terms. They are stored as
+   rich text, so they are rendered as HTML rather than escaped — capped in
+   height because one library entry can run to a megabyte. */
+.spi-dt-tnc { grid-column:1 / -1; margin-top:10px; }
+.spi-dt-tnc-h {
+  font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:#0e7490; margin-bottom:6px;
+}
+.spi-dt-tnc-seg { font-size:10.5px; font-weight:700; color:#0891b2; margin-bottom:2px; }
+.spi-dt-tnc-body {
+  max-height:260px; overflow-y:auto;
+  font-size:12.5px; line-height:1.6; color:#334155;
+  padding:10px 12px; border-radius:8px;
+  background:rgba(8,145,178,.05); border:1px solid rgba(8,145,178,.18);
+}
+.spi-dt-tnc-body + .spi-dt-tnc-body { margin-top:8px; }
+[data-bs-theme="dark"] .spi-dt-tnc-h { color:#67e8f9; }
+[data-bs-theme="dark"] .spi-dt-tnc-seg { color:#22d3ee; }
+[data-bs-theme="dark"] .spi-dt-tnc-body {
+  color:#cbd5e1; background:rgba(34,211,238,.08); border-color:rgba(34,211,238,.22);
+}
 .spi-dt-ro-lbl { font-size:9px; font-weight:800; letter-spacing:.04em; color:#94a3b8; text-transform:uppercase; }
 .spi-dt-ro-val { font-size:13px; font-weight:600; color:#0f172a; margin-top:5px; word-break:break-word; }
 .spi-dt-ro-val.is-muted { color:#94a3b8; font-style:italic; font-weight:500; }

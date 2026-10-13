@@ -702,6 +702,35 @@ class SupplierInvoiceController extends Controller
         }
     }
 
+    /**
+     * GET /p2p/spi/{id}/summary — everything the Temporary Putaway Summary shows.
+     *
+     * One call for the whole dialog: the header pills, the eight analytics
+     * tiles, the three trading parties, the PI/PO/SPI references, the
+     * per-box placement and the per-box contents.
+     *
+     * Read-only, and it reads ROWS. The screen used to compute its zones and
+     * racks from the invoice number, so it drew a full allocation for an
+     * invoice whose boxes had never been scanned; this answers from
+     * p2p_spi_putaways and returns nulls where nothing has been placed.
+     */
+    public function summary(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $this->tenantUser($request);
+            $body = app(\App\Services\P2p\SpiSummaryService::class)->build($this->findSpi($id));
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     /** GET /p2p/spi/{id}/zoho-tracker — says WHY there is no bill, rather than showing an empty state. */
     public function zohoTracker(Request $request, int $id)
     {

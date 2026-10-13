@@ -1946,6 +1946,33 @@ class SalesPdfController extends Controller
     }
 
     /**
+     * The three Terms & Conditions layers of a purchase order, composed exactly
+     * as the PDF composes them.
+     *
+     * Public because the SCREEN needs the same answer. Stage 4's recap drew the
+     * typed `terms` alone, so a global or segment clause appeared on the printed
+     * PO and nowhere before it — and an edit to the global library looked like
+     * it had never been fetched (QA #11). One method, both readers, so they
+     * cannot drift.
+     *
+     * @return array{typed: string, global: array<int, string>, segment: array<int, array>}
+     */
+    public function poTncLayers($po): array
+    {
+        [$global, $segment] = $this->dedupeTncLayers(
+            $po->terms ?? null,
+            $this->fetchGlobalTncs($po->client_id, $po->branch_id, $this->poTncCategory($po)),
+            $this->fetchPoTncs($po),
+        );
+
+        return [
+            'typed'   => trim((string) ($po->terms ?? '')),
+            'global'  => $global,
+            'segment' => $segment,
+        ];
+    }
+
+    /**
      * The GLOBAL Terms & Conditions of one document category: a single entry that
      * applies to every document of that category, whatever segments it carries.
      * Rendered between the form's own terms and the segment-wise blocks.
