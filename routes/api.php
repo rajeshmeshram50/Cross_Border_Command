@@ -550,6 +550,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/{id}/packing-summary',     [SpiBoxController::class, 'packingSummary'])->whereNumber('id');
         // Temporary Putaway Summary — the whole dialog in one read.
         Route::get   ('/{id}/summary',             [SupplierInvoiceController::class, 'summary'])->whereNumber('id');
+        // Evidence Vault of ONE invoice (the SUPPLIER's vault is /segment-uploads/supplier/{id}/vault).
+        Route::get   ('/{id}/evidence-vault',      [SupplierInvoiceController::class, 'evidenceVault'])->whereNumber('id');
         Route::post  ('/{id}/boxes',               [SpiBoxController::class, 'store'])->whereNumber('id');
         Route::put   ('/{id}/boxes/{box}',         [SpiBoxController::class, 'update'])->whereNumber('id')->whereNumber('box');
         Route::delete('/{id}/boxes/{box}',         [SpiBoxController::class, 'destroy'])->whereNumber('id')->whereNumber('box');

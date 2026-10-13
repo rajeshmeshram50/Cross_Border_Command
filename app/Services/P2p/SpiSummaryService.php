@@ -40,7 +40,7 @@ class SpiSummaryService
             'parties'    => $this->parties($spi),
             'references' => $this->references($spi),
             'locations'  => $this->locations($boxes, $places),
-            'boxes'      => $this->boxDetails($boxes, $places),
+            'boxes'      => $this->boxDetails($boxes, $places, $spi),
         ];
     }
 
@@ -181,9 +181,9 @@ class SpiSummaryService
     }
 
     /** Per-box dimensions and weights, each with the products inside it. */
-    private function boxDetails($boxes, array $places): array
+    private function boxDetails($boxes, array $places, SupplierInvoice $spi): array
     {
-        return $boxes->map(function (SpiBox $b, int $i) use ($places) {
+        return $boxes->map(function (SpiBox $b, int $i) use ($places, $spi) {
             $p = $places[$b->id] ?? null;
 
             return [
@@ -202,17 +202,18 @@ class SpiSummaryService
                 'temp_min_c'   => $b->temp_min_c === null ? null : (float) $b->temp_min_c,
                 'temp_max_c'   => $b->temp_max_c === null ? null : (float) $b->temp_max_c,
                 'location'     => $p['allocation_id'] ?? null,
-                'products'     => $this->boxProducts($b),
+                'products'     => $this->boxProducts($b, $spi),
             ];
         })->values()->all();
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function boxProducts(SpiBox $b): array
+    private function boxProducts(SpiBox $b, SupplierInvoice $spi): array
     {
-        [$hazardIds, $coldIds] = $this->flagIds($b->supplier_invoice_id ? SupplierInvoice::find($b->supplier_invoice_id) : null);
+        [$hazardIds, $coldIds] = $this->flagIds($spi);
+        $master = $this->flagMaster($spi);
 
-        return $b->items->values()->map(function (SpiBoxItem $it, int $i) use ($hazardIds, $coldIds) {
+        return $b->items->values()->map(function (SpiBoxItem $it, int $i) use ($hazardIds, $coldIds, $master) {
             $flags = array_map('intval', (array) ($it->flags ?? []));
             $line  = $it->invoiceItem;
             $prod  = $line?->product_id ? DB::table('products')->find($line->product_id) : null;
@@ -222,6 +223,21 @@ class SpiSummaryService
                 'product_code' => $prod->product_code ?? null,
                 'product_name' => $line->description ?: ($prod->name ?? null),
                 'quantity'     => (float) $it->quantity,
+                /* The flag MASTER rows this item carries, not just the two
+                 * the tiles count. A box item stores ids in its `flags` json and
+                 * nothing else; an id on its own tells a reader nothing, and the
+                 * screen draws a chip per flag. Named here from
+                 * inventory_product_flags, one query for the whole page.
+                 *
+                 * is_default marks the platform rows (Hazardous, Cold Chain,
+                 * Fragile) that every tenant shares and none may rename — the
+                 * same flag the master list returns. */
+                'flags'        => array_values(array_filter(array_map(
+                    fn (int $id) => $master[$id] ?? null,
+                    $flags,
+                ))),
+                // Kept as their own booleans: the two analytics tiles count
+                // these specifically, and a tile should not have to search a list.
                 'hazardous'    => (bool) array_intersect($flags, $hazardIds),
                 'cold_chain'   => (bool) array_intersect($flags, $coldIds),
                 'serial_no'    => $it->serial_no,
@@ -280,6 +296,34 @@ class SpiSummaryService
         }
 
         return $out;
+    }
+
+    /**
+     * id => the product flag master row, for every flag this tenant can see.
+     *
+     * Platform defaults (client_id null) included, because that is what the
+     * packing screen's built-in chips resolve to and what a box item actually
+     * stores. Memoised per client+branch, so a page of boxes costs one query.
+     *
+     * @return array<int, array{id:int, code:string, name:string, is_default:bool}>
+     */
+    private function flagMaster(SupplierInvoice $spi): array
+    {
+        static $cache = [];
+        $key = ($spi->client_id ?? 0) . ':' . ($spi->branch_id ?? 0);
+        if (isset($cache[$key])) return $cache[$key];
+
+        return $cache[$key] = ProductFlag::query()
+            ->where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $spi->client_id))
+            ->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $spi->branch_id))
+            ->get()
+            ->mapWithKeys(fn (ProductFlag $f) => [(int) $f->id => [
+                'id'         => (int) $f->id,
+                'code'       => $f->flag_code,
+                'name'       => $f->flag_name,
+                'is_default' => $f->client_id === null,
+            ]])
+            ->all();
     }
 
     /**
