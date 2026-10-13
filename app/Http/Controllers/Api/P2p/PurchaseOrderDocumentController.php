@@ -228,7 +228,7 @@ class PurchaseOrderDocumentController extends Controller
                 'client_id'         => $order->client_id,
                 'branch_id'         => $order->branch_id,
                 'purchase_order_id' => $order->id,
-                'code'              => $this->svc->nextDocCode((int) $order->client_id),
+                'code'              => $this->svc->nextDocCode((int) $order->client_id, $order->branch_id ? (int) $order->branch_id : null),
                 'name'              => $data['name'],
                 'doc_kind'          => $data['doc_kind'] ?? 'other',
                 'is_required'       => $data['is_required'] ?? 'no',

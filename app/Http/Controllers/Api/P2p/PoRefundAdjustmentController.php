@@ -144,7 +144,7 @@ class PoRefundAdjustmentController extends Controller
         if ((float) $order->paid_amount <= 0) return $this->fail('No money has been released on this PO — cancel it directly instead.');
         if ($order->refundAdjustment()->exists()) return $this->fail('This PO already has a refund adjustment.');
         return $this->ok([
-            'next_code' => $this->svc->nextRefundCode((int) $user->client_id, false),
+            'next_code' => $this->svc->nextRefundCode((int) $user->client_id, $order->branch_id ? (int) $order->branch_id : null, false),
             'po'        => $this->shapePo($order, $this->linkRefs(collect([$order]))),
         ]);
     }
@@ -181,7 +181,7 @@ class PoRefundAdjustmentController extends Controller
 
             $adj = PoRefundAdjustment::create([
                 'client_id' => $po->client_id, 'branch_id' => $po->branch_id,
-                'code' => $this->svc->nextRefundCode((int) $po->client_id),
+                'code' => $this->svc->nextRefundCode((int) $po->client_id, $po->branch_id ? (int) $po->branch_id : null),
                 'purchase_order_id' => $po->id, 'vendor_id' => $po->vendor_id,
                 'refund_date' => now()->toDateString(),
                 'supplier_ref_no' => $data['supplier_ref_no'] ?? null,

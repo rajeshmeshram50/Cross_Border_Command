@@ -72,7 +72,7 @@ class PurchaseOrderService
     }
 
     /**
-     * Next PRQ-### payment request code, one running sequence per client. Call
+     * Next PRQ-### payment request code, one running sequence PER BRANCH. Call
      * inside a transaction.
      *
      * Plain PRQ-001, not PRQ/<FY>/<SEQ> like the documents around it: a payment
@@ -80,22 +80,27 @@ class PurchaseOrderService
      * added length without telling anyone anything the request date does not.
      * The sequence therefore runs on and never restarts, or April would hand out
      * a PRQ-001 that already exists.
+     *
+     * Per branch for the same reason the PO itself is (QA #15): a request is
+     * raised on one office's order and approved in that office, so counting
+     * another branch's requests only skips numbers and tells each branch how
+     * busy the others are.
      */
-    public function nextPaymentRequestCode(int $clientId): string
+    public function nextPaymentRequestCode(int $clientId, ?int $branchId = null): string
     {
-        return $this->nextSerialCode($clientId, 'PRQ', PoPaymentRequest::withoutGlobalScope('tenant'));
+        return $this->nextSerialCode($clientId, 'PRQ', PoPaymentRequest::withoutGlobalScope('tenant'), true, $branchId);
     }
 
-    /** Next ADR/<FY>/<SEQ> (advance refund adjustment), one sequence per client. */
-    public function nextRefundCode(int $clientId, bool $allocate = true): string
+    /** Next ADR/<FY>/<SEQ> (advance refund adjustment), one sequence per branch. */
+    public function nextRefundCode(int $clientId, ?int $branchId = null, bool $allocate = true): string
     {
-        return $this->nextCode($clientId, 'ADR', PoRefundAdjustment::withoutGlobalScope('tenant')->withTrashed(), $allocate);
+        return $this->nextCode($clientId, 'ADR', PoRefundAdjustment::withoutGlobalScope('tenant')->withTrashed(), $allocate, $branchId);
     }
 
-    /** Next DOC/<FY>/<SEQ>, one sequence per client. */
-    public function nextDocCode(int $clientId): string
+    /** Next DOC/<FY>/<SEQ>, one sequence per branch. */
+    public function nextDocCode(int $clientId, ?int $branchId = null): string
     {
-        return $this->nextCode($clientId, 'DOC', PurchaseOrderDocument::withoutGlobalScope('tenant')->withTrashed());
+        return $this->nextCode($clientId, 'DOC', PurchaseOrderDocument::withoutGlobalScope('tenant')->withTrashed(), true, $branchId);
     }
 
     /* ══════════════════ Stage 04 · documents from the CLM libraries ══════════════════ */
@@ -147,7 +152,7 @@ class PurchaseOrderService
                 'client_id'         => $po->client_id,
                 'branch_id'         => $po->branch_id,
                 'purchase_order_id' => $po->id,
-                'code'              => $this->nextDocCode((int) $po->client_id),
+                'code'              => $this->nextDocCode((int) $po->client_id, $po->branch_id ? (int) $po->branch_id : null),
                 'name'              => $row['name'],
                 'doc_sub'           => $row['sub'],
                 'doc_kind'          => $row['kind'],
@@ -305,18 +310,30 @@ class PurchaseOrderService
     }
 
     /**
-     * A running <PREFIX>-### number, one sequence per client and no financial
-     * year in it. Codes in the older <PREFIX>/<FY>/<SEQ> shape are ignored when
-     * the next number is read, so both can sit in the same table while the old
-     * rows keep the number they were issued under.
+     * A running <PREFIX>-### number with no financial year in it. Codes in the
+     * older <PREFIX>/<FY>/<SEQ> shape are ignored when the next number is read,
+     * so both can sit in the same table while the old rows keep the number they
+     * were issued under.
+     *
+     * @param  int|null  $branchId  Numbers within this branch alone; null keeps
+     *   the client-wide sequence.
      */
-    private function nextSerialCode(int $clientId, string $prefix, Builder $query, bool $allocate = true): string
+    private function nextSerialCode(int $clientId, string $prefix, Builder $query, bool $allocate = true, ?int $branchId = null): string
     {
-        // Allocation locks the client row so two saves never take the same number.
-        if ($allocate) DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+        // The BRANCH row when numbering within one, so two branches do not queue
+        // behind each other; the client row otherwise. Same rule as nextCode().
+        if ($allocate) {
+            $branchId !== null
+                ? DB::table('branches')->where('id', $branchId)->lockForUpdate()->first()
+                : DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+        }
 
-        $max = 0;
-        foreach ($query->where('client_id', $clientId)->where('code', 'like', "{$prefix}-%")->pluck('code') as $code) {
+        $max  = 0;
+        $rows = $query->where('client_id', $clientId)
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->where('code', 'like', "{$prefix}-%")
+            ->pluck('code');
+        foreach ($rows as $code) {
             if (preg_match('#^' . preg_quote($prefix, '#') . '-(\d+)$#', (string) $code, $m)) {
                 $max = max($max, (int) $m[1]);
             }
