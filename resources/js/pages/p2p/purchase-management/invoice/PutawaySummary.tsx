@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { HeadPill } from '../order/create-po/CreatePoForm';
@@ -7,8 +7,9 @@ import {
   IcoPin, IcoShip, IcoTag, IcoTarget, IcoCart, IcoUser, IcoWarehouse, IcoX,
 } from '../../icons';
 import { money } from '../order/manage-payment/payment-shared';
-import { proformaNo, putawayBoxes, putawayParties, putawayTotals } from './putaway-data';
-import type { PutawayBox, PutawayParty } from './putaway-data';
+import { PoApiError } from '../order/api/po-api';
+import { putawayApi } from './putaway-data';
+import type { PutawayBox, PutawayParty, PutawaySummaryData } from './putaway-data';
 import type { InvoiceRow } from './types';
 
 const PutawayStickerModal = lazy(() => import('./PutawayStickerModal'));
@@ -122,6 +123,14 @@ function AmountCard({ label, value, sub, tone }: { label: string; value: string;
   );
 }
 
+const dash = (v: string | null | undefined) => (v && v.trim() ? v : '—');
+
+const PARTY_ROLES: Array<{ role: PutawayParty['role']; tone: string }> = [
+  { role: 'Customer', tone: 'cust' },
+  { role: 'Consignee', tone: 'cons' },
+  { role: 'Supplier', tone: 'sup' },
+];
+
 function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: number }) {
   const [open, setOpen] = useState(index === 0);
   const [sticker, setSticker] = useState(false);
@@ -156,11 +165,12 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
         ))}
         <span className="pts-box__f pts-box__f--loc">
           <i>Temporary Putaway Location</i>
-          <b className="pts-loc"><IcoPin /> {box.allocationId}</b>
+          <b className="pts-loc"><IcoPin /> {box.allocationId ?? 'Not placed yet'}</b>
         </span>
         <span className="pts-box__act" onClick={e => e.stopPropagation()}>
           <button type="button" className="pts-sticker"
-            title={`Preview the temporary putaway sticker for ${box.id}`}
+            title={box.apiId ? `Preview the temporary putaway sticker for ${box.id}` : 'This box could not be matched to its sticker'}
+            disabled={!box.apiId}
             onClick={() => setSticker(true)}>
             <IcoTag /> Temporary Putaway Sticker
           </button>
@@ -186,13 +196,9 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
               </thead>
               <tbody>
                 {box.products.map((p, i) => (
-                  <tr key={p.code}>
+                  <tr key={`${p.code}-${i}`}>
                     <td><span className="pts-sr">{i + 1}</span></td>
                     <td><span className="pts-chip pts-chip--code">{p.code}</span></td>
-                    {/* The name is the one cell here with no shape to it. In
-                        an auto-layout table a long one widens its column and
-                        squeezes every other, so it is capped and cut with "…",
-                        and the title carries it whole. */}
                     <td className="pts-l">
                       <span className="pts-pname" title={p.name}>
                         <i className="pts-pdot" /><span className="pts-trunc">{p.name}</span>
@@ -201,11 +207,17 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
                     <td><span className="pts-qty">{p.qty}</span></td>
                     <td><Flag on={p.hazardous} /></td>
                     <td><Flag on={p.coldChain} /></td>
-                    <td><span className="pts-mono pts-dim">{p.serial}</span></td>
-                    <td><span className="pts-mono pts-dim">{p.lot}</span></td>
-                    <td><span className="pts-mono pts-dim">{p.batch}</span></td>
-                    <td><span className="pts-chip pts-chip--cap" title={p.cat}>{p.cat}</span></td>
-                    <td><span className="pts-ok pts-ok--cap" title={p.remark}>{p.remark}</span></td>
+                    <td><span className="pts-mono pts-dim">{dash(p.serial)}</span></td>
+                    <td><span className="pts-mono pts-dim">{dash(p.lot)}</span></td>
+                    <td><span className="pts-mono pts-dim">{dash(p.batch)}</span></td>
+                    <td><span className="pts-mono pts-dim" title={p.cat}>{dash(p.cat)}</span></td>
+                    <td>
+                      <span className="pts-ok pts-ok--cap"
+                        style={p.remarkKind === 'correct' ? undefined : { color: p.remarkKind === 'damaged' ? '#dc2626' : '#b45309' }}
+                        title={p.remarkNote ? `${p.remark} — ${p.remarkNote}` : p.remark}>
+                        {p.remark}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -242,14 +254,34 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const boxes = useMemo(() => putawayBoxes(row), [row]);
-  const totals = useMemo(() => putawayTotals(boxes, row), [boxes, row]);
-  const parties = useMemo(() => putawayParties(row), [row]);
+  const [data, setData] = useState<PutawaySummaryData | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!row.apiId) { setState('failed'); setError('This invoice has not been saved yet.'); return; }
+    let live = true;
+    putawayApi.summary(row.apiId)
+      .then(d => { if (live) { setData(d); setState('ready'); } })
+      .catch(e => {
+        if (!live) return;
+        setState('failed');
+        setError(e instanceof PoApiError ? e.firstError : 'Could not load the summary.');
+      });
+    return () => { live = false; };
+  }, [row.apiId]);
 
-  const ownWarehouse = row.warehouseKind === 'own';
+  const h = data?.header;
+  const boxes = data?.boxes ?? [];
+  const totals = data?.analytics;
+  const refs = data?.references;
+  const whName = h?.warehouse?.name || row.warehouseName || '—';
+  const ownWarehouse = h?.warehouse ? h.warehouse.isOwn : row.warehouseKind === 'own';
+  const partyFor = (role: PutawayParty['role']): PutawayParty =>
+    data?.parties.find(p => p.role === role) ?? { role, name: '—', code: '—', country: '—' };
+  const spiId = h?.spiId || row.invoiceNo;
 
   return createPortal(
-    <div className="spi-mdl-backdrop pts-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="spi-mdl-backdrop pts-backdrop">
       <div
         className="spi-mdl pts-card"
         role="dialog" aria-modal="true" aria-labelledby="pts-title"
@@ -263,84 +295,92 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
           </div>
 
           <div className="spi-dt-pills pts-pills">
-            <HeadPill icon={<IcoDoc />} label="SPI ID" value={row.invoiceNo} mono
+            <HeadPill icon={<IcoDoc />} label="SPI ID" value={spiId} mono
               extra={<span className="pts-dot pts-dot--ok" title="Mapped" />} />
-            <HeadPill icon={<IcoCart />} label="SHIPMENT ID" value={row.shipmentId || '—'} alt mono
+            <HeadPill icon={<IcoCart />} label="SHIPMENT ID" value={h?.shipmentId || row.shipmentId || '—'} alt mono
               extra={<span className="pts-dot pts-dot--info" title="Shipment raised" />} />
-            <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={row.opportunityId || '—'} mono
+            <HeadPill icon={<IcoTarget />} label="OPPORTUNITY ID" value={h?.opportunityId || row.opportunityId || '—'} mono
               extra={<span className="pts-dot pts-dot--violet" title="Opportunity" />} />
-            <HeadPill icon={<IcoCart />} label="PROCUREMENT ID" value={row.procurementId || '—'} alt mono
+            <HeadPill icon={<IcoCart />} label="PROCUREMENT ID" value={h?.procurementId || row.procurementId || '—'} alt mono
               extra={<span className="pts-dot pts-dot--warn" title="Procurement" />} />
-            <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={row.warehouseName || '—'}
+            <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={whName}
               extra={<span className="pts-badge">{ownWarehouse ? 'Own' : '3P'}</span>} />
-            <HeadPill icon={<IcoTag />} label="SPI TYPE" value={row.poNo ? 'PO + SPI' : 'SPI Only'} alt />
-            <HeadPill icon={<IcoLines />} label="SPI DATE" value={shortDate(row.invoiceDate)} mono />
-            <HeadPill icon={<IcoBox />} label="BOXES" value={String(totals.boxes)} alt mono />
-            <HeadPill icon={<IcoCard />} label="PRODUCTS" value={String(totals.products)} mono />
-            <HeadPill icon={<IcoPin />} label="TOTAL QTY" value={`${totals.quantity} U`} alt mono />
+            <HeadPill icon={<IcoTag />} label="SPI TYPE" value={h?.spiType || (row.poNo ? 'PO + SPI' : 'Direct SPI')} alt />
+            <HeadPill icon={<IcoLines />} label="SPI DATE" value={(h?.spiDate || row.invoiceDate) ? shortDate(h?.spiDate || row.invoiceDate) : '—'} mono />
+            <HeadPill icon={<IcoBox />} label="BOXES" value={h ? String(h.boxes) : '…'} alt mono />
+            <HeadPill icon={<IcoCard />} label="PRODUCTS" value={h ? String(h.products) : '…'} mono />
+            <HeadPill icon={<IcoPin />} label="TOTAL QTY" value={h ? `${h.totalQty} U` : '…'} alt mono />
           </div>
         </div>
 
         <div className="pts-body">
+          {state !== 'ready' ? (
+            <div className="pts-sec" style={{ padding: 32, textAlign: 'center' }}>
+              {state === 'loading' ? 'Loading the putaway summary…' : error}
+            </div>
+          ) : (<>
           <Section
             icon={<IcoList />}
-            prefix={row.invoiceNo}
+            prefix={spiId}
             title="Analytics Overview"
             meta="8 metrics"
             sub="Live snapshot of boxes, products, quantities and exceptions."
           >
             <div className="pts-tiles">
-              <Tile tone="boxes" value={String(totals.boxes)} label="Total Boxes" />
-              <Tile tone="prod" value={String(totals.products)} label="Total Products" />
-              <Tile tone="qty" value={String(totals.quantity)} label="Total Quantity" />
-              <Tile tone="spi" value={money(totals.value)} label="SPI Value" />
-              <Tile tone="haz" value={String(totals.hazardous)} label="Hazardous" />
-              <Tile tone="cold" value={String(totals.coldChain)} label="Cold Chain" />
-              <Tile tone="dmg" value={String(totals.damaged)} label="Damaged / Rejected" />
-              <Tile tone="mis" value={String(totals.mismatched)} label="Mismatched" />
+              <Tile tone="boxes" value={String(totals?.boxes ?? 0)} label="Total Boxes" />
+              <Tile tone="prod" value={String(totals?.products ?? 0)} label="Total Products" />
+              <Tile tone="qty" value={String(totals?.quantity ?? 0)} label="Total Quantity" />
+              <Tile tone="spi" value={money(totals?.value ?? 0)} label="SPI Value" />
+              <Tile tone="haz" value={String(totals?.hazardous ?? 0)} label="Hazardous" />
+              <Tile tone="cold" value={String(totals?.coldChain ?? 0)} label="Cold Chain" />
+              <Tile tone="dmg" value={String(totals?.damaged ?? 0)} label="Damaged / Rejected" />
+              <Tile tone="mis" value={String(totals?.mismatched ?? 0)} label="Mismatched" />
             </div>
           </Section>
 
           <Section
             icon={<IcoUsers />}
-            prefix={row.invoiceNo}
+            prefix={spiId}
             title="Customer, Consignee & Supplier"
             meta="3 parties"
             sub="Trading parties associated with this invoice."
           >
             <div className="pts-parties">
-              <PartyCard party={parties[0]} icon={<IcoUser />} tone="cust" />
-              <PartyCard party={parties[1]} icon={<IcoBuilding />} tone="cons" />
-              <PartyCard party={parties[2]} icon={<IcoTruck />} tone="sup" />
+              {PARTY_ROLES.map(({ role, tone }) => (
+                <PartyCard key={role} party={partyFor(role)} tone={tone}
+                  icon={role === 'Customer' ? <IcoUser /> : role === 'Consignee' ? <IcoBuilding /> : <IcoTruck />} />
+              ))}
             </div>
           </Section>
 
           <Section
             icon={<IcoDoc />}
-            prefix={row.invoiceNo}
+            prefix={spiId}
             title="Supplier Purchase Invoice"
             sub="PI, PO & SPI references with financial values."
           >
             <div className="pts-refs">
-              <RefCard tone="pi" label="Proforma Invoice (PI)" value={proformaNo(row)} />
-              <RefCard tone="po" label="Purchase Order (PO)" value={row.poNo || '—'}
-                date={row.poDate ? row.poDate : undefined} />
-              <RefCard tone="spi" label="Supplier Purchase Invoice (SPI)" value={row.invoiceNo}
-                date={row.invoiceDate} />
-              <AmountCard tone="pov" label="PO Amount" value={money(row.totalPoAmount)} sub="Purchase Order" />
-              <AmountCard tone="spiv" label="SPI Amount" value={money(row.netPayable)} sub="Supplier Invoice" />
+              <RefCard tone="pi" label="Proforma Invoice (PI)" value={dash(refs?.pi.code)}
+                date={refs?.pi.date ? shortDate(refs.pi.date) : undefined} />
+              <RefCard tone="po" label="Purchase Order (PO)" value={dash(refs?.po.code)}
+                date={refs?.po.date ? shortDate(refs.po.date) : undefined} />
+              <RefCard tone="spi" label="Supplier Purchase Invoice (SPI)" value={dash(refs?.spi.code || spiId)}
+                date={refs?.spi.date ? shortDate(refs.spi.date) : undefined} />
+              <AmountCard tone="pov" label="PO Amount" value={refs?.poAmount != null ? money(refs.poAmount) : '—'}
+                sub={refs?.poAmount != null ? 'Purchase Order' : 'Direct SPI — no PO'} />
+              <AmountCard tone="spiv" label="SPI Amount" value={money(refs?.spiAmount ?? 0)} sub="Supplier Invoice" />
             </div>
           </Section>
 
           <Section
             icon={<IcoWarehouse />}
-            prefix={row.invoiceNo}
+            prefix={spiId}
             title="Warehouse Location & Rack Allocation"
             meta={`${boxes.length} box${boxes.length === 1 ? '' : 'es'}`}
             sub="Temporary putaway location recorded for each box at invoice mapping."
             right={(
               <>
-                <span className="pts-whpill" title={row.warehouseName}><IcoPin /><span className="pts-trunc">{row.warehouseName}</span></span>
+                <span className="pts-whpill" title={whName}><IcoPin /><span className="pts-trunc">{whName}</span></span>
                 <span className="pts-temp">Temporary</span>
               </>
             )}
@@ -354,22 +394,24 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
                   </tr>
                 </thead>
                 <tbody>
-                  {boxes.map((b, i) => (
+                  {boxes.length === 0 ? (
+                    <tr><td colSpan={8} className="pts-dim">No boxes have been packed for this invoice yet.</td></tr>
+                  ) : boxes.map((b, i) => (
                     <tr key={b.id}>
                       <td><span className="pts-sr">{i + 1}</span></td>
                       <td><span className="pts-chip pts-chip--code">{b.id}</span></td>
                       <td className="pts-l">{b.scenario}</td>
-                      {/* Same treatment as the product name: a warehouse is
-                          free text and can be long. */}
                       <td className="pts-l">
-                        <span className="pts-whcell" title={row.warehouseName}>
-                          <IcoWarehouse /><span className="pts-trunc">{row.warehouseName}</span>
+                        <span className="pts-whcell" title={whName}>
+                          <IcoWarehouse /><span className="pts-trunc">{b.warehouse || whName}</span>
                         </span>
                       </td>
-                      <td><span className="pts-chip pts-chip--zone">{ICON_ZONE}{b.zone}</span></td>
-                      <td><span className="pts-chip pts-chip--rack">{ICON_RACK}{b.rack}</span></td>
-                      <td><span className="pts-chip pts-chip--shelf">{ICON_SHELF}{b.shelf}</span></td>
-                      <td><span className="pts-mono">{b.allocationId}</span></td>
+                      <td>{b.zone ? <span className="pts-chip pts-chip--zone">{ICON_ZONE}{b.zone}</span> : <span className="pts-dim">—</span>}</td>
+                      <td>{b.rack ? <span className="pts-chip pts-chip--rack">{ICON_RACK}{b.rack}</span> : <span className="pts-dim">—</span>}</td>
+                      <td>{b.shelf ? <span className="pts-chip pts-chip--shelf">{ICON_SHELF}{b.shelf}</span> : <span className="pts-dim">—</span>}</td>
+                      <td>{b.allocationId
+                        ? <span className="pts-mono">{b.allocationId}</span>
+                        : <span className="pts-dim">Not placed yet</span>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -379,15 +421,18 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
 
           <Section
             icon={<IcoBox />}
-            prefix={row.invoiceNo}
+            prefix={spiId}
             title="Box & Product Details"
             meta={`${boxes.length} box${boxes.length === 1 ? '' : 'es'}`}
             sub="Per-box breakdown with product-level details (temporary putaway)."
           >
             <div className="pts-boxes">
-              {boxes.map((b, i) => <BoxRow key={b.id} box={b} row={row} index={i} />)}
+              {boxes.length === 0
+                ? <div className="pts-dim" style={{ padding: 16 }}>No boxes have been packed for this invoice yet.</div>
+                : boxes.map((b, i) => <BoxRow key={b.id} box={b} row={row} index={i} />)}
             </div>
           </Section>
+          </>)}
         </div>
       </div>
     </div>,
