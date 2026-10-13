@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { IcoBox, IcoDownload, IcoX } from '../../icons';
-import type { PutawayBox } from './putaway-data';
+import { putawayApi, type PutawayBox } from './putaway-data';
 import type { InvoiceRow } from './types';
+import { useToast } from '../../../../contexts/ToastContext';
 
 import './putaway-sticker.css';
 
@@ -17,11 +18,6 @@ const ICON_STACK = <svg {...ic} width="9" height="9"><path d="M21 16V8a2 2 0 0 0
 const ICON_SCALE = <svg {...ic} width="9" height="9"><path d="M12 3v18M3 7h18M6 7l-3 7h6zM18 7l-3 7h6z" /></svg>;
 const ICON_PRINT = <svg {...ic} width="13" height="13"><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>;
 
-/** What the label's code carries: enough to find the box without the screen. */
-const payloadFor = (box: PutawayBox, spi: string) =>
-  ['PUT', spi, box.id, box.allocationId, String(box.products.reduce((n, p) => n + p.qty, 0))].join('|');
-
-/** The code itself, painted once per box. */
 function StickerQr({ text }: { text: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
@@ -37,14 +33,6 @@ function StickerQr({ text }: { text: string }) {
   return <canvas ref={ref} width={60} height={60} />;
 }
 
-/**
- * Temporary Putaway Sticker — the label for one box.
- *
- * Opened from a box's strip in Box & Product Details. It is a preview of what
- * gets stuck on the carton, so it shows only what the label itself carries:
- * the box, the invoice it came in on, the product, its measurements and where
- * it was put away.
- */
 export default function PutawayStickerModal({ box, row, onClose }: {
   box: PutawayBox;
   row: InvoiceRow;
@@ -60,15 +48,37 @@ export default function PutawayStickerModal({ box, row, onClose }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const toast = useToast();
+  const [busy, setBusy] = useState<'pdf' | 'print' | null>(null);
+  const fetchPdf = async (mode: 'pdf' | 'print') => {
+    if (!row.apiId || !box.apiId || busy) return;
+    setBusy(mode);
+    try {
+      const blob = await putawayApi.stickerPdf(row.apiId, box.apiId);
+      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      if (mode === 'print') {
+        window.open(url, '_blank', 'noopener');
+      } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${row.invoiceNo.replace(/\//g, '-')}-${box.id}.pdf`;
+        a.click();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      toast.error('Could not get the sticker', 'Please try again.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const qty = box.products.reduce((n, p) => n + p.qty, 0);
-  /* A carton holding several lines has no single name to print, so the label
-     names the count and the code carries the rest. */
   const title = box.products.length === 1
     ? box.products[0].name
     : `${box.products.length} products`;
 
   return createPortal(
-    <div className="gsm-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="gsm-backdrop">
       <div
         className="gsm-box"
         role="dialog" aria-modal="true" aria-labelledby="gsm-title"
@@ -93,7 +103,6 @@ export default function PutawayStickerModal({ box, row, onClose }: {
           <button type="button" className="gsm-close" onClick={onClose} aria-label="Close"><IcoX /></button>
         </div>
 
-        {/* The label itself, on the slab it would be printed from. */}
         <div className="gsm-stage">
           <div className="gsm-face">
             <div className="gsm-strip">
@@ -110,7 +119,7 @@ export default function PutawayStickerModal({ box, row, onClose }: {
             <div className="gsm-body">
               <div className="gsm-pname">{title}</div>
               <div className="gsm-qr-row">
-                <div className="gsm-qr"><StickerQr text={payloadFor(box, row.invoiceNo)} /></div>
+                <div className="gsm-qr"><StickerQr text={String(box.apiId ?? box.id)} /></div>
                 <div className="gsm-dims">
                   <div className="gsm-dim">
                     <div className="gsm-dim-l">{ICON_RULER} L×W×H</div>
@@ -128,7 +137,7 @@ export default function PutawayStickerModal({ box, row, onClose }: {
               </div>
 
               <div className="gsm-footrow">
-                <span className="gsm-loc">Temporary Location: {box.allocationId}</span>
+                <span className="gsm-loc">Temporary Location: {box.allocationId ?? 'Not placed yet'}</span>
                 <span className="gsm-status gsm-status--temp">Temporary Putaway</span>
               </div>
             </div>
@@ -137,15 +146,13 @@ export default function PutawayStickerModal({ box, row, onClose }: {
 
         <div className="gsm-actions">
           <div className="gsm-actions-row gsm-stickbtns">
-            {/* Neither is wired yet: there is no label endpoint, and a button
-                that silently does nothing is worse than one that says so. */}
-            <button type="button" className="gsm-btn gsm-btn--pdf" disabled
-              title="Downloading the label arrives with the print service">
-              <IcoDownload /> PDF
+            <button type="button" className="gsm-btn gsm-btn--pdf" disabled={!box.apiId || !!busy}
+              title="Download the 4 × 6 in sticker as a PDF" onClick={() => void fetchPdf('pdf')}>
+              <IcoDownload /> {busy === 'pdf' ? 'Preparing…' : 'PDF'}
             </button>
-            <button type="button" className="gsm-btn gsm-btn--print" disabled
-              title="Printing arrives with the label print service">
-              {ICON_PRINT} Print Label
+            <button type="button" className="gsm-btn gsm-btn--print" disabled={!box.apiId || !!busy}
+              title="Open the sticker to print it" onClick={() => void fetchPdf('print')}>
+              {ICON_PRINT} {busy === 'print' ? 'Opening…' : 'Print Label'}
             </button>
           </div>
         </div>

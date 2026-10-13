@@ -221,7 +221,7 @@ class SpiSummaryService
             return [
                 'sr_no'        => $i + 1,
                 'product_code' => $prod->product_code ?? null,
-                'product_name' => $line->description ?: ($prod->name ?? null),
+                'product_name' => $prod->name ?? null,
                 'quantity'     => (float) $it->quantity,
                 /* The flag MASTER rows this item carries, not just the two
                  * the tiles count. A box item stores ids in its `flags` json and
