@@ -34,6 +34,17 @@ class Rack extends Model
         'status', 'created_by', 'updated_by',
     ];
 
+    /**
+     * A new row is ACTIVE until somebody says otherwise.
+     *
+     * The column already defaults to 1 in the database, but Eloquent does not
+     * read a default back after an insert — so the model the create endpoint
+     * serialised still held null, `(int) null` made it 0, and the response said
+     * the row was inactive while the stored row was active. Invisible on screen
+     * only because every save reloads the list.
+     */
+    protected $attributes = ['status' => 1];
+
     protected $casts = [
         'cold_chain' => 'integer',
         'hazardous'  => 'integer',

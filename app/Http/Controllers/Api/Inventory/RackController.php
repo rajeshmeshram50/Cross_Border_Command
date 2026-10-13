@@ -385,7 +385,13 @@ class RackController extends BaseInventoryController
     {
         $data = $this->labelData($request, $id);
 
-        return $this->qrPng($data['code'], (int) $request->input('scale', 10));
+        /* The SCAN value, not the printed code — the same thing labelPdf()
+           encodes. Codes restart at 001 in every branch, so a scanner reading
+           "WH-001" cannot tell which branch's it is holding; the scan value
+           carries the row id, which does not repeat. This endpoint was still
+           encoding the human code, so a QR saved from here and one printed on
+           the label resolved to different things. */
+        return $this->qrPng($data['scan'] ?? $data['code'], (int) $request->input('scale', 10));
     }
 
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
