@@ -31,6 +31,7 @@ export default function WarehouseQrModal({ warehouse: w, onClose }: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [code, setCode] = useState<string | null>(null);
+  const [scan, setScan] = useState<string | null>(null);
   const [state, setState] = useState<'painting' | 'ready' | 'failed'>('painting');
   const [error, setError] = useState('');
 
@@ -46,7 +47,7 @@ export default function WarehouseQrModal({ warehouse: w, onClose }: {
     let live = true;
     setState('painting');
     warehouseApi.preview(w.apiId)
-      .then(l => { if (live) setCode(l.code || w.id); })
+      .then(l => { if (live) { setCode(l.code || w.id); setScan(l.scan || l.code || w.id); } })
       .catch(e => {
         if (!live) return;
         setState('failed');
@@ -57,14 +58,14 @@ export default function WarehouseQrModal({ warehouse: w, onClose }: {
 
   useEffect(() => {
     const c = canvasRef.current;
-    if (!c || !code) return;
-    QRCode.toCanvas(c, code, {
+    if (!c || !scan) return;
+    QRCode.toCanvas(c, scan, {
       width: 196, margin: 0, errorCorrectionLevel: 'H',
       color: { dark: '#0c4a6e', light: '#ffffff' },
     })
       .then(() => setState('ready'))
       .catch(() => { setState('failed'); setError('QR could not be generated.'); });
-  }, [code]);
+  }, [scan]);
 
   const shownCode = code || w.id;
   const address = [w.address, w.city, [w.state, w.pin].filter(Boolean).join(' ')].filter(Boolean).join(', ');

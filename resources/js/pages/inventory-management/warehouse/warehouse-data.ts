@@ -81,6 +81,7 @@ type WarehouseRow = {
 
 export interface WarehouseLabel {
   code: string;
+  scan: string;
   title: string;
   subtitle: string | null;
   rows: Array<[string, string]>;
@@ -196,6 +197,7 @@ export const warehouseApi = {
     const rows = (d.rows && typeof d.rows === 'object' ? d.rows : {}) as Record<string, unknown>;
     return {
       code: String(d.code ?? ''),
+      scan: String(d.scan ?? d.code ?? ''),
       title: String(d.title ?? ''),
       subtitle: d.subtitle ? String(d.subtitle) : null,
       rows: Object.entries(rows).map(([k, v]) => [k, String(v)] as [string, string]),
