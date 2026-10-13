@@ -51,6 +51,26 @@ export interface ZoneWarehouse {
 }
 
 export type ZoneTab = 'all' | ZoneType;
+
+export function uniqueLabels<T>(
+  items: T[], key: (t: T) => number, base: (t: T) => string, hint: (t: T) => string,
+): Map<number, string> {
+  const seen = new Map<string, number>();
+  for (const t of items) seen.set(base(t), (seen.get(base(t)) ?? 0) + 1);
+  const used = new Set<string>();
+  const out = new Map<number, string>();
+  for (const t of items) {
+    let label = base(t);
+    if ((seen.get(label) ?? 0) > 1) {
+      const h = hint(t).trim();
+      if (h) label = `${label} (${h})`;
+    }
+    if (used.has(label)) label = `${label} #${key(t)}`;
+    used.add(label);
+    out.set(key(t), label);
+  }
+  return out;
+}
 export type ZoneCounts = Record<ZoneTab, number>;
 
 export interface ZonePayload {
@@ -146,7 +166,7 @@ const toZone = (r: ZoneRow): Zone => {
     date: r.created_at ?? '',
     type: r.rack_mode === 'norack' ? 'norack' : 'rack',
     name: r.zone_name ?? '',
-    wh: r.warehouse_id ? `WH-${String(r.warehouse_id).padStart(3, '0')}` : '',
+    wh: '',
     area: num(r.area_sqft),
     purpose: r.purpose ?? '',
     cold: Number(r.cold_chain) === 1,

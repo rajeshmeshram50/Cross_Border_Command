@@ -279,7 +279,7 @@ function Row({ f, no, off, busy, onToggle, onEdit }: {
       <td>
         <div className="whm-namecell">
           <span className="whm-namecell__ico"><IcoFlag size={15} /></span>
-          <div className="whm-namecell__t"><b>{f.name}</b><span>{f.id}</span></div>
+          <div className="whm-namecell__t"><b>{f.name}</b><span>{f.isDefault ? `${f.id} · Shared default` : f.id}</span></div>
         </div>
       </td>
 
@@ -288,7 +288,8 @@ function Row({ f, no, off, busy, onToggle, onEdit }: {
       <td>
         <div className="whm-acts">
           <button type="button" className="whm-act" aria-label={`Edit ${f.id}`}
-            title="Edit this product flag" onClick={() => onEdit(f)}>
+            title={f.isDefault ? 'Shared default — it cannot be edited' : 'Edit this product flag'}
+            disabled={f.isDefault} onClick={() => onEdit(f)}>
             <IcoEdit />
           </button>
           <button
@@ -296,8 +297,10 @@ function Row({ f, no, off, busy, onToggle, onEdit }: {
             className={`whm-toggle${off ? '' : ' is-on'}`}
             role="switch" aria-checked={!off}
             aria-label={`Toggle status of ${f.id}`}
-            title={off ? 'Inactive — click to activate' : 'Active — click to deactivate'}
-            disabled={busy}
+            title={f.isDefault
+              ? 'Shared default — it cannot be switched off'
+              : off ? 'Inactive — click to activate' : 'Active — click to deactivate'}
+            disabled={busy || f.isDefault}
             onClick={() => onToggle(f)}
           >
             <span />

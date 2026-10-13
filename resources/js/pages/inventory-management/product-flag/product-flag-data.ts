@@ -9,6 +9,7 @@ export interface ProductFlag {
   name: string;
   purpose: string;
   status: 'active' | 'inactive';
+  isDefault: boolean;
 }
 
 export type ProductFlagTab = 'all' | 'active' | 'inactive';
@@ -18,6 +19,7 @@ export type ProductFlagMeta = ServerPageMeta & { tabs: ProductFlagTabs };
 type ApiRow = {
   id: number;
   flag_code: string | null;
+  is_default?: boolean;
   flag_name: string | null;
   purpose: string | null;
   status: number;
@@ -50,6 +52,7 @@ const toFlag = (r: ApiRow): ProductFlag => ({
   name: r.flag_name ?? '',
   purpose: r.purpose ?? '',
   status: Number(r.status) === 1 ? 'active' : 'inactive',
+  isDefault: !!r.is_default,
 });
 
 const one = (b: unknown) => toFlag((b as { data: ApiRow }).data);
