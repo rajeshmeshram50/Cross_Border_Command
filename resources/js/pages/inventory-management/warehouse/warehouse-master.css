@@ -233,12 +233,18 @@
 }
 .whm-page .whm-namecell__t span {
   font-size: 10.5px;
+  line-height: 1.35;
   color: #64748b;
 }
+/* The sub-line that names what the row IS — "Standard rack", "Cold chain
+   rack", the warehouse's type — is the design's one teal line in the cell,
+   set a step heavier than the grey sub-spans around it. */
 .whm-page .whm-namecell__loc {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  font-weight: 600;
+  color: #0e7490;
 }
 .whm-page .whm-namecell__loc svg { color: #0891b2; flex-shrink: 0; }
 
@@ -904,6 +910,10 @@
 [data-bs-theme="dark"] .whm-page .whm-loc__city b,
 [data-bs-theme="dark"] .whm-page .whm-area b { color: #e2e8f0; }
 [data-bs-theme="dark"] .whm-page .whm-loc__pin { color: #cbd5e1; }
+/* The teal sub-line stays teal on dark — it is a span, so the grey group
+   above would otherwise swallow it. Lifted to the dark-mode teal the pills
+   and icons on this row already use. */
+[data-bs-theme="dark"] .whm-page .whm-namecell__loc { color: #67e8f9; }
 /* `.whm-namecell__ico` is deliberately not in this group any more: it is a
    solid teal tile with a white glyph, which reads the same on a dark card as
    on a light one. The pale treatment here is for the chips beside it. */

@@ -85,6 +85,7 @@ export type SpiStage1Body = {
   purchase_order_id: number | null;
   vendor_id: number;
   document_type: 'domestic' | 'international';
+  warehouse_id?: number | null;
 };
 
 export type SpiHeader = {
@@ -147,7 +148,7 @@ export type SpiDetail = {
     invoice_file_name: string | null;
     eway_file_name: string | null;
     items: SpiDetailItem[];
-    warehouse: { id: number; wh_id: string | null; wh_name: string; wh_type: string | null } | null;
+    warehouse: { id: number; code: string | null; wh_name: string; wh_type: string | null } | null;
   };
 };
 

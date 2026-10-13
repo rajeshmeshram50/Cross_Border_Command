@@ -186,6 +186,7 @@ export default function InvoiceForm({
         purchase_order_id: input.poId ?? null,
         vendor_id: draft.vendorId,
         document_type: draft.docType === 'International' ? 'international' : 'domestic',
+        warehouse_id: input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null,
       });
       setSpiId(spi.id);
       setSpiCode(spi.code);

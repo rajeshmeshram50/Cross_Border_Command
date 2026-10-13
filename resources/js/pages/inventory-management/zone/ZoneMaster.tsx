@@ -125,6 +125,7 @@ const COLUMNS = [
 export default function ZoneMaster() {
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
+  const [searchArmed, setSearchArmed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
 
   const toast = useToast();
@@ -276,6 +277,9 @@ export default function ZoneMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
+              name="zone-list-search"
+              readOnly={!searchArmed}
+              onFocus={() => setSearchArmed(true)}
               placeholder="Search by zone ID, zone name, purpose or warehouse..."
               aria-label="Search zones"
               autoComplete="off"

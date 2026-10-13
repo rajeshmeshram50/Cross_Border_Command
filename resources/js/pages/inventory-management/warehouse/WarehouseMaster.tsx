@@ -126,6 +126,7 @@ const COLUMNS: Array<{ label: string; left?: boolean }> = [
 export default function WarehouseMaster() {
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
+  const [searchArmed, setSearchArmed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
 
   const toast = useToast();
@@ -268,6 +269,9 @@ export default function WarehouseMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
+              name="warehouse-list-search"
+              readOnly={!searchArmed}
+              onFocus={() => setSearchArmed(true)}
               placeholder="Search by warehouse ID, name, city, state or contact person..."
               aria-label="Search warehouses"
               autoComplete="off"

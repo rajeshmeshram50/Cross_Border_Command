@@ -126,6 +126,7 @@ const COLUMNS = [
 export default function RackMaster() {
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
+  const [searchArmed, setSearchArmed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
 
   const toast = useToast();
@@ -276,7 +277,10 @@ export default function RackMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by rack name..."
+              name="rack-list-search"
+              readOnly={!searchArmed}
+              onFocus={() => setSearchArmed(true)}
+              placeholder="Search by rack ID, rack name, zone or warehouse..."
               aria-label="Search racks"
               autoComplete="off"
             />

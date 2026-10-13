@@ -68,8 +68,8 @@ class RackController extends BaseInventoryController
             $q = $base
                 ->with(['warehouse:id,wh_name', 'zone:id,zone_name,temp_min_c,temp_max_c'])
                 ->withCount('shelves')
-                ->withSum('shelves as capacity_kg', 'max_weight_kg')
-                ->withSum('shelves as used_kg', 'used_weight_kg')
+                ->withSum(['shelves as capacity_kg' => fn ($s) => $s->where('status', 1)], 'max_weight_kg')
+                ->withSum(['shelves as used_kg' => fn ($s) => $s->where('status', 1)], 'used_weight_kg')
                 ->orderByDesc('id');
 
             $this->applyTab($q, $f['tab'] ?? null);
@@ -124,8 +124,8 @@ class RackController extends BaseInventoryController
 
             $rack = Rack::with(['warehouse:id,wh_name', 'zone:id,zone_name,temp_min_c,temp_max_c'])
                 ->withCount('shelves')
-                ->withSum('shelves as capacity_kg', 'max_weight_kg')
-                ->withSum('shelves as used_kg', 'used_weight_kg')
+                ->withSum(['shelves as capacity_kg' => fn ($s) => $s->where('status', 1)], 'max_weight_kg')
+                ->withSum(['shelves as used_kg' => fn ($s) => $s->where('status', 1)], 'used_weight_kg')
                 ->findOrFail($id);
 
             $body = $this->row($rack) + [

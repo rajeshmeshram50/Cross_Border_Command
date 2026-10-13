@@ -23,6 +23,14 @@
 
 /* Add Shelf sits in the header band, so it is white-on-teal rather than
    teal-on-white — the inverse of the page's primary button. */
+/* Holds the corner so the button keeps it whether or not a tooltip span is
+   wrapped around it. The spacing lives here; the button only styles itself. */
+.rks-addwrap {
+  flex-shrink: 0;
+  display: inline-flex;
+  margin-left: auto;
+  margin-right: 10px;
+}
 .rks-add {
   flex-shrink: 0;
   display: inline-flex;
@@ -30,8 +38,6 @@
   gap: 7px;
   height: 40px;
   padding: 0 16px;
-  margin-left: auto;
-  margin-right: 10px;
   border-radius: 11px;
   border: 1px solid rgba(255, 255, 255, .9);
   background: #fff;
