@@ -84,6 +84,7 @@ const COLUMNS = ['No.', 'Product Flag', 'Purpose', 'Action'];
 export default function ProductFlagMaster() {
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
+  const [searchArmed, setSearchArmed] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
 
   const toast = useToast();
@@ -206,6 +207,9 @@ export default function ProductFlagMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
+              name="product-flag-list-search"
+              readOnly={!searchArmed}
+              onFocus={() => setSearchArmed(true)}
               placeholder="Search by flag ID, product flag or purpose..."
               aria-label="Search product flags"
               autoComplete="off"
