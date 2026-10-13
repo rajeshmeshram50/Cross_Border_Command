@@ -199,7 +199,22 @@ const LEGAL_GROUPS: { name: string; sub: string; parts: [string, string][] }[] =
 const pctOf = (done: number, total: number) => (total ? Math.round((done / total) * 100) : 0);
 const toneOf = (pct: number): LegalSection['tone'] => (pct === 100 ? 'ok' : pct >= 60 ? 'warn' : 'bad');
 
-type VaultRow = { id?: unknown; status?: unknown };
+type VaultRow = { id?: unknown; status?: unknown; requirement?: unknown };
+
+/**
+ * An OPTIONAL document never holds a purchase order up.
+ *
+ * Every vault row is tagged 'M' or 'O' by the segment rule behind it, and the
+ * server already counts only the 'M' ones for the CLM card — see the
+ * $coreMandatory tally in SegmentDocUploadController::vault(). This counted all
+ * of them, so a supplier with one optional licence unfilled read "1 of 5
+ * standard documents is still pending" and Step 03 refused to submit over
+ * paperwork nobody is required to provide (QA #16).
+ *
+ * A row with no requirement at all is treated as mandatory: that is the older
+ * shape, and silently dropping those would weaken a gate that does its job.
+ */
+const isMandatory = (d: VaultRow) => String(d.requirement ?? 'M').toUpperCase() !== 'O';
 type VaultDeal = { docs?: VaultRow[]; agreements?: VaultRow[] };
 
 /* Every case-to-case document this supplier carries, across all their deals —
@@ -215,12 +230,15 @@ function dealDocs(vault: Record<string, unknown> | null): VaultRow[] {
 }
 
 export function legalFromVault(vault: Record<string, unknown> | null): LegalView {
-  const rows = (key: string) => (Array.isArray(vault?.[key]) ? (vault![key] as { status?: unknown }[]) : []);
+  const rows = (key: string) => (Array.isArray(vault?.[key]) ? (vault![key] as VaultRow[]) : []);
   const ctc = dealDocs(vault);
   const sections = LEGAL_GROUPS.map((g) => {
-    const docs = g.parts.some(([, key]) => key === 'trade_documents')
+    const all = g.parts.some(([, key]) => key === 'trade_documents')
       ? [...g.parts.flatMap(([, key]) => rows(key)), ...ctc]
       : g.parts.flatMap(([, key]) => rows(key));
+    // Optional paperwork is still listed in the vault; it is just not counted
+    // here, because this count is what holds the submit.
+    const docs = all.filter(isMandatory);
     const done = docs.filter((d) => DONE_STATUSES.includes(String(d.status ?? '').toLowerCase())).length;
     const pct = pctOf(done, docs.length);
     return { name: g.name, sub: g.sub, parts: g.parts.map(([label]) => label), done, total: docs.length, pct, tone: toneOf(pct) };
