@@ -83,8 +83,11 @@ class WarehouseController extends BaseInventoryController
                 ->orderByDesc('id');
 
             $this->applyTab($q, $f['tab'] ?? null);
+            // 'code' first: WH-002 is what the list shows and what someone
+            // reading a label types in. It was not searchable at all while the
+            // code was computed from the id, because there was no column.
             $this->applySearch($q, $f['q'] ?? null, [
-                'wh_name', 'city', 'state_name', 'contact_person', 'contact_mobile',
+                'code', 'wh_name', 'city', 'state_name', 'contact_person', 'contact_mobile',
             ]);
 
             $body = $this->listBody($q, $request, $tabs, fn (Warehouse $w) => $this->row($w));

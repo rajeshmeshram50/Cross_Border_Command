@@ -154,16 +154,27 @@ abstract class BaseInventoryController extends Controller
         };
     }
 
-    /** @param string[] $columns */
-    protected function applySearch(Builder $q, ?string $term, array $columns): void
+    /**
+     * One search box over several columns, and optionally over a relation.
+     *
+     * $also is given the same where group and the trimmed term, so a caller can
+     * OR in anything a column list cannot express — a related name, or a code
+     * that is derived rather than stored. It runs inside the group, so the
+     * whole search stays one AND against the tab and tenant filters.
+     *
+     * @param  string[]  $columns
+     * @param  null|callable(\Illuminate\Contracts\Database\Query\Builder, string): void  $also
+     */
+    protected function applySearch(Builder $q, ?string $term, array $columns, ?callable $also = null): void
     {
         $term = trim((string) $term);
         if ($term === '') return;
 
-        $q->where(function ($w) use ($term, $columns) {
+        $q->where(function ($w) use ($term, $columns, $also) {
             foreach ($columns as $c) {
                 $w->orWhere($c, 'ilike', '%' . $term . '%');
             }
+            if ($also) $also($w, $term);
         });
     }
 

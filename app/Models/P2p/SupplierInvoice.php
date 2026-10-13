@@ -5,7 +5,7 @@ namespace App\Models\P2p;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\Concerns\BelongsToTenant;
-use App\Models\Masters\WarehouseMaster;
+use App\Models\Inventory\Warehouse;
 use App\Models\User;
 use App\Models\Vendor;
 use Illuminate\Database\Eloquent\Model;
@@ -112,9 +112,21 @@ class SupplierInvoice extends Model
     {
         return $this->belongsTo(Vendor::class);
     }
+    /**
+     * The Inventory warehouse master — NOT master_warehouse_master.
+     *
+     * This pointed at the generic Masters table because on 9 Oct, when the SPI
+     * was written, that was the only warehouse master there was. The five
+     * Inventory masters arrived on 10 Oct with their own tables and the SPI was
+     * never switched over, so the Temporary Storage picker listed
+     * inventory_warehouses while the invoice read the id back out of
+     * master_warehouse_master — two unrelated tables whose ids happen to
+     * overlap. Picking WH-001 and reading back a different company's WH-001 is
+     * what that cost.
+     */
     public function warehouse(): BelongsTo
     {
-        return $this->belongsTo(WarehouseMaster::class, 'warehouse_id');
+        return $this->belongsTo(Warehouse::class, 'warehouse_id');
     }
     public function createdBy(): BelongsTo
     {

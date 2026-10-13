@@ -66,6 +66,11 @@ export const productFlagApi = {
       };
     }),
 
+  nextCode: () => call(
+    () => api.get('/inventory/product-flags/next-code'),
+    (b) => String((b as { data?: { next_code?: string } } | null)?.data?.next_code ?? ''),
+  ),
+
   create: (data: { flag_name: string; purpose: string }) =>
     call(() => api.post('/inventory/product-flags', data), one),
 

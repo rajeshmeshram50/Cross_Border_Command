@@ -268,7 +268,7 @@ export default function WarehouseMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by name, city, state or contact person..."
+              placeholder="Search by warehouse ID, name, city, state or contact person..."
               aria-label="Search warehouses"
               autoComplete="off"
             />

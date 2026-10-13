@@ -190,7 +190,7 @@ class SupplierInvoiceController extends Controller
                 'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,proforma_invoice_id,'
                     . 'procurement_request_code,physical_inspection,inspection_status,zoho_status,'
                     . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
-                'warehouse:id,wh_id,wh_name,wh_type',
+                'warehouse:id,code,wh_name,wh_type',
             ])
                 /* The row's Payment Requests button shows a count and a ready-to-pay
                    note. Subqueries, so a page of 10 rows costs two extra queries
@@ -251,7 +251,7 @@ class SupplierInvoiceController extends Controller
             $spi->load([
                 'items',
                 'vendor:id,vendor_code,company_name',
-                'warehouse:id,wh_id,wh_name,wh_type',
+                'warehouse:id,code,wh_name,wh_type',
                 'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,procurement_request_code,'
                     . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
                 'purchaseOrder.shipmentOrder:id,shipment_code',
@@ -823,10 +823,12 @@ class SupplierInvoiceController extends Controller
 
             'warehouse'   => $s->warehouse ? [
                 'id'      => $s->warehouse->id,
-                'code'    => $s->warehouse->wh_id,
+                // The Inventory master's own columns: a stored per-branch code,
+                // and a type of 'own' / 'tpl'.
+                'code'    => $s->warehouse->code,
                 'name'    => $s->warehouse->wh_name,
                 // Drives the OWN / 3PL badge. Read from the master, never stored.
-                'is_own'  => $s->warehouse->wh_type === 'Own Warehouse',
+                'is_own'  => $s->warehouse->wh_type === 'own',
             ] : null,
 
             'status'          => $s->status,
@@ -997,7 +999,13 @@ class SupplierInvoiceController extends Controller
             // Decides whether the tax section renders at all, so it is asked
             // up front rather than discovered at Stage 02.
             'document_type'     => ['required', Rule::in(SupplierInvoice::DOC_TYPES)],
-            'warehouse_id'      => ['nullable', 'integer'],
+            /* Must be a warehouse THIS tenant can see.
+             *
+             * It was ['nullable','integer'] with no foreign key behind it, so
+             * any number stuck — including an id belonging to another client,
+             * or to the old master table the relation used to read. */
+            'warehouse_id'      => ['nullable', 'integer', Rule::exists('inventory_warehouses', 'id')
+                ->where(fn ($q) => $q->where('client_id', $user->client_id))],
         ]);
     }
 
@@ -1030,11 +1038,23 @@ class SupplierInvoiceController extends Controller
      * only. Read from the master, never from a column here that could
      * contradict the warehouse it points at.
      */
+    /**
+     * Ours or a third party's — it decides whether Stage 4 runs the full
+     * rack-and-shelf put-away or the 3PL summary.
+     *
+     * Read from inventory_warehouses, where the column holds 'own' / 'tpl'. It
+     * used to ask master_warehouse_master for the string 'Own Warehouse',
+     * which was wrong twice over once the Inventory masters landed: the wrong
+     * table, and a value the new one cannot contain.
+     *
+     * No warehouse chosen yet still means TRUE — the screen must offer the
+     * full flow until someone says otherwise, not quietly fall to summary.
+     */
     private function isOwnWarehouse(?int $warehouseId): bool
     {
         if (!$warehouseId) return true;
 
-        return DB::table('master_warehouse_master')->where('id', $warehouseId)->value('wh_type') === 'Own Warehouse';
+        return DB::table('inventory_warehouses')->where('id', $warehouseId)->value('wh_type') === 'own';
     }
 
     /**

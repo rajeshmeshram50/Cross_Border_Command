@@ -71,7 +71,10 @@ class ZoneController extends BaseInventoryController
             $q = $base->with('warehouse:id,wh_name,wh_type')->withCount('racks')->orderByDesc('id');
 
             $this->applyTab($q, $f['tab'] ?? null);
-            $this->applySearch($q, $f['q'] ?? null, ['zone_name', 'purpose']);
+            // Searchable by its code now that the code is a stored column.
+            $this->applySearch($q, $f['q'] ?? null, ['code', 'zone_name', 'purpose'], function ($w, $term) {
+                $w->orWhereHas('warehouse', fn ($h) => $h->where('wh_name', 'ilike', '%' . $term . '%'));
+            });
 
             $body = $this->listBody($q, $request, $tabs, fn (Zone $z) => $this->row($z));
 

@@ -32,10 +32,22 @@ class InventoryCodeAllocator
 {
     /** table => prefix. Shelves derive from their rack and are not allocated. */
     public const PREFIX = [
-        'inventory_warehouses' => 'WH-',
-        'inventory_zones'      => 'ZN-',
-        'inventory_racks'      => 'RK-',
+        'inventory_warehouses'    => 'WH-',
+        'inventory_zones'         => 'ZN-',
+        'inventory_racks'         => 'RK-',
+        'inventory_product_flags' => 'PF-',
     ];
+
+    /**
+     * Tables whose rows a tenant sees ALONGSIDE the platform defaults.
+     *
+     * Product flags are the only master with rows owned by nobody — Hazardous,
+     * Cold Chain and Fragile are drawn on every branch's picker — so their
+     * codes are spent in every branch and a tenant's own flag has to carry on
+     * after them. Counting only the branch's own rows would issue PF-001 next
+     * to the shared Hazardous on one dropdown.
+     */
+    private const COUNTS_PLATFORM = ['inventory_product_flags'];
 
     /**
      * The next free code in this branch. CALL INSIDE A TRANSACTION.
@@ -80,15 +92,16 @@ class InventoryCodeAllocator
      */
     private function build(string $table, string $prefix, ?int $clientId, ?int $branchId): string
     {
-        $codes = DB::table($table)
-            ->when($clientId === null,
-                fn ($q) => $q->whereNull('client_id'),
-                fn ($q) => $q->where('client_id', $clientId))
-            ->when($branchId === null,
-                fn ($q) => $q->whereNull('branch_id'),
-                fn ($q) => $q->where('branch_id', $branchId))
-            ->whereNotNull('code')
-            ->pluck('code');
+        $q = DB::table($table)->whereNotNull('code');
+
+        $ownedByCaller = in_array($table, self::COUNTS_PLATFORM, true) && $clientId !== null;
+        $ownedByCaller
+            ? $q->where(fn ($w) => $w
+                ->where(fn ($own) => $this->scopeOwn($own, $clientId, $branchId))
+                ->orWhere(fn ($plat) => $plat->whereNull('client_id')->whereNull('branch_id')))
+            : $this->scopeOwn($q, $clientId, $branchId);
+
+        $codes = $q->pluck('code');
 
         $max   = 0;
         $regex = '/^' . preg_quote($prefix, '/') . '(\d+)$/i';
@@ -100,5 +113,17 @@ class InventoryCodeAllocator
         }
 
         return $prefix . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
+    }
+
+    /** The caller's own slot: null client or branch is a slot, not a wildcard. */
+    private function scopeOwn($q, ?int $clientId, ?int $branchId)
+    {
+        return $q
+            ->when($clientId === null,
+                fn ($w) => $w->whereNull('client_id'),
+                fn ($w) => $w->where('client_id', $clientId))
+            ->when($branchId === null,
+                fn ($w) => $w->whereNull('branch_id'),
+                fn ($w) => $w->where('branch_id', $branchId));
     }
 }

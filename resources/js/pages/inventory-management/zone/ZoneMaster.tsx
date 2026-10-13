@@ -276,7 +276,7 @@ export default function ZoneMaster() {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by zone name or purpose..."
+              placeholder="Search by zone ID, zone name, purpose or warehouse..."
               aria-label="Search zones"
               autoComplete="off"
             />

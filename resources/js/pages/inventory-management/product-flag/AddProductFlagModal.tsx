@@ -50,7 +50,20 @@ export default function AddProductFlagModal({ flag, onClose, onSaved }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const id = editing ? flag!.id : 'Assigned on save';
+  /* The code the next flag will get, shown before saving — the warehouse and
+     zone forms already do this, and "Assigned on save" told nobody which
+     number was coming. A preview: the server reserves nothing. */
+  const [nextCode, setNextCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (editing) return;
+    let live = true;
+    productFlagApi.nextCode()
+      .then(code => { if (live) setNextCode(code || 'Assigned on save'); })
+      .catch(() => { if (live) setNextCode('Assigned on save'); });
+    return () => { live = false; };
+  }, [editing]);
+
+  const id = editing ? flag!.id : (nextCode ?? 'Loading…');
 
   const save = async () => {
     if (saving) return;

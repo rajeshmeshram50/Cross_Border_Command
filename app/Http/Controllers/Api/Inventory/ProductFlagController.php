@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Inventory;
 
 use App\Models\Inventory\ProductFlag;
+use App\Services\Inventory\InventoryCodeAllocator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\DB;
  */
 class ProductFlagController extends BaseInventoryController
 {
+    public function __construct(private InventoryCodeAllocator $codes) {}
+
     /** GET /inventory/product-flags */
     public function index(Request $request)
     {
@@ -41,7 +44,7 @@ class ProductFlagController extends BaseInventoryController
 
             $q = $base->orderByDesc('id');
             $this->applyTab($q, $f['tab'] ?? null);
-            $this->applySearch($q, $f['q'] ?? null, ['flag_name', 'purpose']);
+            $this->applySearch($q, $f['q'] ?? null, ['code', 'flag_name', 'purpose']);
 
             $body = $this->listBody($q, $request, $tabs, fn(ProductFlag $p) => $this->row($p));
 
@@ -61,6 +64,27 @@ class ProductFlagController extends BaseInventoryController
     public function options(Request $request)
     {
         return $this->index($request->merge(['view' => 'options']));
+    }
+
+    /**
+     * GET /inventory/product-flags/next-code — what the form shows before saving.
+     *
+     * A preview, not a reservation: two people opening the form see the same
+     * number and the second one to save gets the next. Nothing is locked, so
+     * the figure the screen shows is only true until somebody else commits.
+     */
+    public function nextCode(Request $request)
+    {
+        $user = $this->tenantUser($request);
+
+        return response()->json(['status' => true, 'data' => [
+            'next_code' => $this->codes->peek(
+                'inventory_product_flags',
+                $user->client_id,
+                $this->branchScope($request, $user),
+            ),
+            'preview'   => true,
+        ]], 200);
     }
 
     /** GET /inventory/product-flags/{id} */
@@ -102,6 +126,13 @@ class ProductFlagController extends BaseInventoryController
 
             $flag = new ProductFlag($data + $this->tenantColumns($user, $branch));
             $flag->created_by = $user->id;
+            // Per branch, under a lock, inside this transaction — and counted
+            // on from the platform defaults, which every branch can see.
+            $flag->code = $this->codes->next(
+                'inventory_product_flags',
+                $flag->client_id,
+                $flag->branch_id,
+            );
             $flag->save();
 
             DB::commit();

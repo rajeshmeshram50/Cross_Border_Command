@@ -23,8 +23,8 @@ use Illuminate\Validation\Rule;
  * be invisible — and "the scanner isn't working" would be unanswerable.
  *
  * An own warehouse allocates rack and shelf; a third party is summary only.
- * Which it is comes from master_warehouse_master.wh_type, never from a column
- * here that could contradict it.
+ * Which it is comes from inventory_warehouses.wh_type, never from a column here
+ * that could contradict it.
  */
 class SpiPutawayController extends Controller
 {
@@ -47,7 +47,7 @@ class SpiPutawayController extends Controller
     {
         if (!$warehouseId) return true;
 
-        return DB::table('master_warehouse_master')->where('id', $warehouseId)->value('wh_type') === 'Own Warehouse';
+        return DB::table('inventory_warehouses')->where('id', $warehouseId)->value('wh_type') === 'own';
     }
 
     /* ══════════════════════════ READ ══════════════════════════ */
@@ -99,11 +99,17 @@ class SpiPutawayController extends Controller
             $spi  = $this->findSpi($id);
             $data = $request->validate(['warehouse_id' => ['required', 'integer']]);
 
-            $wh = DB::table('master_warehouse_master')->where('id', $data['warehouse_id'])->first();
+            /* Scoped to the invoice's client: an id alone is not proof of
+               ownership, and this column has no foreign key behind it. */
+            $wh = DB::table('inventory_warehouses')
+                ->where('id', $data['warehouse_id'])
+                ->where('client_id', $spi->client_id)
+                ->first();
             if (!$wh) {
                 abort(response()->json(['status' => false, 'message' => 'That warehouse does not exist.'], 422));
             }
-            if ($wh->status !== 'Active') {
+            // Status is 0/1 on the Inventory masters, not the string 'Active'.
+            if ((int) $wh->status !== 1) {
                 abort(response()->json([
                     'status'  => false,
                     'message' => "{$wh->wh_name} is inactive — pick another warehouse.",
@@ -339,32 +345,31 @@ class SpiPutawayController extends Controller
 
         if ($type === 'location') {
             // The zone within the invoice's warehouse.
-            $zone = DB::table('master_zone_master')
-                ->where('warehouse', (string) $spi->warehouse_id)
-                ->where('zone_id', $value)->first();
+            $zone = $this->matchLocation('inventory_zones', 'ZN', $value)
+                ->where('warehouse_id', $spi->warehouse_id)->first();
             if (!$zone) return 'unknown';
-            if (($zone->status ?? 'Active') !== 'Active') return 'inactive';
+            if ((int) $zone->status !== 1) return 'inactive';
 
             return ['zone_id' => $zone->id];
         }
 
         if ($type === 'rack') {
-            $rack = DB::table('master_racks')
-                ->where('warehouse', (string) $spi->warehouse_id)
-                ->where('rackName', $value)->first();
+            $rack = $this->matchLocation('inventory_racks', 'RK', $value)
+                ->where('warehouse_id', $spi->warehouse_id)->first();
             if (!$rack) return 'unknown';
+            if ((int) $rack->status !== 1) return 'inactive';
             // A rack in another zone than the one just scanned is a wrong turn.
-            if ($row->zone_id && (string) $rack->zone !== (string) $row->zone_id) return 'not_on_rack';
+            if ($row->zone_id && (int) $rack->zone_id !== (int) $row->zone_id) return 'not_on_rack';
 
             return ['rack_id' => $rack->id];
         }
 
         // shelf
-        $shelf = DB::table('master_shelf_master')->where('shelf_name', $value)->first();
+        $shelf = $this->matchShelf($value, $row)->first();
         if (!$shelf) return 'unknown';
-        if (($shelf->status ?? 'Active') === 'Under Maintenance') return 'inactive';
+        if ((int) $shelf->status !== 1) return 'inactive';
         // The shelf must belong to the rack the operator just scanned.
-        if ($row->rack_id && (string) $shelf->rack_ref !== (string) $row->rack_id) return 'not_on_rack';
+        if ($row->rack_id && (int) $shelf->rack_id !== (int) $row->rack_id) return 'not_on_rack';
 
         return ['shelf_id' => $shelf->id];
     }
@@ -372,12 +377,64 @@ class SpiPutawayController extends Controller
     /** The human-readable placement, rebuilt after every scan. */
     private function describe(SpiPutaway $row): string
     {
-        $wh    = DB::table('master_warehouse_master')->where('id', $row->warehouse_id)->value('wh_id');
-        $zone  = $row->zone_id  ? DB::table('master_zone_master')->where('id', $row->zone_id)->value('zone_id') : null;
-        $rack  = $row->rack_id  ? DB::table('master_racks')->where('id', $row->rack_id)->value('rackName') : null;
-        $shelf = $row->shelf_id ? DB::table('master_shelf_master')->where('id', $row->shelf_id)->value('shelf_name') : null;
+        $wh   = DB::table('inventory_warehouses')->where('id', $row->warehouse_id)->value('code');
+        $zone = $row->zone_id ? DB::table('inventory_zones')->where('id', $row->zone_id)->value('code') : null;
+        $rack = $row->rack_id ? DB::table('inventory_racks')->where('id', $row->rack_id)->value('code') : null;
+
+        // A shelf has no code column — it is its rack's code plus the level.
+        $shelf = null;
+        if ($row->shelf_id) {
+            $level = DB::table('inventory_shelves')->where('id', $row->shelf_id)->value('level_no');
+            $shelf = $level === null ? null : ($rack ?: 'RK-???') . '-SH-' . str_pad((string) $level, 2, '0', STR_PAD_LEFT);
+        }
 
         return implode(' / ', array_filter([$wh, $zone, $rack, $shelf]));
+    }
+
+    /**
+     * A scanned label, matched against an Inventory master.
+     *
+     * TWO FORMS reach here and both have to work:
+     *   · 'ZN:14'  — what the QR on the printed label carries. Codes are
+     *                numbered per BRANCH, so three branches each have a ZN-001
+     *                and the code alone no longer names one row; the QR carries
+     *                the id for that reason. See BaseInventoryController.
+     *   · 'ZN-001' — the code printed under the QR, which is what gets typed
+     *                when the label is scuffed and the camera will not read it.
+     *
+     * The caller still scopes the result to the invoice's warehouse, so a valid
+     * id from somewhere else is refused rather than trusted.
+     */
+    private function matchLocation(string $table, string $kind, string $value)
+    {
+        $value = trim($value);
+        $q     = DB::table($table);
+
+        return preg_match('/^' . $kind . ':(\d+)$/i', $value, $m)
+            ? $q->where('id', (int) $m[1])
+            : $q->where('code', 'ilike', $value);
+    }
+
+    /**
+     * The shelf, which has no code column of its own: 'RK-002-SH-03' is its
+     * rack's code plus the level. 'SH:41' is the QR, matched on the id.
+     */
+    private function matchShelf(string $value, SpiPutaway $row)
+    {
+        $value = trim($value);
+        $q     = DB::table('inventory_shelves');
+
+        if (preg_match('/^SH:(\d+)$/i', $value, $m)) {
+            return $q->where('id', (int) $m[1]);
+        }
+
+        // Typed: take the level off the tail, within the rack already scanned.
+        if (preg_match('/sh-?(\d+)$/i', $value, $m) && $row->rack_id) {
+            return $q->where('rack_id', $row->rack_id)->where('level_no', (int) $m[1]);
+        }
+
+        // Nothing recognisable — fall back to the name, which is free text.
+        return $q->where('shelf_name', 'ilike', $value);
     }
 
     /* ══════════════════════════ SCAN LOG ══════════════════════════ */

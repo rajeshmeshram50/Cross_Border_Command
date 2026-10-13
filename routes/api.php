@@ -644,6 +644,7 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         // Product flags
         Route::get   ('/product-flags',            [ProductFlagController::class, 'index']);
         Route::get   ('/product-flags/options',    [ProductFlagController::class, 'options']);
+        Route::get   ('/product-flags/next-code',  [ProductFlagController::class, 'nextCode']);
         Route::post  ('/product-flags',            [ProductFlagController::class, 'store']);
         Route::get   ('/product-flags/{id}',       [ProductFlagController::class, 'show'])->whereNumber('id');
         Route::put   ('/product-flags/{id}',       [ProductFlagController::class, 'update'])->whereNumber('id');
