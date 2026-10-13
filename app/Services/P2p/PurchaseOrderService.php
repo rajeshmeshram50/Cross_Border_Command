@@ -43,20 +43,32 @@ class PurchaseOrderService
     }
 
     /**
-     * Next PO/<FY>/<SEQ>, one sequence per client. Must be called inside a
-     * transaction. The tenant scope is lifted because the code is unique
-     * across the whole client — a branch-filtered read would reuse a code
-     * another branch already holds.
+     * Next PO/<FY>/<SEQ>, one sequence PER BRANCH. Call inside a transaction.
+     *
+     * It used to be one sequence per client, which meant a branch's numbering
+     * counted every other branch's orders too: raise PO/2026-27/001 in Pune
+     * and Mumbai's first order of the year came out PO/2026-27/002. A number
+     * that skips is read as a lost document, and one branch could infer how
+     * much the others were buying from the gaps (QA #15).
+     *
+     * Every other per-branch code in this codebase already works this way —
+     * emp_code, vendor_code, customer_code, and the inventory WH-/ZN-/RC-
+     * codes. The code is therefore NOT unique on its own: the unique index is
+     * (client_id, branch_id, code).
+     *
+     * The tenant scope is still lifted, because the read has to see rows the
+     * caller's own scope might hide (another user's draft in the same branch);
+     * the client and branch are then filtered explicitly.
      */
-    public function nextPoCode(int $clientId): string
+    public function nextPoCode(int $clientId, ?int $branchId = null): string
     {
-        return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed());
+        return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed(), true, $branchId);
     }
 
     /** The number the next PO would get — a read only: no lock, nothing reserved or written. */
-    public function previewPoCode(int $clientId): string
+    public function previewPoCode(int $clientId, ?int $branchId = null): string
     {
-        return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed(), false);
+        return $this->nextCode($clientId, 'PO', PurchaseOrder::withoutGlobalScope('tenant')->withTrashed(), false, $branchId);
     }
 
     /**
@@ -259,14 +271,31 @@ class PurchaseOrderService
         return false;
     }
 
-    private function nextCode(int $clientId, string $prefix, Builder $query, bool $allocate = true): string
+    /**
+     * @param  int|null  $branchId  Numbers within this branch alone. Null keeps
+     *   the client-wide sequence, which is what ADR and DOC still use — those
+     *   are company references, not per-office documents.
+     */
+    private function nextCode(int $clientId, string $prefix, Builder $query, bool $allocate = true, ?int $branchId = null): string
     {
         $fy = $this->financialYear();
-        // Allocation locks the client row so two saves never take the same number.
-        if ($allocate) DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
 
-        $max = 0;
-        $rows = $query->where('client_id', $clientId)->where('code', 'like', "{$prefix}/{$fy}/%")->pluck('code');
+        /* Lock the BRANCH when numbering within one, not the client: two
+           branches numbering at the same moment are independent sequences and
+           must not queue behind each other, while two saves in one branch must.
+           A client-wide sequence still locks the client, and a branch-scoped
+           one with no branch falls back to it for the same reason. */
+        if ($allocate) {
+            $branchId !== null
+                ? DB::table('branches')->where('id', $branchId)->lockForUpdate()->first()
+                : DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
+        }
+
+        $max  = 0;
+        $rows = $query->where('client_id', $clientId)
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->where('code', 'like', "{$prefix}/{$fy}/%")
+            ->pluck('code');
         foreach ($rows as $code) {
             if (preg_match('#^' . $prefix . '/' . preg_quote($fy, '#') . '/(\d+)$#', (string) $code, $m)) {
                 $max = max($max, (int) $m[1]);

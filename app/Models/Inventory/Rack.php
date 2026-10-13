@@ -46,12 +46,12 @@ class Rack extends Model
 
     protected $appends = ['rack_code', 'height_cm'];
 
-    /** The stored code — RK-001, counted within this rack's own branch. See
+    /** The stored code — RC-001, counted within this rack's own branch. See
      *  Warehouse::getWhCodeAttribute() for why it is no longer the id. */
     public function getRackCodeAttribute(): string
     {
         return $this->attributes['code']
-            ?: 'RK-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
+            ?: 'RC-' . str_pad((string) $this->id, 3, '0', STR_PAD_LEFT);
     }
 
     public static function idFromCode(?string $code): ?int

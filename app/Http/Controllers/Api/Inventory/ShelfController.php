@@ -38,7 +38,7 @@ class ShelfController extends BaseInventoryController
      * GET /inventory/racks/{rack}/shelves/next-code
      *
      * A shelf code is not built from the shelf's own id — it is
-     * RK-003-SH-02, the RACK's code plus the shelf's level within it. So the
+     * RC-003-SH-02, the RACK's code plus the shelf's level within it. So the
      * next code is the next LEVEL in this rack, not the next sequence value,
      * and unlike the other three it is contiguous: levels are counted, not
      * handed out, so a deleted shelf's level is reused by the next one.
@@ -80,7 +80,7 @@ class ShelfController extends BaseInventoryController
             $this->applyTab($q, $f['tab'] ?? null);
             /* The shelf code is derived, so it is not a column to search.
                Every shelf here belongs to $rack, so a term carrying a level —
-               "SH-03", or the whole "RK-002-SH-03" — is answered by matching
+               "SH-03", or the whole "RC-002-SH-03" — is answered by matching
                the level, once any rack-code part names THIS rack. */
             $this->applySearch($q, $f['q'] ?? null, ['shelf_name', 'shelf_type', 'purpose'],
                 function ($w, $term) use ($rack) {

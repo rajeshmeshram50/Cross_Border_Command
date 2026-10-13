@@ -354,7 +354,7 @@ class RackController extends BaseInventoryController
         return [
             'kind'     => 'RACK',
             'code'     => $r->rack_code,
-            'scan'     => $this->scanValue('RK', (int) $r->id),
+            'scan'     => $this->scanValue('RC', (int) $r->id),
             'title'    => $r->rack_name,
             'subtitle' => trim(implode('  /  ', array_filter([$r->warehouse?->wh_name, $r->zone?->zone_name]))) ?: null,
             'rows'     => array_filter([

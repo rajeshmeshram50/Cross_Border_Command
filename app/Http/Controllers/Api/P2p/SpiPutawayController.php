@@ -354,7 +354,7 @@ class SpiPutawayController extends Controller
         }
 
         if ($type === 'rack') {
-            $rack = $this->matchLocation('inventory_racks', 'RK', $value)
+            $rack = $this->matchLocation('inventory_racks', 'RC', $value)
                 ->where('warehouse_id', $spi->warehouse_id)->first();
             if (!$rack) return 'unknown';
             if ((int) $rack->status !== 1) return 'inactive';
@@ -385,7 +385,7 @@ class SpiPutawayController extends Controller
         $shelf = null;
         if ($row->shelf_id) {
             $level = DB::table('inventory_shelves')->where('id', $row->shelf_id)->value('level_no');
-            $shelf = $level === null ? null : ($rack ?: 'RK-???') . '-SH-' . str_pad((string) $level, 2, '0', STR_PAD_LEFT);
+            $shelf = $level === null ? null : ($rack ?: 'RC-???') . '-SH-' . str_pad((string) $level, 2, '0', STR_PAD_LEFT);
         }
 
         return implode(' / ', array_filter([$wh, $zone, $rack, $shelf]));
@@ -395,7 +395,8 @@ class SpiPutawayController extends Controller
      * A scanned label, matched against an Inventory master.
      *
      * TWO FORMS reach here and both have to work:
-     *   · 'ZN:14'  — what the QR on the printed label carries. Codes are
+     *   · 'ZN:14'  — what the QR on the printed label carries (a rack reads
+     *                'RC:7'). Codes are
      *                numbered per BRANCH, so three branches each have a ZN-001
      *                and the code alone no longer names one row; the QR carries
      *                the id for that reason. See BaseInventoryController.
@@ -416,7 +417,7 @@ class SpiPutawayController extends Controller
     }
 
     /**
-     * The shelf, which has no code column of its own: 'RK-002-SH-03' is its
+     * The shelf, which has no code column of its own: 'RC-002-SH-03' is its
      * rack's code plus the level. 'SH:41' is the QR, matched on the id.
      */
     private function matchShelf(string $value, SpiPutaway $row)

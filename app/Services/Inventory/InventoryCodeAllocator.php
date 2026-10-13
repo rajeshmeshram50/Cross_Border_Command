@@ -34,7 +34,7 @@ class InventoryCodeAllocator
     public const PREFIX = [
         'inventory_warehouses'    => 'WH-',
         'inventory_zones'         => 'ZN-',
-        'inventory_racks'         => 'RK-',
+        'inventory_racks'         => 'RC-',
         'inventory_product_flags' => 'PF-',
     ];
 
