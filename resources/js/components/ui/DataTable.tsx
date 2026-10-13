@@ -591,24 +591,7 @@ export default function DataTable<T extends object>({
         el.style.maxHeight = mh;
         return;
       }
-      /* The card is never taller than the rows it holds.
-       *
-       * Under the automatic fit the row count is measured to fill the card, so
-       * the two normally agree and this clamp does nothing. They come apart
-       * when the measurement is wrong: fitRows takes ONE reading per viewport
-       * and then sets settledRef, so a reading taken while the page above is
-       * still settling sticks — ten rows fitted for a card the viewport sizes
-       * at fourteen, and the four rows' worth of difference shows as a band of
-       * white between the last row and the pager. It is also what is left when
-       * a page simply has fewer records than fit.
-       *
-       * Clamping here rather than re-measuring: fitRows derives its count from
-       * the VIEWPORT (window.innerHeight - top), not from the card, so a
-       * shortened card cannot feed back into the row count, and a resize still
-       * grows the table to the new height. */
-      const viewportH = Math.max(rowFloor(), window.innerHeight - top - bottomReserve());
-      const ch = contentHeight();
-      const h = `${ch !== null ? Math.min(viewportH, ch) : viewportH}px`;
+      const h = `${Math.max(rowFloor(), window.innerHeight - top - bottomReserve())}px`;
       if (el.style.height === h && !el.style.minHeight) return;
       el.style.flex = 'none';
       el.style.minHeight = '';
@@ -657,6 +640,37 @@ export default function DataTable<T extends object>({
     };
 
     const t = window.setTimeout(fitRows, 120);
+
+    /* One self-correction, once the page really has stopped moving.
+     *
+     * fitRows takes a single reading per viewport and then settles, so a
+     * reading taken while the content above was still arriving sticks: ten
+     * rows fitted for a card the viewport sizes at fourteen, and the four
+     * rows' worth of difference shows as a band of white between the last row
+     * and the pager. (QA Document Template #35)
+     *
+     * The answer is more ROWS, not a shorter card — shrinking the card to its
+     * rows is what left the whole page empty below it, which is the gap QA #59
+     * objected to.
+     *
+     * Only fires when the reading was demonstrably wrong: a row or more of the
+     * scroll box is unused AND there are records not on screen to fill it
+     * with. Self-limiting, because once the rows fill the card it is false. */
+    const correct = window.setTimeout(() => {
+      const root = rootRef.current;
+      if (!root || manualSize !== null) return;
+      const scrollBox = root.querySelector('.dt-scroll') as HTMLElement | null;
+      const table = root.querySelector('.dt-table') as HTMLElement | null;
+      const rowEl = root.querySelector('.dt-table tbody tr:not(.dt-empty-row)') as HTMLElement | null;
+      if (!scrollBox || !table || !rowEl) return;
+      const rowH = rowEl.offsetHeight || 44;
+      const unused = scrollBox.clientHeight - table.offsetHeight;
+      if (unused < rowH || filteredCount <= pageSize) return;
+      fitEmitsRef.current = 0;
+      settledRef.current = false;
+      fitRows();
+    }, 700);
+
     /* A real resize legitimately changes the answer, so clear the oscillation
        freeze before re-fitting — otherwise a window the user actually resized
        would stay stuck at whatever size we settled on. */
@@ -676,11 +690,12 @@ export default function DataTable<T extends object>({
     }
     return () => {
       window.clearTimeout(t);
+      window.clearTimeout(correct);
       window.clearTimeout(debounce);
       window.removeEventListener('resize', onResize);
       ro?.disconnect();
     };
-  }, [autoFitRows, fitRows, loading, children]);
+  }, [autoFitRows, fitRows, loading, children, manualSize, filteredCount, pageSize]);
 
   /* The search box, built once and either left in the toolbar or portaled into
      the caller's `searchHost`. Same node either way, so query state, the clear
