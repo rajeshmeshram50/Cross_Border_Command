@@ -87,7 +87,11 @@ class PurchaseOrderDocumentController extends Controller
         // sent it, see markSent) — this only brings their statuses up to date.
         $this->docs->syncSignatures($order->documents()->get());
         $docs = $order->documents()->orderBy('id')->get();
-        $sigs = ClmSignatureRequest::whereIn('id', $docs->pluck('signature_request_id')->filter()->unique())->get()->keyBy('id');
+        // Scoped to the PO's own client: a row that somehow holds a foreign
+        // request id must read as "no signature", never as that request's state.
+        $sigs = ClmSignatureRequest::whereIn('id', $docs->pluck('signature_request_id')->filter()->unique())
+            ->where('client_id', $order->client_id)
+            ->get()->keyBy('id');
         $master = $this->masterCodes($docs);
         return $docs->map(fn ($d) => $this->shape($d, $d->signature_request_id ? $sigs->get($d->signature_request_id) : null, $master[$d->id] ?? null))->all();
     }
@@ -191,6 +195,39 @@ class PurchaseOrderDocumentController extends Controller
             return $this->fail('Some documents were not found on this PO.');
         }
 
+        /* The request has to be THIS company's, and it has to actually cover the
+         * documents being marked.
+         *
+         * `exists:clm_signature_requests,id` alone accepts any id on the
+         * platform. A stale one — the previous PO still held in the screen's
+         * state — was written onto these rows, and `signature_status` then
+         * reported that other request's state: a PO nobody had signed showed a
+         * signed timeline carrying another entry's data (QA #12).
+         *
+         * `trade_doc_ids` lists OUR row ids for a P2P PO document request and
+         * the CLM library ids otherwise, which is the same pair shape() reads
+         * to find a document's place in the request. An older request that
+         * recorded no ids cannot be checked that way, so it is let through on
+         * the tenant match alone rather than blocking a legitimate resend. */
+        $sig = ClmSignatureRequest::where('id', $data['signature_request_id'])
+            ->where('client_id', $order->client_id)
+            ->first();
+        if (!$sig) {
+            return $this->fail('That signature request does not belong to this company.');
+        }
+
+        $sigDocIds = is_array($sig->trade_doc_ids) ? array_map('intval', $sig->trade_doc_ids) : [];
+        if ($sigDocIds) {
+            foreach ($docs as $doc) {
+                $mine = $sig->document_type === ClmSignatureRequest::DOC_P2P_PO_DOCUMENT || $doc->source_id === null
+                    ? (int) $doc->id
+                    : (int) $doc->source_id;
+                if (!in_array($mine, $sigDocIds, true)) {
+                    return $this->fail("\"{$doc->name}\" is not part of that signature request.");
+                }
+            }
+        }
+
         $this->inTransaction('record the signature request', function () use ($docs, $data, $request) {
             foreach ($docs as $doc) {
                 $doc->update([
@@ -228,7 +265,7 @@ class PurchaseOrderDocumentController extends Controller
                 'client_id'         => $order->client_id,
                 'branch_id'         => $order->branch_id,
                 'purchase_order_id' => $order->id,
-                'code'              => $this->svc->nextDocCode((int) $order->client_id),
+                'code'              => $this->svc->nextDocCode((int) $order->client_id, $order->branch_id ? (int) $order->branch_id : null),
                 'name'              => $data['name'],
                 'doc_kind'          => $data['doc_kind'] ?? 'other',
                 'is_required'       => $data['is_required'] ?? 'no',

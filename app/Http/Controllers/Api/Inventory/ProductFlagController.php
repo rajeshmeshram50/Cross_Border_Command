@@ -251,10 +251,11 @@ class ProductFlagController extends BaseInventoryController
     private function optionRow(ProductFlag $p): array
     {
         return [
-            'id'        => $p->id,
-            'flag_code' => $p->flag_code,
-            'flag_name' => $p->flag_name,
-            'purpose'   => $p->purpose,
+            'id'         => $p->id,
+            'flag_code'  => $p->flag_code,
+            'flag_name'  => $p->flag_name,
+            'purpose'    => $p->purpose,
+            'is_default' => $p->client_id === null,
         ];
     }
 
@@ -265,6 +266,13 @@ class ProductFlagController extends BaseInventoryController
             'flag_code'  => $p->flag_code,
             'flag_name'  => $p->flag_name,
             'purpose'    => $p->purpose,
+            /* Hazardous, Cold Chain and Fragile are owned by nobody and shared
+               by every tenant, so update/delete/status refuse them with a 403
+               (refuseIfPlatformRow). The list never said which ones they were,
+               so Edit and the toggle looked live on PF-001…003 and failed only
+               once clicked. The row says so now, and the screen can disable
+               them instead. */
+            'is_default' => $p->client_id === null,
             'status'     => (int) $p->status,
             'created_at' => $p->created_at?->toDateString(),
             'updated_at' => $p->updated_at?->toDateTimeString(),

@@ -9,6 +9,7 @@ import './zone-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
 import {
   ZoneApiError, zoneApi,
+  uniqueLabels,
   type Zone, type ZonePayload, type ZoneStorage, type ZoneType, type ZoneWarehouse,
 } from './zone-data';
 
@@ -140,13 +141,17 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   useScrollLock(true, '.znm-addmdl');
 
   const activeWarehouses = useMemo(() => warehouses.filter(w => w.active), [warehouses]);
+  const whLabels = useMemo(
+    () => uniqueLabels(warehouses, w => w.apiId, w => WAREHOUSE_LABEL(w.id, w.name), w => w.city),
+    [warehouses],
+  );
   const zoneWarehouse = zone?.warehouseId ? warehouses.find(w => w.apiId === zone.warehouseId) : undefined;
   const cm = zone?.dims?.unit === 'cm';
   const fromCm = (v: number) => String(cm ? round(v / 100, 3) : v);
 
   const [d, setD] = useState<Draft>(() => (zone
     ? {
-      wh: zoneWarehouse ? WAREHOUSE_LABEL(zoneWarehouse.id, zoneWarehouse.name) : '',
+      wh: zoneWarehouse ? whLabels.get(zoneWarehouse.apiId) ?? '' : '',
       name: zone.name,
       area: String(zone.area),
       type: TYPE_LABEL[zone.type],
@@ -165,7 +170,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   const set = (p: Partial<Draft>) => setD(prev => ({ ...prev, ...p }));
 
   useEffect(() => {
-    if (zoneWarehouse && !d.wh) set({ wh: WAREHOUSE_LABEL(zoneWarehouse.id, zoneWarehouse.name) });
+    if (zoneWarehouse && !d.wh) set({ wh: whLabels.get(zoneWarehouse.apiId) ?? '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoneWarehouse]);
 
@@ -199,7 +204,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   }, [editing]);
 
   const id = editing ? zone!.id : (nextCode ?? 'Loading…');
-  const picked = activeWarehouses.find(w => WAREHOUSE_LABEL(w.id, w.name) === d.wh);
+  const picked = activeWarehouses.find(w => whLabels.get(w.apiId) === d.wh);
   const type: ZoneType | '' = d.type === TYPE_LABEL.rack ? 'rack' : d.type === TYPE_LABEL.norack ? 'norack' : '';
   const noRack = type === 'norack';
 
@@ -361,7 +366,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
             <Field label="Warehouse" req error={errors.wh} hint="Only active warehouses are listed">
               <EditSelect
                 value={d.wh}
-                options={activeWarehouses.map(w => WAREHOUSE_LABEL(w.id, w.name))}
+                options={activeWarehouses.map(w => whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name))}
                 placeholder="Select warehouse"
                 invalid={!!errors.wh}
                 onChange={v => { set({ wh: v }); clear('wh'); clear('area'); }}

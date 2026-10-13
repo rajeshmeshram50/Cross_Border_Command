@@ -702,6 +702,35 @@ class SupplierInvoiceController extends Controller
         }
     }
 
+    /**
+     * GET /p2p/spi/{id}/summary — everything the Temporary Putaway Summary shows.
+     *
+     * One call for the whole dialog: the header pills, the eight analytics
+     * tiles, the three trading parties, the PI/PO/SPI references, the
+     * per-box placement and the per-box contents.
+     *
+     * Read-only, and it reads ROWS. The screen used to compute its zones and
+     * racks from the invoice number, so it drew a full allocation for an
+     * invoice whose boxes had never been scanned; this answers from
+     * p2p_spi_putaways and returns nulls where nothing has been placed.
+     */
+    public function summary(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $this->tenantUser($request);
+            $body = app(\App\Services\P2p\SpiSummaryService::class)->build($this->findSpi($id));
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
     /** GET /p2p/spi/{id}/zoho-tracker — says WHY there is no bill, rather than showing an empty state. */
     public function zohoTracker(Request $request, int $id)
     {
@@ -999,13 +1028,29 @@ class SupplierInvoiceController extends Controller
             // Decides whether the tax section renders at all, so it is asked
             // up front rather than discovered at Stage 02.
             'document_type'     => ['required', Rule::in(SupplierInvoice::DOC_TYPES)],
-            /* Must be a warehouse THIS tenant can see.
+            /* Must be a warehouse THIS INVOICE'S BRANCH can see.
              *
              * It was ['nullable','integer'] with no foreign key behind it, so
              * any number stuck — including an id belonging to another client,
-             * or to the old master table the relation used to read. */
+             * or to the old master table the relation used to read.
+             *
+             * Client alone is not enough. A warehouse is branch-wise, and so is
+             * everything under it: scoping only to the company let a branch-6
+             * invoice be saved against a branch-7 warehouse, and putaway would
+             * then hunt for zones in a building the invoice's branch does not
+             * own. A null branch_id is a client-wide site and belongs to every
+             * branch, which is the same rule the Inventory masters read by
+             * (BaseInventoryController::scopeTenant).
+             *
+             * On create the invoice does not exist yet, so the branch is the
+             * one it is about to be filed under — tenantUser() refuses a user
+             * without one, so this is never null. */
             'warehouse_id'      => ['nullable', 'integer', Rule::exists('inventory_warehouses', 'id')
-                ->where(fn ($q) => $q->where('client_id', $user->client_id))],
+                ->where(fn ($q) => $q
+                    ->where('client_id', $user->client_id)
+                    ->where(fn ($w) => $w
+                        ->whereNull('branch_id')
+                        ->orWhere('branch_id', $spi?->branch_id ?? $user->branch_id)))],
         ]);
     }
 

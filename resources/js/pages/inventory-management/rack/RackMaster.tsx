@@ -280,7 +280,7 @@ export default function RackMaster() {
               name="rack-list-search"
               readOnly={!searchArmed}
               onFocus={() => setSearchArmed(true)}
-              placeholder="Search by rack name..."
+              placeholder="Search by rack ID, rack name, zone or warehouse..."
               aria-label="Search racks"
               autoComplete="off"
             />

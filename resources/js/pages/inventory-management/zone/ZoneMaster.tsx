@@ -436,7 +436,7 @@ function Row({ z, sr, off, busy, opening, w, onToggle, onQr, onEdit }: {
 
       <td>
         <div className="znm-whcell">
-          <span className="whm-idpill znm-whid">{w?.id ?? z.wh}</span>
+          <span className="whm-idpill znm-whid">{w?.id ?? '—'}</span>
           <b title={w?.name ?? z.whName}>{w?.name || z.whName || '—'}</b>
         </div>
       </td>

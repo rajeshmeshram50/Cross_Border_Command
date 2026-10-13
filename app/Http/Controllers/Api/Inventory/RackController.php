@@ -68,8 +68,8 @@ class RackController extends BaseInventoryController
             $q = $base
                 ->with(['warehouse:id,wh_name', 'zone:id,zone_name,temp_min_c,temp_max_c'])
                 ->withCount('shelves')
-                ->withSum('shelves as capacity_kg', 'max_weight_kg')
-                ->withSum('shelves as used_kg', 'used_weight_kg')
+                ->withSum(['shelves as capacity_kg' => fn ($s) => $s->where('status', 1)], 'max_weight_kg')
+                ->withSum(['shelves as used_kg' => fn ($s) => $s->where('status', 1)], 'used_weight_kg')
                 ->orderByDesc('id');
 
             $this->applyTab($q, $f['tab'] ?? null);
@@ -124,8 +124,8 @@ class RackController extends BaseInventoryController
 
             $rack = Rack::with(['warehouse:id,wh_name', 'zone:id,zone_name,temp_min_c,temp_max_c'])
                 ->withCount('shelves')
-                ->withSum('shelves as capacity_kg', 'max_weight_kg')
-                ->withSum('shelves as used_kg', 'used_weight_kg')
+                ->withSum(['shelves as capacity_kg' => fn ($s) => $s->where('status', 1)], 'max_weight_kg')
+                ->withSum(['shelves as used_kg' => fn ($s) => $s->where('status', 1)], 'used_weight_kg')
                 ->findOrFail($id);
 
             $body = $this->row($rack) + [
@@ -385,7 +385,13 @@ class RackController extends BaseInventoryController
     {
         $data = $this->labelData($request, $id);
 
-        return $this->qrPng($data['code'], (int) $request->input('scale', 10));
+        /* The SCAN value, not the printed code — the same thing labelPdf()
+           encodes. Codes restart at 001 in every branch, so a scanner reading
+           "WH-001" cannot tell which branch's it is holding; the scan value
+           carries the row id, which does not repeat. This endpoint was still
+           encoding the human code, so a QR saved from here and one printed on
+           the label resolved to different things. */
+        return $this->qrPng($data['scan'] ?? $data['code'], (int) $request->input('scale', 10));
     }
 
     /* ══════════════════════════ INTERNALS ══════════════════════════ */

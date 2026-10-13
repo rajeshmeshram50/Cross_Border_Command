@@ -198,7 +198,7 @@ class PoPaymentRequestController extends Controller
                 'branch_id'         => $locked->branch_id,
                 'purchase_order_id'   => $locked->id,
                 'supplier_invoice_id' => $data['supplier_invoice_id'] ?? null,
-                'code'              => $this->svc->nextPaymentRequestCode((int) $locked->client_id),
+                'code'              => $this->svc->nextPaymentRequestCode((int) $locked->client_id, $locked->branch_id ? (int) $locked->branch_id : null),
                 'payment_type'      => $data['payment_type'],
                 'percentage'        => $this->requestPct($locked, $amount, $data['percentage'] ?? null),
                 'requested_amount'  => $amount,

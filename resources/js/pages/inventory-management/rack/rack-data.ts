@@ -112,7 +112,7 @@ const toRack = (r: RackRow): Rack => {
   const length = num(r.length), width = num(r.width), height = num(r.height);
   return {
     apiId: r.id,
-    id: r.rack_code || `RK-${String(r.id).padStart(3, '0')}`,
+    id: r.rack_code || `RC-${String(r.id).padStart(3, '0')}`,
     date: r.created_at ?? '',
     warehouseId: r.warehouse_id,
     zoneId: r.zone_id,

@@ -11,9 +11,9 @@ import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po
 import {
   InventoryApiError, rackApi, type InventoryLookups, type Rack, type RackPayload,
 } from './rack-data';
+import { uniqueLabels } from '../zone/zone-data';
 
 const LABEL = (id: string, name: string) => `${id} · ${name}`;
-const codeOf = (label: string) => label.split('·')[0].trim();
 
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
@@ -97,13 +97,21 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
   const activeWarehouses = useMemo(() => lookups.warehouses.filter(w => w.active), [lookups]);
   const rackWarehouse = rack?.warehouseId ? lookups.warehouses.find(w => w.apiId === rack.warehouseId) : undefined;
   const rackZone = rack?.zoneId ? lookups.zones.find(z => z.apiId === rack.zoneId) : undefined;
+  const whLabels = useMemo(
+    () => uniqueLabels(lookups.warehouses, w => w.apiId, w => LABEL(w.id, w.name), w => w.city),
+    [lookups],
+  );
+  const zoneLabels = useMemo(
+    () => uniqueLabels(lookups.zones.filter(z => z.apiId), z => z.apiId as number, z => LABEL(z.id, z.name), z => z.whName ?? ''),
+    [lookups],
+  );
 
   const [unit, setUnit] = useState<Unit>(rack?.dims.unit ?? 'cm');
   const [d, setD] = useState<Draft>(() => {
     if (!rack) return EMPTY;
     return {
-      wh: rackWarehouse ? LABEL(rackWarehouse.id, rackWarehouse.name) : '',
-      zone: rackZone ? LABEL(rackZone.id, rackZone.name) : '',
+      wh: rackWarehouse ? whLabels.get(rackWarehouse.apiId) ?? '' : '',
+      zone: rackZone?.apiId ? zoneLabels.get(rackZone.apiId) ?? '' : '',
       name: rack.name,
       cold: rack.cold,
       haz: rack.haz,
@@ -117,15 +125,15 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
   const set = (p: Partial<Draft>) => setD(s => ({ ...s, ...p }));
 
   useEffect(() => {
-    if (rackWarehouse && !d.wh) set({ wh: LABEL(rackWarehouse.id, rackWarehouse.name) });
-    if (rackZone && !d.zone) set({ zone: LABEL(rackZone.id, rackZone.name) });
+    if (rackWarehouse && !d.wh) set({ wh: whLabels.get(rackWarehouse.apiId) ?? '' });
+    if (rackZone?.apiId && !d.zone) set({ zone: zoneLabels.get(rackZone.apiId) ?? '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rackWarehouse, rackZone]);
   const clear = (k: keyof Draft) => setErrors(e => (e[k] ? { ...e, [k]: undefined } : e));
 
   const picked = useMemo(
-    () => (d.wh ? lookups.warehouses.find(w => w.id === codeOf(d.wh)) ?? null : null),
-    [d.wh, lookups],
+    () => (d.wh ? lookups.warehouses.find(w => whLabels.get(w.apiId) === d.wh) ?? null : null),
+    [d.wh, lookups, whLabels],
   );
 
   const zoneChoices = useMemo(
@@ -136,8 +144,8 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
     [picked, lookups, rack],
   );
   const zone = useMemo(
-    () => (d.zone ? zoneChoices.find(z => z.id === codeOf(d.zone)) ?? null : null),
-    [d.zone, zoneChoices],
+    () => (d.zone ? zoneChoices.find(z => z.apiId && zoneLabels.get(z.apiId) === d.zone) ?? null : null),
+    [d.zone, zoneChoices, zoneLabels],
   );
 
   const [nextCode, setNextCode] = useState<string | null>(null);
@@ -257,7 +265,7 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
             <Field label="Warehouse" req error={errors.wh}>
               <EditSelect
                 value={d.wh}
-                options={activeWarehouses.map(w => LABEL(w.id, w.name))}
+                options={activeWarehouses.map(w => whLabels.get(w.apiId) ?? LABEL(w.id, w.name))}
                 placeholder="Select warehouse"
                 invalid={!!errors.wh}
                 onChange={v => { set({ wh: v, zone: '', cold: false, haz: false }); clear('wh'); clear('zone'); }}
@@ -281,7 +289,7 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
             >
               <EditSelect
                 value={d.zone}
-                options={zoneChoices.map(z => LABEL(z.id, z.name))}
+                options={zoneChoices.map(z => (z.apiId && zoneLabels.get(z.apiId)) || LABEL(z.id, z.name))}
                 placeholder={picked ? 'Select zone' : 'Select warehouse first'}
                 invalid={!!errors.zone}
                 onChange={v => { set({ zone: v, cold: false, haz: false }); clear('zone'); }}
