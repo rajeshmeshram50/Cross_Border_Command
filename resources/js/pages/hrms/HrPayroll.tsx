@@ -2466,8 +2466,13 @@ export default function HrPayroll() {
 
       {/* g-1, not g-3 — the KPI tiles sit ~4px apart, matching the Recruitment
           page's .rec-page-kpis row. The gap is set on the row itself rather
-          than in CSS, same as the Employees and Onboarding hubs. */}
-      <Row className="g-1 mb-3 align-items-stretch">
+          than in CSS, same as the Employees and Onboarding hubs.
+
+          rec-page-kpis is what makes these the PAGE-level tiles the rest of
+          HRMS uses — 14px radius, 11/15 padding, an 82px floor, a 24px value
+          and a 38px icon tile. The bare .rec-kpi-card is the compact variant
+          Attendance puts inside its detail pane, which is a size smaller. */}
+      <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
         {KPI_CARDS.map(k => {
           let displayValue: React.ReactNode;
           if (k.mode === 'currency') {
@@ -2497,33 +2502,31 @@ export default function HrPayroll() {
 
           return (
             <Col key={k.key} xl={3} md={6} sm={6} xs={6}>
-              <div
-                className="onb-surface onb-kpi-card"
-                style={{
-                  borderRadius: 14,
-                  border: '1px solid var(--vz-border-color)',
-                  boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                  padding: '16px 18px',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  height: '100%',
-                }}
-              >
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.strip }} />
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                  <div className="min-w-0">
-                    <h3 style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: '0 0 6px', lineHeight: 1 }}>
-                      {loading ? <Shimmer height={24} width={90} radius={6} /> : displayValue}
-                    </h3>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 4px' }}>
-                      {k.label}
-                    </p>
-                    <div className="text-muted" style={{ fontSize: 11.5 }}>{subtitle}</div>
-                  </div>
-                  <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.tint, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, ['--kpi-accent' as any]: k.strip, ['--kpi-tint-dark' as any]: `${k.strip}2e` }}>
-                    <i className={k.icon} style={{ fontSize: 20, color: k.fg }} />
-                  </div>
+              {/* The shared KPI card, the same one Attendance and the employee
+                  pages use, rather than a hand-rolled copy of it. These cards
+                  were built inline and had drifted a size up on every part —
+                  26px value against 22, an 11px label against 10.5, a 44px
+                  icon tile against 36 with a 20px glyph against 16 — which is
+                  what read as "larger and heavier than the rest of HRMS".
+                  Only the per-card colours stay local; the type, the metrics
+                  and the layout now come from one place. */}
+              <div className="rec-kpi-card h-100">
+                <span className="rec-kpi-strip" style={{ background: k.strip }} />
+                <div className="rec-kpi-text">
+                  <span className="rec-kpi-label">{k.label}</span>
+                  <span className="rec-kpi-num">
+                    {loading ? <Shimmer height={22} width={90} radius={6} /> : displayValue}
+                  </span>
+                  <span className="att-kpi-sub">{subtitle}</span>
                 </div>
+                {/* Solid accent behind a white glyph, as Attendance has it.
+                    The pale tint these used needed a dark-mode override of its
+                    own (.pay-page .onb-kpi-icon) or it showed as a bright
+                    block on a dark card; a solid accent reads on both themes
+                    and needs no second rule. */}
+                <span className="rec-kpi-icon" style={{ background: k.strip }}>
+                  <i className={k.icon} />
+                </span>
               </div>
             </Col>
           );

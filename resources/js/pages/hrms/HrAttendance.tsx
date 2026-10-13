@@ -412,7 +412,10 @@ function EmployeeDetailPanel({
         ))}
       </Row>
 
-      <Row className="g-2 align-items-stretch">
+      {/* The last row takes whatever height is left in the column, so the
+          detail side ends level with the roster beside it instead of stopping
+          short of it. */}
+      <Row className="g-2 align-items-stretch att-detail-fill">
         <Col xl={7} lg={12}>
           <TodayRecordCard employee={employee} viewDate={viewDate} isPast={isPast} hour24={hour24} />
         </Col>
@@ -961,7 +964,7 @@ export default function HrAttendance() {
                 </div>
               </Col>
 
-              <Col xl={9} lg={8} md={7} xs={12}>
+              <Col xl={9} lg={8} md={7} xs={12} className="att-detail-col">
                 {detailReady || detailLoading ? (
                   /* While loading this holds the OUTGOING employee (or, on the
                      first load, the roster row), blurred behind a spinner, so
@@ -1082,7 +1085,7 @@ function TodayRecordCard({
   const dateLabel = `${WEEK_LABELS[parseISO(viewDate).getDay()].slice(0,3)}, ${parseISO(viewDate).getDate()}-${monthOf(viewDate)}-${yearOf(viewDate)}`;
 
   return (
-    <Card className="att-today-card mb-0">
+    <Card className="att-today-card mb-0 h-100">
       <CardBody className="p-0">
         <div className="att-today-titlebar">
           <div className="d-flex align-items-center gap-2 min-w-0">

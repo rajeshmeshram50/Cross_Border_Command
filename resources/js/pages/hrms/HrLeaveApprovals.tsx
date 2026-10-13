@@ -7,6 +7,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import SearchClear from '../../components/ui/SearchClear';
+import WorklistPager from '../../components/ui/WorklistPager';
 
 type StatusFilter = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' | 'All';
 
@@ -444,56 +445,26 @@ export default function HrLeaveApprovals() {
               dead arrows is furniture, not information. Rendered while loading
               too, so the row does not appear and disappear under the cursor. */}
           {total > perPage && (
-            <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2"
-                 style={{ borderTop: '1px solid var(--vz-border-color)', fontSize: 12.5 }}>
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted">
-                  {(page - 1) * perPage + 1}–{Math.min(page * perPage, total)} of {total}
-                </span>
-                <select
-                  className="form-select form-select-sm"
-                  style={{ width: 'auto', fontSize: 12.5 }}
-                  value={perPage}
-                  disabled={loading}
-                  onChange={e => {
-                    // A pick ends the auto-fit and is remembered; re-deriving a
-                    // size over a deliberate choice is what makes the control
-                    // feel broken.
-                    const n = Number(e.target.value);
-                    autoFitRef.current = false;
-                    try { localStorage.setItem(PER_PAGE_KEY, String(n)); } catch { /* private mode */ }
-                    setPerPage(n);
-                  }}
-                  aria-label="Rows per page"
-                >
-                  {/* The fitted size is rarely one of the presets (it is
-                      whatever the viewport allows, e.g. 14), and a <select>
-                      whose value matches no option renders blank. Fold the
-                      current size in so it always has something to show. */}
-                  {Array.from(new Set([...PER_PAGE_OPTIONS, perPage])).sort((a, b) => a - b)
-                    .map(n => <option key={n} value={n}>{n} / page</option>)}
-                </select>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <button
-                  type="button"
-                  className="btn btn-light btn-sm"
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                >
-                  <i className="ri-arrow-left-s-line" />
-                </button>
-                <span className="text-muted">{page} / {Math.max(1, Math.ceil(total / perPage))}</span>
-                <button
-                  type="button"
-                  className="btn btn-light btn-sm"
-                  disabled={page >= Math.ceil(total / perPage) || loading}
-                  onClick={() => setPage(p => p + 1)}
-                >
-                  <i className="ri-arrow-right-s-line" />
-                </button>
-              </div>
-            </div>
+            <WorklistPager
+              total={total}
+              page={page}
+              pageSize={perPage}
+              onPage={p => { if (!loading) setPage(p); }}
+              onPageSize={n => {
+                if (loading) return;
+                // A pick ends the auto-fit and is remembered; re-deriving a
+                // size over a deliberate choice is what makes the control
+                // feel broken.
+                autoFitRef.current = false;
+                try { localStorage.setItem(PER_PAGE_KEY, String(n)); } catch { /* private mode */ }
+                setPerPage(n);
+              }}
+              /* The fitted size is rarely one of the presets (it is whatever
+                 the viewport allows, e.g. 14), and a chooser whose value
+                 matches no option has nothing to show. Fold the current size
+                 in so it always does. */
+              pageSizeOptions={Array.from(new Set([...PER_PAGE_OPTIONS, perPage])).sort((a, b) => a - b)}
+            />
           )}
         </div>
       </Col>

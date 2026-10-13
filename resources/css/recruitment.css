@@ -8344,6 +8344,30 @@
 .att-btn-reject { background: #ffffff; color: #b91c1c; border: 1px solid #fecaca; }
 .att-btn-reject:hover { background: #fef2f2; }
 
+/* The View pill that replaces Approve/Reject once a request is decided.
+   Its colours were inline on the element, which no stylesheet can override
+   without !important — so it kept its light indigo on a dark table while the
+   rest of the row darkened around it. Shaped like .att-btn-soft above: a
+   tinted wash, a light tint for the text, a tint border. */
+.att-reg-view {
+  height: 28px;
+  padding: 0 11px;
+  cursor: pointer;
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+.att-reg-view:hover { background: #e0e7ff; color: #3730a3; }
+[data-bs-theme="dark"] .att-reg-view {
+  background: rgba(99,102,241,0.14);
+  color: #c7d2fe;
+  border-color: rgba(99,102,241,0.38);
+}
+[data-bs-theme="dark"] .att-reg-view:hover {
+  background: rgba(99,102,241,0.24);
+  color: #e0e7ff;
+}
+
 /* ── Left pane: employee list — sub-card inside the page surface. ── */
 .att-emplist {
   background: #ffffff;
@@ -8352,40 +8376,56 @@
   box-shadow: none;
   overflow: hidden;
   display: flex; flex-direction: column;
-  /* Size to content (not the taller right pane) so a short roster doesn't
-     leave a big empty panel — the scroll child still caps tall lists.
-     (HRMS-BUG-067) */
-  align-self: flex-start;
   max-height: calc(100vh - 200px);
 }
 
-/* Equal-height with the right pane (>=768px, where the columns sit side by
-   side): make the column the positioning context and let the roster fill it
-   absolutely. With the roster out of flow, the shorter right pane drives the
-   row height, so a long roster is capped to that height and scrolls inside
-   instead of hanging below the right boxes. Below 768px the columns stack and
-   the roster keeps sizing to its content (rules above). */
+/* Equal height with the detail pane beside it (>=768px, where the two sit side
+   by side), whatever the roster's length — two employees or fifty, the card
+   ends where the right-hand column ends.
+
+   Done by stretching, not by taking the roster out of flow. The old version
+   pinned it with position:absolute;inset:0, which forced the panel to the
+   RIGHT pane's height even when the roster needed more: at five employees the
+   list wanted 364px in the 348px it was given, so it scrolled by sixteen
+   pixels, and a scroller with almost nothing in it still swallows the wheel —
+   sixteen pixels of list, a pause, then the page. That hand-off read as lag
+   (HRMS-BUG-067, fixed then by letting it size to content instead).
+
+   Stretching has neither failure: the row is as tall as whichever side is
+   taller, so a long roster makes the row grow to fit rather than scrolling by
+   a hair, and a short one simply has room to spare. The inner scroller appears
+   only when the card itself hits the cap above, which is when it earns its
+   keep. Below 768px the columns stack and the roster sizes to its content. */
 @media (min-width: 768px) {
-  /* The roster takes its own height, and scrolls only when it is genuinely
-     long.
-     Pinned to the row with position: absolute; inset: 0, the panel was always
-     as tall as the detail pane beside it — and with five employees the list
-     needed 364px in the 348px that left, so it scrolled by SIXTEEN pixels. A
-     scroller with nothing in it still catches the wheel: the pointer over the
-     roster meant sixteen pixels of list, a pause, and only then the page. That
-     hand-off is what reads as lag.
-     Sized to its content it does not scroll at all at that length, leaving the
-     page as the only scroller; a long roster still gets its own scroll at the
-     cap below, which is when an inner scroller earns its keep. */
-  .att-emplist-col { position: relative; }
+  .att-emplist-col { display: flex; }
   .att-emplist-col .att-emplist {
-    align-self: flex-start;
-    max-height: none;
-  }
-  .att-emplist-col .att-emplist-scroll {
-    max-height: calc(100vh - 360px);
+    flex: 1 1 auto;
     min-height: 0;
   }
+  .att-emplist-col .att-emplist-scroll { min-height: 0; }
+
+  /* Stretching the roster alone only levelled the two sides when the roster
+     was the SHORTER one. With a few employees it is the taller, so the row
+     grew to fit it and the detail cards beside it stopped short — the roster
+     hung below them by the difference.
+
+     So the detail side fills its column too, and the last row of panels takes
+     the leftover. Both sides then end at whichever is taller, and the roster's
+     own max-height is what stops a long list running away: past that it caps
+     and scrolls inside, and the detail column follows it to the cap.
+
+     The chain has to be unbroken — Col, BusyOverlay's wrapper, its content
+     box — or the fill stops at the first element that is not a flex parent. */
+  .att-detail-col,
+  .att-detail-col > .busy-wrap,
+  .att-detail-col > .busy-wrap > .busy-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .att-detail-col > .busy-wrap,
+  .att-detail-col > .busy-wrap > .busy-content { flex: 1 1 auto; }
+  .att-detail-col .att-detail-fill { flex: 1 1 auto; min-height: 0; }
 }
 [data-bs-theme="dark"] .att-emplist {
   background: rgba(255,255,255,0.03);
@@ -8399,14 +8439,34 @@
   border-bottom: 1px solid #f1f2f4;
   background: #ffffff;
   overflow-x: auto;
+  /* `thin` stays on whatever the state, so the gutter is reserved either way
+     and the tabs do not shift by 4px when the bar appears. */
   scrollbar-width: thin;
-  scrollbar-color: rgba(15,23,42,0.18) transparent;
 }
+
+/* The rail's bar stays visible. It is the only thing telling you the Leave
+   tab is sitting off the right edge — hidden until hover, the rail looks
+   complete and there is nothing to invite the scroll.
+
+   Dark mode was the real defect behind HRMS bug #50, and it is fixed here
+   rather than by hiding the bar: scrollbar-color was stated once as a dark
+   navy and never re-stated for dark, so Firefox drew a navy thumb on a
+   near-black panel and it could not be seen at all. Both engines and both
+   themes are now spelled out, with hover as a stronger state rather than the
+   only state. */
+.att-emplist-tabs { scrollbar-color: rgba(15,23,42,0.22) transparent; }
 .att-emplist-tabs::-webkit-scrollbar { height: 4px; }
-.att-emplist-tabs::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.18); border-radius: 4px; }
 .att-emplist-tabs::-webkit-scrollbar-track { background: transparent; }
+.att-emplist-tabs::-webkit-scrollbar-thumb { background-color: rgba(15,23,42,0.22); border-radius: 4px; }
+
+.att-emplist-tabs:hover { scrollbar-color: rgba(15,23,42,0.36) transparent; }
+.att-emplist-tabs:hover::-webkit-scrollbar-thumb { background-color: rgba(15,23,42,0.36); }
+
 [data-bs-theme="dark"] .att-emplist-tabs { background: rgba(255,255,255,0.02); border-bottom-color: var(--vz-border-color); }
-[data-bs-theme="dark"] .att-emplist-tabs::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.20); }
+[data-bs-theme="dark"] .att-emplist-tabs { scrollbar-color: rgba(255,255,255,0.28) transparent; }
+[data-bs-theme="dark"] .att-emplist-tabs::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.28); }
+[data-bs-theme="dark"] .att-emplist-tabs:hover { scrollbar-color: rgba(255,255,255,0.45) transparent; }
+[data-bs-theme="dark"] .att-emplist-tabs:hover::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.45); }
 .att-emplist-tab {
   flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -8485,9 +8545,12 @@
 
 .att-emplist-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 6px;
-  max-height: calc(100vh - 360px);
+  /* No max-height of its own. The card above caps the whole panel; a second,
+     tighter cap here would stop the list short of the card's bottom edge on a
+     short viewport and leave a band of empty white inside it. */
   /* Custom scrollbar so the thumb stays visible against the panel in both
      themes — the browser default washes out in Dark Mode (HRMS-BUG-077). */
   scrollbar-width: thin;
@@ -9301,9 +9364,11 @@
 .att-logs-empty-sub { font-size: 11.5px; color: #9ca3af; margin-top: 4px; max-width: 360px; }
 
 /* ── Responsive ── */
-@media (max-width: 991px) {
-  /* Stacked layout — cap the scroll so a long roster doesn't push the
-     detail pane far down, but let the panel hug its content (HRMS-BUG-067). */
+/* Stacked layout only — cap the scroll so a long roster doesn't push the
+   detail pane far down. 767px, not 991px: the columns go side by side at 768
+   (md={5}), and from there the roster stretches to the detail pane, where a
+   420px cap would stop the list short of the card's own bottom edge. */
+@media (max-width: 767px) {
   .att-emplist-scroll { max-height: 420px; }
 }
 @media (max-width: 767px) {
@@ -9343,7 +9408,11 @@
   border: 2px solid #ffffff;
 }
 .att-emp-bar-info { flex: 1; min-width: 200px; }
-.att-emp-bar-name { font-size: 15px; font-weight: 800; color: var(--vz-body-color); letter-spacing: -0.01em; }
+/* 700, the theme's bold ($font-weight-bold), not 800. Velzon tops out at
+   600 for headings and 700 for bold, so 800 in Rubik sat above anything the
+   app defines and read heavier than every other module -- and heavier than
+   .att-timeline-title beside it, which was already 700. (QA #35) */
+.att-emp-bar-name { font-size: 15px; font-weight: 700; color: var(--vz-body-color); letter-spacing: -0.01em; }
 .att-emp-bar-meta { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
 [data-bs-theme="dark"] .att-emp-bar-meta { color: rgba(255,255,255,0.70); }
 .att-emp-bar-chips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -9427,7 +9496,8 @@
   border: 1px solid rgba(255,255,255,0.28);
 }
 .att-reg-head-icon i { font-size: 20px; color: #ffffff; }
-.att-reg-head-title { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+/* 700 — same as the other attendance headings, see .att-emp-bar-name. */
+.att-reg-head-title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
 .att-reg-head-sub { font-size: 11.5px; color: rgba(255,255,255,0.86); margin-top: 2px; }
 .att-reg-close {
   width: 32px; height: 32px; border-radius: 9px;
@@ -9456,7 +9526,8 @@
   flex-shrink: 0;
 }
 .att-reg-emp-info { flex: 1; min-width: 180px; }
-.att-reg-emp-name { font-size: 14px; font-weight: 800; color: var(--vz-body-color); }
+/* 700 — a name, like .att-emp-bar-name, and now weighted the same. */
+.att-reg-emp-name { font-size: 14px; font-weight: 700; color: var(--vz-body-color); }
 [data-bs-theme="dark"] .att-reg-emp-name { color: #ffffff; }
 .att-reg-emp-meta { font-size: 11px; color: var(--vz-secondary-color); margin-top: 1px; }
 [data-bs-theme="dark"] .att-reg-emp-meta { color: rgba(255,255,255,0.62); }
@@ -9738,7 +9809,9 @@
   background: #ccfbf1; color: #0d9488;
 }
 .att-today-titlebar-icon i { font-size: 14px; }
-.att-today-titlebar-text { font-size: 13px; font-weight: 800; color: var(--vz-body-color); letter-spacing: -0.005em; }
+/* 700 — see .att-emp-bar-name. This one sat beside .att-timeline-title's
+   700 in the same row, so the pair read as two different headings. */
+.att-today-titlebar-text { font-size: 13px; font-weight: 700; color: var(--vz-body-color); letter-spacing: -0.005em; }
 .att-today-status-pill {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 10px;
@@ -10435,7 +10508,8 @@
   flex-shrink: 0;
 }
 .att-logs-headbar-icon i { font-size: 18px; }
-.att-logs-headbar-title { font-size: 15px; font-weight: 800; color: var(--vz-body-color); letter-spacing: -0.01em; }
+/* 700 — see .att-emp-bar-name. */
+.att-logs-headbar-title { font-size: 15px; font-weight: 700; color: var(--vz-body-color); letter-spacing: -0.01em; }
 [data-bs-theme="dark"] .att-logs-headbar-title { color: #ffffff; }
 .att-logs-headbar-sub { font-size: 11.5px; color: var(--vz-secondary-color); margin-top: 2px; }
 [data-bs-theme="dark"] .att-logs-headbar-sub { color: rgba(255,255,255,0.62); }
