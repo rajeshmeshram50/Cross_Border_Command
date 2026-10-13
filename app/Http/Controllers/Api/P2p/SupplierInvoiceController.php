@@ -442,6 +442,23 @@ class SupplierInvoiceController extends Controller
             // On disk now; the catch deletes them again if the write fails.
             $files = $this->storeAttachments($request, $spi);
 
+            /* The file each upload REPLACES, read before the model is filled.
+             *
+             * One invoice and one e-way bill per SPI — a single column each, so
+             * a second upload simply overwrites the first. What it did not do
+             * was remove the first from disk: every re-upload left a file nobody
+             * can reach, and SPI 1 had eight of them against two live paths.
+             *
+             * Deleted AFTER the commit, never before. A rollback leaves the old
+             * path as the live one, and a file deleted on the way to a failed
+             * save is a document lost for nothing. */
+            $superseded = [];
+            foreach (['invoice', 'eway'] as $kind) {
+                $new = $files["{$kind}_file_path"] ?? null;
+                $old = $spi->{"{$kind}_file_path"};
+                if ($new && $old && $old !== $new) $superseded["{$kind}_file_path"] = $old;
+            }
+
             // An international supplier charges no Indian GST: the four tax columns
             // stay NULL, which is a different fact from "charged at zero rate".
             $rows = $this->priceLines(
@@ -486,6 +503,9 @@ class SupplierInvoiceController extends Controller
             $spi->load('items');
 
             DB::commit();
+
+            // The replaced files, now that the new paths are safely stored.
+            $this->removeFiles($superseded);
 
             return response()->json(['status' => true, 'data' => [
                 'invoice'  => $spi,
@@ -611,7 +631,15 @@ class SupplierInvoiceController extends Controller
             $rows = PoPaymentRequest::where('supplier_invoice_id', $spi->id)
                 ->orderBy('id')->get();
 
-            $approved = $rows->where('status', 'Approved');
+            /* The CONSTANT, not a literal.
+             *
+             * The column stores 'approved' / 'pending' in lower case; this
+             * compared against 'Approved' and matched nothing, so awaiting,
+             * approved_amount and ready_to_pay were all returned as 0 on every
+             * invoice. Invisible on screen because the panel adds the figures
+             * up from the request rows itself — the summary it was given was
+             * simply never used. */
+            $approved = $rows->where('status', PoPaymentRequest::STATUS_APPROVED);
             $paid     = round((float) $rows->sum('paid_amount'), 2);
             $gst      = round((float) $spi->total_cgst + (float) $spi->total_sgst + (float) $spi->total_igst, 2);
 
@@ -631,7 +659,7 @@ class SupplierInvoiceController extends Controller
                 'requests_summary' => [
                     'total'            => $rows->count(),
                     'requested_amount' => round((float) $rows->sum('requested_amount'), 2),
-                    'awaiting'         => round((float) $rows->where('status', 'Pending')->sum('requested_amount'), 2),
+                    'awaiting'         => round((float) $rows->where('status', PoPaymentRequest::STATUS_PENDING)->sum('requested_amount'), 2),
                     'approved_amount'  => round((float) $approved->sum('approved_amount'), 2),
                     'paid_amount'      => $paid,
                     // Approved but not yet released — what the Make Payment button owes.
@@ -721,6 +749,33 @@ class SupplierInvoiceController extends Controller
 
             $this->tenantUser($request);
             $body = app(\App\Services\P2p\SpiSummaryService::class)->build($this->findSpi($id));
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * GET /p2p/spi/{id}/evidence-vault — every document filed against this invoice.
+     *
+     * Grouped as the dialog reads: the purchase order, the invoice's own
+     * uploads, the trade documents and agreements, and the packing evidence.
+     * Read-only — the vault gathers paperwork produced elsewhere.
+     *
+     * The SUPPLIER's vault (KYC, DD, licences) is a different endpoint keyed on
+     * the vendor: /segment-uploads/supplier/{id}/vault.
+     */
+    public function evidenceVault(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $this->tenantUser($request);
+            $body = app(\App\Services\P2p\SpiVaultService::class)->build($this->findSpi($id));
 
             DB::commit();
 
@@ -1127,6 +1182,11 @@ class SupplierInvoiceController extends Controller
      * Move any attached invoice / e-way file onto the public disk and return
      * the four columns to write. Empty when the request carried no files —
      * Stage 02 is one call whether or not there are attachments.
+     *
+     * ONE FILE EACH, by the shape of the table: `invoice_file_path` and
+     * `eway_file_path` are single columns, and the rules accept a single file
+     * rather than a list. A new upload therefore replaces the old one; the
+     * caller removes what it replaced once the save has committed.
      */
     private function storeAttachments(Request $request, SupplierInvoice $spi): array
     {
