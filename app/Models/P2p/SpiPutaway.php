@@ -4,7 +4,7 @@ namespace App\Models\P2p;
 
 use App\Models\Branch;
 use App\Models\Client;
-use App\Models\Masters\WarehouseMaster;
+use App\Models\Inventory\Warehouse;
 use App\Models\Concerns\BelongsToTenant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * PICKED BUT NOT PLACED — that distinction is what the Digital Warehouse reads.
  *
  * A third-party warehouse allocates no rack or shelf, so those stay NULL. The
- * own / 3PL split is read from master_warehouse_master.wh_type, never stored
+ * own / 3PL split is read from inventory_warehouses.wh_type, never stored
  * here: a stored copy could contradict the warehouse it points at.
  */
 class SpiPutaway extends Model
@@ -51,7 +51,10 @@ class SpiPutaway extends Model
     public function branch(): BelongsTo      { return $this->belongsTo(Branch::class); }
     public function invoice(): BelongsTo     { return $this->belongsTo(SupplierInvoice::class, 'supplier_invoice_id'); }
     public function box(): BelongsTo         { return $this->belongsTo(SpiBox::class, 'box_id'); }
-    public function warehouse(): BelongsTo   { return $this->belongsTo(WarehouseMaster::class, 'warehouse_id'); }
+    // The Inventory master, like SupplierInvoice::warehouse() — the ids in
+    // this table were allocated from inventory_warehouses, not the old
+    // master_warehouse_master the SPI was first written against.
+    public function warehouse(): BelongsTo   { return $this->belongsTo(Warehouse::class, 'warehouse_id'); }
     public function scannedBy(): BelongsTo   { return $this->belongsTo(User::class, 'scanned_by'); }
     public function confirmedBy(): BelongsTo { return $this->belongsTo(User::class, 'confirmed_by'); }
 
