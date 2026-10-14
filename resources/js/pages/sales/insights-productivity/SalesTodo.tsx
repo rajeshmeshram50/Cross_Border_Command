@@ -1181,6 +1181,20 @@ export default function SalesTodo() {
                               <button type="button" className="td-ab td-ab-done" aria-label="Mark Done" onClick={() => setMark(r, 'Done')}><IconCheck /></button>
                             </Tooltip>
                           )}
+                          {/* Done rows keep the slot rather than dropping the
+                              button, the same way Edit does above.
+                              .td-actions centres its children, so a row with
+                              one button fewer shifted its whole cluster by
+                              half a slot — the buttons stopped forming
+                              columns down the table and the column read as
+                              misaligned against its header. Holding the slot
+                              is also honest: the action exists, it just has
+                              nothing left to do on a completed reminder. */}
+                          {r.status === 'Done' && canEdit && (
+                            <Tooltip label="Already completed">
+                              <button type="button" aria-disabled="true" className="td-ab td-ab-done td-ab-muted" aria-label="Already completed"><IconCheck /></button>
+                            </Tooltip>
+                          )}
                           {canDel && (
                             <Tooltip label="Delete">
                               <button className="td-ab td-ab-del" aria-label="Delete" onClick={() => del(r)}><IconTrash /></button>

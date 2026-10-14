@@ -6027,6 +6027,22 @@ function Stage5Policies({ emp, onProgress }: {
   const [tplHasFields, setTplHasFields] = useState<Record<number, boolean>>({});
   const [genTpl, setGenTpl] = useState<Tpl | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  /* Who would sign, and under what job title, if a not-yet-sent template were
+   * sent now — keyed by template id.
+   *
+   * A template's stored workflow names ROLES ("Employee", "Reporting
+   * Manager") and leaves designation_name null, so before a run exists the
+   * stepper had nothing but the bare role to print: no person, no title
+   * (#23). The server resolves the chain with the same SignerResolver the
+   * send uses, so the preview cannot disagree with what Send will do.
+   *
+   * Fetched lazily, only when a document is expanded, so opening the stage
+   * does not fire one request per template. */
+  const [previewSigners, setPreviewSigners] = useState<Record<number, Array<{
+    role_name?: string | null; action?: string | null; name?: string | null;
+    designation?: string | null; unassigned?: boolean;
+  }>>>({});
+  const previewTried = useRef<Set<number>>(new Set());
 
   const parseSigners = (raw: any): Array<{ role_name?: string | null; designation_name?: string | null; action?: string | null }> => {
     if (Array.isArray(raw)) return raw;
@@ -6287,7 +6303,31 @@ function Stage5Policies({ emp, onProgress }: {
         {!loading && templates.map(tpl => {
           const isExpanded = expandedId === tpl.id;
           const signers = parseSigners(tpl.signers);
-          const toggle = () => setExpandedId(prev => prev === tpl.id ? null : tpl.id);
+          const toggle = () => {
+            const opening = expandedId !== tpl.id;
+            setExpandedId(prev => prev === tpl.id ? null : tpl.id);
+            /* Resolve the chain the first time this document is opened and
+             * only while it has no run — once sent, the run carries its own
+             * frozen signers and a preview would be the wrong answer. The
+             * `previewTried` guard also covers the failure case, so a template
+             * whose roles resolve to nobody is not re-requested on every
+             * open. */
+            if (!opening) return;
+            if (runByTemplateId.get(tpl.id)) return;
+            if (previewTried.current.has(tpl.id)) return;
+            previewTried.current.add(tpl.id);
+            if (!emp.dbId) return;
+            api.get('/hr-document-signatures/preview-signers', {
+              params: { template_id: tpl.id, employee_id: emp.dbId },
+            })
+              .then(r => {
+                const list = Array.isArray(r.data) ? r.data : [];
+                if (list.length) setPreviewSigners(p => ({ ...p, [tpl.id]: list }));
+              })
+              /* Silent: the stepper already has the template's roles to fall
+                 back on, and a failed preview must not interrupt the stage. */
+              .catch(() => {});
+          };
           const run = runByTemplateId.get(tpl.id) || null;
           /* The workflow the TEMPLATE now configures, against the one this run
            * was frozen with at send time.
@@ -6494,6 +6534,28 @@ function Stage5Policies({ emp, onProgress }: {
                             active: i === run.current_index && (run.status === 'Pending' || run.status === 'In Progress'),
                             at:     s.acted_at,
                             note:   s.note ?? null,
+                          }))
+                        /* Not sent yet. Prefer the server-resolved chain — it
+                         * names the actual person and their job title, which
+                         * the template itself cannot (its signers carry a role
+                         * and a null designation_name). Falls back to the raw
+                         * template roles when the preview has not arrived or
+                         * could not resolve, so the stepper never empties out.
+                         * (#23) */
+                        : (previewSigners[tpl.id] ?? []).length > 0
+                        ? previewSigners[tpl.id].map((s, i) => ({
+                            name:   s.name || s.role_name || `Signer ${i + 1}`,
+                            action: s.action,
+                            /* Job title when one resolves, else the workflow
+                               role — the row must say who this person is in
+                               the org either way, and for a signer with no
+                               employee record (a client admin, say) the role
+                               is the only true answer. */
+                            desig:  s.designation || s.role_name || null,
+                            state:  (s.unassigned ? 'Unassigned' : 'Pending') as string,
+                            active: i === 0 && !s.unassigned,
+                            at:     null as string | null,
+                            note:   null as string | null,
                           }))
                         : signers.map((s, i) => ({
                             name:   s.role_name || s.designation_name || `Signer ${i + 1}`,

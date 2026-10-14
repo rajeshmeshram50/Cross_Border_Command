@@ -8248,13 +8248,29 @@
 }
 
 /* ---------------------------------------------------------------------
-   Modal backdrop — soft blur so the page behind any open dialog reads
-   as a frosted backdrop. Applies to every modal in the app.
+   Modal backdrop — a plain dim, deliberately NOT a frosted blur.
+
+   This rule applies to every modal in the app, and the backdrop covers the
+   whole viewport (measured at 1664x855 = 1.4 megapixels). backdrop-filter
+   makes the compositor re-sample and re-blur that whole area on each frame
+   in which anything above it changes — which includes scrolling inside the
+   modal, even though nothing behind the backdrop has moved.
+
+   Measured on the onboarding modal, interleaved runs to cancel warm-up:
+     blur(6px)            33.7ms per frame  (~30fps)
+     no backdrop-filter   16.6ms per frame  (~60fps)
+   Repeatable to 0.1ms across runs. It is the filter itself, not its radius:
+   blur(2px) costs the same as blur(6px). Promoting the scroller to its own
+   compositor layer (will-change: transform) does not help — 34.0ms, i.e.
+   unchanged — so the usual layer trick is no escape here.
+
+   Halving the frame rate of every scrollable modal is not worth a
+   decorative frost; the 45% dim below already separates the dialog from
+   the page, which is the job the backdrop is actually doing. (QA: onboarding
+   modal scroll lag)
    --------------------------------------------------------------------- */
 .modal-backdrop.show {
   background-color: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   opacity: 1 !important;
 }
 [data-bs-theme="dark"] .modal-backdrop.show {
@@ -12610,21 +12626,21 @@
   }
 }
 
-/* This page's toolbar wraps at every width, not only below 768px.
-   It carries eight items — the Group, Type and Year filters plus Template,
-   Import Excel, Groups and Add Holiday — which is more than the shared
-   toolbar's single line can hold. Above 1200px that toolbar switches to
-   flex-wrap: nowrap and .dt-toolbar-actions is flex-shrink: 0, on the
-   principle that the search gives up width instead; with eight items the
-   search reaches its minimum and there is still nothing left to give, so the
-   row went over-full and Add Holiday was clipped by the container's edge
-   instead of moving to a new line. (QA #49)
-   Letting it wrap keeps the 8px the toolbar already pads with on the right,
-   and puts the same 8px between the two rows.
-   Scoped to this page: the one-line rule is right for toolbars that do fit,
-   which is every other one. */
+/* This page's toolbar now holds ONE line again, like every other.
+   It used to force flex-wrap: wrap at every width (QA #49) because the row
+   carried too much: the search could only shrink so far, so the line went
+   over-full and Add Holiday was clipped by the container's edge. Wrapping
+   stopped the clipping but left the search alone on the first row and the
+   filters and buttons on a second — which is what came back as QA #56.
+   The row is no longer over-full: the Group / Type / Year text labels are
+   gone from the markup, because each sat beside a select that already read
+   "All Groups" / "All Types" / "All Years". That is 123px of duplicated
+   wording, measured, and it is the whole of the overflow. Without it the
+   actions need 930px instead of 1053px and the line clears its padding at
+   every width down to 1280, with the search still 280px wide there.
+   The override is kept only for the row-gap, which matters below 1200px
+   where the shared toolbar still wraps as its small-screen fallback. */
 .holiday-page .dt-toolbar {
-  flex-wrap: wrap;
   row-gap: 8px;
 }
 

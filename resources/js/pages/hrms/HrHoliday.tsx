@@ -501,22 +501,27 @@ export default function HrHoliday() {
               }
               toolbarActions={
                 <>
-                  <div className="hol-filter d-flex align-items-center gap-2">
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Group</span>
+                  {/* No standalone GROUP / TYPE / YEAR labels.
+                      Each sat beside a select that already reads "All Groups"
+                      / "All Types" / "All Years", so the wording was on screen
+                      twice — and that duplication was 123px, measured, which
+                      is the whole reason this toolbar could not hold one line
+                      and had to wrap (see .holiday-page .dt-toolbar). The
+                      title keeps the name reachable on hover for when a
+                      filter is set and the select shows a value instead. */}
+                  <div className="hol-filter d-flex align-items-center gap-2" title="Filter by holiday group">
                     <div className="hol-filter-sel" style={{ minWidth: 160 }}>
                       <MasterSelect value={groupFilter} onChange={applyFilter(setGroupFilter)}
                         options={[{ value: 'All', label: 'All Groups' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} placeholder="All Groups" />
                     </div>
                   </div>
-                  <div className="hol-filter d-flex align-items-center gap-2">
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
+                  <div className="hol-filter d-flex align-items-center gap-2" title="Filter by holiday type">
                     <div className="hol-filter-sel" style={{ minWidth: 130 }}>
                       <MasterSelect value={typeFilter} onChange={applyFilter(setTypeFilter)}
                         options={[{ value: 'All', label: 'All Types' }, ...TYPE_OPTIONS]} placeholder="All Types" />
                     </div>
                   </div>
-                  <div className="hol-filter d-flex align-items-center gap-2">
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Year</span>
+                  <div className="hol-filter d-flex align-items-center gap-2" title="Filter by year">
                     <div className="hol-filter-sel" style={{ minWidth: 95 }}>
                       <MasterSelect value={yearFilter} onChange={applyFilter(setYearFilter)}
                         options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />

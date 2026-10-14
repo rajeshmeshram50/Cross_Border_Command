@@ -1173,6 +1173,10 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get ('/my-team/my-updates',                   [MyTeamController::class, 'myUpdates']);
 
     Route::get ('/hr-document-signatures/inbox',        [HrDocumentSignatureController::class, 'inbox']);
+    /* Read-only: who would sign, and with what job title, if this template
+       were sent for this employee now. Declared above the {id} routes so
+       "preview-signers" is not swallowed as an id. */
+    Route::get ('/hr-document-signatures/preview-signers', [HrDocumentSignatureController::class, 'previewSigners']);
     Route::post('/hr-document-signatures/{id}/action',  [HrDocumentSignatureController::class, 'action']);
     Route::post('/hr-document-signatures/{id}/reject',  [HrDocumentSignatureController::class, 'reject']);
     Route::post('/hr-document-signatures/{id}/cancel',  [HrDocumentSignatureController::class, 'cancel']);

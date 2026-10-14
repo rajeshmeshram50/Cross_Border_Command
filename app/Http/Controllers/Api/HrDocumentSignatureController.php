@@ -185,6 +185,64 @@ class HrDocumentSignatureController extends Controller
 
     /* ───── SEND ───── */
 
+    /**
+     * Who WOULD sign, and under what job title, if this template were sent for
+     * this employee now. Read-only: nothing is created or written.
+     *
+     * The signing workflow stored on a template names ROLES ("Employee",
+     * "Reporting Manager", "Client (CEO)") and almost never a designation —
+     * designation_name is null on every template in practice. Until a run
+     * exists there is no person and no job title to show, so the stepper could
+     * only print the bare role, which is what "designations are missing when
+     * sending for signature" reports (#23).
+     *
+     * Resolution is the SAME SignerResolver::resolve() that store() uses, so
+     * the preview cannot drift from what the send actually does. It stays a
+     * preview, though: store() resolves again at send time on purpose, so that
+     * a re-org between looking and sending is reflected rather than frozen
+     * from whatever was on screen.
+     */
+    public function previewSigners(Request $request)
+    {
+        $data = $request->validate([
+            'template_id' => 'required|integer|exists:hr_document_templates,id',
+            'employee_id' => 'required|integer|exists:employees,id',
+        ]);
+
+        $tpl = HrDocumentTemplate::findOrFail((int) $data['template_id']);
+        $emp = Employee::with(['department', 'designation'])->findOrFail((int) $data['employee_id']);
+
+        /* Same tenant gate the rest of this controller applies — a preview
+           must not become a way to read another client's workflow. */
+        $user = $request->user();
+        if ($user && $user->user_type !== 'super_admin') {
+            if ((int) $tpl->client_id !== (int) $user->client_id
+                || (int) $emp->client_id !== (int) $user->client_id) {
+                abort(403, 'Out of scope.');
+            }
+        }
+
+        $out = [];
+        foreach ((is_array($tpl->signers) ? $tpl->signers : []) as $i => $s) {
+            $roleName = (string) ($s['role_name'] ?? '');
+            [$userId, $displayName, $designation] = $this->resolveSignerUser($roleName, $emp);
+            $out[] = [
+                'index'       => $i,
+                'role_name'   => $roleName,
+                'action'      => (string) ($s['action'] ?? 'Sign'),
+                'user_id'     => $userId,
+                'name'        => $displayName,
+                'designation' => $designation ?: ($s['designation_name'] ?? null),
+                /* The stepper greys a slot nobody resolves to, and store()
+                   refuses the send for the same reason — better to say so
+                   before the click than after it. */
+                'unassigned'  => $userId === null,
+            ];
+        }
+
+        return response()->json($out);
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate([
