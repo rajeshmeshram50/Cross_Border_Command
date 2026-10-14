@@ -17,15 +17,20 @@ already have, and in what order.
 | | Count |
 |---|---|
 | Backend endpoints already built and reused | **9** |
-| New backend endpoints | **8** |
+| New backend endpoints | **10** |
 | Existing endpoints / behaviours that change | **9** |
-| **New database tables** | **3** |
+| **New database tables** | **4** |
 | Existing tables altered | **3** (columns only) |
 | New React components | **9** |
 
-The three new tables are the box↔location ledger, the Zebra task, and the
-activity log. Everything else — zones, racks, shelves, the putaway row, the
-scan log, the device registry — already exists.
+The four new tables are the box↔location ledger, the Zebra task, the activity
+log and the location lock. Everything else — zones, racks, shelves, the putaway
+row, the scan log, the device registry — already exists.
+
+Each new table carries `created_by` / `updated_by` alongside its own
+role-specific people (`placed_by`, `issued_by`, `held_by`), as the inventory
+masters already do. The activity log takes `created_by` only: it is append-only,
+and an `updated_by` column would advertise that its rows can be edited.
 
 ---
 
@@ -251,16 +256,27 @@ the same path as 4.3**, so both methods end in one place.
 
 ### 4.7 `POST /putaway/tasks/{task}/cancel`
 
-Two-step in the UI, one call here. Cancels the task, **releases the reserved
-occupancy**, and leaves the putaway row assigned-but-unconfirmed so Manual
-Confirmation is still offered — exactly what the screen does.
+Two-step in the UI, one call here. Cancels the task and leaves the putaway row
+assigned-but-unconfirmed so Manual Confirmation is still offered — exactly what
+the screen does, at the same address.
+
+**The reservation is NOT released.** The modal reopens still pointing at
+`SH-105`, so releasing the capacity would let another operator take that shelf
+in the seconds before this one confirms it by hand. Release belongs to
+**Change** (4.1) and to expiry, not to cancel.
 
 ### 4.8 `GET /p2p/spi/{id}/putaway/activity` · `GET /putaway/activity`
 
 The log the operator and the auditor read: every event against a box, a shelf,
 an operator or a device, newest first, from `inventory_putaway_activity_logs`.
 
-### 4.9 `GET /p2p/spi/{id}/putaway/summary` — 3PL mode
+### 4.9 `POST /putaway/locks/{lock}/heartbeat` · `DELETE /putaway/locks/{lock}`
+
+The open screen pings while it is working; the reaper releases anything stale.
+The delete is a supervisor's force-release, written to the activity log with a
+reason — never a silent take-back.
+
+### 4.10 `GET /p2p/spi/{id}/putaway/summary` — 3PL mode
 
 `isFullPutaway()` already returns false for a `tpl` warehouse and expects a
 summary path. Neither screen nor endpoint exists; a whole warehouse type has no
@@ -342,13 +358,66 @@ created, task cancelled, confirmed manually, confirmed by device, released.
 One table answers "what happened to this box", "what did this operator do
 today", and "who filled this shelf" without joining four others.
 
-### 5.4 Columns on existing tables
+### 5.4 `inventory_location_locks` — the location somebody is working on
+
+**This is a third kind of lock, and none of the three substitutes for another:**
+
+| | Holds | For how long |
+|---|---|---|
+| `select … for update` (7.3) | the shelf **row**, so two transactions cannot both pass one capacity check | milliseconds |
+| occupancy `reserved` (5.1) | **capacity** — 12.9% of the shelf; the other 87% stays open to everyone, correctly | minutes to hours |
+| **this table** | **the location**, exclusively — nobody else is shown it, offered it, or allowed to take it | the session, or the life of a Zebra task |
+
+| Column | Note |
+|---|---|
+| `client_id`, `branch_id`, `warehouse_id` | tenancy; the warehouse denormalised so every live lock in it is one read |
+| `location_type`, `location_id` | `zone` · `rack` · `shelf` — one table covers all three levels and the norack path |
+| `held_by`, `session_id` | the person, and the tab: two tabs of one user are two workers |
+| `held_for_type`, `held_for_id` | the putaway row, or the task that keeps holding it after the screen closes |
+| `reason` | `putaway` · `stocktake` · `maintenance` |
+| `acquired_at`, `last_heartbeat_at`, `expires_at` | taken, alive, deadline |
+| `released_at`, `released_reason` | `completed` · `cancelled` · `reassigned` · `expired` · `force_released` |
+
+A table rather than `locked_by`/`locked_at` on the masters: the lock applies to
+zones, racks and shelves alike, so columns would mean the same four on three
+masters; a master is cached reference data and a lock is transient, high-churn
+state; overwriting columns loses the history of who held what and for how long;
+and the partial unique index settles a race in the database — one insert wins,
+the other is refused and told who holds it.
+
+**When it is taken and given back**
+
+| Point | Lock |
+|---|---|
+| Step 02 — a location is chosen | **acquire** |
+| Step 02 — **Change** to another | release old (`reassigned`), acquire new |
+| Step 03 — **Complete Putaway** | release, `completed` |
+| Step 03 — **Submit for Zebra Verification** | **persists**, `expires_at` aligned to the task's |
+| Zebra — both scans verified | release, `completed` |
+| Zebra — **Cancel task** | **persists** — the modal still points at the same shelf |
+| Abandoned screen | the reaper releases it, `expired` |
+| Supervisor override | `force_released`, logged |
+
+**It must expire.** A lock only the happy path releases means the first closed
+laptop takes a shelf out of service permanently.
+
+And it feeds Step 02: a locked location is **ineligible** — greyed in the tree,
+out of the `13 / 38 eligible` count, never recommended. Its reason reads
+differently from the rest: *"in use"*, about a person, not *"unavailable"*,
+about the goods.
+
+### 5.5 Columns on existing tables
 
 | Table | Column | Why |
 |---|---|---|
 | `inventory_product_flags` | `behaviour` enum(`hazardous`,`cold_chain`,`fragile`,`none`) | `code` is a sequence (`PF-001`…) and only `flag_name` says "Hazardous". A tenant renaming it, or adding "Hazmat Class 3", silently breaks the HAZ/COLD buckets and every placement rule. Zones, racks and shelves already carry real `cold_chain`/`hazardous` booleans — this makes both ends speak the same language. |
 | `p2p_spi_putaways` | `occupancy_id`, `task_id`, `verify_method`, `suggested_shelf_id` | the links above, plus "did the operator take the suggestion?" so the ranking can ever be tuned |
-| `inventory_shelves` | `code` | zones and racks store a code; shelves compute `SH-101` in the model. These codes are **printed on the labels the handheld scans** — a computed code that drifts from a printed sticker breaks the scan, not just the display. |
+| `inventory_zones` | `used_volume`, `used_area_sqft`, `used_weight_kg`, `boxes_count` | the zone master has every capacity column and **no consumption column at all**. Survivable while every box lands on a shelf and the zone rolls up from them — not survivable in a **no-rack zone**, where the zone *is* the location and there is nothing underneath to roll up from. Two of the three zones configured today are no-rack. |
+
+**Not** `inventory_shelves.code`. An earlier migration settled that deliberately
+— *"a shelf code is its RACK's code plus the level, so it follows the rack's
+stored code automatically"* — and now that the rack's code is stored, the
+accessor cannot drift from the printed label.
 
 ---
 
@@ -361,7 +430,7 @@ today", and "who filled this shelf" without joining four others.
 | 3 | `SpiPutawayController::scan` | adds the **temperature check**. A box carries `temp_min_c`/`temp_max_c`, a zone carries its own, and nothing compares them today — a −20 °C box can be confirmed onto an ambient shelf and nothing objects. Of every gap here this is the costliest: a silent cold-chain breach is found when the goods are opened. |
 | 4 | `ShelfController` | stops accepting `used_weight_kg` / `boxes_count` from the form. Its own comment says they *"belong to the put-away, not to this master"* — from here they are system-maintained (7.2). |
 | 5 | `Shelf` model | `load_pct` / `occupancy` finally read non-zero values |
-| 6 | `Shelf` code accessor | replaced by the stored `code` column, so the printed label and the scanned value cannot diverge |
+| 6 | `ZoneController` | like `ShelfController`, stops accepting the four new consumption columns from the form |
 | 7 | Zone / rack / shelf option endpoints | accept `mode=rack\|norack` so Step 02 filters at the source |
 | 8 | Product-flag master (API + UI) | exposes `behaviour`; the three seeded defaults get it in a data migration |
 | 9 | Bucket rule | moves server-side out of `spiPackBoxType()`. **Note the mismatch:** the DB enum is `correct\|damaged\|mismatched\|extra`, the prototype tests `remark === 'mismatch'`. Ported literally, the Mismatch bucket stays empty forever. `extra` belongs with Inventory, as the prototype's own card label says. |
@@ -497,7 +566,8 @@ placed box leaves *Awaiting Putaway* for the STORED group.
 | **4** | `packed-boxes` extended (filters, pagination, counts, blocking) | 3 |
 | **5** | Temperature check in `scan` | — |
 | **6** | `/putaway/locations` **without** ranking — eligibility and occupancy only | 1 |
-| **7** | `assign` + `confirm-manual` — the whole Option 02 path | 1, 2 |
+| **7** | `inventory_location_locks` + acquire / release / heartbeat / reaper | 2 |
+| **7a** | `assign` + `confirm-manual` — the whole Option 02 path | 1, 2, 7 |
 | **8** | Step 4 shell, box list, mode modal, location tree, confirm panel, method modal (manual only) | 4, 6, 7 |
 | **9** | `p2p_spi_putaway_tasks` + create / list / cancel | 7 |
 | **10** | Device callback with ordered scans + `ZebraTaskPanel` + queue | 9 |
@@ -529,21 +599,31 @@ occupancy and a full activity trail. Zebra (9–10) is the second release, ranki
    `0% → 13%` (used) — same shelf, opposite directions, one screen. The API
    should return one canonical pair and let the UI phrase it.
 5. **Ineligibility reasons and their priority.** `Full`, cold-chain mismatch,
-   hazardous mismatch, too heavy, too tall, inactive — a shelf can fail several
-   and the chip shows one.
-6. **How long does a task stay open?** `expires_at` needs a number, and somebody
+   hazardous mismatch, too heavy, too tall, inactive, **in use** — a shelf can
+   fail several and the chip shows one.
+6. **Lock granularity: shelf or rack?** The placement target is a shelf, and
+   `RC-001` has seven of them. Lock the rack and one box takes seven shelves out
+   of service; with three racks and three operators the third box deadlocks.
+   Shelf-level (and zone-level in norack mode) is the safe default, with
+   rack-level kept for stocktake and maintenance. The table supports either —
+   only the `location_type` written changes.
+7. **Lock timeout.** 30 minutes idle for a manual session is a starting point;
+   the Zebra case should inherit the task's `expires_at` instead, since that one
+   is meant to stay open for hours.
+8. **How long does a task stay open?** `expires_at` needs a number, and somebody
    has to see expired tasks or boxes sit unverified forever.
-7. **Manual confirmation after a task was sent** — the floor may simply place it.
+9. **Manual confirmation after a task was sent** — the floor may simply place it.
    If allowed, the task closes as *superseded* rather than staying pending.
-8. **Who may cancel a task, and does it need a reason?** It releases reserved
-   capacity, so it is not a neutral act.
-9. **Is the Stage 03 condition re-asked at Stage 04 deliberately?** Both exist
-   (`p2p_spi_boxes.condition`, `condition_at_putaway`). Damage between packing
-   and placement is real, but the two must read as different questions.
-10. **Does a 3PL warehouse record box-level placement, or only a count?**
-11. **Does the selected box live in the URL?** If yes, add
+10. **Who may cancel a task, and does it need a reason?** It does not release the
+    capacity (4.7), so an abandoned cancel leaves a shelf held by nobody until
+    the lock expires.
+11. **Is the Stage 03 condition re-asked at Stage 04 deliberately?** Both exist
+    (`p2p_spi_boxes.condition`, `condition_at_putaway`). Damage between packing
+    and placement is real, but the two must read as different questions.
+12. **Does a 3PL warehouse record box-level placement, or only a count?**
+13. **Does the selected box live in the URL?** If yes, add
     `GET /p2p/spi/{id}/packed-boxes/{box}` so a mid-flow refresh survives.
-12. ~~May a confirmed putaway be moved?~~ **Answered by the design: no.** The
+14. ~~May a confirmed putaway be moved?~~ **Answered by the design: no.** The
     dialog locks the shelf and says the location cannot be changed. Coming off a
     shelf is a *cancel and release*, not a move.
 
@@ -553,9 +633,9 @@ occupancy and a full activity trail. Zebra (9–10) is the second release, ranki
 
 | | |
 |---|---|
-| New tables | **3** — occupancy ledger, Zebra task, activity log |
-| New columns | **8** across 3 existing tables |
-| New endpoints | **8** (1 blocked on the ranking decision) |
+| New tables | **4** — occupancy ledger, Zebra task, activity log, location lock |
+| New columns | **9** across 3 existing tables |
+| New endpoints | **10** (1 blocked on the ranking decision) |
 | Changed behaviour | **9 items**, section 6 |
 | Reused endpoints | **9** |
 | New components | **9** |

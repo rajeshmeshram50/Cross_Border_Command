@@ -1,0 +1,284 @@
+<?php
+
+namespace App\Services\Inventory;
+
+use App\Models\Inventory\LocationLock;
+use App\Models\P2p\SpiBox;
+use App\Models\P2p\SupplierInvoice;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Inventory · where a box may go, and which of those places is best.
+ *
+ * Serves the whole of Stage 04 Step 02 in one pass: the mode counts on the
+ * opening modal, the recommendation in Section A, and the tree in Section B.
+ * One pass because the recommendation IS the top of the tree's own ranked list
+ * — computing it twice would cost twice and could disagree with itself.
+ *
+ * WHAT IT DOES NOT DECIDE ANYTHING. Every condition and every weight lives in
+ * PutawaySuggestionEngine — one file — so the rules can be read and argued
+ * about without reading this one. This service fetches, shapes and counts; the
+ * engine judges.
+ */
+class LocationFinderService
+{
+    public function __construct(private LocationOccupancyService $occupancy,
+                                private LocationLockService $locks,
+                                private PutawaySuggestionEngine $engine) {}
+
+    /**
+     * @param  string|null $mode 'rack' | 'norack'; null returns only the counts
+     * @return array<string,mixed>
+     */
+    public function forBox(SupplierInvoice $spi, SpiBox $box, ?string $mode = null, ?int $userId = null): array
+    {
+        $need  = $this->requirements($spi, $box);
+        $zones = $this->zones((int) $spi->warehouse_id);
+
+        $counts = $this->modeCounts($zones, $need, $userId);
+
+        $body = [
+            'box'   => $need,
+            'modes' => $counts,
+        ];
+
+        if ($mode === null) return $body;
+
+        $tree = $mode === 'rack'
+            ? $this->rackTree($zones->where('rack_mode', 'rack'), $need, $userId)
+            : $this->zoneTree($zones->where('rack_mode', 'norack'), $need, $userId);
+
+        $body['zones']       = $tree['zones'];
+        $body['eligible']    = $tree['eligible'];
+        $body['total']       = $tree['total'];
+        $body['recommended'] = $tree['recommended'];
+
+        return $body;
+    }
+
+    /* ═══════════════════════ WHAT THE BOX NEEDS ═══════════════════════ */
+
+    /**
+     * The box's own demands, resolved once.
+     *
+     * Cold chain and hazardous come from the product flags INSIDE the box, by
+     * meaning rather than by name: inventory_product_flags.behaviour, not the
+     * tenant-editable flag_name. A renamed flag must not silently stop a rule.
+     */
+    private function requirements(SupplierInvoice $spi, SpiBox $box): array
+    {
+        $flagIds = DB::table('p2p_spi_box_items')
+            ->where('box_id', $box->id)->whereNull('deleted_at')
+            ->pluck('flags')
+            ->flatMap(fn ($j) => array_map('intval', (array) json_decode((string) $j, true)))
+            ->unique()->filter()->values();
+
+        $behaviours = $flagIds->isEmpty() ? collect() : DB::table('inventory_product_flags')
+            ->whereIn('id', $flagIds)->pluck('behaviour');
+
+        $weight = (float) ($box->gross_weight_kg ?: $box->weight_kg ?: 0);
+
+        return [
+            'id'            => $box->id,
+            'box_code'      => $box->box_code,
+            'weight_kg'     => $weight,
+            'height_cm'     => (float) ($box->height_cm ?: 0),
+            'footprint_cm2' => (float) ($box->length_cm ?: 0) * (float) ($box->width_cm ?: 0),
+            'volume_cm3'    => (float) ($box->length_cm ?: 0) * (float) ($box->width_cm ?: 0) * (float) ($box->height_cm ?: 0),
+            'cold_chain'    => $behaviours->contains('cold_chain'),
+            'hazardous'     => $behaviours->contains('hazardous'),
+            'fragile'       => $behaviours->contains('fragile'),
+            'is_stackable'  => (bool) $box->is_stackable,
+            'temp_min_c'    => $box->temp_min_c === null ? null : (float) $box->temp_min_c,
+            'temp_max_c'    => $box->temp_max_c === null ? null : (float) $box->temp_max_c,
+            'spi_id'        => $spi->id,
+        ];
+    }
+
+    private function zones(int $warehouseId)
+    {
+        return collect(DB::table('inventory_zones')->where('warehouse_id', $warehouseId)->get());
+    }
+
+    /* ═══════════════════════ THE TREE ═══════════════════════ */
+
+    /** Zone › Rack › Shelf, every level carrying its fill and its eligibility. */
+    private function rackTree($zones, array $need, ?int $userId): array
+    {
+        $zoneIds = $zones->pluck('id')->all();
+
+        $racks = $zoneIds ? collect(DB::table('inventory_racks')->whereIn('zone_id', $zoneIds)->get()) : collect();
+        $rackIds = $racks->pluck('id')->all();
+
+        $shelves = $rackIds ? collect(DB::table('inventory_shelves')->whereIn('rack_id', $rackIds)->orderBy('level_no')->get()) : collect();
+
+        $loads  = $this->occupancy->shelfLoads($shelves->pluck('id')->all());
+        $locked = $this->locks->heldMap(LocationLock::SHELF, $shelves->pluck('id')->all());
+        $mates  = $this->invoiceMates($need['spi_id']);
+
+        $total = $eligible = 0;
+        $best  = null;
+
+        $out = $zones->map(function ($z) use ($racks, $shelves, $loads, $locked, $mates, $need, $userId, &$total, &$eligible, &$best) {
+            $zoneRacks = $racks->where('zone_id', $z->id);
+
+            $rackRows = $zoneRacks->map(function ($r) use ($shelves, $loads, $locked, $mates, $need, $z, $userId, &$total, &$eligible, &$best) {
+                $rackShelves = $shelves->where('rack_id', $r->id);
+
+                $shelfRows = $rackShelves->map(function ($s) use ($loads, $locked, $mates, $need, $z, $r, $userId, &$total, &$eligible, &$best) {
+                    $total++;
+                    $load  = $loads[$s->id] ?? ['weight_kg' => 0, 'boxes' => 0];
+                    $cap   = (float) ($s->max_weight_kg ?: 0);
+                    $free  = max(0, $cap - $load['weight_kg']);
+                    $hold  = $locked[$s->id] ?? null;
+
+                    $why = $this->engine->refuseShelf($need, $s, $z, $free, $hold, $userId);
+                    if ($why === null) $eligible++;
+
+                    $usedBefore = $cap > 0 ? round($load['weight_kg'] / $cap * 100, 1) : 0.0;
+                    $usedAfter  = $cap > 0 ? round(($load['weight_kg'] + $need['weight_kg']) / $cap * 100, 1) : 0.0;
+
+                    $row = [
+                        'id'            => (int) $s->id,
+                        'name'          => $s->shelf_name,
+                        // No code column: a shelf is its rack's code plus the level.
+                        'code'          => $r->code . '-SH-' . str_pad((string) $s->level_no, 2, '0', STR_PAD_LEFT),
+                        'level_no'      => (int) $s->level_no,
+                        'max_weight_kg' => $cap,
+                        'free_weight_kg' => $free,
+                        'boxes'         => $load['boxes'],
+                        'used_pct'      => $usedBefore,
+                        'used_pct_after' => $usedAfter,
+                        'eligible'      => $why === null,
+                        'reason'        => $why,
+                        'reason_label'  => $this->engine->label($why),
+                        'held_by'       => $hold['held_by'] ?? null,
+                    ];
+
+                    if ($why === null) {
+                        $scored = $this->engine->scoreShelf($need, $cap, $load, (int) $s->level_no, in_array((int) $s->id, $mates, true));
+                        $row['score']       = $scored['score'];
+                        $row['score_parts'] = $scored['parts'];
+                        if ($best === null || $row['score'] > $best['score']) {
+                            $best = $row + [
+                                'zone_id' => (int) $z->id, 'zone_name' => $z->zone_name, 'zone_code' => $z->code,
+                                'rack_id' => (int) $r->id, 'rack_name' => $r->rack_name, 'rack_code' => $r->code,
+                            ];
+                        }
+                    }
+
+                    return $row;
+                })->values();
+
+                return [
+                    'id'       => (int) $r->id,
+                    'name'     => $r->rack_name,
+                    'code'     => $r->code,
+                    'shelves'  => $shelfRows->all(),
+                    'total'    => $shelfRows->count(),
+                    'eligible' => $shelfRows->where('eligible', true)->count(),
+                ];
+            })->values();
+
+            return [
+                'id'        => (int) $z->id,
+                'name'      => $z->zone_name,
+                'code'      => $z->code,
+                'rack_mode' => $z->rack_mode,
+                'cold_chain' => (int) $z->cold_chain,
+                'hazardous' => (int) $z->hazardous,
+                'racks'     => $rackRows->all(),
+                'total'     => $rackRows->sum('total'),
+                'eligible'  => $rackRows->sum('eligible'),
+            ];
+        })->values();
+
+        return ['zones' => $out->all(), 'total' => $total, 'eligible' => $eligible, 'recommended' => $best];
+    }
+
+    /** A no-rack zone IS the location — no racks, no shelves, no levels. */
+    private function zoneTree($zones, array $need, ?int $userId): array
+    {
+        $ids    = $zones->pluck('id')->all();
+        $loads  = $this->occupancy->zoneLoads($ids, directOnly: true);
+        $locked = $this->locks->heldMap(LocationLock::ZONE, $ids);
+
+        $total = $eligible = 0;
+        $best  = null;
+
+        $out = $zones->map(function ($z) use ($loads, $locked, $need, $userId, &$total, &$eligible, &$best) {
+            $total++;
+            $load = $loads[$z->id] ?? ['weight_kg' => 0, 'volume_cm3' => 0, 'boxes' => 0];
+            $hold = $locked[$z->id] ?? null;
+
+            // A zone states capacity in m³ (or litres for a fridge), not kilos.
+            $capM3  = (float) ($z->usable_volume ?: $z->volume ?: 0);
+            $usedM3 = $load['volume_cm3'] / 1_000_000;
+            $freeM3 = max(0, $capM3 - $usedM3);
+
+            $why = $this->engine->refuseZone($need, $z, $freeM3, $hold, $userId);
+            if ($why === null) $eligible++;
+
+            $row = [
+                'id'             => (int) $z->id,
+                'name'           => $z->zone_name,
+                'code'           => $z->code,
+                'rack_mode'      => $z->rack_mode,
+                'cold_chain'     => (int) $z->cold_chain,
+                'hazardous'      => (int) $z->hazardous,
+                'capacity_m3'    => $capM3,
+                'free_m3'        => round($freeM3, 3),
+                'boxes'          => $load['boxes'],
+                'used_pct'       => $capM3 > 0 ? round($usedM3 / $capM3 * 100, 1) : 0.0,
+                'used_pct_after' => $capM3 > 0 ? round(($usedM3 + $need['volume_cm3'] / 1_000_000) / $capM3 * 100, 1) : 0.0,
+                'eligible'       => $why === null,
+                'reason'         => $why,
+                'reason_label'   => $this->engine->label($why),
+                'held_by'        => $hold['held_by'] ?? null,
+            ];
+
+            if ($why === null && ($best === null || $row['free_m3'] < $best['free_m3'])) {
+                $best = $row;
+            }
+
+            return $row;
+        })->values();
+
+        return ['zones' => $out->all(), 'total' => $total, 'eligible' => $eligible, 'recommended' => $best];
+    }
+
+    /** Shelves already holding a box from this same invoice. */
+    private function invoiceMates(int $spiId): array
+    {
+        return DB::table('inventory_location_occupancy as o')
+            ->join('p2p_spi_boxes as b', function ($j) {
+                $j->on('b.id', '=', 'o.occupant_id')->where('o.occupant_type', '=', 'spi_box');
+            })
+            ->where('b.supplier_invoice_id', $spiId)
+            ->whereIn('o.status', ['reserved', 'occupied'])
+            ->whereNotNull('o.shelf_id')
+            ->pluck('o.shelf_id')
+            ->map(fn ($v) => (int) $v)
+            ->unique()->values()->all();
+    }
+
+    /** How many places each mode offers — the two numbers on the opening modal. */
+    private function modeCounts($zones, array $need, ?int $userId): array
+    {
+        $rackZones   = $zones->where('rack_mode', 'rack');
+        $norackZones = $zones->where('rack_mode', 'norack');
+
+        $shelves = $rackZones->isEmpty() ? collect() : collect(
+            DB::table('inventory_shelves as s')
+                ->join('inventory_racks as r', 'r.id', '=', 's.rack_id')
+                ->whereIn('r.zone_id', $rackZones->pluck('id'))
+                ->where('s.status', 1)->where('r.status', 1)
+                ->get(['s.id'])
+        );
+
+        return [
+            'rack'   => $shelves->count(),
+            'norack' => $norackZones->where('status', 1)->count(),
+        ];
+    }
+}

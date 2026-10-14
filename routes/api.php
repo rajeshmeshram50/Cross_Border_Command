@@ -72,7 +72,9 @@ use App\Http\Controllers\Api\Inventory\WarehouseController;
 use App\Http\Controllers\Api\Inventory\ZoneController;
 use App\Http\Controllers\Api\P2p\PoPaymentRequestController;
 use App\Http\Controllers\Api\P2p\SpiBoxController;
+use App\Http\Controllers\Api\P2p\SpiPutawayAllocationController;
 use App\Http\Controllers\Api\P2p\SpiPutawayController;
+use App\Http\Controllers\Api\P2p\SpiPutawayTaskController;
 use App\Http\Controllers\Api\P2p\SupplierInvoiceController;
 use Illuminate\Support\Facades\Route;
 
@@ -569,6 +571,26 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::put   ('/{id}/storage-type',          [SpiPutawayController::class, 'setStorageType'])->whereNumber('id');
         Route::post  ('/{id}/putaway/scan',          [SpiPutawayController::class, 'scan'])->whereNumber('id');
         Route::put   ('/{id}/putaway/{row}/confirm', [SpiPutawayController::class, 'confirm'])->whereNumber('id')->whereNumber('row');
+
+        /* Step 02 · where may this box go. Without `mode` only the two counts
+           the opening modal asks for; with it the whole tree AND the
+           recommendation, because Section A is the top of Section B's own
+           ranked list and computing it twice could disagree with itself. */
+        /* Where every box of this invoice stands — status, sub-step and the
+           counts the left rail and the progress bar read. Driven from the
+           BOXES, so a box nobody has started still appears. */
+        Route::get   ('/{id}/putaway/board',         [SpiPutawayAllocationController::class, 'board'])->whereNumber('id');
+        Route::get   ('/{id}/putaway/locations',     [SpiPutawayAllocationController::class, 'locations'])->whereNumber('id');
+        /* The box now has a place: the location is locked, its capacity
+           reserved, and the box becomes a DRAFT until something confirms it.
+           POST because re-assigning releases the previous hold and takes a new
+           one — not idempotent. */
+        Route::post  ('/{id}/putaway/assign',        [SpiPutawayAllocationController::class, 'assign'])->whereNumber('id');
+        // Step 03 · Option 02 — the operator states the box is physically there.
+        Route::post  ('/{id}/putaway/{row}/confirm-manual', [SpiPutawayAllocationController::class, 'confirmManual'])->whereNumber('id')->whereNumber('row');
+        // Step 03 · Option 01 — hand it to the floor; the box stays unplaced.
+        Route::post  ('/{id}/putaway/{row}/scan-task',      [SpiPutawayTaskController::class, 'store'])->whereNumber('id')->whereNumber('row');
+        Route::get   ('/{id}/putaway/tasks',                [SpiPutawayTaskController::class, 'index'])->whereNumber('id');
 
         /* Payment Requests History for ONE invoice. The requests themselves are
            still raised and decided on the PO — this is the read that scopes
@@ -1305,6 +1327,13 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::apiResource('scan-devices', \App\Http\Controllers\Api\ScanDeviceController::class)
         ->only(['index', 'store', 'update', 'destroy']);
     Route::post('/scan-devices/{id}/rotate', [\App\Http\Controllers\Api\ScanDeviceController::class, 'rotate']);
+
+    /* The floor's own queue, across invoices — what is still out with the
+       warehouse. Cancelling closes the task and NOTHING else: the shelf stays
+       reserved and locked, because the screen reopens on the same address
+       offering manual confirmation. */
+    Route::get ('/putaway/tasks',               [SpiPutawayTaskController::class, 'queue']);
+    Route::post('/putaway/tasks/{task}/cancel', [SpiPutawayTaskController::class, 'cancel'])->whereNumber('task');
 
 
     Route::get('/modules', [PermissionController::class, 'modules']);
