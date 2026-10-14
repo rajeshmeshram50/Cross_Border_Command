@@ -7778,6 +7778,21 @@
   padding: 8px 12px;
 }
 .ev-doc.ev-doc--promo:hover { background: #fffdf7; }
+/* The promo row's own dark hover.
+ *
+ * .ev-doc:hover has a dark override above, but this rule matches with the
+ * same specificity and comes later, so in dark mode the row still took the
+ * light #fffdf7 — a near-white card appearing under white text, which made
+ * the document name and its meta line vanish while the pointer was on them.
+ *
+ * Light lifts #fff by a hint of warmth; dark lifts its own #1c2531 by the
+ * same 6% white the generic dark row hover uses, flattened to an opaque
+ * value because the row paints its own background (a translucent white would
+ * replace it and let the amber panel through). The amber identity stays in
+ * the border, which is untouched. */
+[data-bs-theme="dark"] .ev-doc.ev-doc--promo:hover {
+  background: color-mix(in srgb, #ffffff 6%, #1c2531);
+}
 .ev-doc--promo + .ev-doc--promo { margin-top: 6px; }
 .ev-doc-icon--promo { background: rgba(245,158,11,0.18); color: #a16207; }
 .ev-doc-status--not-sent { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
