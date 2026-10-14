@@ -34,7 +34,6 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
     // Tenant brand-color toggle. The button only appears when the logged-in
     // user actually has tenant colors (otherwise toggling is a no-op).
     const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
-    const hasTenantColors = !!(user?.primary_color || user?.secondary_color);
     // Mirror the horizontal header's action icons (Gmail, Inbox, Logout +
     // employee clock-in) so both layouts expose the same controls.
     const isEmployee = user?.user_type === 'employee' && !!user?.employee_id;
@@ -197,24 +196,22 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass } : any) => {
 
                             {/* Tenant brand-color toggle — labeled pill switch, matching the
                                 horizontal header's "Default / Brand" toggle. */}
-                            {hasTenantColors && (
-                                <div className="me-2 header-item d-flex align-items-center">
-                                    <div
-                                        className={`vth-switch ${tenantThemeEnabled ? 'vth-on' : ''}`}
-                                        title={tenantThemeEnabled ? 'Click to switch to default theme' : 'Click to switch to brand theme'}
-                                        style={{ '--vth-on': (user?.primary_color || '#7C3AED') } as React.CSSProperties}
-                                    >
-                                        <span className="vth-switch-label">{tenantThemeEnabled ? 'Brand' : 'Default'}</span>
-                                        <button
-                                            type="button"
-                                            className="vth-switch-toggle"
-                                            aria-label="Toggle brand theme"
-                                            aria-pressed={tenantThemeEnabled}
-                                            onClick={toggleTenantTheme}
-                                        />
-                                    </div>
+                            <div className="me-2 header-item d-flex align-items-center">
+                                <div
+                                    className={`vth-switch ${tenantThemeEnabled ? 'vth-on' : ''}`}
+                                    title={tenantThemeEnabled ? 'Click to switch to default theme' : 'Click to switch to brand theme'}
+                                    style={{ '--vth-on': (user?.primary_color || '#7C3AED') } as React.CSSProperties}
+                                >
+                                    <span className="vth-switch-label">{tenantThemeEnabled ? 'Brand' : 'Default'}</span>
+                                    <button
+                                        type="button"
+                                        className="vth-switch-toggle"
+                                        aria-label="Toggle brand theme"
+                                        aria-pressed={tenantThemeEnabled}
+                                        onClick={toggleTenantTheme}
+                                    />
                                 </div>
-                            )}
+                            </div>
 
                             {/* Dark/Light Mode set */}
                             <LightDark

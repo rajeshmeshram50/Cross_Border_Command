@@ -26,31 +26,13 @@ interface Props {
 const empty = {
   name: '', code: '', email: '', phone: '', website: '',
   contact_person: '', branch_type: '', industry: '', description: '',
-  /* Sandwich Leave Policy — 'yes' | 'no'. Pre-selected to 'no' by choice: the
-     policy is the exception rather than the norm, so a new branch starts where
-     most branches land and an admin only touches it when their office actually
-     runs the rule. The field stays required server-side; the '' state the
-     validator still guards against is now unreachable from this form.
-     Converted to 1/0 at submit. */
   sandwich_policy: 'no',
-  /* Loss-of-pay policy: what an absent day is priced against, and over how
-     many days. Seeded with the rule payroll has always applied (basic ÷
-     calendar days) so an admin who never opens this section keeps exactly the
-     existing behaviour. Submitted as two scalars; the server composes them
-     into branches.lop_policy. */
   lop_basis: 'basic',
   lop_divisor: 'calendar',
-  /* Late-mark deduction rule for this office. Seeded with the rule payroll
-     used to hardcode (every 3 late marks = half day) so an admin who never
-     touches this section gets exactly the old behaviour. Half day / full day
-     are the only choices — payroll settles in 0.5-day steps.
-     Submitted as the late_mark_policy object, not as three loose fields. */
   late_mark_enabled: 'yes',
   late_mark_count: '3',
   late_mark_deduction: 'half_day',
   gst_number: '', pan_number: '', registration_number: '',
-  // Letterhead / export-house compliance fields — all optional, surface
-  // on the Quotation/PI PDF letterhead block when populated.
   gst_state_code: '', cin: '', iec: '',
   drug_license: '', pcpndt_no: '', aeo_code: '',
   one_star_file_no: '', one_star_udin_no: '',
@@ -66,11 +48,6 @@ const empty = {
 
 type FormState = typeof empty;
 
-/* Bank-accounts sublist definition for <InlineSublist>. Deliberately a copy of
- * masterConfigs' legal_entities → `banks` field (same labels, placeholders,
- * regexes and card layout) so a bank account typed on a branch is validated
- * exactly like one typed on a legal entity. Keep the two in step when either
- * changes. */
 const BRANCH_BANK_FIELD: FieldDef = {
   n: 'bank_accounts', l: 'Bank Accounts', t: 'sublist',
   subSingular: 'Bank Detail',
@@ -93,7 +70,6 @@ const BRANCH_BANK_FIELD: FieldDef = {
   ],
 };
 
-// Human-readable field labels used for error summaries / toasts
 const FIELD_LABELS: Record<string, string> = {
   name: 'Branch Name',
   sandwich_policy: 'Sandwich Leave Policy',
@@ -105,8 +81,6 @@ const FIELD_LABELS: Record<string, string> = {
   gst_number: 'GST Number',
   pan_number: 'PAN Number',
   registration_number: 'Registration Number',
-  // Letterhead / export-house compliance — used by the error-summary
-  // toast so the user sees "GST State Code" instead of "gst_state_code".
   gst_state_code: 'GST State Code',
   cin: 'CIN',
   iec: 'IEC',
@@ -123,38 +97,18 @@ const FIELD_LABELS: Record<string, string> = {
   user_password_confirmation: 'Confirm Password',
 };
 
-/* Email shape, TLD REQUIRED (QA #4).
- *
- *   test@mailinator.com  → ok
- *   test@mailinator      → rejected — no top-level domain
- *   test@mailinator.c    → rejected — a TLD is 2+ letters
- *
- * The old rule here was /^[^\s@]+@[^\s@]+\.[^\s@]+$/, which only asked for a
- * dot somewhere after the @ — "test@mailinator." and "a@b.1" both slipped
- * through. Note that a bare hostname like `test@mailinator` is legal to an
- * RFC parser (and to PHP's FILTER_VALIDATE_EMAIL, which is why the API let it
- * past too); it just can't receive mail from the public internet, which is the
- * only thing these addresses are for here. */
 const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
 
-// Website / URL validator. Accepts:
-//   www.example.com         → ok
-//   example.com             → ok
-//   https://www.example.com → ok
-//   http://sub.example.co.in/path?x=1 → ok
-// Rejects bare words, missing TLD, spaces, or unsupported schemes.
 function validateWebsite(raw: string): string {
   const v = raw.trim();
   if (/\s/.test(v)) return 'Website cannot contain spaces';
   if (v.length > 500) return 'Website is too long (max 500 characters)';
 
-  // Strip optional scheme for the domain check
   const stripped = v.replace(/^https?:\/\//i, '');
   if (/^(ftp|file|javascript|mailto):/i.test(v)) {
     return 'Website must start with http:// or https://';
   }
 
-  // domain.tld with optional subdomain, optional path/query/hash. TLD ≥ 2 chars.
   const re = /^(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i;
   if (!re.test(stripped)) {
     return 'Enter a valid website like www.example.com or https://example.com';
@@ -162,7 +116,6 @@ function validateWebsite(raw: string): string {
   return '';
 }
 
-// ── Password strength rules (mirrors ClientForm + Profile) ──
 const PW_RULES = [
   'At least 8 characters',
   'One uppercase letter',
@@ -189,16 +142,9 @@ function computePasswordStrength(pw: string) {
   return { level, text: levels[level], color: textColors[level], barColor: barColors[level] };
 }
 
-/**
- * @param stateGstCode Statutory GST code of the state picked in the address
- *        ("27" for Maharashtra), resolved from the form bundle. Undefined when
- *        no state is picked or the master carries no code for it — the
- *        state-based checks below are then skipped, never guessed.
- */
 function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: string): Record<string, string> {
   const e: Record<string, string> = {};
 
-  // ── Branch name ──
   if (!form.name?.trim()) {
     e.name = 'Branch name is required';
   } else if (form.name.trim().length < 2) {
@@ -207,17 +153,10 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     e.name = 'Branch name cannot exceed 100 characters';
   }
 
-  // ── Sandwich leave policy ──
-  // Mandatory here and server-side (`required|boolean`). Neither answer is a
-  // safe default to assume: switching it on retrospectively changes what every
-  // past leave in this branch cost, so an admin has to say which it is.
   if (form.sandwich_policy !== 'yes' && form.sandwich_policy !== 'no') {
     e.sandwich_policy = 'Choose whether this branch follows the sandwich leave policy';
   }
 
-  // ── Branch email ──
-  // Required, not just validated-when-present: this address is what quotations,
-  // invoices and onboarding invites are sent from and replied to.
   if (!form.email?.trim()) {
     e.email = 'Branch email is required';
   } else if (form.email) {
@@ -228,8 +167,6 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     }
   }
 
-  // ── Contact person ── (optional, but a real name when given)
-  // A single letter is a typo, not a contact — the same floor Branch Name uses.
   if (form.contact_person?.trim()) {
     const cp = form.contact_person.trim();
     if (cp.length < 2) {
@@ -239,15 +176,6 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     }
   }
 
-  // ── Branch phone ──
-  // Required: this is the number printed on quotations and invoices, so a
-  // branch without one goes out on paper with a blank contact.
-  //
-  // A flat 7–13 digit range rather than validatePhone()'s country rules: a
-  // branch office is reached on a landline as often as a mobile, and the
-  // country table only describes mobiles (India = exactly 10, starting 6-9),
-  // which rejected perfectly good landline numbers. The character check is
-  // kept — a range says nothing about what the characters may be.
   if (!form.phone?.trim()) {
     e.phone = 'Branch phone is required';
   } else if (!/^[+\d\s\-()]+$/.test(form.phone)) {
@@ -259,13 +187,11 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     }
   }
 
-  // ── Website ──
   if (form.website) {
     const err = validateWebsite(form.website);
     if (err) e.website = err;
   }
 
-  // ── Pincode ── (Indian PIN = 6 digits)
   if (form.pincode) {
     if (!/^\d{6}$/.test(form.pincode)) {
       e.pincode = `Pincode must be exactly 6 digits (you entered ${form.pincode.length})`;
@@ -274,13 +200,6 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     }
   }
 
-  /* ── Legal & Registration ──
-     All six are MANDATORY (QA #5 / #6). A branch is the legal entity that
-     appears on quotations, proforma invoices and export paperwork, so it
-     cannot be registered without the numbers that identify it. The FORMAT
-     rules stay India-gated — GSTIN / PAN patterns are Indian, and a branch
-     recorded under another country would fail them for no good reason — but
-     the PRESENCE requirement applies everywhere. */
   if (!form.gst_number?.trim())          e.gst_number = 'GST Number is required';
   if (!form.pan_number?.trim())          e.pan_number = 'PAN Number is required';
   if (!form.registration_number?.trim()) e.registration_number = 'Registration Number is required';
@@ -288,7 +207,6 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
   if (!form.cin?.trim())                 e.cin = 'CIN is required';
   if (!form.iec?.trim())                 e.iec = 'IEC is required';
 
-  // ── India-specific tax IDs ──
   if (form.country === 'India') {
     if (form.gst_number) {
       if (form.gst_number.length !== 15) {
@@ -304,21 +222,7 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
         e.pan_number = 'Invalid PAN format. Example: AADCI6120M (5 letters + 4 digits + 1 letter)';
       }
     }
-    /* ── GSTIN ↔ PAN ↔ State must agree (QA #1) ──
-       A GSTIN is not an independent number, it is assembled from the other
-       two fields:
 
-           2 7 A A F C D 5 6 7 8 L 1 Z 5
-           └┬┘ └─────┬─────────┘
-            │        └── characters 3-12 ARE the PAN of the same entity
-            └─────────── the state code of the registration
-
-       Format-only rules happily accept a GSTIN from one company in one state
-       next to the PAN of a different company — and those three numbers then
-       print together on every quotation, PI and export document. */
-
-    // GSTIN chars 3-12 vs the PAN field. Only when both pass their own format
-    // check, so a mistyped PAN reports one problem instead of two.
     if (form.gst_number && form.pan_number && !e.gst_number && !e.pan_number) {
       const embeddedPan = form.gst_number.slice(2, 12);
       if (embeddedPan !== form.pan_number.trim()) {
@@ -326,17 +230,11 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
       }
     }
 
-    // GSTIN's first two digits vs the state picked in the address.
     if (form.gst_number && !e.gst_number && stateGstCode
         && form.gst_number.slice(0, 2) !== stateGstCode) {
       e.gst_number = `This GSTIN is registered in state code ${form.gst_number.slice(0, 2)}, but the address state is ${form.state} (${stateGstCode})`;
     }
 
-    /* The GST state code is the FIRST TWO DIGITS of the GSTIN — it is not an
-       independent value. It also decides the tax split on every document
-       raised from this branch (same state as the party → CGST+SGST, otherwise
-       IGST), so a code that disagrees with the GSTIN silently mis-taxes
-       invoices rather than failing loudly. */
     if (form.gst_state_code && !/^\d{2}$/.test(form.gst_state_code.trim())) {
       e.gst_state_code = 'GST State Code must be exactly 2 digits. Example: 27 for Maharashtra';
     } else if (
@@ -347,13 +245,10 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     } else if (
       form.gst_state_code && stateGstCode && form.gst_state_code.trim() !== stateGstCode
     ) {
-      // Reached when the GSTIN itself is missing/malformed — the code still
-      // has to agree with the state, otherwise the tax split is wrong.
       e.gst_state_code = `GST State Code for ${form.state} is ${stateGstCode}, not ${form.gst_state_code.trim()}`;
     }
   }
 
-  // ── Max users ──
   if (form.max_users) {
     const n = parseInt(form.max_users);
     if (isNaN(n)) {
@@ -365,13 +260,6 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     }
   }
 
-  /* ── Branch admin email ──
-     Checked in BOTH modes, unlike the rest of the admin block below (QA #4).
-     The whole section used to sit behind `if (!isEdit)`, which meant an EDIT
-     could put anything at all in the login email — test@mailinator, or the
-     branch's own address — and save it without a word. Only the "is it filled
-     in" rule is create-only: on edit a blank field means "leave the admin
-     alone", not "clear the login". */
   if (form.user_email?.trim()) {
     if (!EMAIL_RE.test(form.user_email.trim())) {
       e.user_email = 'Enter a valid email like: admin@company.com (a domain ending such as .com is required)';
@@ -382,12 +270,7 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     e.user_email = 'Admin email is required';
   }
 
-  // ── Remaining branch admin fields (only when creating a new branch) ──
   if (!isEdit) {
-    /* Letters and spaces only — the same rule the employee form applies to
-       first / middle / last name, so a person's name is written the same way
-       whichever screen creates them. It had no character rule at all here, so
-       digits and punctuation went straight through. */
     const NAME_RE = /^[A-Za-z ]+$/;
     if (!form.user_name?.trim()) {
       e.user_name = 'Admin user name is required';
@@ -417,7 +300,6 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     if (errs.length) e.user_password = errs.join(', ');
   }
 
-  // ── Password confirmation ──
   if (form.user_password && form.user_password !== form.user_password_confirmation) {
     e.user_password_confirmation = 'Passwords do not match';
   }
@@ -425,7 +307,6 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
   return e;
 }
 
-// ── Section palette (AddPlan-style tints + gradients) ──
 const SECTION_STYLE: Record<string, { gradTint: string; border: string; iconGrad: string; pillBg: string; pillText: string; pillBorder: string; iconShadow: string }> = {
   A: { gradTint: 'linear-gradient(135deg, rgba(99,102,241,0.10), rgba(99,102,241,0.02))', border: 'rgba(99,102,241,0.20)',  iconGrad: 'linear-gradient(135deg, #6366f1, #8b5cf6)', pillBg: 'rgba(99,102,241,0.15)', pillText: '#6366f1', pillBorder: 'rgba(99,102,241,0.30)', iconShadow: '0 4px 12px rgba(99,102,241,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
   B: { gradTint: 'linear-gradient(135deg, rgba(14,165,233,0.10), rgba(14,165,233,0.02))', border: 'rgba(14,165,233,0.20)',  iconGrad: 'linear-gradient(135deg, #0ea5e9, #38bdf8)', pillBg: 'rgba(14,165,233,0.15)', pillText: '#0ea5e9', pillBorder: 'rgba(14,165,233,0.30)', iconShadow: '0 4px 12px rgba(14,165,233,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
@@ -435,7 +316,6 @@ const SECTION_STYLE: Record<string, { gradTint: string; border: string; iconGrad
   F: { gradTint: 'linear-gradient(135deg, rgba(100,116,139,0.10), rgba(100,116,139,0.02))', border: 'rgba(100,116,139,0.20)', iconGrad: 'linear-gradient(135deg, #64748b, #94a3b8)', pillBg: 'rgba(100,116,139,0.15)', pillText: '#475569', pillBorder: 'rgba(100,116,139,0.30)', iconShadow: '0 4px 12px rgba(100,116,139,0.40), inset 0 1px 0 rgba(255,255,255,0.22)' },
 };
 
-// ── Inline styles (AddPlan-aligned) ─────────────────────────────────────────
 const css = {
   label: {
     fontSize: '11.5px', fontWeight: 600, letterSpacing: '0.01em',
@@ -485,57 +365,24 @@ export default function BranchForm({ onBack, editId }: Props) {
   const [loadingData, setLoadingData] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
-  /* Confirmation gate when the user picks "Inactive" on the Status
-   * dropdown. Deactivating a branch cascades — its login users get
-   * disabled, its data hides from rollups, and sub-branch employees
-   * lose access. The confirmation popup forces a deliberate click
-   * before that happens, instead of a stray dropdown change wiping
-   * out the branch silently on Save. */
   const [showInactiveConfirm, setShowInactiveConfirm] = useState(false);
-  // Snapshot of the password as loaded from the server. If unchanged on
-  // save we skip sending user_password so the backend won't re-hash and
-  // won't fire the password-changed email.
   const [originalUserPassword, setOriginalUserPassword] = useState('');
   const [serverErrors, setServerErrors] = useState<Record<string, string[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const touchedRef = useRef<Record<string, boolean>>({});
 
-  // Branch logo upload — file is held in memory until save, then submitted
-  // alongside the form via multipart/form-data. Preview is a data URL while
-  // a new file is staged, or the saved /storage/... URL when editing.
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  /* What the branch already has on the server, per upload field: the URL to
-     download it from and the file name to show. Kept separate from the staged
-     File so the field can display the current file on reopen, and so Cancel
-     can fall back to it instead of blanking the preview. */
   const [savedLogo, setSavedLogo] = useState<SavedUpload>(null);
   const [savedProfilePhoto, setSavedProfilePhoto] = useState<SavedUpload>(null);
   const [savedSignature, setSavedSignature] = useState<SavedUpload>(null);
-  // Branch-defined work shifts (repeater) — each { name, start, end }. These
-  // feed the Employee form's Shift dropdown, so each branch runs its own shifts.
   type Shift = { name: string; start: string; end: string };
   const blankShift = (): Shift => ({ name: '', start: '', end: '' });
-  /* An overnight shift is simply one whose end time is at or before its start
-     (21:00 → 06:00). Both times are plain "HH:MM" clock values, so the wrap is
-     implied rather than stored — the row means "next day" whenever this is true. */
   const isOvernightShift = (s: Shift) => !!s.start && !!s.end && s.end <= s.start;
-  // Always keep at least one row so the section renders an editable shift
-  // straight away instead of an empty-state placeholder.
   const [shifts, setShifts] = useState<Shift[]>([blankShift()]);
-  // Per-row validation flags (only set on submit / touched). A row is only
-  // validated once the user starts filling it — a fully-blank row is optional
-  // and simply dropped on save.
   type ShiftErr = { name?: boolean; start?: boolean; end?: boolean };
   const [shiftErrors, setShiftErrors] = useState<Record<number, ShiftErr>>({});
-  // Late Mark Policy — only the count can be wrong (the other two are selects),
-  // so one message is enough. Blank only becomes an error once "Deduct for Late
-  // Marks" is Yes; on No the field isn't rendered and nothing is validated.
   const [lateMarkError, setLateMarkError] = useState('');
-  /* shift name -> employees currently on it, from GET /branches/{id}.
-     Deleting an in-use shift orphans those employees (employees.shift stores
-     the NAME, so nothing cascades), which is why the row's delete is locked
-     rather than merely warned about. */
   const [shiftUsage, setShiftUsage] = useState<Record<string, number>>({});
   const usageFor = (name: string) => {
     const key = (name || '').trim().toLowerCase();
@@ -552,9 +399,6 @@ export default function BranchForm({ onBack, editId }: Props) {
     const sh = shifts[i];
     const named = sh?.name.trim();
 
-    // Second line of defence — the button is already disabled for in-use
-    // shifts, but a stale count (someone assigned an employee while this form
-    // was open) must not slip through to a bounced save.
     const used = usageFor(named || '');
     if (used > 0) {
       await confirm({
@@ -581,16 +425,12 @@ export default function BranchForm({ onBack, editId }: Props) {
   };
   const updateShift = (i: number, key: keyof Shift, val: string) => {
     setShifts(s => s.map((row, j) => j === i ? { ...row, [key]: val } : row));
-    // Clear this field's error the moment the user fills it.
     if (val) setShiftErrors(e => {
       if (!e[i]?.[key]) return e;
       const next = { ...e, [i]: { ...e[i], [key]: false } };
       return next;
     });
   };
-  // Validate the repeater: any row the user has STARTED filling must have all
-  // three fields. Fully-blank rows are optional (dropped on save). Returns a
-  // map of row → missing fields, empty when everything is valid.
   const validateShifts = (): Record<number, ShiftErr> => {
     const errs: Record<number, ShiftErr> = {};
     shifts.forEach((s, i) => {
@@ -602,11 +442,6 @@ export default function BranchForm({ onBack, editId }: Props) {
       if (!s.end)         e.end = true;
       if (e.name || e.start || e.end) errs[i] = e;
     });
-    /* …and one row has to actually be filled in. Skipping untouched rows made
-       every shift optional, so a branch saved with the repeater never opened
-       went straight through while all three fields carried a red asterisk.
-       Complete means name + start + end: a named shift with no times is not
-       something the Employee form's Shift dropdown or payroll can use. */
     if (!shifts.some(s => s.name.trim() && s.start && s.end)) {
       const first = shifts[0];
       errs[0] = {
@@ -617,28 +452,15 @@ export default function BranchForm({ onBack, editId }: Props) {
     }
     return errs;
   };
-  /* Bank accounts (Legal & Registration) — the same repeatable block the Legal
-     Entities master uses, via the shared <InlineSublist>. Field definitions,
-     validation patterns and card layout come from BRANCH_BANK_FIELD below, which
-     mirrors masterConfigs' legal_entities → banks sublist so both places accept
-     exactly the same input. Persisted as branches.bank_accounts (JSON), the same
-     way `shifts` is. */
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
-  // Set when Save is pressed with no bank account on the branch (QA #7).
   const [bankError, setBankError] = useState('');
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
-  // Authorised-signatory image (signature + company stamp combined).
-  // Goes on the with-signature variant of the Quotation/PI PDF in the
-  // bottom-left "Authorized Signatory" block. PNG with transparent
-  // background works best because it sits on the branded footer.
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [signaturePreview, setSignaturePreview] = useState<string | null>(null);
 
   const handleLogoChange = (file: File | null, inputEl?: HTMLInputElement) => {
     if (file) {
-      // Match backend image validation — surface failures as toast before
-      // the upload round-trips.
       const okTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
       if (!okTypes.includes(file.type)) {
         toast.error('Invalid logo', 'Logo must be PNG, JPG, WebP or SVG.');
@@ -709,53 +531,19 @@ export default function BranchForm({ onBack, editId }: Props) {
     }
   };
 
-  // ── one state per dropdown ──────────────────────────────────────────────────
   const [ddBranchType, setDdBranchType] = useState(false);
   const [ddStatus,     setDdStatus]     = useState(false);
   const [ddState,      setDdState]      = useState(false);
   const [ddCountry,    setDdCountry]    = useState(false);
   const [ddUserStatus, setDdUserStatus] = useState(false);
 
-  // Geography lookups for the cascading Country -> State dropdowns. Sourced
-  // from the master tables seeded by GeographySeeder so every form picks from
-  // the same canonical dataset.
   const [countries, setCountries] = useState<Array<{ id: number; name: string; iso_code: string; status: string }>>([]);
   const [statesAll, setStatesAll] = useState<Array<{ id: number; country_id: string; name: string; status: string }>>([]);
-  /* Statutory GST state codes keyed by state id ("27" for Maharashtra), from
-   * the same bundle. Used only to validate the GSTIN against the address
-   * state — an empty list (older cached bundle, offline) just means that one
-   * check is skipped client-side; the API enforces it either way. */
   const [stateCodes, setStateCodes] = useState<Array<{ state_id: string; state_code: string }>>([]);
-  /* True until /branches/form-bundle resolves (or the sessionStorage cache
-   * hits). Drives the form shimmer below — flips to false the moment the
-   * masters land OR cache hit fires (whichever comes first). */
   const [loadingLookups, setLoadingLookups] = useState(true);
 
-  /* Is the auto-assigned branch code still being fetched?
-   *
-     Separate from loadingLookups on purpose. A warm masters cache flips that
-     one false synchronously, so the real form paints while the bundle call
-     that carries next_code is still in flight — and the Branch Code input,
-     empty at that point, showed its "BR-001" placeholder. BR-001 is a code the
-     client already USES, so for a moment the field read as a real, taken code
-     before flipping to the new one (QA #2). The field now shimmers until the
-     server answers, so nothing that looks like a code appears before the code
-     it will actually get. */
   const [codeLoading, setCodeLoading] = useState(!isEdit);
 
-  /* Bundled form fetch — /branches/form-bundle returns countries + states +
-   * next_code in ONE round-trip, replacing the previous 3 separate calls
-   * (/master/countries, /master/states, /branches/next-code).
-   *
-   * Caching strategy:
-   *   • countries + states ARE cached in sessionStorage (5-min TTL via
-   *     branchFormBundleCache) — they're static and worth deduplicating.
-   *   • next_code is NOT cached — branch codes increment as new branches
-   *     are created, so each new-add must fetch a fresh code. We still
-   *     fire the network call on cache hit to get a fresh next_code,
-   *     but countries/states paint instantly from cache so the dropdowns
-   *     never look empty during the bundle fetch.
-   */
   useEffect(() => {
     type Bundle = {
       countries: Array<{ id: number; name: string; iso_code: string; status: string }>;
@@ -766,16 +554,11 @@ export default function BranchForm({ onBack, editId }: Props) {
     };
 
     const hydrateMasters = (b: Pick<Bundle, 'countries' | 'states' | 'state_codes'>) => {
-      // Server already returns active+sorted rows — no client filter/sort needed.
       setCountries(Array.isArray(b.countries) ? b.countries : []);
       setStatesAll(Array.isArray(b.states) ? b.states : []);
       setStateCodes(Array.isArray(b.state_codes) ? b.state_codes : []);
     };
 
-    // Cache hit — populate dropdowns immediately so loadingLookups flips
-    // false in the same tick. The fresh bundle call still fires below
-    // (we need an up-to-date next_code), but the user already sees the
-    // form ready for input.
     const cached = readBranchFormBundle<Pick<Bundle, 'countries' | 'states' | 'state_codes'>>();
     if (cached) {
       hydrateMasters(cached);
@@ -785,19 +568,16 @@ export default function BranchForm({ onBack, editId }: Props) {
     api.get<Bundle>('/branches/form-bundle')
       .then(res => {
         hydrateMasters(res.data);
-        // Persist only the static masters slice — next_code is mutable per-tenant.
         writeBranchFormBundle({
           countries: res.data.countries,
           states: res.data.states,
           state_codes: res.data.state_codes ?? [],
         });
-        // Reuse the bundled next_code so we don't fire a second round-trip
-        // to /branches/next-code (the legacy effect below is now removed).
         if (!isEdit && res.data.next_code) {
           setForm(prev => (prev.code ? prev : { ...prev, code: res.data.next_code! }));
         }
       })
-      .catch(() => { /* dropdowns stay empty on failure */ })
+      .catch(() => {})
       .finally(() => { setLoadingLookups(false); setCodeLoading(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit]);
@@ -807,15 +587,11 @@ export default function BranchForm({ onBack, editId }: Props) {
     setValidationErrors(e => { if (!e[key]) return e; const n = { ...e }; delete n[key]; return n; });
   }, []);
 
-  // Country options from the canonical master list.
   const countryOptions = useMemo(
     () => countries.map(c => ({ label: c.name, value: c.name })),
     [countries]
   );
 
-  // State options filtered by the currently-selected country. The form stores
-  // country/state by NAME (not id), so we resolve back to the id and then
-  // keep only the states that match.
   const stateOptions = useMemo(() => {
     if (!form.country || countries.length === 0) return [];
     const selected = countries.find(c => c.name === form.country);
@@ -825,11 +601,6 @@ export default function BranchForm({ onBack, editId }: Props) {
       .map(s => ({ label: s.name, value: s.name }));
   }, [form.country, countries, statesAll]);
 
-  /* Statutory GST code of the state currently picked in the address, e.g.
-   * Maharashtra → "27". The form stores the state by NAME, so resolve name →
-   * id → code. Undefined when nothing is picked or the master has no code for
-   * that state (non-Indian states have none) — the validator then skips the
-   * GSTIN/state checks rather than inventing a code. */
   const selectedStateGstCode = useMemo(() => {
     if (!form.state || stateCodes.length === 0) return undefined;
     const state = statesAll.find(s => s.name === form.state);
@@ -839,11 +610,8 @@ export default function BranchForm({ onBack, editId }: Props) {
     return code ? code.padStart(2, '0') : undefined;
   }, [form.state, statesAll, stateCodes]);
 
-  // Password strength meter for the branch admin password (mirrors ClientForm).
   const pwStrength = useMemo(() => computePasswordStrength(form.user_password || ''), [form.user_password]);
 
-  // When the country changes, drop a previously-picked state that doesn't
-  // belong to the new country.
   useEffect(() => {
     if (!form.state) return;
     if (stateOptions.length === 0) return;
@@ -865,11 +633,6 @@ export default function BranchForm({ onBack, editId }: Props) {
     });
   }, [isEdit, selectedStateGstCode]);
 
-  /* Picking a state can invalidate a GSTIN typed earlier (and fix one flagged
-   * a moment ago), but the state dropdown lives in another section and never
-   * blurs the tax fields. Re-run the validator on every state change so the
-   * GSTIN/state verdict is never one interaction stale. Touched fields only —
-   * this must not start flagging fields the user hasn't reached yet. */
   useEffect(() => {
     if (!touchedRef.current.gst_number && !touchedRef.current.gst_state_code) return;
     const liveErrors = validateBranchForm(form, isEdit, selectedStateGstCode);
@@ -884,12 +647,6 @@ export default function BranchForm({ onBack, editId }: Props) {
   const fieldError = useCallback((key: string) => serverErrors[key]?.[0] || validationErrors[key], [serverErrors, validationErrors]);
   const fieldInvalid = (key: string) => !!fieldError(key);
 
-  // next_code is now served from /branches/form-bundle in the masters
-  // effect above — the standalone /branches/next-code call has been
-  // removed to save one round-trip per modal open. The server still
-  // re-locks and re-allocates inside store(), so the previewed code
-  // matches what gets persisted unless two creates race.
-
   useEffect(() => {
     if (!editId) return;
     setLoadingData(true);
@@ -897,8 +654,6 @@ export default function BranchForm({ onBack, editId }: Props) {
       const b = res.data.branch;
       setShiftUsage(res.data.shift_usage || {});
       const u = res.data.branch_user;
-      // Late-mark rule — null on branches created before the column, which is
-      // exactly the legacy 3 → half day the backend also falls back to.
       const rawLate = typeof b.late_mark_policy === 'string'
         ? (() => { try { return JSON.parse(b.late_mark_policy); } catch { return null; } })()
         : b.late_mark_policy;
@@ -906,15 +661,7 @@ export default function BranchForm({ onBack, editId }: Props) {
         name: b.name || '', code: b.code || '', email: b.email || '',
         phone: b.phone || '', website: b.website || '',
         contact_person: b.contact_person || '', branch_type: b.branch_type || '',
-        // Existing branches predate the column and come back false; that is a
-        // real answer ("does not apply"), so it maps to 'no' rather than back
-        // to the unanswered '' state — an edit must not be blocked by a field
-        // the branch was created before.
         sandwich_policy: b.sandwich_policy ? 'yes' : 'no',
-        /* lop_policy is null on every branch created before the column
-           existed. Null is not "unanswered" here — it means the default that
-           payroll has been applying all along, so it maps to that rather than
-           to an empty control. */
         lop_basis:   (b.lop_policy as any)?.basis   === 'gross'   ? 'gross'   : 'basic',
         lop_divisor: (b.lop_policy as any)?.divisor === 'working' ? 'working' : 'calendar',
         late_mark_enabled: rawLate && rawLate.enabled === false ? 'no' : 'yes',
@@ -941,38 +688,24 @@ export default function BranchForm({ onBack, editId }: Props) {
         secondary_color: b.secondary_color || '#10B981',
         user_name: u?.name || '', user_email: u?.email || '',
         user_phone: u?.phone || '', user_designation: u?.designation || '',
-        // Backend decrypts `password_encrypted` for super_admin / owning
-        // client_admin and returns it as `password_plain` — pre-fill both
-        // fields so the admin can SEE the current password and edit it.
         user_password: u?.password_plain || '',
         user_password_confirmation: u?.password_plain || '',
         user_status: u?.status || 'active',
       });
       setOriginalUserPassword(u?.password_plain || '');
       if (u?.password_plain) setShowPassword(true);
-      // Work shifts — cast to the { name, start, end } row shape defensively
-      // (backend may return null, a JSON string, or an array).
       const rawShifts = typeof b.shifts === 'string'
         ? (() => { try { return JSON.parse(b.shifts); } catch { return []; } })()
         : b.shifts;
       if (Array.isArray(rawShifts) && rawShifts.length) {
         setShifts(rawShifts.map((s: any) => ({ name: s?.name || '', start: s?.start || '', end: s?.end || '' })));
       }
-      // Bank accounts — same defensive decode as shifts (null / JSON string /
-      // array). is_primary comes back as a real boolean from the array cast;
-      // InlineSublist normalises it to Yes/No when the row is opened for edit.
       const rawBanks = typeof b.bank_accounts === 'string'
         ? (() => { try { return JSON.parse(b.bank_accounts); } catch { return []; } })()
         : b.bank_accounts;
       if (Array.isArray(rawBanks)) setBankAccounts(rawBanks);
-      // Prefer the `logo_url` accessor (resolves to a public Storage URL)
-      // over the raw `logo` path — otherwise the <img> tries to load
-      // "branches/logos/foo.png" relative to the SPA root and 404s.
       const savedLogoUrl  = b.logo_url || b.logo || '';
       const savedPhotoUrl = b.profile_photo_url || b.profile_photo || '';
-      // The model appends `signature_url` (not `signature_path_url`) — reading
-      // the wrong key fell through to the raw relative path and 404'd the
-      // preview. Keep the old key as a fallback for any older payload shape.
       const savedSignUrl  = b.signature_url || b.signature_path_url || b.signature_path || '';
       if (savedLogoUrl) {
         setLogoPreview(savedLogoUrl);
@@ -989,7 +722,6 @@ export default function BranchForm({ onBack, editId }: Props) {
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
 
-  // Focus + scroll to first invalid field so user sees what's missing, even if it's far down the form
   const focusFirstError = (errs: Record<string, string | string[]>) => {
     const keys = Object.keys(errs);
     if (!keys.length) return;
@@ -1016,7 +748,6 @@ export default function BranchForm({ onBack, editId }: Props) {
       focusFirstError(errs);
       return;
     }
-    // Shift rows — each started row must have name + start + end.
     const shErrs = validateShifts();
     if (Object.keys(shErrs).length) {
       setShiftErrors(shErrs);
@@ -1030,12 +761,6 @@ export default function BranchForm({ onBack, editId }: Props) {
       return;
     }
     setShiftErrors({});
-    /* Bank details are MANDATORY (QA #7). A branch is the entity money is
-       collected into and paid out from — its account appears on proforma
-       invoices — so registering one without an account leaves those documents
-       with nowhere to remit. At least one row with a bank name counts, which
-       is the same row the save filters to (cleanBanks below); a half-typed
-       card the user never completed is not an account. */
     if (!bankAccounts.some(b => String(b?.bank_name || '').trim())) {
       toast.error('Bank details required', 'Add at least one bank account for this branch.');
       document.querySelector('[data-branch-banks]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1043,9 +768,6 @@ export default function BranchForm({ onBack, editId }: Props) {
       return;
     }
     setBankError('');
-    /* Late Mark Policy — the count only has to make sense when the branch
-       actually deducts. On "No" the fields aren't even rendered, so there is
-       nothing to complete and the rule is saved as disabled. */
     if (form.late_mark_enabled !== 'no') {
       const n = parseInt(form.late_mark_count, 10);
       if (!String(form.late_mark_count).trim() || isNaN(n) || n < 1 || n > 31) {
@@ -1059,39 +781,20 @@ export default function BranchForm({ onBack, editId }: Props) {
     try {
       const payload: Record<string, any> = { ...form };
       delete payload.user_password_confirmation;
-      // On edit, skip the password field if it matches the originally-loaded
-      // value — otherwise every save would re-hash and fire the
-      // password-changed email to the branch user.
       if (isEdit && form.user_password === originalUserPassword) {
         payload.user_password = null;
       }
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
       payload.max_users = parseInt(form.max_users) || 0;
-      /* 1/0, not 'yes'/'no' and not a JS boolean. The same payload is sent two
-         ways: as JSON, and as FormData when there are file uploads. FormData
-         stringifies everything, so a real `false` would arrive as the string
-         "false" — which is truthy to PHP. 1/0 survives both paths and satisfies
-         Laravel's `boolean` rule. The line above has already turned '' into
-         null, and null is what makes `required` fire when nothing was picked. */
       if (form.sandwich_policy === 'yes' || form.sandwich_policy === 'no') {
         payload.sandwich_policy = form.sandwich_policy === 'yes' ? 1 : 0;
       }
-      // Plain strings, so they survive both the JSON and the FormData path.
       payload.lop_basis   = form.lop_basis;
       payload.lop_divisor = form.lop_divisor;
-      // Work shifts (repeater) — drop blank rows, trim names. Sent as a JSON
-      // string on multipart (FormData stringifies arrays badly) and as a real
-      // array on the JSON path.
       const cleanShifts = shifts
         .filter(s => (s.name || '').trim())
         .map(s => ({ name: s.name.trim(), start: s.start, end: s.end }));
-      // Bank accounts (repeater) — travels the same way as shifts. Every row
-      // already passed the inline editor's validation, so nothing to re-check
-      // here; the backend still normalises and drops nameless rows.
       const cleanBanks = bankAccounts.filter(b => String(b?.bank_name || '').trim());
-      /* Late-mark rule — the three form fields collapse into one object, and
-         the loose fields are dropped so they don't hit the branches table as
-         unknown columns. Travels as a JSON string on multipart, like shifts. */
       const latePolicy = {
         enabled: form.late_mark_enabled !== 'no',
         count: Math.min(31, Math.max(1, parseInt(form.late_mark_count, 10) || 3)),
@@ -1103,8 +806,6 @@ export default function BranchForm({ onBack, editId }: Props) {
 
       if (isEdit) {
         if (logoFile || profilePhotoFile || signatureFile) {
-          // Multipart upload — Laravel reads PUT only as application/x-www-form-urlencoded,
-          // so use POST + _method=PUT spoofing (same trick ClientForm uses).
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
           fd.append('shifts', JSON.stringify(cleanShifts));
@@ -1134,8 +835,6 @@ export default function BranchForm({ onBack, editId }: Props) {
           createRes = await api.post('/branches', { ...payload, shifts: cleanShifts, bank_accounts: cleanBanks, late_mark_policy: latePolicy });
         }
         toast.success('Branch Created', 'New branch has been created with login credentials');
-        // Surface the welcome-email outcome — if it couldn't be sent (e.g.
-        // SMTP auth failure) the backend returns the exact reason here.
         const mailWarning = createRes?.data?.mail_warning;
         if (mailWarning) {
           toast.warning('Welcome email not sent', String(mailWarning));
@@ -1149,7 +848,6 @@ export default function BranchForm({ onBack, editId }: Props) {
       const hasFieldErrors = Object.keys(svErrs).length > 0;
 
       if (status === 422 && hasFieldErrors) {
-        // Field-level validation errors from server
         setServerErrors(svErrs);
         const keys = Object.keys(svErrs);
         const missing = keys.slice(0, 3).map(k => FIELD_LABELS[k] || k).join(', ');
@@ -1157,12 +855,9 @@ export default function BranchForm({ onBack, editId }: Props) {
         toast.error('Fix these fields', `${missing}${more}`);
         focusFirstError(svErrs);
       } else if (status === 422 || status === 403 || status === 409) {
-        // Business-rule rejection (plan limit, permission, conflict) — surface
-        // the message under a `general` key so the banner at the top displays it.
         const msg = data.message || 'Request was rejected by the server.';
         setServerErrors({ general: [msg] });
         toast.error('Cannot save', msg);
-        // Scroll the user back to the top of the form so they see the banner
         try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
       } else {
         toast.error('Error', data.message || 'Something went wrong');
@@ -1174,29 +869,15 @@ export default function BranchForm({ onBack, editId }: Props) {
     setForm(empty); setValidationErrors({}); touchedRef.current = {};
     setLogoFile(null); setLogoPreview(null); setSavedLogo(null);
     setShifts([blankShift()]); setShiftErrors({});
-    /* "New Branch" blanked the code and nothing ever refilled it, so the field
-       fell back to its placeholder — and sat on a used code indefinitely. It
-       also has to be a FRESH read: the branch just saved took the previous
-       one. Shimmer covers the round-trip. */
     if (!isEdit) {
       setCodeLoading(true);
       api.get<{ code?: string }>('/branches/next-code')
         .then(res => { if (res.data?.code) setForm(f => ({ ...f, code: res.data.code! })); })
-        .catch(() => { /* leave it blank — store() allocates the real code anyway */ })
+        .catch(() => {})
         .finally(() => setCodeLoading(false));
     }
   };
 
-  /* Form-shaped shimmer — fires while EITHER the edit-mode entity
-   * prefill (/branches/{id}) OR the master bundle (/branches/form-bundle)
-   * is in flight. Previously only edit mode showed shimmer, so new-add
-   * mode flashed empty country/state dropdowns. Extending the condition
-   * to `loadingLookups` covers both flows: banner + four sections ×
-   * six field cells mirror the real form layout the user is about to
-   * interact with. Cache hit (sessionStorage) flips loadingLookups
-   * false synchronously, so the shimmer barely appears on warm reopens.
-   * Shimmer component uses the global .shimmer class which already
-   * has light + dark variants in app.css via [data-bs-theme="dark"]. */
   if (loadingData || loadingLookups) return (
     <div className="p-3">
       <div
@@ -1250,11 +931,6 @@ export default function BranchForm({ onBack, editId }: Props) {
     </div>
   );
 
-  // ── SelectDD — thin wrapper that delegates to MasterSelect so every ────
-  //   dropdown in this form matches the master / client-form dropdown.
-  //   Legacy props (isOpen, toggle, dotColor) are kept for backwards
-  //   compatibility with existing call sites but ignored — MasterSelect
-  //   manages its own open state and doesn't render status dots.
   const SelectDD = (props: {
     isOpen?: boolean;
     toggle?: () => void;
@@ -1321,7 +997,6 @@ export default function BranchForm({ onBack, editId }: Props) {
     <Label style={css.label}>{children}</Label>
   );
 
-  // ── Themed date picker — click anywhere in field to open ─────────────────
   const ThemedDatePicker = ({
     value, onChange, placeholder, minDate,
   }: { value: string; onChange: (v: string) => void; placeholder?: string; minDate?: string }) => {
@@ -1539,11 +1214,6 @@ export default function BranchForm({ onBack, editId }: Props) {
           transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
           background: var(--vz-card-bg);
         }
-        /* Uniform 38px height + 10px corners across every form control on
-           this page so single-line Inputs, InputGroup prefixes, MasterSelect
-           dropdowns and the Bootstrap dropdown all line up across the grid.
-           Was visually mismatched because bsSize="sm" inputs rendered ~31px
-           with 4px corners while MasterSelect rendered 38px with 10px. */
         .bf-wrap .form-control,
         .bf-wrap .form-select,
         .bf-wrap .dropdown-toggle.btn-light,
@@ -1605,9 +1275,6 @@ export default function BranchForm({ onBack, editId }: Props) {
         }
       `}</style>
 
-      {/* The page-title strip that used to sit here is gone — it stacked a second
-          header above the card's own, repeating the same "Edit Branch" identity.
-          Its title, subtitle and Back button moved into the card header below. */}
       <div className="bf-wrap">
 
       {serverErrors.general && (() => {
@@ -1695,8 +1362,6 @@ export default function BranchForm({ onBack, editId }: Props) {
         );
       })()}
 
-      {/* Server-side validation summary — lists EVERY field that failed
-          so the user can see exactly what's wrong instead of hunting. */}
       {Object.keys(serverErrors).filter(k => k !== 'general').length > 0 && (
         <div
           style={{
@@ -1753,8 +1418,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               alignItems: 'center',
               justifyContent: 'space-between',
               borderBottom: '1px solid var(--vz-border-color)',
-              // Plain white — the indigo wash it used to carry made the header
-              // read as a separate band from the form body below it.
               background: 'var(--vz-card-bg, #ffffff)',
             }}
           >
@@ -1769,7 +1432,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               >
                 <i className={isEdit ? 'ri-edit-2-line' : 'ri-git-branch-line'} style={{ color: '#fff', fontSize: 20 }} />
               </span>
-              {/* The page title lives here now — one header for the screen. */}
               <div className="min-w-0">
                 <h6 className="mb-0 fw-bold" style={{ fontSize: 15 }}>{isEdit ? 'Edit Branch' : 'Add New Branch'}</h6>
                 <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>
@@ -1806,7 +1468,6 @@ export default function BranchForm({ onBack, editId }: Props) {
 
           <CardBody style={css.cardBody}>
 
-            {/* ══ A: Branch Details ══ */}
             <SectionHeader icon="ri-git-branch-line" title="Branch Details" badge="A" />
             <Row className="g-2 mb-3">
               <Col md={4}>
@@ -1826,20 +1487,9 @@ export default function BranchForm({ onBack, editId }: Props) {
                   )}
                 </Lbl>
                 {codeLoading ? (
-                  /* Shimmer, not the empty input: its placeholder was a
-                     REAL code ("BR-001") that this client already uses, so
-                     waiting on the server looked like an answer — and a wrong
-                     one — until the true code replaced it (QA #2). */
                   <Shimmer height={38} radius={10} />
                 ) : (
                 <Input
-                  // Read-only at all times — the server is the source of
-                  // truth for branch codes. On add: pre-filled with the
-                  // next BR-### the API allocated; on edit: the existing
-                  // code that this branch was assigned. Letting the user
-                  // hand-edit it caused collisions with the auto sequence
-                  // and broke the "Showing N of M" counter when an admin
-                  // typed a custom string.
                   readOnly
                   style={{
                     ...css.input,
@@ -1851,10 +1501,6 @@ export default function BranchForm({ onBack, editId }: Props) {
                     cursor: 'not-allowed',
                   }}
                   value={form.code}
-                  /* Never a sample code here. The fetch failed if we are
-                     showing an empty field, and the server allocates the real
-                     one on save either way — say that instead of printing a
-                     code the user would read as theirs. */
                   placeholder={isEdit ? '' : 'Assigned on save'}
                   maxLength={20}
                   title="Branch code is auto-assigned and cannot be edited"
@@ -1889,15 +1535,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Status</Lbl>
-                {/* Status uses MasterSelect directly (not the SelectDD
-                    wrapper) so we can intercept the value change. When
-                    the user picks "Inactive" from an "Active" branch we
-                    open a confirmation popup instead of writing the
-                    change straight into form state — deactivating a
-                    branch is a heavy side-effect operation (cascades
-                    to users + data visibility), and the previous
-                    silent dropdown made it too easy to flip
-                    accidentally. */}
                 <MasterSelect
                   value={form.status}
                   placeholder="Select"
@@ -1923,11 +1560,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Email <span className="text-danger">*</span></Lbl>
-                {/* Lower-cased as typed (QA #3) — same treatment GST/PAN get in
-                    the opposite direction. Emails are stored lowercase because
-                    both the duplicate check and login look them up with an
-                    exact match, so a stray capital creates a second account
-                    for the same mailbox and then fails to sign in. */}
                 <Input name="email" style={css.input} type="email" value={form.email} invalid={fieldInvalid('email')}
                   onChange={e => set('email', e.target.value.toLowerCase())} onBlur={() => touch('email')}
                   placeholder="branch@company.com" />
@@ -1942,12 +1574,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Website</Lbl>
-                {/* type="text" not "url" — the browser's url validation
-                    rejects bare-domain inputs like "www.branch.com" and
-                    forces the user to type "http://..." even though our
-                    own validateWebsite() (and the placeholder) accepts
-                    the www. form. Keep our regex as the gate so the
-                    UX stays consistent with the hint text. */}
                 <Input name="website" style={css.input} type="text" value={form.website}
                   invalid={fieldInvalid('website')}
                   onChange={e => set('website', e.target.value)} onBlur={() => touch('website')}
@@ -2008,15 +1634,9 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ B: Shift Details ══ */}
-            {/* Repeater — each branch defines its own work shifts (name +
-                start/end time). These feed the Employee form's Shift dropdown,
-                so shifts stay per-branch instead of a hardcoded global list. */}
             <SectionHeader icon="ri-time-line" title="Shift Details" badge="B" />
             <div className="mb-3" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '14px 16px', background: 'var(--vz-light, rgba(0,0,0,0.015))' }}>
               {shifts.map((sh, i) => (
-                // Everything on ONE line — name / start / end / delete, and the
-                // Add-Shift button beside delete on the last row.
                 <div key={i} style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 8 }}>
                   <div style={{ flex: '1 1 auto', minWidth: 0 }}>
                     {i === 0 && <Lbl>Shift Name <span style={{ color: '#dc2626' }}>*</span></Lbl>}
@@ -2032,19 +1652,11 @@ export default function BranchForm({ onBack, editId }: Props) {
                   </div>
                   <div style={{ flex: '0 0 190px' }}>
                     {i === 0 && <Lbl>End Time <span style={{ color: '#dc2626' }}>*</span></Lbl>}
-                    {/* No minTime here: an overnight shift (9:00 PM → 6:00 AM)
-                        ends BEFORE it starts on the clock, and a minTime floor
-                        made those hours unselectable — night shifts simply
-                        couldn't be entered. The badge below spells out that the
-                        end falls on the next day. */}
                     <MasterTimePicker value={sh.end} showNow={false} hour12
                       invalid={!!shiftErrors[i]?.end}
                       onChange={v => updateShift(i, 'end', v)} />
                   </div>
                   {(() => {
-                    // Locked while employees are on this shift — same rule the
-                    // server enforces, surfaced before the click rather than
-                    // after a failed save.
                     const used = usageFor(sh.name);
                     return (
                       <button
@@ -2078,17 +1690,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               ))}
             </div>
 
-            {/* Late Mark Policy.
-                Sits with Shift Details because a late mark is defined against
-                the shift start time above. Payroll used to hardcode "every 3
-                late marks = half day"; this makes the block size and the cut
-                per-branch, because offices genuinely differ.
-
-                Only Half Day and Full Day are offered — payroll settles paid
-                days in 0.5-day steps, so a finer cut would round away. The
-                worked example under the fields spells out the arithmetic for
-                the numbers actually typed, so the consequence is visible here
-                rather than in someone's payslip. */}
             {(() => {
               const enabled = form.late_mark_enabled !== 'no';
               const count   = Math.min(31, Math.max(1, parseInt(form.late_mark_count, 10) || 3));
@@ -2103,29 +1704,17 @@ export default function BranchForm({ onBack, editId }: Props) {
                     How many late marks cost how much pay in this branch. Applied by payroll on every run.
                   </div>
 
-                  {/* "Deduct for Late Marks" is the master switch for this whole
-                      block. On No, the two rule fields are REMOVED rather than
-                      greyed out — a disabled input still reads as a setting that
-                      matters, and an empty-looking count next to an active "Full
-                      Day" invited the question "so what is it actually doing?".
-                      Nothing applies when the answer is No, so nothing shows. */}
                   <Row className="g-3">
                     <Col md={enabled ? 4 : 12}>
                       <Lbl>Deduct for Late Marks <span style={{ color: '#dc2626' }}>*</span></Lbl>
                       <Input type="select" style={css.input} value={form.late_mark_enabled}
                         onChange={e => {
                           set('late_mark_enabled', e.target.value);
-                          // Coming back to Yes with a blank count would fail the
-                          // save for a field the admin never saw; restore the
-                          // default so the rule is always complete.
                           if (e.target.value === 'yes' && !String(form.late_mark_count).trim()) {
                             set('late_mark_count', '3');
                           }
                           setLateMarkError('');
                         }}>
-                        {/* Plain Yes / No. The consequence of each answer is
-                            already spelled out in the summary line below, so
-                            the option labels don't repeat it. */}
                         <option value="yes">Yes</option>
                         <option value="no">No</option>
                       </Input>
@@ -2175,18 +1764,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               );
             })()}
 
-            {/* Sandwich Leave Policy.
-                Placed under Shift Details because both describe how this
-                office's working CALENDAR behaves — it does not belong among
-                Branch Type / Industry, which are identity fields.
-
-                Presented as a worked EXAMPLE plus two explicit choices rather
-                than a switch or a Yes/No select. "Sandwich leave" is jargon:
-                an admin who has not met the term cannot answer a bare toggle,
-                and a switch answers "no" on their behalf the moment the form
-                opens. The four-day strip below shows the actual arithmetic and
-                RECOLOURS as the choice is made, so the consequence is visible
-                before Save rather than discovered in a payslip. */}
             {(() => {
               const val     = form.sandwich_policy;
               const invalid = fieldInvalid('sandwich_policy');
@@ -2252,10 +1829,6 @@ export default function BranchForm({ onBack, editId }: Props) {
                       <div className="fw-semibold" style={{ fontSize: 13 }}>
                         Sandwich Leave Policy <span style={{ color: '#f06548' }}>*</span>
                       </div>
-                      {/* One line only. The term is jargon, so it needs SOME
-                          gloss — but the worked four-day example that used to
-                          sit here was teaching material on a form that is
-                          filled once. */}
                       <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
                         Deducts a week-off or holiday that falls between two leave days.
                       </div>
@@ -2276,44 +1849,31 @@ export default function BranchForm({ onBack, editId }: Props) {
               );
             })()}
 
-            {/* Loss of Pay basis.
-                Sits beside the sandwich policy because both decide how this
-                office turns a day off into money.
-
-                Two questions, because they are genuinely independent: WHAT an
-                absent day is priced against, and over HOW MANY days. Charging
-                on basic means allowances are never clawed back — an employee
-                absent all month still takes home the allowance half of their
-                salary. That is a legitimate policy plenty of employers run,
-                but it has to be a decision somebody made rather than a default
-                nobody could see: until this control existed the switch lived
-                only in the database (QA #117).
-
-                The live rate below is the whole point — it shows the four
-                combinations differ by more than rounding, before Save rather
-                than in a payslip. */}
             {(() => {
               const opt = (
                 field: 'lop_basis' | 'lop_divisor',
                 value: string,
                 title: string,
                 sub: string,
+                disabled = false,
               ) => {
                 const on = (form as any)[field] === value;
                 return (
                   <div
                     role="radio"
                     aria-checked={on}
-                    tabIndex={0}
-                    onClick={() => set(field, value)}
+                    aria-disabled={disabled}
+                    tabIndex={disabled ? -1 : 0}
+                    onClick={() => { if (!disabled) set(field, value); }}
                     onKeyDown={ev => {
+                      if (disabled) return;
                       if (ev.key === ' ' || ev.key === 'Enter') { ev.preventDefault(); set(field, value); }
                     }}
                     style={{
                       display: 'flex', alignItems: 'flex-start', gap: 9,
                       border: `1.5px solid ${on ? '#4F46E5' : 'var(--vz-border-color)'}`,
                       background: on ? 'rgba(79,70,229,0.06)' : 'var(--vz-card-bg)',
-                      borderRadius: 10, padding: '10px 12px', cursor: 'pointer',
+                      borderRadius: 10, padding: '10px 12px', cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, filter: disabled ? 'grayscale(1)' : undefined,
                       transition: 'border-color .15s ease, background .15s ease',
                       height: '100%',
                     }}
@@ -2335,9 +1895,6 @@ export default function BranchForm({ onBack, editId }: Props) {
                 );
               };
 
-              /* A worked example on a round number, so the consequence of the
-                 choice is a figure rather than a sentence. 30/26 are the usual
-                 stand-ins for a month's calendar and working days. */
               const gross = 30000;
               const basic = gross / 2;
               const amount = form.lop_basis === 'gross' ? gross : basic;
@@ -2375,9 +1932,9 @@ export default function BranchForm({ onBack, editId }: Props) {
 
                   <Row className="g-2" style={{ marginTop: 8, marginLeft: 29 }}>
                     <Col md={6}>{opt('lop_basis', 'basic', 'Charge on Basic', 'Allowances are not deducted')}</Col>
-                    <Col md={6}>{opt('lop_basis', 'gross', 'Charge on Monthly Gross', 'Deducts what a day actually earns')}</Col>
+                    <Col md={6}>{opt('lop_basis', 'gross', 'Charge on Monthly Gross', 'Deducts what a day actually earns', true)}</Col>
                     <Col md={6}>{opt('lop_divisor', 'calendar', 'Divide by Calendar Days', 'All days of the month')}</Col>
-                    <Col md={6}>{opt('lop_divisor', 'working', 'Divide by Working Days', 'Excludes week-offs and holidays')}</Col>
+                    <Col md={6}>{opt('lop_divisor', 'working', 'Divide by Working Days', 'Excludes week-offs and holidays', true)}</Col>
                   </Row>
 
                   <div
@@ -2396,7 +1953,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               );
             })()}
 
-            {/* ══ C: Limits ══ */}
             <SectionHeader icon="ri-group-line" title="Limits" badge="C" />
             <Row className="g-2 mb-3">
               <Col md={6}>
@@ -2409,13 +1965,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               <Col md={4}>
                 <Lbl>Established Date</Lbl>
                 <div style={{ maxWidth: 240 }}>
-                  {/* Swapped from the in-file ThemedDatePicker to the
-                      shared MasterDatePicker so this calendar matches
-                      every other date control across the app
-                      (master forms, recruitment, products). The old
-                      one had its own month/year drill-down that
-                      diverged from the rest, so users said the calendar
-                      "looked wrong" only on this page. */}
                   <MasterDatePicker
                     value={form.established_at}
                     onChange={v => set('established_at', v)}
@@ -2426,9 +1975,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ D: Address ══ */}
-            {/* Order: Street -> Country -> State -> City -> District -> Taluka -> Pincode.
-                Country drives the State dropdown (cascading from master data). */}
             <SectionHeader icon="ri-map-pin-line" title="Address Details" badge="D" />
             <Row className="g-2 mb-3">
               <Col xs={12}>
@@ -2478,7 +2024,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ D: Legal & Registration ══ */}
             <SectionHeader icon="ri-file-text-line" title="Legal & Registration" badge="E" />
             <Row className="g-2 mb-3">
               <Col md={4}>
@@ -2504,13 +2049,6 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <FormFeedback style={css.formFeedback}>{fieldError('registration_number')}</FormFeedback>
               </Col>
 
-              {/* ── Letterhead / export-house compliance fields ──
-                  GST State Code, CIN and IEC are REQUIRED (QA #6) — they print
-                  on the Quotation / PI letterhead and the state code decides
-                  the CGST+SGST vs IGST split, so a branch without them raises
-                  documents that are incomplete or mis-taxed. The remaining
-                  licences below stay optional; they apply only to particular
-                  trades. Two rows so the section doesn't overwhelm. */}
               <Col md={4}>
                 <Lbl>GST State Code <span className="text-danger">*</span></Lbl>
                 <Input name="gst_state_code" style={css.input} value={form.gst_state_code}
@@ -2569,11 +2107,6 @@ export default function BranchForm({ onBack, editId }: Props) {
                   maxLength={60} placeholder="Optional" />
               </Col>
 
-              {/* Bank accounts — the shared <InlineSublist> block, identical to
-                  the one on the Legal Entities master (card list + inline
-                  Add/Edit panel + dashed "+Add"). At least one is REQUIRED
-                  (QA #7): the branch account is what a proforma invoice tells
-                  the customer to remit to. */}
               <Col xs={12} className="mt-2" data-branch-banks>
                 <Lbl>Bank Accounts <span className="text-danger">*</span></Lbl>
                 <div className="text-muted mb-2" style={{ fontSize: 11.5 }}>
@@ -2593,7 +2126,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ E: Branch User Credentials ══ */}
             <SectionHeader icon="ri-user-line" title={isEdit ? 'Branch User Credentials' : 'Branch User Credentials (Required)'} badge="F" />
             <Row className="g-2 mb-3">
               <Col md={4}>
@@ -2605,8 +2137,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Email {!isEdit && <span className="text-danger">*</span>}</Lbl>
-                {/* Lower-cased as typed — this one is a LOGIN credential, see
-                    the branch email above. */}
                 <Input name="user_email" style={css.input} type="email" value={form.user_email} invalid={fieldInvalid('user_email')}
                   onChange={e => set('user_email', e.target.value.toLowerCase())} onBlur={() => touch('user_email')}
                   placeholder="user@branch.com" />
@@ -2748,7 +2278,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ F: Notes ══ */}
             <SectionHeader icon="ri-sticky-note-line" title="Notes" badge="G" />
             <Row className="g-2 mb-3">
               <Col xs={12}>
@@ -2759,7 +2288,6 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ Actions (AddPlan-style sticky footer) ══ */}
             <div
               className="d-flex justify-content-between align-items-center mt-3 px-3 py-2 rounded-3 flex-wrap gap-2"
               style={{
@@ -2876,14 +2404,13 @@ export default function BranchForm({ onBack, editId }: Props) {
       </Form>
       </div>
 
-      {/* Confirmation popup for "Active → Inactive" status change.
-          Confirming commits the change to local form state — the
-          actual server-side cascade still fires from the normal Save
-          flow at the bottom of the form, not from this dialog. */}
       <DeleteConfirmModal
         open={showInactiveConfirm}
         itemName={form.name || 'this branch'}
         title="Set Branch Inactive?"
+        actionVerb="Set inactive"
+        confirmLabel="Inactive"
+        confirmIcon="ri-forbid-line"
         subMessage="Inactive branches disappear from rollups, their login users are disabled, and sub-branch employees lose access. You can re-activate later from the Branches list."
         onClose={() => setShowInactiveConfirm(false)}
         onConfirm={() => {
