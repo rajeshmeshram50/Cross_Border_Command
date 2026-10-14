@@ -2,7 +2,6 @@ import axios from 'axios';
 import api from '../../../../api';
 import { PoApiError } from '../order/api/po-api';
 import { formatProductCode } from './invoice-products';
-import type { InvoiceRow } from './types';
 
 export interface PutawayProduct {
   code: string;
@@ -220,7 +219,3 @@ export const putawayApi = {
     }
   },
 };
-
-export function proformaNo(row: InvoiceRow): string {
-  return row.invoiceNo.replace(/^SPI/, 'PI');
-}

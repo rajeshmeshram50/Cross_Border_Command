@@ -458,3 +458,49 @@ export const spiPaymentApi = {
       spiPaymentForm(body), { headers: { 'Content-Type': 'multipart/form-data' } }),
       (b) => (b as { data: { payment: PoPaymentRow; summary: PoPaymentsPayload } }).data),
 };
+
+export type VaultDocument = {
+  name: string;
+  meta: string;
+  kind: string;
+  status: string;
+  source: 'uploaded' | 'generated' | 'signed' | 'awaited' | string;
+  file_url: string | null;
+  url: string | null;
+  modes: string[];
+  action_url?: string | null;
+  action?: string | null;
+  signed_file_url?: string | null;
+  amount?: number;
+  required?: boolean;
+};
+
+export type VaultSection = { key: string; title: string; documents: VaultDocument[] };
+export type VaultGroup = { key: string; title: string; subtitle: string; sections: VaultSection[] };
+export type EvidenceVault = {
+  subject: { kind: string; id: number; code: string };
+  related: { purchase_order?: { id: number; code: string } };
+  groups: VaultGroup[];
+  totals: { documents: number; available: number; missing: number };
+};
+
+export const spiVaultApi = {
+  vault: (spiId: number) =>
+    call('Evidence vault', () => api.get(`/p2p/spi/${spiId}/evidence-vault`),
+      (b) => (b as { data: EvidenceVault }).data),
+
+  file: async (url: string, preview: boolean): Promise<Blob> => {
+    const path = url.replace(/^\/api(?=\/)/, '');
+    const full = preview ? `${path}${path.includes('?') ? '&' : '?'}mode=preview` : path;
+    try {
+      const res = await api.get(full, { responseType: 'blob' });
+      return res.data as Blob;
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        throw new PoApiError('Vault file', err.response?.status ?? null,
+          err.response?.status === 404 ? 'The file is missing from storage.' : 'Could not open the file.', {}, null);
+      }
+      throw err;
+    }
+  },
+};
