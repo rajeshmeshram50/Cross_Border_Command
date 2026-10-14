@@ -465,7 +465,26 @@
   border-color: rgba(124, 92, 252, 0.20);
 }
 .lp-plan-item.is-active .lp-plan-name { color: #5a3fd1; }
-.lp-plan-name { font-size: 13px; font-weight: 600; }
+.lp-plan-name {
+  font-size: 13px; font-weight: 600;
+  /* The name is already cut at 30 characters in the component. This is the
+     backstop: 30 wide characters measure far more than 30 narrow ones, and
+     without it a name of capitals still pushed the DEFAULT pill out of the
+     row. min-width: 0 is what lets a flex item shrink at all. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Same backstop for the detail header, where the name sits beside the locked
+   chip and ran under the kebab menu. */
+.lp-main-title { min-width: 0; }
+.lp-main-title > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .lp-plan-count {
   font-size: 11px; color: var(--vz-secondary-color, #6b7280); margin-top: 2px;
 }

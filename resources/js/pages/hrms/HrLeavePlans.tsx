@@ -8,6 +8,7 @@ import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse, ApiLeaveBalanceRow } from './leavePlansApi';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
+import TruncText from '../../components/ui/TruncText';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -227,6 +228,19 @@ interface PlanEmployee {
   initials: string;
   accent: string;
 }
+
+/* A plan name is free text and arrives as long as whoever typed it made it.
+ * Past 30 characters it is cut with an ellipsis and the whole of it moves to a
+ * tooltip: in the header it ran off the card and under the kebab menu, and in
+ * the sidebar it pushed the DEFAULT pill out of its row. (Leave #4)
+ *
+ * Cut by CHARACTER rather than by CSS width. The two places this renders have
+ * very different widths, and a width-based ellipsis would truncate at a
+ * different point in each — the same plan reading two different ways. */
+const PLAN_NAME_MAX = 30;
+const PlanName = ({ name, className }: { name: string; className?: string }) => (
+  <TruncText text={name} max={PLAN_NAME_MAX} className={className} />
+);
 
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
@@ -753,7 +767,7 @@ export default function HrLeavePlans() {
                         className={`lp-plan-item ${p.id === activePlanId ? 'is-active' : ''}`}
                       >
                         <div className="d-flex align-items-center justify-content-between gap-2">
-                          <div className="lp-plan-name">{p.name}</div>
+                          <PlanName name={p.name} className="lp-plan-name" />
                           {p.isDefault && (
                             <span className="lp-default-pill">DEFAULT</span>
                           )}
@@ -785,8 +799,8 @@ export default function HrLeavePlans() {
                     <>
                       <div className="lp-main-head">
                         <div className="min-w-0">
-                          <h5 className="fw-bold mb-1 d-flex align-items-center gap-2">
-                            {activePlan.name}
+                          <h5 className="fw-bold mb-1 d-flex align-items-center gap-2 lp-main-title">
+                            <PlanName name={activePlan.name} />
                             {activePlanLocked && (
                               <span
                                 className="badge d-inline-flex align-items-center gap-1 lvp-locked-chip"

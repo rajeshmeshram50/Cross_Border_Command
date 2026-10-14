@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import { truncSegment } from '../../../../utils/segmentLabel';
 import AddConsigneeModal, { type ConsigneeRow } from '../consignee/AddConsigneeModal';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
@@ -316,41 +317,23 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 </tbody>
               </table>
             </div>
+            {/* The app's own pager. This popup had a bespoke one -- a plain
+                "Showing X-Y of Z" beside arrow buttons and a numbered button
+                per page -- which matched nothing else in the product, least of
+                all the customer list it opens from. (QA #42) */}
             {filtered.length > 0 && (
               <div className="ccm-pag">
-                <span className="ccm-pag-info">
-                  Showing <b>{(page - 1) * ROWS_PER_PAGE + 1}</b>–<b>{Math.min(page * ROWS_PER_PAGE, filtered.length)}</b> of <b>{filtered.length}</b>
-                </span>
-                <div className="ccm-pag-btns">
-                  <button
-                    type="button"
-                    className="ccm-pag-btn"
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    aria-label="Previous page"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-                  </button>
-                  {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
-                    <button
-                      key={n}
-                      type="button"
-                      className={`ccm-pag-btn ${n === page ? 'is-active' : ''}`}
-                      onClick={() => setPage(n)}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="ccm-pag-btn"
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    aria-label="Next page"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                  </button>
-                </div>
+                {/* No hideNavWhenSinglePage: these two popups are compared
+                    side by side, and a footer that shows its controls in one
+                    and hides them in the other reads as one of them being
+                    broken. The rack Shelves dialog still hides them -- nothing
+                    sits beside that one to compare it against. */}
+                <WorklistPager
+                  total={filtered.length}
+                  page={page}
+                  pageSize={ROWS_PER_PAGE}
+                  onPage={setPage}
+                />
               </div>
             )}
           </div>
@@ -781,65 +764,41 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .ccm-empty td strong { color: #6ee7b7; }
 [data-bs-theme="dark"] .ccm-empty-state { color: #6ee7b7; }
 
-/* Pagination footer — sits under the table inside .ccm-body. Matches
- * the customers-list pagination aesthetic: pill info chip on the left,
- * uniform 32×32 buttons on the right with the active page filled. */
-.ccm-pag {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 18px 14px;
-  gap: 10px; flex-wrap: wrap;
+/* Pagination footer — sits under the table inside .ccm-body. It holds the
+ * shared WorklistPager now, which brings its own band, pills and arrows, so
+ * this is only the padding around it. The old .ccm-pag-info chip and the
+ * .ccm-pag-btn page buttons went with the bespoke pager; nothing else in the
+ * app carried those classes. */
+.ccm-pag { padding: 10px 18px 14px; display: flex; }
+.ccm-pag .wl-pager {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+  border-radius: 0;
+  background: none;
 }
-.ccm-pag-info {
-  font-size: 12px; color: #047857; font-weight: 600;
-  padding: 5px 12px;
-  background: #f5f3ff; border: 1px solid rgba(52,211,153,.30);
-  border-radius: 999px;
+[data-bs-theme="dark"] .ccm-pag .wl-pager { background: none; }
+/* Green, not the pager's default violet.
+   WorklistPager ships violet and offers a teal variant; this popup is green
+   throughout -- header, id pills, the Add Or Map button -- so a violet page
+   pill and violet arrows at its foot read as a piece of another screen. The
+   component exposes its colours as custom properties, so they are restated
+   here rather than the component being given a third variant for one caller.
+   The paired Mapped Customers popup on the Consignee side is violet already,
+   so it needs none of this. */
+.ccm-pag .wl-pager {
+  --tcwl-accent: #059669;
+  --tcwl-text: #047857;
+  --tcwl-border: #a7f3d0;
+  --tcwl-range-bg: linear-gradient(135deg, #10b981 0%, #059669 55%, #047857 100%);
+  --tcwl-glow: rgba(5, 150, 105, .4);
 }
-.ccm-pag-info b { color: #064e3b; font-weight: 800; }
-.ccm-pag-btns { display: inline-flex; align-items: center; gap: 4px; }
-.ccm-pag-btn {
-  height: 32px; min-width: 32px; padding: 0;
-  border-radius: 8px;
-  border: 1px solid #e0d9f7;
-  background: #fff;
-  color: #047857;
-  font-size: 12.5px; font-weight: 700;
-  font-family: inherit;
-  display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .22s ease;
-}
-.ccm-pag-btn:hover:not(:disabled):not(.is-active) {
-  background: #f5f3ff; border-color: #6ee7b7; color: #065f46;
-}
-.ccm-pag-btn.is-active {
-  background: linear-gradient(135deg, #059669, #047857);
-  border-color: #059669; color: #fff;
-  box-shadow: 0 2px 6px rgba(4,120,87,.30);
-  cursor: default;
-}
-.ccm-pag-btn:disabled { opacity: .4; cursor: not-allowed; }
-
-[data-bs-theme="dark"] .ccm-pag-info {
-  background: rgba(5,150,105,.20);
-  border-color: rgba(52,211,153,.35);
-  color: #a7f3d0;
-}
-[data-bs-theme="dark"] .ccm-pag-info b { color: #d1fae5; }
-[data-bs-theme="dark"] .ccm-pag-btn {
-  background: #131c33;
-  border-color: rgba(52,211,153,.30);
-  color: #6ee7b7;
-}
-[data-bs-theme="dark"] .ccm-pag-btn:hover:not(:disabled):not(.is-active) {
-  background: rgba(5,150,105,.20);
-  border-color: rgba(52,211,153,.50);
-  color: #d1fae5;
-}
-[data-bs-theme="dark"] .ccm-pag-btn.is-active {
-  background: linear-gradient(135deg, #047857, #064e3b);
-  border-color: #059669; color: #fff;
-  box-shadow: 0 2px 8px rgba(5,150,105,.45);
+[data-bs-theme="dark"] .ccm-pag .wl-pager {
+  --tcwl-text-dark: #6ee7b7;
+  --tcwl-border-dark: rgba(16, 185, 129, .35);
+  --tcwl-band-dark: none;
 }
 [data-bs-theme="dark"] .ccm-empty-spinner { border-color: rgba(52,211,153,0.30); border-top-color: #34d399; }
 [data-bs-theme="dark"] .ccm-id-chip { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }

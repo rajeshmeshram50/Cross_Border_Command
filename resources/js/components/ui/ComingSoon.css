@@ -37,9 +37,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Stops where a fitted table stops — 15px clear of the viewport foot, the
-     same reserve DataTable's bottomReserve() uses. */
-  min-height: calc(100dvh - 133px);
+  /* 166px, measured, not 133.
+     The shell gives .main-content the viewport less its 150px of chrome, and
+     .page-content takes 8px of padding off each end -- so 166px is what is
+     actually unavailable. At 133 this panel was 33px taller than the space it
+     had, and .main-content got a 33px scroll range on a page with nothing to
+     scroll: grab it and it shifts a little and jerks, which is what the scroll
+     "lag" on these screens is. Measured in a 1600x760 window:
+     .main-content clientHeight 610, .page-content padding 8+8, so 594 fits and
+     calc(100dvh - 133px) asked for 627. */
+  min-height: calc(100dvh - 166px);
   padding: 56px 24px;
   border-radius: 20px;
   /* Light: the app's own card, washed with the brand's cyan and violet in the

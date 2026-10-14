@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SegmentNameBadge } from '../../../components/ui/SegmentBadge';
+import TruncText from '../../../components/ui/TruncText';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../contexts/ToastContext';
 import { LFM_CSS } from '../opportunity-pipeline/LeadFilterModal';
@@ -439,7 +440,13 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
                         </svg>
                       </span>
                       <span className="lfm-card-label">
-                        <span className="lfm-card-name">{opt.label}</span>
+                        {/* A segment name is free text. The CSS here already
+                            ellipsised it, but with nothing to reveal the rest
+                            -- so a long segment was unreadable and two that
+                            share a prefix were indistinguishable. Cut at 30
+                            with the whole of it on hover. (Consignee #33 /
+                            Customer #41) */}
+                        <TruncText text={opt.label} max={30} className="lfm-card-name" clip />
                         {active === 'segment' && <SegmentNameBadge name={opt.value} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
                       </span>
                     </label>

@@ -6646,6 +6646,54 @@ const SCOPED_CSS = `
    Previously borders were so faded inputs looked like ghost outlines
    and placeholders blended into the input background. */
 [data-bs-theme="dark"] .acm-field label { color: #e2e8f0; font-weight: 700; }
+/* Dropdowns match the inputs beside them.
+   MasterSelect renders a BUTTON, so the rule below -- which names input,
+   select and textarea -- never reached it, and every dropdown kept
+   MasterSelect's own var(--vz-card-bg) while the fields around it took this
+   form's navy. On a row of Customer Category / Segment / Classification /
+   Risk Level the two alternated. (QA #44)
+   Both themes, because the light values matched only by coincidence. */
+.acm-root .master-select-toggle {
+  border: 1.5px solid #e0d9f7;
+  border-radius: 9px;
+  background: #fff;
+  font-size: 12px;
+  color: #3b0764;
+}
+.acm-root .master-select-wrap.show .master-select-toggle,
+.acm-root .master-select-toggle:focus-visible {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3.5px rgba(124,58,237,.14);
+}
+[data-bs-theme="dark"] .acm-root .master-select-toggle {
+  background: #131c33;
+  border-color: rgba(167,139,250,0.50);
+  color: #ffffff;
+}
+[data-bs-theme="dark"] .acm-root .master-select-toggle:disabled { color: #94a3b8; }
+
+/* Autofill paints its own background over any field Chrome filled, which no
+   ordinary background overrides -- so a remembered value sat pale blue beside
+   fields that were typed. These inputs are opaque, so an inset shadow in the
+   form's own colour covers it. */
+.acm-field input:-webkit-autofill,
+.acm-field input:-webkit-autofill:hover,
+.acm-field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #3b0764;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  caret-color: #3b0764;
+  transition: background-color 9999s ease-out 0s;
+  font-family: inherit !important;
+  font-size: 12px !important;
+}
+[data-bs-theme="dark"] .acm-field input:-webkit-autofill,
+[data-bs-theme="dark"] .acm-field input:-webkit-autofill:hover,
+[data-bs-theme="dark"] .acm-field input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ffffff;
+  -webkit-box-shadow: 0 0 0 1000px #131c33 inset;
+  caret-color: #ffffff;
+}
+
 [data-bs-theme="dark"] .acm-field input,
 [data-bs-theme="dark"] .acm-field select,
 [data-bs-theme="dark"] .acm-field textarea {

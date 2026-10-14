@@ -337,21 +337,12 @@ export function MasterMultiSelect({
                       : opt.label}
                   style={unusable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
                 >
-                  <span
-                    style={{
-                      width: 16,
-                      height: 16,
-                      borderRadius: 4,
-                      border: '1.5px solid ' + (checked ? '#7c5cfc' : '#cbd5e1'),
-                      background: checked ? '#7c5cfc' : '#fff',
-                      marginRight: 8,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {checked && <i className="ri-check-line" style={{ color: '#fff', fontSize: 12 }} />}
+                  {/* Classed, not inline-styled. The box used to carry its own
+                      colours in a style attribute, which no stylesheet can
+                      override -- so it stayed a white square on a dark
+                      dropdown however the theme changed. (QA #45) */}
+                  <span className={`master-select-check${checked ? ' is-on' : ''}`}>
+                    {checked && <i className="ri-check-line" />}
                   </span>
                   {/* minWidth:0 is load-bearing — a flex child defaults to
                       min-width:auto and refuses to shrink below its text, which
