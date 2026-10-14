@@ -3347,6 +3347,46 @@ export const SSF_CSS = `
 [data-bs-theme="dark"] .ssf-signer-row input { background: #0f172a; border-color: #334155; color: #e2e8f0; }
 [data-bs-theme="dark"] .ssf-doc-rail, [data-bs-theme="dark"] .ssf-coord-pane { background: #1e293b; border-color: #334155; }
 [data-bs-theme="dark"] .ssf-rail-name { color: #e2e8f0; }
+
+/* Signature Position panel, in dark mode.
+ *
+ * Six of its classes had no dark rule at all, so they kept the light theme's
+ * slate greys — #64748b on a #0f172a panel is barely over 2:1, and the whole
+ * right-hand rail read as a ghost (QA #145). The pane itself was already
+ * darkened, which is what made the text look faint rather than simply
+ * unstyled: the background moved and the foreground did not.
+ *
+ * Pitched like the rest of this modal's dark text — #e2e8f0 for what is read,
+ * #94a3b8 for labels and help, which clears 4.5:1 on the panel. */
+[data-bs-theme="dark"] .ssf-rail-head       { color: #94a3b8; }
+[data-bs-theme="dark"] .ssf-coord-help      { color: #94a3b8; }
+[data-bs-theme="dark"] .ssf-coord-help code { background: #1e293b; color: #a5b4fc; }
+[data-bs-theme="dark"] .ssf-recipient-h     { color: #94a3b8; }
+[data-bs-theme="dark"] .ssf-recipient-email { color: #94a3b8; }
+[data-bs-theme="dark"] .ssf-coord-hint      { color: #94a3b8; }
+/* The row carries its OWN text too, not just inputs: the X / Y / Page labels
+   and the "… signs in · N places on this doc" line all inherit from here, and
+   #334155 on a #0f172a panel is unreadable. */
+[data-bs-theme="dark"] .ssf-coord-row       { color: #cbd5e1; }
+/* The number inputs are read AND typed into, so they take the brighter one. */
+[data-bs-theme="dark"] .ssf-coord-row input {
+  background: #0f172a; border-color: #334155; color: #e2e8f0;
+}
+[data-bs-theme="dark"] .ssf-coord-row input:focus {
+  border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.25);
+}
+[data-bs-theme="dark"] .ssf-nudge-btn {
+  background: #1e293b; border-color: #334155; color: #cbd5e1;
+}
+[data-bs-theme="dark"] .ssf-nudge-btn:hover {
+  background: rgba(99,102,241,.18); border-color: #6366f1; color: #c7d2fe;
+}
+[data-bs-theme="dark"] .ssf-reset-btn {
+  background: #1e293b; border-color: #334155; color: #cbd5e1;
+}
+[data-bs-theme="dark"] .ssf-reset-btn:hover {
+  background: rgba(99,102,241,.18); border-color: #6366f1; color: #c7d2fe;
+}
 [data-bs-theme="dark"] .ssf-rail-item:hover { background: rgba(99,102,241,.10); }
 [data-bs-theme="dark"] .ssf-rail-item.is-active { background: rgba(99,102,241,.18); border-color: #6366f1; }
 [data-bs-theme="dark"] .ssf-coord-row input { background: #0f172a; border-color: #334155; color: #e2e8f0; }

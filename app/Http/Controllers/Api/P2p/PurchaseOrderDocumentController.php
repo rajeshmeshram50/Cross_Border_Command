@@ -107,6 +107,26 @@ class PurchaseOrderDocumentController extends Controller
     }
 
     /** GET /p2p/orders/{po}/documents */
+    /**
+     * GET /p2p/orders/{po}/evidence-vault — every document filed against this
+     * order, including each invoice raised under it.
+     *
+     * The same service the invoice's own vault uses, entered from the other
+     * end: the order and its trade documents, then a block per SPI carrying
+     * that invoice, its e-way bill, a sticker per box and the packing images,
+     * then every payment proof released — each naming the invoice it answered.
+     *
+     * Read-only, and separate from index() on purpose: that one owns the PO's
+     * document ROWS and the Necessary marking, while this gathers paperwork
+     * from four tables and writes nothing.
+     */
+    public function evidenceVault(int $po): JsonResponse
+    {
+        [$order] = $this->find($po);
+
+        return $this->ok(app(\App\Services\P2p\P2pVaultService::class)->forPo($order));
+    }
+
     public function index(int $po): JsonResponse
     {
         [$order] = $this->find($po);

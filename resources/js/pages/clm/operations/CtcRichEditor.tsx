@@ -14,124 +14,23 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-/* ─────────────────────────────────────────────────────────────────────────────
- * TipTap editor building blocks for the CTC Draft Agreement Content editor.
- *
- * Split into a hook + a toolbar + a content CSS string (instead of one bundled
- * component) so the parent can lay them out around its HeaderFooterPanel — the
- * toolbar ABOVE, the editable content INSIDE the page frame — exactly like the
- * HR TemplateEditor. Content is HTML in / HTML out, so the backend contract
- * (draft = HTML string) is unchanged.
- *
- * Replaces the old raw contentEditable + document.execCommand, which choked on
- * large (200-300 page) DOCX uploads (ghost cursors, unrendered content, jank).
- * TipTap owns a real document model + reliable selection, so those go away.
- *
- * Font-size uses TextStyle + FontSize (@tiptap/extension-text-style, pinned to
- * the same 3.23.x as the rest to avoid the peer-dep clash). Paragraph indent is
- * a tiny global-attribute extension (ParagraphIndent, below) that stamps a
- * margin-left on paragraph/heading nodes; the toolbar's indent/outdent buttons
- * nudge list items when inside a list, else nudge the block indent.
- * ────────────────────────────────────────────────────────────────────────── */
-
-// Max nesting + px per indent level for paragraph/heading blocks.
 const INDENT_STEP = 28;
 const INDENT_MAX = 10;
 
-/* Adds an `indent` attribute (0..INDENT_MAX) to paragraph/heading nodes,
- * serialised as an inline margin-left so it round-trips through the HTML draft
- * and the generated PDF. Commands live in the toolbar (see changeIndent) to
- * avoid TipTap command module-augmentation ceremony. */
-/* ── Page flow ─────────────────────────────────────────────────────────────
-   Two different things happen at a page boundary, because two different things
-   happen in the PDF:
-
-     a block that FITS on a sheet but not on this one  → moved down, leaving the
-       tail of the sheet blank. dompdf does the same, so the blank tail here is
-       the blank tail in the PDF.
-     a block TALLER than a whole sheet                 → left where it is, with
-       the boundary drawn over it. The template sets .document-content { page-
-       break-inside: auto }, so dompdf splits it at a line box and leaves no
-       blank tail. Reserving space here would invent whitespace the PDF does
-       not have; drawing nothing (the original behaviour) hid whole pages.
-
-   Geometry, all read off the PDF (derivation in .ctcte-pageview):
-     PAGE_H   printable height of a sheet
-     FIRST_H  sheet one, shorter because the document header sits in the flow
-              there and nowhere else
-     GAP      the band drawn between sheets
-
-   ── Why this measures the DOM's own spacers ──
-   The obvious version keeps a running total of the spacer height it has
-   inserted and subtracts it to get "natural" positions. It does not converge.
-   On the first pass a block has no spacer above it, so its offsetTop is
-   natural; on the second the spacer IS above it and offsetTop includes it, but
-   the accumulator was only incremented AFTER that block was handled — so the
-   two passes disagree about the same block, the decision flips, and the page
-   numbers and gap heights oscillate.
-
-   So nothing is accumulated. The spacers are read straight out of the DOM, in
-   document order, and their measured heights are subtracted. That frame is the
-   same on every pass whatever has already been inserted, so the pass is
-   idempotent — run it twice and it produces the identical decoration set. */
-/* ── Measured against dompdf, not derived ────────────────────────────────
-   These were computed from the @page rule — 1123 (A4 @96dpi) - 25 - 92 = 1006 —
-   and that was wrong by 42px a page, about two lines. Rendering the template's
-   own CSS through dompdf and binary-searching the page count gives the real
-   numbers: a full page holds 964px of content, and page one 948px before the
-   document header.
-   dompdf's line boxes are also ~1.28x what a browser produces for the same
-   unitless line-height, so 11px/1.5 is 16.5px here and 21.4px there — a 30%
-   error on EVERY line, which no amount of box tuning could absorb. The page
-   surface therefore states its line heights in px, at dompdf's scale. */
-const PAGE_H   = 964;    // measured: full page content height
-/* .page-header, measured off the blade rather than assumed:
-     logo max-height 62 (header_config.logo_height default; the title block is
-     shorter at ~38, and the cells are vertical-align:middle, so the logo sets
-     the row) + padding 10 top + 10 bottom + margin-bottom 12 = 94.
-   Only holds while the logo height is the default — a tenant who sets
-   header_config.logo_height taller gets a taller header and one fewer line on
-   page one. */
-const HEAD_H   = 94;     // document header, in flow on page one only
-const DOC_PAD  = 18;     // .document-content padding-top, page one only (measured 964-948)
+const PAGE_H   = 964;
+const HEAD_H   = 94;
+const DOC_PAD  = 18;
 const FIRST_H  = PAGE_H - HEAD_H - DOC_PAD;
-/* No gutter between sheets. A grey strip is decoration — the PDF has nothing
-   there, so drawing it both added space the output does not have and put a band
-   under the boundary line that read as part of the document. The blank tail
-   above the line is the only real thing, and that is the paper itself. */
-/* Nothing is reserved between two sheets.
-   A footer strip + desk + top margin were drawn in here so the draft would look
-   like separate sheets. It reserved 178px at every boundary and painted over
-   it — and any boundary whose reservation did not land left that painting on
-   top of the text. The blank tail below is real (dompdf leaves it); this was
-   not, so it is gone rather than patched. */
 const PAGE_GAP = 0;
-/* How much of a manual break's blank tail the draft actually draws. */
 const MANUAL_TAIL_MAX = 90;
-/* Runaway guard only. The measure below is one forced reflow followed by N
-   cached reads — it does not write inside the loop, so it stays linear and a
-   few thousand blocks are cheap. The old 400 was set as if each read cost a
-   reflow, and an uploaded agreement clears 400 top-level blocks at around
-   twenty pages, so real imports silently lost their page breaks entirely. */
 const PAGINATE_MAX_BLOCKS = 12000;
 
-/* Fired on the editor's root once a pagination pass has settled. An import is
-   not "done" when the HTTP call returns — the browser still has to lay out the
-   document and this pass still has to find the page boundaries. */
 export const CTC_PAGINATED_EVENT = 'ctc-paginated';
-/* detail: { pages } — emitted after every pass that changed something, so a
-   caller can show the count climbing instead of an unmoving spinner. */
 export const CTC_PAGINATING_EVENT = 'ctc-paginating';
 
-/* Resolves when the page boundaries for the current document are on screen, so
-   a caller can keep its spinner up instead of handing the user a document that
-   then reflows under them. Resolves at once outside page view (nothing to
-   wait for) and always resolves — a timeout never leaves a spinner stuck. */
 export function waitForPagination(
   editor: Editor | null,
   onProgress?: (pages: number) => void,
-  // A safety net, not the normal exit. At 12s this was firing FIRST on a large
-  // import and releasing the caller mid-pagination.
   timeoutMs = 120000,
 ): Promise<void> {
   const dom = editor?.view?.dom as HTMLElement | undefined;
@@ -166,15 +65,8 @@ const PageFlow = Extension.create({
         view(view) {
           let timer = 0;
           let frame = 0;
-          /* null, not '' — an empty string is a LEGAL signature (a document
-             with no page breaks yet), so starting there let the very first pass
-             match itself and declare the layout converged before it had
-             measured anything. */
           let signature: string | null = null;
           let retries = 0;
-          /* Retries are frame-cheap now (the count check below reads no
-             geometry), so this can be generous — a 300-page layout needs many
-             more than a dozen frames to finish. */
           const MEASURE_RETRIES = 240;
 
           const measure = () => {
@@ -183,38 +75,8 @@ const PageFlow = Extension.create({
             if (!dom.isConnected || !dom.closest('.ctcte-pageview')) return;
             if (view.state.doc.childCount > PAGINATE_MAX_BLOCKS) { settled(); return; }
 
-            /* Walk the rendered children once, in order. Spacers and content
-               blocks are interleaved siblings, so filtering the spacers out
-               leaves exactly the document's top-level blocks — and the running
-               gap total gives each block's natural (un-spaced) position. */
-            /* offsetTop is measured from the nearest POSITIONED ancestor, not
-               from .ProseMirror — and .ProseMirror carries no position of its
-               own, so every reading was inflated by however far the editor sat
-               inside the page shell (toolbar, wrapper padding, …). The first
-               sheet therefore looked full long before it was, and the counter
-               was already past page 1 by the time the first gap appeared —
-               which is why the very first band read "END OF PAGE 2".
-
-               .ctcte-pageview .ProseMirror is now position:relative, so
-               offsetTop is relative to it; subtracting its padding-top puts the
-               first block at natural 0, matching the PDF where 1006px is the
-               PRINTABLE height, margins already excluded. */
             const kids = Array.from(dom.children) as HTMLElement[];
 
-            /* Readiness check FIRST, and deliberately without touching offsetTop
-               or offsetHeight — reading either forces the browser to lay the
-               whole document out. The DOM lags the model after a bulk replace,
-               so on a 300-page import the early passes are all going to be
-               rejected; making each rejected pass pay for a full layout is what
-               turned the import into a visible grind.
-               classList is free, so a retry now costs one frame and nothing else. */
-            /* Both of PageFlow's OWN children have to be excluded here, not
-               just the spacer. The absolutely-positioned mark overlay is a real
-               child of .ProseMirror too, so once a single in-place boundary
-               existed this count was permanently one too high, the readiness
-               check never passed again, and pagination stopped dead — and with
-               it settled(), so the import spinner sat out its whole timeout.
-               That is the 2-3 minutes on a 4-5 page file: no work, just a wait. */
             const isOurs = (el: HTMLElement) =>
               el.classList.contains('ctcte-pagegap') || el.classList.contains('ctcte-spanmarks');
 
@@ -222,8 +84,6 @@ const PageFlow = Extension.create({
             for (const child of kids) if (!isOurs(child)) blocks += 1;
             if (blocks !== view.state.doc.childCount) {
               if (retries < MEASURE_RETRIES) { retries += 1; schedule(true); return; }
-              // Out of retries: stop waiting on it, but never leave a caller
-              // holding a spinner for something that is not going to arrive.
               settled();
               return;
             }
@@ -231,31 +91,7 @@ const PageFlow = Extension.create({
 
             const padTop = parseFloat(getComputedStyle(dom).paddingTop) || 0;
 
-            /* ── Flow units ──────────────────────────────────────────────────
-               A table is ONE top-level block, so a block-level pass can only
-               count pages across it — it can never place a boundary inside it.
-               An imported agreement is very often a single several-hundred-row
-               table, which is why a whole upload could come back with no page
-               break drawn anywhere.
-
-               dompdf does split a table, at row boundaries. So rows are the
-               correct unit here, and everything else stays a block.
-
-               The spacer inside a table is a real <tr>, not the <div> used
-               between blocks: a div is invalid inside <tbody> and the browser
-               hoists it out of the table, taking the reserved height with it.
-               Being a genuine sibling row also means it is measured and
-               subtracted exactly like the block spacers, so the pass stays
-               idempotent for the same reason. */
             const rowsOf = (el: HTMLElement): HTMLElement[] | null => {
-              /* The table is not reliably a direct child, and its rows are not
-                 reliably all in one <tbody>. `:scope > table` + `:scope > tbody`
-                 missed both cases, rowsOf returned null, and the whole table
-                 fell back to being ONE block — which is exactly how the page
-                 counter jumps 2 → 5 with no band in between: a three-page table
-                 counted as three pages and drew none of them.
-                 querySelector('table') is tree order, so a nested table in a
-                 cell can never win over its own outer table. */
               const table = (el.tagName === 'TABLE' ? el : el.querySelector('table')) as HTMLElement | null;
               if (!table) return null;
               const rows: HTMLElement[] = [];
@@ -273,23 +109,13 @@ const PageFlow = Extension.create({
             const docKids: { node: any; pos: number }[] = [];
             view.state.doc.forEach((node, offset) => docKids.push({ node, pos: offset }));
 
-            // `phys` is offsetTop as rendered — .ProseMirror is position:relative,
-            // so it is already the coordinate an absolutely placed marker needs.
             type Unit = { top: number; height: number; phys: number; pos: number; size: number; row: boolean; cols: number; brk: boolean };
             const units: Unit[] = [];
             let gapAcc = 0;
             let di = 0;
             for (const child of kids) {
-              // The mark overlay is absolutely positioned — no flow height to
-              // subtract, and not a document block either.
               if (child.classList.contains('ctcte-spanmarks')) continue;
               if (child.classList.contains('ctcte-pagegap')) { gapAcc += child.offsetHeight; continue; }
-              /* A block carrying its own blank tail as padding. The padding is
-                 INSIDE the element, so its border-box top is still the natural
-                 position and only what follows is displaced — the same frame as
-                 a spacer sibling, which is why it subtracts identically.
-                 Base padding-top for p/h/div in the page view is 0, so the
-                 computed value IS the reserved tail. */
               const own = child.classList.contains('ctcte-pgtop')
                 ? (parseFloat(getComputedStyle(child).paddingTop) || 0) : 0;
               const dk = docKids[di++];
@@ -297,16 +123,6 @@ const PageFlow = Extension.create({
 
               const rows = dk.node.type.name === 'table' ? rowsOf(child) : null;
               const content = rows?.filter(r => !r.classList.contains('ctcte-pagegap-row'));
-              /* Pair model rows to DOM rows by index, and require only that the
-                 DOM has at least as many.
-                 Demanding an EXACT match was too strict and it failed silently:
-                 one extra <tr> anywhere — and rowsOf now also reads <thead> and
-                 <tfoot> — dropped the whole table back to being one block. A
-                 table two pages tall then ate two page boundaries and produced
-                 the in-place dashes instead of proper gutters, which is why
-                 boundaries appeared in two different designs.
-                 rowsOf only collects direct section children of the outer table,
-                 so a nested table's rows can never shift this alignment. */
               if (!rows || !content || content.length < dk.node.childCount) {
                 units.push({
                   top: child.offsetTop - padTop - gapAcc, height: child.offsetHeight - own,
@@ -329,78 +145,25 @@ const PageFlow = Extension.create({
               }
             }
 
-            /* Every block measuring zero means the browser has not laid the
-               document out yet — NOT "nothing overflows a page". Without this
-               the pass produced an empty decoration set, called that a converged
-               layout, and released the import spinner onto a document whose page
-               breaks had not been worked out at all. */
             const last = units[units.length - 1];
             if (units.length && last.top + last.height <= 0) {
               if (retries < MEASURE_RETRIES) { retries += 1; schedule(true); }
               return;
             }
 
-            /* ── Boundaries, then numbers ─────────────────────────────────
-               The page number used to be a counter incremented at each of four
-               sites, and the label was read off it at the moment a band was
-               drawn. Any site that advanced the counter without drawing
-               anything silently ate a page number — which is how the labels
-               could read PAGE 2 ENDS then PAGE 5 ENDS.
-
-               So nothing is numbered during the walk. Every boundary is
-               COLLECTED, in document order, and numbered 1..N afterwards. A
-               skipped number is then not a bug to hunt, it is unrepresentable:
-               a boundary either exists in this list and gets the next number,
-               or it does not exist at all.
-
-               Every boundary also gets a mark. Where the PDF pushes content
-               down (a block that fits on a sheet, just not this one) that mark
-               is a spacer band. Where the PDF splits in place (a block taller
-               than a sheet, page-break-inside:auto) it is a line drawn over the
-               content, reserving nothing. */
-            /* `pad` is the ordinary case and deliberately not a widget.
-               A widget means a DOM node created and destroyed on every pass —
-               and the page number is part of its key, so ordinary typing churned
-               every band in the document. Insert-and-remove under a scrolling,
-               clipped, fixed shell is what leaves Chrome painting stale tiles,
-               i.e. the doubled text. A node decoration touches no DOM at all
-               when nothing changed, and when something does it is one inline
-               style on an element that was already there. */
             type Bound =
               | { kind: 'pad'; from: number; to: number; fill: number; line: number }
               | { kind: 'band'; at: number; key: string; h: number; row: boolean; cols: number; line: number; silent?: boolean }
               | { kind: 'mark'; line: number };
             const bounds: Bound[] = [];
-            let cap = FIRST_H;   // natural height available through this sheet
+            let cap = FIRST_H;
 
             for (const u of units) {
-              /* An explicit Page Break ends the sheet HERE, however much room is
-                 left. PageFlow used to ignore the node entirely and keep filling
-                 the same sheet, so every automatic band after a manual break was
-                 measured against a page that had already ended. */
               if (u.brk) {
                 const bottom = u.top + u.height;
                 const fill = Math.round(cap - bottom);
-                /* A manual break ALWAYS ends its page — that is the point of
-                   the button. It used to fall through to a bare marker whenever
-                   it landed with no room left, which said the opposite of what
-                   the user had just asked for. */
                 const room = Math.max(0, fill);
-                /* The blank tail after a MANUAL break is shown collapsed.
-                   It is real — the PDF leaves it — but it is dead space the
-                   user deliberately created, and rendering all of it made them
-                   scroll through half a page of nothing.
-                   Safe to shorten because the page maths never reads this
-                   height: natural positions come from the DOM (gapAcc measures
-                   whatever is actually reserved) and `cap` advances by the TRUE
-                   room below. So the numbering and every later boundary stay
-                   exactly where the PDF puts them. Automatic breaks are left
-                   alone — their tails are what the PDF genuinely chose. */
                 const shown = Math.min(room, MANUAL_TAIL_MAX);
-                /* silent: the node draws its own PAGE BREAK marker right here,
-                   so an automatic "PAGE n ENDS" on the same boundary was a
-                   second label for one event. It still takes its page number —
-                   it is a real boundary — it just isn't drawn twice. */
                 bounds.push({ kind: 'band', at: u.pos + u.size, key: `pb${u.pos}`,
                               h: shown + PAGE_GAP, row: false, cols: 0, silent: true,
                               line: u.phys + u.height + shown });
@@ -408,23 +171,7 @@ const PageFlow = Extension.create({
                 continue;
               }
 
-              /* ── A block that fits on a sheet, but not on THIS one ────
-                 …is pushed down whole, leaving the tail of the sheet blank.
-
-                 This was removed on the reasoning that .document-content is
-                 page-break-inside:auto, so dompdf must be splitting the block
-                 at a line box instead. That reasoning was wrong, and rendering
-                 the template through dompdf settles it: twenty 4-line
-                 paragraphs fit in two pages, not twenty-two. dompdf moves the
-                 whole block. The blank tail is real, and it is the gap that
-                 shows up above the footer in the generated PDF. */
               if (u.height <= PAGE_H && u.top + u.height > cap) {
-                /* fill can legitimately be 0 — the sheet ended exactly at this
-                   block's edge. There is no blank tail, but the footer strip,
-                   the gutter and the next sheet's top margin are still there,
-                   so space is still reserved and this still draws as a real
-                   sheet break. It used to fall through to a bare line labelled
-                   "PAGE n ENDS" with nothing ending after it. */
                 const fill = Math.round(cap - u.top);
                 const room = Math.max(0, fill);
                 const line = u.phys + room;
@@ -434,8 +181,6 @@ const PageFlow = Extension.create({
                 cap = u.top + PAGE_H;
               }
 
-              /* Taller than a whole sheet, so it cannot be pushed anywhere —
-                 dompdf has to break it in place, and so do we. */
               while (u.top + u.height > cap) {
                 bounds.push({ kind: 'mark', line: u.phys + (cap - u.top) });
                 cap += PAGE_H;
@@ -444,11 +189,9 @@ const PageFlow = Extension.create({
 
             const decos: Decoration[] = [];
             const sigParts: string[] = [];
-            // EVERY boundary is drawn, whatever it also reserves.
             const marks = bounds
               .map((b, i) => ({
                 top: b.line, page: i + 1,
-                // An in-place split reserves nothing, so only a hairline fits.
                 sheet: b.kind !== 'mark',
                 silent: b.kind === 'band' && b.silent === true,
               }))
@@ -460,7 +203,6 @@ const PageFlow = Extension.create({
                 sigParts.push(`p${b.from}:${b.fill}:${from}`);
                 decos.push(Decoration.node(b.from, b.to, {
                   class: 'ctcte-pgtop',
-                  // Blank tail, then footer strip + gutter + next top margin.
                   style: `--pg-fill:${b.fill}px; --pg-pad:${b.fill + PAGE_GAP}px`,
                   'data-from': String(from),
                 }));
@@ -491,9 +233,6 @@ const PageFlow = Extension.create({
               }, { side: -1, key: `${b.key}#${from}` }));
             });
 
-            /* All in-place boundaries ride in ONE absolutely-positioned widget
-               at the top of the document. Absolute means zero flow impact — no
-               reflow, no caret jump, no re-measure cascade. */
             if (marks.length) {
               const marksSig = marks.map(m => `${Math.round(m.top)}/${m.page}/${m.sheet ? 1 : 0}`).join('.');
               sigParts.push('m' + marksSig);
@@ -510,33 +249,13 @@ const PageFlow = Extension.create({
                   wrap.appendChild(line);
                 }
                 return wrap;
-                              /* The key has to encode the marks. A constant key told
-                   ProseMirror the widget had not changed, so it reused the DOM
-                   and never called toDOM again — the breaks stayed frozen at
-                   positions measured BEFORE any page padding was applied. */
               }, { side: -1, key: 'spans:' + marksSig }));
             }
 
-            /* Dispatch only on a real change, or each pass would trigger the
-               next. An unchanged signature is also the ONLY honest definition of
-               "the pages have stopped moving": inserting the spacers reflows the
-               document, so the pass that inserts them cannot know whether that
-               reflow pushed anything further along. Only the pass that finds
-               nothing left to do can say the layout has converged — that is what
-               the waiting spinner is holding out for. */
             const sig = sigParts.join(',');
             if (sig === signature) { settled(); return; }
             signature = sig;
             dom.dispatchEvent(new CustomEvent(CTC_PAGINATING_EVENT, { detail: { pages: bounds.length + 1 } }));
-            /* Follow the caret across the reflow — but ONLY when it has
-               actually been pushed out of sight.
-               Scrolling on every pass was wrong twice over. A pass runs two or
-               three times per edit, so the view was being scrolled repeatedly
-               while PageFlow was still changing the content height — and a
-               scroll concurrent with a height change is exactly the pairing
-               that makes Chrome reuse stale tiles, which is the doubled text.
-               So it self-inflicted the very artefact it was meant to help with,
-               and made typing feel like it was fighting back. */
             const tr = view.state.tr
               .setMeta(pageFlowKey, DecorationSet.create(view.state.doc, decos))
               .setMeta('addToHistory', false);
@@ -551,15 +270,9 @@ const PageFlow = Extension.create({
               } catch { chase = false; }
             }
             view.dispatch(chase ? tr.scrollIntoView() : tr);
-            // Confirm on the very next frame instead of behind the typing
-            // debounce — the confirmation pass is what releases the spinner.
             schedule(true);
           };
 
-          /* A pass costs one forced layout, so on a 300-page import it is worth
-             real milliseconds. Keep it snappy on ordinary drafts and let it
-             breathe on the huge ones, where re-measuring every 160ms while
-             typing is what makes the editor feel like it is stuttering. */
           const schedule = (immediate = false) => {
             const delay = immediate ? 0 : (view.state.doc.childCount > 1200 ? 600 : 160);
             window.clearTimeout(timer);
@@ -570,16 +283,8 @@ const PageFlow = Extension.create({
           };
 
           schedule();
-          /* The first pass runs in the fallback face while the PDF font is still
-             downloading, so every line measured there is the wrong width. Redo
-             it once the real font is in. */
           (document as any).fonts?.ready?.then(() => schedule(true));
           return {
-            /* Wrapped, not passed straight through. ProseMirror calls this as
-               update(view, prevState), so handing it `schedule` directly fed the
-               EditorView object into the `immediate` parameter — always truthy,
-               so the debounce collapsed to 0ms and every keystroke ran a full
-               measure of the whole document. */
             update: () => schedule(),
             destroy() { window.clearTimeout(timer); cancelAnimationFrame(frame); },
           };
@@ -589,38 +294,20 @@ const PageFlow = Extension.create({
   },
 });
 
-/**
- * An explicit page break.
- *
- * dompdf already honours page-break-* (the signature-document blade leans on it
- * throughout), but the editor had no way to EMIT one — a drafter could see a
- * clause land across two pages in the generated PDF and had no control over it
- * beyond padding the text with blank lines.
- *
- * Serialises to `<div class="page-break"></div>`, which the PDF stylesheet turns
- * into `page-break-after: always`. In the browser the same element is styled as
- * a labelled dashed rule, so the break is visible while writing. Being a plain
- * div means an older draft round-trips untouched and the backend contract
- * (draft = HTML string) is unchanged.
- */
 const PageBreak = Node.create({
   name: 'pageBreak',
   group: 'block',
-  atom: true,          // one indivisible thing — no cursor inside it
+  atom: true,
   selectable: true,
   parseHTML() {
     return [{ tag: 'div.page-break' }, { tag: 'div[data-page-break]' }];
   },
   renderHTML() {
-    // data-page-break as well as the class: a stylesheet can be stripped or
-    // overridden, but the attribute survives for the PDF side to match on.
     return ['div', { class: 'page-break', 'data-page-break': 'true' }];
   },
   addCommands() {
     return {
       setPageBreak: () => ({ chain }: any) =>
-        // Insert the break AND a paragraph after it, otherwise an atom at the
-        // end of the doc leaves nowhere to put the caret.
         chain().insertContent([{ type: 'pageBreak' }, { type: 'paragraph' }]).run(),
     } as any;
   },
@@ -647,52 +334,10 @@ const ParagraphIndent = Extension.create({
   },
 });
 
-/* Line spacing — the Word "Line and Paragraph Spacing" control.
- *
- * TipTap ships no line-height extension, so this is the same shape as
- * ParagraphIndent above: a global attribute on the block nodes, written out as
- * an inline style. Inline style rather than a class because the value has to
- * survive the round trip through the DOCX/PDF exporters, which read the
- * serialized HTML and understand `line-height` but know nothing about our
- * class names.
- *
- * Applied per BLOCK, not to a text selection: spacing is a property of a
- * paragraph, and half a paragraph at 1.5 and half at 1.0 is not a thing Word
- * can express either. Selecting across several paragraphs sets all of them.
- */
-/* One font: Times New Roman.
- *
- * The agreement is set in it, so anything else on offer is a way to make a
- * clause not match the rest of the document. The list used to hold fourteen
- * faces; a draft is not a place to pick a typeface.
- *
- * The control is kept rather than removed because it still does something:
- * text that arrived carrying its own font — pasted from a browser, or from a
- * DOCX written before the upload strip existed — can be put back on the house
- * face by selecting it and choosing this. The uploader strips font-family on
- * the way in (ClmCtcForm's uploadDocx) and the page surface sets Times New
- * Roman as the default, so typing and uploading both land here already.
- *
- * The stack ends in a generic serif so dompdf resolves it to its built-in
- * times metrics, and a machine without the face falls back to a serif rather
- * than to the app's sans. */
 const FONT_FAMILIES: { label: string; value: string }[] = [
   { label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
 ];
 
-/**
- * The font list for editors that ARE allowed a choice — currently only Terms &
- * Conditions, whose clauses are dropped into third-party paperwork that may be
- * set in something other than the house face.
- *
- * The agreement editors deliberately do NOT get this: a clause in a different
- * typeface from the rest of the contract is a defect, not an option.
- *
- * Every value ends in a generic (serif / sans-serif) because dompdf ships only
- * Times, Helvetica, Courier and the DejaVu family — Georgia and Cambria will
- * render AS a serif in the PDF rather than as themselves. Arial and Times New
- * Roman are the two that come out exactly.
- */
 export const TNC_FONT_FAMILIES: { label: string; value: string }[] = [
   { label: 'Arial',           value: 'Arial, Helvetica, sans-serif' },
   { label: 'Calibri',         value: "Calibri, 'Segoe UI', sans-serif" },
@@ -701,23 +346,8 @@ export const TNC_FONT_FAMILIES: { label: string; value: string }[] = [
   { label: 'Cambria',         value: 'Cambria, Georgia, serif' },
 ];
 
-/* Sizes in POINTS, not pixels. A legal draft is specified in pt (12pt body,
- * 14pt headings) and that is the unit the printed/PDF page is measured in —
- * px only ever matched on screen. Values are the ones Word offers. */
 const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36'];
 
-/* Insert Table writes its borders INLINE rather than relying on a stylesheet.
- *
- * The PDF deliberately forces no cell border (see clm-signature-document
- * .blade.php): a bordered table has to carry its border in the markup so that
- * clause / layout tables — the borderless ones a DOCX upload brings in — stay
- * clean in the output. The editor follows the same rule, which is why a table
- * inserted with the plain insertTable() command appeared to do nothing: it was
- * there, three empty rows of it, with nothing drawn.
- *
- * Building the HTML here instead of calling insertTable() is what lets the
- * styles be part of the node from the first render. StyledTable / -Row / -Cell
- * preserve the `style` attribute, so it survives the save and the export. */
 const TBL_BORDER = '1px solid #94A3B8';
 function buildTableHTML(rows: number, cols: number): string {
   const th = `<th style="border:${TBL_BORDER};padding:6px 8px;background:#EEF2F7;vertical-align:top;text-align:left"><p></p></th>`;
@@ -727,17 +357,6 @@ function buildTableHTML(rows: number, cols: number): string {
   return `<table style="width:100%;table-layout:fixed;border-collapse:collapse"><tbody>${head}${body}</tbody></table><p></p>`;
 }
 
-/* Row height.
- *
- * prosemirror-tables ships columnResizing and nothing for rows, so the
- * horizontal border cannot be dragged the way the vertical one can. Word's own
- * fallback is the same thing this is: a height set on the row, with the row
- * still free to GROW past it when the text needs more space.
- *
- * Written as a min-height on the row's own style attribute (StyledTableRow
- * keeps `style`), because a plain `height` on a table row is treated as a
- * minimum by every renderer anyway — including dompdf — and saying min-height
- * makes that explicit rather than implied. */
 const ROW_HEIGHTS: { label: string; value: string | null }[] = [
   { label: 'Auto (fit text)', value: null },
   { label: 'Short',  value: '28px' },
@@ -745,7 +364,6 @@ const ROW_HEIGHTS: { label: string; value: string | null }[] = [
   { label: 'Tall',   value: '56px' },
 ];
 
-/** Replace (or drop) min-height inside an existing inline style string. */
 function withRowHeight(style: string | null | undefined, height: string | null): string | null {
   const kept = String(style || '')
     .split(';')
@@ -755,17 +373,8 @@ function withRowHeight(style: string | null | undefined, height: string | null):
   return kept.length ? kept.join('; ') : null;
 }
 
-/* Cell borders.
- *
- * The PDF forces no border on cells by design (clm-signature-document.blade
- * .php), so a bordered table has to say so in its own markup — which means
- * turning borders on or off is an edit to each cell's inline style, not a
- * class toggle. Insert Table already writes them; these let an existing table
- * — including one that arrived from a DOCX with no borders at all — be
- * changed after the fact. */
 type BorderSpec = 'all' | 'bottom' | 'none';
 
-/** Rewrite the border declarations inside one inline style string. */
 function withBorders(style: string | null | undefined, spec: BorderSpec): string | null {
   const kept = String(style || '')
     .split(';')
@@ -777,8 +386,6 @@ function withBorders(style: string | null | undefined, spec: BorderSpec): string
 }
 
 const LINE_HEIGHTS = ['1', '1.15', '1.5', '2', '2.5', '3'];
-/* What "Add Space Before/After Paragraph" adds. Word uses 10pt; the editor
- * works in px, and 10pt is 13.33px. */
 const PARA_SPACE = '13px';
 
 const LineHeight = Extension.create({
@@ -794,12 +401,6 @@ const LineHeight = Extension.create({
           renderHTML: (attributes: { lineHeight?: string | null }) =>
             attributes.lineHeight ? { style: `line-height: ${attributes.lineHeight}` } : {},
         },
-        /* Word's menu carries three separate things and so does this: the line
-         * spacing above, plus space BEFORE and space AFTER the paragraph.
-         * They are different properties — line spacing is the gap between the
-         * lines INSIDE one paragraph, these two are the gap between one
-         * paragraph and the next — which is why setting 1.5 never moved the
-         * paragraphs apart and looked like it had not worked. */
         spaceBefore: {
           default: null,
           parseHTML: (element: HTMLElement) => element.style.marginTop || null,
@@ -816,8 +417,6 @@ const LineHeight = Extension.create({
     }];
   },
   addCommands() {
-    /* Applied to EVERY block type in one chain, so a selection spanning a
-     * heading and two paragraphs is set in a single undo step. */
     const each = (types: string[], fn: (c: any, t: string) => any) =>
       ({ chain }: any) => types.reduce((c: any, t: string) => fn(c, t), chain()).run();
 
@@ -834,13 +433,6 @@ const LineHeight = Extension.create({
   },
 });
 
-/* Preserve the inline `style` attribute on table nodes. TipTap's default table
- * extensions drop arbitrary `style`, which stripped the border/background the
- * Insert-Table modal writes inline — so inserted tables lost their borders and
- * the PDF had to force a border on EVERY cell, which then boxed up clause /
- * layout tables that were never meant to have borders. Keeping the inline style
- * lets a bordered table stay bordered and a borderless one stay clean, in both
- * the editor and the generated PDF. */
 const keepStyleAttr = {
   style: {
     default: null,
@@ -848,31 +440,6 @@ const keepStyleAttr = {
     renderHTML: (attrs: { style?: string | null }) => (attrs.style ? { style: attrs.style } : {}),
   },
 };
-/* Keep every table's columns fully specified and inside the sheet.
- *
- * Two things prosemirror-tables does not do, and both of them showed up as the
- * editor and the PDF preview disagreeing:
- *
- *   1. A drag only records widths for the columns beside the handle. The rest
- *      stay null and serialize with no width, so anything reading the HTML
- *      sees a partial picture and lays the table out its own way.
- *   2. Nothing bounds the total, because nothing in it knows how wide the
- *      paper is — so widening a column pushed the table off the right margin.
- *
- * This fills in every column and rescales the set to the page. Same ratios the
- * author dragged; a complete, bounded set of numbers to serialize.
- *
- * 694px is this editor's text column: 794 (A4 at 96dpi) less the two @page
- * margins and the 50px the PDF's own wrappers add — the same arithmetic the
- * .ctcte-pageview rule below is built on. Keep the two in step.
- *
- * The ratios the author dragged are preserved; only the total is brought back
- * to the page. A floor of 30px stops a column being crushed to nothing, which
- * is the other half of the same problem.
- *
- * The PDF does not need this — the blade converts these widths to percentages
- * of the table, so they always sum to 100 there. This is the editor catching
- * up with what the page can actually hold. */
 const PAGE_CONTENT_W = 694;
 const MIN_COL_W = 30;
 
@@ -893,15 +460,6 @@ const TableFit = Extension.create({
             const firstRow = table.firstChild;
             if (!firstRow) return false;
 
-            /* ── Read the current per-column widths ──────────────────────────
-               prosemirror-tables only writes colwidth for the columns either
-               side of the handle you dragged; the rest stay null. TipTap then
-               serializes those as a bare min-width with no width at all, so the
-               PDF had widths for two columns and nothing for the third — it
-               sized the two it knew and squeezed the rest, which is why the
-               editor and the preview disagreed while both "had" the widths.
-               Every column gets a real number here, so what is serialized is
-               the whole picture. */
             const cols: number[] = [];
             firstRow.forEach(cell => {
               const span = cell.attrs.colspan || 1;
@@ -913,20 +471,14 @@ const TableFit = Extension.create({
             const knownTotal = cols.reduce((a, b) => a + b, 0);
             const missing = cols.filter(w => !w).length;
 
-            /* Untouched columns share whatever the page has left over; if the
-               drag already used it all they fall back to the floor. */
             const spare = Math.max(0, PAGE_CONTENT_W - knownTotal);
             const share = missing ? Math.max(MIN_COL_W, Math.floor(spare / missing)) : 0;
             const filled = cols.map(w => (w ? w : share));
 
-            /* Then bring the total back to the page, keeping the ratios. This
-               is also what stops a drag pushing the table off the sheet. */
             const total = filled.reduce((a, b) => a + b, 0);
             const factor = total > 0 ? PAGE_CONTENT_W / total : 1;
             const final = filled.map(w => Math.max(MIN_COL_W, Math.round(w * factor)));
 
-            /* Write back, but only where a value actually differs — an
-               unconditional setNodeMarkup would re-fire this plugin forever. */
             table.forEach((row, rowOff) => {
               const rowPos = pos + 1 + rowOff;
               let col = 0;
@@ -944,7 +496,7 @@ const TableFit = Extension.create({
               });
             });
 
-            return false;   // no tables inside tables
+            return false;
           });
 
           return changed ? tr : null;
@@ -954,26 +506,6 @@ const TableFit = Extension.create({
   },
 });
 
-/* Sub points — the multi-level clause numbering an agreement is written in:
- *
- *     1.  Purpose
- *     1.1   The Seller shall ...
- *     1.1.1   ... including
- *
- * A plain nested <ol> cannot do this. Its levels number independently, so the
- * second level restarts at 1 instead of continuing its parent as 1.1 — which
- * is the whole point of clause numbering, because clauses are cross-referenced
- * by that number.
- *
- * Built on CSS counters rather than by writing the numbers into the text: the
- * numbers then renumber themselves when a clause is inserted or deleted, which
- * hand-typed ones do not. dompdf implements counters() (see
- * vendor/dompdf/dompdf/src/Css/Content/Counters.php), so the same rule works
- * in the PDF — the matching CSS lives in clm-signature-document.blade.php and
- * the two have to stay in step.
- *
- * The flag sits on the OUTER list only; the nested ones are picked up by the
- * descendant selector, so Tab-ing a new level in needs no extra bookkeeping. */
 const LegalList = Extension.create({
   name: 'legalList',
   addGlobalAttributes() {
@@ -990,37 +522,13 @@ const LegalList = Extension.create({
   },
 });
 
-/* Find and Replace.
- *
- * TipTap ships no search extension (the official one is paid), so this is the
- * whole thing: a plugin that finds every match and decorates it, plus commands
- * to step through them and rewrite them.
- *
- * Matching is done per TEXT BLOCK, not per text node. A text node ends
- * wherever a mark starts, so "Agreement" with only "Agree" in bold is two
- * nodes — searching node by node would never find it. Walking the block and
- * building a char→position map finds it and still lands on the right document
- * positions, including when the block also holds non-text inline nodes (a page
- * break, a hard break) which occupy a position but contribute no text.
- */
 const findKey = new PluginKey('findReplace');
 
 type FindMatch = { from: number; to: number };
 type FindState = { term: string; matchCase: boolean; matches: FindMatch[]; index: number };
 
-/* A "word" character for whole-word matching. Letters, digits and _ — the
-   same set w means in a regex, so "position" does not match inside
-   "positions" but "co-operate" still matches "operate" after the hyphen. */
 const isWordChar = (c: string | undefined): boolean => !!c && /[A-Za-z0-9_]/.test(c);
 
-/* Whole-word matching is ALWAYS on. It is not a user option because the
-   alternative is not merely a preference — substring matching lets a search
-   term survive inside its own replacement, so replacing "position" with
-   "positions" leaves the count above zero and every further Replace All
-   appends another "s" ("positionssssss…"). Making it unconditional removes
-   that failure mode rather than leaving it one unticked box away.
-   The trade: a partial term no longer finds the longer word — searching
-   "confirm" will not match "confirmation". */
 function collectMatches(doc: any, term: string, matchCase: boolean): FindMatch[] {
   const out: FindMatch[] = [];
   if (!term) return out;
@@ -1039,17 +547,12 @@ function collectMatches(doc: any, term: string, matchCase: boolean): FindMatch[]
     const hay = matchCase ? text : text.toLowerCase();
     let at = hay.indexOf(needle);
     while (at !== -1) {
-      /* Whole word: reject a hit that has a word character touching either
-         end. Without it, replacing "position" with "positions" leaves the term
-         still present inside its own replacement — the count never reaches
-         zero, which invites another Replace All and appends another "s" every
-         time ("positionsssss…"). */
       const okStart = !isWordChar(hay[at - 1]);
       const okEnd   = !isWordChar(hay[at + needle.length]);
       if (okStart && okEnd) out.push({ from: map[at], to: map[at + needle.length - 1] + 1 });
       at = hay.indexOf(needle, at + needle.length);
     }
-    return false;   // a textblock holds no further textblocks
+    return false;
   });
   return out;
 }
@@ -1066,15 +569,6 @@ const FindReplace = Extension.create({
             const meta = tr.getMeta(findKey);
             let next: FindState = meta ? { ...prev, ...meta } : prev;
 
-            /* The matches normally arrive WITH the search, computed by the
-               toolbar against the live document (see pushSearch). Carrying them
-               rather than recomputing here is what keeps the highlights and the
-               1/61 counter describing the same set — they were computed in two
-               places and could disagree, which is how a search could count 61
-               matches and draw none of them.
-               A plain document edit brings no meta, so the set is refreshed
-               from the term instead; without that a highlight would keep
-               pointing at text that has since moved. */
             if (tr.docChanged && !meta) {
               next = { ...next, matches: collectMatches(tr.doc, next.term, next.matchCase) };
             }
@@ -1107,22 +601,11 @@ const StyledTableHeader = TableHeader.extend({ addAttributes() { return { ...thi
 
 export interface CtcEditor {
   editor: Editor | null;
-  /** Insert an HTML fragment at the caret (Clause Library, HTML placeholders). */
   insertHTML: (html: string) => void;
-  /** Insert plain text + a trailing space at the caret (token placeholders). */
   insertText: (text: string) => void;
-  /** Replace the whole document (DOCX upload, external re-seed). */
   setHTML: (html: string) => void;
 }
 
-/**
- * Repair links whose href is empty or protocol-only (e.g. href="https://") but
- * whose visible TEXT is a real URL. An old toolbar bug saved these when a user
- * link-wrapped a pasted URL and accepted the bare "https://" prompt default, so
- * the link opened nowhere — in the editor AND in the DOCX/PDF export. Rewriting
- * the href from the text makes the link openable everywhere, and (because the
- * editor emits the repaired HTML on the next save) permanently fixes the record.
- */
 export function repairBrokenLinkHrefs(html: string): string {
   if (!html || html.indexOf('<a') === -1) return html;
   try {
@@ -1143,24 +626,6 @@ export function repairBrokenLinkHrefs(html: string): string {
   }
 }
 
-/**
- * The 1,000,000-character ceiling, enforced on the way IN.
- *
- * Past it the PDF and Word exports are dead — dompdf and PhpWord do not fail
- * gracefully on a document that size, they take the request down. So the limit
- * was already checked on DOCX upload, and shown by the counter under every
- * editor. Neither of those covers a paste: someone could drop five megabytes of
- * text in, watch the counter turn red, and save it anyway.
- *
- * A paste is the only realistic way to cross a million characters by hand —
- * typing cannot — so paste and drop are the two events guarded. Typing is left
- * alone deliberately: checking every keystroke would mean serialising the whole
- * document on each one, and it cannot cross the line a character at a time.
- *
- * The message is not shown from here. The extension reports to whoever
- * configured it, so each editor raises it through its own toast rather than
- * this file inventing a second notification style.
- */
 export const CONTENT_MAX_CHARS = 1000000;
 
 type ContentLimitOptions = {
@@ -1168,56 +633,15 @@ type ContentLimitOptions = {
   onExceed?: (attempted: number, max: number) => void;
 };
 
-/**
- * The document's length as the WRITER counts it: characters of text, with the
- * markup left out.
- *
- * The limit used to be measured on the HTML, which meant formatting spent it.
- * Selecting a paragraph and raising its font size added a span and its style to
- * every run it touched, so the counter climbed without a character being typed
- * — and a document could be refused the next letter because of how it looked,
- * not what it said. Text is the only measure a writer can act on: shorten the
- * document and the number goes down, restyle it and it does not move.
- */
 export const contentTextLength = (editor: Editor | null | undefined): number =>
   editor ? (editor.getText({ blockSeparator: '\n' }) ?? '').length : 0;
 
-/* How much a paste will actually ADD to the document — again as text.
- *
- * `clipboardData.getData('text/html')` is not the content either; it is the
- * content inside a transport envelope the browser builds. Chrome prepends a
- * <meta charset>, wraps the selection in <html><body> with StartFragment /
- * EndFragment comments, and — when the copy came from another ProseMirror
- * editor, which is exactly the Agreement-to-Trade-Document case — stamps a
- * data-pm-slice attribute on the wrapper. None of it survives the parse.
- *
- * Reading the text out of the payload drops the envelope and the markup in one
- * step, so the figure the guard adds is the figure the counter will show. */
 export const pastedLength = (raw: string): number => htmlTextLength(raw);
 
-/**
- * The ceiling for a CHEAP pre-check made on an HTML string.
- *
- * Reading a string and walking the editor's document are two ways of counting
- * the same characters, and on a long import they differ slightly. A gate that
- * runs before the document is even seeded must not be the thing that refuses a
- * file the editor would have held — so it keeps a small margin, and the real
- * decision is taken afterwards from the editor itself.
- */
 export const preCheckMax = (max: number): number => Math.round(max * 1.02);
 
-/**
- * The same count, taken from an HTML string rather than a live editor — for
- * content on its way in (a Word import) or already stored (a saved draft).
- *
- * Block ends become newlines first so the figure lines up with the editor's own
- * text, which separates blocks the same way; without that the two measures
- * would drift apart by one character per paragraph and the counter and the
- * guard would disagree again.
- */
 export const htmlTextLength = (html: string): number => {
   if (!html) return 0;
-  // Plain text is already the answer.
   if (!/<[a-z!/]/i.test(html)) return html.trim().length;
   const spaced = html
     .replace(/<br\s*\/?>/gi, '\n')
@@ -1229,15 +653,6 @@ export const htmlTextLength = (html: string): number => {
   }
 };
 
-/* Show a link's target on hover.
- *
- * A link inside a contenteditable gets no status-bar preview and no tooltip —
- * the browser only does that for links you can actually click through, so an
- * author had no way to see where a link they had inserted actually pointed
- * without opening it. Stamping the href onto title= gives the native tooltip.
- *
- * Written on mouseover rather than at render time so it stays correct after the
- * href is edited, and it costs nothing until the pointer is over a link. */
 const LinkTitle = Extension.create({
   name: 'linkTitle',
   addProseMirrorPlugins() {
@@ -1252,7 +667,7 @@ const LinkTitle = Extension.create({
                 const href = a.getAttribute('href') || '';
                 if (a.getAttribute('title') !== href) a.setAttribute('title', href);
               }
-              return false;   // never consume the event
+              return false;
             },
           },
         },
@@ -1261,16 +676,6 @@ const LinkTitle = Extension.create({
   },
 });
 
-/* Keep the selection VISIBLE while a toolbar panel is open.
- *
- * A browser only paints ::selection while the element owning it has focus. The
- * link panel's input takes that focus, so the moment it opened the highlight
- * vanished — you were asked which URL to attach without being shown what you
- * had selected. It came back only after Apply, which is too late to check.
- *
- * The selection still EXISTS in editor state throughout; it is only the drawing
- * that stops. So we draw it ourselves: a decoration over the same range,
- * switched on when the panel opens and off when it closes. */
 export const selShadowKey = new PluginKey('ctcSelShadow');
 const SelectionShadow = Extension.create({
   name: 'ctcSelShadow',
@@ -1282,9 +687,8 @@ const SelectionShadow = Extension.create({
           init: () => null as { from: number; to: number } | null,
           apply(tr, prev) {
             const meta = tr.getMeta(selShadowKey);
-            if (meta !== undefined) return meta;                 // explicit on/off
+            if (meta !== undefined) return meta;
             if (!prev) return null;
-            // Follow edits so the band stays on the same text.
             return { from: tr.mapping.map(prev.from), to: tr.mapping.map(prev.to) };
           },
         },
@@ -1302,16 +706,6 @@ const SelectionShadow = Extension.create({
   },
 });
 
-/**
- * Measure the document once and give that same number to BOTH the limit and
- * the screen.
- *
- * Reading the guard's cache instead would depend on whether the extension's
- * update handler runs before the editor's own — a difference of one keystroke,
- * which is exactly the kind of small disagreement this is here to end. Taken
- * fresh, written back to the cache, returned to the caller: one measurement,
- * one number, no ordering to reason about.
- */
 export const limitTextLen = (editor: Editor | null | undefined): number => {
   if (!editor) return 0;
   const len = contentTextLength(editor);
@@ -1325,10 +719,6 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
   addOptions() {
     return { max: CONTENT_MAX_CHARS, onExceed: undefined };
   },
-  /* The document's TEXT length, cached.
-     Reading the text walks the whole document, so it cannot be done on every
-     keystroke of a million-character draft; it is measured once per update and
-     the guard reuses the number, which costs nothing per key. */
   addStorage() {
     return { textLen: 0, lastWarn: 0 };
   },
@@ -1339,9 +729,6 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
     const editor = this.editor;
     const storage = this.storage;
 
-    /* One message per two seconds. Typing at the ceiling fires the guard on
-       every key, and a toast per keystroke is worse than the thing it warns
-       about. */
     const warn = (attempted: number) => {
       const now = Date.now();
       if (now - storage.lastWarn < 2000) return;
@@ -1349,8 +736,6 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
       onExceed?.(attempted, max);
     };
 
-    /* True = block. Measured the same way the counter on screen is, so nothing
-       is ever rejected at a figure the user never saw. */
     const wouldOverflow = (incoming: number): boolean => {
       const attempted = contentTextLength(editor) + incoming;
       if (attempted <= max) return false;
@@ -1358,18 +743,6 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
       return true;
     };
 
-    /* At or past the ceiling, nothing more goes in.
-
-       The cached length is trusted only while it says there is room: a cache is
-       a promise about a document that has since been replaced, and content set
-       through setHTML lands with emitUpdate:false, so onUpdate never corrects
-       it. A big draft followed by a small import therefore left the ceiling
-       armed against a document that was nowhere near it — "the uploaded doc is
-       within the limit but will not accept another letter" (CS-17).
-
-       So: the cheap check decides when to let a keystroke through, and the real
-       measurement decides when to refuse one. getHTML() runs only on the
-       keystroke that would cross the line, not on every key. */
     const atCeiling = (incoming: number): boolean => {
       if (storage.textLen + incoming <= max) return false;
       storage.textLen = contentTextLength(editor);
@@ -1393,18 +766,10 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
             const len = pastedLength(dt?.getData('text/html') || dt?.getData('text/plain') || '');
             return wouldOverflow(len);
           },
-          /* Typing. A document sitting just under the ceiling walks past it one
-             character at a time, which is exactly how a draft reached
-             1,000,043 — the paste guard alone was never going to catch that.
-             handleTextInput and handleKeyDown are USER-input hooks: they never
-             fire for setContent, so hydrating a document that is already at the
-             limit still works. A filterTransaction guard would have blocked
-             that too and left the editor blank. */
           handleTextInput(_view, _from, _to, text) {
             return atCeiling(text.length);
           },
           handleKeyDown(_view, event) {
-            // Enter opens a new block — a few characters of HTML, not one.
             if (event.key !== 'Enter') return false;
             return atCeiling(8);
           },
@@ -1414,42 +779,68 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
   },
 });
 
-/**
- * The extension set behind the CLM editors.
- *
- * Exported because the toolbar (CtcToolbar) is only as capable as the
- * extensions under it: an editor that renders the bar without these gets
- * buttons that silently do nothing. The Terms & Conditions wizard keeps its
- * own useEditor — its hydration and change handling differ — and takes the
- * capability from here instead of re-listing it.
- *
- * PageBreak and PageFlow are included even for editors that never paginate.
- * PageFlow does nothing outside a .ctcte-pageview surface (it checks before
- * measuring), and PageBreak without its toolbar button is simply a node type
- * nobody can insert — while leaving them out would mean any page break already
- * saved in a document could not be parsed back.
- */
+const LIST_TYPES = new Set(['bulletList', 'orderedList']);
+
+const PasteOutOfList = Extension.create({
+  name: 'pasteOutOfList',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey('pasteOutOfList'),
+        props: {
+          handlePaste(view, _event, slice) {
+            const { state } = view;
+            const { $from, empty } = state.selection;
+            if (!empty || !$from.parent.isTextblock) return false;
+            const first = slice.content.firstChild;
+            if (!first || first.isInline) return false;
+            if (slice.content.childCount < 2 && first.isTextblock) return false;
+            if ($from.parentOffset !== $from.parent.content.size) return false;
+
+            let listDepth = -1;
+            for (let d = $from.depth - 1; d > 0; d--) {
+              const node = $from.node(d);
+              if (node.type.name !== 'listItem' && !LIST_TYPES.has(node.type.name)) break;
+              if ($from.index(d) !== node.childCount - 1) break;
+              if (LIST_TYPES.has(node.type.name)) listDepth = d;
+            }
+            if (listDepth < 0) return false;
+
+            try {
+              const tr = state.tr;
+              let insertAt = $from.after(listDepth);
+              const li = $from.node($from.depth - 1);
+              if ($from.parent.content.size === 0 && li.type.name === 'listItem' && li.childCount === 1) {
+                let d = $from.depth - 1;
+                while (d > listDepth && $from.node(d - 1).childCount === 1) d--;
+                const from = $from.before(d), to = $from.after(d);
+                tr.delete(from, to);
+                insertAt = tr.mapping.map(insertAt, -1);
+              }
+              tr.replaceRange(insertAt, insertAt, slice);
+              const end = tr.mapping.map(insertAt, 1);
+              tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(end, tr.doc.content.size)), -1));
+              view.dispatch(tr.scrollIntoView().setMeta('paste', true).setMeta('uiEvent', 'paste'));
+              return true;
+            } catch {
+              return false;
+            }
+          },
+        },
+      }),
+    ];
+  },
+});
+
 export function ctcExtensions(opts?: {
-  /** Called when a paste or drop would cross CONTENT_MAX_CHARS. */
   onLimit?: (attempted: number, max: number) => void;
 }) {
   return [
     ContentLimit.configure({ max: CONTENT_MAX_CHARS, onExceed: opts?.onLimit }),
-      // StarterKit v3 BUNDLES link + underline, so configure link HERE (a second
-    // Link extension would be a duplicate and its config ignored). autolink/
-    // linkOnPaste OFF: they linkify any "word.word" text as a domain, which
-    // turned every {{customer.name}} / {{customer.company}} placeholder into a
-    // link. Manual links via the toolbar's 🔗 button still work.
+    PasteOutOfList,
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
-      // autolink/linkOnPaste OFF + shouldAutoLink hard-returns false so NOTHING
-      // is ever auto-linkified — placeholder tokens like {{customer.name}} were
-      // being turned into links because ".name/.company/.email/.zip" are real
-      // TLDs. Manual links via the toolbar 🔗 button still work.
       link: {
-        // Manual links (toolbar 🔗) open in a NEW TAB when clicked so the
-        // editor isn't navigated away. autolink/linkOnPaste stay OFF so
-        // placeholder tokens like {{customer.name}} are never linkified.
         openOnClick: true,
         autolink: false,
         linkOnPaste: false,
@@ -1466,31 +857,8 @@ export function ctcExtensions(opts?: {
     FontFamily,
     Color,
     BackgroundColor,
-    /* Subscript and Superscript must EXCLUDE each other. (#7)
-     *
-     * TipTap 3's marks ship with no `excludes` at all, so ProseMirror was happy
-     * to stack them: pressing X² then X₂ produced <sub><sup>text</sup></sub>
-     * with both toolbar buttons lit, and the character rendered as neither one
-     * thing nor the other. They are opposite vertical alignments of the same
-     * glyph — a character cannot be both, so the schema should say so rather
-     * than leaving the toolbar to police it.
-     *
-     * Declaring it on the schema (instead of unsetting the sibling inside each
-     * click handler) means every route in obeys it: the toolbar, the Mod-.
-     * and Mod-, keyboard shortcuts, and pasted or DOCX-imported HTML that
-     * carries a nested <sub><sup>. Each mark names ITSELF too, because
-     * ProseMirror's default `excludes` is the mark's own name and spelling out
-     * a value replaces that default rather than adding to it. */
     Subscript.extend({ excludes: 'subscript superscript' }),
     Superscript.extend({ excludes: 'superscript subscript' }),
-    /* Tables — Insert Table here, plus tables carried in from an uploaded
-       DOCX. resizable: TRUE so a column can be dragged to width the way it
-       can in Word; it was off because the widths it writes were considered
-       noise in the serialized HTML, but a table you cannot size is a table
-       that never fits its content.
-       The widths land in a <colgroup>, which the PDF honours (its tables are
-       table-layout: fixed) — that path only became safe once the blade
-       stopped moving <colgroup> behind the promoted <thead>. */
     StyledTable.configure({ resizable: true }),
     TableFit,
     StyledTableRow,
@@ -1506,21 +874,8 @@ export function ctcExtensions(opts?: {
 
 export function useCtcEditor(opts: {
   value: string;
-  /**
-   * `textLen` is the document's length as the LIMIT counts it — the very
-   * number the typing guard compares against, handed out rather than
-   * recomputed.
-   *
-   * The counter used to measure the saved HTML while the guard measured the
-   * editor's own text. Two readings of the same document that agree on a short
-   * draft and drift apart on a long one: at 993,471 on screen the guard had
-   * already reached 1,000,000, so an upload that "fit" refused the next letter
-   * typed (CS-17 again, from the other side). One number now, taken once.
-   */
   onChange: (html: string, textLen: number) => void;
   editable?: boolean;
-  /** Raised when a paste or drop would cross CONTENT_MAX_CHARS. The editor
-   *  blocks the input either way; this is how the screen says so. */
   onLimit?: (attempted: number, max: number) => void;
 }): CtcEditor {
   const { value, onChange, editable = true, onLimit } = opts;
@@ -1534,8 +889,6 @@ export function useCtcEditor(opts: {
     onUpdate({ editor }) {
       const html = editor.getHTML();
       lastSyncedRef.current = html;
-      // Debounce the push to the parent so a long agreement doesn't re-render the
-      // whole Stage tree on every keystroke; formatting itself stays instant.
       if (syncTimer.current) window.clearTimeout(syncTimer.current);
       syncTimer.current = window.setTimeout(() => onChange(html, limitTextLen(editor)), 250);
     },
@@ -1544,8 +897,6 @@ export function useCtcEditor(opts: {
   useEffect(() => () => { if (syncTimer.current) window.clearTimeout(syncTimer.current); }, []);
   useEffect(() => { editor?.setEditable(editable); }, [editable, editor]);
 
-
-  // External value change (hydration / DOCX / reset) → re-seed without looping.
   useEffect(() => {
     if (!editor) return;
     if (value !== lastSyncedRef.current && value !== editor.getHTML()) {
@@ -1562,20 +913,6 @@ export function useCtcEditor(opts: {
       if (!editor) return;
       const repaired = repairBrokenLinkHrefs(html);
       editor.commands.setContent(repaired || '<p></p>', { emitUpdate: false });
-      /* What goes out is what the EDITOR now holds, not the string that was
-         handed in.
-
-         TipTap re-writes whatever it parses — <b> becomes <strong>,
-         color:#1F3A5F becomes color: rgb(31, 58, 95) — so a Word import lands
-         roughly a fifth longer than the HTML the server converted. Publishing
-         the incoming string left the counter, the save guard and the typing
-         guard reading two different documents: a file imported at 919,000
-         characters sat in the editor at 1,131,908, so the screen said "919 KB
-         of 1 MB" and the very next letter was refused as over the limit
-         (CS-17). One measurement, taken from the editor itself.
-
-         emitUpdate:false also means the limit guard's cached length is never
-         told the document changed, so it is set here too. */
       const seeded = editor.getHTML() || repaired || '<p></p>';
       lastSyncedRef.current = seeded;
       const len = contentTextLength(editor);
@@ -1586,26 +923,14 @@ export function useCtcEditor(opts: {
   };
 }
 
-/** Content-area render — drop inside the HeaderFooterPanel (or any surface). */
-/**
- * @param pageView  Lay the surface out as A4 pages, the way Word does.
- *   Without it the drafter types into an endless column and cannot tell where
- *   the PDF will split — they only find out after generating it. The geometry
- *   is taken from the PDF itself (see .ctcte-pageview) so the guides land where
- *   dompdf actually breaks.
- */
-/* Left/right page margin, in px, as the PDF measures it.
-   Clamped to the same 10..60 window as clm-signature-document.blade.php, so a
-   margin that can be set here is always a margin the PDF can render. */
 export const MARGIN_MIN = 10;
 export const MARGIN_MAX = 60;
 export type CtcMargins = { left: number; right: number };
 export const DEFAULT_MARGINS: CtcMargins = { left: 25, right: 25 };
 
-export const SHEET_W = 794;   // A4 at 96dpi — the printed sheet width
+export const SHEET_W = 794;
 const PX_PER_CM = SHEET_W / 21;
 
-/** Word's ruler: the sheet's full width, with a draggable marker per margin. */
 function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: (m: CtcMargins) => void }) {
   const barRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<'left' | 'right' | null>(null);
@@ -1616,8 +941,6 @@ function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: 
       const bar = barRef.current;
       if (!bar) return;
       const x = e.clientX - bar.getBoundingClientRect().left;
-      // Each side is measured from its OWN edge, which is what the @page rule
-      // means by margin-left / margin-right.
       const raw = drag === 'left' ? x : SHEET_W - x;
       const v = Math.round(Math.max(MARGIN_MIN, Math.min(MARGIN_MAX, raw)));
       onChange(drag === 'left' ? { ...margins, left: v } : { ...margins, right: v });
@@ -1628,10 +951,6 @@ function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: 
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
   }, [drag, margins, onChange]);
 
-  /* Ticks every half centimetre across the sheet, numbered on the whole ones.
-     The ruler used to draw the numbers ALONE, floating with nothing under them,
-     so it read as a row of digits rather than a scale — there was no way to see
-     where a centimetre actually fell. A21 is 21cm wide, so 42 half-steps. */
   const ticks: { x: number; major: boolean; cm: number }[] = [];
   for (let half = 0; half <= 42; half++) {
     ticks.push({ x: (half / 2) * PX_PER_CM, major: half % 2 === 0, cm: half / 2 });
@@ -1639,7 +958,6 @@ function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: 
 
   return (
     <div className="ctcte-ruler" ref={barRef} style={{ width: SHEET_W }}>
-      {/* The greyed ends are the margins — the writable column is what stays white. */}
       <div className="ctcte-ruler-pad" style={{ left: 0, width: margins.left }} />
       <div className="ctcte-ruler-pad" style={{ right: 0, width: margins.right }} />
       {ticks.map(t => (
@@ -1649,8 +967,6 @@ function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: 
           style={{ left: t.x }}
         />
       ))}
-      {/* 0 and 21 sit on the paper's own edges, where a number has no room and
-          nothing to say — the edge is the edge. */}
       {ticks.filter(t => t.major && t.cm > 0 && t.cm < 21).map(t => (
         <span key={`n${t.x}`} className="ctcte-ruler-num" style={{ left: t.x }}>{t.cm}</span>
       ))}
@@ -1671,7 +987,6 @@ function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: 
 export function CtcEditorContent({ editor, pageView, margins, onMargins, footerText }: {
   editor: Editor | null; pageView?: boolean;
   margins?: CtcMargins; onMargins?: (m: CtcMargins) => void;
-  /** Printed at the foot of every sheet, so the draft shows what the PDF will. */
   footerText?: string;
 }) {
   if (!editor) return null;
@@ -1690,67 +1005,30 @@ export function CtcEditorContent({ editor, pageView, margins, onMargins, footerT
   );
 }
 
-/** Formatting toolbar — render ABOVE the content surface. */
-/* Toolbar panels render into <body>, not into the toolbar.
- *
- * Both the Link box and the Find-and-Replace panel used to be position:absolute
- * inside their button's wrapper. That made them prisoners of whatever clipped
- * the editor: inside the T&C modal the shell is overflow:hidden for its rounded
- * corners, so the panels were cut in half; removing that clip was worse, because
- * an absolutely-positioned child still counts toward an ancestor's overflow, so
- * opening one widened the layout and shoved the whole editor sideways.
- *
- * A portal has no such ancestor. The panel is measured from its own button and
- * placed in viewport coordinates, so it cannot be clipped, cannot displace the
- * editor, and behaves the same in all five editors that use this toolbar.
- * Same technique, and the same reason, as the segment "+N" popover in
- * Vendors.tsx.
- *
- * Right-aligned to the button so a wide panel opens INWARD, and clamped to the
- * viewport so it can never sit off-screen on a narrow window. */
 function AnchoredPop({ anchor, width, onClose, children }: {
   anchor: HTMLElement | null;
   width: number;
-  /** Called when the panel's coordinates go stale. */
   onClose: () => void;
   children: ReactNode;
 }) {
-  /* Close on any click that is not inside this panel.
-     The panel is positioned once, when it opens, so anything that moves the
-     button afterwards — Full Screen, a resize, scrolling the draft — leaves it
-     stranded at coordinates that no longer mean anything. Clicking anywhere
-     else closes it, which is what a user expects from a transient panel and
-     covers every one of those cases without watching for them individually. */
   const popRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (popRef.current?.contains(t)) return;   // inside the panel — keep it
-      if (anchor?.contains(t)) return;           // its own button — it toggles
+      if (popRef.current?.contains(t)) return;
+      if (anchor?.contains(t)) return;
       onClose();
     };
-    // Capture phase: a toolbar button that stops propagation must not be able
-    // to keep a stale panel alive.
     document.addEventListener('mousedown', onDown, true);
     return () => document.removeEventListener('mousedown', onDown, true);
   }, [anchor, onClose]);
 
   if (!anchor) return null;
   const r = anchor.getBoundingClientRect();
-  /* Open RIGHTWARD from the button, and only flip when there is no room.
-     Right-aligning to the button (left = r.right - width) put a 340px panel
-     270px to the LEFT of a button that sits near the left edge of the
-     toolbar — outside the dialog entirely. Left-aligning keeps the panel
-     beside the control that opened it, which is where the eye already is. */
   let left = r.left;
-  if (left + width > window.innerWidth - 8) left = r.right - width;   // flip
-  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));  // clamp
+  if (left + width > window.innerWidth - 8) left = r.right - width;
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
   return createPortal(
-    /* 400001 — ABOVE every dialog this toolbar can appear inside. The T&C
-       wizard's own overlay is z-index 200000 and its nested overlay 300000, so
-       a portal at the old 12000 rendered behind the modal and the panel simply
-       never appeared. A portalled popover has to outrank its host dialog, not
-       the page. */
     <div ref={popRef} style={{ position: 'fixed', top: r.bottom + 6, left, zIndex: 400001 }}>
       {children}
     </div>,
@@ -1761,57 +1039,10 @@ function AnchoredPop({ anchor, width, onClose, children }: {
 export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FONT_FAMILIES }: {
   editor: Editor | null;
   dark?: boolean;
-  /** Fonts the Font control may offer. Defaults to the house face alone — an
-   *  agreement is set in one typeface and a clause in another is a defect. Pass
-   *  a longer list (TNC_FONT_FAMILIES) where a real choice is wanted. */
   fonts?: { label: string; value: string }[];
-  /** Drop the Page Break button. For an editor whose content is a FRAGMENT of
-   *  a document rather than a document: a T&C clause is inserted into an
-   *  agreement and takes that agreement's pagination, so a break authored here
-   *  would land wherever the host happened to drop the clause. */
   hidePageBreak?: boolean;
-  /** Drop the text-colour picker and the highlight swatches. For an editor
-   *  whose output is not rendered by our own PDF pipeline: HR document
-   *  templates go through PHPWord, whose HTML reader has only partial support
-   *  for inline colour, so offering the control there promises formatting the
-   *  generated DOCX may not keep. */
   hideColor?: boolean;
 }) {
-  /* ONE menu open at a time.
-     These were four independent booleans, so each menu knew only about itself:
-     opening Table while Find was up left both on screen, overlapping. A toolbar
-     that can show two menus at once is a toolbar where the second one is read
-     as part of the first.
-     Exclusivity is a property of the state now rather than something every
-     handler has to remember — a fifth menu added later inherits it. The
-     setters keep the same shape (boolean or updater) so no call site changed. */
-  /* Re-render the toolbar when the editor state the buttons DRAW changes.
-
-     Every button below asks editor.isActive(...) AT RENDER TIME, but TipTap v3
-     dropped useEditor's automatic re-render on each transaction
-     (shouldRerenderOnTransaction defaults to false), so nothing re-ran this
-     component when the caret moved or a mark toggled. The highlights were
-     repainted only when some UNRELATED render happened to fire — typing, which
-     bubbles through onUpdate → onChange → parent state. Hence the reported
-     symptom: press Bold and the button stays unlit until you type a character,
-     and un-pressing it likewise stays lit.
-
-     This lives in the TOOLBAR rather than in whichever component owns the
-     editor: CtcRichEditor and the HR Document Template editor each call
-     useEditor themselves and share only these buttons, so a subscription in
-     either wrapper leaves the other one unfixed.
-
-     BOTH events are needed. 'transaction' covers mark toggles on an empty
-     selection (stored marks) and content edits; 'selectionUpdate' covers a
-     caret move that changes no document — a click from inside a bold word to
-     outside it dispatches no transaction, so on 'transaction' alone the button
-     kept the previous word's state.
-
-     The signature guard is what keeps this off the hot path: 'transaction'
-     fires on every keystroke, and re-rendering the toolbar each time is what
-     shouldRerenderOnTransaction:true would have cost. Typing inside one bold
-     word produces the same signature and re-renders nothing; the first
-     character that leaves it re-renders once. */
   const [, bumpToolbar] = useState(0);
   const toolbarSigRef = useRef('');
   useEffect(() => {
@@ -1826,15 +1057,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       editor.isActive({ textAlign: 'left' }), editor.isActive({ textAlign: 'center' }),
       editor.isActive({ textAlign: 'right' }), editor.isActive({ textAlign: 'justify' }),
     ].map(Boolean).join('')
-      /* The two dropdowns belong in here as well.
-       *
-       * They show what the CARET is on, but only buttons were signed — so
-       * moving to text of a different size re-rendered nothing and the Size box
-       * went on displaying the last value applied. A <select> whose value is
-       * already the value you pick fires no change event, so choosing that same
-       * size again did nothing at all, and the only way through was to pick some
-       * other size and come back (CS-13). Signed here, the box follows the
-       * selection and every pick is a real change. */
       + '|' + String(editor.getAttributes('textStyle').fontSize ?? '')
       + '|' + String(editor.getAttributes('textStyle').fontFamily ?? '');
 
@@ -1856,16 +1078,11 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
 
   type ToolMenu = 'link' | 'spacing' | 'table' | 'find' | null;
   const [menu, setMenu] = useState<ToolMenu>(null);
-  /* Anchors for the portalled Link and Find panels — measured, not nested. */
   const spacingAnchorRef = useRef<HTMLDivElement>(null);
   const tableAnchorRef   = useRef<HTMLDivElement>(null);
   const linkAnchorRef = useRef<HTMLDivElement>(null);
   const findAnchorRef = useRef<HTMLDivElement>(null);
   const linkOpen    = menu === 'link';
-  /* Clear the selection band on EVERY way the panel can close — Apply, Remove,
-     Escape, the toggle, or a click outside. Clearing it only where the panel is
-     opened would leave the band painted after an Escape, which reads as a
-     selection the user no longer has. */
   useEffect(() => {
     if (!editor || linkOpen) return;
     if (selShadowKey.getState(editor.state)) {
@@ -1880,8 +1097,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       setMenu(prev => {
         const isOpen = prev === name;
         const next = typeof v === 'function' ? v(isOpen) : v;
-        // Closing a menu that is not the open one must not shut the one that is
-        // — the popovers' click-away handlers fire on each other.
         return next ? name : (isOpen ? null : prev);
       });
   const setLinkOpen    = menuSetter('link');
@@ -1891,27 +1106,9 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
   const [findTerm, setFindTerm] = useState('');
   const [replaceTerm, setReplaceTerm] = useState('');
   const [matchCase, setMatchCase] = useState(false);
-  /* False until the user has actually travelled to a match for the current
-     query — see stepMatch. A ref, not state: it must not cause a render. */
   const findVisited = useRef(false);
   const [linkUrl, setLinkUrl] = useState('');
 
-
-  /* ── Leaving Find puts the editor back the way it was ────────────────
-     Two things outlive the panel otherwise:
-
-       1. The highlight decorations. The Find button and Escape both clear
-          them, but they are not the only ways out — clicking away closes the
-          menu (menu → null), and so does opening another popover. Those paths
-          left the document painted with highlights and no panel on screen to
-          explain them.
-       2. The SELECTION. Stepping to a match selects it, so exiting without
-          replacing left the last match sitting there selected. That does not
-          read as "here is your search result"; it reads as "the editor still
-          has this text picked", and the next keystroke would have replaced it.
-
-     Keyed on the panel closing rather than added to each close path, so a
-     close route added later cannot forget to clean up. */
   const findWasOpen = useRef(false);
   useEffect(() => {
     if (findOpen) { findWasOpen.current = true; return; }
@@ -1919,8 +1116,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     findWasOpen.current = false;
 
     let tr = editor.state.tr.setMeta(findKey, { term: '', matchCase: false, index: 0, matches: [] });
-    // Collapse to the END of the match, where a caret would sit after reading
-    // it — not the start, which would look like the cursor jumped backwards.
     if (!editor.state.selection.empty) {
       tr = tr.setSelection(TextSelection.create(tr.doc, editor.state.selection.to));
     }
@@ -1933,17 +1128,13 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
   const applyLink = () => {
     const raw = linkUrl.trim();
     if (!raw) {
-      // Empty → remove the link from the current selection.
       editor.chain().focus().extendMarkRange('link').unsetLink().run();
       setLinkOpen(false); setLinkUrl('');
       return;
     }
-    // Add a protocol so "www.x.com" / "x.com" become valid, openable hrefs.
     const url = /^(https?:\/\/|mailto:|tel:)/i.test(raw) ? raw : `https://${raw}`;
     const { from, to } = editor.state.selection;
     if (from === to) {
-      // No text selected — insert the URL itself as clickable linked text so
-      // the link actually shows in the draft instead of applying to nothing.
       editor.chain().focus()
         .insertContent(`<a href="${url.replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer">${raw.replace(/</g, '&lt;')}</a> `)
         .run();
@@ -1957,32 +1148,13 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     : editor.isActive('heading', { level: 2 }) ? 'h2'
     : editor.isActive('heading', { level: 3 }) ? 'h3' : 'p';
 
-  // Current font size (px number without unit) from the textStyle mark.
-  /* Documents written before the switch to points carry px values, so a stored
-     `16px` must not read as blank in a pt dropdown. Converted at 1pt = 1.333px
-     and rounded, which lands the old px list exactly on the pt list. */
   const rawFontSize = String(editor.getAttributes('textStyle').fontSize || '');
   const curFontSize = rawFontSize.endsWith('px')
     ? String(Math.round(parseFloat(rawFontSize) * 0.75))
     : rawFontSize.replace('pt', '');
-  /* Falls back to the house font rather than to blank. Times New Roman is set
-     on the page surface in CSS, not as a mark, so text that was simply typed
-     carries no fontFamily attribute and the control read "Font" — as though no
-     font were chosen — on a document that is entirely in one. */
   const curFontFamily = String(editor.getAttributes('textStyle').fontFamily || fonts[0].value);
-  /* Every structure command is a no-op outside a table, so the menu greys
-     them out rather than letting a click do nothing silently. */
   const inTable = editor.isActive('table');
 
-  /* ── Sub points ────────────────────────────────────────────────────────
-     The flag belongs on the OUTERMOST ordered list, never on the level the
-     caret happens to be in.
-     Word applies a multilevel scheme to the whole list, and the CSS here does
-     the same: the numbering is `counters(legal, ".")` walking down from the top
-     list, so 1 / 1.1 / 1.1.1 only comes out if the top one carries the flag.
-     updateAttributes() writes to the nearest matching node — so pressing Tab
-     first and then the button marked the SUB-list, leaving the parent on plain
-     decimal and the two levels numbering independently. */
   const outerOrderedList = (): { pos: number; node: any } | null => {
     const $from = editor.state.selection.$from;
     let found: { pos: number; node: any } | null = null;
@@ -1990,13 +1162,11 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       const n = $from.node(d);
       if (n.type.name === 'orderedList' && !found) found = { pos: $from.before(d), node: n };
     }
-    return found;   // the SHALLOWEST ordered list, i.e. the top of the list
+    return found;
   };
   const legalListOn = !!outerOrderedList()?.node.attrs.legal;
   const toggleLegalList = () => {
     if (!editor.isActive('orderedList')) {
-      // No list yet — make one, then mark it. The new list is the outermost by
-      // definition, so a second lookup is not needed.
       editor.chain().focus().toggleOrderedList().updateAttributes('orderedList', { legal: '1' }).run();
       return;
     }
@@ -2011,52 +1181,12 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     editor.commands.focus();
   };
 
-  /* ── Find and Replace ──────────────────────────────────────────────────
-     The plugin owns the matches; these push the query into it and act on what
-     it found. Everything goes through the view rather than a chain because a
-     search is not a document edit — only the replaces are. */
-  /* The matches are computed HERE, from the live document, rather than read
-     back out of the plugin.
-     TipTap v3's useEditor does not re-render on a transaction unless it is
-     asked to (shouldRerenderOnTransaction defaults to false), so a toolbar
-     reading plugin state saw whatever was there at the last React render —
-     which for a fresh query is an empty match list. That is why the counter
-     sat at 0/0 on a word the document plainly contains.
-     The plugin still owns the DECORATIONS; it just is not the source of truth
-     for the count or for what Enter steps through. Only computed while the
-     panel is open with something typed in it, so a closed Find costs nothing
-     even on a 200-page agreement. */
-  /* Clear the match highlights on EVERY way the Find panel can close.
-     The toolbar button cleared them itself, but that is only one exit out of
-     five: clicking outside the panel, Escape, opening another menu (the `menu`
-     state is exclusive, so that closes Find too) and unmounting the editor all
-     bypassed it. The decorations then stayed painted over the document with no
-     panel on screen and no way to dismiss them short of reopening Find and
-     closing it again by the one blessed route -- the reported "searched text
-     stays highlighted after navigating back".
-
-     Hanging it off findOpen makes the clear a consequence of the panel being
-     shut rather than something each close path has to remember, so a sixth one
-     added later inherits it. Guarded on there being something to clear, so it
-     does not dispatch an empty transaction on every unrelated menu change. */
   useEffect(() => {
     if (!editor || findOpen) return;
     const fs: FindState | undefined = findKey.getState(editor.state);
     if (!fs?.term && !fs?.matches?.length) return;
     const tr = editor.state.tr.setMeta(findKey, { term: '', matchCase, index: 0, matches: [] });
 
-    /* Also COLLAPSE the selection, when it is the one stepMatch made.
-       Stepping through hits (Enter / the arrows) sets a real TextSelection over
-       the current match -- that is what puts the match on screen and what
-       Replace then acts on. Dropping the decorations alone therefore left the
-       browser's own selection band sitting on the last hit, which reads as
-       "the searched text is still highlighted" just as much as the decorations
-       did, and is very likely what was actually reported: the plain blue
-       selection, not our find styling.
-       Collapsed to the END of the match so the caret lands where the user was
-       reading, ready to type. Only when the selection IS the current match --
-       a selection the user made themselves, or one left by a Replace, is
-       theirs to keep. */
     const m = fs.matches?.[fs.index];
     const sel = editor.state.selection;
     if (m && !sel.empty && sel.from === m.from && sel.to === m.to) {
@@ -2074,13 +1204,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
   const findIndex = findCount ? Math.min(findState?.index ?? 0, findCount - 1) + 1 : 0;
 
   const pushSearch = (term: string, caseSensitive: boolean) => {
-    /* Highlights and the counter update as you type; the PAGE does not move.
-       Jumping on every keystroke meant the document ran away under a
-       half-typed word — "r", "re", "reg" each landing somewhere different —
-       and the first real match was reached by accident rather than on purpose.
-       Enter (or the arrows) is what travels.
-       The matches travel WITH the query so the decorations draw exactly the set
-       the counter is counting. */
     const matches = term ? collectMatches(editor.state.doc, term, caseSensitive) : [];
     editor.view.dispatch(
       editor.state.tr.setMeta(findKey, { term, matchCase: caseSensitive, index: 0, matches }),
@@ -2088,20 +1211,9 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     findVisited.current = false;
   };
 
-  /* Step to a match and bring it on screen.
-     The scroll is done on the DOM, not with the transaction's scrollIntoView().
-     That flag is honoured against the FOCUSED selection, and the focus is in
-     the Find box — which is where it has to stay, or the next keystroke would
-     go into the document instead of the search. So the match is located with
-     domAtPos and scrolled directly; that works whether or not the editor holds
-     focus. Centred rather than merely "into view", so a match at the very
-     bottom of the viewport does not sit under the panel. */
   const stepMatch = (delta: number) => {
     if (!findMatches.length) return;
     const cur = Math.min(findKey.getState(editor.state)?.index ?? 0, findMatches.length - 1);
-    /* The first Enter after a new query goes to the match you are already ON,
-       not past it. Without this the opening hit was skipped: typing set the
-       index to 0 and the first Enter advanced straight to the second. */
     const next = findVisited.current
       ? (cur + delta + findMatches.length) % findMatches.length
       : cur;
@@ -2115,7 +1227,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     scrollToMatch(m.from);
   };
 
-  /** Scroll whatever element holds this document position into the middle. */
   const scrollToMatch = (pos: number) => {
     try {
       const at = editor.view.domAtPos(pos);
@@ -2124,8 +1235,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
         node?.nodeType === 3 ? node.parentElement : (node as HTMLElement | null);
       el?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
     } catch {
-      /* domAtPos throws if the position was mapped away mid-edit — the next
-         keystroke recomputes the matches anyway. */
     }
   };
 
@@ -2134,15 +1243,11 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     const cur = Math.min(findKey.getState(editor.state)?.index ?? 0, findMatches.length - 1);
     const m = findMatches[cur] ?? findMatches[0];
     editor.view.dispatch(editor.state.tr.insertText(replaceTerm, m.from, m.to));
-    // The plugin recomputes on docChanged, so the next match is already the
-    // current one — nothing to advance by hand.
   };
 
   const replaceAll = () => {
     if (!findMatches.length) return;
     const tr = editor.state.tr;
-    /* Back to front: replacing shifts every position after the match, and
-       working backwards leaves the ones still to do untouched. */
     for (let i = findMatches.length - 1; i >= 0; i--) {
       const m = findMatches[i];
       tr.insertText(replaceTerm, m.from, m.to);
@@ -2150,11 +1255,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     editor.view.dispatch(tr);
   };
 
-  /* Walk up from the caret to the table (or just the row, for a bottom line)
-     and rewrite every cell's style in ONE transaction, so the whole change is
-     a single undo step. Done through the view rather than a chain because
-     updateAttributes only ever reaches the node the caret is actually in —
-     here every cell has to be touched. */
   const applyBorders = (spec: BorderSpec, scope: 'table' | 'row') => {
     const { state, view } = editor;
     const $from = state.selection.$from;
@@ -2183,12 +1283,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     editor.commands.focus();
   };
 
-  /* prosemirror-tables builds an inserted row or column out of bare cells: no
-     border, no padding, and on the header row none of the header's own
-     background — so a new column arrived as a dark gap in a white header
-     (QA #16). The table already says what a cell of each kind looks like, so
-     an unstyled cell copies its nearest relative: another cell of the same
-     kind in its row, else the same column, else anywhere in the table. */
   const dressNewCells = () => {
     const { state, view } = editor;
     const $from = state.selection.$from;
@@ -2228,8 +1322,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
     });
     if (tr.docChanged) view.dispatch(tr);
   };
-  /* Heading first — getAttributes('paragraph') is empty while the caret sits in
-     a heading, and the control would read as unset. */
   const blockAttrs = Object.keys(editor.getAttributes('heading')).length
     ? editor.getAttributes('heading')
     : editor.getAttributes('paragraph');
@@ -2237,8 +1329,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
   const hasSpaceBefore = !!blockAttrs.spaceBefore;
   const hasSpaceAfter  = !!blockAttrs.spaceAfter;
 
-  // Indent / outdent: nudge list nesting inside a list, else the block's
-  // margin-left (the ParagraphIndent attribute) across the selection.
   const changeIndent = (delta: number) => {
     if (editor.isActive('listItem')) {
       const c = editor.chain().focus();
@@ -2260,16 +1350,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
 
   return (
     <div className={`ctcte-toolbar ${dark ? 'ctcte-dark' : ''}`}>
-      {/* Every cluster is its own flex box, so when the bar runs out of
-          width it wraps BETWEEN groups and never mid-group. Wrapping the
-          buttons as loose siblings is what made the second row start
-          halfway through a set and read as scattered. */}
-      {/* Grouped the way a document toolbar is read: what the block IS,
-          then how the TEXT looks, then how the PARAGRAPH sits, then lists,
-          then things you INSERT, then the tools, then history.
-          Find had been sitting among the bold/italic buttons and the sub-point
-          numbering next to the highlighters — both were where they first got
-          added rather than where they belong. */}
       <div className="ctcte-grp">
       <select
         className="ctcte-sel"
@@ -2296,8 +1376,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
         }}
         title="Font"
       >
-        {/* No blank placeholder — the control always shows the font actually in
-            use, and "no font" is not a state a document has. */}
         {fonts.map(f => (
           <option key={f.label} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>
         ))}
@@ -2323,15 +1401,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       <TB active={editor.isActive('italic')}    onClick={() => editor.chain().focus().toggleItalic().run()}    title="Italic"><i>I</i></TB>
       <TB active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline"><u>U</u></TB>
       <TB active={editor.isActive('strike')}    onClick={() => editor.chain().focus().toggleStrike().run()}    title="Strikethrough"><s>S</s></TB>
-      {/* Superscript / subscript, text colour and highlight. The extensions for
-          all four were already registered in useCtcEditor — only the buttons
-          were missing here, which is what would have made switching the Trade
-          Document editor onto this toolbar a downgrade. */}
-      {/* Mutually exclusive. TipTap models these as two independent marks, so
-          both could be active at once — the character then carries a raised AND
-          a lowered baseline, which no renderer can honour and the DOCX export
-          resolves arbitrarily. Unsetting the other in the SAME chain means one
-          undo step, not two. */}
       <TB active={editor.isActive('superscript')} onClick={() => editor.chain().focus().unsetSubscript().toggleSuperscript().run()} title="Superscript"><span style={{ fontSize: 11 }}>X²</span></TB>
       <TB active={editor.isActive('subscript')}   onClick={() => editor.chain().focus().unsetSuperscript().toggleSubscript().run()} title="Subscript"><span style={{ fontSize: 11 }}>X₂</span></TB>
       {!hideColor && (<>
@@ -2343,8 +1412,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
           onChange={e => (editor.chain().focus() as any).setColor(e.target.value).run()}
         />
       </label>
-      {/* Five everyday highlights inline, so the common case never opens the
-          OS colour picker; the last swatch clears it. */}
       {['#FEF08A', '#BBF7D0', '#BFDBFE', '#FBCFE8', '#DDD6FE'].map(c => (
         <button
           key={c}
@@ -2373,12 +1440,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       <TB active={editor.isActive({ textAlign: 'right' })}   onClick={() => editor.chain().focus().setTextAlign('right').run()}   title="Align right"><Ico d="M3 6h18M9 12h12M3 18h18" /></TB>
       <TB active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()} title="Justify"><Ico d="M3 6h18M3 12h18M3 18h18" /></TB>
 
-
-      {/* Line and Paragraph Spacing — Word's menu, same three sections: the
-          multiplier list, then the two paragraph-space toggles. A menu rather
-          than a <select> because a select cannot hold the toggles, and those
-          are the half people actually reach for: line spacing changes the gap
-          INSIDE a paragraph, the toggles change the gap BETWEEN paragraphs. */}
       <div className="ctcte-linkwrap" ref={spacingAnchorRef}>
         <button
           type="button"
@@ -2387,17 +1448,11 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
           onClick={() => setSpacingOpen(o => !o)}
           title={`Line and paragraph spacing${curLineHeight ? ` — ${curLineHeight}` : ''}`}
         >
-          {/* Word's icon: the text lines on the right, the up/down arrow that
-              measures the gap between them on the left. */}
           <Ico d="M9 5h12M9 12h12M9 19h12M4 4v16M4 4l-2 2.5M4 4l2 2.5M4 20l-2-2.5M4 20l2-2.5" />
-          {/* The current value is kept as a caption — it is the one thing the
-              icon cannot say, and it is what people check before changing it. */}
           {curLineHeight && <span className="ctcte-btn-val">{curLineHeight}</span>}
         </button>
         {spacingOpen && (
           <>
-            {/* Click-away. mousedown-prevented everywhere inside so the caret
-                never leaves the document while the menu is open. */}
             <div className="ctcte-spcbd" onMouseDown={e => { e.preventDefault(); setSpacingOpen(false); }} />
             <AnchoredPop anchor={spacingAnchorRef.current} width={232} onClose={() => setSpacingOpen(false)}>
             <div className="ctcte-spcpop ctcte-pop-portal" onMouseDown={e => e.preventDefault()}>
@@ -2462,21 +1517,11 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       <TB onClick={() => changeIndent(1)} title="Increase indent"><Ico d="M3 6h18M3 12h9M3 18h18M17 9l3 3-3 3" /></TB>
       <TB onClick={() => changeIndent(-1)} title="Decrease indent"><Ico d="M3 6h18M3 12h9M3 18h18M21 9l-3 3 3 3" /></TB>
 
-
-      {/* Sub points. Turns the list under the caret into clause numbering, or
-          starts one where there is no list yet. Tab / Shift+Tab then move a
-          line in and out a level, the way they already do in any list here. */}
       <TB
         active={legalListOn}
         onClick={toggleLegalList}
         title="Sub points (1.1, 1.1.1)"
       >
-        {/* Text, not an icon — deliberately, and the only one on this bar.
-            Word's multilevel glyph is stepped rules with markers, which at 13px
-            is indistinguishable from the numbered list and the two indent
-            buttons standing right next to it: four near-identical icons in a
-            row, one of which does something entirely different.
-            "1.1" says what the others cannot and is read at a glance. */}
         <span className="ctcte-btn-txt">1.1</span>
       </TB>
       </div>
@@ -2486,8 +1531,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
         <TB active={editor.isActive('link')} onClick={() => {
           const opening = !linkOpen;
           setLinkUrl(editor.getAttributes('link').href ?? '');
-          /* Freeze the current selection as a decoration BEFORE the panel's
-             input steals focus, so the user can still see what they picked. */
           const { from, to } = editor.state.selection;
           editor.view.dispatch(editor.state.tr.setMeta(selShadowKey, opening && to > from ? { from, to } : null));
           setLinkOpen(o => !o);
@@ -2502,14 +1545,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
         )}
       </div>
 
-
-      {/* Table. The extensions were already registered for the Agreement /
-          Trade Doc editors and for tables carried in from an uploaded DOCX —
-          only the UI was missing here, so this is a menu over commands that
-          already worked.
-          The structure items are disabled outside a table rather than hidden:
-          a menu whose length changes as the caret moves is harder to learn
-          than one whose items grey out. */}
       <div className="ctcte-linkwrap" ref={tableAnchorRef}>
         <button
           type="button"
@@ -2538,8 +1573,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
 
               <div className="ctcte-spcsep" />
               {([
-                /* dressNewCells after each one: the command itself adds bare
-                   cells, and the table's own styling is put on them next. */
                 ['Insert Row Above',    () => { editor.chain().focus().addRowBefore().run(); dressNewCells(); }],
                 ['Insert Row Below',    () => { editor.chain().focus().addRowAfter().run(); dressNewCells(); }],
                 ['Insert Column Left',  () => { editor.chain().focus().addColumnBefore().run(); dressNewCells(); }],
@@ -2634,8 +1667,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       </div>
       <span className="ctcte-div" />
       <div className="ctcte-grp">
-      {/* Find and Replace. Its own panel because two inputs, a case toggle, a
-          match counter and four actions do not fit a dropdown list. */}
       <div className="ctcte-linkwrap" ref={findAnchorRef}>
         <button
           type="button"
@@ -2644,15 +1675,8 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
           onClick={() => {
             const next = !findOpen;
             setFindOpen(next);
-            // Leaving the panel clears the highlights; they are a search aid,
-            // not part of the document.
             if (!next) { pushSearch('', matchCase); return; }
 
-            /* Seed Find from the SELECTION, the way Ctrl+F does everywhere else.
-               Opening the panel with a word selected used to leave the box
-               empty and the word unhighlighted, so the user had to retype what
-               they had just selected. A selection spanning more than one block
-               is ignored — that is a passage, not a search term. */
             const { from, to, empty } = editor.state.selection;
             const picked = empty ? '' : editor.state.doc.textBetween(from, to, ' ').trim();
             const seed = (picked && !picked.includes('\n') && picked.length <= 120) ? picked : findTerm;
@@ -2708,14 +1732,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       </div>
       <span className="ctcte-div" />
       <div className="ctcte-grp">
-      {/* Page break — the only EXACT control over where the PDF splits. The
-          A4 guides on the surface are an estimate (browser and dompdf lay text
-          out differently); this is a real instruction dompdf obeys. */}
-      {/* Labelled, unlike every other button here. Icon-only was invisible in
-          practice: it sat among a dozen formatting glyphs and read as one more
-          alignment control, so nobody found it. This is a rare, deliberate
-          action with no widely-known glyph — the word is what makes it
-          findable. */}
       {!hidePageBreak && (
         <button
           type="button"
@@ -2729,12 +1745,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
         </button>
       )}
 
-      {/* Undo / redo share the Page Break group rather than sitting behind a
-          divider of their own — two buttons alone were being wrapped onto a
-          row by themselves, which read as leftovers rather than a group. */}
-      {/* Feather rotate-ccw / rotate-cw. The previous pair drew a nearly closed
-          arc with its arrow head lying along the circle, so at 13px both came
-          out as plain rings with a stub. */}
       <TB onClick={() => editor.chain().focus().undo().run()} title="Undo"><Ico d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></TB>
       <TB onClick={() => editor.chain().focus().redo().run()} title="Redo"><Ico d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></TB>
       </div>
@@ -2750,158 +1760,47 @@ function Ico({ d }: { d: string }) {
   return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{d.split('M').filter(Boolean).map((seg, i) => <path key={i} d={'M' + seg} />)}</svg>;
 }
 
-/** Drop once inside the editor's stage (styles the toolbar + ProseMirror body). */
 export const CTC_EDITOR_CSS = `
-/* WRAP onto multiple rows so EVERY tool is visible (no horizontal scroll that
-   hid the right-hand tools). row-gap keeps the rows cleanly separated and
-   align-items:center lines the controls up so it doesn't read as ragged. */
-/* Editor + live preview side by side. Below 1180px the two panes stop being
-   usable together — a 32% preview leaves the editor under 700px, which is
-   narrower than the A4 sheet it is drawing — so they stack instead, editor
-   first. Shared by all three CLM editors (CTC, Trade Document, Agreement)
-   because all three lay the split out the same way. */
 .clm-editor-split { display: flex; flex: 1; min-height: 0; min-width: 0; }
 @media (max-width: 1180px) {
   .clm-editor-split { flex-direction: column; }
   .clm-editor-split > * { width: auto !important; }
   .clm-editor-split > *:last-child { flex: 0 0 42%; min-height: 0; }
 }
-/* The stand-in for ::selection while a panel holds focus. Deliberately the
-   toolbar's own purple rather than the OS blue, so it reads as "this is what
-   the panel is about to act on" rather than a live text selection. */
 .ctcte-selshadow { background: rgba(124,58,237,.22); border-radius: 2px; }
 .ctcte-toolbar { display: flex; align-items: center; gap: 3px; row-gap: 6px; flex-wrap: wrap; padding: 7px 10px; border-bottom: 1px solid #EDE9FE; background: #FAFBFF; flex-shrink: 0; }
 .ctcte-toolbar > * { flex-shrink: 0; }
-/* A cluster of related controls. nowrap is the load-bearing part: the bar
-   wraps, the group inside it does not, so a row break always falls on a
-   divider instead of through the middle of the alignment buttons. */
-/* Every group is one 28px line tall, whatever it holds. Without that the groups
-   measured 26, 28 and 34px and, centred against each other, their controls sat
-   at four different heights on the same row — the "icons misaligned, some
-   spaced out, some squashed" the toolbar was reported for. */
 .ctcte-grp { display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; flex-shrink: 0; height: 28px; }
-/* An empty group can be left behind when a divider lands at either end. */
 .ctcte-grp:empty { display: none; }
-/* A divider that ends up first or last on a wrapped row is a line against
-   nothing. */
 .ctcte-div:first-child, .ctcte-div:last-child { display: none; }
 .ctcte-sel { height: 28px; border: 1.5px solid #E5E1F3; border-radius: 8px; background: #fff; color: #4C1D95; font-family: inherit; font-size: 11px; font-weight: 600; padding: 0 8px; cursor: pointer; outline: none; }
 .ctcte-sel-sm { min-width: 56px; padding: 0 6px; }
-/* The font control has exactly one option, so the native chevron was promising
-   a choice that is not there. Dropped rather than the whole control, because
-   selecting it still does something: it puts pasted text that carried its own
-   font back onto the house face. */
 .ctcte-sel-fixed { appearance: none; -webkit-appearance: none; -moz-appearance: none; padding-right: 10px; text-align: left; }
 .ctcte-sel-fixed::-ms-expand { display: none; }
-/* ── A4 page view ──────────────────────────────────────────────────────────
-   Every number is read off the PDF, not chosen for looks — a sheet edge here
-   has to be where dompdf really breaks.
-
-     config/dompdf.php : paper a4, dpi 96  ->  A4 = 794 x 1123 px
-     blade @page       : margins 25 top / 25 sides / 92 bottom
-       => printable area 744 x 1006 px                            (PAGE_H)
-     blade .page-header: padding 20 + logo 62 + margin 12 = 94px, and it sits
-       in the NORMAL flow, so it costs that height on sheet ONE only  (HEAD_H)
-     blade body        : font-size 11px, line-height 15px
-
-   No background gradient any more: the sheets are defined by the gaps PageFlow
-   inserts, so there is exactly one source of truth for where a page ends. A
-   gradient drawn independently would drift away from the real breaks. */
-/* The sheet is 744px because that is A4's printable width, and it is not
-   negotiable — every page boundary is measured against it.
-   It was briefly scaled up with a CSS transform to fill a full-screen window.
-   That has to stay out: a transform over a contenteditable this large makes
-   Chrome miss repaint invalidations, so editing after an import left the old
-   paint on screen underneath the new one and the document appeared doubled.
-   Bounding the workspace is layout only, so it cannot corrupt paint. */
-/* Chrome leaves the old paint behind here without this.
-   The draft scroller (.ctc-mid-scroll) sits inside a position:fixed, rounded,
-   overflow:hidden shell in full screen. Chrome scrolls that by blitting tiles,
-   and PageFlow changes the content height underneath it every time a band is
-   inserted — so tiles that should have been repainted get reused, and the text
-   from before the shift stays on screen under the text from after it. The
-   document itself is fine; only the screen is wrong.
-   Promoting the page surface to its own layer makes Chrome composite it
-   instead of blitting stale tiles. It changes no geometry, so nothing PageFlow
-   measures moves.
-
-   The promotion goes HERE and not on .ctc-mid-scroll. will-change: transform
-   makes an element the containing block for every position:fixed descendant,
-   and .ctc-mid-scroll is also the class on the Panel-02 workspace — an ancestor
-   of the draft editor's position:fixed full-screen shell. Promoting it pinned
-   full screen inside the panel instead of the viewport. .ctcte-pageview is
-   inside that shell and contains nothing fixed, so it is safe. */
 .ctcte-pageview { will-change: transform; }
 
 .ctcte-pageview { --pg-w: 744px; background: #EEF0F6; padding: 26px 0 34px; min-height: 100%; box-sizing: border-box; }
-/* ── Type metrics, copied from the PDF, not chosen ────────────────────────
-   Every number below is read off resources/views/pdf/clm-signature-document
-   .blade.php. They were previously eyeballed, and each gap made the editor fit
-   MORE on a page than the PDF does, so the breaks drifted earlier and earlier:
-
-     text column   744px here vs 704 there  (.document-content adds 20px of
-                   padding each side inside the 25px @page margin) — the widest
-                   single error: wider lines wrap less, so paragraphs came out
-                   short and pages held too much
-     line-height   fixed 15px here vs 1.5 there = 16.5px at an 11px body — 10%
-                   more height per line, ~60 lines to a page
-     paragraph     .55em (6px) here vs a flat 8px there
-     headings      1.55/1.3/1.12em (17/14.3/12.3px) here vs 20/17/15px there  */
 .ctcte-content.ctcte-pageview .ProseMirror {
-  /* 704 text + 45 left + 45 right = 794 = A4 at 96dpi.
-     45 is the 25px @page margin plus .document-content's own 20px. */
-  /* 794 (A4) minus both @page margins minus everything the PDF nests inside
-     them. There are TWO wrappers, not one:
-         .document-section  padding: 0 5px
-         .document-content  padding: 18px 20px
-     The 5px pair was missed, so the editor's text column was 10px wider than
-     the PDF's. Wider lines wrap later, so each page held fractionally more than
-     the PDF would — the exact way a boundary drifts early and content the
-     editor shows on the next page comes back up on this one.
-     Whatever the margins are, the border box is still exactly A4. */
   width: calc(794px - var(--pg-ml, 25px) - var(--pg-mr, 25px) - 50px);
   margin: 0 auto;
   padding: 43px calc(var(--pg-mr, 25px) + 25px) 110px calc(var(--pg-ml, 25px) + 25px);
   box-sizing: content-box;
-  /* Load-bearing: PageFlow reads child.offsetTop, which is relative to the
-     nearest positioned ancestor. Without this it would measure from somewhere
-     up in the page shell and every page boundary would land early. */
   position: relative;
   background: #fff;
   font-size: 11px;
-  /* 11 x 1.5 x 1.28 — the template's 1.5 at dompdf's line-box scale. */
   line-height: 21.1px;
-  /* Times New Roman — the agreement's house face, and the DEFAULT, so a draft
-     is in it whether it was typed here or uploaded as a DOCX (see the
-     font-family strip in ClmCtcForm's uploadDocx).
-     The stack ends in a generic serif on purpose: dompdf resolves Times New
-     Roman to its built-in times metrics, and any machine without the face
-     falls back to a serif rather than to the app's sans. */
   font-family: 'Times New Roman', Times, serif;
-  /* A sheet is always a whole sheet. Without this an empty draft rendered as a
-     short white strip floating in grey, which reads as a broken layout rather
-     than as page 1 of 1. */
-  min-height: 852px;   /* FIRST_H */
+  min-height: 852px;
   box-shadow: 0 0 0 1px rgba(16,24,40,.05), 0 2px 5px rgba(16,24,40,.10), 0 12px 28px rgba(16,24,40,.07);
 }
-/* Every line-height below is the template's value x 1.28, stated in px so the
-   browser cannot re-derive it. Measured: a 20px/1.3 heading is 33.2px in
-   dompdf, an 11px/1.5 paragraph 21.4px. */
 .ctcte-content.ctcte-pageview .ProseMirror p,
 .ctcte-content.ctcte-pageview .ProseMirror div { margin: 0 0 8px; line-height: 21.1px; }
-/* Headings have to name the font themselves. The page surface sets it on the
-   .ProseMirror container and everything inside inherits — except headings,
-   because the app's own stylesheet carries a plain element-level rule for
-   h1, h2 and h3, and a rule that targets the element beats one inherited from an
-   ancestor no matter how specific the ancestor's selector is. So the body came
-   out in Times New Roman and every clause title stayed on the app's sans. */
 .ctcte-content.ctcte-pageview .ProseMirror h1,
 .ctcte-content.ctcte-pageview .ProseMirror h2,
 .ctcte-content.ctcte-pageview .ProseMirror h3 {
   margin: 14px 0 8px;
   font-family: 'Times New Roman', Times, serif;
 }
-/* Same reason, for the rest of what an agreement is written with. */
 .ctcte-content.ctcte-pageview .ProseMirror th,
 .ctcte-content.ctcte-pageview .ProseMirror td,
 .ctcte-content.ctcte-pageview .ProseMirror li,
@@ -2913,35 +1812,12 @@ export const CTC_EDITOR_CSS = `
 .ctcte-content.ctcte-pageview .ProseMirror h1 { font-size: 20px; line-height: 33.3px; }
 .ctcte-content.ctcte-pageview .ProseMirror h2 { font-size: 17px; line-height: 28.3px; }
 .ctcte-content.ctcte-pageview .ProseMirror h3 { font-size: 15px; line-height: 25.0px; }
-/* Markers need PADDING to sit in, and a list-style to draw.
-   This was padding-left 0 with no list-style at all: the app's global reset
-   strips list-style off ul/ol, and a marker is drawn "outside" the content box —
-   that is, inside this padding — so with zero padding and nothing to draw, an
-   ordered list rendered with no numbers whatsoever. Colour was never the
-   problem; there was no marker to colour.
-   1.6em with a zero left margin matches .tdw-editor, .agw-editor and the
-   .document-content rules in pdf/clm-signature-document.blade.php, so a list
-   occupies the same width in the editor as it does in the preview and the PDF.
-   Each depth is stated because list-style-type is inherited — an unstated third
-   level silently keeps its parent's marker. */
 .ctcte-content.ctcte-pageview .ProseMirror ul,
 .ctcte-content.ctcte-pageview .ProseMirror ol { margin: 0 0 8px 0; padding-left: 1.6em; }
-/* Bold and italic, stated explicitly.
-   The mark itself was always applied — the live preview rendered it bold from
-   the same HTML — but the editor showed no change, so the button read as dead.
-   The app's global reset normalises b/strong/i/em (the same reset that strips
-   list-style off ul/ol, below), and nothing here put the weight back. */
 .ctcte-content .ProseMirror strong,
 .ctcte-content .ProseMirror b { font-weight: 700; }
 .ctcte-content .ProseMirror em,
 .ctcte-content .ProseMirror i { font-style: italic; }
-/* Scoped to the HRMS surface as well as the CLM one.
-   These rules only named .ctcte-content, but the HRMS template editor renders
-   its EditorContent inside .tpl-editor-surface — so neither the list-style nor
-   the padding below reached it. The app's global reset strips list-style from
-   ul/ol, and a marker is drawn OUTSIDE the content box, so HRMS lists came out
-   indented with no bullet and no number at all: the toolbar button lit up, the
-   list existed in the document, and nothing was drawn. */
 .ctcte-content .ProseMirror ul,
 .tpl-editor-surface .ProseMirror ul       { list-style: disc outside; }
 .ctcte-content .ProseMirror ul ul,
@@ -2954,15 +1830,9 @@ export const CTC_EDITOR_CSS = `
 .tpl-editor-surface .ProseMirror ol ol    { list-style: lower-alpha outside; }
 .ctcte-content .ProseMirror ol ol ol,
 .tpl-editor-surface .ProseMirror ol ol ol { list-style: lower-roman outside; }
-/* The markers need room to sit in, or they are clipped off the left edge. */
 .tpl-editor-surface .ProseMirror ul,
 .tpl-editor-surface .ProseMirror ol { margin: 0 0 8px 0; padding-left: 1.6em; }
 .ctcte-content.ctcte-pageview .ProseMirror li { line-height: 21.1px; }
-/* Tables, matched to the PDF the same way the body text is.
-   The page view carried NO table CSS — cells fell back to whatever the DOCX
-   converter wrote inline, or to browser defaults, so a table-heavy page fitted
-   a whole extra table here that the PDF pushed to the next page. dompdf pads
-   every cell 6px 8px and lays tables out fixed. */
 .ctcte-content.ctcte-pageview .ProseMirror table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .ctcte-content.ctcte-pageview .ProseMirror table td,
 .ctcte-content.ctcte-pageview .ProseMirror table th {
@@ -2970,15 +1840,8 @@ export const CTC_EDITOR_CSS = `
   word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;
 }
 .ctcte-content.ctcte-pageview .ProseMirror table p { margin: 0; }
-/* Column resizing. ProseMirror inserts the handle element but ships no CSS for
-   it, so without this the grab area exists and is invisible. */
 .ctcte-content .ProseMirror table { position: relative; max-width: 100%; }
 
-/* Sub points (see LegalList). counters(legal, ".") is what turns the nesting
-   into 1 / 1.1 / 1.1.1 — counter() alone would print only the innermost level.
-   The marker is drawn by ::before, so the native list marker is switched off
-   and the item becomes a block; the indent then comes from the nested list's
-   own padding rather than from a list marker box. */
 .ctcte-content .ProseMirror ol[data-legal],
 .ctcte-content .ProseMirror ol[data-legal] ol {
   counter-reset: legal; list-style: none; padding-left: 0; margin-left: 0;
@@ -2991,78 +1854,31 @@ export const CTC_EDITOR_CSS = `
   font-weight: 700;
   margin-right: 6px;
 }
-/* The number and its text on ONE line.
-   A list item's content in ProseMirror is a <p>, and a <p> is a block — so the
-   ::before marker took a line of its own and every clause came out as "1." with
-   its words underneath. Only the FIRST paragraph goes inline: a clause that
-   runs to a second paragraph should still break, it just should not break
-   between the number and the sentence it numbers. */
 .ctcte-content .ProseMirror ol[data-legal] li > p:first-of-type {
   display: inline;
   margin: 0;
 }
-/* A nested level is a block again, or the sub-list would run on inside its
-   parent's sentence. */
 .ctcte-content .ProseMirror ol[data-legal] li > ol { display: block; }
-/* Table-editing mechanics — NOT scoped to .ctcte-content.
-
-   These style elements TipTap itself puts in the document: the column-resize
-   handle it inserts into whichever cell the pointer is near, and the wash on
-   cells being dragged across. Every editor built on ctcExtensions gets them,
-   and two of those surfaces are not .ctcte-content — the T&C wizard
-   (.tnw-editor) and the HR template editor (.tpl-editor-surface). There the
-   handle arrived as a plain unstyled <div> INSIDE the cell, so it took up
-   space: the row grew, the whole document below it moved down, and it all
-   sprang back when the pointer moved on. Hovering the content made it jump
-   between 2143px and 2216px — the "flickering / flipping" report.
-
-   position:relative on the cell is what makes the absolutely-positioned handle
-   sit on the cell's edge instead of anchoring to a distant ancestor, so it
-   belongs with them. */
 .ProseMirror .column-resize-handle {
   position: absolute; right: -2px; top: 0; bottom: 0; width: 4px;
   background: #7C3AED; pointer-events: none; z-index: 20;
 }
 .ProseMirror.resize-cursor { cursor: col-resize; }
 .ProseMirror th, .ProseMirror td { position: relative; }
-/* The selected-cell wash TipTap toggles while dragging across cells. */
 .ProseMirror .selectedCell::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: rgba(124,58,237,.14);
 }
-/* A cell with no border of its own still needs an edge while you are editing,
-   or a borderless layout table is a set of invisible boxes you cannot click
-   into accurately. Dashed and pale so it never reads as a real rule, and it is
-   editor-only CSS — nothing here reaches the PDF, which keeps such tables
-   clean by design. The :not([style*="border"]) guard steps aside the moment the cell
-   carries a real border. */
 .ctcte-content.ctcte-pageview .ProseMirror table td:not([style*="border"]),
 .ctcte-content.ctcte-pageview .ProseMirror table th:not([style*="border"]) {
   outline: 1px dashed #D8DEE9; outline-offset: -1px;
 }
 
-/* ── The PDF's own font ──────────────────────────────────────────────────
-   NOTE: the page surface now sets Times New Roman (above) to match the blade.
-   The DejaVu faces below are kept because dompdf still falls back to them for
-   any glyph Times lacks, and because content that carries its own font-family
-   (a pasted table, an uploaded fragment) can still land on them — so the
-   editor must be able to measure them.
-
-   dompdf renders the body in DejaVu Sans (see the blade's font-family). The
-   editor was rendering in DM Sans, the app font. Same size, same line-height,
-   completely different letterforms — so every line wrapped at a different word,
-   every paragraph came out a different number of lines, and the two paginations
-   could never agree no matter how exactly the box geometry was matched.
-   These are dompdf's own .ttf files, published from its lib/fonts, so the
-   editor measures the identical typeface the PDF will print. Loaded only where
-   they are used, which is the page surface. */
 @font-face { font-family: 'DejaVu Sans'; src: url('/fonts/DejaVuSans.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: 'DejaVu Sans'; src: url('/fonts/DejaVuSans-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
 @font-face { font-family: 'DejaVu Sans'; src: url('/fonts/DejaVuSans-Oblique.ttf') format('truetype'); font-weight: 400; font-style: italic; font-display: swap; }
 @font-face { font-family: 'DejaVu Sans'; src: url('/fonts/DejaVuSans-BoldOblique.ttf') format('truetype'); font-weight: 700; font-style: italic; font-display: swap; }
 
-/* Word's ruler. Sits above the sheet and is exactly as wide as it, so a marker
-   is literally over the paper edge it controls. */
 .ctcte-ruler {
   position: relative; height: 26px; margin: 0 auto 10px;
   background: #fff; border: 1px solid #E3E6EF; border-radius: 4px;
@@ -3070,9 +1886,6 @@ export const CTC_EDITOR_CSS = `
   user-select: none;
 }
 .ctcte-ruler-pad { position: absolute; top: 0; bottom: 0; background: #E6E9F2; }
-/* The scale itself: a short mark every half centimetre, a taller one on the
-   whole, numbers above the tall ones. Ticks hang from the BOTTOM edge so the
-   scale reads against the paper directly beneath it. */
 .ctcte-ruler-tick {
   position: absolute; bottom: 0; width: 1px; height: 4px;
   background: #CBD2E0; transform: translateX(-50%);
@@ -3083,8 +1896,6 @@ export const CTC_EDITOR_CSS = `
   font-size: 8px; font-weight: 700; color: #98A2B3; letter-spacing: .02em;
   line-height: 1; pointer-events: none;
 }
-/* Sits high on the bar so it never covers the ticks it is being dragged
-   against. */
 .ctcte-ruler-grip {
   position: absolute; top: 7px; width: 11px; height: 11px; padding: 0;
   transform: translate(-50%, -50%) rotate(45deg);
@@ -3098,30 +1909,15 @@ export const CTC_EDITOR_CSS = `
 [data-bs-theme="dark"] .ctcte-ruler-tick.is-major { background: #5b6478; }
 [data-bs-theme="dark"] .ctcte-ruler-num { color: #7c8698; }
 
-/* A page boundary that falls inside a single block — a table row taller than a
-   sheet, or a very long paragraph. The PDF splits these mid-block and leaves no
-   blank tail, so there is nothing to reserve: this is drawn OVER the content,
-   absolutely, and costs the layout nothing. */
 .ctcte-spanmarks { position: absolute; inset: 0 0 auto 0; height: 0; pointer-events: none; z-index: 2; }
 
-/* One hairline across the paper with the page number on it, for every
-   boundary — the reserved blank tail above it is the only thing that differs,
-   and that difference is paper, not styling. */
 .ctcte-pageline, .ctcte-spanmark {
   position: absolute; height: 0;
   left: calc((var(--pg-ml, 25px) + 25px) * -1);
   right: calc((var(--pg-mr, 25px) + 25px) * -1);
 }
 .ctcte-pageline { border-top: 1px solid #CFD5E2; box-shadow: 0 4px 8px -6px rgba(16,24,40,.45); }
-/* The one boundary that reserves nothing: a block taller than a whole sheet,
-   which dompdf breaks in place. It says CONTINUES because the text runs
-   straight on underneath it. */
 .ctcte-spanmark { border-top: 1px dashed #D3D8E3; }
-/* Out past the sheet edge, on the desk.
-   Centred above the line it needed clear paper to sit on, and there is none
-   when the page ends flush with a block — then it landed on the last line of
-   the page it was labelling. The desk beside the sheet is always empty, so it
-   cannot collide with anything whatever the tail measures. */
 .ctcte-pageline::after, .ctcte-spanmark::after {
   position: absolute; right: 0; top: 0; transform: translate(calc(100% + 8px), -50%);
   padding: 2px 11px; border-radius: 999px;
@@ -3135,84 +1931,35 @@ export const CTC_EDITOR_CSS = `
 [data-bs-theme="dark"] .ctcte-pageline::after,
 [data-bs-theme="dark"] .ctcte-spanmark::after { background: #1b2028; border-color: #3b2f63; color: #c4b5fd; }
 
-/* The reservations are silent: they hold the space the PDF leaves and nothing
-   else. Three things used to draw their own line and their own label, each
-   numbering itself, so one boundary could show its label twice. */
 .ctcte-pagegap { margin: 0 calc((var(--pg-mr, 25px) + 25px) * -1) 0 calc((var(--pg-ml, 25px) + 25px) * -1); user-select: none; }
 .ctcte-pagegap-row > td { padding: 0 !important; border: none !important; user-select: none; }
 
 [data-bs-theme="dark"] .ctcte-content.ctcte-pageview .ProseMirror { background: #1b2028; color: #e5e7eb; }
 [data-bs-theme="dark"] .ctcte-pagegap { background: #12151c; border-color: #2a3140; }
-/* The desk the sheets sit on. Dark mode already darkened the sheet and the gap
-   between pages, but this surface kept its light grey — in the full-page
-   editor that is most of the screen, which is what "everything except the
-   draft is white" was describing. */
 [data-bs-theme="dark"] .ctcte-content.ctcte-pageview { background: #12151c; }
 
-/* ── "PAGE N ENDS" boundary markers HIDDEN in the editor ───────────────────
-   The Live PDF Preview now shows the real page breaks, so the editor's own
-   estimated "PAGE N ENDS" pill + hairline were redundant and noisy while
-   writing / after a DOCX upload. The page-tail spacing (--pg-fill gradient) is
-   kept so the surface still reads as separated pages — only the label and the
-   line are hidden. Nothing is removed from the PageFlow logic; delete this
-   block to bring the markers back. */
 .ctcte-pgtop::after,
 .ctcte-pagegap::after,
 .ctcte-pagegap-row > td::after,
-/* .ctcte-pageline was missing from this list, which is why "PAGE N ENDS" kept
-   showing after it was supposedly removed. Line 505 picks the class per
-   boundary: m.sheet ? 'ctcte-pageline' : 'ctcte-spanmark' — pageline is the
-   ORDINARY page break and spanmark only appears for a block taller than a
-   whole sheet. Only the rare one was being hidden. */
 .ctcte-pageline::after,
 .ctcte-spanmark::after { content: none !important; display: none !important; }
 .ctcte-pgtop::before,
 .ctcte-pagegap::before,
 .ctcte-pagegap-row > td::before { border-top: none !important; box-shadow: none !important; }
-/* The label and the hairline are separate declarations — hiding ::after alone
-   would leave the rule floating across the page with no caption. */
 .ctcte-pageline,
 .ctcte-spanmark { border-top: none !important; box-shadow: none !important; }
 
 .ctcte-pgbtn { height: 26px; padding: 0 9px; border: 1.5px solid #DDD6FE; border-radius: 7px; background: #F5F3FF; color: #6D28D9; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: background .12s, border-color .12s; }
-/* Icon-only buttons are square. Without this they keep the 9px side padding a
-   labelled button needs and read as wide empty pills. Page Break keeps its
-   words — it inserts something permanent, and an icon alone invites the
-   accidental click. */
 .ctcte-pgbtn:not(.ctcte-pgbtn-label) { padding: 0 6px; }
-/* The spacing value beside its icon (1.5, 2.0…). Not a label — the number is
-   the state, which no icon can show. */
 .ctcte-btn-val { font-size: 9.5px; font-weight: 800; letter-spacing: -.02em; }
-/* A button whose glyph IS text (the sub-points 1.1). Sized to sit on the
-   same optical weight as the stroked icons around it. */
 .ctcte-btn-txt { font-size: 10px; font-weight: 800; letter-spacing: -.02em; }
-/* A menu that opens INWARD.
-   Every popover here is anchored left:0 under its button, which is right for
-   the controls at the start of the bar. Table and Find sit at the far end, so
-   from there a left-anchored panel runs past the dialog's right edge and gets
-   clipped — the Find box lost its Replace button and both arrows.
-   Set by class rather than measured at runtime: these two are always the last
-   controls on the bar, so which way they should open is known up front. */
-/* Compounded with each popover's own class, not left bare.
-   .ctcte-findpop and .ctcte-spcpop both set left:0, and a bare
-   .ctcte-pop-right is the same weight (0,1,0) — so the winner came down to
-   which rule sits later in the sheet, and both of those do. The class was on
-   the element and doing nothing; the panel still opened rightward and off the
-   dialog. Compounding makes it (0,2,0) and settles it on specificity. */
 .ctcte-findpop.ctcte-pop-right,
 .ctcte-spcpop.ctcte-pop-right { left: auto; right: 0; }
-/* Portalled panels are positioned by AnchoredPop's fixed wrapper, so their own
-   absolute offsets must not fight it. */
 .ctcte-pop-portal { position: static !important; top: auto !important; left: auto !important; right: auto !important; margin: 0 !important; }
 .ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }
 [data-bs-theme="dark"] .ctcte-pgbtn { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.45); color: #C4B5FD; }
-/* The rule sits on the same 28px line as the groups, with the visible stroke
-   centred inside it — so a divider never rides above or below its neighbours. */
 .ctcte-div { width: 1px; height: 28px; background: transparent; margin: 0 3px; display: flex; align-items: center; }
 .ctcte-div::before { content: ''; display: block; width: 1px; height: 18px; background: #E5E1F3; }
-/* Colour + highlight. The native colour input is laid OVER its swatch so the
-   whole button opens the picker instead of sitting beside it as a second
-   target. */
 .ctcte-color { position: relative; overflow: hidden; font-weight: 800; }
 .ctcte-color input[type="color"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; padding: 0; border: none; }
 .ctcte-swatch { width: 18px; height: 18px; padding: 0; border: 1.5px solid rgba(15,23,42,.12); border-radius: 5px; cursor: pointer; flex-shrink: 0; }
@@ -3225,7 +1972,6 @@ export const CTC_EDITOR_CSS = `
 .ctcte-btn:hover { background: #EDE9FE; }
 .ctcte-btn.is-active { background: linear-gradient(135deg,#6D28D9,#7C3AED); color: #fff; }
 .ctcte-linkwrap { position: relative; display: inline-flex; }
-/* Find & Replace panel + match highlights */
 .ctcte-findpop {
   position: absolute; top: 32px; left: 0; z-index: 60;
   width: min(340px, calc(100vw - 24px));
@@ -3239,13 +1985,10 @@ export const CTC_EDITOR_CSS = `
 .ctcte-findcase { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #4C1D95; cursor: pointer; }
 .ctcte-findpop .ctcte-linkbtn:disabled,
 .ctcte-findpop .ctcte-btn:disabled { opacity: .45; cursor: default; }
-/* Every match, and the one you are on. Background only — a match inside bold
-   or coloured text must keep looking like that text. */
 .ctcte-find-hit { background: #FEF08A; }
 .ctcte-find-cur { background: #FB923C; color: #fff; }
 [data-bs-theme="dark"] .ctcte-findpop { background: #1b2230; border-color: rgba(124,58,237,.35); }
 [data-bs-theme="dark"] .ctcte-findcase { color: #DDD6FE; }
-/* Line & paragraph spacing menu */
 .ctcte-pgbtn.is-open { background: #EDE9FE; border-color: #C4B5FD; }
 .ctcte-spcbd { position: fixed; inset: 0; z-index: 59; }
 .ctcte-spcpop {
@@ -3253,17 +1996,9 @@ export const CTC_EDITOR_CSS = `
   padding: 5px; background: #fff; border: 1.5px solid #DDD6FE; border-radius: 10px;
   box-shadow: 0 12px 30px rgba(109,40,217,.2);
   display: flex; flex-direction: column;
-  /* The Table menu is 15 items now and ran off the bottom of the screen, so
-     the last of them could not be reached at all. Capped against the VIEWPORT
-     rather than a fixed pixel height — the editor is used both in a page panel
-     and full screen, and a number that fits one crops the other. */
   max-height: min(58vh, 420px);
   overflow-y: auto;
-  /* Scrolling the menu must not scroll the document underneath it once the
-     list hits its end. */
   overscroll-behavior: contain;
-  /* Near the right edge of a narrow window a left-anchored menu would push the
-     page sideways; it stays inside the viewport instead. */
   max-width: min(320px, calc(100vw - 24px));
   scrollbar-width: thin; scrollbar-color: #DDD6FE transparent;
 }
@@ -3317,30 +2052,15 @@ export const CTC_EDITOR_CSS = `
 .ctcte-content .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: #A78BFA; pointer-events: none; float: left; height: 0; }
 
 [data-bs-theme="dark"] .ctcte-toolbar { background: rgba(255,255,255,.03); border-bottom-color: rgba(124,58,237,.2); }
-/* A native select paints its OPEN list from its own background-color, and a
-   translucent white composites to near-white — so Paragraph / font / Size
-   dropped open as a white panel with pale lavender text on it, unreadable in
-   dark mode. An opaque surface, options coloured in their own right, and
-   color-scheme so the browser draws the popup's chrome dark too. */
 [data-bs-theme="dark"] .ctcte-sel { background: #241a3d; border-color: rgba(124,58,237,.45); color: #ddd2ff; color-scheme: dark; }
 [data-bs-theme="dark"] .ctcte-sel option { background: #241a3d; color: #ddd2ff; }
 [data-bs-theme="dark"] .ctcte-sel:hover { border-color: rgba(167,139,250,.65); }
 [data-bs-theme="dark"] .ctcte-sel:focus { outline: none; border-color: #a78bfa; }
-/* The stroke moved to ::before, so the dark colour goes there too. */
 [data-bs-theme="dark"] .ctcte-div { background: transparent; }
 [data-bs-theme="dark"] .ctcte-div::before { background: rgba(124,58,237,.3); }
 [data-bs-theme="dark"] .ctcte-btn { color: #c4b5fd; }
 [data-bs-theme="dark"] .ctcte-btn:hover { background: rgba(124,58,237,.18); }
 [data-bs-theme="dark"] .ctcte-content .ProseMirror { color: #e8eaed; }
-/* List markers in dark mode.
-   ::marker takes its colour from its OWN list item, and inherits only a small
-   set of properties — the colour set on .ProseMirror above reaches the text
-   inside each <li> (which TipTap wraps in a <p>) but not the marker the <li>
-   draws itself. So the numbering stayed near-black on the dark page: the
-   sub-point text was readable while its "1." / "a." / "i." was invisible.
-   Stated on the list item, which is the only element ::marker listens to.
-   The counter-drawn legal list (1.1.1) uses ::before, not ::marker, and picks
-   up the inherited colour already — hence the separate rule below. */
 [data-bs-theme="dark"] .ctcte-content .ProseMirror li::marker { color: #e8eaed; }
 [data-bs-theme="dark"] .ctcte-content .ProseMirror ol[data-legal] li::before { color: #e8eaed; }
 [data-bs-theme="dark"] .ctcte-linkpop { background: #1b2230; border-color: rgba(124,58,237,.35); }

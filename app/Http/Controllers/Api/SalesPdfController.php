@@ -2134,7 +2134,16 @@ class SalesPdfController extends Controller
          * supplier-party filter is gone — a T&C has no applicable party (see
          * PoTncResolver, which this mirrors). Segment + tier below are the only
          * narrowing. */
-        $candidates = \App\Models\ClmTncLibrary::where('client_id', $clientId)
+        /* The tenant scope is LIFTED, exactly as fetchGlobalTncs lifts it.
+         * ClmTncLibrary uses BelongsToTenant, which narrows to the signed-in
+         * user's client AND branch. This method did not lift it while its
+         * sibling did, so the two layers of one document answered to different
+         * rules: the global clauses printed and the segment ones vanished
+         * whenever the PDF was built outside the PO's own branch — or from a
+         * queued job, where there is no user to scope by at all (QA #142).
+         * client_id is filtered explicitly below, as it is there. */
+        $candidates = \App\Models\ClmTncLibrary::withoutGlobalScope('tenant')
+            ->where('client_id', $clientId)
             ->where(fn ($w) => $w->whereNull('status')->orWhere('status', 'active'))
             ->orderBy('id')
             ->get()

@@ -48,23 +48,6 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ LOOKUPS ══════════════════════════ */
 
-    /**
-     * GET /p2p/orders/{id}/terms — the three T&C layers, as the PDF prints them.
-     *
-     * Read-only. Stage 4 showed the typed terms alone, so the global entry and
-     * the segment-matched clauses existed only on the PDF — editing the global
-     * library changed the printed PO and nothing on screen (QA #11). Composed
-     * by SalesPdfController so the screen and the document cannot disagree,
-     * including the de-duplication between the layers.
-     */
-    public function terms(Request $request, int $id): JsonResponse
-    {
-        $user  = $this->tenantUser($request);
-        $order = PurchaseOrder::findOrFail($id);
-
-        return $this->ok(app(\App\Http\Controllers\Api\SalesPdfController::class)->poTncLayers($order));
-    }
-
     /** GET /p2p/orders/next-code — preview only; nothing is written until Step 01 is saved. */
     public function nextCode(Request $request)
     {
@@ -1599,6 +1582,15 @@ class PurchaseOrderController extends Controller
         }
         $out = $po->toArray() + ($this->linkRefs(collect([$po]))[$po->id] ?? []);
         $out['created_by_name'] = $po->creator?->name;
+        /* The Terms & Conditions the PDF prints, on the record the screen already
+         * loads — no second call for them.
+         *
+         * Stage 4 drew the typed terms alone, so the global entry and the
+         * segment-matched clauses lived on the printed PO and nowhere before
+         * it: editing the T&C library changed the document and nothing on
+         * screen (QA #142). Composed by SalesPdfController, de-duplication
+         * included, so the screen and the document cannot give two answers. */
+        $out['terms_layers'] = app(\App\Http\Controllers\Api\SalesPdfController::class)->poTncLayers($po);
         // View-only once payments have started (the edit form opens read-only).
         $out['payments_started'] = $po->paymentsStarted();
         // And once any document has gone out for signature (until declined / recalled).

@@ -445,8 +445,6 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::put   ('/{id}/items',                     [$po, 'updateItems'])->whereNumber('id');  // Stage 02
         Route::put   ('/{id}/terms',                     [$po, 'updateTerms'])->whereNumber('id');  // Stage 03 (+ submit)
         Route::get   ('/{id}/qty-history',               [$po, 'qtyHistory'])->whereNumber('id');
-        // Stage 04's T&C panel: typed + global + segment, composed as the PDF does.
-        Route::get   ('/{id}/terms',                     [$po, 'terms'])->whereNumber('id');
         // Payments: TDS, payment requests and payments against them (Manage Payment Requests),
         // plus the all-PO list and decisions (Payment Request Management).
         $pay = \App\Http\Controllers\Api\P2p\PoPaymentRequestController::class;
@@ -497,6 +495,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
         // Stage 04 · documents
         Route::get   ('/{po}/documents',                 [$doc, 'index'])->whereNumber('po');
+        // Every document filed against the order, invoices and payment proofs included.
+        Route::get   ('/{po}/evidence-vault',            [$doc, 'evidenceVault'])->whereNumber('po');
         Route::post  ('/{po}/documents/needs',           [$doc, 'setNeeds'])->whereNumber('po');
         Route::post  ('/{po}/documents/mark-sent',       [$doc, 'markSent'])->whereNumber('po');
         Route::post  ('/{po}/documents',                 [$doc, 'store'])->whereNumber('po');
