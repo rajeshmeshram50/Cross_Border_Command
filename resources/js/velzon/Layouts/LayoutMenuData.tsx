@@ -488,8 +488,19 @@ const Navdata = () => {
 
   const menuItems: any[] = [];
 
+  const adminMenu: Record<string, string[]> = {
+    super_admin: ["dashboard", "clients", "plans", "payments", "master", "permissions", "dev-tools", "settings", "profile"],
+    client_admin: ["dashboard", "branches", "master", "permissions", "my-plan", "dev-tools", "profile"],
+  };
+  const adminAllowed = user ? adminMenu[user.user_type] : undefined;
+
   for (const m of MENU_ITEMS) {
     if (!user || !m.roles.includes(user.user_type)) continue;
+    if (adminAllowed && !m.section && !adminAllowed.includes(m.id)) continue;
+    if (m.id === "master" && user.user_type === "client_admin") {
+      menuItems.push({ id: m.id, label: m.label, icon: resolveIcon(m.icon), link: slugToPath(m.id) });
+      continue;
+    }
 
     // Permissions menu is visible to every branch_user. A branch user can
     // grant module access to employees in their own branch — see
