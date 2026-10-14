@@ -286,6 +286,8 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bref-box { background: #1e293b !important; }
 [data-bs-theme="dark"] .bref-box__header { background: linear-gradient(110deg,#103a48,#0c2e3a) !important; border-bottom-color: rgba(6,182,212,.25) !important; }
 [data-bs-theme="dark"] .bref-box__body { background: linear-gradient(180deg,#172033,#0f172a) !important; }
+[data-bs-theme="dark"] .bref-box__toggle, [data-bs-theme="dark"] .bp-chev-toggle { background: rgba(6,182,212,.12) !important; border-color: rgba(34,211,238,.30) !important; color: #67e8f9 !important; box-shadow: none !important; }
+[data-bs-theme="dark"] .bref-box__header:hover .bref-box__toggle, [data-bs-theme="dark"] .bp-chev-toggle:hover { background: rgba(6,182,212,.22) !important; border-color: rgba(34,211,238,.45) !important; }
 [data-bs-theme="dark"] .bref-item { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .bref-item__title { color: #e2e8f0 !important; }
 [data-bs-theme="dark"] .bref-item__desc { color: #94a3b8 !important; }
@@ -957,7 +959,7 @@ export default function ClmBuyerProfilePage() {
                     );
                   })}
                 </div>
-                <div onClick={() => setTxnAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s', flexShrink: 0 }}>
+                <div className="bp-chev-toggle" onClick={() => setTxnAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s', flexShrink: 0 }}>
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" style={{ transition: 'transform .24s cubic-bezier(.22,1,.36,1)', transform: txnAnalyticsOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}><polyline points="6 9 12 15 18 9" /></svg>
                 </div>
               </div>
@@ -1210,7 +1212,7 @@ export default function ClmBuyerProfilePage() {
                     <button className={`bpa-tab ${bpaTab === 'buyer' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('buyer'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer</button>
                     <button className={`bpa-tab ${bpaTab === 'consignee' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('consignee'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee</button>
                   </div>
-                  <div onClick={() => setPartyAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s' }}>
+                  <div className="bp-chev-toggle" onClick={() => setPartyAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s' }}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" style={{ transition: 'transform .24s cubic-bezier(.22,1,.36,1)', transform: partyAnalyticsOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}><polyline points="6 9 12 15 18 9" /></svg>
                   </div>
                 </div>
