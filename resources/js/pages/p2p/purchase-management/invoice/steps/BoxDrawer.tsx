@@ -1,4 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import useDismissPopover from '../../../../../hooks/useDismissPopover';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import {
@@ -143,6 +145,24 @@ export default function BoxDrawer({
   const [flags, setFlags] = useState<string[]>(initial?.flagIds ?? []);
   const [stackable, setStackable] = useState(initial?.stackable ?? true);
   const [flagsOpen, setFlagsOpen] = useState(false);
+  /* One. The row already carries three built-in flags and the Stackable
+     toggle, and custom names run long — three of them was still enough to
+     force the strip wider than the drawer. So the second custom flag is
+     already behind "+1 more". */
+  const CUSTOM_FLAGS_SHOWN = 1;
+  /* The first one, plus anything switched ON wherever it sits in the list —
+     a selected flag you cannot see is one you cannot clear. */
+  const visibleCustomFlags = customFlags.filter(
+    (f, i) => i < CUSTOM_FLAGS_SHOWN || flags.includes(f.id),
+  );
+  const hiddenCustomFlags = customFlags.filter(f => !visibleCustomFlags.includes(f));
+  /* The rest open in a popover rather than unfolding into the row. Expanding
+     in place pushed this strip wider again, which is the thing the counter is
+     here to stop; a portalled panel is laid out against the viewport and
+     cannot disturb the drawer at all. Same interaction as the CLM masters'
+     "+N" authority chips. */
+  const [flagPop, setFlagPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
+  useDismissPopover(!!flagPop, () => setFlagPop(null));
   const [temp, setTemp] = useState<TempRange>(initial?.temp ?? { min: '', max: '' });
   const [tempOpen, setTempOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
@@ -454,7 +474,7 @@ export default function BoxDrawer({
                       </button>
                     );
                   })}
-                  {customFlags.map(f => {
+                  {visibleCustomFlags.map(f => {
                     const on = flags.includes(f.id);
                     return (
                       <button
@@ -467,10 +487,32 @@ export default function BoxDrawer({
                           : { color: f.color, borderColor: `${f.color}66`, background: `${f.color}14` }}
                         onClick={() => toggleFlag(f.id)}
                       >
-                        <IcoTag size={11} stroke={2.4} />{f.name}
+                        <IcoTag size={11} stroke={2.4} />
+                        {/* In its own element so it can be truncated. A bare
+                            text node in a flex container is anonymous and
+                            cannot take text-overflow, so one long flag name
+                            would still widen the strip past the drawer. */}
+                        <span className="vti-flag-name" title={f.name}>{f.name}</span>
                       </button>
                     );
                   })}
+                  {hiddenCustomFlags.length > 0 && (
+                    <button type="button" className="vti-flag-more"
+                      aria-haspopup="dialog" aria-expanded={!!flagPop}
+                      onClick={e => {
+                        if (flagPop) { setFlagPop(null); return; }
+                        const b = e.currentTarget.getBoundingClientRect();
+                        /* Flip above the chip when the panel would not fit
+                           below it — this row sits low in a drawer, so below
+                           is usually the side without room. */
+                        const estH = Math.min(300, 34 + hiddenCustomFlags.length * 38);
+                        const spaceBelow = window.innerHeight - b.bottom;
+                        const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
+                        setFlagPop({ x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
+                      }}>
+                      +{hiddenCustomFlags.length} more
+                    </button>
+                  )}
                   <div
                     className={`vti-stack-toggle${stackable ? ' is-stack' : ''}`}
                     role="switch" tabIndex={0} aria-checked={stackable}
@@ -480,6 +522,52 @@ export default function BoxDrawer({
                     <span className="vti-stack-sw"><span className="vti-stack-knob" /></span>
                     <span className="vti-stack-txt">Stackable</span>
                   </div>
+
+                  {/* Portalled to the body, so the panel is positioned against
+                      the viewport and cannot widen the drawer. The flags stay
+                      live in here — they are toggles, not labels, and one you
+                      can see but not switch would be worse than hiding it. */}
+                  {flagPop && createPortal(
+                    <>
+                      <div onClick={() => setFlagPop(null)}
+                        style={{ position: 'fixed', inset: 0, zIndex: 100000 }} />
+                      <div
+                        className="vti-flag-pop"
+                        role="dialog"
+                        aria-label="More product flags"
+                        style={{
+                          position: 'fixed',
+                          left: Math.min(flagPop.x, window.innerWidth - 272),
+                          top: flagPop.flipUp ? undefined : flagPop.y,
+                          bottom: flagPop.flipUp ? window.innerHeight - flagPop.y : undefined,
+                          zIndex: 100001,
+                        }}
+                      >
+                        <div className="vti-flag-pop__title">
+                          Product Flags ({customFlags.length})
+                        </div>
+                        {hiddenCustomFlags.map(f => {
+                          const on = flags.includes(f.id);
+                          return (
+                            <button
+                              key={f.id}
+                              type="button"
+                              className={`vti-flag-btn invf-flag-custom${on ? ' is-active' : ''}`}
+                              aria-pressed={on}
+                              style={on
+                                ? { background: f.color, borderColor: f.color, color: '#fff', boxShadow: `0 4px 16px ${f.color}66` }
+                                : { color: f.color, borderColor: `${f.color}66`, background: `${f.color}14` }}
+                              onClick={() => toggleFlag(f.id)}
+                            >
+                              <IcoTag size={11} stroke={2.4} />
+                              <span className="vti-flag-name" title={f.name}>{f.name}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>,
+                    document.body,
+                  )}
                 </div>
               </div>
             </div>

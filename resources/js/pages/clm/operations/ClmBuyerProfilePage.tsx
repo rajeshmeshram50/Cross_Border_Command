@@ -9,23 +9,10 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
-import { PER_PAGE, useAutoFitRows } from '../shared/clmShared';
+import { PER_PAGE } from '../shared/clmShared';
 import useDismissPopover from '../shared/useDismissPopover';
 import SearchClear from '../../../components/ui/SearchClear';
 
-/*
- * CLM → Buyer Profile page.
- * Live data comes from GET /clm/buyer-profile (ClmBuyerProfileController):
- *   - buyers      : every customer + KYC/DD/TL/TD + agreement progress
- *   - consignees  : every consignee, grouped by parent customer
- *   - ws_eq/ws_neq/wos_eq/wos_neq : the opportunity transaction matrix
- * Compliance progress mirrors the Evidence Vault (segment-rule required
- * docs vs uploaded). The types below are the response row shapes.
- */
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Types
- * ────────────────────────────────────────────────────────────────────────── */
 type Prog = { d: number; t: number };
 
 type BuyerRow = {
@@ -54,16 +41,12 @@ type WosEqRow = {
 };
 type WosNeqRow = WosEqRow & { consignee: string } & ConsProg;
 
-/* Shape of GET /clm/buyer-profile → data. */
 type BpData = {
   buyers: BuyerRow[]; consignees: ConsRow[];
   ws_eq: WsEqRow[]; ws_neq: WsNeqRow[]; wos_eq: WosEqRow[]; wos_neq: WosNeqRow[];
 };
 const EMPTY_BP: BpData = { buyers: [], consignees: [], ws_eq: [], ws_neq: [], wos_eq: [], wos_neq: [] };
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Mock data (verbatim from the prototype)
- * ────────────────────────────────────────────────────────────────────────── */
 const bpBuyerData: BuyerRow[] = [
   { sr: 1, id: 'C-001', name: 'Shree Exports Pvt Ltd', seg: ['Dry Fruits', 'Agro'], sc: '#0e7490', sb: '#f0fdff', country: 'India', cn: 3, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
   { sr: 2, id: 'C-002', name: 'GreenHarvest Global', seg: ['Agro', 'Rice & Grains'], sc: '#065f46', sb: '#f0fdf4', country: 'India', cn: 5, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, ship: 3 },
@@ -148,30 +131,14 @@ const wosNeqData: WosNeqRow[] = [
 ];
 
 const BP_PER_PAGE = 10;
-/* Width of the first-segment chip's column, in px. The "+N" badge sits AFTER
-   this box, so fixing the box is what makes every badge start at the same x
-   down the Segment column. The chip itself still draws at its natural width
-   inside the box and ellipses when it runs past it. */
 const SEG_CHIP_COL = 150;
 
-/* Domestic = the exporter's home country; International = everything else.
-   Module scope, not inside the component: these are pure and never change, and
-   a function recreated on every render would be a new value in every useMemo
-   dependency list below, which would memoise nothing. */
 const HOME_COUNTRY = 'india';
 const isDomesticCountry = (c: string) => (c || '').trim().toLowerCase() === HOME_COUNTRY;
 const isDomesticBuyer = isDomesticCountry;
 const WS_PER_PAGE = 10;
 const WOS_PER_PAGE = 10;
 
-/* ──────────────────────────────────────────────────────────────────────────
- * useDynamicPerPage — rows-per-page that fits the viewport.
- * Measures the table wrapper's distance from the top of the screen and divides
- * the remaining height by a row's height, so the table fills the screen and the
- * pager footer ends up pinned to the bottom (instead of floating up with a
- * fixed 10-row page). Recomputes on resize and whenever `deps` change (tab
- * switch, analytics strip collapse, etc.).
- * ────────────────────────────────────────────────────────────────────────── */
 function useDynamicPerPage(
   ref: React.RefObject<HTMLElement>,
   { rowHeight = 46, min = 5, footer = 56, gap = 18, deps = [] as unknown[] } = {},
@@ -183,15 +150,6 @@ function useDynamicPerPage(
       if (!el) return;
       const top = el.getBoundingClientRect().top;
 
-      /* Both of these were flat numbers, and both were wrong often enough to
-         leave a band of empty card under the last row (QA #19).
-         · The app footer is measured, not assumed 56 — the same rule the CLM
-           masters' useAutoFitRows already follows, and the reason Segment
-           Master fills its page while this one stopped short.
-         · A row is measured from a row that is actually on screen. These rows
-           carry segment pills and progress bars, so 46 is only the floor; a
-           taller real row meant the count was computed against a height no row
-           has, and the table asked for fewer rows than the space holds. */
       const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
       const footerH  = footerEl ? footerEl.offsetHeight : footer;
       const sampleRow = el.querySelector('tbody tr') as HTMLElement | null;
@@ -208,16 +166,6 @@ function useDynamicPerPage(
   return perPage;
 }
 
-/* Measure now, then again as the page settles.
- *
- * One pass at mount plus one at 80ms was not enough: the strips above the card
- * (the guide box, the analytics snapshot, which arrives with its data) change
- * height after that, the card keeps the height computed for the old layout, and
- * a band of dead page is left between the pager and the footer. Re-measuring on
- * a short schedule costs nothing — every caller only sets state when the number
- * actually changes — and it catches whatever settles late.
- *
- * Returns the cleanup for useEffect. */
 function settle(calc: () => void): () => void {
   calc();
   const raf = requestAnimationFrame(calc);
@@ -233,10 +181,6 @@ function settle(calc: () => void): () => void {
   };
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * useFillHeight — min-height that stretches a card to the bottom of the
- * viewport so its pager footer pins there. Recomputes on resize / deps.
- * ────────────────────────────────────────────────────────────────────────── */
 function useFillHeight(
   ref: React.RefObject<HTMLElement>,
   { gap = 14, min = 240, deps = [] as unknown[] } = {},
@@ -256,24 +200,38 @@ function useFillHeight(
   return h;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Scoped CSS (extracted from the prototype)
- * ────────────────────────────────────────────────────────────────────────── */
+function useExactFitRows(
+  cardRef: React.RefObject<HTMLDivElement | null>,
+  autoFitRef: React.MutableRefObject<boolean>,
+  setRows: (n: number) => void,
+  deps: unknown[],
+): number | undefined {
+  const [h, setH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const calc = () => {
+      const el = cardRef.current;
+      if (!el) return;
+      const scroller = el.closest('.main-content') as HTMLElement | null;
+      const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+      const top = el.getBoundingClientRect().top;
+      const next = Math.max(240, Math.round(bottom - top - 8));
+      setH((prev) => (prev === next ? prev : next));
+
+      if (!autoFitRef.current) return;
+      const headerH = (el.firstElementChild as HTMLElement | null)?.offsetHeight || 0;
+      const theadH  = (el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 40;
+      const pagerH  = (el.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight || 56;
+      const rowH    = (el.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 46;
+      const avail = next - headerH - theadH - pagerH - 4;
+      setRows(Math.max(5, Math.floor(avail / rowH)));
+    };
+    return settle(calc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return h;
+}
+
 const BP_CSS = `
-/* margin-top:-8px — the IDIMS shell pads .page-content 16px at the top
- * (Layouts/index.tsx) while this stack sets its cards 8px apart, so the first
- * card sat twice as far from the top of the page as it did from the card below
- * it. Pulling 8px back makes the space above the header strip match the gap
- * beneath it. */
-/* min-height is 100% of the scroller, NOT calc(100vh - 56px).
-   The shell puts a fixed header and a fixed footer OUTSIDE the scroller
-   (Layouts/index.tsx), so this page gets 100vh minus BOTH of them. The
-   header is two rows tall (logo/search + nav), nowhere near the 56px that
-   was being subtracted, so the page reserved ~150px more than it is given
-   and the whole shell picked up a second, outer scrollbar that no amount
-   of table sizing could remove. 100% fills exactly what the scroller
-   offers — and where the chain has no definite height it simply resolves
-   to auto, which is content height, so it cannot over-reserve either. */
 .seg-page { background: #F4F6FB; min-height: 100%; padding: 8px; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 .seg-page-card {
   background: #fff;
@@ -323,13 +281,6 @@ const BP_CSS = `
 .bpa-cards-wrap{overflow:hidden;transition:max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s;}
 .bp-buyer-row:hover{background:rgba(6,182,212,.05)!important;box-shadow:inset 3px 0 0 #0891b2;}
 
-/* ── Dark mode ──
- * The page is built with light inline styles, so dark mode is done with a
- * targeted override sweep: darken every card surface, swap the distinctive
- * light cyan gradient strips/headers for dark equivalents, and lighten the
- * dark inline text colours. Bright-cyan accents (#0891b2/#06b6d4/#22d3ee)
- * and the colour-coded status badges (which set their own bg + text) are
- * left as-is — they already read fine on dark. */
 [data-bs-theme="dark"] .seg-page { background: transparent; }
 [data-bs-theme="dark"] .seg-page-card { background: #1e293b !important; border-color: rgba(6,182,212,.18) !important; box-shadow: 0 2px 12px rgba(0,0,0,.45) !important; }
 [data-bs-theme="dark"] .bref-box { background: #1e293b !important; }
@@ -338,16 +289,12 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bref-item { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .bref-item__title { color: #e2e8f0 !important; }
 [data-bs-theme="dark"] .bref-item__desc { color: #94a3b8 !important; }
-/* "What We Are Doing Here" header bar text (class-styled). */
 [data-bs-theme="dark"] .bref-box__header-label { color: #67e8f9 !important; }
 [data-bs-theme="dark"] .bref-box__header-title { color: #e2e8f0 !important; }
 [data-bs-theme="dark"] .bref-box__header-sub   { color: #7dd3fc !important; }
 [data-bs-theme="dark"] .bref-box__header-sep   { background: rgba(6,182,212,.35) !important; }
 [data-bs-theme="dark"] .bpa-seg { background: rgba(255,255,255,.05) !important; }
 [data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; }
-/* light cyan gradient strips / surfaces → dark.
- * NOTE: the browser serialises inline hex colours as rgb() in the style
- * attribute, so these matchers MUST use the rgb() form, not #hex. */
 [data-bs-theme="dark"] .seg-page [style*="rgb(224, 249, 253)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(206, 248, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(244, 254, 255)"],
@@ -356,87 +303,50 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgb(232, 250, 251)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(236, 254, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(232, 251, 253)"] { background: #16263a !important; }
-/* Light cyan banner gradients (110deg multi-stop) → dark teal gradient.
- * The per-stop rgb matchers above only flatten the banners to a solid; a
- * matching dark gradient reads better and mirrors the light-mode look. Placed
- * AFTER the flat sweep so its full-shorthand wins the specificity tie, and
- * scoped to .seg-page so the portaled consignees modal (its own dark header
- * gradient) is left untouched. Light mode is unaffected (dark-only selector). */
 [data-bs-theme="dark"] .seg-page [style*="linear-gradient(110deg"] { background: linear-gradient(110deg,#103a48,#0c2e3a) !important; }
-/* Neutralise the white sheen overlays that otherwise wash the top of these
- * cards into an ugly light-to-dark gradient on dark. */
 [data-bs-theme="dark"] .seg-page [style*="rgba(255, 255, 255, 0.5)"] { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
 [data-bs-theme="dark"] .bref-box__header::after { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
 [data-bs-theme="dark"] .bpa-tab::before { background: linear-gradient(180deg,rgba(255,255,255,.04),transparent) !important; }
-/* light indigo/violet ID & PI chips (#eef0ff/#f5f6ff/#eef2ff/#f5f3ff) → dark */
 [data-bs-theme="dark"] .seg-page [style*="rgb(238, 240, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(245, 246, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(238, 242, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(245, 243, 255)"] { background: rgba(99, 102, 241, .18) !important; border-color: rgba(129, 140, 248, .35) !important; }
-/* indigo/violet chip text (#4f46e5/#4338ca/#7c3aed) → light */
 [data-bs-theme="dark"] .seg-page [style*="rgb(79, 70, 229)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(67, 57, 202)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(124, 58, 237)"] { color: #c7d2fe !important; }
-/* status-pill light bg (#f8fafc "not started") + progress-bar track
- * (rgba(6,182,212,.1)) → visible on dark. */
 [data-bs-theme="dark"] .seg-page [style*="rgb(248, 250, 252)"] { background: rgba(148, 163, 184, .18) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgba(6, 182, 212, 0.1)"] { background: rgba(148, 163, 184, .30) !important; }
-/* white inline cards (KPI tiles) → dark */
 [data-bs-theme="dark"] .seg-page [style*="background: rgb(255, 255, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="background:rgb(255, 255, 255)"] { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
-/* dark inline text → light (rgb() forms of #0c4a6e/#0f172a/#1f2937/#475569/#0e7490) */
 [data-bs-theme="dark"] .seg-page [style*="rgb(12, 74, 110)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(15, 23, 42)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(31, 41, 55)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(71, 85, 105)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(14, 116, 144)"] { color: #cfe8f3 !important; }
-/* muted grey (#94a3b8 — "0/x" badge numbers, "No PI", denominators) → lighter */
 [data-bs-theme="dark"] .seg-page [style*="rgb(148, 163, 184)"] { color: #94c9dd !important; }
-/* slate grey (#64748b — SubTab inactive, DIFF tag) → lighter */
 [data-bs-theme="dark"] .seg-page [style*="rgb(100, 116, 139)"] { color: #94c9dd !important; }
-/* light-cyan toggle fill (#e0f7fa — Customer/Consignee Transactions inactive pill) → dark */
 [data-bs-theme="dark"] .seg-page [style*="rgb(224, 247, 250)"] { background: rgba(8,145,178,.16) !important; }
-/* REG. STATUS badges — Low (green #ecfdf5) / High (amber #fef3c7) → translucent on dark.
-   Both (indigo #eef2ff) is already handled by the indigo-chip sweep above. */
 [data-bs-theme="dark"] .seg-page [style*="rgb(236, 253, 245)"] { background: rgba(16,185,129,.18) !important; border-color: rgba(16,185,129,.4) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(254, 243, 199)"] { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.4) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(5, 150, 105)"] { color: #6ee7b7 !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(217, 119, 6)"] { color: #fcd34d !important; }
-/* Segment chips — light tint backgrounds (green/amber/red) → translucent on dark
-   (#f0fdff purple/#f5f3ff are already handled above). */
 [data-bs-theme="dark"] .seg-page [style*="rgb(240, 253, 244)"] { background: rgba(16,185,129,.16) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(255, 251, 235)"] { background: rgba(245,158,11,.16) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(254, 242, 242)"] { background: rgba(239,68,68,.16) !important; }
-/* …and their dark text → light */
 [data-bs-theme="dark"] .seg-page [style*="rgb(6, 95, 70)"]  { color: #6ee7b7 !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(146, 64, 14)"] { color: #fcd34d !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(127, 29, 29)"] { color: #fca5a5 !important; }
-/* ⌘K search-hint kbd (#f1f5f9) → dark */
 [data-bs-theme="dark"] .seg-page [style*="rgb(241, 245, 249)"] { background: rgba(148,163,184,.18) !important; border-color: rgba(148,163,184,.3) !important; }
-/* data tables — header strip + rows */
 [data-bs-theme="dark"] .seg-page-card table { background: transparent !important; }
 [data-bs-theme="dark"] .seg-page-card thead tr { background: #16263a !important; }
 [data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
-/* Light-cyan (#A5F3FC = rgb(165,243,252)) borders — used inline on table header
- * rows, toolbar/panel dividers and search boxes — had no dark sweep, so they
- * rendered as bright near-WHITE lines cutting across the dark cards (bug #57).
- * Mute them to the same translucent cyan the rest of the dark theme uses. Only
- * the border colour changes, so layout + text are untouched. */
 [data-bs-theme="dark"] .seg-page [style*="rgb(165, 243, 252)"] { border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .bp-buyer-row:hover { background: rgba(8,145,178,.14)!important; box-shadow: inset 3px 0 0 #22d3ee; }
-/* Count badges (KYC/DD/TL/TD/Agreements "d/t") — swap the light pill fills for
- * translucent-dark equivalents so all three states read consistently on dark.
- * !important overrides the inline colours; the inner "/t" denominator already
- * recolours via the rgb(148,163,184) sweep above. */
 [data-bs-theme="dark"] .bp-prog.is-complete { background: rgba(16,185,129,.18) !important; border-color: rgba(16,185,129,.38) !important; color: #6ee7b7 !important; }
 [data-bs-theme="dark"] .bp-prog.is-partial  { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.38) !important; color: #fcd34d !important; }
 [data-bs-theme="dark"] .bp-prog.is-none     { background: rgba(148,163,184,.16) !important; border-color: rgba(148,163,184,.30) !important; color: #cbd5e1 !important; }
-/* ── Portaled popups (rendered to document.body, OUTSIDE .seg-page) ──
- * The .seg-page dark matchers can't reach these, so they get their own sweep.
- * The injected <style> is global, so these apply wherever the portal lands. */
-/* Consignees popup */
 [data-bs-theme="dark"] .bcm-overlay > div { background: #1e293b !important; }
 [data-bs-theme="dark"] .bcm-overlay [style*="background: rgb(255, 255, 255)"],
 [data-bs-theme="dark"] .bcm-overlay [style*="background:rgb(255, 255, 255)"] { background: #0f172a !important; }
@@ -447,11 +357,9 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bcm-overlay [style*="rgb(12, 74, 110)"],
 [data-bs-theme="dark"] .bcm-overlay [style*="rgb(71, 85, 105)"],
 [data-bs-theme="dark"] .bcm-overlay [style*="rgb(100, 116, 139)"] { color: #cfe8f3 !important; }
-/* Segment tooltip */
 [data-bs-theme="dark"] .seg-pop { background: #1e293b !important; border-color: rgba(6,182,212,.3) !important; box-shadow: 0 18px 50px rgba(0,0,0,.5) !important; }
 [data-bs-theme="dark"] .seg-pop span { color: #cfe8f3 !important; }
 
-/* WorklistPager recoloured to the page's cyan/teal theme (default is violet). */
 .wl-pager.bp-wl { border-top-color: #a5e8f5; background: linear-gradient(90deg,#f0fdff 0%,#e6fafe 40%,#f0fdff 100%); }
 .bp-wl .tc-wl-info, .bp-wl .tc-wl-rows { color: #0e7490; border-color: #a5e8f5; }
 .bp-wl .tc-wl-info .tc-wl-hl, .bp-wl .tc-wl-rows select { color: #0891b2; }
@@ -463,11 +371,6 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bp-wl .tc-wl-info .tc-wl-hl, [data-bs-theme="dark"] .bp-wl .tc-wl-rows select { color: #a5f3fc; }
 [data-bs-theme="dark"] .bp-wl .tc-wl-btn:hover:not(:disabled) { background: rgba(255,255,255,.10); border-color: #22d3ee; }
 
-/* ── Responsive (tablet / mobile) ──
- * Header strips, analytics headers and table toolbars already flex-wrap inline,
- * so the right-hand controls drop below on narrow screens. These rules make the
- * search box flexible (instead of a fixed 280px that overflows), let the top
- * Party/Transaction tab pills wrap, and hide the long sub-heading on phones. */
 @media (max-width: 820px) {
   .seg-page .bpa-seg { flex-wrap: wrap; }
   .seg-page .bpa-tab { height: 34px; padding: 0 14px; font-size: 11px; }
@@ -479,9 +382,6 @@ const BP_CSS = `
 }
 `;
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Small style helpers
- * ────────────────────────────────────────────────────────────────────────── */
 const thStyle: CSSProperties = {
   padding: '9px 10px', fontSize: '7px', fontWeight: 800, letterSpacing: '.09em',
   textTransform: 'uppercase', color: '#0891b2', opacity: .85, whiteSpace: 'nowrap',
@@ -509,7 +409,6 @@ function cardHoverOut(e: React.MouseEvent<HTMLDivElement>) {
   e.currentTarget.style.borderColor = '#A5F3FC';
   e.currentTarget.style.boxShadow = '0 1px 3px rgba(6,182,212,.07)';
 }
-/* Buyer / Consignee Transactions sub-tab pill (Buyer ≠ Consignee view). */
 const neqTabStyle = (on: boolean): CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 9, border: 'none', cursor: 'pointer',
   fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: on ? '#fff' : '#0e7490',
@@ -517,9 +416,6 @@ const neqTabStyle = (on: boolean): CSSProperties => ({
   boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none',
 });
 
-/* Progress cell used in the buyer / consignee list tables. When `onClick`
- * is supplied the cell becomes a button that deep-links into the Evidence
- * Vault on the matching document bucket. */
 function ProgCell({ obj, big = true, onClick }: { obj: Prog; big?: boolean; onClick?: () => void }) {
   const { d, t } = obj;
   const pct = t > 0 ? Math.round((d / t) * 100) : 0;
@@ -574,7 +470,6 @@ function VaultIcon() {
   );
 }
 
-/* Reg status badge in the transaction tables. */
 function RegBadge({ reg }: { reg: Reg }) {
   const cfg = reg === 'High'
     ? { bg: '#FEF3C7', bd: '#FDE68A', c: '#D97706', dot: '#F59E0B' }
@@ -591,7 +486,6 @@ function RegBadge({ reg }: { reg: Reg }) {
   );
 }
 
-/* Smaller progress cell used in transaction tables (wsProgCell). */
 function WsProgCell({ obj }: { obj: Prog }) {
   return <ProgCell obj={obj} big={false} />;
 }
@@ -617,7 +511,6 @@ function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box';
   );
 }
 
-/* Compact pager used by the transaction tables (ws/wos). */
 function TxnPager({ page, total, perPage, noun, onPage, onPageSize }: { page: number; total: number; perPage: number; noun: string; onPage: (p: number) => void; onPageSize?: (n: number) => void }) {
   const totalPages = Math.ceil(total / perPage) || 1;
   const start = (page - 1) * perPage;
@@ -636,7 +529,6 @@ function TxnPager({ page, total, perPage, noun, onPage, onPageSize }: { page: nu
             </select>
           </label>
         )}
-        {/* Compact: < current next > (not every page number). */}
         <button onClick={() => page > 1 && onPage(page - 1)} style={{
           width: '28px', height: '28px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.22)',
           background: '#fff', color: '#0891b2', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center',
@@ -669,6 +561,7 @@ function TxnPager({ page, total, perPage, noun, onPage, onPageSize }: { page: nu
 }
 
 const txnTableHeaderRow: CSSProperties = { background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderBottom: '1.5px solid #A5F3FC' };
+const stickyThead: CSSProperties = { position: 'sticky', top: 0, zIndex: 2, background: '#f0fdff', boxShadow: '0 1.5px 0 #A5F3FC' };
 const idChip: CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: '11px', fontWeight: 800, color: '#0891b2', background: 'linear-gradient(135deg,rgba(8,145,178,.1),rgba(6,182,212,.06))', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(6,182,212,.25)' };
 const oppChip: CSSProperties = { fontSize: '10.5px', fontWeight: 600, color: '#4338CA', background: '#EEF2FF', padding: '2px 7px', borderRadius: '6px', border: '1px solid #C7D2FE' };
 const oppChipMono: CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: '11px', fontWeight: 800, color: '#4338CA', background: '#EEF2FF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #C7D2FE' };
@@ -682,18 +575,12 @@ function txnRowHover(bg: string) {
   };
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Main component
- * ────────────────────────────────────────────────────────────────────────── */
 export default function ClmBuyerProfilePage() {
-  // tab state
   const [brefCollapsed, setBrefCollapsed] = useState(true);
   const [clmTab, setClmTab] = useState<'party' | 'txn'>('party');
   const [bpaTab, setBpaTab] = useState<'buyer' | 'consignee'>('buyer');
   const [buyerScope, setBuyerScope] = useState<'international' | 'domestic'>('international');
   const [consScope, setConsScope] = useState<'international' | 'domestic'>('international');
-  // Analytics KPI cards double as list filters. 'all' clears the filter; the
-  // others narrow the list below to the matching compliance state.
   type CardFilter = 'all' | 'compliant' | 'kyc' | 'dd' | 'tl' | 'td' | 'agr';
   const [cardFilter, setCardFilter] = useState<CardFilter>('all');
   const CARD_KEYS: CardFilter[] = ['all', 'compliant', 'kyc', 'dd', 'tl', 'td', 'agr'];
@@ -712,109 +599,59 @@ export default function ClmBuyerProfilePage() {
   const [shipTab, setShipTab] = useState<'with' | 'without'>('with');
   const [wsSub, setWsSub] = useState<'eq' | 'neq'>('eq');
   const [wosSub, setWosSub] = useState<'eq' | 'neq'>('eq');
-  // Within "Buyer ≠ Consignee" — switch the table between the buyer's and the
-  // consignee's compliance perspective.
   const [neqParty, setNeqParty] = useState<'buyer' | 'consignee'>('buyer');
 
-  // collapsible analytics strips
   const [partyAnalyticsOpen, setPartyAnalyticsOpen] = useState(true);
   const [txnAnalyticsOpen, setTxnAnalyticsOpen] = useState(true);
 
-  // pagination state
   const [buyerPage, setBuyerPage] = useState(1);
   const [consPage, setConsPage] = useState(1);
-  // Dynamic rows-per-page: the Buyer / Consignee list tables size their page to
-  // the viewport so the pager footer stays pinned to the bottom of the screen.
   const buyerTableRef = useRef<HTMLDivElement>(null);
   const consTableRef = useRef<HTMLDivElement>(null);
   const buyerCardRef = useRef<HTMLDivElement>(null);
   const consCardRef = useRef<HTMLDivElement>(null);
-  // Rows-per-page: auto-fits the viewport by default, but a manual choice from
-  // the pager's "Rows per page" selector (when set) overrides the auto-fit.
   const [bpManualSize, setBpManualSize] = useState<number | null>(null);
   const [consManualSize, setConsManualSize] = useState<number | null>(null);
-  /* Dynamic pagination — the SHARED hook the CLM masters use
-     (clmShared/useAutoFitRows), not a local copy.
-     *
-     * This page used to carry its own measurement, and it floored the page at
-     * 4 rows; the shared one floors at PER_PAGE (10) and only grows from there,
-     * which is the whole point of that floor — see its comment: "the old floor
-     * was 4, which served four-row pages on a laptop and made the same tenant
-     * look different on every machine". Sharing it also means a fix to the
-     * measurement lands on every CLM list at once instead of drifting here.
-     *
-     * autoFitRef goes false the moment the user picks a size in the pager, so a
-     * manual choice is never overwritten by the next resize. */
   const [bpDynamicSize, setBpDynamicSize] = useState(PER_PAGE);
   const [consDynamicSize, setConsDynamicSize] = useState(PER_PAGE);
   const buyerAutoFitRef = useRef(true);
   const consAutoFitRef = useRef(true);
-  const buyerCardFill = useAutoFitRows(buyerCardRef, buyerAutoFitRef, setBpDynamicSize, [bpaTab, partyAnalyticsOpen]);
-  const consCardFill = useAutoFitRows(consCardRef, consAutoFitRef, setConsDynamicSize, [bpaTab, partyAnalyticsOpen]);
+  const buyerCardFill = useExactFitRows(buyerCardRef, buyerAutoFitRef, setBpDynamicSize, [bpaTab, partyAnalyticsOpen]);
+  const consCardFill = useExactFitRows(consCardRef, consAutoFitRef, setConsDynamicSize, [bpaTab, partyAnalyticsOpen]);
   const bpPerPage = bpManualSize ?? bpDynamicSize;
   const consPerPage = consManualSize ?? consDynamicSize;
-  // Transaction-wise tables (ws/wos · eq/neq): one card holds the active table,
-  // so a single dynamic page size drives whichever is visible.
   const txnCardRef = useRef<HTMLDivElement>(null);
   const txnTableRef = useRef<HTMLDivElement>(null);
-  // Auto-fit page size by default; a manual "Rows per page" choice overrides it
-  // (mirrors the Buyer / Consignee list tables).
   const [txnManualSize, setTxnManualSize] = useState<number | null>(null);
   const txnDynamicSize = useDynamicPerPage(txnTableRef, { deps: [clmTab, txnAnalyticsOpen, shipTab, wsSub, wosSub, neqParty] });
   const txnPerPage = txnManualSize ?? txnDynamicSize;
   const txnCardFill = useFillHeight(txnCardRef, { deps: [clmTab, txnAnalyticsOpen, shipTab, wsSub, wosSub, neqParty] });
-  // Buyer / Consignee list search boxes (name · id · segment · country).
   const [buyerSearch, setBuyerSearch] = useState('');
   const [consSearch, setConsSearch] = useState('');
-  // Transaction-wise CLM search box (shipment · opportunity · customer ·
-  // consignee · PI · reg. status). Shared by all four transaction tables.
   const [txnSearch, setTxnSearch] = useState('');
   const [wsEqPage, setWsEqPage] = useState(1);
   const [wsNeqPage, setWsNeqPage] = useState(1);
   const [wosEqPage, setWosEqPage] = useState(1);
   const [wosNeqPage, setWosNeqPage] = useState(1);
 
-  // Evidence Vault popups — opened only from the explicit Evidence Vault
-  // button at the end of each row.
   const [buyerVault, setBuyerVault] = useState<CustomerVaultTarget | null>(null);
   const [consVault, setConsVault]   = useState<ConsigneeVaultTarget | null>(null);
   const [buyerVaultTab, setBuyerVaultTab] = useState<VaultTab>('company-dd');
   const [consVaultTab, setConsVaultTab]   = useState<VaultTab>('company-dd');
-  // Single-bucket documents popup — opened when a KYC / DD / TL / TD /
-  // Agreements progress cell is clicked. Shows just that category as a card.
   const [docsPopup, setDocsPopup] = useState<{ ownerType: 'customer' | 'consignee'; ownerId: number; company: string; category: DocCategory } | null>(null);
-  // Segment "+N" popover — lists all segments for a row when the count badge
-  // is clicked (mirrors the DCP authorities badge popover).
   const [segOpen, setSegOpen] = useState<{ key: string; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
-  /* Dismiss rules, shared with every other "+N" popover (see useDismissPopover):
-     a scroll outside the popover's own list, a resize, Escape, the browser tab
-     being hidden, the window losing focus — and any change to the view under it.
-     This page carried only the scroll/resize half, so a popover opened on the
-     buyer list stayed up over the consignee list after a tab switch, pinned to
-     coordinates that no longer meant anything (CS-24, same as CS-31 / CS-35).
-     `watch` therefore lists everything that redraws the table beneath it. */
   useDismissPopover(!!segOpen, () => setSegOpen(null), {
     inside: '.seg-pop',
     watch: `${clmTab}|${bpaTab}|${buyerScope}|${consScope}|${cardFilter}|${buyerPage}|${consPage}|${buyerSearch}|${consSearch}`,
   });
-  // "Consignees for this buyer" popup — opened from the CONSIGNEES count cell.
   const [consListBuyer, setConsListBuyer] = useState<BuyerRow | null>(null);
-  // "Customer for this consignee" popup — opened from the CUSTOMER ID cell in
-  // the consignee list. A consignee maps to exactly one customer, so this shows
-  // that single customer's identity + compliance (mirror of the consignees popup).
   const [custForCons, setCustForCons] = useState<ConsRow | null>(null);
 
-  // Open the Evidence Vault for a buyer / consignee row, focused on a tab.
-  // No-ops without a db_id (mirrors the disabled Evidence Vault button).
   const openBuyerVault = (r: BuyerRow, tab: VaultTab) => {
     if (!r.db_id) return;
     setBuyerVaultTab(tab);
     setBuyerVault({
       id: r.id, db_id: r.db_id, company: r.name, segment: r.seg.join(', '), country: r.country,
-      // Identity chips — without these the header showed only segment, country
-      // and a hard-coded "Low Risk", unlike the same vault opened from the
-      // Customer list. Nulls are dropped so an absent field renders no chip
-      // rather than an empty one.
       contact: r.contact ?? undefined,
       contactCity: r.city ?? undefined,
       type: r.type ?? undefined,
@@ -823,14 +660,6 @@ export default function ClmBuyerProfilePage() {
   };
   const openConsVault = (r: ConsRow, tab: VaultTab) => {
     if (!r.db_id) return;
-    /* A Same-as-Customer consignee never shows a vault — it shows the hand-off
-       card pointing at the customer it mirrors. The card needs that customer,
-       and this page already holds every buyer row, so resolve it here and the
-       modal can render with no request at all.
-       Without the hint the modal had to fetch the vault purely to read one
-       boolean off the response, which is why the full skeleton flashed on
-       screen before the card replaced it. A lookup miss (the customer sits
-       outside this profile) leaves the hint null and the old fetch path runs. */
     const mirrorRow = r.same_as_customer ? bp.buyers.find((b) => b.id === r.cid) : undefined;
     setConsVaultTab(tab);
     setConsVault({
@@ -849,9 +678,6 @@ export default function ClmBuyerProfilePage() {
         : null,
     });
   };
-  // Open the buyer (customer) Evidence Vault from a transaction row. Reuses the
-  // full buyer record (segment, code) when the customer is in the buyer list,
-  // else falls back to a minimal target keyed on the customer's db_id.
   const openTxnBuyerVault = (custId?: number, custName?: string, country?: string) => {
     if (!custId) return;
     const row = bp.buyers.find((b) => b.db_id === custId);
@@ -859,7 +685,6 @@ export default function ClmBuyerProfilePage() {
     setBuyerVaultTab('company-dd');
     setBuyerVault({ id: '—', db_id: custId, company: custName || '—', segment: '', country: country || '' });
   };
-  // Same, for the consignee perspective (Consignee Transactions view).
   const openTxnConsVault = (consId?: number, consName?: string, country?: string) => {
     if (!consId) return;
     const row = bp.consignees.find((c) => c.db_id === consId);
@@ -868,8 +693,6 @@ export default function ClmBuyerProfilePage() {
     setConsVault({ id: '—', db_id: consId, company: consName || '—', segment: '', country: country || '', customerId: '' });
   };
 
-  // Open the single-bucket documents popup for a row's progress cell.
-  // No-ops without a db_id (the row has no backing record to fetch).
   const openBuyerDocs = (r: BuyerRow, category: DocCategory) => {
     if (!r.db_id) return;
     setDocsPopup({ ownerType: 'customer', ownerId: r.db_id, company: r.name, category });
@@ -879,8 +702,6 @@ export default function ClmBuyerProfilePage() {
     setDocsPopup({ ownerType: 'consignee', ownerId: r.db_id, company: r.name, category });
   };
 
-  // Toggle the segment "+N" popover for a row, positioned under (or above, when
-  // there's no room) the count badge. Mirrors the DCP authorities popover.
   const toggleSegPop = (e: React.MouseEvent, key: string, names: string[]) => {
     e.stopPropagation();
     if (segOpen?.key === key) { setSegOpen(null); return; }
@@ -890,29 +711,11 @@ export default function ClmBuyerProfilePage() {
     const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
     setSegOpen({ key, names, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
   };
-  // Render a segment cell like the Authorities column: a teal chip for the first
-  // segment + a circular teal-gradient "+N" badge that opens the full list.
   const renderSegCell = (key: string, names: string[]) => {
     const segs = names.map((s) => s.trim()).filter(Boolean);
     if (segs.length === 0) return <span style={{ fontSize: '10px', color: '#94a3b8' }}>—</span>;
     const extra = segs.length - 1;
-    /* QA #17 — one flex row, not two loose inline chips.
-       The tag was inline-block on vertical-align:middle while the +N badge is
-       inline-flex sitting on the BASELINE, so the two never shared a centre
-       line, and the only space between them was the whitespace in the JSX —
-       which collapses differently depending on the tag's own line box. A flex
-       row with align-items:center and an explicit gap makes both constant down
-       the whole column. */
     return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle', maxWidth: '100%' }}>
-      {/* maxWidth, not a fixed width.
-          A fixed 150px box lined the "+N" badges up in a column, but it also
-          held that width open for a short name — "Processed Foods" left most
-          of the box empty and threw its badge a long way from the chip it
-          belongs to. A cap keeps the part that mattered: every name longer
-          than the cap still truncates at the same x, so those badges still
-          line up, while a short name lets its badge sit right beside it.
-          Truncation is done by CSS at the box edge, not by slicing the string,
-          and the full name stays on the tooltip. */}
       <span style={{ maxWidth: SEG_CHIP_COL, flexShrink: 1, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
         <Tooltip label={segs[0]}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, boxSizing: 'border-box', minWidth: 0 }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{segs[0]}</span><SegmentNameBadge name={segs[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
       </span>
@@ -922,7 +725,6 @@ export default function ClmBuyerProfilePage() {
     </span>;
   };
 
-  // ── Live data from GET /clm/buyer-profile ──
   const [bp, setBp] = useState<BpData>(EMPTY_BP);
   const [bpLoading, setBpLoading] = useState(true);
   useEffect(() => {
@@ -934,37 +736,22 @@ export default function ClmBuyerProfilePage() {
       .finally(() => { if (!cancelled) setBpLoading(false); });
     return () => { cancelled = true; };
   }, []);
-  // Fetched views — shadow the legacy demo arrays of the same name so the
-  // existing render + pagination code below consumes live data unchanged.
   const bpBuyerData = bp.buyers;
   const bpConsData  = bp.consignees;
-  // International vs Domestic buyer scope. Domestic = the exporter's home
-  // country (India); International = every other country. Drives the Buyer
-  // List + the buyer analytics cards so both reflect the chosen tab.
-  /* Recomputed only when the data or the chosen scope changes. Typing in a
-     search box, hovering a row or paging no longer re-filters every record. */
   const scopedBuyers = useMemo(
     () => bpBuyerData.filter((r) => buyerScope === 'domestic' ? isDomesticBuyer(r.country) : !isDomesticBuyer(r.country)),
     [bpBuyerData, buyerScope]);
   const scopedCons = useMemo(
     () => bpConsData.filter((r) => consScope === 'domestic' ? isDomesticCountry(r.country) : !isDomesticCountry(r.country)),
     [bpConsData, consScope]);
-  // International vs Domestic transactions — scoped by the buyer's country so
-  // the transaction-wise analytics + all four tables follow the chosen tab.
   const txnInScope = <T extends { country?: string }>(rows: T[]): T[] =>
     rows.filter((r) => txnScope === 'domestic' ? isDomesticCountry(r.country || '') : !isDomesticCountry(r.country || ''));
-  // These tabs are shipment-linked transactions — only surface rows that
-  // actually carry a shipment id (drop any placeholder/blank ones).
   const hasShipmentId = <T extends { shp?: string }>(r: T): boolean => !!r.shp && r.shp.trim() !== '' && r.shp.trim() !== '—';
   const wsEqData   = useMemo(() => txnInScope(bp.ws_eq).filter(hasShipmentId),   [bp.ws_eq, txnScope]);   // eslint-disable-line react-hooks/exhaustive-deps
   const wsNeqData  = useMemo(() => txnInScope(bp.ws_neq).filter(hasShipmentId),  [bp.ws_neq, txnScope]);  // eslint-disable-line react-hooks/exhaustive-deps
   const wosEqData  = useMemo(() => txnInScope(bp.wos_eq),                        [bp.wos_eq, txnScope]);  // eslint-disable-line react-hooks/exhaustive-deps
   const wosNeqData = useMemo(() => txnInScope(bp.wos_neq),                       [bp.wos_neq, txnScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* Case-insensitive search across every text column the transaction tables
-   * render: Shipment ID, Opportunity ID, Customer, Consignee, PI Number and
-   * Reg. Status. Drives the visible table + its pager; the analytics cards
-   * above stay on the unfiltered scope so the totals don't jump while typing. */
   const txnQ = txnSearch.trim().toLowerCase();
   const txnMatch = (r: { shp?: string; opp?: string; customer?: string; consignee?: string; pi?: string; reg?: Reg; country?: string }): boolean =>
     !txnQ || [r.shp, r.opp, r.customer, r.consignee, r.pi, r.reg, r.country]
@@ -974,20 +761,9 @@ export default function ClmBuyerProfilePage() {
   const wosEqRows  = wosEqData.filter(txnMatch);
   const wosNeqRows = wosNeqData.filter(txnMatch);
 
-  // ── derived buyer analytics (syncBpaCards) ──
   const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
   const buyerTotal = scopedBuyers.length;
-  // Compliant buyer = KYC + DD + Trade License all fully completed.
   const buyerCompliant = scopedBuyers.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
-  /* These cards count DOCUMENTS still outstanding, not parties that have some.
-   *
-     "Trade Documents Pending 01" used to mean "one consignee has something
-     pending", which reads as "one document" and cannot be reconciled with the
-     list underneath — the row on screen showed 0/0 while the card said 1,
-     because the pending one was a different row further down. The label names
-     a document, so the number is a document count.
-     Summing across parties is safe here, unlike the transaction cards: each
-     party owns its own documents, so nothing is counted twice. */
   const partyPending = <T extends { kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog }>(
     rows: T[], pick: (r: T) => Prog,
   ) => rows.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
@@ -1001,7 +777,6 @@ export default function ClmBuyerProfilePage() {
   }), [scopedBuyers]);   // eslint-disable-line react-hooks/exhaustive-deps
   const { kyc: buyerKyc, dd: buyerDd, tl: buyerTl, td: buyerTd, agr: buyerAgr } = buyerKpi;
 
-  // ── derived consignee analytics ──
   const consTotal = scopedCons.length;
   const consCompliant = scopedCons.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
   const consKpi = useMemo(() => ({
@@ -1013,27 +788,11 @@ export default function ClmBuyerProfilePage() {
   }), [scopedCons]);   // eslint-disable-line react-hooks/exhaustive-deps
   const { kyc: consKyc, dd: consDd, tl: consTl, td: consTd, agr: consAgr } = consKpi;
 
-  // ── derived transaction (opportunity) analytics ──
-  // Count only the transactions of the ACTIVE shipment tab so the metrics match
-  // the table on screen: "With Shipment ID" → ws (eq + neq); "Without Shipment
-  // ID" → wos (eq + neq). Summing all four made the totals include rows the
-  // visible table never shows.
   const allTxn: (WsEqRow | WsNeqRow | WosEqRow | WosNeqRow)[] = useMemo(
     () => shipTab === 'without' ? [...wosEqData, ...wosNeqData] : [...wsEqData, ...wsNeqData],
     [shipTab, wsEqData, wsNeqData, wosEqData, wosNeqData]);
   const txnTotal = allTxn.length;
-  /* All FIVE families, not three.
-   *
-     Trade Documents and Agreements were left out of the test, so a
-     transaction counted as fully compliant while its own Trade Docs cell read
-     0/2 and its Agreements cell 0/3 — and the two cards to the right of this
-     one were reporting exactly those pending items at the same time. The
-     panel contradicted itself: "Fully Compliant 3" over "Trade Documents
-     Pending 2, Agreements Pending 3" on a three-row table. A row is compliant
-     only when nothing is outstanding on it. */
   const txnKpi = useMemo(() => {
-    /* One pass instead of seven. Each of these used to walk the whole list on
-       every render; they all read the same rows, so they are gathered here. */
     const sumPendingOf = (pick: (r: typeof allTxn[number]) => { d: number; t: number }) =>
       allTxn.reduce((acc, r) => acc + Math.max(0, pick(r).t - pick(r).d), 0);
     return {
@@ -1051,25 +810,10 @@ export default function ClmBuyerProfilePage() {
   const txnKyc = txnKpi.kyc;
   const txnDd = txnKpi.dd;
   const txnTl = txnKpi.tl;
-  /* Trade Documents / Agreements Pending count DOCUMENTS, not transactions —
-     "how many are still unsigned", which is the number someone acting on this
-     panel actually needs. Two transactions each missing two documents is four
-     pieces of work, and the card used to call that "2".
-     Safe to sum here precisely because these two families are per-transaction:
-     each deal carries its own. The three cards to the left stay on transaction
-     counts for the opposite reason — KYC, Due Diligence and Trade Licences are
-     the CUSTOMER's one-time documents, so the same pending document reappears
-     on every one of that customer's transactions and adding them up would
-     report one missing PAN card as two, or five. */
   const txnTd = txnKpi.td;
   const txnAgr = txnKpi.agr;
 
-  /* Case-insensitive search across Company Name, Customer/Consignee ID,
-   * Segment and Country. Buyer segments are an array; consignee segment is a
-   * single string. Falls back to the full list when the box is empty. */
   const buyerQ = buyerSearch.trim().toLowerCase();
-  /* cardFilter is in the dependency list because matchCard() reads it — leave
-     it out and clicking a KPI card would stop filtering the list. */
   const buyerFiltered = useMemo(() => scopedBuyers.filter((r) =>
     matchCard(r) && (!buyerQ ||
       r.name.toLowerCase().includes(buyerQ) ||
@@ -1088,8 +832,6 @@ export default function ClmBuyerProfilePage() {
   const buyerListTotal = buyerFiltered.length;
   const consListTotal = consFiltered.length;
 
-  // Clamp the active page so a smaller dynamic page size can't leave us stranded
-  // past the last page (e.g. after a resize shrinks the row count).
   const buyerPageSafe = Math.min(buyerPage, Math.max(1, Math.ceil(buyerListTotal / bpPerPage)));
   const consPageSafe = Math.min(consPage, Math.max(1, Math.ceil(consListTotal / consPerPage)));
   const buyerSlice = buyerFiltered.slice((buyerPageSafe - 1) * bpPerPage, (buyerPageSafe - 1) * bpPerPage + bpPerPage);
@@ -1109,16 +851,7 @@ export default function ClmBuyerProfilePage() {
     <div className="seg-page">
       <style>{BP_CSS}</style>
 
-      {/* ── Header Strip ── */}
       <div className="seg-page-card" style={{ background: 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 18%,#d0f4f9 45%,#baeef7 75%,#a0e8f2 100%)' }}>
-        {/* Padding matches the Supplier Profile header strip (0 18px) — this
-            used to add 10px of vertical padding plus a wrapping flex row, which
-            pushed the strip taller and widened the apparent gap to the card
-            below. minHeight is 58px: the tallest thing in the row is the
-            Party/Transaction segmented control at 49px (.bpa-tab 38 + .bpa-seg
-            padding 4x2 + border 1.5x2), so this adds ~4px of breathing room
-            above and below it (the row is centre-aligned, so the slack splits
-            evenly) without touching the pills themselves. */}
         <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: '58px' }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '5px', background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.5),transparent)', pointerEvents: 'none' }} />
@@ -1150,7 +883,6 @@ export default function ClmBuyerProfilePage() {
         </div>
       </div>
 
-      {/* ── What We Are Doing Here ── */}
       <div className="seg-page-card">
         <div className={`bref-box${brefCollapsed ? ' is-collapsed' : ''}`} style={{ border: 'none', borderRadius: 0, boxShadow: 'none', margin: 0 }}>
           <div className="bref-box__header" onClick={() => setBrefCollapsed((c) => !c)}>
@@ -1192,7 +924,6 @@ export default function ClmBuyerProfilePage() {
         </div>
       </div>
 
-      {/* ── TRANSACTION ANALYTICS (txn tab only) ── */}
       {clmTab === 'txn' && (
         <div>
           <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
@@ -1213,7 +944,6 @@ export default function ClmBuyerProfilePage() {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {/* International / Domestic transaction scope */}
                 <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '34px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
                   {([['international', 'International Transactions'], ['domestic', 'Domestic Transactions']] as const).map(([key, label]) => {
                     const on = txnScope === key;
@@ -1257,9 +987,6 @@ export default function ClmBuyerProfilePage() {
             </div>
           </div>
 
-          {/* ── SHIPMENT TABS ── */}
-          {/* marginTop:8px — Transaction-wise CLM tab; same nested-wrapper gap
-              as the party-wise list cards. */}
           <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: txnCardFill }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px 10px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '52px', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1281,7 +1008,6 @@ export default function ClmBuyerProfilePage() {
               </div>
             </div>
 
-            {/* With Shipment ID panel */}
             {shipTab === 'with' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)', flexShrink: 0 }}>
@@ -1292,7 +1018,7 @@ export default function ClmBuyerProfilePage() {
                 {wsSub === 'eq' && (
                   <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                      <thead>
+                      <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
                             <th key={i} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'center' }}>{h}</th>
@@ -1330,7 +1056,7 @@ export default function ClmBuyerProfilePage() {
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                      <thead>
+                      <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'Consignee', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
                             <th key={i} style={{ ...thStyle, textAlign: (h === 'Customer' || h === 'Consignee') ? 'left' : 'center' }}>{h}</th>
@@ -1366,7 +1092,6 @@ export default function ClmBuyerProfilePage() {
               </div>
             )}
 
-            {/* Without Shipment ID panel */}
             {shipTab === 'without' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)', flexShrink: 0 }}>
@@ -1377,7 +1102,7 @@ export default function ClmBuyerProfilePage() {
                 {wosSub === 'eq' && (
                   <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                      <thead>
+                      <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
                             <th key={i} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'center' }}>{h}</th>
@@ -1418,7 +1143,7 @@ export default function ClmBuyerProfilePage() {
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                      <thead>
+                      <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'Consignee', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
                             <th key={i} style={{ ...thStyle, textAlign: (h === 'Customer' || h === 'Consignee') ? 'left' : 'center' }}>{h}</th>
@@ -1460,10 +1185,8 @@ export default function ClmBuyerProfilePage() {
         </div>
       )}
 
-      {/* ── PARTY WISE CLM PANEL ── */}
       {clmTab === 'party' && (
         <div>
-          {/* ANALYTICAL CARDS */}
           <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ position: 'relative' }}>
               <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: 'linear-gradient(180deg,#67e8f9,#0891b2,#0e7490)', zIndex: 10, borderRadius: '14px 0 0 14px' }} />
@@ -1543,14 +1266,8 @@ export default function ClmBuyerProfilePage() {
             </div>
           </div>
 
-          {/* ── BUYER LIST TABLE ── */}
           {bpaTab === 'buyer' && (
             <div>
-              {/* marginTop:8px — this card is nested inside plain wrappers, so
-                  .seg-page's 8px flex gap doesn't reach it and it butted right
-                  up against the Analytics card above. Restores the same spacing
-                  the top-level cards have. Same pattern the Supplier Profile
-                  page uses for its nested cards. */}
               <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: buyerCardFill, maxHeight: buyerCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1568,7 +1285,6 @@ export default function ClmBuyerProfilePage() {
                       <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={buyerSearch} onChange={(e) => { setBuyerSearch(e.target.value); setBuyerPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                       <SearchClear show={buyerSearch} onClear={() => { setBuyerSearch(''); }} />
                     </div>
-                    {/* International / Domestic buyer scope */}
                     <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '38px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
                       {([['international', 'International Customers'], ['domestic', 'Domestic Customers']] as const).map(([key, label]) => {
                         const on = buyerScope === key;
@@ -1586,7 +1302,7 @@ export default function ClmBuyerProfilePage() {
                 </div>
                 <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }} ref={buyerTableRef}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                    <thead>
+                    <thead style={stickyThead}>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
                           <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
@@ -1605,10 +1321,6 @@ export default function ClmBuyerProfilePage() {
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'left', verticalAlign: 'middle', minWidth: '196px' }}>
-                              {/* QA #72 — the cell was centred, so a row carrying a "+N"
-                                  badge pushed its chip left of the rows without one and the
-                                  column never showed a straight edge. Left-aligned (header
-                                  too) so every tag starts at the same x. */}
                               <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'flex-start', alignItems: 'center' }}>
                                 {renderSegCell(`buyer-${r.id}`, r.seg)}
                               </div>
@@ -1639,16 +1351,13 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { buyerAutoFitRef.current = false; setBpManualSize(n); setBuyerPage(1); }} className="bp-wl" />
+                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { buyerAutoFitRef.current = false; setBpManualSize(n); setBuyerPage(1); }} pageSizeOptions={[5, 10, 15, 25, 50]} className="bp-wl" />
               </div>
             </div>
           )}
 
-          {/* ── CONSIGNEE LIST TABLE ── */}
           {bpaTab === 'consignee' && (
             <div>
-              {/* marginTop:8px — see the Customer List card above; same nested
-                  wrapper, same missing gap under the Analytics card. */}
               <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: consCardFill, maxHeight: consCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1666,7 +1375,6 @@ export default function ClmBuyerProfilePage() {
                       <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={consSearch} onChange={(e) => { setConsSearch(e.target.value); setConsPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', width: '280px', background: 'transparent' }} />
                       <SearchClear show={consSearch} onClear={() => { setConsSearch(''); }} />
                     </div>
-                    {/* International / Domestic consignee scope */}
                     <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '38px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
                       {([['international', 'International Consignees'], ['domestic', 'Domestic Consignees']] as const).map(([key, label]) => {
                         const on = consScope === key;
@@ -1684,7 +1392,7 @@ export default function ClmBuyerProfilePage() {
                 </div>
                 <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }} ref={consTableRef}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                    <thead>
+                    <thead style={stickyThead}>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Customer', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
                           <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
@@ -1695,12 +1403,6 @@ export default function ClmBuyerProfilePage() {
                       {bpLoading && <ShimmerTableRows rows={8} cols={14} keyPrefix="cons" />}
                       {!bpLoading && consSlice.map((r, i) => {
                         const bg = rowBg(i);
-                        // A consignee belongs to exactly one customer, so the count is
-                        // 1 when it actually resolves to a real customer, else 0 (an
-                        // orphaned consignee whose customer no longer exists). Derived
-                        // the same way the popup resolves the customer, so badge == popup.
-                        // All customers this consignee is mapped to (M2M), filtered
-                        // to those present in the current buyer list scope.
                         const custIds = (r.cids && r.cids.length ? r.cids : (r.cid ? [r.cid] : []));
                         const custCount = custIds.filter((id) => bpBuyerData.some((b) => b.id === id)).length;
                         return (
@@ -1712,10 +1414,6 @@ export default function ClmBuyerProfilePage() {
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'left', verticalAlign: 'middle', minWidth: '196px' }}>
-                              {/* QA #72 — the cell was centred, so a row carrying a "+N"
-                                  badge pushed its chip left of the rows without one and the
-                                  column never showed a straight edge. Left-aligned (header
-                                  too) so every tag starts at the same x. */}
                               <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'flex-start', alignItems: 'center' }}>
                                 {renderSegCell(`cons-${r.id}`, r.seg.split(','))}
                               </div>
@@ -1746,20 +1444,16 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { consAutoFitRef.current = false; setConsManualSize(n); setConsPage(1); }} className="bp-wl" />
+                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { consAutoFitRef.current = false; setConsManualSize(n); setConsPage(1); }} pageSizeOptions={[5, 10, 15, 25, 50]} className="bp-wl" />
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Evidence Vault popups — same modals used by the Customer / Consignee
-          Sales-Matrix tables. */}
       <CustomerEvidenceVaultModal open={!!buyerVault} customer={buyerVault} initialTab={buyerVaultTab} onClose={() => setBuyerVault(null)} />
       <ConsigneeEvidenceVaultModal open={!!consVault} consignee={consVault} initialTab={consVaultTab} onClose={() => setConsVault(null)} />
 
-      {/* Single-bucket documents popup — opened from a KYC / DD / TL / TD /
-          Agreements progress cell instead of the full Evidence Vault. */}
       <ClmDocsPopup
         open={!!docsPopup}
         onClose={() => setDocsPopup(null)}
@@ -1769,7 +1463,6 @@ export default function ClmBuyerProfilePage() {
         company={docsPopup?.company ?? ''}
       />
 
-      {/* Consignees-for-buyer popup. */}
       {consListBuyer && (
         <BuyerConsigneesModal
           buyer={consListBuyer}
@@ -1778,8 +1471,6 @@ export default function ClmBuyerProfilePage() {
         />
       )}
 
-      {/* Customer-for-consignee popup — ALL customers this consignee is mapped
-          to (many-to-many), filtered to the current buyer list scope. */}
       {custForCons && (
         <ConsigneeCustomerModal
           consignee={custForCons}
@@ -1790,7 +1481,6 @@ export default function ClmBuyerProfilePage() {
         />
       )}
 
-      {/* Segment "+N" popover — lists all segments for the clicked count badge. */}
       {segOpen && createPortal(
         <>
           <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
@@ -1809,8 +1499,6 @@ export default function ClmBuyerProfilePage() {
   );
 }
 
-/* Self-contained segment cell (first chip + clickable "+N" popover) for use
- * inside standalone modals that can't reach the page component's renderSegCell. */
 function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string }) {
   const [open, setOpen] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
   const segs = names.map((s) => s.trim()).filter(Boolean);
@@ -1843,13 +1531,8 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
   </>;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Consignees-for-buyer popup — opened by clicking the CONSIGNEES count in the
- * buyer list. Shows the consignees mapped to that buyer (filtered from the
- * already-loaded consignee dataset) in the same column layout.
- * ────────────────────────────────────────────────────────────────────────── */
 function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows: ConsRow[]; onClose: () => void }) {
-  useScrollLock(true);   // freeze background page scroll while the modal is open
+  useScrollLock(true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -1862,7 +1545,6 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
     <div className="bcm-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true"
       style={{ position: 'fixed', inset: 0, zIndex: 200000, background: 'rgba(7,30,50,.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: 'var(--font-sans)' }}>
       <div onMouseDown={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 1180, maxHeight: 'calc(100vh - 48px)', background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 28px 70px rgba(15,23,42,.45)' }}>
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '16px 22px', background: 'linear-gradient(110deg,#0c6680 0%,#0e7490 35%,#0891b2 75%,#06b6d4 100%)', color: '#fff', flexShrink: 0 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.28)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1884,15 +1566,10 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
           </div>
         </div>
 
-        {/* Body */}
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: '#fff' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
             <thead>
               <tr style={txnTableHeaderRow}>
-                {/* Trade Docs and Agreements are shown as ONE column here — the
-                    same pairing the Evidence Vault uses ("Trade Documents &
-                    Agreements"). Only this modal is merged; the list tables on
-                    the page behind it still carry the two separately. */}
                 {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs & Agreements', 'Total Shipments'].map((h, i) => (
                   <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                 ))}
@@ -1908,16 +1585,12 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                   <td style={{ padding: '9px 11px', textAlign: 'left', minWidth: '140px' }}>
-                    {/* QA #72 — same left edge as the list tables, so the Segment
-                        column reads identically wherever it appears. */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'flex-start', alignItems: 'center' }}>
                       <SegCell names={r.seg.split(',')} sc={r.sc} sb={r.sb} />
                     </div>
                   </td>
                   <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
                   <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} />
-                  {/* Combined progress: both counters are done/total pairs over the
-                      same party, so they add up cleanly into one bar. */}
                   <ProgCell obj={{ d: r.td.d + r.agr.d, t: r.td.t + r.agr.t }} />
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
                 </tr>
@@ -1926,7 +1599,6 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
           </table>
         </div>
 
-        {/* Footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC', flexShrink: 0 }}>
           <span style={{ fontSize: '11px', fontWeight: 600, color: '#0891b2' }}>Showing <strong>{rows.length}</strong> consignee{rows.length === 1 ? '' : 's'}</span>
         </div>
@@ -1936,14 +1608,8 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Customer-for-consignee popup — opened by clicking the CUSTOMER ID badge in
- * the consignee list. A consignee belongs to exactly one customer, so this
- * shows that single customer's identity + compliance in the customer column
- * layout (the mirror of the consignees-for-buyer popup).
- * ────────────────────────────────────────────────────────────────────────── */
 function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: ConsRow; customers: BuyerRow[]; onClose: () => void }) {
-  useScrollLock(true);   // freeze background page scroll while the modal is open
+  useScrollLock(true);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -1956,7 +1622,6 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
     <div className="bcm-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true"
       style={{ position: 'fixed', inset: 0, zIndex: 200000, background: 'rgba(7,30,50,.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: 'var(--font-sans)' }}>
       <div onMouseDown={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 1120, maxHeight: 'calc(100vh - 48px)', background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 28px 70px rgba(15,23,42,.45)' }}>
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '16px 22px', background: 'linear-gradient(110deg,#0c6680 0%,#0e7490 35%,#0891b2 75%,#06b6d4 100%)', color: '#fff', flexShrink: 0 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.28)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -1977,14 +1642,10 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
           </div>
         </div>
 
-        {/* Body */}
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: '#fff' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
             <thead>
               <tr style={txnTableHeaderRow}>
-                {/* Trade Docs and Agreements merged into one column, matching the
-                    Consignees modal and the Evidence Vault's "Trade Documents &
-                    Agreements" pairing. The list tables behind still keep them apart. */}
                 {['Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs & Agreements', 'Total Shipments'].map((h, i) => (
                   <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
                 ))}
@@ -1998,8 +1659,6 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{customer.id}</span></td>
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{customer.name}</td>
                   <td style={{ padding: '9px 11px', textAlign: 'left', minWidth: '140px' }}>
-                    {/* QA #72 — same left edge as the list tables, so the Segment
-                        column reads identically wherever it appears. */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'flex-start', alignItems: 'center' }}>
                       <SegCell names={customer.seg} sc={customer.sc} sb={customer.sb} />
                     </div>
@@ -2015,7 +1674,6 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
           </table>
         </div>
 
-        {/* Footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC', flexShrink: 0 }}>
           <span style={{ fontSize: '11px', fontWeight: 600, color: '#0891b2' }}>Consignee <strong>{consignee.id}</strong> → <strong>{customers.length}</strong> mapped customer{customers.length === 1 ? '' : 's'}</span>
         </div>
@@ -2025,7 +1683,6 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
   );
 }
 
-/* Sub-tab button used inside both With / Without Shipment ID panels. */
 function SubTab({ active, kind, onClick }: { active: boolean; kind: 'eq' | 'neq'; onClick: () => void }) {
   const isEq = kind === 'eq';
   return (
@@ -2046,7 +1703,6 @@ function SubTab({ active, kind, onClick }: { active: boolean; kind: 'eq' | 'neq'
   );
 }
 
-/* Agreements cell for the "without shipment" tables — shows "No PI" italics when pi is empty. */
 function WosAgrCell({ row }: { row: WosEqRow }) {
   if (!row.pi) {
     return (

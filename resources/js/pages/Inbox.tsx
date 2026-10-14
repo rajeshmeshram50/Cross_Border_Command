@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows, Shimmer } from '../components/ui/Shimmer';
+import WorklistPager from '../components/ui/WorklistPager';
 import SignaturePad, { consentLabel } from '../components/ui/SignaturePad';
 
 import ExpenseSettlementModal from '../components/ExpenseSettlementModal';
@@ -324,32 +325,20 @@ export default function Inbox() {
   // any rows from view.
   const Pager = ({ total, page, onChange }: { total: number; page: number; onChange: (n: number) => void }) => {
     if (total <= PAGE_SIZE) return null;
-    const pages = Math.ceil(total / PAGE_SIZE);
-    const safePage = Math.max(0, Math.min(page, pages - 1));
+    /* The app's own pager, as every other list uses — a plain "Page 1 of 3"
+       with two text buttons matched nothing else in the product, and this is
+       the page QA reached from a notification. (QA #32)
+       The index is converted here rather than at the six call sites: the
+       Inbox counts pages from 0, WorklistPager from 1. No rows-per-page
+       chooser — the sections are fixed at four and a chooser whose only
+       setting is the one it has is a control with nothing to do. */
     return (
-      <div className="d-flex align-items-center justify-content-between gap-2 ib-pager">
-        <small className="ib-pager-info">
-          Page {safePage + 1} of {pages} · {total} total
-        </small>
-        <div className="d-flex gap-1">
-          <button
-            type="button"
-            onClick={() => onChange(Math.max(0, safePage - 1))}
-            disabled={safePage === 0}
-            className="ib-pager-btn"
-          >
-            <i className="ri-arrow-left-s-line" /> Prev
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange(Math.min(pages - 1, safePage + 1))}
-            disabled={safePage >= pages - 1}
-            className="ib-pager-btn"
-          >
-            Next <i className="ri-arrow-right-s-line" />
-          </button>
-        </div>
-      </div>
+      <WorklistPager
+        total={total}
+        page={page + 1}
+        pageSize={PAGE_SIZE}
+        onPage={p => onChange(p - 1)}
+      />
     );
   };
 

@@ -18,20 +18,10 @@ import { deriveShortCode } from './ClmTncPage';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 import { ctcExtensions, CtcToolbar, CTC_EDITOR_CSS, TNC_FONT_FAMILIES, contentTextLength, htmlTextLength } from '../operations/CtcRichEditor';
 
-/* Same 1,000,000-character ceiling the other CLM editors carry. A T&C is
-   inserted into an agreement, so it is the AGREEMENT's PDF that dies past
-   this — which is exactly why the limit has to be enforced here rather
-   than left to whoever assembles the document later. */
 const TNC_MAX_CHARS = 1000000;
 
-/* Block-indent extension — StarterKit's list sink/lift only work *inside* a
- * list, so the Indent/Outdent toolbar buttons did nothing on plain paragraphs
- * or headings. This adds an `indent` level attribute (rendered as margin-left)
- * to those block types plus indent/outdent commands that clamp to [0, MAX].
- * The toolbar buttons route to list sink/lift when the caret is in a list and
- * fall back to these commands otherwise, so indent works everywhere. */
 const INDENT_MAX = 8;
-const INDENT_EM = 2.5; // em per level
+const INDENT_EM = 2.5;
 
 const BlockIndent = Extension.create({
   name: 'blockIndent',
@@ -80,25 +70,6 @@ const BlockIndent = Extension.create({
   },
 });
 
-/* ───────────────────────────────────────────────────────────────────────
- * Central CLM → T&C Master → Library → "Add New T&C" (2-step wizard modal)
- *
- *   Step 1 — T&C Basic Details (segment + T&C document name)
- *   Step 2 — T&C Content (rich text editor + clause library hook-up)
- *
- * POST/PUT /clm/tnc-library with { segment, category, content }.
- *
- * A T&C has NO applicable party. It is a property of the DOCUMENT (Domestic
- * Proforma Invoice, International Purchase Order …) and of the segment, not of
- * whoever the document is addressed to — the same PI terms hold whether the
- * counterparty is a customer, a consignee or a supplier. The "Applies To"
- * checkbox grid that used to sit here was removed for that reason; the server
- * now stores the legacy `party` column blank on every write.
- *
- * Quick-add for T&C Document Name calls POST /clm/tnc-categories, mirroring
- * the Trade-Doc Draft wizard's quick-add flow.
- * ─────────────────────────────────────────────────────────────────────── */
-
 export type Cat = { id: number; code: string; name: string };
 export type Lib = {
   id: number;
@@ -123,14 +94,8 @@ interface Props {
   open: boolean;
   existing: Lib | null;
   cats: Cat[];
-  /** All segments with their regulatory tier — drives the tier-filtered picker. */
   segments: SegOpt[];
   nextCode: string;
-  /**
-   * 'segment' (default) — the two-step wizard: segment & category, then content.
-   * 'global' — one entry per document category, with no segment: the same editor
-   * on a single page, saved through /clm/tnc-global.
-   */
   scope?: 'segment' | 'global';
   onClose: () => void;
   onSaved: () => void;
@@ -139,8 +104,8 @@ interface Props {
 export default function ClmTncWizardModal({ open, existing, cats: initialCats, segments, nextCode, scope = 'segment', onClose, onSaved }: Props) {
   const isGlobal = scope === 'global';
   const toast = useToast();
-  useSelectionLock(open);   // block selecting/copying the background while open
-  useScrollLock(open);      // freeze background page scroll while open
+  useSelectionLock(open);
+  useScrollLock(open);
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -149,21 +114,14 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
 
   const [cats, setCats] = useState<Cat[]>(initialCats);
 
-  // Regulatory tier drives the segment picker: 'highly' → ONE segment
-  // (single-select), 'less' → MANY segments (multi-select).
   const [regulatory, setRegulatory] = useState<Reg>('highly');
-  const [segment, setSegment]       = useState('');            // highly: single value
-  const [segmentsMulti, setSegmentsMulti] = useState<Set<string>>(new Set()); // less: many
-  // Segments quick-added in this modal (not yet in clm_segments), tagged
-  // with the tier they were added under so they show in the right picker.
+  const [segment, setSegment]       = useState('');
+  const [segmentsMulti, setSegmentsMulti] = useState<Set<string>>(new Set());
   const [localSegs, setLocalSegs] = useState<{ name: string; tier: Reg }[]>([]);
   const [category, setCategory] = useState('');
 
   const [content, setContent] = useState('');
   const [clauseOpen, setClauseOpen] = useState(false);
-  /* Full screen expands the MODAL, not the browser: the editor already lives
-     in a dialog, so a real Fullscreen API call would black out the page around
-     it and fight the overlay. A class on .tnw-shell is enough. */
   const [editorFs, setEditorFs] = useState(false);
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [drawSigOpen, setDrawSigOpen] = useState(false);
@@ -171,13 +129,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const editor = useEditor({
-    /* The same capability the other CLM editors run on — font, size, spacing,
-       sub points, tables, borders, colour, find & replace. The toolbar below is
-       only as able as this list: rendering CtcToolbar over the old four-item
-       set would have given buttons that quietly did nothing.
-       useEditor is kept rather than useCtcEditor because this wizard hydrates
-       and syncs its own way (see the open effect, and onUpdate below); only the
-       extensions are shared. */
     extensions: ctcExtensions({
       onLimit: (attempted, max) => toast.error(
         'Content limit reached',
@@ -216,8 +167,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       setCategory('');
       setContent('');
     }
-    // Hydrate Tiptap with the row's content (or empty paragraph). Suppress
-    // emitUpdate so onUpdate doesn't echo this hydration back through setContent.
     if (editor) {
       editor.commands.setContent(existing?.content || '<p></p>', { emitUpdate: false });
     }
@@ -234,13 +183,9 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
 
   const headerCode = useMemo(() => {
     if (existing?.code) return existing.code;
-    // A global category with nothing written yet has no code until it is saved.
     return isGlobal ? '' : nextCode;
   }, [existing, nextCode, isGlobal]);
 
-  // Segment names available for the CURRENT tier: the matching
-  // clm_segments rows + any quick-added-in-this-modal names tagged to the
-  // tier + the currently-selected value(s) so an edited row always shows.
   const tierSegmentNames = useMemo(() => {
     const set = new Set<string>();
     segments.forEach(s => { if (s.regulatory_status === regulatory) set.add(s.name); });
@@ -250,14 +195,11 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     return Array.from(set).filter(Boolean);
   }, [segments, localSegs, regulatory, segment, segmentsMulti]);
 
-  // Options for the single-select (highly tier).
   const segmentOptions = useMemo(
     () => tierSegmentNames.map(s => ({ value: s, label: s })),
     [tierSegmentNames],
   );
 
-  // Switch tier → clear the other tier's selection so we never persist a
-  // segment that doesn't belong to the chosen regulatory tier.
   const changeRegulatory = (next: Reg) => {
     setRegulatory(next);
     setSegment('');
@@ -265,20 +207,15 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     setErrors(p => ({ ...p, segment: '' }));
   };
 
-  // Debit/Credit Note → the segment step is skipped (content-only flow).
   const isNoteDoc = useMemo(() => isNoteDocName(category), [category]);
 
   const validateStep1 = () => {
     const next: Record<string, string> = {};
     if (!category.trim()) {
-      // Document name is the primary field; without it we can't tell whether
-      // the segment step even applies.
       next.category = 'T&C document name is required';
       setErrors(next);
       return false;
     }
-    // Debit/Credit Note skip the segment step — only the document name (above)
-    // and the content (step 2) are required.
     if (!isNoteDoc && !isGlobal) {
       if (regulatory === 'highly') {
         if (!segment.trim()) next.segment = 'Select a segment';
@@ -298,8 +235,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       setStep(1);
       return;
     }
-    // T&C content is mandatory — an empty editor still serialises to
-    // "<p></p>", so check the plain text (not the HTML) before saving.
     const plainContent = (editor?.getText() ?? content.replace(/<[^>]*>/g, ''))
       .replace(/\s+/g, ' ')
       .trim();
@@ -310,15 +245,9 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     }
     setSaving(true);
     
-    // Debit/Credit Note carry NO segment / regulatory — persist them blank so
-    // the list shows "—" for those columns. Other docs use the picked values:
-    // highly → one segment; less → CSV of the chosen segments.
     const segmentCsv = (isNoteDoc || isGlobal)
       ? ''
       : (regulatory === 'highly' ? segment.trim() : Array.from(segmentsMulti).join(','));
-    // No `party` key: a T&C has no applicable party. The server blanks the
-    // legacy column on every write, so old rows clear themselves as they are
-    // re-saved.
     const payload = {
       segment: segmentCsv,
       regulatory: ((isNoteDoc || isGlobal) ? '' : regulatory) as Reg | '',
@@ -327,7 +256,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     };
     try {
       if (isGlobal) {
-        // One entry per category: the server upserts on the category itself.
         await api.put('/clm/tnc-global', { category: payload.category, content: payload.content });
         toast.success(editingId ? 'Updated' : 'Added', payload.category);
         onSaved();
@@ -342,8 +270,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       }
       onSaved();
     } catch (e: any) {
-      // Surface field-level validation (e.g. the duplicate segment+category
-      // guard, CBC #18) inline as well as in the toast.
       const fieldErrs = e?.response?.data?.errors as Record<string, string[]> | undefined;
       if (fieldErrs) setErrors(Object.fromEntries(Object.entries(fieldErrs).map(([k, v]) => [k, v[0]])));
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
@@ -368,10 +294,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     }
   };
 
-  // "+" beside the segment opens the REAL Add-Segment form (same modal as
-  // the Segment master) and persists via POST /clm/segments. The created
-  // segment carries its own regulatory tier; we file it into the matching
-  // picker and auto-select it when that tier matches the T&C's tier.
   const onCreateSegment = async (form: SegmentForm): Promise<SaveResult> => {
     try {
       const r = await api.post<{ status: boolean; data: { name: string; regulatory_status: Reg } }>('/clm/segments', form);
@@ -402,16 +324,11 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
 
   if (!open) return null;
 
-  // A global entry is keyed on its category, so an edit cannot move it to another.
   const categoryLocked = isGlobal && !!existing;
 
-  // Shared T&C Document Name selector — placed on its own for note docs and
-  // paired beside Segment for every other document, so it's defined once.
   const documentNameField = (
     <div className="tnw-field">
       <label className="tnw-label">T&amp;C Document Name <span className="tnw-req">*</span></label>
-      {/* Document categories are read-only (managed for the
-          Quotation/PI/PO documents) — no inline "+" quick-add here. */}
       <MasterSelect
         key={`tnw-cat-${cats.length}`}
         value={category}
@@ -440,17 +357,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       aria-modal="true"
     >
       <style>{TNW_CSS}</style>
-      <div className={`tnw-shell${editorFs ? ' is-fullscreen' : ''}`}>
-        {/* Blocks the whole card while the save is in flight. Only the buttons
-            were disabled, so the Regulatory Type radios, the document name and
-            the segment stayed live mid-request: switching High to Less after
-            pressing Save changed nothing that was sent, and the stored T&C no
-            longer matched the form. Same guard the other CLM masters use
-            (ClmKycPage, ClmSegmentPage, ClmClauseLibraryPage …) — the buttons
-            keep their own `disabled` as the real lock. */}
-        {/* The veil alone was invisible — it blocked the card but showed nothing,
-            so a slow save read as a dead modal (#27). Same overlay the Word
-            import already uses, minus the click-to-dismiss. */}
+      <div className={`tnw-shell${editorFs ? ' is-fullscreen' : ''}${(step === 2 || isGlobal) ? ' is-editor' : ''}`}>
         {saving && (
           <div className="tnw-importing" role="status" aria-live="polite">
             <span className="tnw-importing__ring" />
@@ -460,8 +367,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             </span>
           </div>
         )}
-        {/* Reading a Word file is a round trip; the modal waits rather than
-            looking idle while the document is converted. */}
         {importing && (
           <div className="tnw-importing" role="status" aria-live="polite"
             title="Reading the document — click to dismiss if it does not finish"
@@ -471,7 +376,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             <span className="tnw-importing__s">Converting it and loading the content into the editor</span>
           </div>
         )}
-        {/* ── Header ── */}
         <div className="tnw-head">
           <div className="tnw-head-left">
             <div className="tnw-head-ico">
@@ -500,7 +404,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
           </div>
         </div>
 
-        {/* ── Stepper ── */}
         {!isGlobal && <div className="tnw-stepper">
           <div className="tnw-stepper-row">
             {STEPS.map((s, idx) => {
@@ -522,16 +425,11 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
               );
             })}
           </div>
-          {/* The two progress bars are gone. The stepper beside them already
-              says which step you are on and how many there are — a second,
-              wordless reading of the same thing. The "Step 1 of 2" label is
-              kept: it is the one part that states the count outright. */}
           <div className="tnw-stepper-progress">
             <div className="tnw-stepper-label">Step {step} of {STEPS.length}</div>
           </div>
         </div>}
 
-        {/* ── Body ── */}
         <div className={`tnw-body${(step === 2 || isGlobal) ? ' is-editor' : ''}`}>
           {isGlobal ? (
             <div className="tnw-step-body">
@@ -554,10 +452,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             </div>
           ) : step === 1 ? (
             <div className="tnw-step-body">
-              {/* Regulatory Type leads for a normal document; picking Debit
-                  Note / Credit Note as the document name hides it (and the
-                  segment step) and jumps straight to the content editor on
-                  "Save & Next". */}
               {!isNoteDoc && (
               <div className="tnw-field">
                 <label className="tnw-label">Regulatory Type <span className="tnw-req">*</span></label>
@@ -702,7 +596,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
           )}
         </div>
 
-        {/* Mounted for the whole modal: the single-page global form has no step 2. */}
         <input
           ref={fileInputRef}
           type="file"
@@ -713,17 +606,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             if (!file || !editor) return;
             e.target.value = '';
             const lower = file.name.toLowerCase();
-            // "Upload Word" accepts Word documents ONLY. The accept filter
-            // is a hint the user can bypass ("All files"), so reject any
-            // non-Word file here (e.g. an .html renamed or picked directly).
             if (!lower.endsWith('.docx') && !lower.endsWith('.doc')) {
               toast.error('Unsupported file', 'Please upload a Word document (.doc or .docx).');
               return;
             }
-            // Word documents are ZIP-packed XML — reading them as text
-            // yields binary garbage. Convert server-side (PhpWord) via
-            // the shared /clm/docx-to-html endpoint, then insert the
-            // returned HTML.
             const fd = new FormData();
             fd.append('docx', file);
             setImporting(true);
@@ -733,13 +619,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
               .then(({ data }) => {
                 const html = (data?.html ?? '').trim();
                 if (!html) { toast.warning('Nothing to import', 'The document appears to be empty.'); return; }
-                /* The 1,000,000-character ceiling, checked BEFORE the
-                   content goes in. Past it the PDF and Word exports of
-                   whatever hosts this T&C are dead, and seeding first
-                   would leave the user to undo it by hand.
-                   INSERTED, not replaced, so the existing content counts
-                   towards the total — a clause pasted into an already
-                   long T&C has to be measured against what is there. */
                 const total = contentTextLength(editor) + htmlTextLength(html);
                 if (total > TNC_MAX_CHARS) {
                   toast.error(
@@ -756,7 +635,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
           }}
         />
 
-        {/* ── Footer ── */}
         <div className="tnw-foot">
           <div className="tnw-foot-left">
             {step === 2 && !isGlobal && (
@@ -810,14 +688,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   );
 }
 
-/* ── Rich-text editor sub-component ───────────────────────────────────────
- * Tiptap-backed (same library the HR Document Templates editor uses).
- * Every toolbar button drives editor.chain().focus().<command>().run() so
- * formatting is actually applied to the document rather than the buttons
- * being decorative. The Clause Library popover is a placeholder/stub —
- * wires can be added later to load real clauses from /clm/tnc-library.
- * ─────────────────────────────────────────────────────────────────────── */
-
 function TncEditor({
   editor,
   onUploadWord,
@@ -833,8 +703,6 @@ function TncEditor({
   onToggleFullScreen,
 }: {
   editor: Editor | null;
-  /** Modal expanded to fill the viewport. The button lives in this header but
-   *  the class goes on .tnw-shell, which the parent owns. */
   fullScreen: boolean;
   onToggleFullScreen: () => void;
   onUploadWord: () => void;
@@ -856,7 +724,6 @@ function TncEditor({
   const onLink = () => {
     const url = window.prompt('Enter URL', 'https://');
     if (!url) return;
-    // StarterKit doesn't ship the link extension, so just insert it as text
     editor.chain().focus().insertContent(` ${url} `).run();
   };
 
@@ -893,17 +760,7 @@ function TncEditor({
         </div>
       </div>
 
-      {/* ProseMirror + toolbar base styles for the shared editor. */}
       <style>{CTC_EDITOR_CSS}</style>
-      {/* The same toolbar the Case-to-Case, Trade Document and Agreement
-          editors use — minus Page Break. A T&C is a FRAGMENT: it is inserted
-          into an agreement and takes that agreement's pagination, so a page
-          break authored here would land wherever the host happened to drop the
-          clause. There is no live PDF preview here for the same reason — a T&C
-          has no page of its own to preview. */}
-      {/* A real font choice here, unlike the agreement editors: a T&C clause is
-          reusable text that may be dropped into paperwork set in something
-          other than the house face. */}
       <CtcToolbar editor={editor} hidePageBreak fonts={TNC_FONT_FAMILIES} />
 
       <div className="tnw-editor-area">
@@ -979,7 +836,6 @@ function SignaturePad({
   const [hasInk, setHasInk] = useState(false);
   const [signerName, setSignerName] = useState('');
 
-  // Render at device-pixel-ratio so the line stays crisp on retina screens.
   const sizeCanvas = () => {
     const cvs = canvasRef.current;
     if (!cvs) return;
@@ -1004,8 +860,6 @@ function SignaturePad({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Esc closes; consumes the keystroke so the wizard's Escape handler doesn't
-  // also fire and close the whole modal underneath.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', onKey, true);
@@ -1043,9 +897,6 @@ function SignaturePad({
     }
   };
 
-  // Refresh strokes whenever the brush settings change so the preview reflects
-  // the current colour / weight even on already-drawn lines (matches the
-  // expectation users have from Zoho where the whole signature recolours).
   useEffect(() => { redraw(); }, [color, width]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getPoint = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1067,8 +918,6 @@ function SignaturePad({
     if (!currentRef.current) return;
     const pt = getPoint(e);
     const last = currentRef.current[currentRef.current.length - 1];
-    // Skip duplicate / sub-pixel samples — tightens the curve and avoids
-    // jagged spurs from high-frequency pointer events on trackpads.
     if (!last || Math.abs(pt.x - last.x) > 0.6 || Math.abs(pt.y - last.y) > 0.6) {
       currentRef.current.push(pt);
       redraw();
@@ -1076,7 +925,7 @@ function SignaturePad({
   };
 
   const onPointerUp: React.PointerEventHandler<HTMLCanvasElement> = (e) => {
-    try { (e.target as Element).releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    try { (e.target as Element).releasePointerCapture(e.pointerId); } catch {}
     currentRef.current = null;
   };
 
@@ -1095,7 +944,6 @@ function SignaturePad({
   const insert = () => {
     const cvs = canvasRef.current;
     if (!cvs || !hasInk) return;
-    // Crop to the inked bounding box so we don't insert a half-blank canvas.
     const ctx = cvs.getContext('2d');
     if (!ctx) return;
     const dpr  = window.devicePixelRatio || 1;
@@ -1113,7 +961,7 @@ function SignaturePad({
         }
       }
     }
-    if (maxX < minX || maxY < minY) return; // empty
+    if (maxX < minX || maxY < minY) return;
     const pad = Math.round(8 * dpr);
     minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
     maxX = Math.min(w - 1, maxX + pad); maxY = Math.min(h - 1, maxY + pad);
@@ -1226,7 +1074,6 @@ function SignaturePad({
   );
 }
 
-
 const SIG_LINE = '<hr style="border:0;border-top:1px solid #94a3b8;margin:36px 0 6px;width:240px"/>';
 const SIGNATURE_PRESETS = [
   {
@@ -1293,9 +1140,6 @@ const SIGNATURE_PRESETS = [
   },
 ];
 
-/* Scoped CSS — same pattern as Trade-Doc draft wizard. Sits at z-index
- * above CLM modals; MasterSelect's portalled dropdown is bumped to 250000
- * so option lists stay visible. */
 const TNW_CSS = `
 .tnw-overlay {
   position: fixed; inset: 0; z-index: 200000;
@@ -1311,8 +1155,6 @@ const TNW_CSS = `
 .tnw-shell {
   width: 100%; max-width: 1100px; max-height: calc(100vh - 48px);
   display: flex; flex-direction: column;
-  /* Anchors the .clm-saving-veil (position: absolute; inset: 0) to this card
-     rather than the viewport — see the veil in the JSX below. */
   position: relative;
   border-radius: 18px; overflow: hidden;
   background: #fff;
@@ -1326,7 +1168,6 @@ const TNW_CSS = `
 }
 @keyframes tnwSlideUp { from { opacity: 0; transform: translateY(20px) scale(.97) } to { opacity: 1; transform: none } }
 
-/* ── Header ── */
 .tnw-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px;
@@ -1378,7 +1219,6 @@ const TNW_CSS = `
 .tnw-close:hover { background: rgba(255,255,255,.26); transform: rotate(90deg); }
 .tnw-close:disabled { opacity: .5; cursor: not-allowed; }
 
-/* ── Stepper ── */
 .tnw-stepper {
   display: flex; align-items: center; justify-content: space-between;
   background: #f8feff;
@@ -1430,21 +1270,13 @@ const TNW_CSS = `
   padding: 4px 10px; border-radius: 999px;
 }
 
-/* ── Body ── */
 .tnw-body {
   flex: 1; min-height: 0;
   overflow-y: auto;
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
   padding: 22px;
 }
-/* Step 2 is the editor and nothing else, so the body hands its height straight
-   to the frame and stops scrolling itself — two nested scrollers would mean the
-   outer one moves the toolbar out of view before the inner one moves the text. */
-.tnw-body.is-editor { overflow: hidden; display: flex; flex-direction: column; }
-/* .tnw-step-body sits between the body and the editor frame, and it was sizing
-   itself to its content — so the height stopped there. Every link in the chain
-   has to pass it on, or the frame grows past the modal and is simply clipped,
-   which is what happened: no scrollbar, and the last pages unreachable. */
+.tnw-body.is-editor { overflow-y: auto; display: flex; flex-direction: column; }
 .tnw-body.is-editor > .tnw-step-body { flex: 1; min-height: 0; }
 .tnw-step-body { display: flex; flex-direction: column; gap: 18px; }
 .tnw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
@@ -1466,7 +1298,6 @@ const TNW_CSS = `
 .tnw-input:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.14); }
 .tnw-input.is-err { border-color: #ef4444; }
 .tnw-input::placeholder { color: #94a3b8; }
-/* Dropdowns (MasterSelect / MasterMultiSelect) match the white input border. */
 .tnw-step-body .master-select-toggle {
   background: #fff; border: 1.5px solid rgba(6,182,212,.25); border-radius: 9px;
 }
@@ -1488,7 +1319,6 @@ const TNW_CSS = `
   padding: 1px 7px; border-radius: 999px;
 }
 
-/* ── Regulatory tier selector (figma: two radio cards) ── */
 .tnw-reg-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
 .tnw-reg-card {
   display: flex; align-items: center; gap: 11px;
@@ -1505,14 +1335,12 @@ const TNW_CSS = `
 .tnw-reg-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .tnw-reg-title { font-size: 13px; font-weight: 800; color: #334155; }
 .tnw-reg-sub   { font-size: 11px; color: #64748b; line-height: 1.35; }
-/* High Regulatory → red accent when selected */
 .tnw-reg-high.is-on  { border-color: #f87171; background: #fef2f2; }
 .tnw-reg-high.is-on .tnw-reg-radio { border-color: #ef4444; }
 .tnw-reg-high.is-on .tnw-reg-radio::after {
   content: ''; position: absolute; inset: 2px; border-radius: 50%; background: #ef4444;
 }
 .tnw-reg-high.is-on .tnw-reg-title { color: #b91c1c; }
-/* Less Regulatory → green accent when selected */
 .tnw-reg-less.is-on  { border-color: #6ee7b7; background: #ecfdf5; }
 .tnw-reg-less.is-on .tnw-reg-radio { border-color: #10b981; }
 .tnw-reg-less.is-on .tnw-reg-radio::after {
@@ -1520,7 +1348,6 @@ const TNW_CSS = `
 }
 .tnw-reg-less.is-on .tnw-reg-title { color: #047857; }
 
-/* ── Multi-segment chip picker (Less Regulatory) ── */
 .tnw-seg-multi {
   display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
   min-height: 40px; padding: 7px;
@@ -1548,21 +1375,6 @@ const TNW_CSS = `
 }
 .tnw-add-mini:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8,145,178,.50); }
 
-/* ── Editor (step 2) ── */
-/* The editor is a FRAME, not a block that grows.
-   It used to be plain flow: the shell grew with the content and .tnw-body — the
-   modal's own scroller — carried the whole thing, so scrolling the draft
-   scrolled the header and the toolbar off the top with it. The Trade Document
-   editor pins those and scrolls only the page beneath them; this is the same
-   arrangement.
-   The height comes from the modal: .tnw-body is the flex parent and gives this
-   what is left after the stepper, so the frame is exactly as tall as the space
-   there is. */
-/* Full screen — the card grows to the viewport and the editor, being
-   flex:1 inside it, takes the extra height. Width capped just short of the
-   edge so the dialog still reads as a dialog. */
-/* Word import: the whole card waits, so nothing is typed into an editor that
-   is about to have a document dropped into it. */
 .tnw-importing {
   position: absolute; inset: 0; z-index: 60;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
@@ -1583,48 +1395,22 @@ const TNW_CSS = `
 [data-bs-theme="dark"] .tnw-importing__t { color: #67e8f9; }
 [data-bs-theme="dark"] .tnw-importing__s { color: #94a3b8; }
 
+.tnw-shell.is-editor { height: calc(100vh - 48px); }
 .tnw-shell.is-fullscreen {
   width: calc(100vw - 24px);
   max-width: calc(100vw - 24px);
   height: calc(100vh - 24px);
   max-height: calc(100vh - 24px);
 }
-/* Full screen is asked for when the draft needs room, so the wizard chrome
-   steps out of the way: the stepper is navigation for a two-step form the user
-   has already navigated, and it costs ~70px of draft height. The dialog header
-   and the T&C CONTENT bar stay — one identifies the record being edited, the
-   other carries Exit Full Screen, so hiding either would strand the user. The
-   footer stays too: Save must never be more than one click away. */
 .tnw-shell.is-fullscreen .tnw-stepper { display: none; }
-/* overflow:hidden is BACK, deliberately.
- *
- * It was briefly removed to stop this box clipping the toolbar's Link and
- * Find-and-Replace panels. That uncovered them, but made things worse: an
- * absolutely-positioned popover still contributes to an ancestor's overflow
- * area, so opening one widened the layout and an ancestor shifted the whole
- * shell left — the toolbar lost "Paragraph", the head read "C CONTENT", and
- * the Find panel landed outside the dialog entirely.
- *
- * The clipping is not the real bug. The real bug is that both panels are
- * position:absolute inside the toolbar row, so they can only ever be as
- * visible as their nearest clipping ancestor allows. The fix is to render
- * them in a portal to <body> with fixed coordinates measured from the button
- * — the same thing the segment "+N" popover in Vendors.tsx does, and for the
- * same reason. That belongs in CtcRichEditor, where the popovers live, and it
- * fixes them for all five editors at once rather than only this modal.
- *
- * Until then this stays clipped, which is the lesser of the two faults, and
- * Full Screen is the workaround: at full width there is room for both panels
- * and neither clips. */
 .tnw-editor-shell {
   border: 1px solid rgba(6,182,212,.20);
   border-radius: 14px;
   overflow: hidden;
   background: #fff;
   display: flex; flex-direction: column;
-  flex: 1; min-height: 0;
+  flex: 1 0 auto;
 }
-/* Header, toolbar and footer keep their size; only the draft area gives. */
 .tnw-editor-head, .tnw-editor-foot, .tnw-editor-shell .ctcte-toolbar { flex-shrink: 0; }
 .tnw-editor-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -1667,21 +1453,7 @@ const TNW_CSS = `
 .tnw-toolbar-btn:disabled { opacity: .4; cursor: not-allowed; }
 .tnw-toolbar-sep { width: 1px; height: 20px; background: #cbd5e1; }
 
-/* The one part that scrolls. min-height:0 is load-bearing: without it a flex
-   child refuses to shrink below its content, so the frame would grow instead of
-   the area scrolling — which is the state this was in. */
-.tnw-editor-area { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
-/* Teal scrollbar on the draft, matching the other CLM editors — without it the
-   area scrolls with no visible affordance and reads as clipped content. */
-/* The bar has to be SEEN, not merely present: a 6px thumb at .28 alpha on a
-   transparent track read as no scrollbar at all, and a draft that runs past the
-   frame looked cut off rather than scrollable. A track of its own, a wider
-   thumb and a solid teal give it an edge to grab. */
-/* 'auto', not 'thin' (#26). Chrome 121+ honours the standard scrollbar-*
-   properties and then IGNORES the ::-webkit-scrollbar rules below, so 'thin'
-   shrank the bar to a hairline the custom width never reached — on the dark
-   draft it read as no scrollbar at all. The webkit block stays for engines
-   that don't support the standard properties. */
+.tnw-editor-area { position: relative; flex: 1 1 0; min-height: 0; overflow-y: auto; }
 .tnw-editor-area { scrollbar-gutter: stable; scrollbar-width: auto; scrollbar-color: #0891b2 #e2f5fa; }
 .tnw-editor-area::-webkit-scrollbar { width: 12px; }
 .tnw-editor-area::-webkit-scrollbar-track { background: #e2f5fa; border-left: 1px solid rgba(8,145,178,.18); }
@@ -1697,30 +1469,14 @@ const TNW_CSS = `
 .tnw-editor .ProseMirror { padding: 0; min-height: 240px; }
 .tnw-editor .ProseMirror:focus { outline: none; }
 .tnw-editor .ProseMirror p { margin: 0 0 .6em 0; }
-/* Cell padding for tables that came in from Word. The converter used to write
-   it onto every cell; it is said once here, as it is in the page-view editor
-   and the PDF templates. */
 .tnw-editor .ProseMirror td, .tnw-editor .ProseMirror th { padding: 6px 8px; vertical-align: top; }
 .tnw-editor .ProseMirror p:last-child { margin-bottom: 0; }
-/* Inside a table cell the same reset is matched on the last PARAGRAPH, not the
-   last child.
-
-   Moving the pointer near a column edge makes the table plugin append its
-   resize handle to every cell in that column. The paragraph then stops being
-   :last-child, its .6em bottom margin comes back, and all nine rows grow 8px
-   at once — the document jumped between 2143px and 2216px as the pointer
-   moved, which is the flickering the content was reported for. :last-of-type
-   only looks at paragraphs, so a widget dropped in beside them changes
-   nothing. */
 .tnw-editor .ProseMirror td > p:last-of-type,
 .tnw-editor .ProseMirror th > p:last-of-type { margin-bottom: 0; }
 .tnw-editor .ProseMirror h1, .tnw-editor .ProseMirror h2, .tnw-editor .ProseMirror h3 { color: #0c4a6e; font-weight: 800; margin: .4em 0 .4em; line-height: 1.25; }
 .tnw-editor .ProseMirror h1 { font-size: 22px; }
 .tnw-editor .ProseMirror h2 { font-size: 18px; }
 .tnw-editor .ProseMirror h3 { font-size: 15.5px; }
-/* Restore list markers — Tailwind's Preflight resets ul/ol to list-style:none,
-   so toggling Bullet/Numbered list produced list nodes with no visible marker.
-   Re-assert the marker type + position explicitly. */
 .tnw-editor .ProseMirror ul, .tnw-editor .ProseMirror ol { padding-left: 26px; margin: 0 0 .6em 0; list-style-position: outside; }
 .tnw-editor .ProseMirror ul { list-style-type: disc; }
 .tnw-editor .ProseMirror ol { list-style-type: decimal; }
@@ -1736,7 +1492,6 @@ const TNW_CSS = `
   color: #94a3b8; pointer-events: none; float: left; height: 0;
 }
 
-/* Clause Library popover — slides in from the right inside the editor area */
 .tnw-clause-panel {
   position: absolute; top: 0; right: 0; bottom: 0;
   width: min(320px, 70%);
@@ -1784,7 +1539,6 @@ const TNW_CSS = `
   display: block;
 }
 
-/* "Draw Signature" CTA at the top of the signature popover */
 .tnw-sig-draw-cta {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 14px; border-radius: 12px;
@@ -1807,7 +1561,6 @@ const TNW_CSS = `
 }
 .tnw-sig-divider::before, .tnw-sig-divider::after { content: ''; flex: 1; height: 1px; background: #e2e8f0; }
 
-/* ── Signature Pad overlay ── */
 .tnw-sigpad-overlay {
   position: fixed; inset: 0; z-index: 300000;
   background: rgba(7,30,50,.72);
@@ -1927,10 +1680,6 @@ const TNW_CSS = `
 }
 .tnw-editor-foot-hint { color: #0e7490; opacity: .85; }
 
-/* On a laptop screen the draft was left a five-line slit with the sixth line
-   sliced off by the frame — the "content not visible properly" in the report.
-   The modal cannot grow past the viewport, so the chrome around the draft gives
-   its padding back instead: at 1280x720 that turns 173px of draft into ~250. */
 @media (max-height: 840px) {
   .tnw-head { padding: 12px 22px; }
   .tnw-body { padding: 14px 18px; }
@@ -1938,7 +1687,6 @@ const TNW_CSS = `
   .tnw-editor-head { padding: 8px 14px; }
   .tnw-editor-foot { padding: 6px 14px; }
   .tnw-foot { padding: 12px 18px; }
-  /* A draft this short is unusable; below it the frame is better scrolled. */
   .tnw-editor-area { min-height: 180px; }
 }
 .tnw-editor-foot-tag {
@@ -1951,7 +1699,6 @@ const TNW_CSS = `
 }
 .tnw-editor-foot-tag:hover { background: #cffafe; color: #0c4a6e; transform: translateY(-1px); }
 
-/* ── Footer ── */
 .tnw-foot {
   display: flex; align-items: center; justify-content: space-between;
   background: #fff;
@@ -1983,7 +1730,6 @@ const TNW_CSS = `
 }
 .tnw-btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
 
-/* ── Dark mode ── */
 [data-bs-theme="dark"] .tnw-shell { background: #0f172a; border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-stepper { background: rgba(8,145,178,.06); border-bottom-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-step-num { background: rgba(8,145,178,.16); border-color: rgba(6,182,212,.35); color: #67e8f9; }
@@ -2014,14 +1760,11 @@ const TNW_CSS = `
 [data-bs-theme="dark"] .tnw-editor-shell { background: #0f172a; border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-toolbar { background: rgba(8,145,178,.06); border-bottom-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-toolbar-sel, [data-bs-theme="dark"] .tnw-toolbar-btn { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }
-/* The open list of a native select follows the element's own colours, so its
-   options are stated too and the browser is told to draw the popup dark. */
 [data-bs-theme="dark"] .tnw-toolbar-sel { color-scheme: dark; }
 [data-bs-theme="dark"] .tnw-toolbar-sel option { background: #1e293b; color: #cbd5e1; }
 [data-bs-theme="dark"] .tnw-toolbar-btn:hover { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(103,232,249,.45); }
 [data-bs-theme="dark"] .tnw-toolbar-sep { background: rgba(255,255,255,.10); }
 [data-bs-theme="dark"] .tnw-editor, [data-bs-theme="dark"] .tnw-editor .ProseMirror { background: #0f172a; color: #e2e8f0; }
-/* The same visible bar in dark mode — the light track would glow on it. */
 [data-bs-theme="dark"] .tnw-editor-area { scrollbar-color: #22d3ee rgba(8,145,178,.16); }
 [data-bs-theme="dark"] .tnw-editor-area::-webkit-scrollbar-track { background: rgba(8,145,178,.16); border-left-color: rgba(34,211,238,.24); }
 [data-bs-theme="dark"] .tnw-editor-area::-webkit-scrollbar-thumb { background: #22d3ee; border-color: transparent; }
@@ -2046,11 +1789,8 @@ const TNW_CSS = `
 [data-bs-theme="dark"] .tnw-btn-back, [data-bs-theme="dark"] .tnw-btn-cancel { background: rgba(255,255,255,.04); color: #cbd5e1; border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tnw-btn-back:hover, [data-bs-theme="dark"] .tnw-btn-cancel:hover { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(103,232,249,.45); }
 
-/* MasterSelect's portalled dropdown menu sits at z-index 11000 by
-   default — bump it above this modal so option lists are visible. */
 .master-select-menu.dropdown-menu { z-index: 250000 !important; }
 
-/* ── Responsive ── */
 @media (max-width: 900px) {
   .tnw-overlay { padding: 16px; }
   .tnw-shell { max-height: calc(100vh - 32px); }

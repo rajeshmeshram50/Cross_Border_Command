@@ -109,45 +109,10 @@ body {
   min-width: 0;
 }
 
-/* Bootstrap columns are flex items, so their min-width defaults to `auto` —
-   the content's min-content width. A page holding a wide table therefore grew
-   its own column past 100% and pushed the card off screen, rather than letting
-   the table scroll inside it. Every page in this app puts its content in a
-   .row > .col, so the guard belongs here once. */
 .page-content .row>[class*="col-"] {
   min-width: 0;
 }
 
-/* Velzon ships `.page-content { padding: calc(45px + 2.7rem) .75rem 60px .75rem }`.
-   The 45px reserves the horizontal menu; the 2.7rem (~43px) on top of it is
-   breathing room, and it is far more than this app wants — every page opened
-   with a wide empty band between the menu and its header card.
-   Now a flat 8px, chosen to match the gap a page's header strip already
-   leaves BELOW itself (.frm-cstrip carries mb-2 = 8px), so the strip sits
-   with equal air above and below. The
-   2.7rem is gone entirely AND the 45px reserve is cut:
-   .topnav is position:absolute and renders shorter than 45px, so most of that
-   reserve was empty space, not clearance.
-   THIS IS THE CLEARANCE UNDER THE FIXED MENU — if any page's header ever tucks
-   behind the menu bar, this number is why. Raise it, do not add margin to the
-   page. */
-/* One number on all three visible sides: 8px above, 8px left, 8px right.
-   Getting there means switching Bootstrap's gutter machinery off on the
-   OUTERMOST row, not just shrinking padding. Every page puts its content in
-   `.container-fluid > .row > .col`, and a `.row` carries a -12px margin that
-   the container's padding is supposed to absorb. Shrink that padding without
-   touching the row and the row hangs past the container on both sides — with
-   `.main-content` clipping overflow-x, the right edge of the widest strip
-   (the KPI cards) simply disappeared.
-   So: no padding on the container, and the outer row/col gutters zeroed. The
-   nested KPI row keeps its own `g-3` (-8px), which now lands exactly on 0 —
-   flush with the viewport edge, nothing clipped, everything starting at 8px.
-   Nested rows deeper in a page are untouched: this is scoped to the direct
-   container > row > col chain. */
-/* NOTE: padding-top here is NOT what you see. Layouts/index.tsx ships an inline
-   `.idims-active .page-content{padding-top:8px!important}` — two classes, so it
-   wins over this rule no matter what is written below. Change the top gap
-   there; this value only applies if that layout is ever dropped. */
 .page-content {
   padding-top: 8px !important;
   padding-left: 8px !important;
@@ -155,27 +120,8 @@ body {
   padding-bottom: 8px !important;
 }
 
-/* ── The sidebar layout needs a frame of its own ─────────────────────────────
-   The horizontal shell is a column that fills the viewport: the header is in
-   flow, .main-content is the only scroller, the footer sits below it. The
-   sidebar shell is the stock Velzon one — the topbar is position:fixed and the
-   page relies on .page-content's top padding to clear it. The rule above
-   replaces that padding with a flat 8px, which is right for the horizontal
-   header but leaves the sidebar layout with NOTHING under a 71px fixed bar: a
-   page's header strip renders behind it, which is the strip that "hides" no
-   matter how you scroll.
-
-   So the clearance goes on .main-content, where no !important fights it, and
-   the shell gets the same frame as the horizontal one: viewport-tall, scrolling
-   inside itself. That also removes the 8px of page scroll the stock margin left
-   behind — the document was always a little taller than the window, in every
-   layout width, for nothing. Below 768px the menu is off-canvas and the stock
-   flow is correct, so this stays a desktop rule. */
 @media (min-width: 768px) {
 
-  /* Two-column renders the same shell as vertical (fixed topbar, footer inside
-     .main-content), so it needs the same frame or its pages slide under the
-     header too. */
   :is([data-layout="vertical"], [data-layout="twocolumn"]) #layout-wrapper {
     height: 100dvh;
     overflow: hidden;
@@ -187,11 +133,8 @@ body {
     overflow-y: auto;
     overflow-x: hidden;
     margin-bottom: 0 !important;
-    /* the stock mb-2, which the frame replaces */
   }
 
-  /* The footer rides at the end of the scroller in this layout; keeping it on
-     the bottom edge matches the horizontal shell, where it is pinned. */
   :is([data-layout="vertical"], [data-layout="twocolumn"]) .main-content>.footer {
     position: sticky;
     bottom: 0;
@@ -213,40 +156,6 @@ body {
   padding-right: 0 !important;
 }
 
-/* Watch out: the rule above removes the gap BETWEEN side-by-side columns too,
-   not just the page's outer margin. A page whose outermost row puts two cards
-   next to each other gets them touching (#213 — Clock In/Out vs Today's
-   Summary). Fix it by nesting that row one level deeper, as ClockIn.tsx's
-   `.clockin-grid` wrapper does — not by adding another !important here, which
-   would re-break the flush-to-edge alignment this chain exists to produce. */
-
-/* ── One gap, everywhere on a page: 8px ───────────────────────────────────
-   The four bands a page stacks — menu to header strip, strip to KPI cards,
-   KPI cards to the list, list to the footer — were 8 / 8 / 16 / 12, which is
-   why nothing lined up by eye however carefully any single one was tuned.
-   Two of them come from Bootstrap spacing utilities written into the markup,
-   and pages disagree about WHICH utility: Employees writes `.frm-cstrip mb-2`,
-   Onboarding writes `.frm-cstrip mb-3`. Overriding the element rather than
-   chasing the utility class is what makes the number hold everywhere,
-   including on pages written after this comment.
-   Keep all of these on the same value; changing one alone is what produced
-   the mismatch in the first place. */
-
-/* Header strip → whatever follows it.
-   `div.` is load-bearing. Bootstrap's `.mb-3 {margin-bottom:1rem!important}` is
-   (0,1,0) with !important and so is a bare `.frm-cstrip`, so the winner is
-   decided by load order — and Blade lists `resources/css/app.css` BEFORE
-   `resources/js/app.tsx`, whose bundle carries Bootstrap. This file therefore
-   loads FIRST and loses every tie, however far down it the rule sits. Adding
-   the element makes it (0,1,1) and settles it on specificity instead.
-   Nothing here can beat a Bootstrap utility on order alone — raise
-   specificity, do not move the rule. */
-/* The platform pages name their strip per page rather than sharing
-   .frm-cstrip, so each one is listed or it keeps whatever `mb-*` the markup
-   wrote (16px on all of them). */
-/* Master lays its KPI tiles out with `g-3` and its master cards with `gx-3`,
-   which is Bootstrap's 24px — so both grids sat on 16px channels while every
-   other page on this menu runs 8px. Scoped by the page's own strip class. */
 .page-content:has(.ms-cstrip) .row {
   --vz-gutter-x: 8px !important;
   --vz-gutter-y: 8px !important;
@@ -258,20 +167,6 @@ body {
   margin-bottom: 8px !important;
 }
 
-/* ── Every header strip reads the same ───────────────────────────────────────
-   Measured across the platform pages against the HRMS strip (.frm-cstrip),
-   which is the reference: title DM Sans 18px/800 at -0.3px, subtitle DM Sans
-   12px/500. Plans and Payments were rendering in Velzon's RUBIK — the body
-   font leaking in, the same way it did in the HRMS tables — and Clients,
-   Master, Plans and Payments all set their subtitle at weight 400 against the
-   reference's 500, so the second line sat a shade lighter than everywhere else.
-   Set on the title/sub classes rather than the strip, because each page names
-   its strip differently but they all follow the same `-title` / `-sub` pair. */
-/* Each selector names the strip as well as the line inside it. That is not
-   decoration: these pages inject their own <style> at render, which lands after
-   this file, so a bare `.cl-cstrip-sub` would only tie on specificity and lose
-   on order — which is exactly what happened on the first pass, and the
-   subtitles stayed at 400. Two classes settle it without !important. */
 :is(.frm-cstrip .frm-cstrip-title, .cl-cstrip .cl-cstrip-title,
     .pl-cstrip .pl-cstrip-title, .pmt-cstrip .pmt-cstrip-title,
     .br-cstrip .br-cstrip-title, .ms-cstrip .ms-cstrip-title,
@@ -305,13 +200,6 @@ div.mp-cstrip {
   margin-bottom: 8px !important;
 }
 
-/* The primary "Add" button is one button across the product: .smc-add-btn on
-   Customers — 42px tall, a full pill, 13px/600 on 22px of side padding. Each
-   platform page had drawn its own (Clients, Plans and Branches at 44px with a
-   14px radius and weight 700), and every one of them carries a comment saying
-   it matches Customers. It does now.
-   !important because these rules live in <style> tags the pages inject at
-   render, which land after this file and would otherwise win on order. */
 button.cl-cstrip-add,
 button.pl-cstrip-add,
 button.pmt-cstrip-add,
@@ -324,18 +212,6 @@ button.ms-cstrip-add {
   font-weight: 600 !important;
 }
 
-/* …and the same for EVERY action in a page header strip, not just the "Add"
-   one. Measured across HRMS and the client pages, these buttons ran 36, 37,
-   38, 40, 42, 43, 44 and 46px, with six different radii and seven different
-   type settings — Payroll alone had a 38px select beside a 46px Run Payroll
-   beside a 43px Export.
-   42px is the Customers primary (.smc-add-btn). It is deliberately NOT the
-   34px of a tab: Customers itself runs 34px tabs beside a 42px button, because
-   a call to action that matches the tab rail reads as another tab.
-   `:not()` guards what is not an action: a tab rail dropped into a strip keeps
-   its own 34px, and the row-action squares and the search's clear button are
-   their own sizes. `.page-title-box` is the same strip on the client and
-   branch DETAIL pages, which name it differently. */
 :is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box)
   :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
   height: 42px !important;
@@ -344,76 +220,24 @@ button.ms-cstrip-add {
   font-weight: 600 !important;
 }
 
-/* The selects that sit in the same row (All Dates, the payroll month) line up
-   with the buttons beside them rather than standing 4px short. */
 :is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box)
   :is(select, .form-select) {
   height: 42px !important;
   border-radius: 999px !important;
 }
 
-/* KPI strip → the list below it. Matched three ways because the KPI row is
-   written differently per page: by its shared class, as the row that directly
-   follows the header strip (Onboarding, whose row carries no class at all),
-   and by the Employees page's own wrapper.
-   `.ep-doc-kpis` is exempt — it is a KPI strip inside the Exit modal, spaced
-   against the dialog rather than the page. */
-/* The one that cannot miss: any row whose columns hold a KPI card, whatever
-   the page calls it (.onb-kpi-card, .hr-emp-kpi-card, .rec-kpi-card) and
-   whatever wrapper it sits in. The three structural selectors below it were
-   each written against one page's markup and each silently stopped matching on
-   the next page that laid its header out differently — which is why the gap
-   kept "not changing" while the CSS said it had.
-   Specificity (0,4,0): `:has()` contributes its most specific argument. */
-/* `kpi`, not `kpi-card`: the platform pages name their tiles .clients-kpi and
-   .plan-stat-box, so a selector written around the word "card" skipped them and
-   those two rows kept Bootstrap's 24px gutter. */
 .row.mb-3:has(> [class*="col"] > [class*="kpi"]),
 .row.mb-3:has(> [class*="col"] > [class*="stat-box"]),
 .rec-page-kpis.mb-3:not(.ep-doc-kpis),
 .frm-cstrip+.row.mb-3,
 .hr-employees-surface>.row.mb-3 {
   margin-bottom: 8px !important;
-  /* …and the gap BETWEEN the cards: 8px, the page's one number. It was tuned to
-     4px once, on the argument that a tile's 14px radius and drop shadow make a
-     gap look wider than it is — but a KPI strip that is tighter than every other
-     gap on the page is exactly what reads as "uneven" when you look at the
-     module as a whole, which is the complaint this now answers.
-     Set as gutter variables rather than as margins so the row's negative margin
-     and the columns' padding stay in step — halving one without the other would
-     knock the first and last card out of line with the header strip above them.
-     --vz-, NOT --bs-. The Velzon build renames Bootstrap's grid variables, so
-     a row here reads --vz-gutter-x and ignores the Bootstrap name completely.
-     This block set only the --bs- names for a long time, which is why the KPI
-     gap stayed at whatever `g-1` / `g-3` said in the markup however this rule
-     was tuned. Both names are set now so it holds under either build.
-     Overriding `.g-1` (0,1,0) needs the compound selectors above; a bare class
-     would only tie and lose on load order, as the strip's margin did. */
   --vz-gutter-x: 8px !important;
   --vz-gutter-y: 8px !important;
   --bs-gutter-x: 8px !important;
   --bs-gutter-y: 8px !important;
 }
 
-/* ── 8px inside an HRMS page, not just around it ─────────────────────────────
-   The page edge is 8px and the header strip leaves 8px below itself, but the
-   blocks BELOW the strip each wrote their own number: Leave's today-card and
-   Payroll's filter row carry `mb-3` (16px), Custom Fields' banner 12px, and
-   Overview stacks `g-3` rows whose 16px gutter shows up twice over — once
-   between the cards side by side and once between the rows.
-   Stated once for the module instead of edited into each page's markup, so a page
-   written after this comment inherits it. Keyed on `.hr-cstrip`, the same
-   opt-in the HRMS table and tab rails already use, so nothing outside HRMS
-   moves.
-   The gutter is set as --vz-, not --bs-: the Velzon build renames Bootstrap's
-   grid variables and ignores the --bs- names entirely. */
-/* Written as `:has(> …)` rather than as a path from .container-fluid because
-   the block container sits at a different depth on every page — Leave is
-   container-fluid > row > col > .rec-page, Overview is container-fluid > div,
-   Attendance is container-fluid > row > col. The one thing they share is that
-   the element DIRECTLY holding the header strip is the page's block container.
-   Payroll is named too: it tucks the strip inside its own .pay-top, so the
-   :has() lands a level too deep there and misses the page row below it. */
 :is(.page-content :has(>.frm-cstrip.hr-cstrip), .page-content .pay-page)>* {
   margin-bottom: 8px !important;
 }
@@ -422,9 +246,6 @@ button.ms-cstrip-add {
   margin-bottom: 0 !important;
 }
 
-/* A row's gutter pays for BOTH the gap between its cards and, through the
-   negative top margin it pairs with, the gap above the row. Halving one without
-   the other knocks the first and last card out of line with the strip above. */
 :is(.page-content :has(>.frm-cstrip.hr-cstrip), .page-content .pay-page)>.row {
   --vz-gutter-x: 8px !important;
   --vz-gutter-y: 8px !important;
@@ -432,18 +253,8 @@ button.ms-cstrip-add {
   --bs-gutter-y: 8px !important;
 }
 
-/* ── The platform pages take the same standard ───────────────────────────────
-   Clients, Plans, Payments, Branches and Users each grew their own look: tables
-   in Velzon's Rubik on a grey band with black caps, a 40px search, and 16px
-   between every block. Master, on the same menu, uses the shared DataTable and
-   already looks right — which is what made the inconsistency obvious.
-   Scoped by each page's own header strip, the way the HRMS rules are scoped by
-   .hr-cstrip, so nothing outside these pages moves. */
 .page-content:has(:is(.cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip)) :is(table.table, .table) thead th {
   font-family: var(--font-sans);
-  /* The product's header: 9.5px / 800 at .07em, white on the accent band —
-     .dt-table and .smc-table both. This ran 9.5px/800 black on #f3f6f9, and on
-     Payments 13.2px/500, which is not a header at all. */
   font-size: 9.5px !important;
   font-weight: 800 !important;
   letter-spacing: .07em !important;
@@ -464,9 +275,6 @@ button.ms-cstrip-add {
   vertical-align: middle;
 }
 
-/* The one search field: 42px tall, 11px radius, 13px/500, icon inset 14px —
-   .smc-search and .dt-search. Velzon's .search-box ships 10px radius, a 40px
-   left inset and the browser's own input weight. */
 .page-content:has(:is(.cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip)) .search-box .form-control {
   height: 42px;
   border-radius: 11px;
@@ -481,46 +289,16 @@ button.ms-cstrip-add {
   font-size: 16px;
 }
 
-/* NOT the `:has(> strip) > *` shape used for HRMS. These pages do not put the
-   strip beside their other blocks — Clients gives the strip a row of its own
-   and keeps everything else in .clients-surface below it — so that selector
-   matched a container holding ONLY the strip and, through its :last-child
-   exception, zeroed the very margin it was meant to set. The strip's 8px is set
-   on the strip itself above, and the rows get theirs from the KPI rule. */
-
 .footer {
   position: static;
 }
 
-/* ── The footer auto-hides, like a taskbar set to auto-hide ──────────────────
-   Hidden on arrival and after a moment's stillness; it slides back on any
-   scroll (from the window OR a nested scroller — see Footer.tsx) and when the
-   pointer reaches the bottom edge.
-   It only TRANSFORMS. The element keeps its place in the flow and its 40px of
-   height either way, because DataTable sizes every fitted table from this
-   element's offsetHeight (`bottomReserve`) — a footer that really collapsed
-   would grow every table on the page and jump them back when it returned.
-   `pointer-events: none` while hidden so the strip it leaves behind cannot
-   swallow a click meant for the row above it. */
 .footer.app-footer-auto {
-  /* The band is reclaimed by `bottomReserve()` in DataTable.tsx, which skips
-     this footer entirely — a fitted table now runs to the bottom edge and the
-     bar slides up OVER it. Sliding it while the table still reserved its 40px
-     only hid the text and left an empty white strip in its place, which is no
-     better than showing it.
-     Nothing here needs `position: fixed`: #layout-wrapper is `100dvh` with
-     `overflow: hidden`, so the footer's own 40px falls off the bottom and is
-     clipped rather than adding height. Measured: removing the element from the
-     DOM leaves document.scrollHeight at 950 either way. A `position: fixed`
-     was tried here first and changed nothing, so it is not carried. */
   z-index: 3;
   transform: translateY(100%);
   opacity: 0;
   transition: transform .22s cubic-bezier(.22, 1, .36, 1), opacity .18s ease;
   will-change: transform;
-  /* Never interactive, shown or not. It holds nothing but a copyright line, and
-     it comes back OVER the table's pager — passing clicks through means the
-     pager stays usable even while the bar is on screen. */
   pointer-events: none;
 }
 
@@ -571,9 +349,6 @@ body {
 }
 
 ::-webkit-scrollbar {
-  /* Restored to a visible, grabbable width — a prior "changes" commit dropped
-     this to 2px, which made every scrollbar app-wide (modals, tables, the
-     agreement popup) look removed. */
   width: 8px;
   height: 8px;
 }
@@ -847,14 +622,6 @@ body {
       rgba(255, 255, 255, 0) 100%);
 }
 
-/* ── Busy overlay ──────────────────────────────────────────────────────
-   Blur + spinner over content that is being REFRESHED, as opposed to the
-   shimmer skeletons above, which stand in for content that has never been
-   drawn. Reaching for a skeleton on a refresh throws away a laid-out panel
-   and replaces it with grey bars — the page appears to rebuild itself every
-   time the user clicks a different row. Blurring what is already there keeps
-   the shape of the screen still and reads as "this is updating".
-   Markup lives in components/ui/BusyOverlay.tsx. */
 .busy-wrap {
   position: relative;
 }
@@ -866,8 +633,6 @@ body {
 .busy-wrap>.busy-content.is-busy {
   filter: blur(3px) saturate(.9);
   opacity: .5;
-  /* The stale panel must not be clickable or tabbable while it is standing
-     in for the next one — a click would act on the employee being replaced. */
   pointer-events: none;
   user-select: none;
 }
@@ -882,8 +647,6 @@ body {
   justify-content: center;
   gap: 10px;
   border-radius: inherit;
-  /* Faint scrim so the spinner reads against whatever it is standing over —
-     the blur alone leaves light panels almost as bright as the ring. */
   background: var(--busy-scrim, rgba(255, 255, 255, .35));
   animation: fadeIn .18s ease both;
 }
@@ -917,7 +680,6 @@ body {
   --busy-scrim: rgba(16, 19, 26, .35);
 }
 
-/* Respect a reduced-motion preference: keep the blur, drop the spin. */
 @media (prefers-reduced-motion: reduce) {
   .busy-veil-spinner {
     animation: none;
@@ -1655,9 +1417,6 @@ tbody tr:nth-child(10) {
   padding: 20px;
 }
 
-/* The status rail is a tab rail, so it takes the Customers tab strip's type
-   (.smc-pill — 12.5px / 700). Only the type: the Bootstrap button colours and
-   the pill shape are left as they are. */
 .pmt-status-tab.btn {
   font-size: 12.5px;
   font-weight: 700;
@@ -1800,11 +1559,6 @@ tbody tr:nth-child(10) {
 }
 
 .frm-cstrip {
-  /* No pull. This used to be -6px (copied from Supplier Management) to tighten
-     the strip under the menu, which left the top gap at 2px while the sides
-     were 8px — the strip looked pasted to the menu and floating away from the
-     edges. The 8px in .page-content is now the single number for all three
-     sides, so cancelling it on one side only would undo that. */
   margin-top: 0;
   position: relative;
   overflow: hidden;
@@ -1819,10 +1573,6 @@ tbody tr:nth-child(10) {
   border: 1px solid #c4b5fd;
   border-radius: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-  /* The app's own face, as the Customers strip already sets on itself.
-     Without it the strip inherits Velzon's body font (Rubik) while
-     Customers renders in DM Sans, so one page's header read in a
-     different typeface from every other page's. */
   font-family: var(--font-sans);
 }
 
@@ -1907,17 +1657,12 @@ tbody tr:nth-child(10) {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-/* HRMS header strip: the Purchase Order banner (.spi-head in p2p-common.css),
-   kept in the HRMS purple. Opt-in through .hr-cstrip so the other pages that
-   share .frm-cstrip (Users, Settings, Masters, dashboards) stay as they are. */
 .frm-cstrip.hr-cstrip {
-  /* Height stays at the HRMS strip's original 70px; only the look follows PO. */
   min-height: 70px;
   padding: 12px 20px 12px 18px;
   gap: 12px;
 }
 
-/* Attendance keeps its own compact 52px strip. */
 .att-page .frm-cstrip.hr-cstrip {
   min-height: 52px;
   padding-top: 8px;
@@ -1941,13 +1686,6 @@ tbody tr:nth-child(10) {
     radial-gradient(ellipse at 90% 50%, rgba(167, 139, 250, .28) 0%, transparent 55%);
 }
 
-/* Dark mode for the HRMS strip itself, not only for .att-page.
-   The dark rule above is written as [data-bs-theme=dark] .att-page .frm-cstrip,
-   and Attendance's strip does not sit under .att-page — so the light purple
-   gradient below stood untouched: a near-white banner across the top of an
-   otherwise dark page. Keyed off .hr-cstrip, every HRMS page that opts into
-   this strip follows the theme. Same ink as the .att-page rule, so the two
-   agree wherever both apply. */
 [data-bs-theme="dark"] .frm-cstrip.hr-cstrip {
   border-color: rgba(167, 139, 250, 0.34);
   background:
@@ -1957,7 +1695,6 @@ tbody tr:nth-child(10) {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-/* The sheen on top of it is a white wash — it reads as fog on a dark strip. */
 [data-bs-theme="dark"] .frm-cstrip.hr-cstrip::after {
   background-image:
     radial-gradient(ellipse at 10% 50%, rgba(167, 139, 250, 0.16) 0%, transparent 55%),
@@ -1974,8 +1711,6 @@ tbody tr:nth-child(10) {
   padding-left: 10px;
 }
 
-/* Everything in the strip sits above the ::after sheen — pages put their
-   actions in a .d-flex wrapper, a bare button, or their own wrapper. */
 .hr-cstrip>*:not(.frm-cstrip-accent) {
   position: relative;
   z-index: 1;
@@ -2004,8 +1739,6 @@ tbody tr:nth-child(10) {
 }
 
 .hr-cstrip .frm-cstrip-title {
-  /* Size and tracking left to the base rule so every module's strip title
-     reads at the Customers size; only the colour is this variant's own. */
   color: #2e1065;
 }
 
@@ -2018,10 +1751,6 @@ tbody tr:nth-child(10) {
   line-height: 1.35;
 }
 
-/* Action buttons: the Create PO button's shape and finish (.spi-head-btn) —
-   12px corners, a glossy top half, a soft shadow and a lift on hover. Colours
-   stay the page's own: white outline for the secondary buttons, purple
-   gradient for the main one. */
 .hr-cstrip>.d-flex .btn.rounded-pill,
 .hr-cstrip>.d-flex .btn-label {
   position: relative;
@@ -2051,7 +1780,6 @@ tbody tr:nth-child(10) {
   pointer-events: none;
 }
 
-/* Secondary (white) buttons: same lift and shadow as Create PO, in purple. */
 .hr-cstrip>.d-flex .btn.rounded-pill:not(.btn-label) {
   box-shadow: 0 4px 14px rgba(124, 58, 237, .14), 0 1px 3px rgba(91, 33, 182, .10), inset 0 1px 0 rgba(255, 255, 255, .9);
 }
@@ -2065,7 +1793,6 @@ tbody tr:nth-child(10) {
   transform: translateY(0);
 }
 
-/* The main action (Add …): the PO's filled gradient button, in purple. */
 .hr-cstrip>.d-flex .btn-label {
   position: relative;
   overflow: hidden;
@@ -2075,12 +1802,6 @@ tbody tr:nth-child(10) {
   letter-spacing: .02em;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
   background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 50%, #8b5cf6 100%);
-  /* Same glow geometry as the outlined buttons beside it (4px/14px), at .22
-     rather than .45. All three strip buttons are 42px tall — measured, with
-     identical top and bottom — but at .45 over 16px of blur this one's glow
-     bled about 4px past the pill on every side, so the row read as a tall
-     button between two short ones. The fill alone is enough to say which
-     action is primary; it does not also need three times the shadow. */
   box-shadow: 0 4px 14px rgba(124, 58, 237, .22), 0 1px 3px rgba(91, 33, 182, .16), inset 0 1px 0 rgba(255, 255, 255, .2);
   transition: transform .14s, box-shadow .14s;
 }
@@ -2089,8 +1810,6 @@ tbody tr:nth-child(10) {
   transform: translateY(-2px);
   color: #fff;
   background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 55%, #7c3aed 100%);
-  /* Matches the outlined buttons' hover glow, so the lift reads the same
-     across the row. */
   box-shadow: 0 8px 22px rgba(124, 58, 237, .28), 0 2px 5px rgba(91, 33, 182, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
 
@@ -2105,7 +1824,6 @@ tbody tr:nth-child(10) {
   pointer-events: none;
 }
 
-/* Drop Velzon's dark icon block — the PO button shows a plain "+". */
 .hr-cstrip>.d-flex .btn-label .label-icon {
   position: static;
   width: auto;
@@ -2139,12 +1857,6 @@ tbody tr:nth-child(10) {
   border-color: #21183b;
 }
 
-
-/* ── Attendance: the same strip in TEAL ───────────────────────────────────
-   Shape, height and sheen are the shared HRMS ones; only the hue changes, so
-   the page is recognisable at a glance without becoming a different design.
-   Applied by class, not by a page wrapper: .att-page is referenced in this
-   file but set on no element, so rules hung off it would never fire. */
 .frm-cstrip.hr-cstrip.hr-cstrip--teal {
   border-color: #99e6dd;
   background: linear-gradient(110deg, #f4fdfb 0%, #e9fbf7 25%, #d6f5ef 55%, #c3efe7 85%, #aee8de 100%);
@@ -2158,11 +1870,6 @@ tbody tr:nth-child(10) {
     radial-gradient(ellipse at 90% 50%, rgba(45, 212, 191, .28) 0%, transparent 55%);
 }
 
-/* ...and the same in dark. The teal rules above sit after the generic
-   .hr-cstrip dark rule and carry the same weight, so they won on order alone
-   and Attendance kept a near-white mint banner across the top of a dark page.
-   Teal-tinted rather than purple, so the page stays recognisable, and the
-   white sheen comes off: on a dark strip it reads as fog. */
 [data-bs-theme="dark"] .frm-cstrip.hr-cstrip.hr-cstrip--teal {
   border-color: rgba(45, 212, 191, 0.30);
   background:
@@ -2195,9 +1902,6 @@ tbody tr:nth-child(10) {
   color: #0d9488;
 }
 
-/* Those two are ink for a pale mint strip: on the dark strip the title was a
-   near-black teal on near-black, and the subtitle sat at the edge of legible.
-   Light teal on dark keeps the page's colour without losing the words. */
 [data-bs-theme="dark"] .hr-cstrip.hr-cstrip--teal .frm-cstrip-title {
   color: #e6fffa;
 }
@@ -2327,11 +2031,6 @@ tbody tr:nth-child(10) {
   outline: none;
 }
 
-/* Rows-per-page listbox (components/ui/DataTable renders it; the old native
-   <select> is kept styled above for the tables that still use one). The menu
-   opens UPWARDS — the pager is the last line of the card, so downwards would
-   run off it — and its left edge is flush with the trigger, which is what the
-   OS list never managed. (#19) */
 .tc-wl-rows-sel {
   position: relative;
   display: inline-flex;
@@ -2359,9 +2058,6 @@ tbody tr:nth-child(10) {
 }
 
 .tc-wl-rows-menu {
-  /* Centred over the trigger and only as wide as the numbers need. It used to
-     hang from left: -10px at a 64px minimum with 12px of padding either side
-     of a two-digit number, which read as a panel rather than a short list. */
   position: absolute;
   bottom: calc(100% + 8px);
   left: 50%;
@@ -2509,11 +2205,6 @@ tbody tr:nth-child(10) {
     flex-wrap: wrap;
   }
 
-  /* Sized for a fingertip. These controls carry desktop proportions down to
-     the phone: the rows-per-page trigger was a 28x18px hit area and the two
-     arrows 32x32, well under the ~40px a thumb needs, on the one row of the
-     page that exists to be tapped. The text goes up a step with them — 11.5px
-     is small for a number you are checking against the table above. */
   .tc-wl-pag {
     gap: 7px;
     padding: 8px;
@@ -2553,7 +2244,6 @@ tbody tr:nth-child(10) {
     gap: 6px;
   }
 
-  /* The menu this opens is tapped too, not just read. */
   .tc-wl-rows-menu button {
     min-height: 32px;
     font-size: 11.5px;
@@ -2569,26 +2259,6 @@ tbody tr:nth-child(10) {
   color: #ddd6fe;
 }
 
-/* ── --vz-card-bg outside a .card ──────────────────────────────────────
-   Bootstrap declares --vz-card-bg INSIDE `.card` — it is a component
-   variable, sitting next to --vz-card-spacer-y and friends — not on the theme
-   root the way --vz-secondary-bg and --vz-body-bg are. So `background:
-   var(--vz-card-bg)` written on anything that is NOT inside a .card has
-   nothing to resolve against: the declaration is invalid at computed-value
-   time and the element comes out TRANSPARENT.
-
-   Not a theoretical footgun. The Inbox's Document Preview / Review & Decide
-   modal is its own shell rather than a .card, and its dark-mode rules reach
-   for this variable — so card, body and footer all rendered see-through, the
-   table row behind the modal read straight through the footer, and the footer
-   strip looked like it simply wasn't there (QA #4). Around 70 files use this
-   variable; every one of them outside a .card has the same hole waiting.
-
-   Declaring it at the root gives those elements the value they were written
-   for. It cannot affect anything INSIDE a .card: that component declares its
-   own copy ON itself, which is nearer the element and still wins. The value
-   mirrors Bootstrap's own (--vz-card-bg: var(--vz-secondary-bg)), so a card
-   and a card-styled element outside one finally agree. */
 :root {
   --vz-card-bg: var(--vz-secondary-bg);
 }
@@ -2709,8 +2379,6 @@ tbody tr:nth-child(10) {
 }
 
 .pmt-kpi-value {
-  /* 700, not 800. At 20-26px an 800 numeral is the heaviest thing on the
-     page and the KPI row shouted over the list it introduces. */
   font-size: 20px;
   font-weight: 700;
   color: var(--vz-heading-color, var(--vz-body-color));
@@ -4318,20 +3986,8 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   background: rgba(124, 92, 252, 0.16);
 }
 
-/* CSS tooltips ([data-tooltip] + optional [data-tooltip-pos]) — the attribute
-   flavour used by icon buttons in tables (Expense Management, etc.).
-   Theme-aware, with the SAME palette as the <Tooltip themed> component behind
-   the Consignee action column: a white pill with dark text in light mode, a
-   dark pill with white text in dark mode. It used to be dark in both, which
-   left it low-contrast against dark surfaces (CBC #70). Colours live in
-   custom properties so the dark override below flips every side at once —
-   pseudo-elements inherit them from the trigger. */
 [data-tooltip] {
   position: relative;
-  /* Solid pure-white pill with black text in light mode — the old
-     white→grey gradient + grey text read faint against light surfaces
-     (CBC: "tooltip is very faint"). Border + shadow keep the white pill
-     defined against white backgrounds. */
   --tt-bg: #ffffff;
   --tt-fg: #000000;
   --tt-arrow: #ffffff;
@@ -5184,7 +4840,7 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout-mode="dark"] .app-onboarding-banner {
   background: rgba(245, 158, 11, 0.16) !important;
   color: #fcd34d !important;
-  border-bottom-color: rgba(245, 158, 11, 0.30) !important;
+  border-color: rgba(245, 158, 11, 0.30) !important;
 }
 
 .recharts-wrapper:focus,
@@ -5196,13 +4852,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   outline: none !important;
 }
 
-/* ── Search-box clear button (components/ui/SearchClear.tsx) ──────────────
-   One rule for every module's search bar. Sizes and colours are deliberately
-   neutral so it sits correctly in the cyan Sales bar, the slate CLM bar and
-   the violet P2P bar without each page restating them; a page that wants its
-   own accent sets --ui-search-clear on the search wrapper.
-   flex-shrink: 0 matters — the wrappers are flex rows with a growing input,
-   and without it the button is the first thing squeezed to nothing. */
 .ui-search-clear {
   --_c: var(--ui-search-clear, #64748b);
   flex-shrink: 0;
@@ -5225,21 +4874,7 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   color: #fff;
 }
 
-/* The icon stays put whatever the host search bar does to its svgs.
-   Several wrappers position THEIR magnifier with a broad descendant rule —
-   `.spi-search svg { position:absolute; left:13px; … }` and friends — which
-   also catches the × inside this button: the icon flew to the left edge and
-   sat on top of the magnifier, leaving an empty box on the right. Written
-   with the element qualifier so it outranks those one-class rules whichever
-   stylesheet loads last, and it only undoes positioning — colour still comes
-   from the button. */
 button.ui-search-clear svg {
-  /* !important because the rules being undone are scoped deeper than any
-     selector this one can reach: `.pom .polist-search svg` is two classes,
-     and specificity counts classes before elements, so it beats even
-     button.ui-search-clear svg. Nothing weaker wins, and the declaration
-     touches only the icon inside our own button — it cannot reach a host
-     page's magnifier. */
   position: static !important;
   left: auto !important;
   right: auto !important;
@@ -5255,7 +4890,6 @@ button.ui-search-clear svg {
   outline-offset: 1px;
 }
 
-/* Older engines without color-mix still get a visible, tappable control. */
 @supports not (background: color-mix(in srgb, red 10%, transparent)) {
   .ui-search-clear {
     background: rgba(100, 116, 139, .12);
@@ -5272,11 +4906,6 @@ button.ui-search-clear svg {
   color: #0f172a;
 }
 
-/* Velzon's .search-box is position:relative with an absolutely-placed icon on
-   the left and a plain block input — not the flex row every custom search bar
-   in this app uses. Dropped in as a normal-flow sibling the clear button lands
-   BELOW the field, so here it is pinned to the right edge instead, and the
-   input gets room so its text never runs underneath. */
 .search-box {
   position: relative;
 }
@@ -5293,15 +4922,6 @@ button.ui-search-clear svg {
   padding-right: 38px;
 }
 
-/* Wrappers that are neither a flex row nor a Velzon .search-box: a plain
-   positioned box holding one full-width input. Dropped in as a normal-flow
-   sibling the button lands BELOW the field, outside the box — so those
-   wrappers carry ui-search-abs and the button is pinned to the right edge
-   instead. position: relative is the fallback; a wrapper that is already
-   sticky or absolute keeps its own (inline wins) and is a positioned
-   ancestor either way. padding-right needs !important only because these
-   inputs set their padding inline, and nothing weaker can reach it —
-   without it a long query slides under the button. */
 .ui-search-abs {
   position: relative;
 }
@@ -5318,12 +4938,6 @@ button.ui-search-clear svg {
   padding-right: 36px !important;
 }
 
-/* An input[type=search] draws Chrome's OWN clear button, so where ours
-   follows one the user saw two crosses side by side. Hide the native one
-   and keep ours — ours is the same control on every screen, styled and
-   themed, and it appears in the same place whether the field is type=text
-   or type=search. Scoped by the sibling test so an input WITHOUT our button
-   keeps the browser's. */
 input[type="search"]:has(~ .ui-search-clear)::-webkit-search-cancel-button {
   display: none;
 }
@@ -5333,25 +4947,8 @@ input[type="search"]:has(~ .ui-search-clear) {
   -webkit-appearance: none;
 }
 
-/* ── Document HTML: give lists their markers back ─────────────────────────────
- * The app's global stylesheet resets `ul { list-style: none }` (twice — the
- * admin theme and a plugin both do it). That is right for navigation menus,
- * which is what those resets are for, and wrong for RENDERED DOCUMENT CONTENT:
- * an exit letter or agreement authored with bullet points arrived in the
- * preview as flat, unmarked lines, so the reader could not tell a list from a
- * paragraph — and the PDF, which DomPDF renders outside this stylesheet,
- * disagreed with what was on screen. (CBC #7)
- *
- * Applied to every surface that renders authored HTML: the shared
- * .tpl-readonly-preview (signed documents, Inbox, My Team, onboarding, the
- * template editor) and .doc-html (the exit-document preview).
- * ========================================================================== */
 .tpl-readonly-preview ul,
 .doc-html ul {
-  /* Longhands, not the `list-style` shorthand: a minifier drops `disc` from
-     `disc outside` as redundant, which is correct per spec but leaves the
-     built CSS reading `list-style: outside` and looking like the marker was
-     lost. Explicit is easier to trust when this regresses. */
   list-style-type: disc;
   list-style-position: outside;
   margin-left: 0;
@@ -5366,7 +4963,6 @@ input[type="search"]:has(~ .ui-search-clear) {
   padding-left: 1.6em;
 }
 
-/* Nested levels read the way a word processor renders them. */
 .tpl-readonly-preview ul ul,
 .doc-html ul ul {
   list-style-type: circle;
@@ -5382,7 +4978,6 @@ input[type="search"]:has(~ .ui-search-clear) {
   display: list-item;
 }
 
-/* An author who explicitly asked for no markers still gets none. */
 .tpl-readonly-preview ul[style*="list-style: none"],
 .tpl-readonly-preview ul[style*="list-style:none"],
 .doc-html ul[style*="list-style: none"],

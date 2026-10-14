@@ -4,6 +4,7 @@ import HrEmployees from '../hrms/HrEmployees';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useModulePermission } from '../../hooks/useModulePermission';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import api from '../../api';
 import { rankForDesignationName, rankOutranks } from '../../utils/positionHierarchy';
 import {
@@ -1626,6 +1627,20 @@ function InitiateOnboardingModal({
   onSaved?: () => void;
 }) {
   const toast = useToast();
+  /* Freeze whatever is scrolling behind the dialog.
+   *
+   * reactstrap puts `modal-open` on <body>, but nothing in this app scrolls on
+   * body — the page scrolls on .main-content — so that lock frees nothing and
+   * the page kept moving under the dialog while the wheel was over it. With
+   * two scrollers of its own inside, the gesture would run one of them, reach
+   * its end and then shift the whole background: the stall-then-jump that
+   * reads as the fields bouncing. (QA #51)
+   *
+   * overscroll-behavior: contain on those panes stopped the chaining out of
+   * them, but not a wheel over the header, the footer or the gap beside them.
+   * This hook asks the DOM what is actually scrolling and freezes that, with
+   * the dialog's own subtree excepted so its panes still work. */
+  useScrollLock(isOpen, '.onb-init-modal');
   const leavePerm = useModulePermission('hr.leave', 'leave plans');
   const empPerm = useModulePermission('hr.employee', 'employee records');
   const readOnly = !empPerm.canEdit;
@@ -4018,12 +4033,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   <button
     type="button"
     className="onb-init-btn-ghost"
-    /* formLocked too. The busy veil covers .onb-init-body only, so while a
-       stage's data was loading these footer buttons sat outside it -- neither
-       dimmed nor disabled -- and could be clicked straight through the load.
-       (QA #20) */
+    /* formLocked and coreReady. The busy veil covers .onb-init-body only, so
+       while a stage's data was loading these footer buttons sat outside it --
+       neither dimmed nor disabled -- and could be clicked straight through the
+       load. coreReady is the other half: it is false while the masters and the
+       employee's own record are still arriving on stage 1, which is the slow
+       one, and nothing here was watching it. (QA #20) */
     disabled={
-      formLocked ||
+      formLocked || !coreReady ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving)
@@ -4045,7 +4062,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     }
     disabled={
       readOnly ||
-      formLocked ||
+      formLocked || !coreReady ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving) ||
@@ -4071,7 +4088,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     disabled={
       readOnly ||
       nextLoading ||
-      formLocked ||
+      formLocked || !coreReady ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving)
@@ -4200,7 +4217,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
            stages are done you are on stage 6, where this replaces Next
            Stage, and it was clickable while the stage data was still
            loading. (QA #20) */
-        disabled={nextLoading || blocked || formLocked}
+        disabled={nextLoading || blocked || formLocked || !coreReady}
         style={
           nextLoading
             ? { opacity: 0.85, cursor: 'progress' }
@@ -6121,6 +6138,46 @@ function Stage5Policies({ emp, onProgress }: {
     }
   }, [emp?.dbId]);
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
+
+  /* Signing happens away from this screen — in Zoho Sign, usually in another
+   * tab — so nothing here ever learned that a document had come back signed,
+   * and the panel kept showing the state it loaded with until the whole page
+   * was reloaded by hand. (QA #21)
+   *
+   * Two triggers, and neither polls when there is nothing to wait for:
+   *
+   *  · coming back to this tab, which is exactly what you do after signing.
+   *    Both events are listened for because they are not the same: switching
+   *    tabs fires visibilitychange, while returning from another WINDOW fires
+   *    only focus.
+   *  · a 20s poll, but only while at least one run is still outstanding — a
+   *    stage whose documents are all settled makes no requests at all. This
+   *    is the backstop for the case the events miss, signing on a phone.
+   *
+   * onProgress below already re-reports whenever the counts change, so the
+   * stage badge and the sidebar follow from this without further wiring. */
+  /* Named positively: Completed, Cancelled and Rejected are all settled, so
+     the poll should stop on any of them — a rejected document is as final as
+     a signed one and must not keep the timer alive. */
+  const awaitingSignature = useMemo(
+    () => runs.some(r => r.status === 'Pending' || r.status === 'In Progress'),
+    [runs],
+  );
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') void fetchRuns(); };
+    const onFocus = () => { void fetchRuns(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [fetchRuns]);
+  useEffect(() => {
+    if (!awaitingSignature) return;
+    const id = window.setInterval(() => { void fetchRuns(); }, 20000);
+    return () => window.clearInterval(id);
+  }, [awaitingSignature, fetchRuns]);
 
   const runByTemplateId = useMemo(() => {
     const m = new Map<number, SignatureRun>();

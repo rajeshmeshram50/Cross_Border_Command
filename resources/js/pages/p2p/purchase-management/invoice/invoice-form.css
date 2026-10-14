@@ -341,9 +341,100 @@
 .vti-dw-inp--auto { color: #0e7490; font-weight: 800; cursor: default; }
 .vti-dw-row2-inner { display: flex; align-items: stretch; gap: 0; border-top: 1px solid rgba(6,182,212,.15); padding: 0; background: linear-gradient(108deg, #f8fdff 0%, #fbfeff 50%, #ffffff 100%); }
 .vti-dw-mini-section { padding: 14px 18px; border-right: 1px solid rgba(6,182,212,.12); flex-shrink: 0; }
-.vti-dw-mini-section:last-child { border-right: none; flex: 1; }
+/* min-width: 0 is the important half. A flex item defaults to min-width:auto,
+   which refuses to shrink below its own content — so a wide flags row forced
+   this whole strip wider than the drawer and pushed Product Remark and Box
+   Condition off the left edge instead of being contained. */
+.vti-dw-mini-section:last-child { border-right: none; flex: 1; min-width: 0; }
 .vti-dw-mini-title { font-size: 8px; font-weight: 800; color: #0891b2; text-transform: uppercase; letter-spacing: .18em; margin-bottom: 12px; opacity: .7; }
 .vti-dw-flags { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; }
+/* The hidden flags open in a portalled panel rather than unfolding into the
+   row — expanding in place pushed this strip wider again, which is what the
+   counter is here to stop. Modelled on the CLM masters' "+N" popover. */
+.vti-flag-pop {
+  width: 256px;
+  max-height: 300px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1.5px solid rgba(6,182,212,.35);
+  box-shadow: 0 16px 40px rgba(8,47,73,.22);
+}
+.vti-flag-pop__title {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #0891b2;
+  padding: 2px 2px 4px;
+}
+/* The chips inside stand on their own line and may be any width, so they are
+   not held to the row's fixed 40px or its nowrap name cap. */
+.vti-flag-pop .vti-flag-btn { width: 100%; justify-content: flex-start; }
+.vti-flag-pop .vti-flag-name { max-width: none; white-space: normal; overflow: visible; }
+.vti-flag-pop::-webkit-scrollbar { width: 8px; }
+.vti-flag-pop::-webkit-scrollbar-thumb { background: rgba(6,182,212,.35); border-radius: 8px; }
+[data-bs-theme="dark"] .vti-flag-pop,
+[data-layout-mode="dark"] .vti-flag-pop {
+  background: #0f1b2a;
+  border-color: rgba(34,211,238,.28);
+  box-shadow: 0 16px 40px rgba(0,0,0,.6);
+}
+[data-bs-theme="dark"] .vti-flag-pop__title,
+[data-layout-mode="dark"] .vti-flag-pop__title { color: #67e8f9; }
+/* A custom flag's name is free text and can be any length. Capped with an
+   ellipsis and the full name on hover, so one long name cannot widen the
+   strip past the drawer on its own. */
+.vti-flag-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The counter chip. Deliberately quieter than a flag: it is a control for the
+   row, not another thing to switch on, so it carries no colour of its own. */
+.vti-flag-more {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center;
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: 1.5px dashed rgba(100,116,139,.45);
+  background: rgba(148,163,184,.10);
+  color: #475569;
+  font-size: 11px; font-weight: 700; letter-spacing: .01em;
+  cursor: pointer;
+  transition: all .18s;
+}
+.vti-flag-more:hover {
+  border-color: #64748b;
+  background: rgba(148,163,184,.20);
+  color: #334155;
+}
+/* Both attributes. This sheet writes [data-bs-theme] throughout, but the SPI
+   wizard is one of the screens that carries [data-layout-mode] instead, and a
+   chip styled for only one of them stayed on its light colours. */
+[data-bs-theme="dark"] .vti-flag-more,
+[data-layout-mode="dark"] .vti-flag-more {
+  border-color: rgba(148,163,184,.45);
+  /* Opaque, not a 12% wash. The strip behind this is a gradient, so a
+     translucent chip picked up whatever was under it and read as a pale
+     blob rather than as part of the row. */
+  background: #1e293b;
+  color: #cbd5e1;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .vti-flag-more:hover,
+[data-layout-mode="dark"] .vti-flag-more:hover {
+  border-color: #94a3b8;
+  background: #334155;
+  color: #f1f5f9;
+}
 .vti-flag-btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 16px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .18s; letter-spacing: .01em; position: relative; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.07), inset 0 1px 0 rgba(255,255,255,.8); }
 .vti-flag-btn::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.45) 0%, transparent 100%); border-radius: 20px 20px 0 0; pointer-events: none; }
 .vti-flag-btn svg { flex-shrink: 0; transition: all .18s; }
@@ -916,7 +1007,10 @@
    bottom inside a 40px box, which clips the button's second line. */
 .vti-dw-row2-inner .vti-dw-remarks .vti-rmk-btn,
 .vti-dw-row2-inner .vti-dw-conditions .vti-cond-btn,
-.vti-dw-row2-inner .vti-dw-flags .vti-flag-btn {
+.vti-dw-row2-inner .vti-dw-flags .vti-flag-btn,
+/* The counter stands in the same row and has to be the same height as the
+   chips either side of it, or it sits short against them. */
+.vti-dw-row2-inner .vti-dw-flags .vti-flag-more {
   height: 40px;
   min-height: 40px;
   padding-top: 0;

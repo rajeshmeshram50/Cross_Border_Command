@@ -1,6 +1,3 @@
-/* Card containers reuse the shared `ep-section-card-flat` (radius 16 + border +
-   shadow + dark #1c2531) from EmployeeProfile.css so the inbox matches the rest
-   of the app — see EmployeeProfile.css for the definition + dark override. */
 .ib-cardbody-0   { padding: 0; }
 
 .ib-section-head { padding: 14px 18px; border-bottom: 1px solid var(--vz-border-color); }
@@ -11,14 +8,12 @@
 .ib-actions-col  { min-width: 140px; }
 .ib-body-col-hist { flex: 1 1 280px; min-width: 200px; }
 
-/* ── Header strip ──────────────────────────────────────────────────────────── */
 .ib-pending-badge {
   padding: 6px 14px; border-radius: 999px;
   background: linear-gradient(135deg, #f7b84b, #fbc763);
   color: #fff; font-weight: 700; font-size: 13px;
 }
 
-/* ── Tabs ──────────────────────────────────────────────────────────────────── */
 .ib-tab-cardbody    { padding: 10px; }
 .ib-tab-btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -42,7 +37,6 @@
   background: rgba(255,255,255,.25); color: #fff;
 }
 
-/* ── Section header icon chips + count badges (New tab) ─────────────────────── */
 .ib-head-chip {
   width: 32px; height: 32px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -69,7 +63,6 @@
 .ib-head-title { font-size: 14px; }
 .ib-head-sub   { font-size: 11.5px; }
 
-/* History head chip + count (generic, accent driven by custom property) */
 .ib-hist-chip {
   width: 32px; height: 32px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -84,7 +77,6 @@
 [data-bs-theme="dark"] .ib-hist-icon  { color: var(--ib-hist-fg-d); }
 [data-bs-theme="dark"] .ib-hist-count { background: var(--ib-hist-bg-d); color: var(--ib-hist-fg-d); }
 
-/* ── Empty states ──────────────────────────────────────────────────────────── */
 .ib-empty       { padding: 28px; text-align: center; color: #9ca3af; }
 .ib-empty-icon  { font-size: 30px; display: block; margin-bottom: 6px; }
 .ib-empty-title { font-size: 13px; font-weight: 600; }
@@ -92,7 +84,6 @@
 .ib-hist-empty  { padding: 24px; text-align: center; color: #9ca3af; font-size: 12.5px; }
 .ib-shim-wrap   { padding: 18px; }
 
-/* ── Avatars ───────────────────────────────────────────────────────────────── */
 .ib-avatar {
   width: 38px; height: 38px; font-size: 12px;
 }
@@ -104,7 +95,6 @@
 .ib-avatar-sm--leave { background: linear-gradient(135deg, #7c5cfc, #5a3fd1); }
 .ib-avatar-sm--exp   { background: linear-gradient(135deg, #f59e0b, #d97706); }
 
-/* Update notification avatar (tone driven by runtime data) */
 .ib-upd-avatar {
   width: 38px; height: 38px;
   background: var(--ib-tone-bg); color: var(--ib-tone-fg);
@@ -112,7 +102,6 @@
 }
 .ib-upd-icon { font-size: 18px; }
 
-/* ── Row text bits ─────────────────────────────────────────────────────────── */
 .ib-name        { font-size: 13.5px; }
 .ib-name-sm     { font-size: 13px; }
 .ib-sub-meta    { font-size: 11px; color: #6b7280; }
@@ -120,7 +109,6 @@
 .ib-line-sm     { font-size: 12px; }
 .ib-quote       { font-size: 12px; }
 
-/* Leave-type pill */
 .ib-pill-leave {
   padding: 2px 8px; border-radius: 6px;
   background: #ede9fe; color: #5a3fd1; font-weight: 700; font-size: 11px;
@@ -132,7 +120,6 @@
 }
 [data-bs-theme="dark"] .ib-pill-leave-sm { background: rgba(124,92,252,0.20); color: #c4b5fd; }
 
-/* Expense/Advance type pill */
 .ib-pill-type {
   padding: 2px 8px; border-radius: 999px;
   font-weight: 700; font-size: 10px; letter-spacing: 0.3px; text-transform: uppercase;
@@ -142,7 +129,6 @@
 [data-bs-theme="dark"] .ib-pill-type--adv { background: rgba(99,102,241,0.20); color: #a5b4fc; }
 [data-bs-theme="dark"] .ib-pill-type--exp { background: rgba(245,158,11,0.18); color: #fdba74; }
 
-/* Category pill (amber) */
 .ib-pill-cat {
   padding: 2px 8px; border-radius: 6px;
   background: #fef3c7; color: #a16207; font-weight: 700; font-size: 11px;
@@ -154,24 +140,20 @@
 }
 [data-bs-theme="dark"] .ib-pill-cat-sm { background: rgba(245,158,11,0.18); color: #fcd34d; }
 
-/* Inline code pill (grey) */
 .ib-code-grey {
   font-size: 10.5px; background: #f3f4f6; color: #4b5563;
   padding: 1px 6px; border-radius: 4px;
 }
 [data-bs-theme="dark"] .ib-code-grey { background: rgba(255,255,255,0.08); color: #cbd5e1; }
-/* Inline code pill (amber) */
 .ib-code-amber {
   font-size: 10.5px; background: #fef3c7; color: #a16207;
   padding: 1px 6px; border-radius: 4px;
 }
 [data-bs-theme="dark"] .ib-code-amber { background: rgba(245,158,11,0.18); color: #fcd34d; }
 
-/* Amber amount text */
 .ib-amt { color: #a16207; }
 [data-bs-theme="dark"] .ib-amt { color: #fcd34d; }
 
-/* Stage pill */
 .ib-pill-stage {
   padding: 1px 7px; border-radius: 999px;
   font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase;
@@ -184,10 +166,8 @@
 
 .ib-title-line { font-size: 12px; color: #374151; }
 
-/* ── Inputs ────────────────────────────────────────────────────────────────── */
 .ib-remark-input { font-size: 12.5px; }
 
-/* Leave row: remark input + Accept + Reject on one line, one height. */
 .ib-decision-row { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; }
 .ib-decision-row .ib-remark-input { flex: 1 1 240px; min-width: 0; height: 36px; }
 .ib-decision-row .ib-btn-approve,
@@ -196,15 +176,11 @@
   display: inline-flex; align-items: center; justify-content: center; white-space: nowrap;
 }
 
-/* ── Approve / Reject buttons (rows) ───────────────────────────────────────── */
 .ib-btn-approve {
   padding: 8px 12px; border-radius: 8px; border: 0;
   background: linear-gradient(135deg, #10b981, #059669);
   color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
 }
-/* HR stage: the manager has approved and this is the final step. Same faint
-   blue the Expense / Advance tables use, so the colour means one thing across
-   the app rather than "approve" in one place and "HR's turn" in another. */
 .ib-btn-approve--hr {
   background: #b6d9f7;
   color: #08406f;
@@ -217,15 +193,12 @@
   font-size: 12px; font-weight: 700; cursor: pointer;
 }
 .ib-btn-reject:disabled { cursor: not-allowed; opacity: 0.6; }
-/* Dark mode: the white outline reject button reads as light-theme on the dark
-   canvas — use a translucent-red danger treatment with light red text/border. */
 [data-bs-theme="dark"] .ib-btn-reject {
   background: rgba(239,68,68,0.12);
   border-color: rgba(239,68,68,0.40);
   color: #fca5a5;
 }
 
-/* ── Status pill (history) ─────────────────────────────────────────────────── */
 .ib-status-pill {
   padding: 3px 10px; border-radius: 999px;
   font-size: 11px; font-weight: 800; white-space: nowrap;
@@ -235,10 +208,8 @@
 [data-bs-theme="dark"] .ib-status-pill--ok  { background: rgba(16,185,129,0.18); color: #6ee7b7; }
 [data-bs-theme="dark"] .ib-status-pill--bad { background: rgba(239,68,68,0.18); color: #fca5a5; }
 
-/* History stage muted text */
 .ib-hist-stage { font-size: 11px; }
 
-/* Document icon chip (history) */
 .ib-doc-chip {
   width: 34px; height: 34px; border-radius: 8px;
   background: #e0e7ff; color: #4338ca;
@@ -246,11 +217,9 @@
 [data-bs-theme="dark"] .ib-doc-chip { background: rgba(99,102,241,0.20); color: #a5b4fc; }
 .ib-doc-chip-icon { font-size: 17px; }
 
-/* History meta line */
 .ib-hist-meta { font-size: 11.5px; margin-top: 2px; }
 .ib-hist-type-line { font-size: 12px; margin-top: 2px; }
 
-/* ── Pager ─────────────────────────────────────────────────────────────────── */
 .ib-pager { padding: 10px 18px; border-top: 1px solid var(--vz-border-color); }
 .ib-pager-info { color: var(--vz-secondary-color); font-size: 11.5px; }
 .ib-pager-btn {
@@ -264,7 +233,6 @@
 }
 [data-bs-theme="dark"] .ib-pager-btn:disabled { color: #475569; }
 
-/* ── Your Claim Updates (Updated tab) ──────────────────────────────────────── */
 .ib-upd-chip {
   width: 32px; height: 32px; border-radius: 8px;
   background: linear-gradient(135deg, #dbeafe, #bfdbfe);
@@ -276,7 +244,6 @@
   background: #dbeafe; color: #1d4ed8; font-weight: 700; font-size: 11.5px;
 }
 
-/* Update verdict pill (tone driven by runtime data) */
 .ib-upd-verdict {
   padding: 2px 8px; border-radius: 6px;
   background: var(--ib-tone-bg); color: var(--ib-tone-fg);
@@ -291,7 +258,6 @@
 .ib-upd-stage { color: var(--ib-tone-fg); }
 .ib-upd-time { font-size: 11px; }
 
-/* ── New-tab documents table ───────────────────────────────────────────────── */
 .ib-table { font-size: 13px; }
 .ib-thead-bg { background: #fffbeb; }
 .ib-thead-row {
@@ -331,7 +297,6 @@
   color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
 }
 
-/* ── Modal shell ───────────────────────────────────────────────────────────── */
 .ib-modal-backdrop {
   position: fixed; inset: 0; background: rgba(15,23,42,0.55); z-index: 1500;
   display: flex; align-items: center; justify-content: center; padding: 20px;
@@ -388,9 +353,6 @@
 }
 .ib-input-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
 
-/* Mandatory consent tick on a Sign step. Amber while unticked so it reads as
-   an outstanding action, indigo once given. The Sign button stays disabled
-   until it is checked. */
 .ib-consent {
   display: flex; align-items: flex-start; gap: 8px;
   margin-top: 12px; padding: 10px 12px;
@@ -399,8 +361,6 @@
 }
 .ib-consent:has(.ib-consent-box:checked) { background: #eef2ff; border-color: #c7d2fe; }
 .ib-consent-box { margin-top: 2px; width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
-/* Shown only after a submit was refused for it — the tick is far enough from
-   the toast that the corner message alone read as nothing having happened. */
 .ib-consent.is-invalid { background: #fef2f2; border-color: #fca5a5; }
 .ib-consent-err { margin-top: 6px; font-size: 11.5px; font-weight: 600; color: #b91c1c; }
 [data-bs-theme="dark"] .ib-consent,
@@ -440,15 +400,6 @@
 .ib-btn-submit--ack     { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
 .ib-btn-submit-icon { margin-right: 6px; }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Dark-theme overrides — moved verbatim from the former inline <style> block.
-   Page-scoped rules use .inbox-page; modal rules use class names that don't
-   require the wrapper since the modal is rendered as a sibling of the page
-   container.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* Reminder badge — the pulsing amber pill in the header strip that tells
-   the signer "someone nudged you". Drawn in both themes (not dark-only). */
 @keyframes inboxReminderPulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.45); }
   50%      { box-shadow: 0 0 0 4px rgba(245,158,11,0); }
@@ -468,10 +419,6 @@
 [data-bs-theme="dark"] .inbox-reminder-pill--header { background: rgba(245,158,11,0.22); color: #fcd34d; }
 
 [data-bs-theme="dark"] .inbox-page .inbox-header-icon {
-  /* Stay on the same saturated amber gradient as light mode so the
-   * icon chip matches the Master-tile treatment in both themes,
-   * rather than the older translucent variant that washed out
-   * against the dark canvas. */
   background: linear-gradient(135deg, #f7b84b, #fad07e) !important;
   box-shadow: 0 4px 14px rgba(247, 184, 75, 0.38) !important;
 }
@@ -486,8 +433,6 @@
   border-bottom-color: var(--vz-border-color) !important;
   color: var(--vz-body-color);
 }
-/* "Your Claim Updates" (Updated tab) — recolour the blue icon chip and
-   counter badge for dark mode so they don't read as light-theme tiles. */
 [data-bs-theme="dark"] .inbox-page .claim-upd-icon { background: rgba(59,130,246,0.18) !important; }
 [data-bs-theme="dark"] .inbox-page .claim-upd-icon i { color: #60a5fa !important; }
 [data-bs-theme="dark"] .inbox-page .claim-upd-badge { background: rgba(59,130,246,0.18) !important; color: #93c5fd !important; }
@@ -497,28 +442,14 @@
 [data-bs-theme="dark"] .inbox-page .inbox-code-pill {
   background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
 }
-[data-bs-theme="dark"] .inbox-page .inbox-action-Sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
-[data-bs-theme="dark"] .inbox-page .inbox-action-Approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
-[data-bs-theme="dark"] .inbox-page .inbox-action-Other   { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
+[data-bs-theme="dark"] .inbox-page .ib-action-pill--sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
+[data-bs-theme="dark"] .inbox-page .ib-action-pill--approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
+[data-bs-theme="dark"] .inbox-page .ib-action-pill--other   { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
 [data-bs-theme="dark"] .inbox-page .inbox-view-btn {
   background: rgba(99,102,241,0.18) !important; color: #c4b5fd !important;
   border-color: rgba(124,92,252,0.35) !important;
 }
 
-/* Modals — rendered as siblings of the page card, scoped only by the
-   class names on the modal itself.
-
-   These reached for var(--vz-card-bg), which Bootstrap only declares inside
-   `.card` — and this modal is its own shell, not a card. The variable
-   resolved to nothing, the declaration was dropped, and the surfaces fell
-   back to TRANSPARENT: the Inbox row behind the modal showed straight through
-   the footer, so the footer strip looked missing and the buttons appeared to
-   float over the page (QA #4). app.css now also declares that variable at the
-   root, but these rules name the surfaces outright so the modal does not
-   depend on a component variable it sits outside of.
-
-   The pairing keeps light mode's hierarchy: shell and footer share one
-   surface, the body is a step darker so the document sits in a recess. */
 [data-bs-theme="dark"] .inbox-modal-card {
   background: var(--vz-secondary-bg, #212529) !important;
   color: var(--vz-body-color) !important;
@@ -548,12 +479,7 @@
   border-color: var(--vz-border-color) !important;
   color: var(--vz-body-color) !important;
 }
-/* Reject & Send Back — the enabled (red gradient) state reads fine on
-   dark, but the disabled state's light-pink fill / dark-red text looked
-   out of place against the dark footer. Tone it to the dark palette. */
 [data-bs-theme="dark"] .inbox-btn-reject:disabled,
-/* Blocked (no remark yet) is not :disabled — the button stays clickable so
-   the click can toast why — so it needs the same dark tone explicitly. */
 [data-bs-theme="dark"] .ib-btn-sendback.is-blocked {
   background: rgba(239,68,68,0.16) !important;
   color: #fca5a5 !important;
