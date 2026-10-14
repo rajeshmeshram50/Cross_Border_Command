@@ -594,6 +594,23 @@
   border-color: rgba(96, 165, 250, .65) !important;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, .22) !important;
 }
+/* Autofill on the other auth steps (Forgot Password, Verify OTP, Reset
+   Password). These fields are rgba(255,255,255,.06) over the same artwork, so
+   they have the Login card's problem and had no guard at all — a remembered
+   email arrived on Chrome's own grey. Same background-clip: text treatment as
+   .kx-input below; see the long note there for why no colour is named. */
+.kx-card input:not(.kx-input):-webkit-autofill,
+.kx-card input:not(.kx-input):-webkit-autofill:hover,
+.kx-card input:not(.kx-input):-webkit-autofill:focus,
+.kx-card input:not(.kx-input):-webkit-autofill:active {
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: #f1f5f9;
+  caret-color: #f1f5f9;
+  transition: background-color 9999s ease-out 0s;
+  font-family: inherit !important;
+  font-size: inherit !important;
+}
 /* The full-width primary buttons on those pages take the Log In gradient. */
 .kx-card button.bg-primary {
   background: linear-gradient(90deg, #1b90fe 0%, #454ffd 50%, #8438fc 100%) !important;
@@ -681,12 +698,27 @@
    match a translucent field sitting over a photograph, so the fix is to leave
    the input transparent and let the field render the whole width itself.
 
-   The transition does the work: Chrome applies its autofill background as a
-   transition, so a long enough delay means it never arrives. That was already
-   here, under the shadow. */
+   What removes it is background-clip: text.
+
+   Chrome paints the autofill background through the UA stylesheet, at a
+   priority no author rule can outrank — background-color: transparent
+   !important below does not touch it, and the 9999s transition only delays
+   it, which stopped holding in current Chrome. That is why a remembered
+   email still showed a grey bar sitting inside the field. (QA, Oct 2026)
+
+   background-clip: text clips the element's background — the UA's autofill
+   fill included — to the text glyphs, and -webkit-text-fill-color then paints
+   those glyphs over the top. The fill is still produced; there is simply
+   nowhere left for it to show. That needs no knowledge of what is behind the
+   field, which is exactly the problem a fixed inset colour could not solve.
+
+   The transition stays as a second line of defence; the two don't conflict. */
 .kx-input:-webkit-autofill,
 .kx-input:-webkit-autofill:hover,
-.kx-input:-webkit-autofill:focus {
+.kx-input:-webkit-autofill:focus,
+.kx-input:-webkit-autofill:active {
+  -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: #f1f5f9;
   background-color: transparent !important;
   caret-color: #f1f5f9;
