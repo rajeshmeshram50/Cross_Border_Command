@@ -249,7 +249,9 @@ export default function InvoicePaymentsModal({ row, onClose }: {
                       type="button"
                       className={`mpr-tdsbtn${po.tds_saved ? ' mpr-tdsbtn--edit' : ''}`}
                       title={po.tds_locked
-                        ? `TDS on ${po.code} is fixed — a payment is already recorded`
+                        ? `TDS on ${po.code} is fixed — ${po.tds_locked_by === 'approval'
+                          ? 'a payment request has already been approved against this net'
+                          : 'a payment is already recorded'}`
                         : po.tds_saved ? `Revise the TDS withheld on ${po.code}` : `Withhold tax at source on ${po.code}`}
                       onClick={() => setTdsOpen(true)}
                     >

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
 import SegmentBadge, { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
 import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
 import './product-management.css';
@@ -297,13 +297,19 @@ export default function Products() {
     return out;
   }, [filters, hsnLabel]);
 
+  /* The search term is NOT a chip (QA #19).
+     A filter is a choice you made inside the Filters panel and then cannot see
+     any more, which is exactly why the Applied strip exists. The search term is
+     sitting in the box at the top of the screen with its own clear button —
+     repeating it below as something "applied" says a filter is in force that
+     the user cannot find in the panel, and makes a one-word search look like a
+     state to be undone. */
   const toolbarChips = useMemo<FilterChip[]>(() => {
     const out: FilterChip[] = [];
-    if (q.trim())                    out.push({ id: 'q',       group: 'Search',  label: q,            onRemove: () => setQ('') });
     if (segment !== 'All Segments')  out.push({ id: 'segment', group: 'Segment', label: segment,      onRemove: () => setSegment('All Segments') });
     if (statusFilter !== 'All Status') out.push({ id: 'status', group: 'Status',  label: statusFilter, onRemove: () => setStatusFilter('All Status') });
     return out;
-  }, [q, segment, statusFilter]);
+  }, [segment, statusFilter]);
 
   const allChips = useMemo(() => [...toolbarChips, ...appliedChips], [toolbarChips, appliedChips]);
 
@@ -991,12 +997,30 @@ function FrozenRows(props: { options: string[] }) {
 
 function CheckRow(props: { label: string; checked: boolean; onChange: () => void; tip?: string; segment?: boolean }) {
   const tip = props.tip ?? props.label;
-  const long = props.tip !== undefined || props.label.length > 28;
-  const span = <span className="prd-filter-row-txt">{props.label}</span>;
+  /* The tooltip used to depend on the label being longer than 28 characters,
+     which is a guess about width, not a measurement of it. A segment row also
+     carries its regulatory badge, so the text has whatever the badge leaves —
+     "Lemon Lemon Lemon Lemon L…" was cut at 25 characters and showed nothing on
+     hover (QA #20). This measures instead: tooltip exactly when the text is
+     actually clipped, re-checked when the panel resizes. */
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const [cut, setCut] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => setCut(el.scrollWidth > el.clientWidth + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [props.label]);
+
+  const span = <span ref={ref} className="prd-filter-row-txt">{props.label}</span>;
   return (
     <label className="prd-filter-row">
       <input type="checkbox" checked={props.checked} onChange={props.onChange} />
-      {long ? <Tooltip label={tip}>{span}</Tooltip> : span}
+      {/* An explicit tip is a different sentence from the label, so it always shows. */}
+      <Tooltip label={tip} disabled={props.tip === undefined && !cut}>{span}</Tooltip>
       {props.segment && <SegmentNameBadge name={props.label} style={{ flex: '0 0 auto', alignSelf: 'center', marginLeft: 'auto' }} />}
     </label>
   );

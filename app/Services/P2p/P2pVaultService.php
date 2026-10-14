@@ -137,8 +137,15 @@ class P2pVaultService
      *
      * $named titles the block with the invoice code, which matters only when a
      * PO is showing several of them at once.
+     *
+     * NULLABLE, because group() returns null once every section is empty — and
+     * a new invoice is exactly that: no invoice file, no e-way bill, no boxes,
+     * no payment proof. Declared as a plain array this threw a TypeError on
+     * every freshly created SPI, which is the one case the vault is most likely
+     * to be opened in. body() already drops the nulls, so the vault then shows
+     * the PO and trade groups, or reads as empty.
      */
-    private function invoiceGroup(?PurchaseOrder $po, SupplierInvoice $spi, bool $named = false): array
+    private function invoiceGroup(?PurchaseOrder $po, SupplierInvoice $spi, bool $named = false): ?array
     {
         $general = [];
 

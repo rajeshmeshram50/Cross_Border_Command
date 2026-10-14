@@ -3539,25 +3539,29 @@ export default function AddVendorModal(props: {
             {!(step === 1 && idTab === 'identification') && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {!(step === 2 && kycTabOrder.indexOf(kycTab) === kycTabOrder.length - 1) ? (
               <button className="avm-btn-primary" onClick={goNext} disabled={saving || loadingEdit || mastersLoading}>
-                {saving ? (
-                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
-                ) : (
-                  <>
+                {/* Both labels share one grid cell, so the hidden one still
+                    sets the width and the button cannot resize mid-save. */}
+                <span className="avm-btn-stack" data-busy={saving || undefined}>
+                  <span className="avm-btn-stack-idle">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                     {isEdit ? 'Update' : 'Save'} &amp; Next →
-                  </>
-                )}
+                  </span>
+                  <span className="avm-btn-stack-busy">
+                    <span className="avm-spinner" role="status" aria-hidden="true" /> Saving…
+                  </span>
+                </span>
               </button>
             ) : (
               <button className="avm-btn-primary" onClick={finishSupplier} disabled={saving || loadingEdit || mastersLoading}>
-                {saving ? (
-                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
-                ) : (
-                  <>
+                <span className="avm-btn-stack" data-busy={saving || undefined}>
+                  <span className="avm-btn-stack-idle">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
                     {isEdit ? 'Update Supplier' : 'Save Supplier'}
-                  </>
-                )}
+                  </span>
+                  <span className="avm-btn-stack-busy">
+                    <span className="avm-spinner" role="status" aria-hidden="true" /> Saving…
+                  </span>
+                </span>
               </button>
             )}
           </div>

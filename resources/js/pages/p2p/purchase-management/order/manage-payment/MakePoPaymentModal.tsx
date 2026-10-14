@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import WorklistPager from '../../../../../components/ui/WorklistPager';
 import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { downloadFile } from '../../../../../utils/downloadFile';
 import type { OrderRow } from '../po-list/Order';
@@ -147,6 +148,19 @@ export default function MakePoPaymentModal({
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [syncing, setSyncing] = useState<number | null>(null);
+
+  /* Paged in the browser — the releases of one request are already in hand.
+     The original index travels with each row because edit, delete and Zoho
+     sync all address a payment by its position in `payments`, and on page two
+     the loop index is no longer that position (QA #24). */
+  const [payPage, setPayPage] = useState(1);
+  // 5 to a page, matching the request list this popup opens from.
+  const [payPageSize, setPayPageSize] = useState(5);
+  const payPages = Math.max(1, Math.ceil(payments.length / payPageSize));
+  useEffect(() => { if (payPage > payPages) setPayPage(payPages); }, [payPage, payPages]);
+  const pagedPayments = payments
+    .map((p, i) => ({ p, i }))
+    .slice((payPage - 1) * payPageSize, payPage * payPageSize);
 
   const syncRow = async (i: number) => {
     if (syncing !== null) return;
@@ -307,7 +321,7 @@ export default function MakePoPaymentModal({
                   <div className="cpay-empty__t">No payments recorded yet</div>
                   <div className="cpay-empty__s">Use Add New Payment to record a release against this request.</div>
                 </div>
-              ) : payments.map((p, i) => (
+              ) : pagedPayments.map(({ p, i }) => (
                 <div className="cpay-cols cpay-row" key={`${p.utr}-${i}`}>
                   <span className="mpr-sr" data-l="Sr. No">{i + 1}</span>
                   <span data-l="Paid Against Request ID">
@@ -382,6 +396,16 @@ export default function MakePoPaymentModal({
                   </span>
                 </div>
               ))}
+              <WorklistPager
+                className="wl-teal"
+                total={payments.length}
+                page={payPage}
+                pageSize={payPageSize}
+                onPage={setPayPage}
+                onPageSize={(n) => { setPayPageSize(n); setPayPage(1); }}
+                pageSizeOptions={[5, 10, 25]}
+                hideNavWhenSinglePage
+              />
             </div>
           </div>
         </div>

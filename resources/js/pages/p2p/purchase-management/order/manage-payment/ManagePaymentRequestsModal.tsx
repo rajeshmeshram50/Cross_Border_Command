@@ -5,6 +5,7 @@ import type { OrderRow } from '../po-list/Order';
 import type { NewRequest } from './RaisePaymentRequestModal';
 import type { ReleasePayment } from './MakePoPaymentModal';
 import { useToast } from '../../../../../contexts/ToastContext';
+import WorklistPager from '../../../../../components/ui/WorklistPager';
 import { PoApiError, poPaymentApi, type PoPaymentBody, type PoPaymentsPayload, type PoPayRequest } from '../api/po-api';
 import {
   Box, HeroRefChips, ICON_X, PoSummaryCards, STAT_ICONS, Stat, TdsStrip,
@@ -225,6 +226,23 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
      at once whenever this tab or window is looked at again. Nothing is pending
      — nothing to poll, so a settled PO costs nothing. */
   const list = useMemo(() => (data?.requests ?? []).map(toRow), [data]);
+
+  /* Paged in the browser, not on the server: the payload already carries every
+     request because the summary figures above are computed from all of them.
+     Fetching a page at a time would mean a second round trip for totals that
+     are already in hand. A PO with forty releases is a long scroll, which is
+     the whole of QA #23. */
+  const [reqPage, setReqPage] = useState(1);
+  // 5 to a page: the list sits inside a modal under two summary strips, so it
+  // runs out of room long before a full-page table would.
+  const [reqPageSize, setReqPageSize] = useState(5);
+  const reqPages = Math.max(1, Math.ceil(list.length / reqPageSize));
+  // A deleted or decided row can leave the last page empty — step back onto it.
+  useEffect(() => { if (reqPage > reqPages) setReqPage(reqPages); }, [reqPage, reqPages]);
+  const pagedList = useMemo(
+    () => list.slice((reqPage - 1) * reqPageSize, reqPage * reqPageSize),
+    [list, reqPage, reqPageSize],
+  );
   const awaiting = list.some((r) => r.status === 'pending');
   useEffect(() => {
     if (!awaiting) return;
@@ -551,11 +569,16 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
                 icon={<><path d="M6 3h12" /><path d="M6 8h12" /><path d="m6 13 8.5 8" /><path d="M6 13h3" /><path d="M9 13c6.667 0 6.667-10 0-10" /></>}
                 label="Total Paid Amount" value={money(f.paid)} sub={`${pctPaid}% of net payable released`}
               />
+              {/* Named for what it is, not "Balance" (QA #147). The summary
+                  cards above already show a Balance — grand total less paid —
+                  and this is a different, smaller number: what is left AFTER
+                  the requests already pending or approved. Two figures under
+                  one word is why the ceiling looked like the PO balance. */}
               <Stat
                 mod="mpr-stat--tds"
                 icon={<><path d="M3 3v18h18" /><polyline points="7 14 11 9 15 12 20 6" /></>}
-                label="Balance Amount" value={money(f.openToRequest)}
-                sub={f.complete ? 'PO settled in full' : 'Open to request'}
+                label="Open To Request" value={money(f.openToRequest)}
+                sub={f.complete ? 'PO settled in full' : 'After pending and approved requests'}
               />
             </div>
           </Box>
@@ -594,7 +617,22 @@ export default function ManagePaymentRequestsModal({ row, startWithRaise = false
                   <span className="mpr-c">Paid Amount</span>
                   <span className="mpr-c">Action</span>
                 </div>
-                {list.map((q, i) => <RequestRow key={q.rid} q={q} index={i} net={live.net} onPay={openPay} ccy={row.currency} />)}
+                {/* index keeps counting across pages, so Sr No reads 11, 12, 13
+                    on page two rather than starting again at 1. */}
+                {pagedList.map((q, i) => (
+                  <RequestRow key={q.rid} q={q} index={(reqPage - 1) * reqPageSize + i}
+                    net={live.net} onPay={openPay} ccy={row.currency} />
+                ))}
+                <WorklistPager
+                  className="wl-teal"
+                  total={list.length}
+                  page={reqPage}
+                  pageSize={reqPageSize}
+                  onPage={setReqPage}
+                  onPageSize={(n) => { setReqPageSize(n); setReqPage(1); }}
+                  pageSizeOptions={[5, 10, 25]}
+                  hideNavWhenSinglePage
+                />
               </div>
             )}
           </div>

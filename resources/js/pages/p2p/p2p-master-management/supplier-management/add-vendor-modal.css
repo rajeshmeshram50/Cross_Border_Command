@@ -2242,3 +2242,25 @@ button.avm-kyc-act { padding: 0; font: inherit; }
   .avm-mapped-search { max-width: none; flex-basis: 100%; }
   .avm-mapped-pager.wl-pager { justify-content: center; }
 }
+
+/* ── The save button does not change size while it saves (QA #38) ─────────
+ *
+ * Its label swaps on click — "Update Supplier" becomes "Saving…", "Update &
+ * Next →" becomes the same — and the button is sized by its content, so it
+ * shrank by about 60px mid-save. In a right-aligned footer row every button
+ * beside it slid along to follow, which is the jump the tester saw: nothing
+ * moved on screen except everything.
+ *
+ * Both labels now occupy one grid cell. The hidden one still takes part in
+ * sizing, so the button is always as wide as its WIDEST state and cannot move
+ * when the state changes. visibility, not display — display:none would stop it
+ * reserving the space, which is the whole point.
+ */
+.avm-btn-stack { display: inline-grid; align-items: center; justify-items: center; }
+.avm-btn-stack > * {
+  grid-area: 1 / 1;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.avm-btn-stack > .avm-btn-stack-busy { visibility: hidden; }
+.avm-btn-stack[data-busy] > .avm-btn-stack-idle { visibility: hidden; }
+.avm-btn-stack[data-busy] > .avm-btn-stack-busy { visibility: visible; }

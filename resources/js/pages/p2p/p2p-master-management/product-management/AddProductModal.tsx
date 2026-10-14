@@ -179,6 +179,7 @@ export default function AddProductModal(props: {
 
   const PRODUCT_NAME_MAX = 100;
   const GENERIC_NAME_MAX = 255;
+  const BRAND_MAX = 255;
   const NAME_FIELD_MAX: Record<'name' | 'genericName', number> = {
     name: PRODUCT_NAME_MAX,
     genericName: GENERIC_NAME_MAX,
@@ -1410,7 +1411,24 @@ export default function AddProductModal(props: {
 
                   <div className="apm-grid-2">
                     <Field label="Make / Brand / Specifications" required icon={<i className="ri-store-2-line" />} error={fieldErrors.brand}>
-                      <input className="apm-input apm-input-mf" placeholder="Make / Brand / Specifications" value={brand} onChange={e => { setBrand(e.target.value); clearFieldError('brand'); }} />
+                      {/* Capped like the other free-text names on this form. It
+                          is a line on a PO and on the PDF, not a description —
+                          without a limit the only thing stopping an essay was
+                          the column being `text` (QA #18). */}
+                      <input className="apm-input apm-input-mf" placeholder="Make / Brand / Specifications"
+                        maxLength={BRAND_MAX} value={brand}
+                        onChange={e => {
+                          const v = e.target.value.slice(0, BRAND_MAX);
+                          setBrand(v);
+                          clearFieldError('brand');
+                          // Paste is the only way past maxLength; say why it was cut.
+                          if (e.target.value.length > BRAND_MAX) {
+                            setFieldErrors(prev => ({
+                              ...prev,
+                              brand: `Must be ${BRAND_MAX} characters or fewer — the extra characters were not added`,
+                            }));
+                          }
+                        }} />
                     </Field>
                     <Field label="Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segmentId}>
                       <SelectInput value={segmentId} onChange={(v) => { void requestSegmentChange(v); }} placeholder="Select" disabled={segChecking}

@@ -643,24 +643,23 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                                 sent while Not necessary read as the opposite. */}
                             <span className="cdoc-req">{isNeeded(doc) ? 'NECESSARY' : 'NOT NECESSARY'}</span>
                           </Tooltip>
-                        ) : selected.includes(doc.id) ? (
-                          /* Ticking a row is already the "I am dealing with this
-                             one" gesture, so the Yes / No ride on it. */
-                          <span className="cdoc-need">
-                            <button type="button" disabled={busy === 'needs'}
-                              className={`cdoc-need__b${doc.needed === 'yes' ? ' is-yes' : ''}`}
-                              onClick={() => setNeeds([doc.id], true)}>Yes</button>
-                            <button type="button" disabled={busy === 'needs'}
-                              className={`cdoc-need__b${doc.needed === 'no' ? ' is-no' : ''}`}
-                              onClick={() => setNeeds([doc.id], false)}>No</button>
-                          </span>
                         ) : (
-                          /* CS-414: a document starts Not necessary and is
+                          /* The TICK is the answer, so this column only reports
+                             it. A Yes / No pair used to appear here on a ticked
+                             row, which asked the same question the tick had just
+                             answered — and let the two disagree on screen until
+                             the save came back. One control, one answer.
+
+                             CS-414: a document starts Not necessary and is
                              promoted after someone has read it — no third
                              "not decided yet" state to work through. */
-                          <span className={`cdoc-req${doc.needed === 'yes' ? ' cdoc-req--need' : ' cdoc-req--opt'}`}>
-                            {doc.needed === 'yes' ? 'NECESSARY' : 'NOT NECESSARY'}
-                          </span>
+                          <Tooltip label={doc.needed === 'yes'
+                            ? 'Marked necessary — untick the row to mark it not necessary'
+                            : 'Not necessary — tick the row to mark it necessary'} themed>
+                            <span className={`cdoc-req${doc.needed === 'yes' ? ' cdoc-req--need' : ' cdoc-req--opt'}`}>
+                              {doc.needed === 'yes' ? 'NECESSARY' : 'NOT NECESSARY'}
+                            </span>
+                          </Tooltip>
                         )}
                       </td>
                       <td>{doc.generated_on ? formatDmy(doc.generated_on) : '—'}</td>
