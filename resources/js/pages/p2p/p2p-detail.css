@@ -190,7 +190,13 @@
 .spi-dt-head-title { font-size:14.5px; font-weight:700; letter-spacing:-.2px; color:#0C4A6E; line-height:1.15; }
 .spi-dt-head-sub { display:flex; align-items:center; gap:6px; font-size:10px; font-weight:500; color:#0E7490; margin-top:1px; line-height:1.2; }
 .spi-dt-livedot { width:7px; height:7px; border-radius:50%; background:#22c55e; box-shadow:0 0 0 2px rgba(34,197,94,.25); }
-.spi-dt-pills { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+/* The pills GIVE WAY to the buttons, rather than running under them.
+   Without min-width:0 a flex item refuses to shrink below its content, so five
+   pills kept their full width and the header line overflowed; .spi-dt-head-r
+   comes later in the DOM, so it painted on top of the last pill — Procurement
+   ID sat behind the Evidence Vault button (QA #21). flex:1 1 auto lets the row
+   wrap its own pills instead. */
+.spi-dt-pills { display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:1 1 auto; min-width:0; }
 .spi-dt-pill { display:flex; align-items:center; gap:9px; padding:7px 14px; border-radius:12px;
   background: rgba(255,255,255,.65); border:1.5px solid rgba(8,145,178,.3);
   box-shadow: 0 2px 8px rgba(6,182,212,.12), inset 0 1px 0 rgba(255,255,255,.95);
@@ -224,7 +230,9 @@
 .spi-dt-pill-val { font-size:12.5px; font-weight:800; letter-spacing:.05em; color:#0C4A6E; line-height:1; max-width:170px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .spi-dt-pill-val--mono { font-family:'Geist Mono',ui-monospace,monospace; }
 .spi-dt-dots { align-self:center; color:#0891b2; opacity:.4; font-size:12px; line-height:1; letter-spacing:-1px; padding:0 1px; }
-.spi-dt-head-r { display:flex; align-items:center; gap:8px; margin-left:auto; }
+/* Never squeezed and never overlapped: the actions keep their size and the
+   pills wrap around them. */
+.spi-dt-head-r { display:flex; align-items:center; gap:8px; margin-left:auto; flex-shrink:0; }
 .spi-dt-divider { width:1px; height:30px; margin:0 3px; flex-shrink:0; align-self:center;
   background: linear-gradient(to bottom, transparent, rgba(8,145,178,.3) 40%, rgba(8,145,178,.3) 60%, transparent); }
 [data-bs-theme="dark"] .spi-dt-divider { background: linear-gradient(to bottom, transparent, rgba(34,211,238,.3) 40%, rgba(34,211,238,.3) 60%, transparent); }

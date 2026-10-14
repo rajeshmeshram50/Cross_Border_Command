@@ -286,6 +286,13 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   });
 
   const chosen = docs.filter((d) => selected.includes(d.id));
+  /* The Purchase Order always goes with the order, so the server refuses to
+     mark it not necessary — "… always goes with the order and cannot be marked
+     not necessary". The button was still offered on a selection containing it,
+     which made a refusal the only way to find the rule out. It is said before
+     the press instead; ticking the row stays allowed, because the same tick is
+     what sends it for email or signature. */
+  const lockedNeeded = chosen.filter((d) => d.doc_kind === 'purchase_order');
   // Email sends stored files; the Purchase Order's is rendered on demand.
   const noFile = chosen.filter((d) => !d.file_path && d.doc_kind !== 'purchase_order');
   const notPending = chosen.filter((d) => d.status !== 'pending');
@@ -363,11 +370,28 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
       await run('email', async () => {
         await Promise.all(chosen.map(ensureFile));
         const res = await poDocumentApi.email(poId as number, selected);
-        setSelected([]);
+        setSelected(stickyIds);
         toast.success('Email sent', `${res.count} document${res.count === 1 ? '' : 's'} emailed to ${res.to}.`);
       });
     })();
   };
+
+  /* The Purchase Order is ticked from the start and cannot be unticked.
+   *
+   * It always goes with the order — the server refuses to mark it not
+   * necessary, and nothing is sent without it — so leaving its tick to be
+   * found and set was busywork that could also be got wrong. Kept in the
+   * selection through select-all, clear and a completed send alike.
+   *
+   * Settled rows are excluded: one already out for signature is not ticked by
+   * anything, and forcing it back would offer to send it twice. */
+  const stickyIds = docs.filter((d) => isMandatory(d) && !isSettled(d)).map((d) => d.id);
+  useEffect(() => {
+    if (!stickyIds.length) return;
+    setSelected((all) => (stickyIds.every((id) => all.includes(id))
+      ? all
+      : [...all, ...stickyIds.filter((id) => !all.includes(id))]));
+  }, [stickyIds.join(',')]);
 
   // Rows already out for signature / signed cannot be ticked, so "all" means the rest.
   const selectable = docs.filter((d) => !isSettled(d));
@@ -395,6 +419,8 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   };
   const toggleOne = (id: number) => {
     const doc = docs.find((d) => d.id === id);
+    // The Purchase Order's tick does not come off — see stickyIds.
+    if (doc && isMandatory(doc) && selected.includes(id)) return;
     const ticking = !selected.includes(id);
     setSelected((all) => (all.includes(id) ? all.filter((c) => c !== id) : [...all, id]));
     // The Purchase Order always stays Necessary; its tick only picks it for sending.
@@ -573,8 +599,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                     <tr key={doc.id}>
                       <td className="cdoc-check">
                         <input type="checkbox" checked={selected.includes(doc.id)} onChange={() => toggleOne(doc.id)} aria-label={`Select ${doc.name}`}
-                          disabled={isSettled(doc)}
-                          title={isSettled(doc) ? 'Already sent for signature — nothing more to do on this row' : undefined} />
+                          disabled={isSettled(doc) || (isMandatory(doc) && selected.includes(doc.id))}
+                          title={isSettled(doc)
+                            ? 'Already sent for signature — nothing more to do on this row'
+                            : isMandatory(doc) ? 'The Purchase Order always goes with the order' : undefined} />
                       </td>
                       <td>{i + 1}</td>
                       {/* A library row is known by its CLM master code. The Purchase
@@ -709,11 +737,16 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             {selected.length > 0 ? (
               <span className="cdoc-selbar">
                 <b>{selected.length}</b> selected
-                <button type="button" className="cdoc-selbar__x" aria-label="Clear selection" onClick={() => setSelected([])}>×</button>
+                <button type="button" className="cdoc-selbar__x" aria-label="Clear selection" onClick={() => setSelected(stickyIds)}>×</button>
                 <button type="button" className="cdoc-markbtn" disabled={busy === 'needs'} onClick={() => setNeeds(selected, true)}>
                   Mark Necessary
                 </button>
-                <button type="button" className="cdoc-markbtn" disabled={busy === 'needs'} onClick={() => setNeeds(selected, false)}>
+                <button type="button" className="cdoc-markbtn"
+                  disabled={busy === 'needs' || lockedNeeded.length > 0}
+                  title={lockedNeeded.length
+                    ? `${lockedNeeded.map((d) => d.name).join(', ')} always goes with the order and cannot be marked not necessary`
+                    : undefined}
+                  onClick={() => setNeeds(selected, false)}>
                   Mark Not necessary
                 </button>
               </span>

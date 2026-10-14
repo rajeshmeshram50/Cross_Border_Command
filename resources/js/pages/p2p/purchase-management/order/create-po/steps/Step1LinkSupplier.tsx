@@ -98,9 +98,6 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
      SGD orders came to sit in the books as rupees — so it is said here, and the
      save refuses it, rather than the list quietly hiding the option. */
   const currencyOptions = lookups.currencies;
-  const zohoMissing = !!draft.currency
-    && (sup?.zohoCurrencies?.length ?? 0) > 0
-    && !sup!.zohoCurrencies!.some((c) => c.toUpperCase() === draft.currency.toUpperCase());
   /* Only a currency a transaction of ours already put in Zoho leaves no choice.
      A contact merely showing INR was made before we sent a currency at all, and
      an international PO may not be in INR — locking to it would leave the field
@@ -307,10 +304,11 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
 
           {isInternational && (
             <>
+              {/* No Zoho hint under the field: the currency check speaks once,
+                  in the dialog the submit raises, rather than twice in two
+                  different wordings. */}
               <Field label="Currency" req
-                error={err.currency || (zohoMissing
-                  ? `${draft.currency} is not enabled in Zoho Books — add it there (Settings → Currencies) before submitting, or pick another.`
-                  : undefined)}
+                error={err.currency}
                 hint={currencySettled
                   ? `${sup?.code ?? 'This supplier'} trades in ${zohoCurrency} — Zoho Books holds one currency per supplier`
                   : zohoCurrency ? `${sup?.code ?? 'This supplier'} shows ${zohoCurrency} in Zoho Books; the first order to sync settles it` : undefined}>
