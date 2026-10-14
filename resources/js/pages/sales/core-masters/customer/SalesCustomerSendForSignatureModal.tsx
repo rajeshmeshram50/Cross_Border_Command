@@ -3387,6 +3387,24 @@ export const SSF_CSS = `
 [data-bs-theme="dark"] .ssf-reset-btn:hover {
   background: rgba(99,102,241,.18); border-color: #6366f1; color: #c7d2fe;
 }
+/* The codes in the rail and on the doc cards, in dark mode.
+ *
+ * #4338ca is indigo-700 — chosen to read as a strong accent on white, where it
+ * clears 8:1. On the dark panel behind it (#1e293b) the same colour is under
+ * 2:1: dark ink on a dark card. Nothing about the text looked wrong, it simply
+ * could not be read, which is how a code that is meant to be checked against a
+ * document goes unchecked (QA #18).
+ *
+ * indigo-300 keeps it recognisably the same accent and clears 7:1 here. */
+[data-bs-theme="dark"] .ssf-rail-code,
+[data-bs-theme="dark"] .ssf-doc-card-code,
+[data-bs-theme="dark"] .ssf-sig-page { color: #a5b4fc; }
+/* The page label sits ON the signature box, so it loses the opacity it could
+   afford over white. */
+[data-bs-theme="dark"] .ssf-sig-page { opacity: 1; }
+[data-bs-theme="dark"] .ssf-doc-card-body { color: #cbd5e1; }
+[data-bs-theme="dark"] .ssf-coord-row-nudge input { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+[data-bs-theme="dark"] .ssf-rail-item { color: #cbd5e1; }
 [data-bs-theme="dark"] .ssf-rail-item:hover { background: rgba(99,102,241,.10); }
 [data-bs-theme="dark"] .ssf-rail-item.is-active { background: rgba(99,102,241,.18); border-color: #6366f1; }
 [data-bs-theme="dark"] .ssf-coord-row input { background: #0f172a; border-color: #334155; color: #e2e8f0; }

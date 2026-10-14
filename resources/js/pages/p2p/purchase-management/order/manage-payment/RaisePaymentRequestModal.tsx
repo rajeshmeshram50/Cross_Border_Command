@@ -157,7 +157,7 @@ export default function RaisePaymentRequestModal({
     if (!amount) { setError('Enter a payment request amount before submitting.'); return; }
     if (amount < 1) { setError(`The payment request amount must be at least ${sym}1.`); return; }
     if (amount > available) {
-      setError(`The requested amount exceeds the available balance of ${money(available)}.`);
+      setError(`The requested amount exceeds the ${money(available)} still open to request — the rest is already pending, approved or paid.`);
       return;
     }
     if (!type) { setError('Select a payment type before submitting.'); return; }
@@ -278,7 +278,7 @@ export default function RaisePaymentRequestModal({
                 </div>
                 {overBudget && (
                   <span className="rpr-amthint is-err">
-                    Amount exceeds the available balance of {money(available)}.
+                    Amount exceeds the {money(available)} still open to request.
                   </span>
                 )}
               </div>

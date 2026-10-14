@@ -124,8 +124,8 @@ class PoPaymentRequestController extends Controller
         $this->inTransaction('save the TDS', function () use ($order, $user, $amount, $pct) {
             // Row lock: a payment saved at the same moment can't slip in under the old TDS.
             $locked = PurchaseOrder::whereKey($order->id)->lockForUpdate()->first();
-            if ($this->paymentRows($locked->id)->exists()) {
-                abort(response()->json(['status' => false, 'message' => 'TDS cannot be changed — a payment has already been recorded against this PO.'], 422));
+            if ($this->tdsLockedBy($locked->id)) {
+                abort(response()->json(['status' => false, 'message' => $this->tdsLockMessage($locked->id)], 422));
             }
             $locked->forceFill(['tds_percentage' => $pct, 'tds_amount' => $amount,
                 'tds_updated_by' => $user->id, 'tds_updated_at' => now(), 'updated_by' => $user->id])->save();
@@ -718,6 +718,38 @@ class PoPaymentRequestController extends Controller
             ->when($requestId, fn ($q) => $q->where('payment_request_id', $requestId));
     }
 
+    /**
+     * What stops the TDS being edited: a recorded payment, or an APPROVAL.
+     *
+     * The approval used to count for nothing here, so TDS stayed editable until
+     * money actually moved. But the approver decides an amount against the net
+     * payable, and the net payable is the grand total less TDS — so editing the
+     * TDS afterwards silently changes the figure that was agreed to, on a
+     * decision already signed. Worse, every open request is validated against
+     * the new net, so raising the deduction can push an approved request past
+     * the ceiling it was approved under (QA #21).
+     *
+     * @return 'payment'|'approval'|null
+     */
+    private function tdsLockedBy(int $poId): ?string
+    {
+        if ($this->paymentRows($poId)->exists()) return 'payment';
+
+        $approved = PoPaymentRequest::withoutGlobalScope('tenant')
+            ->where('purchase_order_id', $poId)
+            ->where('status', PoPaymentRequest::STATUS_APPROVED)
+            ->exists();
+
+        return $approved ? 'approval' : null;
+    }
+
+    private function tdsLockMessage(int $poId): string
+    {
+        return $this->tdsLockedBy($poId) === 'payment'
+            ? 'TDS cannot be changed — a payment has already been recorded against this PO.'
+            : 'TDS cannot be changed — a payment request on this PO has already been approved. It was approved against the current net payable.';
+    }
+
     /** Net payable less every pending and approved request. */
     private function openToRequest(PurchaseOrder $po): float
     {
@@ -754,7 +786,9 @@ class PoPaymentRequestController extends Controller
                 'base_amount' => $base, 'gst_amount' => $gst, 'gst_pct' => $base > 0 ? round($gst / $base * 100, 2) : 0,
                 'extra_charges' => $extra, 'grand_total' => $total,
                 'tds_percentage' => (float) $po->tds_percentage, 'tds_amount' => $tds, 'tds_saved' => (bool) $po->tds_updated_at,
-                'tds_locked' => $paid > 0 || $this->paymentRows($po->id)->exists(),
+                // Locked by a payment OR by an approval — see tdsLockedBy().
+                'tds_locked' => $paid > 0 || $this->tdsLockedBy((int) $po->id) !== null,
+                'tds_locked_by' => $this->tdsLockedBy((int) $po->id),
                 'tds_applies' => $po->document_type !== 'international',
                 'net_payable' => $net, 'paid' => $paid, 'balance' => round((float) $po->balance_amount, 2),
                 'paid_pct' => $net > 0 ? (int) round($paid / $net * 100) : 0,

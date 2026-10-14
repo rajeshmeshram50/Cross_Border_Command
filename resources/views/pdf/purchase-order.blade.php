@@ -687,7 +687,10 @@
                 @foreach($segmentTermsConditions as $tnc)
                     <div class="po-terms" style="margin-bottom: 8px;">
                         @if(!empty($tnc['segment']))
-                            <div style="font-size: 8.5px; font-weight: 700; color: {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-bottom: 2px;">{{ $tnc['segment'] }}</div>
+                            {{-- Labelled, not bare: on its own the name reads as a
+                                 heading for the clauses under it rather than as the
+                                 segment they belong to. --}}
+                            <div style="font-size: 8.5px; font-weight: 700; color: {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-bottom: 2px;">Segment - {{ $tnc['segment'] }}</div>
                         @endif
                         {!! \App\Support\PdfHighlight::fix($tnc['content']) !!}
                     </div>

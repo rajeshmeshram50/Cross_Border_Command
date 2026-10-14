@@ -627,7 +627,9 @@ class ProductController extends Controller
             // is very generous for a real description, yet bounded for the
             // renderers (~85 rows). Fix the source, not the templates.
             'description'           => 'nullable|string|max:10000',
-            'brand'                 => 'nullable|string',
+            // A line on the PO and on its PDF, not a description — so bounded
+            // like a name rather than left open by the `text` column (QA #18).
+            'brand'                 => 'nullable|string|max:255',
             'segment_id'            => 'nullable|integer',
             'haz_type'              => 'nullable|string|max:20',
             'haz_class_id'          => 'nullable|integer',

@@ -38,8 +38,16 @@
 .cpf-form .spi-dt-head-sub { margin-top: 2px; }
 .cpf-form .spi-dt-pill { padding: 7px 14px; }
 /* Reference pills sit to the right, beside PO Payment / Close — the gap in the
-   strip is between the title and the pills, not after them. */
-.cpf-form .spi-dt-pills { margin-left: auto; }
+   strip is between the title and the pills, not after them. With six of them
+   they reach back to the heading; with one, it rests against the buttons.
+
+   justify-content, NOT margin-left: auto. The base rule gives this container
+   `flex: 1 1 auto`, so it already absorbs every pixel of free space — an auto
+   margin has nothing left to push with and the pills stay at the left edge of
+   a box that has quietly stretched the whole strip. Aligning the contents
+   inside that stretched box is what actually moves them.
+   (QA #152 asked for them on the left; reverted on review.) */
+.cpf-form .spi-dt-pills { justify-content: flex-end; }
 /* SPI pushes the buttons right with their own auto margin; with two of them the
    free space splits in half and the pills drift left. The pills own it here. */
 .cpf-form .spi-dt-head-r { margin-left: 0; gap: 6px; }
@@ -698,6 +706,9 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
+  /* A dialog taller than the viewport scrolls the backdrop rather than being
+     centred with its head off the top of the screen. */
+  overflow: auto;
   background: rgba(8, 40, 60, .45);
   backdrop-filter: blur(2px);
   font-family: 'DM Sans', system-ui, sans-serif;
@@ -706,7 +717,8 @@
 }
 @keyframes cgstIn { from { opacity: 0; } to { opacity: 1; } }
 .cgst-card {
-  width: min(520px, 100%);
+  /* The SHELL carries the width now (QA #150/#151) — see below. */
+  width: 100%;
   max-height: 88vh;
   overflow: auto;
   border-radius: 16px;
@@ -722,7 +734,23 @@
 .cgst-shell {
   position: relative;
   display: flex;
-  max-width: 100%;
+  /* THE WIDTH LIVES HERE, not on the card (QA #150 / #151).
+     It used to be the other way round: the shell took its width from its
+     content and the card asked for min(520px, 100%) of it. That percentage
+     resolves against a container whose own width is still being worked out
+     from the same content, so a long supplier or approver name could make the
+     shell wider than 520 — and the card, a flex item, then starts at the
+     shell's LEFT edge. The backdrop was centring the shell perfectly; the card
+     inside it was not centred at all, and the offset changed with the names in
+     the dialog, which is why the same popup was reported once as drifting left
+     and once as drifting right.
+     With the width on the shell there is nothing left to resolve: the shell is
+     520 (or the viewport less its padding), the backdrop centres it, the card
+     fills it. */
+  width: min(520px, 100%);
+  /* Centres by its own margins as well as by the backdrop's flex, so an
+     over-tall dialog scrolls instead of having its top edge clipped. */
+  margin: auto;
 }
 
 /* Send for Senior Approval, in flight.
@@ -1883,22 +1911,6 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
    both mean "it has to be signed for this PO". */
 .cdoc-req--need { background: #d9f5f0; color: #0a8a78; }
 
-/* Yes / No, shown on a ticked row: two separate pills, not a joined switch. */
-.cdoc-need { display: inline-flex; align-items: center; gap: 5px; }
-.cdoc-need__b {
-  min-width: 42px; padding: 4px 12px;
-  border: 1px solid #e2e8f0; border-radius: 999px; background: transparent;
-  font-family: inherit; font-size: 10.5px; font-weight: 800; letter-spacing: .03em; line-height: 1.5;
-  white-space: nowrap; color: #64748b; cursor: pointer;
-  transition: background .12s, color .12s, border-color .12s;
-}
-/* Hover only on the pill that is NOT the current answer — otherwise it repaints
-   the chosen one and the answer looks unset while the pointer rests on it. */
-.cdoc-need__b:not(.is-yes):not(.is-no):hover:not(:disabled) { border-color: #cbd5e1; background: #f8fafc; }
-.cdoc-need__b.is-yes { background: #0ab39c; border-color: #0ab39c; color: #fff; }
-.cdoc-need__b.is-no { background: #94a3b8; border-color: #94a3b8; color: #fff; }
-.cdoc-need__b:disabled { opacity: .6; cursor: wait; }
-
 /* The selection bar that replaces the hint once rows are ticked — the lead
    popup's shape (.lasm-bulk-bar): a solid pill that rises into the footer and
    carries the marking actions on it, in this module's teal instead of purple.
@@ -1946,9 +1958,6 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 .cdoc-markbtn:disabled { opacity: .55; cursor: default; }
 /* .cdoc-req--need needs no dark rule — it is the same tag as Mandatory.
    Both dark rules exclude the answered pills, which keep their filled tone. */
-[data-bs-theme="dark"] .cdoc-need__b:not(.is-yes):not(.is-no) { background: rgba(255, 255, 255, .04); border-color: rgba(148, 163, 184, .25); color: #94a3b8; }
-[data-bs-theme="dark"] .cdoc-need__b:not(.is-yes):not(.is-no):hover:not(:disabled) { border-color: rgba(148, 163, 184, .45); background: rgba(255, 255, 255, .08); }
-[data-bs-theme="dark"] .cdoc-need__b.is-no { background: rgba(148, 163, 184, .55); border-color: rgba(148, 163, 184, .55); color: #f1f5f9; }
 /* The bar carries its own colour, so only its ramp softens in dark — its
    buttons stay white / translucent white against it. */
 [data-bs-theme="dark"] .cdoc-selbar {

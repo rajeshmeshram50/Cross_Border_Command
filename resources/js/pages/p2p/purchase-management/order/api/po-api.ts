@@ -647,6 +647,8 @@ export type PoPaymentPosition = {
   currency_code: string;
   base_amount: number; gst_amount: number; gst_pct: number; extra_charges: number; grand_total: number;
   tds_percentage: number; tds_amount: number; tds_saved: boolean; tds_locked: boolean; tds_applies: boolean;
+  // What fixed it: a recorded payment, or an approved request. Null while open.
+  tds_locked_by?: 'payment' | 'approval' | null;
   net_payable: number; paid: number; balance: number; paid_pct: number; complete: boolean;
 };
 

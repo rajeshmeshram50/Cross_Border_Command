@@ -230,7 +230,9 @@ function TncLayers({ layers }: { layers?: { global?: string[]; segment?: Array<{
           <div className="spi-dt-tnc-h">Segment Terms &amp; Conditions</div>
           {segments.map((row, i) => (
             <div key={i} className="spi-dt-tnc-body">
-              {row.segment && <div className="spi-dt-tnc-seg">{row.segment}</div>}
+              {/* Labelled, so the name reads as the segment these clauses belong
+                  to rather than as a heading of its own. */}
+              {row.segment && <div className="spi-dt-tnc-seg">Segment - {row.segment}</div>}
               <div dangerouslySetInnerHTML={{ __html: row.content ?? '' }} />
             </div>
           ))}

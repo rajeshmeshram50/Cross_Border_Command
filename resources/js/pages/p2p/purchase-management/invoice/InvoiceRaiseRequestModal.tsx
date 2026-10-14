@@ -115,7 +115,7 @@ export default function InvoiceRaiseRequestModal({ row, figures, totals, onSubmi
     }
     if (!amount) { setError('Enter a payment request amount before submitting.'); return; }
     if (amount < 1) { setError('The payment request amount must be at least ₹1.'); return; }
-    if (amount > available) { setError(`The requested amount exceeds the available balance of ${money(available)}.`); return; }
+    if (amount > available) { setError(`The requested amount exceeds the ${money(available)} still open to request — the rest is already pending, approved or paid.`); return; }
     if (!type) { setError('Select a payment type before submitting.'); return; }
     if (!reason.trim()) { setError('Enter a payment reason before submitting.'); return; }
     const who = approvers.find(a => String(a.id) === approver);
@@ -231,7 +231,7 @@ export default function InvoiceRaiseRequestModal({ row, figures, totals, onSubmi
                 </div>
                 {overBudget && (
                   <span className="rpr-amthint is-err">
-                    Amount exceeds the available balance of {money(available)}.
+                    Amount exceeds the {money(available)} still open to request.
                   </span>
                 )}
               </div>
