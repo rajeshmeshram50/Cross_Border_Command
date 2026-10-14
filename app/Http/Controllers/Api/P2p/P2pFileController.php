@@ -31,6 +31,18 @@ class P2pFileController extends Controller
         'p2p/refund-recoveries/'  => ['p2p_po_refund_recoveries', 'proof_path', 'proof_name', 'proof_files'],
         'p2p/refund-adjustments/' => ['p2p_po_refund_adjustments', 'attachment_path', 'attachment_name'],
         'p2p/po-documents/'       => ['p2p_purchase_order_documents', 'file_path', 'original_name'],
+        /* The invoice and the e-way bill an SPI was filed with. Two columns on
+         * one row, so the bucket is listed twice — the lookup matches on the
+         * path column, and a file is only served when some row claims it. The
+         * Evidence Vault offers both for download; without this they had no
+         * authenticated route at all and only resolved through the local
+         * /storage symlink, which Azure does not have. */
+        'p2p/spi/'               => ['p2p_supplier_invoices', 'invoice_file_path', 'invoice_file_name'],
+    ];
+
+    /** A second claim on the same bucket: the e-way bill shares p2p/spi/. */
+    private const ALSO = [
+        'p2p/spi/' => ['p2p_supplier_invoices', 'eway_file_path', 'eway_file_name'],
     ];
 
     /** GET /p2p/files/download?path=|url= */
@@ -48,9 +60,9 @@ class P2pFileController extends Controller
         }
         $path = explode('?', $path)[0];
 
-        $owner = null;
+        $owner = $prefixHit = null;
         foreach (self::OWNERS as $prefix => $cols) {
-            if (str_starts_with($path, $prefix)) { $owner = $cols; break; }
+            if (str_starts_with($path, $prefix)) { $owner = $cols; $prefixHit = $prefix; break; }
         }
         // No traversal, and nothing outside the buckets this endpoint serves.
         if ($path === '' || str_contains($path, '..') || !$owner) abort(404, 'File not found.');
@@ -59,6 +71,15 @@ class P2pFileController extends Controller
         $listCol = $owner[3] ?? null;
         $name = null;
         $row = DB::table($table)->where($pathCol, $path)->first();
+
+        /* A bucket whose rows hold TWO files in two columns — an SPI keeps its
+         * invoice and its e-way bill side by side. The first column did not
+         * claim this path, so try the second before giving up. */
+        if (!$row && isset(self::ALSO[$prefixHit])) {
+            [$table, $pathCol, $nameCol] = self::ALSO[$prefixHit];
+            $listCol = self::ALSO[$prefixHit][3] ?? null;
+            $row = DB::table($table)->where($pathCol, $path)->first();
+        }
         if (!$row && $listCol) {
             // A second, third … file on the row: only the JSON list knows it. The
             // LIKE narrows the rows on the file name alone — the stored JSON escapes

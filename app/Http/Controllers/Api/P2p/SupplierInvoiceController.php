@@ -775,7 +775,7 @@ class SupplierInvoiceController extends Controller
             DB::beginTransaction();
 
             $this->tenantUser($request);
-            $body = app(\App\Services\P2p\SpiVaultService::class)->build($this->findSpi($id));
+            $body = app(\App\Services\P2p\P2pVaultService::class)->forSpi($this->findSpi($id));
 
             DB::commit();
 
