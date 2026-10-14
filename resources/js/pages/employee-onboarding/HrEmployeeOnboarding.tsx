@@ -4084,7 +4084,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   <button
     type="button"
     className="onb-init-btn-next"
-    title={readOnly ? (empPerm.lockedTitle('edit') ?? undefined) : undefined}
+    /* Says WHY it is refusing. The grey alone leaves the user guessing
+       whether the stage is blocked or the screen is still working. */
+    title={
+      readOnly ? (empPerm.lockedTitle('edit') ?? undefined)
+        : !coreReady ? "Loading this employee's details…"
+        : undefined
+    }
     disabled={
       readOnly ||
       nextLoading ||
