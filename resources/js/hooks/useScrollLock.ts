@@ -44,10 +44,14 @@ export function useScrollLock(active = true, exceptSelector?: string): void {
        on .main-content, not body, so the compensation was going to an element
        that had no scrollbar to lose. (#228) */
     const paneBars = panes.map(el => el.offsetWidth - el.clientWidth);
+    const prevPaneTransition = panes.map(el => el.style.transition);
+    const prevBodyTransition = body.style.transition;
 
+    body.style.transition = 'none';
     html.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
     panes.forEach((el, i) => {
+      el.style.transition = 'none';
       el.style.overflow = 'hidden';
       if (paneBars[i] > 0) {
         const pad = parseFloat(getComputedStyle(el).paddingRight) || 0;
@@ -66,6 +70,9 @@ export function useScrollLock(active = true, exceptSelector?: string): void {
         el.style.overflow = prevPanes[i];
         el.style.paddingRight = prevPanePad[i];
       });
+      void body.offsetHeight;
+      body.style.transition = prevBodyTransition;
+      panes.forEach((el, i) => { el.style.transition = prevPaneTransition[i]; });
     };
   }, [active, exceptSelector]);
 }
