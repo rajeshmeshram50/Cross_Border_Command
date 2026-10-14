@@ -760,6 +760,31 @@ class SupplierInvoiceController extends Controller
     }
 
     /**
+     * GET /p2p/spi/{id}/packed-boxes — every box of this invoice, fully resolved.
+     *
+     * The packing screen reads /boxes, which returns the rows it edits. This is
+     * the same boxes for a READER: products named, flags named, the put-away
+     * location, the attachments and the sticker state, with the dimensions and
+     * weights as measured.
+     */
+    public function packedBoxes(Request $request, int $id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $this->tenantUser($request);
+            $body = app(\App\Services\P2p\SpiSummaryService::class)->packedBoxes($this->findSpi($id));
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * GET /p2p/spi/{id}/evidence-vault — every document filed against this invoice.
      *
      * Grouped as the dialog reads: the purchase order, the invoice's own

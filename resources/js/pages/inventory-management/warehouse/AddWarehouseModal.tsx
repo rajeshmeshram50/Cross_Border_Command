@@ -108,6 +108,28 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
   onSaved?: (warehouse: Warehouse) => void;
 }) {
   const editing = !!warehouse;
+  /* Four fields settle once the first zone is built.
+
+     A zone is allocated AGAINST the warehouse's area, so shrinking it afterwards
+     leaves every zone over-committed and the free figure pinned at nothing. And
+     the address is not a label: the goods are physically in that city, under
+     that state's tax code, and they do not move because a dropdown changed.
+
+     The server refuses all four (WarehouseController::guardSettled); this says
+     so before the form is filled in rather than after it is sent. */
+  const zoneCount = editing ? (warehouse!.zones ?? 0) : 0;
+  const settled = zoneCount > 0;
+  /* Said ONCE, when the field is touched — not standing under all four.
+     The same sentence printed four times reads as four problems, and it pushes
+     the form apart while saying nothing the user asked. A locked control that
+     answers when you click it is quieter and arrives at the moment the question
+     is actually being asked. */
+  const lockedNote = () => toast.info(
+    'Settled once zones exist',
+    zoneCount + (zoneCount === 1 ? ' zone is' : ' zones are')
+      + ' allocated against this warehouse, so its area and location can no longer change.'
+      + ' Remove the zones first, or raise a new warehouse.',
+  );
   const toast = useToast();
   useScrollLock(true, '.whm-addmdl');
 
@@ -335,8 +357,9 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
             <Field label="Warehouse Area (Sq. Ft)" req error={errors.area}>
               <div className="whm-suf">
                 <input
-                  className={`spi-dt-inp${errors.area ? ' is-invalid' : ''}`}
+                  className={`spi-dt-inp${errors.area ? ' is-invalid' : ''}${settled ? ' is-locked' : ''}`}
                   type="number" min={1} placeholder="e.g. 25000"
+                  readOnly={settled} onClick={settled ? lockedNote : undefined}
                   value={d.area} onChange={e => { set({ area: e.target.value }); clear('area'); }}
                 />
                 <span>Sq. Ft</span>
@@ -356,6 +379,7 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
               <EditSelect
                 value={d.country} options={countries.map(c => c.name)} invalid={!!errors.country}
                 placeholder={countries.length ? 'Select country' : 'Loading countries…'}
+                readOnly={settled} onLockedClick={settled ? lockedNote : undefined}
                 onChange={v => { set({ country: v, state: v === d.country ? d.state : '' }); clear('country'); clear('state'); }}
               />
             </Field>
@@ -367,21 +391,24 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
                 <EditSelect
                   value={d.state} options={states.map(x => x.name)} invalid={!!errors.state}
                   placeholder={countryId ? (statesFor === countryId ? 'Select state' : 'Loading states…') : 'Choose a country first'}
-                  readOnly={!hasStates}
+                  readOnly={!hasStates || settled}
+                  onLockedClick={settled ? lockedNote : undefined}
                   onChange={v => { set({ state: v }); clear('state'); }}
                 />
               ) : (
                 <input
                   className={`spi-dt-inp${errors.state ? ' is-invalid' : ''}`}
                   placeholder="State or province" maxLength={100}
+                  readOnly={settled} onClick={settled ? lockedNote : undefined}
                   value={d.state} onChange={e => { set({ state: e.target.value }); clear('state'); }}
                 />
               )}
             </Field>
             <Field label="City" req error={errors.city}>
               <input
-                className={`spi-dt-inp${errors.city ? ' is-invalid' : ''}`}
+                className={`spi-dt-inp${errors.city ? ' is-invalid' : ''}${settled ? ' is-locked' : ''}`}
                 placeholder="e.g. Mumbai" maxLength={80}
+                readOnly={settled} onClick={settled ? lockedNote : undefined}
                 value={d.city} onChange={e => { set({ city: e.target.value }); clear('city'); }}
               />
             </Field>

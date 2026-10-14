@@ -4,6 +4,7 @@ namespace App\Services\P2p;
 
 use App\Models\Inventory\ProductFlag;
 use App\Models\P2p\SpiBox;
+use App\Models\P2p\SpiBoxAttachment;
 use App\Models\P2p\SpiBoxItem;
 use App\Models\P2p\SupplierInvoice;
 use App\Models\Vendor;
@@ -41,6 +42,152 @@ class SpiSummaryService
             'references' => $this->references($spi),
             'locations'  => $this->locations($boxes, $places),
             'boxes'      => $this->boxDetails($boxes, $places, $spi),
+        ];
+    }
+
+    /**
+     * Every packed box of one invoice, with everything that was stored about it.
+     *
+     * The packing screen's own /boxes endpoint returns the ROWS — ids, a flags
+     * array, an invoice-item reference — which is what a form being edited
+     * needs. A reader needs the same facts resolved: which product, named; what
+     * the flags mean; where the box was put away; what is attached to it. This
+     * is that view, and it is read-only.
+     *
+     * Resolved in a fixed number of queries whatever the box count: the flag
+     * master once, the put-away rows once, the products once.
+     *
+     * @return array<string, mixed>
+     */
+    public function packedBoxes(SupplierInvoice $spi): array
+    {
+        $boxes  = $spi->boxes()->with('items.invoiceItem')->orderBy('box_code')->get();
+        $places = $this->placements($spi, $boxes);
+        $master = $this->flagMaster($spi);
+
+        // One query for every product across every box.
+        $productIds = $boxes->flatMap->items
+            ->map(fn (SpiBoxItem $i) => $i->invoiceItem?->product_id)
+            ->filter()->unique()->values();
+        $products = $productIds->isEmpty()
+            ? collect()
+            : DB::table('products')->whereIn('id', $productIds)->get(['id', 'product_code', 'name'])->keyBy('id');
+
+        // And one for the attachments of every box.
+        $files = $boxes->isEmpty()
+            ? collect()
+            : SpiBoxAttachment::whereIn('box_id', $boxes->pluck('id'))->orderBy('id')->get()->groupBy('box_id');
+
+        $rows = $boxes->values()->map(function (SpiBox $b, int $i) use ($places, $master, $products, $files) {
+            $p = $places[$b->id] ?? null;
+
+            return [
+                'sr_no'        => $i + 1,
+                'id'           => $b->id,
+                'box_code'     => $b->box_code,
+                'scenario'     => $b->scenario,
+                'scenario_label' => $this->scenarioLabel($b),
+
+                // As measured, plus the volumetric figure the carrier charges on.
+                'length_cm'    => (float) $b->length_cm,
+                'width_cm'     => (float) $b->width_cm,
+                'height_cm'    => (float) $b->height_cm,
+                'weight_kg'    => (float) $b->weight_kg,
+                'net_weight_kg'   => (float) $b->net_weight_kg,
+                'gross_weight_kg' => (float) $b->gross_weight_kg,
+                'volumetric_weight_kg' => $b->volumetricWeightKg(),
+
+                // How it must be handled.
+                'is_stackable' => (int) $b->is_stackable,
+                'temp_min_c'   => $b->temp_min_c === null ? null : (float) $b->temp_min_c,
+                'temp_max_c'   => $b->temp_max_c === null ? null : (float) $b->temp_max_c,
+                'condition'    => $b->condition,
+
+                'qty'          => round($b->items->sum(fn ($it) => (float) $it->quantity), 3),
+                'product_count' => $b->items->pluck('supplier_invoice_item_id')->filter()->unique()->count(),
+
+                // Null until the box is actually scanned onto a shelf.
+                'putaway'      => [
+                    'warehouse'     => $p['warehouse'] ?? null,
+                    'zone'          => $p['zone'] ?? null,
+                    'rack'          => $p['rack'] ?? null,
+                    'shelf'         => $p['shelf'] ?? null,
+                    'allocation_id' => $p['allocation_id'] ?? null,
+                    'confirmed'     => (bool) ($p['confirmed'] ?? false),
+                ],
+
+                /* The sticker is rendered on demand, so what is stored is only
+                   WHETHER it has been printed — the link is the action. */
+                'sticker'      => [
+                    'printed_at' => optional($b->sticker_printed_at)->toDateTimeString(),
+                    'url'        => "/api/p2p/spi/{$b->supplier_invoice_id}/boxes/{$b->id}/sticker/download",
+                ],
+
+                'attachments'  => ($files[$b->id] ?? collect())->map(fn (SpiBoxAttachment $a) => [
+                    'id'          => $a->id,
+                    'name'        => $a->file_name,
+                    // A box_item_id means the picture is of ONE product inside.
+                    'box_item_id' => $a->box_item_id,
+                    'scope'       => $a->box_item_id ? 'product' : 'box',
+                    'url'         => $a->file_path ? file_url($a->file_path) : null,
+                ])->values()->all(),
+
+                'products'     => $b->items->values()->map(function (SpiBoxItem $it, int $n) use ($master, $products) {
+                    $line = $it->invoiceItem;
+                    $prod = $line?->product_id ? $products->get($line->product_id) : null;
+
+                    return [
+                        'sr_no'        => $n + 1,
+                        'id'           => $it->id,
+                        'invoice_item_id' => $it->supplier_invoice_item_id,
+                        'line_no'      => $line->line_no ?? null,
+                        'product_id'   => $line->product_id ?? null,
+                        'product_code' => $prod->product_code ?? null,
+                        'product_name' => $line->description ?: ($prod->name ?? null),
+                        'hsn_code'     => $line->hsn_code ?? null,
+                        'uom'          => $line->uom ?? null,
+
+                        // Packed here, against what the invoice billed on that line.
+                        'quantity'     => (float) $it->quantity,
+                        'qty_invoiced' => $line ? (float) $line->qty_spi : null,
+                        'rate'         => $line ? (float) $line->rate : null,
+
+                        'is_stackable' => (int) $it->is_stackable,
+
+                        // The flag MASTER rows, not the ids the column holds.
+                        'flags'        => array_values(array_filter(array_map(
+                            fn (int $id) => $master[$id] ?? null,
+                            array_map('intval', (array) ($it->flags ?? [])),
+                        ))),
+
+                        // Traceability, as entered at packing.
+                        'serial_no'    => $it->serial_no,
+                        'lot_no'       => $it->lot_no,
+                        'batch_no'     => $it->batch_no,
+                        'cat_no'       => $it->cat_no,
+                        'mfg_date'     => optional($it->mfg_date)->toDateString(),
+                        'expiry_date'  => optional($it->expiry_date)->toDateString(),
+
+                        'remark'       => $it->remark,
+                        'remark_note'  => $it->remark_note,
+                    ];
+                })->all(),
+            ];
+        })->all();
+
+        return [
+            'spi'    => ['id' => $spi->id, 'code' => $spi->code, 'date' => $spi->invoice_date],
+            'boxes'  => $rows,
+            'totals' => [
+                'boxes'        => count($rows),
+                'products'     => $this->distinctProducts($boxes),
+                'quantity'     => round($boxes->flatMap->items->sum(fn ($i) => (float) $i->quantity), 3),
+                'gross_weight_kg' => round($boxes->sum(fn (SpiBox $b) => (float) $b->gross_weight_kg), 3),
+                // What a carrier bills on: the greater of actual and volumetric.
+                'volumetric_weight_kg' => round($boxes->sum(fn (SpiBox $b) => (float) ($b->volumetricWeightKg() ?? 0)), 3),
+                'placed'       => count(array_filter($places, fn ($p) => $p['confirmed'])),
+                'attachments'  => $files->flatten()->count(),
+            ],
         ];
     }
 
