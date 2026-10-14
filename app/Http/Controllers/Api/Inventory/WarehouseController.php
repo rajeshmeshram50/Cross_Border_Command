@@ -200,6 +200,8 @@ class WarehouseController extends BaseInventoryController
             $warehouse = Warehouse::findOrFail($id);
             $data      = $request->validate($this->rules());
 
+            $this->guardSettled($warehouse, $data);
+
             $warehouse->fill($data);
             $warehouse->updated_by = $user->id;
             $warehouse->fill($this->storeCard($request, $warehouse))->save();
@@ -373,6 +375,64 @@ class WarehouseController extends BaseInventoryController
     }
 
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
+
+    /**
+     * What a warehouse may no longer change once zones have been built in it.
+     *
+     * A zone is allocated AGAINST the warehouse's area — the zone form offers
+     * only what is still free — so shrinking the warehouse afterwards leaves
+     * every zone over-committed and the free figure pinned at nothing. And the
+     * address is not a label: the goods are physically in that city, under that
+     * state's tax code, and the stock does not move because someone edited a
+     * dropdown.
+     *
+     * So the moment the first zone exists these four settle. Everything else —
+     * the name, the contact, the business card, the map link, the status —
+     * stays editable, because none of it is load-bearing.
+     *
+     * An EMPTY warehouse is untouched by this: nothing has been built on the
+     * old figures, so there is nothing to contradict.
+     */
+    private function guardSettled(Warehouse $warehouse, array $d): void
+    {
+        if (!$warehouse->zones()->exists()) return;
+
+        $changed = [];
+
+        // Compared as a number: '48000' and 48000.0 are the same area.
+        if (array_key_exists('area_sqft', $d)
+            && round((float) $d['area_sqft'], 2) !== round((float) $warehouse->area_sqft, 2)) {
+            $changed[] = 'Warehouse Area';
+        }
+
+        foreach ([
+            'country_id' => 'Country',
+            'state_id'   => 'State',
+            'state_name' => 'State',
+            'city'       => 'City',
+        ] as $col => $label) {
+            if (!array_key_exists($col, $d)) continue;
+            $was = $warehouse->{$col};
+            $now = $d[$col];
+            // Loose on purpose: an id arrives as a string from a form post, and
+            // null and '' both mean "not given".
+            if ((string) ($was ?? '') !== (string) ($now ?? '') && !in_array($label, $changed, true)) {
+                $changed[] = $label;
+            }
+        }
+
+        if (!$changed) return;
+
+        $count = $warehouse->zones()->count();
+
+        abort(response()->json([
+            'status'  => false,
+            'message' => implode(', ', $changed) . ' cannot be changed once zones exist in this warehouse — '
+                . $count . ' zone' . ($count === 1 ? ' is' : 's are') . ' already allocated against it.'
+                . ' Remove the zones first, or raise a new warehouse.',
+            'errors'  => ['locked' => $changed],
+        ], 422));
+    }
 
     private function rules(): array
     {

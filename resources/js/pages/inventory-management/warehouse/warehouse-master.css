@@ -941,3 +941,17 @@
 [data-bs-theme="dark"] .whm-toggle {
   background: linear-gradient(180deg, #334155, #1e293b);
 }
+
+/* A field that has settled: read-only because zones are allocated against this
+   warehouse, not because the form is busy. It LOOKS unavailable and still takes
+   a click — readOnly rather than disabled, since a disabled input swallows the
+   event and the explanation would never be raised. */
+.spi-dt-inp.is-locked {
+  background: var(--vz-light, #f1f5f9);
+  color: var(--vz-secondary-color, #64748b);
+  cursor: not-allowed;
+}
+[data-bs-theme="dark"] .spi-dt-inp.is-locked {
+  background: rgba(148, 163, 184, .10);
+  color: #94a3b8;
+}
