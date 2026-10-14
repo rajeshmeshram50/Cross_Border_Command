@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
+import TruncText from '../../components/ui/TruncText';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 
@@ -218,8 +219,16 @@ export default function HrHoliday() {
       meta: { width: 176, align: 'center' },
       cell: info => {
         const r = info.row.original;
+        /* The badge is a 176px column and the group name is free text, so a
+           long one ran straight out of its pill and across the cells beside
+           it. 18 here rather than the 30 used in the popup: this is a pill in
+           a narrow column, not a name in a table cell. (Holiday #5) */
         return r.holiday_group_id
-          ? <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7' }}>{r.group?.name || groupName(r.holiday_group_id)}</span>
+          ? (
+            <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', maxWidth: '100%' }}>
+              <TruncText text={r.group?.name || groupName(r.holiday_group_id) || ''} max={18} clip />
+            </span>
+          )
           : <span className="text-muted">Ungrouped</span>;
       },
     },
@@ -873,37 +882,16 @@ function ManageGroupsModal({
                   <tr key={g.id}>
                     <td className="text-center text-muted fs-13">{idx + 1}</td>
                     <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>
-                    <td style={{ whiteSpace: 'normal' }}>
-                      <Tooltip label={g.name}>
-                        <div
-                          className="fw-bold fs-13"
-                          style={{
-                            overflowWrap: 'anywhere',
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {g.name}
-                        </div>
-                      </Tooltip>
+                    {/* Cut at a character budget rather than clamped to two
+                        lines. The clamp kept the text inside the cell but let
+                        a long name take twice the height of every other row,
+                        so the popup's rows no longer lined up — which is the
+                        half of this the ticket asks for. One line each now,
+                        with the full value on hover. (Holiday #5) */}
+                    <td>
+                      <TruncText text={g.name} max={30} className="fw-bold fs-13 d-block" clip />
                       {g.description && (
-                        <Tooltip label={g.description}>
-                          <div
-                            className="text-muted"
-                            style={{
-                              fontSize: 11.5,
-                              overflowWrap: 'anywhere',
-                              display: '-webkit-box',
-                              WebkitLineClamp: 2,
-                              WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {g.description}
-                          </div>
-                        </Tooltip>
+                        <TruncText text={g.description} max={40} className="text-muted d-block" style={{ fontSize: 11.5 }} clip />
                       )}
                     </td>
                     <td className="fs-13">{g.holidays_count ?? 0}</td>

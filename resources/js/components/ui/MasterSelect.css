@@ -346,3 +346,31 @@
   }
 
   @keyframes master-select-spin { to { transform: rotate(360deg); } }
+
+  /* Option checkbox in the multi-select list.
+     Unchecked on dark is a transparent box with a light rim rather than a
+     white fill: a white square on a near-black panel reads as the selected
+     state, which is the opposite of what it means. Checked keeps the violet
+     in both themes, so "on" looks the same wherever you see it. */
+  .master-select-check {
+    width: 16px; height: 16px;
+    margin-right: 8px;
+    border-radius: 4px;
+    border: 1.5px solid #cbd5e1;
+    background: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: background-color .15s ease, border-color .15s ease;
+  }
+  .master-select-check.is-on { background: #7c5cfc; border-color: #7c5cfc; }
+  .master-select-check i { color: #fff; font-size: 12px; line-height: 1; }
+  [data-bs-theme="dark"] .master-select-check,
+  [data-layout-mode="dark"] .master-select-check {
+    background: transparent;
+    border-color: rgba(148, 163, 184, .55);
+  }
+  [data-bs-theme="dark"] .master-select-check.is-on,
+  [data-layout-mode="dark"] .master-select-check.is-on {
+    background: #7c5cfc;
+    border-color: #7c5cfc;
+  }

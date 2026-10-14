@@ -56,7 +56,9 @@
     rgba(16,185,129,0.95)   86%,
     rgba(5,150,105,0.92)   100%);
   opacity: 0.9;
-  filter: blur(0.4px);
+  /* No `filter: blur(0.4px)`. A filter promotes the element to its own
+     compositing layer and makes the header band repaint as the page moves,
+     and at 0.4px on a 1.5px strip it was doing nothing you can see. */
 }
 .smcg-cstrip-left {
   display: flex; align-items: center; gap: 16px;
@@ -1104,11 +1106,14 @@
 [data-bs-theme="dark"] .smcg-wdh-chev:hover { background: rgba(255,255,255,0.20); }
 
 [data-bs-theme="dark"] .smcg-step {
-
-  background: rgba(5, 28, 22, 0.72);
+  /* Opaque, with no backdrop-filter. These four cards each blurred what sat
+     behind them, and a backdrop-filter is re-composited on every frame the
+     page moves -- four blurred regions re-rendered for the length of a
+     scroll. They sit on a flat panel, so the blur was buying nothing and
+     costing frames. The colour is the same translucent navy already
+     flattened onto the band behind it. (Consignee #32) */
+  background: #0a2019;
   border-color: rgba(16,185,129,0.30);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
 }
 
 [data-bs-theme="dark"] .smcg-step[data-n="0"],
@@ -1355,3 +1360,109 @@
 [data-bs-theme="dark"] .smcg-filterbar-lbl { color: #94a3b8; }
 [data-bs-theme="dark"] .smcg-filterchip { color: #6ee7b7; background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.3); }
 [data-bs-theme="dark"] .smcg-filterchip button { background: rgba(110,231,183,.15); color: #6ee7b7; }
+
+/* ── Mapped Customers popup footer ──────────────────────────────────────────
+   The pager shares the row with Close, so it gives up everything that made it
+   a band of its own -- the tint, the top border, the padding and the margin --
+   and becomes the row's stretching left half. The footer's own border and
+   background are the ones on screen. */
+.smcg-mapped-foot .wl-pager {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+  border-radius: 0;
+  background: none;
+}
+[data-bs-theme="dark"] .smcg-mapped-foot .wl-pager { background: none; }
+
+
+/* ── Unpinned: no room to fit the card to the viewport ──────────────────────
+   Set by the fit() effect when the hero and an open banner have used the
+   space. The card takes its natural height and the PAGE scrolls instead.
+
+   Both overrides are required. .smcg-table-wrap is `flex: 1; min-height: 0`,
+   which is right inside a card of a known height but collapses to nothing
+   when the card has none -- the first attempt at this left one row visible.
+   And the inner scroller must stop scrolling, or the rows would hide inside a
+   box that is no longer capped. */
+[data-unpinned="1"] .smcg-table-wrap {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+}
+[data-unpinned="1"] .smcg-table-wrap .table-responsive {
+  overflow-y: visible;
+  max-height: none;
+}
+
+
+/* ── The vertical scrollbar belongs to the ROWS, not the whole table ────────
+   The header used to be `position: sticky` inside .table-responsive, which is
+   also the vertical scroller -- so the browser drew that box's scrollbar down
+   its full height, including the strip beside the header. (QA #35)
+
+   A scrollbar cannot be inset: `margin` on ::-webkit-scrollbar-track was tried
+   and does nothing. The only way to start it under the header is to take the
+   header out of the scrolling box, which is what this does WITHOUT touching
+   the shared table component:
+
+     .table-responsive  keeps the HORIZONTAL scroll, so the header and the rows
+                        still slide sideways together.
+     thead              becomes its own `display: table` band, outside anything
+                        that scrolls vertically. It no longer needs to be
+                        sticky -- nothing scrolls past it any more.
+     tbody              becomes the vertical scroller, so its scrollbar starts
+                        exactly at the first row.
+
+   Columns stay aligned because thead and every tbody row are `table-layout:
+   fixed` at the same width, and the per-column percentages below already
+   apply to `thead th:nth-child(n)` and `tbody td:nth-child(n)` equally.
+
+   When the card is unpinned (see the fit() effect) .table-responsive has no
+   definite height, so the calc() resolves against auto, tbody is uncapped and
+   the PAGE scrolls instead -- which is the intended behaviour there. */
+.smcg-table-wrap .table-responsive {
+  overflow-y: hidden;
+}
+.smcg-table-wrap .table {
+  display: block;
+  height: 100%;
+}
+.smcg-table-wrap .table thead,
+.smcg-table-wrap .table tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+.smcg-table-wrap .table tbody {
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(100% - var(--smcg-thead-h, 36px));
+  scrollbar-width: thin;
+}
+/* Not sticky any more: it sits outside the scroller, so pinning it would only
+   add a stacking context and the 1px seam that comes with it. */
+.smcg-table-wrap .table thead th {
+  position: static !important;
+  top: auto !important;
+}
+
+
+/* ── How tall the "what we are doing here" banner may get ───────────────────
+   The viewport, less what has to stay visible beneath it: the app header
+   (150), this page's hero strip and gaps (~85), and the table card's own 240px
+   floor plus its bottom reserve. Whatever is left is the banner's.
+
+   It used to be a flat 600px, which on a short window -- or at 150% zoom,
+   where the viewport is barely 540 CSS px -- was more height than existed. The
+   table went below the fold, the page had to scroll, and every strip on it
+   moved when you dragged. Capped, the banner scrolls inside itself instead and
+   the page keeps still.
+
+   clamp, so it never collapses to nothing on a very short screen and never
+   exceeds the 600 it was designed around on a tall one. */
+.smcg-wdh-body-wrap { --wdh-max: clamp(160px, calc(100vh - 500px), 600px); }
+.smcg-wdh-card.is-open .smcg-wdh-body-wrap { overflow-y: auto; overscroll-behavior: contain; }

@@ -14,6 +14,7 @@ import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { type ConsigneeRow } from './AddConsigneeModal';
 import { type ConsigneeVaultTarget } from './ConsigneeEvidenceVaultModal';
 import { ShimmerTable } from '../../../../components/ui/Shimmer';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
@@ -80,6 +81,27 @@ const truncTip = (value?: string | null, max = 15) => {
   return v.length > max
     ? <Tooltip label={v}><span>{`${v.slice(0, max)}…`}</span></Tooltip>
     : v;
+};
+
+/* How much of the viewport bottom the card must leave alone.
+ *
+ * The card is sized to `innerHeight - top - reserve`, so if the reserve is too
+ * small the card runs past the bottom of the screen -- and because the page
+ * FOOTER sits below the card, the page ends up taller than the viewport by
+ * exactly the footer's height. That is a short, jerky scroll range on a page
+ * that should not scroll at all, which is what reads as lag here.
+ *
+ * A flat 15 ignored the footer entirely. Measured instead, the same way
+ * components/ui/DataTable does it, including its one exception: the
+ * auto-hiding footer is position: fixed, owns no height in the flow, and
+ * comes back over the table -- reserving its 40px would leave exactly the
+ * white band it exists to remove. */
+const bottomReserve = (): number => {
+  if (typeof document === 'undefined') return 15;
+  const f = document.querySelector('footer.footer') as HTMLElement | null;
+  if (f?.classList.contains('app-footer-auto')) return 15;
+  const fh = f?.offsetHeight ?? 0;
+  return fh > 0 ? fh + 8 : 15;
 };
 
 export default function SalesConsignee() {
@@ -199,11 +221,59 @@ export default function SalesConsignee() {
     const el = tableCardRef.current;
     if (!el) return;
     const fit = () => {
-      const top = el.getBoundingClientRect().top;
-      const h = Math.max(240, window.innerHeight - top - 15);
-      el.style.flex = 'none';
-      el.style.height = `${h}px`;
-      el.style.maxHeight = `${h}px`;
+      /* First, and unconditionally. tbody's max-height is
+         `calc(100% - var(--smcg-thead-h))`, so this has to be published on every
+         pass -- including the unpinned one, which returns early. Measured
+         rather than a constant because these headers wrap to two lines on a
+         narrow column, which is exactly when a fixed value would be wrong. */
+      const headH = (el.querySelector('.smcg-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
+      if (headH) el.style.setProperty('--smcg-thead-h', `${headH}px`);
+
+      /* Measured INSIDE the scroller, not against the viewport.
+       *
+       * getBoundingClientRect().top is viewport-relative, so it shrinks as the
+       * page scrolls -- and `innerHeight - top` therefore GROWS. Measured on
+       * the real page: unscrolled the card wanted 459px, and 40px down the
+       * same code asked for 499. The card gets taller, the page gets taller
+       * with it, so there is more to scroll, so the next measurement is taken
+       * from further down and asks for more again. That loop is the lag and
+       * the bouncing.
+       *
+       * An earlier version clamped `top` at zero, which only caught the card
+       * scrolling fully off the top -- at 246px it passes straight through.
+       *
+       * The card's offset within the scrolling element does not move when you
+       * scroll, so this answer is the same at any scroll position and there is
+       * no loop to start. */
+      const scroller = (el.closest('.main-content') as HTMLElement | null) ?? null;
+      const offsetTop = scroller
+        ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+        : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
+      const spaceH = scroller ? scroller.clientHeight : window.innerHeight;
+      const cardSpace = spaceH - offsetTop - bottomReserve();
+      /* A floor, not an escape hatch.
+         This briefly released the pin whenever cardSpace fell under 240 -- added
+         while chasing the bounce, before the cause was known. It makes things
+         worse where it fires: zoomed to 150%, with the banner open, the card
+         then takes its NATURAL height, so the page carries a full table instead
+         of a compact 240px one with its own scroll, and there is far more page
+         to drag.
+         The bounce turned out to be the viewport-relative measurement above,
+         which is fixed, so the floor can simply be a floor again: the card is
+         never smaller than 240, and where that overruns the viewport the page
+         scrolls -- by a predictable amount, without feeding back. */
+      delete el.dataset.unpinned;
+      const h = Math.max(240, cardSpace);
+      /* Only write when the value actually changes. fit() runs from a
+         ResizeObserver, and writing styles inside an observer callback
+         re-enters layout -- so an unchanged height still cost a reflow on
+         every notification, which is the rest of the judder. */
+      const next = `${h}px`;
+      if (el.style.height !== next) {
+        el.style.flex = 'none';
+        el.style.height = next;
+        el.style.maxHeight = next;
+      }
 
       if (manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smcg-toolbar') as HTMLElement | null)?.offsetHeight || 0;
@@ -227,14 +297,40 @@ export default function SalesConsignee() {
     const t = window.setTimeout(fit, 120);
     window.addEventListener('resize', fit);
     let ro: ResizeObserver | undefined;
+    let roSettle: (() => void) | undefined;
     const banner = document.querySelector('.smcg-wdh-body-wrap');
     if (banner && typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => fit());
+      /* HEIGHT only. This observer is here for one thing: the banner being
+         expanded or collapsed. But a ResizeObserver reports WIDTH too, and
+         width is exactly what changes when a vertical scrollbar appears --
+         which is the loop. fit() sets the card's height, the page height
+         changes, the scrollbar toggles, the page narrows, the banner's width
+         changes, the observer fires, fit() runs again. The page oscillating
+         between the two states is the bouncing.
+         Ignoring width-only notifications breaks it: the scrollbar can come
+         and go without re-running the measurement. */
+      let lastH = (banner as HTMLElement).getBoundingClientRect().height;
+      /* Debounced, and that is the point.
+         This banner animates its max-height over .35s, so the observer fires
+         on every frame of the open/close -- roughly twenty times -- and each
+         firing wrote a new height onto the card. The card sprang around for
+         the length of the animation, which is the bouncing. Trailing by 180ms,
+         fit() runs once, after the banner has settled on its final height. */
+      let settle: number | undefined;
+      ro = new ResizeObserver(entries => {
+        const h = entries[0]?.contentRect.height ?? 0;
+        if (Math.abs(h - lastH) < 1) return;
+        lastH = h;
+        window.clearTimeout(settle);
+        settle = window.setTimeout(fit, 180);
+      });
       ro.observe(banner);
+      roSettle = () => window.clearTimeout(settle);
     }
     return () => {
       window.clearTimeout(t);
       window.removeEventListener('resize', fit);
+      roSettle?.();
       ro?.disconnect();
     };
   }, [wdhOpen, loading, manualSize]);
@@ -641,7 +737,13 @@ export default function SalesConsignee() {
           </span>
         </button>
 
-        <div className="smcg-wdh-body-wrap" style={{ maxHeight: wdhOpen ? 600 : 0 }}>
+        {/* A flat 600px let this banner add more height than the viewport had,
+            so opening it pushed the table below the fold and the whole page
+            had to scroll -- which is what everything on it then felt like it
+            was fighting. The cap is now the room actually left (see
+            --wdh-max); past that the banner scrolls inside itself and the
+            page does not grow. */}
+        <div className="smcg-wdh-body-wrap" style={{ maxHeight: wdhOpen ? 'var(--wdh-max)' : 0 }}>
           <div className="smcg-wdh-body">
             {STEPS.map((s, i) => {
               const isLast = i === STEPS.length - 1;
@@ -997,44 +1099,33 @@ export default function SalesConsignee() {
               </table>
             </div>
 
-            {/* Footer — "Showing X–Y of Z" + pager + Close, matching the
-                Consignees modal footer. */}
+            {/* Footer — the app's own pager plus Close.
+                It used to carry a bespoke one: "Showing X-Y of Z customers
+                linked to ..." beside arrow chips and a numbered chip per page.
+                Nothing else in the product paginates that way, and the list
+                this popup opens from uses the standard control, so the two
+                read as different systems. (QA #34) */}
             {(() => {
               const total = mappedFiltered.length;
               const totalPages = Math.max(1, Math.ceil(total / MAPPED_PER_PAGE));
               const page = Math.min(mappedPage, totalPages);
-              const from = total === 0 ? 0 : (page - 1) * MAPPED_PER_PAGE + 1;
-              const to = Math.min(page * MAPPED_PER_PAGE, total);
-              // Arrow chips + numbered page chips (active = filled), matching the
-              // Consignees modal's .ccm-pag pager.
-              const arrowChip = (disabled: boolean): CSSProperties => ({
-                width: 30, height: 30, borderRadius: 8, border: `1px solid ${mc.border}`, background: mc.card,
-                color: disabled ? mc.textMuted : '#6d28d9', fontSize: 15, lineHeight: 1,
-                cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              });
-              const numChip = (active: boolean): CSSProperties => ({
-                minWidth: 30, height: 30, padding: '0 8px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, lineHeight: 1,
-                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                border: active ? 'none' : `1px solid ${mc.border}`,
-                background: active ? 'linear-gradient(135deg,#6d28d9,#7c3aed)' : mc.card,
-                color: active ? '#fff' : mc.textStrong,
-              });
               return (
-                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 20px', borderTop: `1px solid ${mc.border}`, background: mc.rowAlt }}>
-                  <span style={{ fontSize: 12.5, color: mc.textMuted, fontWeight: 600 }}>
-                    Showing <strong style={{ color: mc.textStrong }}>{from}–{to}</strong> of <strong style={{ color: mc.textStrong }}>{total}</strong> {total === 1 ? 'customer' : 'customers'} linked to <strong style={{ color: mc.textStrong }}>{mappedTarget.id}</strong>
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setMappedPage(p => Math.max(1, p - 1))} style={arrowChip(page <= 1)}>‹</button>
-                      {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
-                        <button key={n} type="button" onClick={() => setMappedPage(n)} style={numChip(n === page)}>{n}</button>
-                      ))}
-                      <button type="button" aria-label="Next page" disabled={page >= totalPages} onClick={() => setMappedPage(p => Math.min(totalPages, p + 1))} style={arrowChip(page >= totalPages)}>›</button>
-                    </div>
-                    <button type="button" onClick={() => setMappedTarget(null)} style={{ border: 'none', background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff', borderRadius: 9, padding: '8px 20px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>Close</button>
-                  </div>
+                /* No Close button here -- the header's x already closes this,
+                   and a second control for the same thing only competes with
+                   the pager for the row. */
+                <div className="smcg-mapped-foot" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '13px 20px', borderTop: `1px solid ${mc.border}`, background: mc.rowAlt }}>
+                  {/* No hideNavWhenSinglePage -- see CustomerConsigneesModal:
+                      the paired popup shows its controls, so this one must. */}
+                  <WorklistPager
+                    total={total}
+                    page={page}
+                    pageSize={MAPPED_PER_PAGE}
+                    onPage={setMappedPage}
+                    /* The consignee this list belongs to kept, as the old
+                       footer said it -- it is the only thing on the row that
+                       says whose customers these are. */
+                    note={`linked to ${mappedTarget.id}`}
+                    />
                 </div>
               );
             })()}

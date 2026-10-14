@@ -5,6 +5,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useTheme } from '../../../../contexts/ThemeContext';
 import api from '../../../../api';
 import { MasterSelect, MasterDatePicker } from '../../../master/masterFormKit';
+import { VaultUploadPopup, type VaultStatus } from '../customer/CustomerEvidenceVaultModal';
 import BaseTooltip from '../../../../components/ui/Tooltip';
 import { downloadFile } from '../../../../utils/downloadFile';
 // Consignee-form tooltips follow the active app theme (light pill in light
@@ -687,7 +688,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * Key: `${sub-tab}::${doc.code}`. Value: File + blob URL used by the
    * View / Download actions. Lifted here (parent) so sub-tab switches
    * don't drop in-progress uploads. */
-  type SegRefUpload = { file: File | null; url: string; name: string };
+  /* issueDate / expiryDate ride along so the document tables can show them.
+     The API has always returned issue_date and expiry_date; hydration simply
+     dropped them, so the columns had nothing to read. */
+  type SegRefUpload = { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
   /* Persist a segment-rule reference upload to /segment-uploads/consignee/{id}
@@ -1206,6 +1210,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             file: null as unknown as File,
             url:  ref.attachment_url || '',
             name: ref.attachment_name || '',
+            issueDate:  ref.issue_date  ?? null,
+            expiryDate: ref.expiry_date ?? null,
           };
         }
         if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
@@ -3898,6 +3904,21 @@ const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: str
  *
  * "No expiry" is a real answer — a PAN card does not lapse — so it is a choice
  * rather than an empty date field the user has to guess at. */
+/* A date captured by the upload dialog, or "N/A".
+ *
+ * N/A rather than an empty cell: these rows are a compliance checklist, and a
+ * blank reads as "not loaded yet" where the point is to say the document
+ * carries no such date. An expiry already past is called out, since that is
+ * the one value on the row somebody has to act on. */
+function DocDateCell({ value, expiry = false }: { value?: string | null; expiry?: boolean }) {
+  if (!value) return <span className="acm-doc-date acm-doc-date--na">N/A</span>;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return <span className="acm-doc-date">{value}</span>;
+  const text = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const past = expiry && d.getTime() < Date.now();
+  return <span className={`acm-doc-date${past ? ' acm-doc-date--past' : ''}`}>{text}</span>;
+}
+
 function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fileName, busy, onCancel, onConfirm }: {
   docName: string;
   docCode: string;
@@ -4013,8 +4034,8 @@ function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploa
      Evidence Vault's dialog does. Both come off the row being uploaded to. */
   docCode: string;
   authority?: string;
-  uploads: Record<string, { file: File | null; url: string; name: string }>;
-  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  uploads: Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>;
+  setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>>>;
   persistUpload: (refKey: string, file: File, docName: string, dates?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
   /* When true (Same as Customer on), hide the Upload / Re-upload labels
    * and show only View / Download — the consignee's segment-rule uploads
@@ -4037,23 +4058,19 @@ function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploa
      shown in the table and nothing is sent until the question is answered, so
      cancelling leaves the row exactly as it was. */
   const [pending, setPending] = useState<File | null>(null);
+  const [reupOpen, setReupOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   // refKey is `${sub-tab}::${doc_code}` — the sub-tab half names the bucket.
   const category: 'kyc' | 'dd' | 'tl' =
     refKey.startsWith('company-dd') ? 'dd' : refKey.startsWith('trade-licence') ? 'tl' : 'kyc';
 
-  const onPick = (f: File | undefined) => {
-    if (!f) return;
-    const check = isAcceptedFile(f);
-    if (!check.ok) {
-      toast.error('File rejected', check.reason);
-      return;
-    }
-    setPending(f);
-  };
-
-  const commit = async (dates: { issueDate?: string; expiryDate?: string }) => {
-    const f = pending;
+  /* `file` is passed directly by the re-upload dialog. setPending() is a state
+     write, so a commit called in the same tick would still read the previous
+     value -- the dialog hands the file over rather than routing it through
+     state it cannot see yet. The old two-step flow has no file to pass and
+     keeps reading `pending`. */
+  const commit = async (dates: { issueDate?: string; expiryDate?: string }, file?: File) => {
+    const f = file ?? pending;
     if (!f) return;
     setSaving(true);
     setUploads(prev => {
@@ -4061,7 +4078,10 @@ function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploa
       if (existing?.url && existing.url.startsWith('blob:')) {
         try { URL.revokeObjectURL(existing.url); } catch {}
       }
-      return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name } };
+      return { ...prev, [refKey]: {
+        file: f, url: URL.createObjectURL(f), name: f.name,
+        issueDate: dates.issueDate ?? null, expiryDate: dates.expiryDate ?? null,
+      } };
     });
     try { await persistUpload(refKey, f, docName, dates); }
     finally { setSaving(false); setPending(null); }
@@ -4082,16 +4102,31 @@ function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploa
     return (
       <div className="acm-loc-actions">
         <Tooltip label="Upload">
-          <label className="acm-loc-btn" aria-label="Upload" style={{ cursor: 'pointer' }}>
+          <button type="button" className="acm-loc-btn" aria-label="Upload" onClick={() => setReupOpen(true)}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
-          </label>
+          </button>
         </Tooltip>
-        {pending && (
-          <ConsigneeUploadExpiryPopup
-            docName={docName} docCode={docCode} authority={authority} category={category}
-            fileName={pending.name} busy={saving}
-            onCancel={() => setPending(null)} onConfirm={d => { void commit(d); }}
+        {/* The same dialog as Re-upload, so a first upload and a replacement
+            are one flow. With no file yet it titles itself "Upload ..." and
+            shows no Current File row. */}
+        {reupOpen && (
+          <VaultUploadPopup
+            doc={{
+              id: 0,
+              name: docName,
+              reference: docCode,
+              doc_code: docCode,
+              authority: authority ?? null,
+              expiry: null,
+              attachment: null,
+              attachment_url: null,
+              status: 'Pending' as VaultStatus,
+            }}
+            category={category}
+            busy={saving}
+            overlayClass="acm-reup"
+            onSubmit={(f, opts) => { setPending(f); void commit(opts ?? {}, f); setReupOpen(false); }}
+            onClose={() => setReupOpen(false)}
           />
         )}
       </div>
@@ -4111,17 +4146,36 @@ function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploa
       </Tooltip>
       {!disabled && (
         <Tooltip label="Re-upload (replace file)">
-          <label className="acm-loc-btn" aria-label="Re-upload" style={{ cursor: 'pointer' }}>
+          <button type="button" className="acm-loc-btn" aria-label="Re-upload" onClick={() => setReupOpen(true)}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { onPick(e.target.files?.[0]); e.currentTarget.value = ''; }} />
-          </label>
+          </button>
         </Tooltip>
       )}
-      {pending && (
-        <ConsigneeUploadExpiryPopup
-          docName={docName} docCode={docCode} authority={authority} category={category}
-          fileName={pending.name} busy={saving}
-          onCancel={() => setPending(null)} onConfirm={d => { void commit(d); }}
+      {/* The same dialog the Customer form opens, rather than this form's own
+          two-step flow. Re-upload used to open the OS file picker first and
+          only then ask about dates, so you chose the file before seeing which
+          document you were replacing -- and the little dialog that followed
+          showed none of the code, name or authority the Customer's does.
+          VaultUploadPopup puts all of it in one place, with the current file
+          named, and the two screens now behave identically. */}
+      {reupOpen && (
+        <VaultUploadPopup
+          doc={{
+            id: 0,
+            name: docName,
+            reference: docCode,
+            doc_code: docCode,
+            authority: authority ?? null,
+            expiry: null,
+            attachment: uploaded.name,
+            attachment_url: uploaded.url,
+            status: 'Verified' as VaultStatus,
+          }}
+          category={category}
+          busy={saving}
+          overlayClass="acm-reup"
+          onSubmit={(f, opts) => { setPending(f); void commit(opts ?? {}, f); setReupOpen(false); }}
+          onClose={() => setReupOpen(false)}
         />
       )}
     </div>
@@ -4199,8 +4253,8 @@ const Stage2 = ({
   /** True while the segment-rule catalog is loading from the DB — drives the
    *  in-table shimmer. */
   loading?: boolean;
-  segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
-  setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string }>>>;
+  segmentRefUploads: Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>;
+  setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>>>;
   persistSegmentRefUpload: (refKey: string, file: File, docName: string, dates?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
   /** Segment master rows (name + code) for the "S-001: Name" review display. */
   segments?: { name: string; code?: string }[];
@@ -4347,12 +4401,12 @@ const Stage2 = ({
                     ) : (
                       <>
                         <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                        <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                        <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ISSUE DATE</th><th>EXPIRY</th><th>ACTIONS</th>
                       </>
                     )}
                   </tr>
                 </thead>
-                <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 7} /></tbody>
+                <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 9} /></tbody>
               </table>
             ) : showingOwnerRefs ? (
               /* Owner KYC sub-tab — segment-rule reference table.
@@ -4365,12 +4419,12 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
-                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ISSUE DATE</th><th>EXPIRY</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
                   {segKyc.length === 0 && (
-                    <tr className="acm-loc-empty"><td colSpan={7}>{q ? 'No documents match your search.' : 'No standard documents are configured for this segment yet.'}</td></tr>
+                    <tr className="acm-loc-empty"><td colSpan={9}>{q ? 'No documents match your search.' : 'No standard documents are configured for this segment yet.'}</td></tr>
                   )}
                   {segKyc.map((d: any, i: number) => {
                     const refKey = `owner-kyc::${d.code}`;
@@ -4392,6 +4446,11 @@ const Stage2 = ({
                             ? <Tooltip label={uploaded.name}><a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, whiteSpace:'nowrap' }}>{truncFileName(uploaded.name)}</a></Tooltip>
                             : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
                         </td>
+                        {/* Issue Date / Expiry — the dates captured by the
+                            upload dialog. "N/A" rather than blank so a row
+                            with no dates still reads as answered. */}
+                        <td><DocDateCell value={uploaded?.issueDate} /></td>
+                        <td><DocDateCell value={uploaded?.expiryDate} expiry /></td>
                         <td>
                           <ConsigneeSegmentRefActions
                             refKey={refKey}
@@ -4467,7 +4526,7 @@ const Stage2 = ({
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th>
-                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ACTIONS</th>
+                    <th>ISSUING AUTHORITY</th><th>REQUIREMENT</th><th>ATTACHMENT</th><th>ISSUE DATE</th><th>EXPIRY</th><th>ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4512,6 +4571,8 @@ const Stage2 = ({
                               ? <Tooltip label={uploaded.name}><a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, whiteSpace:'nowrap' }}>{truncFileName(uploaded.name)}</a></Tooltip>
                               : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
                           </td>
+                          <td><DocDateCell value={uploaded?.issueDate} /></td>
+                          <td><DocDateCell value={uploaded?.expiryDate} expiry /></td>
                           <td>
                             <ConsigneeSegmentRefActions
                               refKey={refKey}
@@ -4530,14 +4591,14 @@ const Stage2 = ({
                   })()}
                   {hasRealDocs
                     ? (filteredDocs.length === 0 && (
-                        <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
+                        <tr className="acm-loc-empty"><td colSpan={9}>No documents match your search.</td></tr>
                       ))
                     : (segRefDocs.length === 0 && (
                         q
-                          ? <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
+                          ? <tr className="acm-loc-empty"><td colSpan={9}>No documents match your search.</td></tr>
                           : (sub === 'company-dd')
-                            ? <tr className="acm-loc-empty"><td colSpan={7}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
-                            : <tr className="acm-loc-empty"><td colSpan={7}>No trade licence documents configured for this segment in the Document Control Panel.</td></tr>
+                            ? <tr className="acm-loc-empty"><td colSpan={9}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
+                            : <tr className="acm-loc-empty"><td colSpan={9}>No trade licence documents configured for this segment in the Document Control Panel.</td></tr>
                       ))}
                   {filteredDocs.map((d, i) => {
                     const sr = i + 1;
@@ -4838,7 +4899,7 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
   kycOwners: KycOwnerRow[];
   sameAsCustomer: boolean;
   segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
-  segmentRefUploads: Record<string, { file: File | null; url: string; name: string }>;
+  segmentRefUploads: Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>;
   tdDocs: TdDocRow[];
   onToggleTd: (id: string) => void;
   onToggleAllTd: (checked: boolean) => void;
@@ -7356,8 +7417,69 @@ const SCOPED_CSS = `
   border-color: #10b981;
   box-shadow: 0 0 0 3px rgba(16,185,129,.18);
 }
-.acm-input::placeholder { color: #9ca3af; }
-.acm-input:disabled { background: #f9fafb; color: #9ca3af; cursor: not-allowed; }
+/* Distinct from the disabled value below -- see the dark rules. */
+.acm-input::placeholder { color: #b6bdc7; }
+/* Upload dialog, as launched FROM THIS FORM.
+   The dialog is shared with the Customer and Supplier vaults, whose header is
+   violet -- correct there, foreign here: this form is the teal ramp, and a
+   violet dialog opening on top of it reads as a piece of another screen.
+
+   The Consignee VAULT already solves this with .cnev-reup, but that palette
+   lives in a <style> rendered inside the vault component, so it only exists
+   while the vault is open -- borrowing the class from here would theme
+   nothing. Same hues, scoped to .acm-reup, which only this form passes. */
+.cev-reup-ov.acm-reup .cev-reup-hd {
+  background: linear-gradient(125deg, #083344 0%, #0c4a6e 25%, #0e7490 50%, #0891b2 75%, #06b6d4 100%);
+}
+.cev-reup-ov.acm-reup .cev-reup-save {
+  background: linear-gradient(135deg, #0e7490, #0891b2);
+  box-shadow: 0 4px 12px rgba(8,145,178,.30);
+}
+.cev-reup-ov.acm-reup .cev-reup-drop:hover,
+.cev-reup-ov.acm-reup .cev-reup-drop.has { border-color: #06b6d4; background: #ecfeff; color: #0e7490; }
+/* Dark pairs for the three tints above: these selectors carry two classes and
+   beat the shared sheet's dark rules, so without them a hover lit a white slab
+   on a dark dialog. Low alpha so they read as a tint, not a panel. */
+[data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-drop:hover,
+[data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-drop.has {
+  background: rgba(6,182,212,.12); border-color: #0891b2; color: #67e8f9;
+}
+[data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-toggle button:hover:not(.on) {
+  background: rgba(6,182,212,.14); color: #67e8f9;
+}
+[data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-cur {
+  background: rgba(6,182,212,.12); border-color: rgba(6,182,212,.35); color: #67e8f9;
+}
+[data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-cur:hover { background: rgba(6,182,212,.20); }
+
+/* Issue Date / Expiry cells in the document tables. */
+.acm-doc-date { font-size: 12px; font-weight: 600; color: #475569; white-space: nowrap; }
+.acm-doc-date--na { color: #9aa4b2; font-weight: 500; }
+.acm-doc-date--past { color: #b91c1c; }
+.acm-input:disabled { background: #f9fafb; color: #4b5563; cursor: not-allowed; }
+
+/* Autofill.
+   Chrome paints its own background over any field it filled, which no
+   ordinary background can override -- so on this form the two fields it
+   remembered sat blue-grey while everything typed beside them stayed on the
+   form's colour. The inset shadow is the only thing that covers it, and it
+   has to be opaque; these inputs are opaque anyway, so unlike the login card
+   there is nothing translucent to preserve.
+   The transition is the belt to that brace: Chrome applies the background as
+   a transition, so a long enough delay means it never arrives at all.
+   (QA #37 / #44) */
+.acm-input:-webkit-autofill,
+.acm-input:-webkit-autofill:hover,
+.acm-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #1f2937;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset;
+  caret-color: #1f2937;
+  transition: background-color 9999s ease-out 0s;
+  /* Chrome brings its own font along with the background, so a remembered
+     value could come out a different size from a typed one. */
+  font-family: inherit !important;
+  font-size: 13px !important;
+}
 select.acm-input { appearance: none; background-image: linear-gradient(45deg, transparent 50%, #9ca3af 50%), linear-gradient(135deg, #9ca3af 50%, transparent 50%); background-position: calc(100% - 16px) 17px, calc(100% - 11px) 17px; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 28px; }
 .acm-phone-wrap { display: flex; align-items: stretch; height: 40px; border: 1.5px solid #e5e7eb; border-radius: 9px; background: #fff; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
 .acm-phone-wrap:focus-within { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.18); }
@@ -8014,14 +8136,16 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-same-banner-sub strong { color: #065f46; }
 /* Locked-input visual cue — pairs with the disabled prop wired on
  * every field in the Basic Company + Primary Address sections. */
-.acm-input:disabled { background: #f9fafb; color: #6b7280; cursor: not-allowed; }
+/* Duplicate of the rule near .acm-input, kept in step with it: a locked
+   value has to stay readable and distinctly darker than a placeholder. */
+.acm-input:disabled { background: #f9fafb; color: #4b5563; cursor: not-allowed; }
 [data-bs-theme="dark"] .acm-same-banner    { background: linear-gradient(135deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-color: rgba(16,185,129,.35); }
 [data-bs-theme="dark"] .acm-same-banner.is-on { background: linear-gradient(135deg, rgba(16,185,129,.28) 0%, rgba(16,185,129,.16) 100%); }
 [data-bs-theme="dark"] .acm-same-banner-box   { background: #0a1f1a; border-color: #10b981; }
 [data-bs-theme="dark"] .acm-same-banner-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-same-banner-sub   { color: #34d399; }
 [data-bs-theme="dark"] .acm-same-banner-sub strong { color: #d1fae5; }
-[data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #6b8a7e; }
+[data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #a7c7bc; }
 
 /* ─── Stage 2 — KYC sub-tabs + card ─── */
 .acm-kyc-subtabs {
@@ -8519,8 +8643,54 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-sec-sep    { color: rgba(16,185,129,.40); }
 [data-bs-theme="dark"] .acm-field-label { color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-input      { background: #0a1f1a; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-input::placeholder { color: #6b8a7e; }
-[data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #6b8a7e; }
+[data-bs-theme="dark"] .acm-input:-webkit-autofill,
+[data-bs-theme="dark"] .acm-input:-webkit-autofill:hover,
+[data-bs-theme="dark"] .acm-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #ecfdf5;
+  -webkit-box-shadow: 0 0 0 1000px #0a1f1a inset;
+  caret-color: #ecfdf5;
+}
+
+/* The dropdowns match the text inputs beside them.
+   MasterSelect's toggle is background: var(--vz-card-bg) and this modal
+   never overrode it, so every select sat on Velzon's grey card colour while
+   the inputs around it used this form's own near-black green. On a row of
+   Address Type / Country / State / City the two alternated. (QA #37 / #44)
+   Stated for both themes, not just dark: the light values were a near-match
+   by luck rather than by rule, and only one of them would have drifted. */
+.acm-overlay .master-select-toggle {
+  height: 40px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 9px;
+  background: #fff;
+  font-size: 13px;
+  color: #1f2937;
+}
+.acm-overlay .master-select-toggle:hover:not(:disabled) { border-color: #10b981; box-shadow: none; }
+.acm-overlay .master-select-wrap.show .master-select-toggle,
+.acm-overlay .master-select-toggle:focus-visible {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16,185,129,.18);
+}
+.acm-overlay .master-select-toggle:disabled { background: #f9fafb; color: #9ca3af; cursor: not-allowed; }
+[data-bs-theme="dark"] .acm-overlay .master-select-toggle {
+  background: #0a1f1a;
+  border-color: rgba(16,185,129,.25);
+  color: #ecfdf5;
+}
+[data-bs-theme="dark"] .acm-overlay .master-select-toggle:disabled { background: #14241f; color: #6b8a7e; }
+/* A placeholder and a locked VALUE were the same colour (#6b8a7e), so on a
+   form where half the fields come from the customer there was no telling an
+   empty field from one holding data -- "https://example.com" and "wasdfgh"
+   read identically. The value is now plainly readable and the placeholder
+   plainly secondary. */
+[data-bs-theme="dark"] .acm-input::placeholder { color: #4f6f65; }
+[data-bs-theme="dark"] .acm-doc-date { color: #cbd5e1; }
+[data-bs-theme="dark"] .acm-doc-date--na { color: #6b8a7e; }
+[data-bs-theme="dark"] .acm-doc-date--past { color: #fca5a5; }
+[data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #a7c7bc; }
+[data-bs-theme="dark"] .acm-input:disabled::placeholder { color: #44605a; }
+[data-bs-theme="dark"] .acm-overlay .master-select-toggle:disabled { color: #a7c7bc; }
 [data-bs-theme="dark"] .acm-radio       { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-radio span  { border-color: rgba(255,255,255,.30); }
 

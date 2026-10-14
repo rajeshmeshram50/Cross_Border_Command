@@ -54,7 +54,8 @@
     rgba(168,85,247,0.95)   86%,
     rgba(124,58,237,0.92)  100%);
   opacity: 0.9;
-  filter: blur(0.4px);
+  /* No blur -- see the Consignee list: a filter promotes this strip to its
+     own layer and repaints it as the page moves, for 0.4px nobody can see. */
 }
 .smc-cstrip-left {
   display: flex; align-items: center; gap: 16px;
@@ -1330,10 +1331,11 @@
 [data-bs-theme="dark"] .smc-wdh-chev:hover { background: rgba(255,255,255,0.20); }
 
 [data-bs-theme="dark"] .smc-step {
-  background: rgba(15, 23, 33, 0.78);
+  /* Opaque, with no backdrop-filter -- see the Consignee list. A blurred
+     backdrop is re-composited on every frame the page moves, and these four
+     cards sit on a flat panel where the blur bought nothing. (Customer #40) */
+  background: #11161f;
   border-color: rgba(167,139,250,0.30);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
 }
 
 [data-bs-theme="dark"] .smc-step { border-left-color: #a78bfa; }
@@ -1570,3 +1572,89 @@
 [data-bs-theme="dark"] .smc-filterbar-lbl { color: #94a3b8; }
 [data-bs-theme="dark"] .smc-filterchip { color: #c4b5fd; background: rgba(124,58,237,.12); border-color: rgba(124,58,237,.3); }
 [data-bs-theme="dark"] .smc-filterchip button { background: rgba(196,181,253,.15); color: #c4b5fd; }
+
+
+/* ── Unpinned: no room to fit the card to the viewport ──────────────────────
+   See the Consignee list. Set by fit() when the hero and an open banner have
+   used the space; the card takes its natural height and the page scrolls.
+   .smc-table-wrap is `flex: 1; min-height: 0`, which collapses to nothing when
+   the card has no fixed height, so it has to be released too. */
+[data-unpinned="1"] .smc-table-wrap {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+}
+[data-unpinned="1"] .smc-table-wrap .table-responsive {
+  overflow-y: visible;
+  max-height: none;
+}
+
+
+/* ── The vertical scrollbar belongs to the ROWS, not the whole table ────────
+   The header used to be `position: sticky` inside .table-responsive, which is
+   also the vertical scroller -- so the browser drew that box's scrollbar down
+   its full height, including the strip beside the header. (QA #35)
+
+   A scrollbar cannot be inset: `margin` on ::-webkit-scrollbar-track was tried
+   and does nothing. The only way to start it under the header is to take the
+   header out of the scrolling box, which is what this does WITHOUT touching
+   the shared table component:
+
+     .table-responsive  keeps the HORIZONTAL scroll, so the header and the rows
+                        still slide sideways together.
+     thead              becomes its own `display: table` band, outside anything
+                        that scrolls vertically. It no longer needs to be
+                        sticky -- nothing scrolls past it any more.
+     tbody              becomes the vertical scroller, so its scrollbar starts
+                        exactly at the first row.
+
+   Columns stay aligned because thead and every tbody row are `table-layout:
+   fixed` at the same width, and the per-column percentages below already
+   apply to `thead th:nth-child(n)` and `tbody td:nth-child(n)` equally.
+
+   When the card is unpinned (see the fit() effect) .table-responsive has no
+   definite height, so the calc() resolves against auto, tbody is uncapped and
+   the PAGE scrolls instead -- which is the intended behaviour there. */
+.smc-table-wrap .table-responsive {
+  overflow-y: hidden;
+}
+.smc-table-wrap .table {
+  display: block;
+  height: 100%;
+}
+.smc-table-wrap .table thead,
+.smc-table-wrap .table tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+.smc-table-wrap .table tbody {
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: calc(100% - var(--smc-thead-h, 36px));
+  scrollbar-width: thin;
+}
+/* Not sticky any more: it sits outside the scroller, so pinning it would only
+   add a stacking context and the 1px seam that comes with it. */
+.smc-table-wrap .table thead th {
+  position: static !important;
+  top: auto !important;
+}
+
+
+/* ── How tall the "what we are doing here" banner may get ───────────────────
+   The viewport, less what has to stay visible beneath it: the app header
+   (150), this page's hero strip and gaps (~85), and the table card's own 240px
+   floor plus its bottom reserve. Whatever is left is the banner's.
+
+   It used to be a flat 600px, which on a short window -- or at 150% zoom,
+   where the viewport is barely 540 CSS px -- was more height than existed. The
+   table went below the fold, the page had to scroll, and every strip on it
+   moved when you dragged. Capped, the banner scrolls inside itself instead and
+   the page keeps still.
+
+   clamp, so it never collapses to nothing on a very short screen and never
+   exceeds the 600 it was designed around on a tall one. */
+.smc-wdh-body-wrap { --wdh-max: clamp(160px, calc(100vh - 500px), 600px); }
+.smc-wdh-card.is-open .smc-wdh-body-wrap { overflow-y: auto; overscroll-behavior: contain; }

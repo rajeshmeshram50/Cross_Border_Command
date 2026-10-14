@@ -1161,12 +1161,17 @@ export function SevStat(props: {
  * Auto Code, Document Name and Issuing Authority stay read-only: they come from
  * the segment rule's master row, and editing them here would let one party's
  * upload disagree with the catalogue every other screen reads. */
-export function VaultUploadPopup({ doc, category, busy, onClose, onSubmit }: {
+export function VaultUploadPopup({ doc, category, busy, onClose, onSubmit, overlayClass }: {
   doc: VaultDoc;
   category: 'kyc' | 'dd' | 'tl';
   busy: boolean;
   onClose: () => void;
   onSubmit: (f: File, opts?: { issueDate?: string; expiryDate?: string }) => void | Promise<void>;
+  /** Extra class on the overlay, so a host can re-theme the dialog. The
+   *  Consignee screens pass `cnev-reup`, whose teal palette is already defined
+   *  in ConsigneeEvidenceVaultModal — without it this dialog opens violet on a
+   *  teal form and reads as a piece of another screen. */
+  overlayClass?: string;
 }) {
   const toast = useToast();
   /* The master's `expiry` is free text — "Lifetime", "Varies", "—" all mean
@@ -1220,7 +1225,7 @@ export function VaultUploadPopup({ doc, category, busy, onClose, onSubmit }: {
   const heading = category === 'dd' ? 'Due Diligence' : category === 'kyc' ? 'Owner KYC' : 'Trade License';
 
   return createPortal(
-    <div className="cev-reup-ov" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+    <div className={`cev-reup-ov${overlayClass ? ` ${overlayClass}` : ''}`} onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <div className="cev-reup-card" role="dialog" aria-modal="true">
         <div className="cev-reup-hd">
           <div className="cev-reup-hd-l">

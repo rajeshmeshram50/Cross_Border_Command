@@ -1344,7 +1344,9 @@ export default function SalesLeadWorksheet() {
                   <tr
                     key={l.oppId}
                     onClick={() => onOpenLead(l)}
-                    style={isChecked ? { background: 'rgba(124,58,237,.05)' } : undefined}
+                    /* Cyan, like the checkbox that sets it and the bulk bar it
+                       raises — this was a violet tint. */
+                    style={isChecked ? { background: 'rgba(8,145,178,.06)' } : undefined}
                   >
                     <td style={{ textAlign: 'center', paddingLeft: 14 }} onClick={e => e.stopPropagation()}>
                       <input
@@ -2153,8 +2155,16 @@ const SCOPED_CSS = `
   border: 1.5px solid #a5f3fc;
   border-radius: 14px; padding: 0 18px; gap: 10px;
   /* Figma height/radius (50px / 14px). Kept as a capped flex item so it
-   * still shrinks on narrow viewports instead of the design's fixed 380px. */
-  flex: 0 1 420px; min-width: 220px; max-width: 420px; height: 50px;
+   * still shrinks on narrow viewports instead of the design's fixed 380px.
+   *
+   * It now GROWS into the band as well. At 420px fixed it left an 809px dead
+   * gap between the tab pills and the bar on a full-width screen, which read
+   * as a hole in the toolbar rather than as deliberate spacing.
+   * The 686px cap is where the bar's left edge reaches the Customer Email
+   * column — the target asked for. That alignment is approximate by nature:
+   * the table's columns are content-sized, so they shift with the data. The
+   * cap is what keeps it from stretching the full 1217px of free space. */
+  flex: 1 1 420px; min-width: 220px; max-width: 686px; height: 50px;
   box-shadow: 0 2px 10px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
   transition: all .2s;
 }
@@ -2291,7 +2301,8 @@ const SCOPED_CSS = `
 
 .lwp-root .lwp-chk {
   width: 15px; height: 15px;
-  accent-color: #7c3aed; cursor: pointer; border-radius: 4px;
+  /* The page's cyan, matching the active tab pill and the bulk bar. */
+  accent-color: #0891b2; cursor: pointer; border-radius: 4px;
 }
 
 /* ─── Row sub-elements ─── */
@@ -2454,9 +2465,11 @@ const SCOPED_CSS = `
 .lwp-root .lwp-bulk-bar {
   position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
   z-index: 8900;
-  background: linear-gradient(135deg, #4c1d95, #7c3aed);
+  /* The page's cyan — the same gradient as the active tab pill. The bar was
+     violet, the one purple element on an otherwise cyan screen. */
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
   border-radius: 16px;
-  box-shadow: 0 12px 40px rgba(124,58,237,.45), 0 4px 14px rgba(0,0,0,.18);
+  box-shadow: 0 12px 40px rgba(8,145,178,.45), 0 4px 14px rgba(0,0,0,.18);
   padding: 12px 20px;
   display: flex; align-items: center; gap: 14px; white-space: nowrap;
   font-family: var(--font-sans);
@@ -2478,13 +2491,15 @@ const SCOPED_CSS = `
 .lwp-root .lwp-bulk-divider { width: 1px; height: 20px; background: rgba(255,255,255,.25); }
 .lwp-root .lwp-bulk-btn-primary {
   display: flex; align-items: center; gap: 7px;
-  padding: 8px 18px; background: #fff; color: #7c3aed;
+  /* Label and hover tint follow the bar — they were violet #7c3aed on a
+     lavender #f5f3ff hover, which stayed purple even once the bar was cyan. */
+  padding: 8px 18px; background: #fff; color: #0e7490;
   border: none; border-radius: 10px;
   font-family: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer; transition: all .15s;
   box-shadow: 0 2px 8px rgba(0,0,0,.12);
 }
-.lwp-root .lwp-bulk-btn-primary:hover { background: #f5f3ff; }
+.lwp-root .lwp-bulk-btn-primary:hover { background: #ecfeff; }
 .lwp-root .lwp-bulk-btn-ctq {
   display: flex; align-items: center; gap: 7px;
   padding: 8px 18px; background: #fef3c7; color: #b45309;
