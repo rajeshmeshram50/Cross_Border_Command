@@ -168,6 +168,15 @@ export type PoDetail = PoLinkRefs & {
   payments_started: boolean;
   /** A document is out for signature or signed: view-only until declined / recalled. */
   signing_started: boolean;
+  /** The three T&C layers as the PDF composes them — the typed terms, the
+   *  global entry for this document category, and the segment-matched clauses.
+   *  Carried here so Stage 04 shows what the document prints without a call of
+   *  its own. */
+  terms_layers?: {
+    typed: string;
+    global: string[];
+    segment: Array<{ code?: string; category?: string; segment?: string; content?: string }>;
+  } | null;
   supplier: { vendor_id: number; supplier_code: string; supplier_name: string; supplier_gstin: string | null; supplier_state_code: string | null } | null;
   items: PoItem[];
   documents: PoDocument[];

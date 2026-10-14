@@ -1,8 +1,7 @@
 // "What We Did in the Previous Stages" — the read-only recap every step after
 // the first opens with. `upto` says how many stages are done, so Step 02 shows
 // stage 01 only and Step 03 adds the products, charges and cost summary.
-import { useEffect, useState } from 'react';
-import api from '../../../../../../api';
+import { useState } from 'react';
 import { formatDmy } from '../../../../../../utils/formatDmy';
 import type { PoDraft } from '../po-draft';
 import type { StepCtx } from '../CreatePoForm';
@@ -181,7 +180,7 @@ export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx
                     the PDF composes them. They used to exist only on the printed
                     PO, so editing the T&C library changed the document and
                     nothing on screen (QA #11). */}
-                <TncLayers poId={ctx.detail?.id ?? null} />
+                <TncLayers layers={ctx.detail?.terms_layers} />
               </Group>
             </div>
           </div>
@@ -203,28 +202,17 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
 /**
  * The global and segment Terms & Conditions of this purchase order.
  *
- * Fetched rather than derived: the server already composes the three layers for
- * the PDF — including de-duplicating a clause the buyer typed by hand — and a
- * second implementation here is how the screen and the document end up
- * disagreeing. One endpoint, both readers.
+ * Read off the PO detail the step already has — `terms_layers`, composed by
+ * SalesPdfController so the screen prints what the PDF prints, de-duplication
+ * included. No request of its own: the record is loaded once and this is part
+ * of it.
  *
  * Silent when there is nothing to show: a PO with no matching library entry
  * should read as the typed terms alone, not as an empty heading.
  */
-function TncLayers({ poId }: { poId: number | null }) {
-  const [data, setData] = useState<{ global: string[]; segment: Array<{ segment?: string; content?: string }> } | null>(null);
-
-  useEffect(() => {
-    if (!poId) { setData(null); return; }
-    let live = true;
-    api.get(`/p2p/orders/${poId}/terms`)
-      .then(r => { if (live) setData((r.data?.data ?? null) as typeof data); })
-      .catch(() => { if (live) setData(null); });
-    return () => { live = false; };
-  }, [poId]);
-
-  const globals = data?.global ?? [];
-  const segments = data?.segment ?? [];
+function TncLayers({ layers }: { layers?: { global?: string[]; segment?: Array<{ segment?: string; content?: string }> } | null }) {
+  const globals = layers?.global ?? [];
+  const segments = layers?.segment ?? [];
   if (!globals.length && !segments.length) return null;
 
   return (
