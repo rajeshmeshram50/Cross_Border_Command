@@ -1097,4 +1097,47 @@ const SCOPED_CSS = `
    stays visible against the dark input surface. */
 [data-bs-theme="dark"] .master-modal .anl-modal .master-field-icon { color: #6b7280; }
 [data-bs-theme="dark"] .master-modal .anl-modal .master-field:focus-within .master-field-icon { color: #67e8f9; }
+
+/* Country / State carry the SAME dark surface as the text inputs beside them.
+ *
+ * MasterSelect renders a <button>, not an <input>, so none of the
+ * [data-bs-theme="dark"] .anl-input rules above ever reached it — it kept
+ * masterFormKit's neutral shell, var(--vz-card-bg), which is Velzon's grey
+ * #212529 against this modal's teal #102a3a. Disabled State was a third
+ * colour again (--vz-secondary-bg), so the row read as three different
+ * fields. Every value below is the one .anl-input uses for the same state,
+ * so the two controls can only drift if that palette is edited in one place
+ * and not the other. */
+[data-bs-theme="dark"] .master-modal .anl-modal .master-select-toggle {
+  background: #102a3a;
+  border-color: rgba(34, 211, 238, 0.22);
+  color: #cffafe;
+}
+[data-bs-theme="dark"] .master-modal .anl-modal .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(34, 211, 238, 0.40);
+  box-shadow: none;
+}
+/* .show and .invalid are declared !important in MasterSelect.css, so the
+   teal focus ring has to answer in kind. */
+[data-bs-theme="dark"] .master-modal .anl-modal .master-select-wrap.show .master-select-toggle {
+  background: #0c1f2e;
+  border-color: #06b6d4 !important;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.20) !important;
+}
+[data-bs-theme="dark"] .master-modal .anl-modal .master-select-wrap.invalid .master-select-toggle {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444 !important;
+  color: #fecaca;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15) !important;
+}
+[data-bs-theme="dark"] .master-modal .anl-modal .master-select-toggle:disabled {
+  background: #0e2940;
+  color: #6b7280;
+}
+/* Matches .anl-input::placeholder — "Select country first" should read as
+   unfilled, not as a value. */
+[data-bs-theme="dark"] .master-modal .anl-modal .master-select-placeholder {
+  color: #94a3b8;
+  opacity: 0.7;
+}
 `;

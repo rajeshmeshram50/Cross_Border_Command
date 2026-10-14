@@ -198,11 +198,14 @@ export const LEAD_ACK_CSS = `
 .lam-tabs {
   /* Mirrors the Customer .smc-pill-group — glassy white shell with a violet
      border, so the Lead Ack tabs read identically to the Customer tabs. */
+  /* No fixed height — 34px tab + 4px padding either side resolves to the
+     same 42px as the search bar, so the two line up flush. It was pinned to
+     50px, which is why the search beside it could never match whatever
+     height it chose for itself. */
   display: inline-flex; align-items: center; gap: 2px;
-  height: 50px;
   background: rgba(255, 255, 255, .5);
   border: 1.5px solid #c4b5fd;
-  border-radius: 12px;
+  border-radius: 11px;
   padding: 4px;
   flex-shrink: 0;
   backdrop-filter: blur(4px);
@@ -253,28 +256,39 @@ export const LEAD_ACK_CSS = `
   color: #fff;
 }
 
-/* ─── Search bar — project-standard neutral recipe. Matches the
-   .search-box pattern used in HR Employees and master pages: white
-   card bg, slate icon/placeholder, theme-token border. Picks up the
-   violet ring only on focus. */
+/* ─── Search bar — the Customers toolbar recipe (.smc-toolbar .smc-search),
+   which is the reference every list toolbar is being aligned to.
+   It had its own neutral recipe: no fixed height (so it sized itself from
+   padding and never matched the tab rail beside it), an 8px radius against
+   the rail's 12px, a 1px theme-token border against the rail's violet
+   hairline, and the icon in the flex flow rather than pinned. Those are the
+   four things that made it read as a different control.
+   42px is the house toolbar height, and is what the tab rail resolves to as
+   well: 34px tab + 4px padding either side. */
 .lam-search {
   position: relative;
   display: flex; align-items: center; gap: 8px;
-  background: var(--vz-card-bg, #ffffff);
-  border: 1px solid var(--vz-border-color, #e2e8f0);
-  border-radius: 8px;
-  padding: 6px 14px;
+  background: rgba(255,255,255,0.8);
+  border: 1.5px solid rgba(139,92,246,0.28);
+  border-radius: 11px;
+  padding: 0 14px 0 38px;
+  height: 42px;
   flex: 1 1 320px; min-width: 220px;
-  transition: border-color .15s, box-shadow .15s;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.95) inset;
+  transition: border-color .16s, box-shadow .16s;
 }
-.lam-search:hover { border-color: #cbd5e1; }
-.lam-search:focus-within { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
-.lam-search-icon { color: var(--vz-secondary-color, #6b7280); font-size: 15px; flex-shrink: 0; }
+.lam-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,0.18); }
+.lam-search-icon {
+  position: absolute; left: 14px;
+  color: var(--vz-secondary-color, #6b7280);
+  font-size: 16px; flex-shrink: 0;
+}
 .lam-search input {
-  border: none; background: transparent; outline: none;
-  font-family: inherit; font-size: 13px; color: #1e293b; width: 100%;
+  flex: 1; border: none; background: transparent; outline: none;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  color: var(--vz-body-color, #1e293b); width: 100%;
 }
-.lam-search input::placeholder { color: var(--vz-secondary-color, #94a3b8); font-weight: 400; opacity: 0.75; }
+.lam-search input::placeholder { color: var(--vz-secondary-color, #94a3b8); font-weight: 400; }
 .lam-search-clear {
   background: transparent; border: none; cursor: pointer;
   color: #94a3b8; padding: 0; width: 20px; height: 20px;
@@ -689,6 +703,33 @@ export const LEAD_ACK_CSS = `
 }
 .lam-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
 .lam-textarea::placeholder { color: #94a3b8; font-weight: 400; }
+
+/* Status / DQ Status wear the SAME surface as the Reason textarea above them.
+ *
+ * Those two fields are MasterSelect, which renders a <button> — so none of
+ * the .lam-textarea / .lam-select rules ever reached them and they kept
+ * masterFormKit's neutral shell (var(--vz-card-bg), var(--vz-border-color)),
+ * which is a different surface and a 10px radius against the textarea's 8px.
+ * Barely visible in light mode, obvious in dark, where the textarea is
+ * #14101d and the shell is Velzon's grey #212529.
+ * Every value below is the one .lam-textarea uses for the same state. */
+.lam-modal .master-select-toggle {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #1e293b;
+}
+.lam-modal .master-select-toggle:hover:not(:disabled) {
+  border-color: #cbd5e1;
+  box-shadow: none;
+}
+/* MasterSelect.css declares .show / .invalid !important, so the matching
+   focus ring has to answer in kind. */
+.lam-modal .master-select-wrap.show .master-select-toggle {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15) !important;
+}
+.lam-modal .master-select-placeholder { color: #94a3b8; font-weight: 400; opacity: 1; }
 .lam-char-count { font-size: 10.5px; color: #94a3b8; text-align: right; margin-top: 1px; line-height: 1.1; transition: color .15s; }
 .lam-char-max   { color: #cbd5e1; }
 .lam-cc-warn    { color: #ea580c; font-weight: 700; }
@@ -832,6 +873,9 @@ export const LEAD_ACK_CSS = `
 [data-bs-theme="dark"] .lam-search {
   background: #1a1530;
   border-color: rgba(167,139,250,0.25);
+  /* Replaces the light recipe's inset white highlight, which would otherwise
+     carry over and draw a lit top edge across a dark field. */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.20);
 }
 [data-bs-theme="dark"] .lam-search:hover { border-color: rgba(167,139,250,0.40); }
 [data-bs-theme="dark"] .lam-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
@@ -890,6 +934,20 @@ export const LEAD_ACK_CSS = `
 [data-bs-theme="dark"] .lam-textarea::placeholder { color: #64748b; }
 [data-bs-theme="dark"] .lam-textarea:focus,
 [data-bs-theme="dark"] .lam-select:focus { border-color: #a78bfa; box-shadow: 0 0 0 4px rgba(167,139,250,.18); }
+/* Same surface as the dark textarea above — see the light rules for why
+   MasterSelect needs its own copy of this palette. */
+[data-bs-theme="dark"] .lam-modal .master-select-toggle {
+  background: #14101d; color: #ede9fe;
+  border-color: rgba(167,139,250,.28);
+}
+[data-bs-theme="dark"] .lam-modal .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(167,139,250,.45);
+}
+[data-bs-theme="dark"] .lam-modal .master-select-wrap.show .master-select-toggle {
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 4px rgba(167,139,250,.18) !important;
+}
+[data-bs-theme="dark"] .lam-modal .master-select-placeholder { color: #64748b; }
 [data-bs-theme="dark"] .lam-lbl { color: #c4b5fd; }
 [data-bs-theme="dark"] .lam-char-count { color: #64748b; }
 [data-bs-theme="dark"] .lam-char-max { color: #322750; }

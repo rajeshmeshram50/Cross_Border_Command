@@ -853,6 +853,16 @@ export default function SalesQPI() {
         const cardH = Math.max(0, window.innerHeight - cardTop - 16);
         setFillH(prev => (prev === cardH ? prev : cardH));
       }
+      /* Publish the header band's width for the pinned ACTION header, which
+       * repaints the row's gradient as a right-anchored slice of exactly this
+       * size (see --qpi-band-w in SCOPED_CSS). Set BEFORE the manual-rows
+       * early-return below — the band still has to match when the user has
+       * picked their own row count. */
+      const headRow = host.querySelector('thead tr') as HTMLElement | null;
+      if (headRow) {
+        const bw = headRow.getBoundingClientRect().width;
+        if (bw) host.style.setProperty('--qpi-band-w', `${bw}px`);
+      }
       if (rppManualRef.current) return;   // user chose a value — respect it
       const top    = host.getBoundingClientRect().top;
       const theadH = (host.querySelector('thead') as HTMLElement | null)?.offsetHeight || 44;
@@ -5021,15 +5031,23 @@ function ProductsStep(props: {
    * Domestic drops the "Tax %" column entirely: CGST%+SGST% (or IGST%) already
    * state the rate, so a Tax % beside them was the same number twice. Matches
    * the PO wizard, which likewise shows only the split.
-   *   Name | Qty | Rate | …tax block… | Rate w/Tax | Amount | Action */
+   *   Name | Qty | Rate | …tax block… | Rate w/Tax | Amount | Action
+   *
+   * The ACTION column is 11% in every mode, and the table carries a min-width
+   * (see .qpi-products-table in SCOPED_CSS) so that 11% can never resolve
+   * below ~88px. The "+ Add" button measures 58.5px and the cell keeps an 8px
+   * gutter either side, so 11% clears it at every size the table can take.
+   * The intra set had ACTION at 5% — about 63px on a full-width modal, 19px
+   * short — so the button hung out past the last column and past the table's
+   * own edge, which is what grew the horizontal scrollbar. */
   const colWidths = isIntl
     // Tax % | Tax Amount
-    ? ['30%', '7%', '11%', '7%', '11%', '12%', '12%', '10%']
+    ? ['29%', '7%', '11%', '7%', '11%', '12%', '12%', '11%']
     : intra
       // CGST % | SGST % | CGST Amount | SGST Amount
-      ? ['20%', '7%', '10%', '8%', '8%', '11%', '11%', '11%', '9%', '5%']
+      ? ['19%', '7%', '10%', '7%', '7%', '10%', '10%', '11%', '8%', '11%']
       // IGST % | IGST Amount
-      : ['28%', '8%', '11%', '9%', '12%', '12%', '12%', '8%'];
+      : ['25%', '8%', '11%', '9%', '12%', '12%', '12%', '11%'];
   /* Domestic lines whose product carries no GST % in the master. They quote
    * tax-free, and with the Tax % input gone there's no way to correct that from
    * here — so say so rather than let a 0% quotation go out silently. */
@@ -6057,9 +6075,25 @@ const SCOPED_CSS = `
   position: sticky; right: 0;
 }
 .qpi-table-host .table thead.table-light th:last-child {
-  /* Solid fill — the header gradient lives on the <tr> and can't ride a
-     sticky cell; the gradient's end colour keeps it seamless with the band. */
-  background: #6d28d9 !important;
+  /* The header band lives on the <tr> and a sticky cell cannot ride it — it
+     has to paint its own opaque background, or the scrolling header cells
+     show through.
+     No FLAT colour can be right: the band is still changing across this
+     cell's own ~400px, so whichever stop is picked leaves a step at the
+     cell's left edge. Measured: the band arrives at the seam on #431984
+     while a cell filled with the end stop paints #3b1675.
+     So the cell paints the SAME gradient, sized to the whole row and
+     right-anchored. Its right edge is the row's right edge, so the slice
+     under the cell is exactly what the row would have drawn there — seam
+     gone, at any column width.
+     --qpi-band-w is published by the table's fit() effect. The fallback is
+     the ratio this column usually occupies, so the single frame before that
+     effect runs is already close rather than a bright flash of the 0% stop. */
+  background-color: transparent !important;
+  background-image: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
+  background-size: var(--qpi-band-w, 480%) 100% !important;
+  background-position: right center !important;
+  background-repeat: no-repeat !important;
   z-index: 4;
 }
 .qpi-table-host .table tbody td:last-child {
@@ -6068,13 +6102,28 @@ const SCOPED_CSS = `
   box-shadow: -10px 0 12px -10px rgba(15,23,42,.18);
 }
 .qpi-table-host .table tbody tr:hover td:last-child { background: #ece5fb !important; }
-/* Dark-mode zebra + pinned-cell tints. */
-[data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even) td { background: rgba(124,58,237,.06) !important; }
+/* Dark-mode zebra + pinned-cell tints.
+ *
+ * Every row colour is derived from ONE pair of bases. The pinned ACTION cell
+ * has to repeat its row's colour as an OPAQUE value (see the hover note
+ * below), and when those opaque values were written out by hand they drifted:
+ * the even row composited rgba(124,58,237,.06) over the card to #262635,
+ * while its pinned cell was hardcoded #1d1830 — darker and more purple, so
+ * the ACTION column read as a separate block running down the table.
+ *
+ * color-mix with srgb weights is exactly source-over compositing of a 6%
+ * alpha over an opaque backdrop, so --qpi-row-even IS what the translucent
+ * tint paints — by construction, not by a matching hex kept in step by hand. */
+[data-bs-theme="dark"] .qpi-table-host {
+  --qpi-row-odd:  var(--vz-card-bg, #212529);
+  --qpi-row-even: color-mix(in srgb, #7c3aed 6%, var(--vz-card-bg, #212529));
+}
+[data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even) td { background: var(--qpi-row-even) !important; }
 [data-bs-theme="dark"] .qpi-table-host .table tbody td:last-child {
-  background: var(--vz-card-bg, #1a1d21) !important;
+  background: var(--qpi-row-odd) !important;
 }
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even) td:last-child {
-  background: #1d1830 !important;
+  background: var(--qpi-row-even) !important;
 }
 /* Hover on the PINNED cell must be OPAQUE.
  *
@@ -6087,12 +6136,16 @@ const SCOPED_CSS = `
  * color-mix flattens the same tint against the row's own base colour, so the
  * hover looks identical but nothing shows through. Two rules because the zebra
  * gives odd and even rows different bases — one flat colour would make the
- * pinned cell drift out of step with its own row on hover. */
+ * pinned cell drift out of step with its own row on hover.
+ *
+ * The weight is 8%, matching the rgba(134,92,226,.08) the hover actually
+ * paints on every other cell. It was 12%, so hovering a row lit the ACTION
+ * cell brighter than the rest of the row it belongs to. */
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:hover td:last-child {
-  background: color-mix(in srgb, #865ce2 12%, var(--vz-card-bg, #1a1d21)) !important;
+  background: color-mix(in srgb, #865ce2 8%, var(--qpi-row-odd)) !important;
 }
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even):hover td:last-child {
-  background: color-mix(in srgb, #865ce2 12%, #1d1830) !important;
+  background: color-mix(in srgb, #865ce2 8%, var(--qpi-row-even)) !important;
 }
 
 /* TableContainer's built-in pagination strip — styled as a proper card
@@ -6971,11 +7024,20 @@ const SCOPED_CSS = `
   background: #d1d5db; border-radius: 999px;
 }
 .qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
-/* No min-width on desktop: the fixed layout + percentage colgroup squeeze
-   the columns into the (now 1280px) modal, so the wrap never grows a
-   horizontal scrollbar. Narrow viewports reinstate the min-widths below
-   (≤900px media block) and scroll instead of crushing the inputs. */
-.qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+/* The min-widths apply at EVERY width, not only below the tablet breakpoint.
+   table-layout:fixed sizes columns from the colgroup percentages alone, so a
+   narrow table shrinks every column without limit — and content that no
+   longer fits does not wrap the cell, it spills out of it. That is how the
+   "+ Add" button ended up hanging past the last column and past the table's
+   right edge, dragging a horizontal scrollbar with it.
+   A floor on the table width turns that into an honest scroll of a table
+   whose columns are still the right size. 800px is the smallest width at
+   which the narrowest column (ACTION, 11%) still clears the 58.5px button
+   plus its 8px gutters. */
+.qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; min-width: 800px; }
+/* The 10-column intra-state layout (CGST + SGST split) needs more room before
+   the numeric columns start crushing. */
+.qpi-products-table--wide { min-width: 1020px; }
 /* Saved product name cell — one line, ellipsis. Without this a long name
    wrapped over several lines and misaligned QTY / rate / amount. Full name is
    on the hover tooltip. */
@@ -7001,6 +7063,15 @@ const SCOPED_CSS = `
   text-transform: uppercase; letter-spacing: .06em; text-align: left;
 }
 .qpi-products-table tbody td { padding: 10px 12px; border-bottom: 1px solid #f1f0fc; vertical-align: middle; color: #475569; }
+/* ACTION column keeps an 8px gutter instead of 12px — the same on the header
+   and on every row, so the label and the button below it share one pair of
+   edges. The 4px it gives back is what lets the button clear its column at
+   the table's 800px floor. */
+.qpi-products-table thead th:last-child,
+.qpi-products-table tbody td:last-child { padding-left: 8px; padding-right: 8px; }
+/* Belt and braces: whatever the column resolves to, the button is clipped to
+   it rather than drawn outside it. */
+.qpi-products-table tbody td:last-child > .qpi-prod-add { max-width: 100%; }
 .qpi-products-table tbody tr:last-child td { border-bottom: none; }
 /* Add-product row stays anchored to the bottom of the scroll wrap
    so the "+ Add" button is always reachable without scrolling
@@ -7312,6 +7383,13 @@ const SCOPED_CSS = `
   color: #fff !important;
   border-bottom: 0 !important;
 }
+/* The pinned ACTION header repaints the DARK band's gradient — same slice
+ * trick as the light rule. Without a dark override it kept the light theme's
+ * violet, lighter than every stop in the dark gradient, so the ACTION header
+ * showed as a pale patch cut out of the band. */
+[data-bs-theme="dark"] .qpi-table-host .table thead.table-light th:last-child {
+  background-image: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
+}
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:hover td {
   background: rgba(134,92,226,.08) !important;
 }
@@ -7604,10 +7682,9 @@ const SCOPED_CSS = `
   .qpi-tab { flex: 1; justify-content: center; }
   .qpi-wdh-step { min-height: 0; }
   .qpi-wdh-body { padding: 6px 12px 10px; gap: 10px; }
-  /* Below tablet width the percentage columns would crush the numeric
-     inputs — reinstate the natural min-widths and let the wrap scroll. */
-  .qpi-products-table { min-width: 800px; }
-  .qpi-products-table--wide { min-width: 1020px; }
+  /* The products table's min-widths are no longer set here — they apply at
+     every width now (see .qpi-products-table), because the columns could be
+     crushed on a narrow desktop modal too, not only below tablet width. */
 }
 
 @media (max-width: 680px) {
@@ -7694,6 +7771,10 @@ const SCOPED_CSS = `
   .qpi-actions { gap: 4px; }
   .qpi-act { width: 28px; height: 28px; }
   .qpi-convert-btn { padding: 6px 8px; }
-  .qpi-products-table { min-width: 700px; }
+  /* The 700px floor that used to live here is gone. It overrode the 800px
+     base (same specificity, later in the sheet) and took the ACTION column
+     down to ~77px, which is under what the button needs — so the smallest
+     screens were the ones where it broke out of its column. Scrolling 100px
+     more is the cheaper price. */
 }
 `;

@@ -599,6 +599,17 @@ const ALM_CSS = `
 [data-bs-theme="dark"] .alm-label { color: #cbd5e1; }
 [data-bs-theme="dark"] .alm-foot { background: #1e293b; border-color: #334155; }
 [data-bs-theme="dark"] .alm-btn-ghost { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+/* Cancel's hover had no dark counterpart, so the LIGHT rule above kept
+ * applying: background #f1f5f9 with #0f172a text — a near-white button with
+ * near-black text appearing out of a dark footer the moment the pointer
+ * touched it. The lift and the timing are the same as light; only the palette
+ * changes, one step up from the resting #1e293b rather than inverting it.
+ * The shadow is black, not the light rule's rgba(15,23,42,.10), which is
+ * invisible against a dark surface. */
+[data-bs-theme="dark"] .alm-btn-ghost:hover:not(:disabled) {
+  background: #334155; border-color: #475569; color: #f1f5f9;
+  box-shadow: 0 4px 12px rgba(0,0,0,.35);
+}
 [data-bs-theme="dark"] .alm-note { background: rgba(8,145,178,.18); border-color: rgba(34,211,238,.3); color: #67e8f9; }
 
 /* Phone — single-column date range, fewer side paddings, full-width buttons */

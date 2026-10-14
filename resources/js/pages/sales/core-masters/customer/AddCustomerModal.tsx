@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SegmentBadge, { SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
@@ -1693,6 +1693,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     'cpName','cpDesig','cpTel','cpEmail','cpWa',
   ];
 
+  /* The GST uniqueness answer, reported up from Stage1Identification.
+   * A ref rather than state: validateStage1 only needs the latest value at the
+   * moment it runs, and re-rendering the whole modal on every keystroke of the
+   * GST field to carry it would be a poor trade. */
+  const gstGateRef = useRef<{ status: string; takenBy: string | null }>({ status: 'idle', takenBy: null });
+  /* Stable identity — the child reports through an effect that lists this in
+   * its deps, so a fresh arrow each render would re-fire it every render. */
+  const reportGstGate = useCallback((g: { status: string; takenBy: string | null }) => {
+    gstGateRef.current = g;
+  }, []);
+
   /* ── Stage 1 validation. Runs when the user clicks Save & Next on
    *    Stage 1 (and on the final Submit on Stage 3 so a back-edit can't
    *    smuggle through a bad email/phone). Returns true when the form
@@ -1703,6 +1714,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     for (const k of STAGE1_FIELD_KEYS) {
       const msg = stage1FieldRule(k, form);
       if (msg) next[k] = msg;
+    }
+    /* GST uniqueness, which the field rules cannot carry.
+     *
+     * stage1FieldRule is a pure function of the form, so it can only judge the
+     * SHAPE of a GSTIN. Whether the number already belongs to another customer
+     * is an answer from the server, held in gstStatus -- and nothing consulted
+     * it, so a duplicate passed Stage 1 and was only caught later at GST
+     * Scrutiny, several stages in. (QA #43)
+     *
+     * 'checking' blocks too. The lookup is debounced, so typing a number and
+     * clicking straight through would otherwise race past an answer that had
+     * not arrived yet -- which is the same bug with a smaller window. */
+    if (isDomesticCountry(form.country) && !next.coGstNumber) {
+      const gate = gstGateRef.current;
+      if (gate.status === 'taken') {
+        next.coGstNumber = gate.takenBy
+          ? `This GST Number is already registered to ${gate.takenBy}. Enter a different one.`
+          : 'This GST Number is already registered to another customer. Enter a different one.';
+      } else if (gate.status === 'checking') {
+        next.coGstNumber = 'Still checking whether this GST Number is already registered — one moment.';
+      }
     }
     setErrors(next);
     if (Object.keys(next).length === 0) return true;
@@ -2191,16 +2223,32 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           {/* GST Scrutiny button + close grouped on the right so they sit
               together (the header is justify-content: space-between, which
               would otherwise push them apart). Greyed/disabled until the
-              customer is DOMESTIC (India) AND a GST Number has been entered —
-              the scrutiny form auto-fills from that number, so opening it
-              before one exists gives an empty popup. */}
+              customer is DOMESTIC (India), a GST Number has been entered, AND
+              the Customer Legal Identity step has been saved — the scrutiny
+              form auto-fills from that number, so opening it before one
+              exists gives an empty popup. */}
           <div className="acm-header-right">
             {(() => {
               // GST exists only for a domestic (India) customer — the country
               // decides, not a toggle.
               const gstOn = isDomesticCountry(form.country);
               const hasGstNo = !!(form.coGstNumber ?? '').trim();
-              const canScrutinise = gstOn && hasGstNo;
+              /* Customer Legal Identity saved. A scrutiny entry belongs to a
+               * customer, and its GST number is copied from the one validated
+               * on this step, so scrutinising before the identity exists put
+               * the user in the wrong order: they could file scrutiny rows
+               * against a company name, GST number and country still being
+               * typed, and a duplicate GST was caught only afterwards. (QA #43)
+               *
+               * Deliberately keyed on the row existing, which the Save & Next
+               * on the Identification tab creates -- NOT on all of Stage 1
+               * being complete. The scrutiny requirement itself is enforced at
+               * the Stage 1 -> 2 boundary below, so gating on the whole stage
+               * would unlock the button only after the step that demands it:
+               * a deadlock. In edit mode the row already exists, so an
+               * established customer's button is live immediately. */
+              const identitySaved = !!(savedDbId || customer?.db_id);
+              const canScrutinise = gstOn && hasGstNo && identitySaved;
               return (
                 <button
                   type="button"
@@ -2210,7 +2258,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                   title={
                     canScrutinise ? 'Manage GST Scrutiny'
                       : !gstOn ? 'Set GST Applicable = Yes to enable'
-                      : 'Enter the GST Number to enable'
+                      : !hasGstNo ? 'Enter the GST Number to enable'
+                      : 'Save the Customer Legal Identity step to enable'
                   }
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -2307,7 +2356,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               additional fields populate. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
-            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => String(s.id)) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesById={segTypesById} guardSegmentRemove={(prev, vs) => {
+            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => String(s.id)) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesById={segTypesById} onGstGate={reportGstGate} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
               /* A segment can't be removed when (1) a PRODUCT on a PI / Shipment
@@ -3018,7 +3067,7 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, docsLocked = false, onCountryBlockedByDocs, mapLeadLocked = false, onCountryBlockedByLead, currentCustomerId, unruledSegments = [], segTypesById }:
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, docsLocked = false, onCountryBlockedByDocs, mapLeadLocked = false, onCountryBlockedByLead, currentCustomerId, unruledSegments = [], segTypesById, onGstGate }:
   { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[];
     /** True when GST Scrutiny entries exist. Only guards the Country field now —
      *  the GST Applicable toggle it used to lock no longer exists. */
@@ -3048,7 +3097,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     unruledSegments?: string[];
     /** Segment NAME → its Domestic/International rule types, for the dropdown
      *  badges (Intl / Dom / +2 when a segment has both). */
-    segTypesById: Map<string, Set<SegDocType>> }) {
+    segTypesById: Map<string, Set<SegDocType>>;
+    /** Reports the GST duplicate-check answer up to the parent so Save & Next
+     *  can refuse a number that already belongs to another customer. The
+     *  lookup is debounced and lives down here with the field, but the gate
+     *  that uses it is validateStage1, several hundred lines up. */
+    onGstGate?: (g: { status: string; takenBy: string | null }) => void }) {
   /* India (or not-yet-chosen) → domestic → GST fields render. Any other country
    * → international → they're hidden. Driven by the Primary Address & Contact
    * Person card's Country, which lives in this same component. */
@@ -3154,6 +3208,11 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
       : null,
     [gstApplicable, gstRaw, form.stateCode],
   );
+
+  /* Hand the duplicate-check answer to the parent, which gates Save & Next on
+   * it. Fires on every transition including back to 'idle', so clearing the
+   * field also clears the gate. */
+  useEffect(() => { onGstGate?.({ status: gstStatus, takenBy: gstTakenBy }); }, [gstStatus, gstTakenBy, onGstGate]);
 
   /* Contact Person Name and Whatsapp are lifted out of the JSX because they sit
    * in DIFFERENT slots depending on whether GST Number is rendered:
@@ -6130,6 +6189,11 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-gst-sr { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
 [data-bs-theme="dark"] .acm-gst-table td { color: #cbd5e1; border-top-color: rgba(167,139,250,0.15); }
 [data-bs-theme="dark"] .acm-btn-ghost { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
+/* Cancel's hover had no dark counterpart, so the light rule's #ede9fe kept
+   applying — a pale lavender fill under text that stays #c4b5fd, because the
+   light hover only sets a background. One step up from the resting tint
+   instead. */
+[data-bs-theme="dark"] .acm-btn-ghost:hover:not(:disabled) { background: rgba(167,139,250,0.22); border-color: rgba(167,139,250,0.55); color: #ddd6fe; }
 
 /* Pagination */
 /* WorklistPager carries its own band (background + layout), so this wrapper is

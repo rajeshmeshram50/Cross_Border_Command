@@ -161,6 +161,20 @@ export default function SalesCustomers() {
   const [filterOpen, setFilterOpen] = useState(false);
 
   const [tabSwitching, setTabSwitching] = useState(false);
+  /* Shimmer on every tab change. The three tabs slice an already-loaded set
+   * client-side, so there is no fetch to await — but repainting instantly
+   * reads as "nothing happened": the columns are identical and the rows often
+   * overlap, so only the pill counts visibly move. The shimmer is what says
+   * the table underneath was replaced.
+   *
+   * Same shape and duration as HrEmployees, which is where this pattern
+   * already lives. The cleanup is what makes a fast All → Fresh → Recurring
+   * run restart ONE shimmer rather than stack three that end at odd moments. */
+  useEffect(() => {
+    setTabSwitching(true);
+    const t = window.setTimeout(() => setTabSwitching(false), 450);
+    return () => window.clearTimeout(t);
+  }, [tab]);
   const [q, setQ] = useState('');
   const [wdhOpen, setWdhOpen] = useState(false);
   const [segOpen, setSegOpen] = useState<{ id: string | number; items: { name: string; status?: string | null }[]; x: number; y: number } | null>(null);
@@ -399,9 +413,7 @@ export default function SalesCustomers() {
 
   const switchTab = (next: 'all' | 'fresh' | 'recurring') => {
     if (next === tab) return;
-    // Instant — tabs slice the already-loaded set client-side now, so there's
-    // no fetch to wait on and no shimmer to show.
-    setTab(next);
+    setTab(next);   // the shimmer rides the `tab` effect above
   };
   const onSearch = (v: string) => { setQ(v); };
 

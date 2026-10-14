@@ -3394,5 +3394,9 @@ export const SSF_CSS = `
 [data-bs-theme="dark"] .ssf-recipient-name { color: #e2e8f0; }
 [data-bs-theme="dark"] .ssf-foot { background: #0b1220; border-top-color: #1e293b; }
 [data-bs-theme="dark"] .ssf-btn-ghost { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+/* Back / Cancel had no dark hover, so the light rule's #f8fafc kept applying
+   under text that stays #e2e8f0 — near-white on near-white, so the label
+   disappeared while the pointer was on it. */
+[data-bs-theme="dark"] .ssf-btn-ghost:hover:not(:disabled) { background: #1e293b; border-color: #475569; color: #f8fafc; }
 [data-bs-theme="dark"] .ssf-loading, [data-bs-theme="dark"] .ssf-empty { background: #0f172a; border-color: #334155; color: #94a3b8; }
 `;
