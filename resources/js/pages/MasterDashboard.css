@@ -5,5 +5,4 @@
 .stat-card .icon-box i{transition:transform .25s ease;} 
 .stat-card:hover .icon-box{transform:scale(1.08) rotate(6deg); box-shadow:0 12px 28px rgba(0,0,0,0.18);} 
 .stat-card:hover .icon-box i{transform:translateY(-1px);} 
-/* subtle glow for the inline top strip */
 .stat-card:hover > div[style*="position: absolute"][style*="height: 4"]{filter:drop-shadow(0 6px 12px rgba(102,145,231,0.12));}

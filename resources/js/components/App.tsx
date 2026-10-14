@@ -36,8 +36,6 @@ const Branches = lazyPage(() => import('../pages/branch/Branches'));
 const UsersPage = lazyPage(() => import('../pages/UsersPage'));
 const Plans = lazyPage(() => import('../pages/plan/Plans'));
 const Payments = lazyPage(() => import('../pages/Payments'));
-// [Integration Subscriptions] Parked pending R&D — re-enable with the route below.
-// const IntegrationSubscriptions = lazyPage(() => import('../pages/IntegrationSubscriptions'));
 const Permissions = lazyPage(() => import('../pages/permission/Permissions'));
 const Settings = lazyPage(() => import('../pages/Settings'));
 const Profile = lazyPage(() => import('../pages/Profile'));
@@ -118,16 +116,12 @@ import { Shimmer, ShimmerTable, ShimmerEmployeeProfile } from './ui/Shimmer';
 const PublicOnboarding = lazyPage(() => import('../pages/PublicOnboarding'));
 const ClockIn = lazyPage(() => import('../pages/ClockIn'));
 const ModuleStubPage = lazyPage(() => import('../pages/ModuleStubPage'));
-/* Inventory Management — designed one master at a time; the rest are still stubs. */
 const WarehouseMaster = lazyPage(() => import('../pages/inventory-management/warehouse/WarehouseMaster'));
 const ZoneMaster = lazyPage(() => import('../pages/inventory-management/zone/ZoneMaster'));
 const RackMaster = lazyPage(() => import('../pages/inventory-management/rack/RackMaster'));
 const ProductFlagMaster = lazyPage(() => import('../pages/inventory-management/product-flag/ProductFlagMaster'));
 const P2pBulkSourcing = lazyPage(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
 const DevTools = lazyPage(() => import('../pages/dev-tools/DevTools'));
-/* Invoice — the rebuilt supplier purchase invoice, and now the only one: the
-   screen it replaced was removed along with Debit Note and the old Purchase
-   Order page. */
 const Invoice = lazyPage(() => import('../pages/p2p/purchase-management/invoice/InvoiceList'));
 const Order = lazyPage(() => import('../pages/p2p/purchase-management/order/po-list/Order'));
 const PoGstApprovalReview = lazyPage(() => import('../pages/p2p/purchase-management/order/gst-approval/PoGstApprovalReview'));
@@ -143,39 +137,7 @@ const Documentation = lazyPage(() => import('../pages/Documentation'));
 const Inbox = lazyPage(() => import('../pages/Inbox'));
 const Gmail = lazyPage(() => import('../pages/Gmail'));
 
-/* Route-transition fallback.
- *
- * Every page below is code-split, so navigating to one the browser has not
- * fetched yet suspends for the length of one chunk request. This is what shows
- * during that gap.
- *
- * Deliberately NOT <SplashLoader />: that is the app-boot splash, a fixed
- * full-screen overlay on a 2.4s timer, and firing it on every menu click would
- * cover the shell and take longer than the chunk it is waiting for. This keeps
- * the sidebar and header on screen and only fills the content area, matching
- * the inline spinner the employee wrappers already use.
- *
- * The delay-then-appear trick avoids a spinner flash on chunks that are
- * already cached: nothing paints for the first 180ms, so a warm navigation
- * looks instant and only a genuinely slow fetch ever shows the spinner.
- */
 function RouteFallback() {
-  /* A page-SHAPED skeleton, not a spinner.
-   *
-   * A centred spinner said "something is happening" but nothing about what,
-   * so a route switch read as a blank hole for however long the chunk took.
-   * Most pages in this app resolve into the same silhouette — a header strip
-   * with a title and an action button, a toolbar, then a table — so drawing
-   * that silhouette means the layout is already on screen and only the values
-   * arrive late. Deliberately generic: this stands in for ~108 routes, and a
-   * skeleton that promised any one page's specific layout would be wrong on
-   * the other 107.
-   *
-   * The 180ms delayed fade-in is kept from the spinner version and matters
-   * more now, not less: a full-page skeleton flashing for 40ms on an
-   * already-cached chunk is far more jarring than a spinner doing the same.
-   * Warm navigations still look instant; only a genuinely slow chunk fetch
-   * ever paints this. */
   return (
     <div
       style={{
@@ -188,7 +150,6 @@ function RouteFallback() {
       aria-label="Loading page"
     >
       <style>{'@keyframes cbcRouteFallbackIn{to{opacity:1}}'}</style>
-      {/* Page header — icon tile + title/subtitle on the left, action on the right. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
         <Shimmer width={46} height={46} radius={13} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9, flex: 1, minWidth: 0 }}>
@@ -197,7 +158,6 @@ function RouteFallback() {
         </div>
         <Shimmer width={132} height={38} radius={10} />
       </div>
-      {/* Toolbar — tab pills on the left, search on the right. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <Shimmer width={104} height={34} radius={10} />
         <Shimmer width={104} height={34} radius={10} />
@@ -210,7 +170,6 @@ function RouteFallback() {
   );
 }
 
-// Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
   navigate: (path: string, data?: any) => void;
   getPath: (page: string, data?: any) => string;
@@ -221,7 +180,6 @@ const NavigateContext = createContext<{
 
 export const useNavigateContext = () => useContext(NavigateContext);
 
-// Page to path mapping
 const getPagePath = (page: string, data?: any): string => {
   switch (page) {
     case 'dashboard': return '/dashboard';
@@ -254,12 +212,7 @@ const getPagePath = (page: string, data?: any): string => {
     case 'my-plan': return '/my-plan';
     case 'plan-blocked': return '/plan-blocked';
     case 'payments': return '/payments';
-    // [Integration Subscriptions] Parked pending R&D.
-    // case 'integrations': return '/integrations';
     case 'clock-in': return '/clock-in';
-    // New top-level header modules. P2P reuses the existing Sales P2P
-    // Summary page; the other three render the shared permission-gated stub
-    // until their real pages ship.
     case 'p2p': return '/p2p';
     case 'credentials-vault': return '/credentials-vault';
     case 'project-navigator': return '/project-navigator';
@@ -269,19 +222,11 @@ const getPagePath = (page: string, data?: any): string => {
     case 'permissions': return '/permissions';
     case 'settings': return '/settings';
     case 'profile': return '/profile';
-    /* Both routes existed but had no id here, so navigating to them by id fell
-       through to the `default` branch and landed on /dashboard. The horizontal
-       header pushes paths directly and never hit it; the vertical layout goes
-       through this map, which is why its profile menu couldn't offer them. */
     case 'my-team': return '/my-team';
     case 'documentation': return '/documentation';
     default:
-      // Master leaf slugs come as `master.xxx` — map to `/master/xxx`
       if (page.startsWith('master.')) return `/master/${page.slice('master.'.length)}`;
       if (page === 'master') return '/master';
-      // Sales Matrix leaf slugs come as `sales.xxx`. Wired: customers,
-      // consignee, lead_ack_master. Other sales.* leaves fall through to
-      // /dashboard until their pages are built.
       if (page === 'sales.customers')       return '/sales/customers';
       if (page === 'sales.consignee')       return '/sales/consignee';
       if (page === 'sales.lead_ack_master') return '/sales/lead-ack-master';
@@ -295,16 +240,10 @@ const getPagePath = (page: string, data?: any): string => {
         const qs = [sp, spName, spEmp, spMgr].filter(Boolean).join('&');
         return qs ? `/sales/leads-details?${qs}` : '/sales/leads-details';
       }
-      /* "My Workplace" reuses the Lead Worksheet page — it's the same
-         operational view, surfaced under a friendlier menu label after
-         the May-26 cleanup. */
       if (page === 'sales.workplace')       return '/sales/lead-worksheet';
       if (page === 'sales.todo')            return '/sales/todo';
       if (page === 'sales.matrix_detail')   return data?.oppId ? `/sales/matrix/${encodeOppId(data.oppId)}/stage/${encodeStage(data?.stage || 1)}` : '/sales/matrix';
       if (page === 'sales.qpi')             return '/sales/qpi';
-      /* Sales Matrix Operations menu was trimmed to "My Workplace" and
-         "Quotation Vs PI History"; the QPI page already exists and the
-         alias keeps the new menu id wired to it. */
       if (page === 'sales.quotation_vs_pi') return '/sales/qpi';
       if (page === 'sales.sign_tracker')    return '/sales/sign-tracker';
       if (page === 'sales.p2p_summary')     return '/sales/p2p-summary';
@@ -312,9 +251,6 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'sales.resolution_center') return '/sales/resolution-center';
       if (page === 'sales.analytics')       return '/sales/analytics';
       if (page === 'sales.performance')     return '/sales/performance';
-      // Central CLM — every leaf reuses the same stub route until the
-      // real pages ship. The slug after /clm/ is what the stub reads
-      // to render the right title + breadcrumb.
       if (page === 'clm.analytics')             return '/clm/analytics';
       if (page === 'clm.diagnosis_resolution')  return '/clm/diagnosis-resolution';
       if (page === 'clm.regulatory_defense')    return '/clm/regulatory-defense';
@@ -334,13 +270,11 @@ const getPagePath = (page: string, data?: any): string => {
       if (page === 'clm.agreements')            return '/clm/agreements';
       if (page === 'clm.terms_conditions')      return '/clm/terms-conditions';
       if (page === 'clm.clause_library')        return '/clm/clause-library';
-      // Developers → Shipment (Business Task list).
       if (page === 'developers.shipment')       return '/developers/shipment';
       return '/dashboard';
   }
 };
 
-// Wrapper components to extract URL params
 function ClientViewWrapper() {
   const { id } = useParams();
   const navigateFn = useNavigateContext().navigate;
@@ -413,11 +347,6 @@ function EmployeePermissionsWrapper() {
   const { id } = useParams();
   const location = useLocation();
   const navigateFn = useNavigateContext().navigate;
-  // Same identifier-decode pattern as EmployeeProfileWrapper — the URL
-  // param can be an encrypted token, a numeric id, or a plain emp_code.
-  // We resolve it once via /employees/{param} so the inner page receives
-  // a stable emp_code and the linked employee row (with user_id) needed
-  // to dispatch permission saves to the right backend user.
   const stateEmp = (location.state as any)?.employee;
   const [empCode, setEmpCode] = useState<string | null>(
     stateEmp?.emp_code || stateEmp?.id || null,
@@ -438,7 +367,7 @@ function EmployeePermissionsWrapper() {
           setResolvedEmp(e);
         }
       })
-      .catch(() => { /* leave empCode null — the inner page surfaces the error */ })
+      .catch(() => {})
       .finally(() => { if (!cancelled) setResolving(false); });
     return () => { cancelled = true; };
   }, [id, stateEmp]);
@@ -459,22 +388,9 @@ function EmployeeProfileWrapper() {
   const location = useLocation();
   const navigateFn = useNavigateContext().navigate;
   const stateEmp = (location.state as any)?.employee;
-  // A caller (e.g. the Payroll Execution Blocked popup, #38) can tag the
-  // navigation with a return context so Back/Close comes back to where it was
-  // opened from instead of the default Active-Employees list.
   const returnPage = (location.state as any)?.returnPage as string | undefined;
   const returnData = (location.state as any)?.returnData;
 
-  // The URL param can be: (a) an encrypted token (preferred path,
-  // surfaced by Employee::encrypted_id), (b) a plain numeric DB id, or
-  // (c) a legacy emp_code like EMP-001. EmployeeProfile downstream
-  // expects an emp_code as its `employeeId` prop, so resolve the
-  // identifier via /employees/{param} — the backend's resolveIdParam
-  // accepts all three shapes and returns the canonical record.
-  //
-  // When location.state already carries the row (navigated from
-  // HrEmployees / MyTeam), skip the round-trip and use it directly so
-  // back/forward navigation stays instant.
   const [empCode, setEmpCode] = useState<string | null>(
     stateEmp?.emp_code || stateEmp?.id || null,
   );
@@ -493,10 +409,6 @@ function EmployeeProfileWrapper() {
         if (!e) { setResolveErr('Employee not found'); return; }
         const code = e.emp_code || (e.id ? `EMP-${e.id}` : null);
         setEmpCode(code);
-        // Normalise the raw API row into the EmployeeProfileTarget shape —
-        // department / designation arrive as relation OBJECTS ({id,name,code}),
-        // but EmployeeProfile expects flat strings. Passing the raw objects
-        // crashed the hero with "Objects are not valid as a React child".
         const flatName = (v: any) => (v && typeof v === 'object' ? v.name : v) ?? undefined;
         setResolvedEmp({
           ...e,
@@ -514,11 +426,6 @@ function EmployeeProfileWrapper() {
     return () => { cancelled = true; };
   }, [id, stateEmp]);
 
-  /* Opened WITHOUT a preloaded row — Payroll → Run Payroll → Open Employee is
-     the common case — so the record has to be fetched before the profile can
-     render. That wait used to be a bare centred spinner on an empty page; show
-     the profile's own skeleton instead, so the layout is already in place when
-     the data lands. */
   if (resolving) {
     return <ShimmerEmployeeProfile />;
   }
@@ -533,16 +440,6 @@ function EmployeeProfileWrapper() {
   return <EmployeeProfile employeeId={empCode} employee={resolvedEmp} onBack={() => navigateFn(returnPage || 'hr-employees', returnData)} />;
 }
 
-/**
- * /profile route — branches on the logged-in user type:
- *   employee → renders the EmployeeProfile component preloaded with their
- *              own Employee record (so they get the same tabs, expense
- *              raise/list, evidence vault, etc. as an HR-side view).
- *   anyone   → renders the existing admin/client Profile page.
- *
- * The fetch is fire-and-forget; if it fails, EmployeeProfile still renders
- * with the minimal `{ name, email }` stub built from the auth user.
- */
 function ProfileRouter() {
   const { user } = useAuth();
   const navigateFn = useNavigateContext().navigate;
@@ -571,35 +468,21 @@ function ProfileRouter() {
             || [e.reporting_manager?.first_name, e.reporting_manager?.last_name].filter(Boolean).join(' ').trim()
             || e.reporting_manager_user?.name
             || undefined,
-          // Passport-size photo from onboarding (employee_documents,
-          // document_key='photo'). Read by EmployeeProfile's hero avatar.
-          // Resolve relative `/storage/...` paths to absolute URLs.
           photoUrl: (() => {
             const raw = e.photo_url || user.employee_profile_photo || null;
             return raw ? resolveFileUrl(raw) : null;
           })(),
         });
       })
-      .catch(() => { /* fall back to the minimal stub built below */ });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [isEmployee, user?.employee_id, user?.name, user?.email]);
 
   if (!isEmployee) return <Profile />;
-  // Use the EMP- code as the URL slug — matches the convention HrEmployees
-  // uses, so EmployeeProfile's existing employee_code lookup path runs the
-  // same way for both /profile and /hr/employees/:id/profile.
-  //
-  // The code MUST come from `/me`'s `employee_code`, never be synthesised as
-  // `EMP-${employee_id}`: emp_code is a per-client sequence, not the DB id, so
-  // the fabricated string was a DIFFERENT (and wrong) id that flashed under the
-  // name until the /employees fetch landed and replaced it. When /me has no
-  // code, show nothing rather than a guess — EmployeeProfile renders "—".
   const fallback = {
     id: stateEmp?.id || user!.employee_code || '',
     name: user!.name,
     email: user!.email,
-    // /me already carries the employee passport photo, so the hero shows it
-    // immediately even if the /employees/:id fetch hasn't resolved yet.
     photoUrl: user!.employee_profile_photo ? resolveFileUrl(user!.employee_profile_photo) : null,
   };
   return (
@@ -611,12 +494,10 @@ function ProfileRouter() {
   );
 }
 
-/* ── Auth Pages (Login / Forgot Password / OTP / Reset) ── */
 function AuthRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Get state from location for email (passed via navigation state)
   const state = location.state as { email?: string } | null;
   const [resetEmail, setResetEmail] = useState(state?.email || '');
 
@@ -652,66 +533,25 @@ function AuthRoutes() {
   );
 }
 
-/* ── Dashboard Pages (after login) with URL Routing ── */
 function DashboardRoutes({ user }: { user: any }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [splashDone, setSplashDone] = useState(false);
 
-  /* The EMPLOYEE tier is gated too. (#201)
-   *
-   * This read `client_admin || branch_user`, so an employee login sailed past
-   * an expired plan and kept using the whole application — the subscription
-   * governs the tenant, not the seniority of whoever signs in, and the people
-   * doing the day-to-day work are the ones for whom "still usable" matters
-   * most. The API already sends `plan` for anyone carrying a client_id, so the
-   * information was there; only this test excluded them.
-   *
-   * super_admin stays out: they belong to no client, have no plan of their
-   * own, and are the account that has to be able to reach a locked-out tenant. */
   const isPlanGoverned = user.user_type === 'client_admin'
     || user.user_type === 'branch_user'
     || user.user_type === 'employee';
   const planExpiredOrMissing = isPlanGoverned && user.plan && (!user.plan.has_plan || user.plan.expired);
   const defaultPages = ['/my-plan', '/profile', '/plan-blocked'];
 
-  // Onboarding gate — an employee whose onboarding isn't finished yet CAN sign
-  // in, but is locked to the Inbox so they can sign their pending onboarding
-  // documents. Once HR completes onboarding the `onboarding_pending` flag
-  // clears (on next /me refresh or re-login) and full access opens up, subject
-  // to whatever module permissions the branch then grants. Profile is allowed
-  // so the employee can still view their own record; everything else bounces
-  // back to the Inbox.
   const onboardingPending = user.user_type === 'employee' && !!user.onboarding_pending;
   const onboardingPages = ['/inbox', '/profile'];
 
-  /* Freeze the browser Back button while onboarding is unfinished. (#42)
-   *
-   * The render guard below already refuses to SHOW anything but the Inbox and
-   * the profile, but it acts after the history entry has changed: Back pops to
-   * whatever preceded the Inbox — the login screen, or the dashboard the login
-   * pushed before the guard replaced it — React re-renders, and the guard
-   * bounces. The destination is never reachable, yet the pop still happens, so
-   * on a slow render the previous screen paints for a frame before the bounce,
-   * and any entry whose own render redirects (the catch-all sends '*' to
-   * /dashboard) gets a turn first. What the employee sees is Back opening the
-   * default tab.
-   *
-   * So the pop is corrected at the history layer, where it happens, instead of
-   * being cleaned up afterwards. Popping onto an allowed page is left alone —
-   * Profile back to Inbox still works, and freezing that would be a different
-   * bug — anything else is pinned straight back to the Inbox.
-   *
-   * Registered before the splash early-return so the hook order never changes
-   * between renders. */
   useEffect(() => {
     if (!onboardingPending) return;
     const onPop = () => {
       const popped = window.location.pathname;
       if (onboardingPages.includes(popped)) return;
-      /* replaceState, not a router navigate: this has to take effect in the
-         same task as the pop, before React paints the popped entry. The router
-         is then told the same thing so its own location agrees. */
       window.history.replaceState(null, '', '/inbox');
       navigate('/inbox', { replace: true });
     };
@@ -720,37 +560,10 @@ function DashboardRoutes({ user }: { user: any }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboardingPending, navigate]);
 
-  /* The dashboard-stats preload that used to live here is GONE.
-   *
-   * It fired on every login and warmed the stats cache for a dashboard the
-   * user might visit. What it actually cost, measured:
-   *
-   *   /dashboard/client-stats, cold cache … 110 queries
-   *
-   * Locally that is 147 ms, so it looked free. On the deployment every query
-   * is a network hop and the same call takes 8.5 s — the single slowest thing
-   * on any page. It was paid on the Case-to-Case list, the Sales Matrix,
-   * everywhere, for data none of those screens show.
-   *
-   * And it rarely bought anything: the server-side cache it warms lives for
-   * 60 SECONDS (Cache::remember in DashboardController::clientStats). Unless
-   * the user opened the dashboard within a minute of logging in, the whole
-   * 8.5 s was spent and then expired unused.
-   *
-   * Nothing is lost by dropping it. Every dashboard already fetches its own
-   * stats on mount and writes the same sessionStorage cache — this comment's
-   * predecessor called that "the fallback"; it is simply the path now.
-   */
-
-  // Show splash on first login
   if (!splashDone) {
     return <SplashLoader onComplete={() => setSplashDone(true)} />;
   }
 
-  // Navigate function compatible with existing components.
-  // Forwarding `data` as react-router state means pages that need extra
-  // context (e.g. UsersPage needs the branchName when navigating from the
-  // Branches table) can read it via useLocation().state.
   const navigateFn = (p: string, data?: any) => {
     const path = getPagePath(p, data);
     if (onboardingPending && !onboardingPages.includes(path)) {
@@ -758,8 +571,6 @@ function DashboardRoutes({ user }: { user: any }) {
       return;
     }
     if (planExpiredOrMissing && !defaultPages.includes(path)) {
-      // Same split as the render-time guard below — a tier that cannot buy is
-      // shown the block, not the purchase page. (#201)
       navigate(
         (user.user_type === 'branch_user' || user.user_type === 'employee') ? '/plan-blocked' : '/my-plan',
         { replace: true },
@@ -769,25 +580,16 @@ function DashboardRoutes({ user }: { user: any }) {
     navigate(path, data ? { state: data } : undefined);
   };
 
-  // Provide navigate context to all child components
   const navigateContextValue = {
     navigate: navigateFn,
     getPath: getPagePath,
   };
 
-  // Lock an onboarding-incomplete employee to the Inbox (+ their profile).
-  // Any other path — including the dashboard they'd normally land on — is
-  // bounced to /inbox so the only thing they can do is sign their docs.
   if (onboardingPending && !onboardingPages.includes(location.pathname)) {
     return <Navigate to="/inbox" replace />;
   }
 
-  // Redirect to my-plan if plan expired and trying to access other pages
   if (planExpiredOrMissing && !defaultPages.includes(location.pathname)) {
-    /* Only a client_admin can actually buy or renew, so only they are sent to
-       the purchase page. A branch user or an employee gets the explanatory
-       block instead — routing them to a plan picker they have no authority to
-       act on reads as "you did something wrong". (#201) */
     if (user.user_type === 'branch_user' || user.user_type === 'employee') {
       return <Navigate to="/plan-blocked" replace />;
     }
@@ -799,20 +601,11 @@ function DashboardRoutes({ user }: { user: any }) {
     client_admin: ClientDashboard,
     branch_user: BranchDashboard,
     client_user: BranchDashboard,
-    // Employees get a personal dashboard scoped to their own Employee row
-    // (profile hero, expense KPIs, approvals queue, team peers, etc.).
-    // Fallback below still points to BranchDashboard so any future
-    // user_type is safe-by-default.
     employee:    EmployeeDashboard,
   };
 
   const DefaultDashboard = DashboardMap[user.user_type] || BranchDashboard;
 
-  // Global permission guard — mirrors the sidebar/header visibility rules so a
-  // user who pastes a restricted URL (e.g. a Dashboard-only employee opening
-  // /hr/employees) is blocked with an explicit Access Denied instead of the
-  // page silently rendering in a passive view-only state. Runs on every
-  // navigation (location-driven re-render). See utils/routeAccess.
   const routeAllowed = canAccessPath(location.pathname, user);
 
   return (
@@ -829,24 +622,6 @@ function DashboardRoutes({ user }: { user: any }) {
             {!routeAllowed ? (
               <AccessDenied />
             ) : (
-            /* One boundary for every page route. Each page below is a lazyPage()
-               chunk; this is the only thing that has to catch their suspend.
-
-               `key` is the fix for "switching pages shows the OLD page, then
-               jumps to the new one, with no loader in between".
-
-               React deliberately does NOT re-show a fallback for a Suspense
-               boundary that has already revealed content — during a transition
-               it keeps the previous UI on screen instead, to avoid flashing a
-               spinner over something the user is already reading. React Router
-               wraps navigations in exactly such a transition, so this single
-               long-lived boundary never showed RouteFallback again after the
-               first page: you sat looking at the old page for the whole chunk
-               download, then it swapped.
-
-               Keying by pathname makes each route a DIFFERENT boundary, so
-               navigating mounts a fresh one that has revealed nothing yet —
-               and a fresh boundary does show its fallback. */
             <Suspense key={location.pathname} fallback={<RouteFallback />}>
             <Routes>
               <Route path="/dashboard" element={<DefaultDashboard />} />
@@ -886,11 +661,6 @@ function DashboardRoutes({ user }: { user: any }) {
                   </div>
                 </div>
               } />
-              {/* Payments is a billing surface — only the account owner
-                  (super_admin) and the client_admin who paid the bills
-                  should see it. Other roles hitting the URL directly get
-                  bounced to their dashboard so an employee can't even
-                  load the empty Payments shell. */}
               <Route
                 path="/payments"
                 element={
@@ -899,33 +669,15 @@ function DashboardRoutes({ user }: { user: any }) {
                     : <Navigate to="/dashboard" replace />
                 }
               />
-              {/* [Integration Subscriptions] Parked pending R&D — re-enable this
-                  route + its lazy import + the menu item + the schedule/api routes.
-              <Route
-                path="/integrations"
-                element={
-                  user.user_type === 'super_admin'
-                    ? <IntegrationSubscriptions />
-                    : <Navigate to="/dashboard" replace />
-                }
-              /> */}
               <Route path="/permissions" element={<Permissions />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/profile" element={<ProfileRouter />} />
-              {/* Face-driven attendance — open to any signed-in tenant user.
-                  The controller hard-checks `user.employee_id`, so non-employees
-                  hitting this URL get a friendly 404 toast from the page. */}
               <Route path="/clock-in" element={<ClockIn />} />
               <Route path="/my-team"  element={<MyTeam />} />
-              {/* Master documentation — reference material, open to every role. */}
               <Route path="/documentation" element={<Documentation />} />
               <Route path="/inbox"    element={<Inbox />} />
               <Route path="/gmail"    element={<Gmail />} />
               <Route path="/master" element={<MasterDashboard />} />
-              {/* /master/segments and /clm/segment share the SAME backend
-                  (clm_segments table) and SAME UI. Whatever is added on either
-                  side shows on both. The explicit route below must come before
-                  the catch-all /master/:slug so it takes priority. */}
               <Route path="/master/segments" element={<ClmSegmentPage />} />
               <Route path="/master/:slug" element={<MasterPage />} />
               <Route path="/sales/customers" element={<SalesCustomers />} />
@@ -939,36 +691,24 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/sales/qpi" element={<SalesQPI />} />
               <Route path="/sales/sign-tracker" element={<SalesSignTracker />} />
               <Route path="/sales/p2p-summary" element={<SalesP2PSummary />} />
-              {/* New top-level header modules. P2P reuses the Sales P2P
-                  Summary page; the rest render the shared permission-gated
-                  stub until their real pages are built. */}
               <Route path="/p2p" element={<SalesP2PSummary />} />
               <Route path="/credentials-vault" element={<ModuleStubPage />} />
               <Route path="/dev-tools" element={<DevTools />} />
               <Route path="/project-navigator" element={<ModuleStubPage />} />
               <Route path="/gts" element={<ModuleStubPage />} />
-              {/* Inventory — Zebra TC27 put-away scanning. Runs on simulated
-                  data until the scan/device endpoints ship; see putAwayStore.ts. */}
               <Route path="/inventory" element={<InventoryPutAway />} />
               <Route path="/inventory/stickers" element={<InventoryStickers />} />
               <Route path="/inventory/devices" element={<InventoryScanDevices />} />
               <Route path="/inventory/scan-log" element={<InventoryScanLog />} />
-              {/* P2P leaves without a real page yet — dark-mode-aware "Coming soon" stub. */}
               <Route path="/p2p/analytics" element={<ModuleStubPage />} />
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
               <Route path="/p2p/bulk-sourcing" element={<P2pBulkSourcing />} />
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
-              {/* Inventory Management — blank while each master is designed.
-                  Separate from /master/* on purpose: those are the existing
-                  master screens with their data, these are being built fresh.
-                  Point a route at its real component as that one ships. */}
               <Route path="/inventory-management/warehouse-master" element={<WarehouseMaster />} />
               <Route path="/inventory-management/zone-master" element={<ZoneMaster />} />
               <Route path="/inventory-management/rack-master" element={<RackMaster />} />
               <Route path="/inventory-management/product-flags" element={<ProductFlagMaster />} />
               <Route path="/p2p/supplier-purchase-invoice" element={<Invoice />} />
-              {/* The screen used to live at /p2p/invoice. Kept as a redirect so
-                  a bookmark or a link in an old email still lands on it. */}
               <Route path="/p2p/invoice" element={<Navigate to="/p2p/supplier-purchase-invoice" replace />} />
               <Route path="/p2p/order" element={<Order />} />
               <Route path="/inbox/po-approval/:id" element={<PoGstApprovalReview />} />
@@ -978,14 +718,11 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/products" element={<Products />} />
               <Route path="/products/:id" element={<ProductView />} />
               <Route path="/suppliers" element={<Vendors />} />
-              {/* Old path kept as a redirect so existing links/bookmarks survive the rename. */}
               <Route path="/vendors" element={<Navigate to="/suppliers" replace />} />
               <Route path="/sales/diagnosis" element={<SalesDiagnosis />} />
               <Route path="/sales/resolution-center" element={<SalesResolutionCenter />} />
               <Route path="/sales/analytics" element={<SalesAnalytics />} />
               <Route path="/sales/performance" element={<SalesPerformance />} />
-              {/* Central CLM — real pages get explicit routes; everything
-                  else falls through to the stub. */}
               <Route path="/clm" element={<ClmStubPage />} />
               <Route path="/clm/segment"          element={<ClmSegmentPage />} />
               <Route path="/clm/authority"        element={<ClmAuthorityPage />} />
@@ -1000,18 +737,12 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clm/document-panel"   element={<ClmDcpPage />} />
               <Route path="/clm/buyer-profile"    element={<ClmBuyerProfilePage />} />
               <Route path="/clm/supplier-profile" element={<ClmSupplierProfilePage />} />
-              {/* Command Center — combined Diagnosis & Resolution Center +
-                  the read-only Regulatory Defense File repository. */}
               <Route path="/clm/diagnosis-resolution" element={<ClmDiagnosisResolutionPage />} />
               <Route path="/clm/regulatory-defense"   element={<ClmRegulatoryDefenseFilePage />} />
-              {/* Operations · Without Shipment ID — Case to Case Contracts,
-                  Agreements We Sent, Agreements To Approve. */}
               <Route path="/clm/analytics"             element={<ClmAnalyticsPage />} />
               <Route path="/clm/case-to-case"          element={<ClmCaseToCasePage />} />
               <Route path="/clm/agreements-sent"       element={<ClmAgreementsSentPage />} />
               <Route path="/clm/agreements-to-approve" element={<ClmAgreementsToApprovePage />} />
-              {/* Remaining operations leaves (analytics / diagnosis /
-                  resolution) still fall through to the stub. */}
               <Route path="/clm/:slug" element={<ClmStubPage />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />
@@ -1050,14 +781,10 @@ function DashboardRoutes({ user }: { user: any }) {
   );
 }
 
-/* ── Main Router — switches between Auth and Dashboard ── */
 function Router() {
   const { user } = useAuth();
   const location = useLocation();
 
-  // Public onboarding flow — token-protected, accessible without login.
-  // Matched first so candidates clicking the email link don't bounce to
-  // /login when no session is active.
   if (location.pathname.startsWith('/onboarding/')) {
     return (
       <Suspense fallback={<RouteFallback />}>
@@ -1068,9 +795,6 @@ function Router() {
     );
   }
 
-  // Every printed sticker points here. It must resolve without a session:
-  // an unregistered device has to see "Device blocked", not a login form —
-  // bouncing it to /login would leak that the code means something.
   if (location.pathname.startsWith('/s/')) {
     return (
       <Suspense fallback={<RouteFallback />}>
@@ -1082,43 +806,12 @@ function Router() {
   }
 
   if (!user) {
-    // Allow auth routes even when not logged in
     return <AuthRoutes />;
   }
 
-  // key={user.id} forces full remount when user changes (login/switch user)
   return <DashboardRoutes key={user.id} user={user} />;
 }
 
-/**
- * Scrolls back to the top on every forward navigation.
- *
- * Without this, a route change kept the OUTGOING page's scroll offset: leave
- * /hr/employees scrolled halfway down, pick Employee Onboarding from the menu,
- * and it opened halfway down too — its header and KPI strip cut off above the
- * viewport, reading as a broken page. React Router does not reset scroll on its
- * own, and <ScrollRestoration /> is not an option here: it only works under a
- * data router (createBrowserRouter), while this app uses <BrowserRouter>.
- *
- * ── What actually scrolls ────────────────────────────────────────────────
- * Not the window. The Velzon shell pins #layout-wrapper to height:100dvh with
- * overflow:hidden and lets `.main-content` scroll inside it, deliberately, so
- * the app shows exactly one scrollbar. The document therefore never moves and
- * window.scrollTo() is a silent no-op for every signed-in page — which is why
- * the first version of this component appeared to do nothing.
- *
- * Both are reset: `.main-content` for the shell, and the window for the routes
- * that render outside it (login, forgot-password, public onboarding), which do
- * scroll the document normally.
- *
- * Two deliberate exemptions:
- *  - POP (browser Back/Forward) is left alone — going back should return you to
- *    where you were, not dump you at the top.
- *  - A #hash target is left alone so in-page anchors still land on their section.
- *
- * Keyed on pathname only, so query-string changes (?tab=…, filters, paging)
- * don't yank the page upward while the user is working in place.
- */
 function ScrollToTop() {
   const { pathname, hash } = useLocation();
   const navType = useNavigationType();
@@ -1126,13 +819,9 @@ function ScrollToTop() {
   useEffect(() => {
     if (navType === 'POP' || hash) return;
 
-    // scrollTop rather than scrollTo({behavior:'instant'}): assignment is
-    // always immediate, and it cannot be animated by a stray
-    // `scroll-behavior: smooth` further up the tree.
     document.querySelectorAll<HTMLElement>('.main-content')
       .forEach(el => { el.scrollTop = 0; });
 
-    // Routes outside the shell still scroll the document.
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
   }, [pathname, hash, navType]);
 
@@ -1145,35 +834,16 @@ export default function App() {
       <ThemeProvider>
         <VariantProvider>
           <ToastProvider>
-            {/* ConfirmProvider exposes an async useConfirm() hook so any
-                page can replace native window.confirm() with a styled
-                modal dialog. */}
             <ConfirmProvider>
             <AuthProvider>
-              {/* SettingsProvider sits inside Auth so its API call carries the
-                  bearer token; it sets document.title, favicon, and platform
-                  default theme colors as live dependencies. */}
               <SettingsProvider>
                 <BrowserRouter>
-                  {/* Must sit INSIDE BrowserRouter — it reads the router's
-                      location. Placed above <Router /> so it covers every
-                      route: dashboard, auth and public onboarding alike. */}
                   <ScrollToTop />
-                  {/* Catches anything the route tree throws during render.
-                      Without it a single failure — most often a lazy chunk
-                      that a deploy removed while the tab sat open — unmounted
-                      the whole app and left a blank white page. Inside the
-                      router so the boundary is remounted with the tree, and
-                      above <Router /> so it covers dashboard, auth and the
-                      public onboarding routes alike. */}
                   <AppErrorBoundary>
                     <Router />
                   </AppErrorBoundary>
                 </BrowserRouter>
-                {/* CookieBanner reads privacy.cookie + the user's prior
-                    accept state. Hidden when disabled or already accepted. */}
                 <CookieBanner />
-                {/* Auto-logout after SESSION_TIMEOUT_HOURS idle when security.sessTimeout is ON */}
                 <IdleTimeout />
               </SettingsProvider>
             </AuthProvider>
