@@ -440,7 +440,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       aria-modal="true"
     >
       <style>{TNW_CSS}</style>
-      <div className={`tnw-shell${editorFs ? ' is-fullscreen' : ''}`}>
+      <div className={`tnw-shell${editorFs ? ' is-fullscreen' : ''}${(step === 2 || isGlobal) ? ' is-editor' : ''}`}>
         {/* Blocks the whole card while the save is in flight. Only the buttons
             were disabled, so the Regulatory Type radios, the document name and
             the segment stayed live mid-request: switching High to Less after
@@ -1440,7 +1440,7 @@ const TNW_CSS = `
 /* Step 2 is the editor and nothing else, so the body hands its height straight
    to the frame and stops scrolling itself — two nested scrollers would mean the
    outer one moves the toolbar out of view before the inner one moves the text. */
-.tnw-body.is-editor { overflow: hidden; display: flex; flex-direction: column; }
+.tnw-body.is-editor { overflow-y: auto; display: flex; flex-direction: column; }
 /* .tnw-step-body sits between the body and the editor frame, and it was sizing
    itself to its content — so the height stopped there. Every link in the chain
    has to pass it on, or the frame grows past the modal and is simply clipped,
@@ -1583,6 +1583,7 @@ const TNW_CSS = `
 [data-bs-theme="dark"] .tnw-importing__t { color: #67e8f9; }
 [data-bs-theme="dark"] .tnw-importing__s { color: #94a3b8; }
 
+.tnw-shell.is-editor { height: calc(100vh - 48px); }
 .tnw-shell.is-fullscreen {
   width: calc(100vw - 24px);
   max-width: calc(100vw - 24px);
@@ -1622,7 +1623,7 @@ const TNW_CSS = `
   overflow: hidden;
   background: #fff;
   display: flex; flex-direction: column;
-  flex: 1; min-height: 0;
+  flex: 1 0 auto;
 }
 /* Header, toolbar and footer keep their size; only the draft area gives. */
 .tnw-editor-head, .tnw-editor-foot, .tnw-editor-shell .ctcte-toolbar { flex-shrink: 0; }
@@ -1670,7 +1671,7 @@ const TNW_CSS = `
 /* The one part that scrolls. min-height:0 is load-bearing: without it a flex
    child refuses to shrink below its content, so the frame would grow instead of
    the area scrolling — which is the state this was in. */
-.tnw-editor-area { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
+.tnw-editor-area { position: relative; flex: 1 1 0; min-height: 0; overflow-y: auto; }
 /* Teal scrollbar on the draft, matching the other CLM editors — without it the
    area scrolls with no visible affordance and reads as clipped content. */
 /* The bar has to be SEEN, not merely present: a 6px thumb at .28 alpha on a

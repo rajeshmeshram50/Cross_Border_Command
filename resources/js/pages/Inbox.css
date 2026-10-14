@@ -501,9 +501,9 @@
 [data-bs-theme="dark"] .inbox-page .inbox-code-pill {
   background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
 }
-[data-bs-theme="dark"] .inbox-page .inbox-action-Sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
-[data-bs-theme="dark"] .inbox-page .inbox-action-Approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
-[data-bs-theme="dark"] .inbox-page .inbox-action-Other   { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
+[data-bs-theme="dark"] .inbox-page .ib-action-pill--sign    { background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important; }
+[data-bs-theme="dark"] .inbox-page .ib-action-pill--approve { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
+[data-bs-theme="dark"] .inbox-page .ib-action-pill--other   { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
 [data-bs-theme="dark"] .inbox-page .inbox-view-btn {
   background: rgba(99,102,241,0.18) !important; color: #c4b5fd !important;
   border-color: rgba(124,92,252,0.35) !important;

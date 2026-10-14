@@ -5184,7 +5184,7 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout-mode="dark"] .app-onboarding-banner {
   background: rgba(245, 158, 11, 0.16) !important;
   color: #fcd34d !important;
-  border-bottom-color: rgba(245, 158, 11, 0.30) !important;
+  border-color: rgba(245, 158, 11, 0.30) !important;
 }
 
 .recharts-wrapper:focus,

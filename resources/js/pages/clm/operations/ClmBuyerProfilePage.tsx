@@ -9,7 +9,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
-import { PER_PAGE, useAutoFitRows } from '../shared/clmShared';
+import { PER_PAGE } from '../shared/clmShared';
 import useDismissPopover from '../shared/useDismissPopover';
 import SearchClear from '../../../components/ui/SearchClear';
 
@@ -249,6 +249,37 @@ function useFillHeight(
       const top = el.getBoundingClientRect().top;
       const next = Math.max(min, Math.round(window.innerHeight - top - gap));
       setH((prev) => (prev === next ? prev : next));
+    };
+    return settle(calc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return h;
+}
+
+function useExactFitRows(
+  cardRef: React.RefObject<HTMLDivElement | null>,
+  autoFitRef: React.MutableRefObject<boolean>,
+  setRows: (n: number) => void,
+  deps: unknown[],
+): number | undefined {
+  const [h, setH] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const calc = () => {
+      const el = cardRef.current;
+      if (!el) return;
+      const scroller = el.closest('.main-content') as HTMLElement | null;
+      const bottom = scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight;
+      const top = el.getBoundingClientRect().top;
+      const next = Math.max(240, Math.round(bottom - top - 8));
+      setH((prev) => (prev === next ? prev : next));
+
+      if (!autoFitRef.current) return;
+      const headerH = (el.firstElementChild as HTMLElement | null)?.offsetHeight || 0;
+      const theadH  = (el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 40;
+      const pagerH  = (el.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight || 56;
+      const rowH    = (el.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 46;
+      const avail = next - headerH - theadH - pagerH - 4;
+      setRows(Math.max(5, Math.floor(avail / rowH)));
     };
     return settle(calc);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -669,6 +700,7 @@ function TxnPager({ page, total, perPage, noun, onPage, onPageSize }: { page: nu
 }
 
 const txnTableHeaderRow: CSSProperties = { background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderBottom: '1.5px solid #A5F3FC' };
+const stickyThead: CSSProperties = { position: 'sticky', top: 0, zIndex: 2, background: '#f0fdff', boxShadow: '0 1.5px 0 #A5F3FC' };
 const idChip: CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: '11px', fontWeight: 800, color: '#0891b2', background: 'linear-gradient(135deg,rgba(8,145,178,.1),rgba(6,182,212,.06))', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(6,182,212,.25)' };
 const oppChip: CSSProperties = { fontSize: '10.5px', fontWeight: 600, color: '#4338CA', background: '#EEF2FF', padding: '2px 7px', borderRadius: '6px', border: '1px solid #C7D2FE' };
 const oppChipMono: CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: '11px', fontWeight: 800, color: '#4338CA', background: '#EEF2FF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #C7D2FE' };
@@ -733,24 +765,14 @@ export default function ClmBuyerProfilePage() {
   // the pager's "Rows per page" selector (when set) overrides the auto-fit.
   const [bpManualSize, setBpManualSize] = useState<number | null>(null);
   const [consManualSize, setConsManualSize] = useState<number | null>(null);
-  /* Dynamic pagination — the SHARED hook the CLM masters use
-     (clmShared/useAutoFitRows), not a local copy.
-     *
-     * This page used to carry its own measurement, and it floored the page at
-     * 4 rows; the shared one floors at PER_PAGE (10) and only grows from there,
-     * which is the whole point of that floor — see its comment: "the old floor
-     * was 4, which served four-row pages on a laptop and made the same tenant
-     * look different on every machine". Sharing it also means a fix to the
-     * measurement lands on every CLM list at once instead of drifting here.
-     *
-     * autoFitRef goes false the moment the user picks a size in the pager, so a
-     * manual choice is never overwritten by the next resize. */
+  /* autoFitRef goes false the moment the user picks a size in the pager, so a
+     manual choice is never overwritten by the next resize. */
   const [bpDynamicSize, setBpDynamicSize] = useState(PER_PAGE);
   const [consDynamicSize, setConsDynamicSize] = useState(PER_PAGE);
   const buyerAutoFitRef = useRef(true);
   const consAutoFitRef = useRef(true);
-  const buyerCardFill = useAutoFitRows(buyerCardRef, buyerAutoFitRef, setBpDynamicSize, [bpaTab, partyAnalyticsOpen]);
-  const consCardFill = useAutoFitRows(consCardRef, consAutoFitRef, setConsDynamicSize, [bpaTab, partyAnalyticsOpen]);
+  const buyerCardFill = useExactFitRows(buyerCardRef, buyerAutoFitRef, setBpDynamicSize, [bpaTab, partyAnalyticsOpen]);
+  const consCardFill = useExactFitRows(consCardRef, consAutoFitRef, setConsDynamicSize, [bpaTab, partyAnalyticsOpen]);
   const bpPerPage = bpManualSize ?? bpDynamicSize;
   const consPerPage = consManualSize ?? consDynamicSize;
   // Transaction-wise tables (ws/wos · eq/neq): one card holds the active table,
@@ -1292,7 +1314,7 @@ export default function ClmBuyerProfilePage() {
                 {wsSub === 'eq' && (
                   <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                      <thead>
+                      <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
                             <th key={i} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'center' }}>{h}</th>
@@ -1330,7 +1352,7 @@ export default function ClmBuyerProfilePage() {
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                      <thead>
+                      <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'Consignee', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
                             <th key={i} style={{ ...thStyle, textAlign: (h === 'Customer' || h === 'Consignee') ? 'left' : 'center' }}>{h}</th>
@@ -1377,7 +1399,7 @@ export default function ClmBuyerProfilePage() {
                 {wosSub === 'eq' && (
                   <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                      <thead>
+                      <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
                             <th key={i} style={{ ...thStyle, textAlign: h === 'Customer' ? 'left' : 'center' }}>{h}</th>
@@ -1418,7 +1440,7 @@ export default function ClmBuyerProfilePage() {
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
                     </div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                      <thead>
+                      <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'Consignee', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
                             <th key={i} style={{ ...thStyle, textAlign: (h === 'Customer' || h === 'Consignee') ? 'left' : 'center' }}>{h}</th>
@@ -1586,7 +1608,7 @@ export default function ClmBuyerProfilePage() {
                 </div>
                 <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }} ref={buyerTableRef}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                    <thead>
+                    <thead style={stickyThead}>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
                           <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
@@ -1639,7 +1661,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { buyerAutoFitRef.current = false; setBpManualSize(n); setBuyerPage(1); }} className="bp-wl" />
+                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { buyerAutoFitRef.current = false; setBpManualSize(n); setBuyerPage(1); }} pageSizeOptions={[5, 10, 15, 25, 50]} className="bp-wl" />
               </div>
             </div>
           )}
@@ -1684,7 +1706,7 @@ export default function ClmBuyerProfilePage() {
                 </div>
                 <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }} ref={consTableRef}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
-                    <thead>
+                    <thead style={stickyThead}>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Customer', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
                           <th key={i} style={{ padding: '9px 11px', textAlign: h === 'Company Name' || h === 'Segment' ? 'left' : 'center' }}><span style={thTxt}>{h}</span></th>
@@ -1746,7 +1768,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { consAutoFitRef.current = false; setConsManualSize(n); setConsPage(1); }} className="bp-wl" />
+                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { consAutoFitRef.current = false; setConsManualSize(n); setConsPage(1); }} pageSizeOptions={[5, 10, 15, 25, 50]} className="bp-wl" />
               </div>
             </div>
           )}
