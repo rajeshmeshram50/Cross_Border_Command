@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\P2p;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -101,8 +102,76 @@ class P2pFileController extends Controller
         if (!$user->isSuperAdmin() && !empty($row->client_id) && (int) $row->client_id !== (int) $user->client_id) {
             abort(403, 'You are not allowed to download this file.');
         }
-        if (!Storage::disk('public')->exists($path)) abort(404, 'File is missing on storage.');
+        $disk = $this->diskHolding($path);
+        if (!$disk) abort(404, 'File is missing on storage.');
 
-        return Storage::disk('public')->download($path, $name ?: ($row->{$nameCol} ?: basename($path)));
+        $filename = $name ?: ($row->{$nameCol} ?: basename($path));
+
+        /* ONE url, two modes.
+         *
+         * ?mode=preview opens the file in the tab; ?mode=download (the default)
+         * saves it. The same bytes, the same caller check, the same disk — only
+         * the Content-Disposition differs, so the two cannot drift apart and the
+         * payload carries one link instead of two that must stay in step.
+         *
+         * ?inline=1 still works: it was the first spelling and something may
+         * already hold a link built with it. */
+        $inline = $request->boolean('inline')
+            || strtolower((string) $request->query('mode')) === 'preview';
+
+        try {
+            if ($inline) {
+                return Storage::disk($disk)->response($path, $filename, [
+                    'Content-Disposition' => 'inline; filename="' . addslashes($filename) . '"',
+                ]);
+            }
+
+            return Storage::disk($disk)->download($path, $filename);
+        } catch (\Throwable $e) {
+            /* The row says the file is there and the disk agreed a moment ago,
+             * so a failure here is the STORAGE, not the request: a dropped
+             * connection to the blob container, a revoked key, a read timeout.
+             * 502 says that honestly. A 404 would send whoever is looking to
+             * re-upload a document that has not gone anywhere. */
+            Log::warning('P2P file download failed', [
+                'path' => $path, 'disk' => $disk, 'error' => $e->getMessage(),
+            ]);
+            abort(502, 'The file could not be read from storage. Please try again.');
+        }
+    }
+
+    /**
+     * The disk that actually holds this path, or null when none does.
+     *
+     * NOT hard-coded to 'public'. That disk swaps its driver with
+     * FILESYSTEM_DISK — local on a dev box, azure-storage-blob in production —
+     * and a file written under one setting is still read under another when an
+     * environment is migrated. So the candidates are tried in order and the
+     * first that holds the path wins.
+     *
+     * Each probe is guarded: exists() on a REMOTE disk makes a network call and
+     * throws when the container is unreachable or the key is wrong. An
+     * unreachable disk must not take the request down — it is simply not the
+     * disk holding this file, and the next one gets its turn.
+     */
+    private function diskHolding(string $path): ?string
+    {
+        $candidates = array_values(array_unique(array_filter([
+            config('filesystems.default'),
+            'public',
+            'local',
+        ])));
+
+        foreach ($candidates as $disk) {
+            try {
+                if (Storage::disk($disk)->exists($path)) return $disk;
+            } catch (\Throwable $e) {
+                Log::warning('P2P file disk probe failed', [
+                    'path' => $path, 'disk' => $disk, 'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return null;
     }
 }

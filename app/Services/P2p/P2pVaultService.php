@@ -203,8 +203,13 @@ class P2pVaultService
             $stickers[] = $this->doc(
                 'Sticker — ' . $b->box_code,
                 $b->sticker_printed_at ? 'Printed ' . $this->day($b->sticker_printed_at) : 'Not printed yet',
-                null, 'box_sticker', $b->sticker_printed_at ? 'Printed' : 'Pending',
-            ) + ['action_url' => "/api/p2p/spi/{$spi->id}/boxes/{$b->id}/sticker/download"];
+                null, 'box_sticker', $b->sticker_printed_at ? 'Printed' : 'Pending', 'generated',
+            ) + [
+                // The same idea as the Purchase Order PDF: rendered on demand,
+                // so the action is what exists, not a file.
+                'action_url' => "/api/p2p/spi/{$spi->id}/boxes/{$b->id}/sticker/download",
+                'action'     => 'print',
+            ];
         }
 
         $files = SpiBoxAttachment::whereIn('box_id', $boxes->pluck('id'))->orderBy('id')->get();
@@ -266,6 +271,20 @@ class P2pVaultService
     /** One PO document, with its signing state when it has been sent. */
     private function fromPoDocument(PurchaseOrderDocument $d, ?ClmSignatureRequest $sig = null): array
     {
+        /* Where this document sits in its signature request. A request carries
+         * several documents and the signed files come back in the same order,
+         * so the index is what names this one. Matched the way shape() matches
+         * it in PurchaseOrderDocumentController: our row id for a P2P request,
+         * the CLM library id otherwise. */
+        $pos = null;
+        if ($sig && is_array($sig->trade_doc_ids)) {
+            $mine = $sig->document_type === ClmSignatureRequest::DOC_P2P_PO_DOCUMENT || $d->source_id === null
+                ? (int) $d->id
+                : (int) $d->source_id;
+            $at  = array_search($mine, array_map('intval', $sig->trade_doc_ids), true);
+            $pos = $at === false ? null : $at;
+        }
+
         return $this->doc(
             $d->name,
             trim(implode(' · ', array_filter([
@@ -274,12 +293,45 @@ class P2pVaultService
             $d->file_path,
             $d->doc_kind,
             ucfirst((string) $d->status),
+            /* A SIGNED document is stored on its signature REQUEST, not here:
+             * signing sets status and signed_at and leaves file_path holding
+             * the unsigned draft it was sent as. Saying "signed" names what the
+             * row is; signed_file_url below is where the executed copy lives. */
+            $d->status === 'signed' ? 'signed' : ($d->doc_kind === 'purchase_order' ? 'generated' : 'uploaded'),
         ) + [
             'id'               => $d->id,
             'code'             => $d->code,
             'required'         => $d->needed === 'yes',
             'signature_status' => $sig?->status,
             'signed_at'        => optional($d->signed_at)->toDateTimeString(),
+            /* The EXECUTED copy. file_url above is the draft that was sent —
+             * signing never writes back to file_path — so a screen offering
+             * only that would hand someone an unsigned PDF of a signed
+             * document. Null until the request completes and the index of this
+             * document within it is known. */
+            'signed_file_url'  => ($d->status === 'signed' && $sig && $pos !== null)
+                ? "/api/clm/signature-requests/{$sig->id}/view-file/{$pos}"
+                : null,
+            /* SOME DOCUMENTS ARE MADE, NOT UPLOADED.
+             *
+             * The Purchase Order PDF is rendered from the order on demand, so
+             * until someone asks for it there is no file to preview or save —
+             * and a vault that only offered those would show the one document
+             * that definitely exists as permanently missing. The action that
+             * produces it is named instead, and only while it still can be:
+             * generate() refuses a document already sent or signed.
+             *
+             * A trade document or an agreement has no such action. Nothing
+             * generates a Bill of Lading — it is waiting to be uploaded, and
+             * `file_url: null` with no action is exactly that state. */
+            'action_url' => (!$d->file_path
+                && $d->doc_kind === 'purchase_order'
+                && $d->status === 'pending')
+                ? "/api/p2p/orders/{$d->purchase_order_id}/documents/{$d->id}/generate"
+                : null,
+            'action'     => (!$d->file_path && $d->doc_kind === 'purchase_order' && $d->status === 'pending')
+                ? 'generate'
+                : null,
         ];
     }
 
@@ -291,14 +343,39 @@ class P2pVaultService
      * /p2p/files/download because Azure keeps them off-origin, where a direct
      * link cannot be saved.
      */
-    private function doc(string $name, string $meta, ?string $path, string $kind, string $status): array
+    /**
+     * One vault line.
+     *
+     * $source is the field the screen should branch on, so it never has to
+     * infer a state from which urls happen to be null:
+     *
+     *   uploaded   a person put this file here      → preview + download
+     *   generated  it is rendered on demand          → the action, until a file exists
+     *   signed     it came back from the signer      → preview + download, from the request
+     *   awaited    nobody has provided it yet        → nothing to offer; this is the gap
+     */
+    private function doc(string $name, string $meta, ?string $path, string $kind, string $status, string $source = 'uploaded'): array
     {
         return [
             'name'     => $name,
             'meta'     => $meta,
             'kind'     => $kind,
             'status'   => $status,
+            'source'   => $path ? $source : ($source === 'uploaded' ? 'awaited' : $source),
+            // The raw storage path, kept for anything that wants a plain link.
             'file_url' => $path ? file_url($path) : null,
+            /* ONE url for both buttons: append ?mode=preview to open it in the
+             * tab, ?mode=download to save it. Two separate links said the same
+             * thing twice and could fall out of step; the endpoint decides the
+             * disposition and nothing else about the request changes.
+             *
+             * It is the authenticated stream, which checks the caller, finds
+             * the disk actually holding the path and hands back the ORIGINAL
+             * filename rather than the random stored one — none of which a
+             * direct storage link can do, and on Azure the blob is off-origin,
+             * where a browser may open a file but not save it. */
+            'url'      => $path ? '/api/p2p/files/download?path=' . rawurlencode($path) : null,
+            'modes'    => $path ? ['preview', 'download'] : [],
         ];
     }
 
