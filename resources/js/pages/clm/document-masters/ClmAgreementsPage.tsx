@@ -316,20 +316,28 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
    * longer in the segment master are merged in with an 'unknown'
    * regulatory tier so legacy data still surfaces in the dropdown. */
   const knownSegments = useMemo(() => {
-    const byName = new Map<string, { name: string; regulatory_status: 'highly' | 'less' }>();
-    segs.forEach(s => { if (s.name) byName.set(s.name, { name: s.name, regulatory_status: s.regulatory_status }); });
+    // Keyed by tier + name: the same name (e.g. "Rice") can exist once as a
+    // highly- and once as a less-regulated segment, and both must surface.
+    const byKey = new Map<string, { name: string; regulatory_status: 'highly' | 'less' }>();
+    const names = new Set<string>();
+    segs.forEach(s => {
+      if (!s.name) return;
+      byKey.set(`${s.regulatory_status}|${s.name}`, { name: s.name, regulatory_status: s.regulatory_status });
+      names.add(s.name);
+    });
     rows.forEach(r => {
       if (!r.segment) return;
       // r.segment may be a CSV ("Tobacco, Rice") on multi-segment less-reg
       // agreements — split and add each individually so the wizard's
       // single-name selector still finds them.
       r.segment.split(',').map(s => s.trim()).filter(Boolean).forEach(name => {
-        if (!byName.has(name)) {
-          byName.set(name, { name, regulatory_status: r.regulatory ?? 'less' });
+        if (!names.has(name)) {
+          const status = r.regulatory ?? 'less';
+          byKey.set(`${status}|${name}`, { name, regulatory_status: status });
         }
       });
     });
-    return Array.from(byName.values());
+    return Array.from(byKey.values());
   }, [rows, segs]);
 
   // Download the sample agreement as a PDF or DOCX — rendered server-side with

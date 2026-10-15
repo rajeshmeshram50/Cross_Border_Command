@@ -972,8 +972,10 @@ function SegmentRuleModal(props: {
                             if (existing) return;
                             setDocType(v);
                             // Changing the type re-scopes which segments are already
-                            // ruled / available, so drop any stale segment pick.
-                            setSegCodes([]);
+                            // ruled / available — drop only picks that already have a
+                            // rule of the new type, so a prefilled segment survives.
+                            const ruledForType = new Set(existingRules.filter(r => r.id !== existing?.id && r.document_type === v).map(r => r.segment_code));
+                            setSegCodes(prev => prev.filter(c => !ruledForType.has(c)));
                           }}>
                           <input type="radio" checked={on} onChange={() => {}} disabled={!!existing} style={{ accentColor: accent, width: 14, height: 14 }} />
                           <div>
