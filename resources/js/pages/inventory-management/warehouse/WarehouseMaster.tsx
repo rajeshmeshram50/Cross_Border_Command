@@ -159,7 +159,7 @@ export default function WarehouseMaster() {
     try {
       await warehouseApi.setStatus(w.apiId, activate);
       if (activate) toast.success(`${w.id} marked Active`, 'Its zones and racks stay inactive until you switch them back on.');
-      else toast.warning(`${w.id} marked Inactive`, 'It stays in the list, dimmed. Its zones and racks are deactivated with it.');
+      else toast.warning(`${w.id} marked Inactive`, 'It stays in the list, dimmed.');
       reload();
     } catch (e) {
       toast.error('Could not change the status', e instanceof WarehouseApiError ? e.message : 'Please try again.');

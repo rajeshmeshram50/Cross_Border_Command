@@ -120,9 +120,10 @@ class RackController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
+            $user = $this->tenantUser($request);
 
-            $rack = Rack::with(['warehouse:id,wh_name', 'zone:id,zone_name,temp_min_c,temp_max_c'])
+            $rack = $this->ownedQuery(Rack::query(), $user)
+                ->with(['warehouse:id,wh_name', 'zone:id,zone_name,temp_min_c,temp_max_c'])
                 ->withCount('shelves')
                 ->withSum(['shelves as capacity_kg' => fn ($s) => $s->where('status', 1)], 'max_weight_kg')
                 ->withSum(['shelves as used_kg' => fn ($s) => $s->where('status', 1)], 'used_weight_kg')
@@ -153,20 +154,19 @@ class RackController extends BaseInventoryController
             $user = $this->tenantUser($request);
             $data = $request->validate($this->rules());
 
-            [$zone, $area] = $this->guard($data, null);
+            [$zone, $area] = $this->guard($data, null, $user);
 
             $rack = new Rack($data);
+            // The zone's tenancy, never the user's — see ZoneController::store.
+            $rack->client_id    = $zone->client_id;
+            $rack->branch_id    = $zone->branch_id;
             $rack->warehouse_id = $zone->warehouse_id;
             $rack->area_sqft    = $area;
             $rack->cold_chain   = (int) ($data['cold_chain'] ?? 0);
             $rack->hazardous    = (int) ($data['hazardous'] ?? 0);
             $rack->created_by   = $user->id;
             // Per branch, under a lock, inside this transaction — see Warehouse.
-            $rack->code = $this->codes->next(
-                'inventory_racks',
-                $user->client_id,
-                $rack->branch_id ?: $user->branch_id,
-            );
+            $rack->code = $this->codes->next('inventory_racks', $zone->client_id, $zone->branch_id);
             $rack->save();
 
             DB::commit();
@@ -188,24 +188,16 @@ class RackController extends BaseInventoryController
             DB::beginTransaction();
 
             $user = $this->tenantUser($request);
-            $rack = Rack::findOrFail($id);
+            // Locked: a shelf saved meanwhile is what guardChildren() is judging.
+            $rack = $this->ownedQuery(Rack::query(), $user)->lockForUpdate()->findOrFail($id);
             $data = $request->validate($this->rules());
 
-            [$zone, $area] = $this->guard($data, $rack);
+            [$zone, $area] = $this->guard($data, $rack, $user);
 
-            /* Shrinking a rack below the shelves already stacked in it would
-               make the next shelf save impossible to reason about. */
-            $newHeightCm = $this->svc->toCm((float) $data['height'], $data['dim_unit']);
-            $usedCm      = (float) Shelf::where('rack_id', $rack->id)->sum('height_cm');
-            if ($newHeightCm + 0.001 < $usedCm) {
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => 'Its shelves already use ' . number_format($usedCm, 2)
-                        . ' cm — the rack cannot be shorter than that.',
-                ], 422));
-            }
+            $this->guardChildren($data, $rack);
 
             $rack->fill($data);
+            $rack->branch_id    = $zone->branch_id;
             $rack->warehouse_id = $zone->warehouse_id;
             $rack->area_sqft    = $area;
             $rack->cold_chain   = (int) ($data['cold_chain'] ?? 0);
@@ -232,14 +224,14 @@ class RackController extends BaseInventoryController
             DB::beginTransaction();
 
             $user = $this->tenantUser($request);
-            $rack = Rack::findOrFail($id);
+            $rack = $this->ownedQuery(Rack::query(), $user)->findOrFail($id);
             $data = $request->validate(['status' => ['required', 'integer', 'in:0,1']]);
 
             if ((int) $data['status'] === 1 && !$rack->zone?->isActive()) {
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => 'Its zone is inactive — activate that first.',
-                ], 409));
+                $this->reject("{$rack->rack_code} cannot be activated — its zone {$rack->zone?->zone_code} is inactive", null, 409);
+            }
+            if ((int) $data['status'] === 1 && !$rack->warehouse?->isActive()) {
+                $this->reject("{$rack->rack_code} cannot be activated — its warehouse {$rack->warehouse?->wh_code} is inactive", null, 409);
             }
 
             $rack->forceFill(['status' => $data['status'], 'updated_by' => $user->id])->save();
@@ -266,14 +258,14 @@ class RackController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $rack = Rack::withCount('shelves')->findOrFail($id);
+            $user = $this->tenantUser($request);
+            $rack = $this->ownedQuery(Rack::query(), $user)->withCount('shelves')->lockForUpdate()->findOrFail($id);
 
             if ($rack->shelves_count > 0) {
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => "{$rack->rack_name} holds {$rack->shelves_count} shelf/shelves. Deactivate it instead of deleting it.",
-                ], 409));
+                $this->reject("{$rack->rack_name} holds {$rack->shelves_count} shelf/shelves. Deactivate it instead of deleting it.", null, 409);
+            }
+            if ($used = $this->referencedBy('rack_id', $rack->id)) {
+                $this->reject("{$rack->rack_name} is used by {$used}. Deactivate it instead of deleting it.", null, 409);
             }
 
             $rack->delete();
@@ -404,10 +396,11 @@ class RackController extends BaseInventoryController
             'cold_chain' => ['nullable', 'integer', 'in:0,1'],
             'hazardous'  => ['nullable', 'integer', 'in:0,1'],
             'dim_unit'   => ['required', 'in:cm,m'],
-            'length'     => ['required', 'numeric', 'min:0.01'],
-            'width'      => ['required', 'numeric', 'min:0.01'],
-            'height'     => ['required', 'numeric', 'min:0.01'],
-            'status'     => ['nullable', 'integer', 'in:0,1'],
+            // numeric(12,2) — past that is a database error, not a 422.
+            'length'     => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
+            'width'      => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
+            'height'     => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
+            // No 'status' — setStatus() only, which checks the zone and cascades.
         ];
     }
 
@@ -417,62 +410,92 @@ class RackController extends BaseInventoryController
      *
      * @return array{0: Zone, 1: float}
      */
-    private function guard(array $d, ?Rack $editing): array
+    private function guard(array $d, ?Rack $editing, $user): array
     {
-        $zone = Zone::find($d['zone_id']);
+        /* Locked: two racks saved into one zone at once would both read the
+           same free area and both fit. */
+        $zone = $this->ownedQuery(Zone::query(), $user)->lockForUpdate()->find($d['zone_id']);
 
         if (!$zone) {
-            abort(response()->json(['status' => false, 'message' => 'That zone does not exist.'], 404));
+            $this->reject('Select a zone (with rack)', 'zone_id');
         }
-        if (!$zone->isRacked()) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'Racks can only go in a zone of type With Rack.',
-            ], 422));
+
+        /* Only when the rack is being PUT here. A rack whose zone was switched
+           off later must still be editable — it was refused even a rename. */
+        $moving = !$editing || (int) $editing->zone_id !== (int) $zone->id;
+
+        if ($moving && !$zone->isRacked()) {
+            $this->reject('Select a zone (with rack)', 'zone_id');
         }
-        if (!$zone->isActive()) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => "{$zone->zone_name} is inactive — pick another zone.",
-            ], 422));
+        if ($moving && !$zone->isActive()) {
+            $this->reject("{$zone->zone_name} is inactive — pick another zone.", 'zone_id');
         }
 
         // Cold stock cannot be racked where the zone has no temperature range.
         if (!empty($d['cold_chain']) && !$zone->cold_chain) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => "{$zone->zone_name} is not a cold-chain zone.",
-            ], 422));
+            $this->reject("{$zone->zone_name} is not a cold-chain zone.", 'cold_chain');
         }
         if (!empty($d['hazardous']) && !$zone->hazardous) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => "{$zone->zone_name} does not allow hazardous goods.",
-            ], 422));
+            $this->reject("{$zone->zone_name} does not allow hazardous goods.", 'hazardous');
         }
 
-        $duplicate = Rack::where('zone_id', $zone->id)
-            ->where('rack_name', 'ilike', $d['rack_name'])
-            ->when($editing, fn ($q) => $q->where('id', '!=', $editing->id))
-            ->exists();
-        if ($duplicate) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'This zone already has a rack with this name.',
-            ], 422));
+        if ($this->nameTaken(Rack::where('zone_id', $zone->id), 'rack_name', $d['rack_name'], $editing?->id)) {
+            $this->reject('This zone already has a rack with this name', 'rack_name');
         }
 
         $area = Rack::areaSqft((float) $d['length'], (float) $d['width'], $d['dim_unit']);
         $free = $this->svc->freeZoneAreaSqft($zone, $editing?->id);
         if ($area > $free) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'Rack footprint exceeds the free zone area ('
-                    . number_format($free, 2) . ' Sq. Ft left).',
-            ], 422));
+            $this->reject('Rack footprint exceeds the free zone area (' . $this->num($free) . ' Sq. Ft left)', 'length');
         }
 
         return [$zone, $area];
+    }
+
+    /**
+     * What an edit may not take away from the shelves already in this rack.
+     *
+     * Every shelf was let in against the rack's length, width, height and
+     * flags (ShelfController::guard). Shrinking or narrowing the rack after
+     * the fact left those shelves uneditable — their next save failed a rule
+     * they had passed — so the rack may not go below what they use.
+     */
+    private function guardChildren(array $d, Rack $rack): void
+    {
+        $shelves = Shelf::where('rack_id', $rack->id)->get(['length', 'width', 'height_cm', 'dim_unit', 'cold_chain', 'hazardous']);
+
+        if ((int) $d['zone_id'] !== (int) $rack->zone_id) {
+            if ($shelves->isNotEmpty()) {
+                $this->reject('This rack has shelves — it cannot move to another zone.', 'zone_id');
+            }
+            if ($used = $this->referencedBy('rack_id', $rack->id)) {
+                $this->reject("This rack is used by {$used} — it cannot move to another zone.", 'zone_id');
+            }
+        }
+        if ($shelves->isEmpty()) return;
+
+        $cm = fn ($v) => $this->svc->toCm((float) $v, $d['dim_unit']);
+
+        $usedH = (float) $shelves->sum('height_cm');
+        if ($cm($d['height']) + 0.001 < $usedH) {
+            $this->reject('Its shelves already use ' . number_format($usedH, 2) . ' cm — the rack cannot be shorter than that.', 'height');
+        }
+
+        $maxL = (float) $shelves->max(fn ($s) => $this->svc->toCm((float) $s->length, $s->dim_unit));
+        if ($cm($d['length']) + 0.001 < $maxL) {
+            $this->reject('A shelf in it is ' . number_format($maxL, 2) . ' cm long — the rack cannot be shorter than that.', 'length');
+        }
+        $maxW = (float) $shelves->max(fn ($s) => $this->svc->toCm((float) $s->width, $s->dim_unit));
+        if ($cm($d['width']) + 0.001 < $maxW) {
+            $this->reject('A shelf in it is ' . number_format($maxW, 2) . ' cm wide — the rack cannot be narrower than that.', 'width');
+        }
+
+        if (empty($d['cold_chain']) && $shelves->contains(fn ($s) => (int) $s->cold_chain === 1)) {
+            $this->reject('Cold-chain shelves are in this rack — it must stay cold chain.', 'cold_chain');
+        }
+        if (empty($d['hazardous']) && $shelves->contains(fn ($s) => (int) $s->hazardous === 1)) {
+            $this->reject('Hazardous shelves are in this rack — it must keep allowing hazardous goods.', 'hazardous');
+        }
     }
 
     /** The dropdown shape: enough for the put-away picker to validate a scan. */

@@ -100,6 +100,14 @@ body {
   overflow-x: hidden;
 }
 
+html:has(#layout-wrapper.idims-active),
+html:has(#layout-wrapper.idims-active) body,
+html:has(#layout-wrapper.idims-active) #app {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .main-content {
   overflow-x: hidden;
   min-width: 0;
@@ -122,13 +130,21 @@ body {
 
 @media (min-width: 768px) {
 
+  html:is([data-layout="vertical"], [data-layout="twocolumn"]):has(#layout-wrapper),
+  html:is([data-layout="vertical"], [data-layout="twocolumn"]):has(#layout-wrapper) body,
+  html:is([data-layout="vertical"], [data-layout="twocolumn"]):has(#layout-wrapper) #app {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
   :is([data-layout="vertical"], [data-layout="twocolumn"]) #layout-wrapper {
-    height: 100dvh;
+    height: 100%;
     overflow: hidden;
   }
 
   :is([data-layout="vertical"], [data-layout="twocolumn"]) .main-content {
-    height: 100dvh;
+    height: 100%;
     padding-top: var(--vz-header-height, 70px);
     overflow-y: auto;
     overflow-x: hidden;
@@ -168,11 +184,11 @@ body {
 }
 
 :is(.frm-cstrip .frm-cstrip-title, .cl-cstrip .cl-cstrip-title,
-    .pl-cstrip .pl-cstrip-title, .pmt-cstrip .pmt-cstrip-title,
-    .br-cstrip .br-cstrip-title, .ms-cstrip .ms-cstrip-title,
-    .mp-cstrip .mp-cstrip-title, .ap-cstrip .ap-cstrip-title,
-    .pm-cstrip .pm-cstrip-title, .smc-cstrip .smc-cstrip-title,
-    .smcg-cstrip .smcg-cstrip-title) {
+  .pl-cstrip .pl-cstrip-title, .pmt-cstrip .pmt-cstrip-title,
+  .br-cstrip .br-cstrip-title, .ms-cstrip .ms-cstrip-title,
+  .mp-cstrip .mp-cstrip-title, .ap-cstrip .ap-cstrip-title,
+  .pm-cstrip .pm-cstrip-title, .smc-cstrip .smc-cstrip-title,
+  .smcg-cstrip .smcg-cstrip-title) {
   font-family: var(--font-sans);
   font-size: 18px;
   font-weight: 800;
@@ -180,11 +196,11 @@ body {
 }
 
 :is(.frm-cstrip .frm-cstrip-sub, .cl-cstrip .cl-cstrip-sub,
-    .pl-cstrip .pl-cstrip-sub, .pmt-cstrip .pmt-cstrip-sub,
-    .br-cstrip .br-cstrip-sub, .ms-cstrip .ms-cstrip-sub,
-    .mp-cstrip .mp-cstrip-sub, .ap-cstrip .ap-cstrip-sub,
-    .pm-cstrip .pm-cstrip-sub, .smc-cstrip .smc-cstrip-sub,
-    .smcg-cstrip .smcg-cstrip-sub) {
+  .pl-cstrip .pl-cstrip-sub, .pmt-cstrip .pmt-cstrip-sub,
+  .br-cstrip .br-cstrip-sub, .ms-cstrip .ms-cstrip-sub,
+  .mp-cstrip .mp-cstrip-sub, .ap-cstrip .ap-cstrip-sub,
+  .pm-cstrip .pm-cstrip-sub, .smc-cstrip .smc-cstrip-sub,
+  .smcg-cstrip .smcg-cstrip-sub) {
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
@@ -212,16 +228,14 @@ button.ms-cstrip-add {
   font-weight: 600 !important;
 }
 
-:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box)
-  :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
+:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box) :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
   height: 42px !important;
   border-radius: 999px !important;
   font-size: 13px !important;
   font-weight: 600 !important;
 }
 
-:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box)
-  :is(select, .form-select) {
+:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box) :is(select, .form-select) {
   height: 42px !important;
   border-radius: 999px !important;
 }
@@ -308,7 +322,9 @@ button.ms-cstrip-add {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .footer.app-footer-auto { transition: none; }
+  .footer.app-footer-auto {
+    transition: none;
+  }
 }
 
 .wl-pager {

@@ -30,8 +30,8 @@ export default function Logo({ variant, className = '' }: Props) {
             <img src="/images/igc-logo.png" alt="IGC Group" className="w-full h-full rounded-xl object-contain" />
           </div>
           <div>
-            <h1 className="text-[22px] font-extrabold text-text tracking-tight leading-none">IGC Group</h1>
-            <p className="text-[12px] text-muted font-medium mt-1 tracking-wide">Cross Border Command Platform</p>
+            <h1 className="text-[22px] font-extrabold text-text tracking-tight leading-none">Inorbvict Group of Companies</h1>
+            <p className="text-[12px] text-muted font-medium mt-1 tracking-wide">Kryptone AI</p>
           </div>
         </div>
       );

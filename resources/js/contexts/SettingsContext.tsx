@@ -86,12 +86,21 @@ function readCache(): PlatformSettings | null {
 function writeCache(s: PlatformSettings) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(s)); } catch {}
 }
+function withBootBranding(s: PlatformSettings): PlatformSettings {
+  const b = (window as any).__CBC_BRANDING__ as { platform_name?: string; favicon_url?: string } | undefined;
+  if (!b) return s;
+  return {
+    ...s,
+    general: { ...s.general, platform_name: b.platform_name || s.general.platform_name },
+    appearance: { ...s.appearance, favicon_url: b.favicon_url || s.appearance.favicon_url },
+  };
+}
 
 /* ────────────────────────────────────────────────────────────────── */
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const [settings, setSettings] = useState<PlatformSettings>(() => readCache() ?? FALLBACK);
+  const [settings, setSettings] = useState<PlatformSettings>(() => withBootBranding(readCache() ?? FALLBACK));
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {

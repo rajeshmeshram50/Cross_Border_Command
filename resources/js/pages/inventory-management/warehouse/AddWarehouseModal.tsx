@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } 
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useToast } from '../../../contexts/ToastContext';
+import { useBranchSwitcher } from '../../../contexts/BranchSwitcherContext';
 import '../../p2p/p2p-detail.css';
 import '../../p2p/purchase-management/order/create-po/create-po.css';
 import './warehouse-master.css';
@@ -83,22 +84,24 @@ const FIELD_FOR: Record<string, keyof Draft> = {
 function validate(d: Draft, hasStates: boolean): Partial<Record<keyof Draft, string>> {
   const e: Partial<Record<keyof Draft, string>> = {};
   const india = d.country === 'India';
-  if (!d.type) e.type = 'Choose the ownership type.';
-  if (!d.name.trim()) e.name = 'Give the warehouse a name.';
-  if (!d.area.trim()) e.area = 'Enter the area.';
-  else if (!(Number(d.area) > 0)) e.area = 'Area must be more than zero.';
-  if (!d.address.trim()) e.address = 'Enter the address.';
-  if (!d.country) e.country = 'Choose a country.';
-  if (!d.state.trim()) e.state = hasStates ? 'Choose a state.' : 'Enter the state or province.';
-  if (!d.city.trim()) e.city = 'Enter the city.';
-  if (!d.pin.trim()) e.pin = india ? 'Enter the 6-digit pin code.' : 'Enter the postal code.';
-  else if (india && !/^\d{6}$/.test(d.pin)) e.pin = 'A pin code is 6 digits.';
-  if (!d.contact.trim()) e.contact = 'Enter the contact person.';
-  if (!d.mobile.trim()) e.mobile = 'Enter the mobile number.';
-  else if (india && !/^\d{10}$/.test(d.mobile)) e.mobile = 'A mobile number is 10 digits.';
-  if (!d.email.trim()) e.email = 'Enter the email.';
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) e.email = 'That does not look like an email.';
-  if (d.map.trim() && !/^https?:\/\//i.test(d.map.trim())) e.map = 'Paste the full link, starting with https://';
+  if (!d.type) e.type = 'Select the warehouse type';
+  if (!d.name.trim()) e.name = 'Enter the warehouse name';
+  if (!(Number(d.area) > 0)) e.area = 'Enter the area in square feet';
+  if (!d.address.trim()) e.address = 'Enter the warehouse address';
+  if (!d.country) e.country = 'Select the country';
+  if (!d.state.trim()) e.state = hasStates ? 'Select the state' : 'Enter the state';
+  if (!d.city.trim()) e.city = 'Enter the city';
+  const pin = d.pin.trim();
+  if (!pin) e.pin = 'Enter the pin code';
+  else if (india && !/^[1-9]\d{5}$/.test(pin)) e.pin = 'Pin code must be 6 digits';
+  if (!d.contact.trim()) e.contact = 'Enter the contact person’s name';
+  const mobile = d.mobile.replace(/[\s-]/g, '');
+  if (!mobile) e.mobile = 'Enter the mobile number';
+  else if (india && !/^[6-9]\d{9}$/.test(mobile)) e.mobile = 'Enter a valid 10-digit mobile number';
+  else if (!india && !/^\d{6,15}$/.test(mobile)) e.mobile = 'Enter a valid mobile number';
+  if (!d.email.trim()) e.email = 'Enter the email address';
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) e.email = 'Enter a valid email address';
+  if (d.map.trim() && !/^https?:\/\/\S+$/i.test(d.map.trim())) e.map = 'Enter a valid link starting with https://';
   return e;
 }
 
@@ -146,6 +149,7 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
 
   const [cardFile, setCardFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const { selectedBranchId } = useBranchSwitcher();
 
   const [countries, setCountries] = useState<LookupOption[]>([]);
   useEffect(() => {
@@ -245,10 +249,17 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
 
   const save = async () => {
     if (saving) return;
+    /* Until the country's states arrive, hasStates is false and the state
+       would go up as free text with no id — moving the warehouse off the
+       States master, or tripping "State cannot be changed" on one with zones. */
+    if (countryId && statesFor !== countryId) {
+      toast.error('Still loading states', 'Try again in a moment.');
+      return;
+    }
     const e = validate(d, hasStates);
-    if (!e.country && !countryId) e.country = 'Choose a country from the list.';
+    if (!e.country && !countryId) e.country = 'Select the country';
     const stateId = hasStates ? states.find(x => x.name === d.state)?.id : undefined;
-    if (!e.state && hasStates && !stateId) e.state = 'Choose a state from the list.';
+    if (!e.state && hasStates && !stateId) e.state = 'Select the state';
     setErrors(e);
     const bad = Object.keys(e).filter(k => e[k as keyof Draft]);
     if (bad.length) {
@@ -273,9 +284,11 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
       map_url: d.map.trim() || null,
       contact_person: d.contact.trim(),
       contact_dial: india ? '+91' : (warehouse?.dial || null),
-      contact_mobile: d.mobile.trim(),
+      contact_mobile: d.mobile.replace(/[\s-]/g, ''),
       contact_email: d.email.trim(),
       card: cardFile,
+      // A POST gets no branch from the Axios interceptor; the server needs one.
+      ...(editing ? {} : { branch_id: selectedBranchId }),
     };
 
     setSaving(true);
@@ -283,7 +296,7 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
       const saved = editing && warehouse!.apiId
         ? await warehouseApi.update(warehouse!.apiId, payload)
         : await warehouseApi.create(payload);
-      toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, saved.name);
+      toast.success(`${saved.id} · ${saved.name} ${editing ? 'updated' : 'added'}`);
       onSaved?.(saved);
       onClose();
     } catch (err) {

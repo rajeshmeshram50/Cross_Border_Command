@@ -105,7 +105,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   const isGlobal = scope === 'global';
   const toast = useToast();
   useSelectionLock(open);
-  useScrollLock(open);
+  useScrollLock(open, '.tnw-overlay');
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);

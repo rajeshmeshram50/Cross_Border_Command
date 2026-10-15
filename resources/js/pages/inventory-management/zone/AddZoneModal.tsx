@@ -140,7 +140,13 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   const toast = useToast();
   useScrollLock(true, '.znm-addmdl');
 
-  const activeWarehouses = useMemo(() => warehouses.filter(w => w.active), [warehouses]);
+  /* Active own warehouses — a 3PL holds no zones — plus, on an edit, the one
+     the zone is already in even if it has since been switched off. Without
+     it `picked` came back empty and Save silently did nothing. */
+  const activeWarehouses = useMemo(
+    () => warehouses.filter(w => (w.active && w.type === 'own') || (!!zone && w.apiId === zone.warehouseId)),
+    [warehouses, zone],
+  );
   const whLabels = useMemo(
     () => uniqueLabels(warehouses, w => w.apiId, w => WAREHOUSE_LABEL(w.id, w.name), w => w.city),
     [warehouses],
@@ -240,28 +246,28 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   const save = async () => {
     if (saving) return;
     const e: Partial<Record<keyof Draft, string>> = {};
-    if (!d.wh) e.wh = 'Choose the warehouse this zone is in.';
-    if (!d.name.trim()) e.name = 'Give the zone a name.';
+    if (!d.wh || !picked) e.wh = 'Select the warehouse';
+    if (!d.name.trim()) e.name = 'Enter the zone name';
     const areaNum = Number(shownArea);
-    if (!shownArea.trim()) e.area = 'Enter the zone area.';
-    else if (!(areaNum > 0)) e.area = 'Area must be more than zero.';
-    else if (picked && areaNum > picked.area) {
-      e.area = `Larger than ${picked.id}, which is ${inWhole.format(picked.area)} Sq. Ft.`;
-    }
-    if (!d.type) e.type = 'Choose the zone type.';
+    /* Only empty or 0 here. Whether it fits is the SERVER's answer — it alone
+       sees the other zones, and replies "Only 3,500 Sq. Ft is still free". */
+    if (!(areaNum > 0)) e.area = 'Enter the zone area in square feet';
+    if (!d.type) e.type = 'Select the zone type';
     if (noRack) {
-      if (!d.storage) e.storage = 'Choose how this zone stores.';
-      if (d.storage === 'fridge' && !(Number(d.litres) > 0)) e.litres = 'Enter the capacity in litres.';
+      if (!d.storage) e.storage = 'Choose Refrigerator Storage or Regular Storage';
+      if (d.storage === 'fridge' && !(Number(d.litres) > 0)) e.litres = 'Enter the refrigerator capacity in litres';
       if (d.storage === 'regular') {
-        if (!(calc.L > 0)) e.len = 'Enter the length.';
-        if (!(calc.W > 0)) e.wid = 'Enter the width.';
-        if (!(calc.H > 0)) e.ht = 'Enter the height.';
-        if (!(calc.U > 0 && calc.U <= 100)) e.use = 'Usable floor is a percentage, 1 to 100.';
+        if (!(calc.L > 0)) e.len = 'Enter the length';
+        if (!(calc.W > 0)) e.wid = 'Enter the width';
+        if (!(calc.H > 0)) e.ht = 'Enter the height';
+        if (!(calc.U >= 1 && calc.U <= 100)) e.use = 'Enter a value from 1 to 100';
       }
     }
     const purpose = d.purpose === 'Other' ? d.purposeOther.trim() : d.purpose;
-    if (!purpose) e.purpose = 'Choose or enter the zone purpose.';
-    if (d.cold && !temp) e.cold = 'Set the temperature range for this zone.';
+    if (!d.purpose) e.purpose = 'Select the zone purpose';
+    else if (!purpose) e.purpose = 'Enter the zone purpose';
+    if (d.cold && !temp) e.cold = 'Set the temperature range';
+    else if (d.cold && temp && !(temp.max > temp.min)) e.cold = 'Max temperature must be higher than min temperature.';
 
     setErrors(e);
     const bad = Object.keys(e).filter(x => e[x as keyof Draft]);
@@ -306,7 +312,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
       const saved = editing && zone!.apiId
         ? await zoneApi.update(zone!.apiId, payload)
         : await zoneApi.create(payload);
-      toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, saved.name);
+      toast.success(editing ? `${saved.id} · ${saved.name} updated` : `${saved.id} · ${saved.name} added to ${picked.id}`);
       onSaved?.(saved);
       onClose();
     } catch (err) {
@@ -363,7 +369,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
         <div className="spi-mdl-body whm-addbody">
 
           <Card icon={<IcoWarehouse />} title="Warehouse Details">
-            <Field label="Warehouse" req error={errors.wh} hint="Only active warehouses are listed">
+            <Field label="Warehouse" req error={errors.wh} hint="Only active own warehouses are listed">
               <EditSelect
                 value={d.wh}
                 options={activeWarehouses.map(w => whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name))}

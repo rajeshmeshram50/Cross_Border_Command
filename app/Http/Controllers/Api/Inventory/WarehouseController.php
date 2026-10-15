@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Inventory;
 
 use App\Models\Inventory\Rack;
+use App\Models\Inventory\Shelf;
 use App\Models\Inventory\Warehouse;
 use App\Models\Inventory\Zone;
 use App\Services\Inventory\InventoryCodeAllocator;
@@ -137,8 +138,9 @@ class WarehouseController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $warehouse = Warehouse::with(['country:id,name', 'state:id,name'])
+            $user = $this->tenantUser($request);
+            $warehouse = $this->ownedQuery(Warehouse::query(), $user)
+                ->with(['country:id,name', 'state:id,name'])
                 ->withCount(['zones', 'racks'])
                 ->findOrFail($id);
 
@@ -163,20 +165,21 @@ class WarehouseController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $user = $this->tenantUser($request);
-            $data = $request->validate($this->rules());
+            $user   = $this->tenantUser($request);
+            $data   = $request->validate($this->rules());
+            $branch = $this->writeBranch($request, $user);
+
+            $this->guardName($data['wh_name'], $user, $branch, null);
 
             $warehouse = new Warehouse($data);
+            $warehouse->client_id  = $user->client_id;
+            $warehouse->branch_id  = $branch;
             $warehouse->created_by = $user->id;
             /* Allocated under a lock, inside this transaction — so a save that
                fails below gives the number back, which is the whole reason the
                code no longer rides on the id. Same scoping as vendor_code and
                emp_code: each branch runs its own 001, 002, 003. */
-            $warehouse->code = $this->codes->next(
-                'inventory_warehouses',
-                $user->client_id,
-                $warehouse->branch_id ?: $user->branch_id,
-            );
+            $warehouse->code = $this->codes->next('inventory_warehouses', $user->client_id, $branch);
             $warehouse->save();
             // Needs the id for the storage path, so the card lands after the insert.
             $warehouse->forceFill($this->storeCard($request, $warehouse))->save();
@@ -197,9 +200,12 @@ class WarehouseController extends BaseInventoryController
             DB::beginTransaction();
 
             $user      = $this->tenantUser($request);
-            $warehouse = Warehouse::findOrFail($id);
-            $data      = $request->validate($this->rules());
+            // Locked: a zone saved meanwhile is what guardSettled() is judging.
+            $warehouse = $this->ownedQuery(Warehouse::query(), $user)->lockForUpdate()->findOrFail($id);
+            // The branch is fixed at create — fill() must not move it.
+            $data      = collect($request->validate($this->rules()))->except('branch_id')->all();
 
+            $this->guardName($data['wh_name'], $user, $warehouse->branch_id, $warehouse->id);
             $this->guardSettled($warehouse, $data);
 
             $warehouse->fill($data);
@@ -226,14 +232,25 @@ class WarehouseController extends BaseInventoryController
             DB::beginTransaction();
 
             $user      = $this->tenantUser($request);
-            $warehouse = Warehouse::findOrFail($id);
+            $warehouse = $this->ownedQuery(Warehouse::query(), $user)->findOrFail($id);
             $data      = $request->validate(['status' => ['required', 'integer', 'in:0,1']]);
+
+            /* Retired from the bottom up. Switching off a warehouse that still
+               has live zones or boxes used to take them all down silently. */
+            if ((int) $data['status'] === 0 && $warehouse->isActive()
+                && (Zone::where('warehouse_id', $warehouse->id)->where('status', 1)->exists()
+                    || $this->holdsStock('warehouse_id', $warehouse->id))) {
+                $this->reject('Move or deactivate its zones first.', null, 409);
+            }
 
             $warehouse->forceFill(['status' => $data['status'], 'updated_by' => $user->id])->save();
 
             if ((int) $data['status'] === 0) {
                 Zone::where('warehouse_id', $warehouse->id)->update(['status' => 0, 'updated_by' => $user->id]);
                 Rack::where('warehouse_id', $warehouse->id)->update(['status' => 0, 'updated_by' => $user->id]);
+                // The shelves too — a live shelf under a dead rack is still offered.
+                Shelf::whereIn('rack_id', Rack::where('warehouse_id', $warehouse->id)->select('id'))
+                    ->update(['status' => 0, 'updated_by' => $user->id]);
             }
 
             DB::commit();
@@ -255,20 +272,25 @@ class WarehouseController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $warehouse = Warehouse::withCount('zones')->findOrFail($id);
+            $user      = $this->tenantUser($request);
+            $warehouse = $this->ownedQuery(Warehouse::query(), $user)->withCount('zones')->lockForUpdate()->findOrFail($id);
 
             if ($warehouse->zones_count > 0) {
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => "{$warehouse->wh_name} holds {$warehouse->zones_count} zone(s). Deactivate it instead of deleting it.",
-                ], 409));
+                $this->reject("{$warehouse->wh_name} holds {$warehouse->zones_count} zone(s). Deactivate it instead of deleting it.", null, 409);
+            }
+            /* A 3PL has no zones, so the check above never stops it — yet its
+               put-aways and invoices name it. */
+            if ($used = $this->referencedBy('warehouse_id', $warehouse->id)) {
+                $this->reject("{$warehouse->wh_name} is used by {$used}. Deactivate it instead of deleting it.", null, 409);
             }
 
-            if ($warehouse->card_path) Storage::disk('public')->delete($warehouse->card_path);
+            $card = $warehouse->card_path;
             $warehouse->delete();
 
             DB::commit();
+
+            // Only once the delete is committed — a rollback must not lose the file.
+            if ($card) Storage::disk('public')->delete($card);
 
             return response()->json(['status' => true, 'data' => ['id' => $id, 'deleted' => true]], 200);
         } catch (\Throwable $e) {
@@ -405,6 +427,11 @@ class WarehouseController extends BaseInventoryController
             $changed[] = 'Warehouse Area';
         }
 
+        // Own ↔ 3PL: a 3PL has nothing beneath it, and zones are already built here.
+        if (array_key_exists('wh_type', $d) && $d['wh_type'] !== $warehouse->wh_type) {
+            $changed[] = 'Warehouse Type';
+        }
+
         foreach ([
             'country_id' => 'Country',
             'state_id'   => 'State',
@@ -439,7 +466,8 @@ class WarehouseController extends BaseInventoryController
         return [
             'wh_name'        => ['required', 'string', 'max:180'],
             'wh_type'        => ['required', Rule::in(Warehouse::TYPES)],
-            'area_sqft'      => ['required', 'numeric', 'min:1'],
+            // numeric(14,2) — anything larger is a database error, not a 422.
+            'area_sqft'      => ['required', 'numeric', 'min:1', 'max:999999999999'],
             'address'        => ['required', 'string', 'max:1000'],
             'country_id'     => ['required', 'integer', Rule::exists('master_countries', 'id')],
             /* The form offers the States master only for India; every other
@@ -452,11 +480,26 @@ class WarehouseController extends BaseInventoryController
             'map_url'        => ['nullable', 'url', 'max:500'],
             'contact_person' => ['required', 'string', 'max:150'],
             'contact_dial'   => ['nullable', 'string', 'max:8'],
-            'contact_mobile' => ['required', 'string', 'max:20'],
+            // Digits only — the form strips spaces; 10 in India, 6–15 elsewhere.
+            'contact_mobile' => ['required', 'string', 'regex:/^\d{6,15}$/'],
             'contact_email'  => ['required', 'email', 'max:120'],
             'card'           => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:5120'],
-            'status'         => ['nullable', 'integer', 'in:0,1'],
+            /* No 'status': it changes only through setStatus(), which cascades
+               to the zones, racks and shelves below. A save that set it would
+               switch the warehouse off and leave them all live. The branch
+               the switcher is on, read by writeBranch() on a create. */
+            'branch_id'      => ['nullable', 'integer'],
         ];
+    }
+
+    /** One warehouse of a name per branch — two "Main Godown"s are a mis-pick waiting to happen. */
+    private function guardName(string $name, $user, ?int $branch, ?int $exceptId): void
+    {
+        $q = Warehouse::where('client_id', $user->client_id)->where('branch_id', $branch);
+
+        if ($this->nameTaken($q, 'wh_name', $name, $exceptId)) {
+            $this->reject('A warehouse with this name already exists.', 'wh_name');
+        }
     }
 
     /** Move an attached business card onto the public disk. Empty when none came. */
