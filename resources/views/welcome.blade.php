@@ -4,8 +4,23 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Kryptone AI</title>
-    <link rel="icon" type="image/png" href="/images/igc-logo.png">
+    @php
+        $cbcBranding = ['platform_name' => 'Kryptone AI', 'favicon_url' => '/images/igc-logo.png'];
+        try {
+            $general = \App\Models\PlatformSetting::getSection('general');
+            $appearance = \App\Models\PlatformSetting::getSection('appearance');
+            if (!empty($general['platform_name'])) {
+                $cbcBranding['platform_name'] = $general['platform_name'];
+            }
+            if (!empty($appearance['favicon_path'])) {
+                $cbcBranding['favicon_url'] = file_url($appearance['favicon_path']);
+            }
+        } catch (\Throwable $e) {
+        }
+    @endphp
+    <title>{{ $cbcBranding['platform_name'] }}</title>
+    <link rel="icon" href="{{ $cbcBranding['favicon_url'] }}">
+    <script>window.__CBC_BRANDING__ = @json($cbcBranding);</script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" media="print" onload="this.media='all'"
