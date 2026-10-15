@@ -51,6 +51,8 @@ export interface WarehousePayload {
   contact_mobile: string;
   contact_email: string;
   card?: File | null;
+  /** Create only: the switcher's branch, which a client admin files the warehouse under. */
+  branch_id?: number | null;
 }
 
 type WarehouseRow = {

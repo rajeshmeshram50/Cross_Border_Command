@@ -3,11 +3,17 @@
 namespace App\Http\Controllers\Api\Inventory;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
+use App\Models\Inventory\LocationOccupancy;
+use App\Models\Inventory\Rack;
+use App\Models\Inventory\Shelf;
 use Barryvdh\DomPDF\Facade\Pdf;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Shared plumbing for the five Inventory master controllers.
@@ -104,6 +110,125 @@ abstract class BaseInventoryController extends Controller
         }
 
         return $q;
+    }
+
+    /**
+     * The row a write or a by-id read may touch: this client's, and — for a
+     * branch user — this branch's (or a client-wide one).
+     *
+     * Not branchScope(): a PUT carries no switcher branch, so a client admin
+     * stays client-wide here, while a branch user stays pinned to their own.
+     * The global tenant scope is client-wide for every non-super user, which
+     * is exactly the gap this closes — a branch user reaching another
+     * branch's row by id although their list never shows it.
+     */
+    protected function ownedQuery(Builder $q, $user): Builder
+    {
+        return $this->scopeTenant($q, $user, $user->branch_id ? (int) $user->branch_id : null);
+    }
+
+    /**
+     * The branch a NEW warehouse is filed under. A branch user's own branch;
+     * a client admin's is the switcher's, which the form sends with the save.
+     *
+     * Never null. A warehouse with no branch is read as client-wide and shows
+     * in every branch, and the code allocator cannot number it — the unique
+     * index does not stop the repeat either, as Postgres treats NULLs as
+     * distinct. Everything below a warehouse takes the branch of its parent.
+     */
+    protected function writeBranch(Request $request, $user): int
+    {
+        $branch = $user->branch_id ?: $request->integer('branch_id');
+
+        if (!$branch) {
+            $this->reject('Pick a branch in the branch switcher before adding a warehouse.', 'branch_id');
+        }
+
+        $owned = Branch::where('id', $branch)->where('client_id', $user->client_id)->exists();
+        if (!$owned) {
+            $this->reject('That branch does not belong to your company.', 'branch_id', 403);
+        }
+
+        return (int) $branch;
+    }
+
+    /**
+     * Abort with the 422 shape the forms read: the message for the toast, and
+     * the same message under the API field so it lands on the right input
+     * instead of being guessed from the wording.
+     */
+    protected function reject(string $message, ?string $field = null, int $status = 422): never
+    {
+        abort(response()->json(array_filter([
+            'status'  => false,
+            'message' => $message,
+            'errors'  => $field ? [$field => [$message]] : null,
+        ], fn ($v) => $v !== null), $status));
+    }
+
+    /**
+     * A name already used under the same parent. Compared as equal text, not
+     * with ilike — under ilike "_" and "%" are wildcards, so "Rack_A" was
+     * refused because "Rack-A" existed. Trim and case are ignored.
+     */
+    protected function nameTaken(Builder $q, string $column, string $name, ?int $exceptId = null): bool
+    {
+        return $q->whereRaw("lower(trim({$column})) = lower(trim(?))", [$name])
+            ->when($exceptId, fn ($w) => $w->where('id', '!=', $exceptId))
+            ->exists();
+    }
+
+    /**
+     * Whether stock or put-away history still points at this location.
+     *
+     * These masters hard-delete, and none of the put-away tables has a
+     * foreign key back to them, so a delete here would leave those rows
+     * pointing at nothing — and free the code for reuse while a sticker with
+     * it is still on the wall. Any row at all counts, released history too.
+     *
+     * Tables a deployment has not migrated yet are skipped, not failed on.
+     */
+    protected function referencedBy(string $column, int $id): ?string
+    {
+        foreach ([
+            'inventory_location_occupancy' => 'stock records',
+            'p2p_spi_putaway_tasks'        => 'put-away tasks',
+            'p2p_spi_putaways'             => 'put-aways',
+            'p2p_supplier_invoices'        => 'supplier invoices',
+        ] as $table => $label) {
+            if (!Schema::hasColumn($table, $column)) continue;
+            if (DB::table($table)->where($column, $id)->exists()) return $label;
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether boxes are on hand anywhere under this location right now.
+     *
+     * Live occupancy rows where the put-away tables exist, and the shelves'
+     * own box counts always — the two are kept together by the put-away, and
+     * the shelf count still answers on a deployment not yet migrated.
+     */
+    protected function holdsStock(string $column, int $id): bool
+    {
+        if (Schema::hasTable('inventory_location_occupancy')
+            && DB::table('inventory_location_occupancy')->where($column, $id)
+                ->whereIn('status', LocationOccupancy::LIVE)->exists()) {
+            return true;
+        }
+
+        $shelves = $column === 'rack_id'
+            ? Shelf::where('rack_id', $id)
+            : Shelf::whereIn('rack_id', Rack::where($column, $id)->select('id'));
+
+        return $shelves->where('boxes_count', '>', 0)->exists();
+    }
+
+    /** 3,500 rather than 3,500.00 — and 12.4 rather than 12.40 — in a message. */
+    protected function num(float $value): string
+    {
+        return rtrim(rtrim(number_format($value, 2), '0'), '.');
     }
 
     /**

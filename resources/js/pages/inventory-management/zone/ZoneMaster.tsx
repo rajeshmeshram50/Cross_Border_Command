@@ -167,7 +167,7 @@ export default function ZoneMaster() {
     try {
       await zoneApi.setStatus(z.apiId, activate);
       if (activate) toast.success(`${z.id} marked Active`);
-      else toast.warning(`${z.id} marked Inactive`, 'It stays in the list, dimmed. Its racks are deactivated with it.');
+      else toast.warning(`${z.id} marked Inactive`, 'It stays in the list, dimmed.');
       reload();
     } catch (e) {
       toast.error('Could not change the status', e instanceof ZoneApiError ? e.message : 'Please try again.');

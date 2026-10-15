@@ -94,7 +94,11 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
   });
 
   const [saving, setSaving] = useState(false);
-  const activeWarehouses = useMemo(() => lookups.warehouses.filter(w => w.active), [lookups]);
+  // Plus, on an edit, the rack's own warehouse even if since switched off — it must stay selectable.
+  const activeWarehouses = useMemo(
+    () => lookups.warehouses.filter(w => w.active || (!!rack && w.apiId === rack.warehouseId)),
+    [lookups, rack],
+  );
   const rackWarehouse = rack?.warehouseId ? lookups.warehouses.find(w => w.apiId === rack.warehouseId) : undefined;
   const rackZone = rack?.zoneId ? lookups.zones.find(z => z.apiId === rack.zoneId) : undefined;
   const whLabels = useMemo(
@@ -181,13 +185,12 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
   const save = async () => {
     if (saving) return;
     const e: Partial<Record<keyof Draft, string>> = {};
-    if (!d.wh) e.wh = 'Choose a warehouse';
-    if (!d.zone) e.zone = picked ? 'Choose a zone' : 'Choose a warehouse first';
-    if (!d.name.trim()) e.name = 'Enter a rack name';
-    (['len', 'wid', 'ht'] as const).forEach(k => {
-      const n = parseFloat(d[k]);
-      if (!(n > 0)) e[k] = 'Required';
-    });
+    if (!d.wh) e.wh = 'Select the warehouse';
+    if (!d.zone || !zone) e.zone = picked ? 'Select a zone (with rack)' : 'Select the warehouse first';
+    if (!d.name.trim()) e.name = 'Enter the rack name';
+    if (!(parseFloat(d.len) > 0)) e.len = 'Enter the length';
+    if (!(parseFloat(d.wid) > 0)) e.wid = 'Enter the width';
+    if (!(parseFloat(d.ht) > 0)) e.ht = 'Enter the height';
     setErrors(e);
     const first = Object.keys(e)[0];
     if (first) {
@@ -210,7 +213,7 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
     setSaving(true);
     try {
       const saved = editing ? await rackApi.update(rack!.apiId, payload) : await rackApi.create(payload);
-      toast.success(editing ? `${saved.id} updated` : `${saved.id} created`, `${saved.name} in ${zone.id} · ${picked?.id ?? ''}`);
+      toast.success(editing ? `${saved.id} · ${saved.name} updated` : `${saved.id} · ${saved.name} added to ${zone.id}`);
       onSaved?.(saved);
       onClose();
     } catch (err) {

@@ -48,8 +48,8 @@ class ShelfController extends BaseInventoryController
      */
     public function nextCode(Request $request, int $rackId)
     {
-        $this->tenantUser($request);
-        $rack = Rack::findOrFail($rackId);
+        $user = $this->tenantUser($request);
+        $rack = $this->ownedQuery(Rack::query(), $user)->findOrFail($rackId);
 
         $next = (int) Shelf::where('rack_id', $rack->id)->max('level_no') + 1;
 
@@ -66,8 +66,9 @@ class ShelfController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $rack = Rack::with('zone:id,zone_name,temp_min_c,temp_max_c')->findOrFail($rackId);
+            $user = $this->tenantUser($request);
+            $rack = $this->ownedQuery(Rack::query(), $user)
+                ->with('zone:id,zone_name,temp_min_c,temp_max_c')->findOrFail($rackId);
 
             $f = $request->validate($this->listRules());
 
@@ -137,8 +138,9 @@ class ShelfController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $shelf = Shelf::with('rack.zone:id,zone_name,temp_min_c,temp_max_c')->findOrFail($id);
+            $user  = $this->tenantUser($request);
+            $shelf = $this->ownedQuery(Shelf::query(), $user)
+                ->with('rack.zone:id,zone_name,temp_min_c,temp_max_c')->findOrFail($id);
 
             DB::commit();
 
@@ -161,12 +163,18 @@ class ShelfController extends BaseInventoryController
             DB::beginTransaction();
 
             $user = $this->tenantUser($request);
-            $rack = Rack::with('zone')->findOrFail($rackId);
+            /* Locked: every rule below compares against the rack and the
+               shelves already in it. Two shelves added at once both read the
+               same free height and the same free level; the second now waits. */
+            $rack = $this->ownedQuery(Rack::query(), $user)->with('zone')->lockForUpdate()->findOrFail($rackId);
             $data = $request->validate($this->rules());
 
             $this->guard($data, $rack, null);
 
             $shelf = new Shelf($data);
+            // The rack's tenancy, never the user's — see ZoneController::store.
+            $shelf->client_id      = $rack->client_id;
+            $shelf->branch_id      = $rack->branch_id;
             $shelf->rack_id        = $rack->id;
             $shelf->height_cm      = $this->svc->toCm((float) $data['height'], $data['dim_unit']);
             $shelf->cold_chain     = (int) ($data['cold_chain'] ?? 0);
@@ -193,9 +201,13 @@ class ShelfController extends BaseInventoryController
             DB::beginTransaction();
 
             $user  = $this->tenantUser($request);
-            $shelf = Shelf::findOrFail($id);
-            $rack  = Rack::with('zone')->findOrFail($shelf->rack_id);
-            $data  = $request->validate($this->rules());
+            /* Rack, then shelf — always this order here, so two saves cannot
+               deadlock. A put-away locks only the shelf, so its boxes_count
+               cannot move under the occupied-shelf rules below. */
+            $rackId = $this->ownedQuery(Shelf::query(), $user)->whereKey($id)->value('rack_id') ?? abort(404);
+            $rack   = Rack::with('zone')->lockForUpdate()->findOrFail($rackId);
+            $shelf  = Shelf::lockForUpdate()->findOrFail($id);
+            $data   = $request->validate($this->rules());
 
             $this->guard($data, $rack, $shelf);
 
@@ -222,20 +234,17 @@ class ShelfController extends BaseInventoryController
             DB::beginTransaction();
 
             $user  = $this->tenantUser($request);
-            $shelf = Shelf::findOrFail($id);
+            /* Locked as the put-away locks it, so boxes_count cannot change
+               between this read and the save — a box reserved meanwhile used
+               to land on a shelf being switched off. */
+            $shelf = $this->ownedQuery(Shelf::query(), $user)->lockForUpdate()->findOrFail($id);
             $data  = $request->validate(['status' => ['required', 'integer', 'in:0,1']]);
 
             if ((int) $data['status'] === 0 && (int) $shelf->boxes_count > 0) {
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => "{$shelf->shelf_name} still holds {$shelf->boxes_count} box(es).",
-                ], 409));
+                $this->reject("{$shelf->shelf_name} still holds {$shelf->boxes_count} box(es).", null, 409);
             }
             if ((int) $data['status'] === 1 && !$shelf->rack?->isActive()) {
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => 'Its rack is inactive — activate that first.',
-                ], 409));
+                $this->reject('Its rack is inactive — activate that first.', null, 409);
             }
 
             $shelf->forceFill(['status' => $data['status'], 'updated_by' => $user->id])->save();
@@ -255,14 +264,15 @@ class ShelfController extends BaseInventoryController
         try {
             DB::beginTransaction();
 
-            $this->tenantUser($request);
-            $shelf = Shelf::findOrFail($id);
+            $user  = $this->tenantUser($request);
+            $shelf = $this->ownedQuery(Shelf::query(), $user)->lockForUpdate()->findOrFail($id);
 
             if ((int) $shelf->boxes_count > 0) {
-                abort(response()->json([
-                    'status'  => false,
-                    'message' => "{$shelf->shelf_name} still holds {$shelf->boxes_count} box(es).",
-                ], 409));
+                $this->reject("{$shelf->shelf_name} still holds {$shelf->boxes_count} box(es).", null, 409);
+            }
+            // Released history too — it names this shelf, and the level would be reused.
+            if ($used = $this->referencedBy('shelf_id', $shelf->id)) {
+                $this->reject("{$shelf->shelf_name} is used by {$used}. Deactivate it instead of deleting it.", null, 409);
             }
 
             $shelf->delete();
@@ -386,60 +396,51 @@ class ShelfController extends BaseInventoryController
     {
         return [
             'shelf_name'    => ['required', 'string', 'max:180'],
-            'level_no'      => ['required', 'integer', 'min:1'],
+            // Upper bounds are the columns' (smallint, numeric) — past them is
+            // a database error, not a 422.
+            'level_no'      => ['required', 'integer', 'min:1', 'max:32767'],
             'shelf_type'    => ['required', Rule::in(Shelf::TYPES)],
-            'max_weight_kg' => ['required', 'numeric', 'min:1'],
+            'max_weight_kg' => ['required', 'numeric', 'min:1', 'max:999999999999'],
             // Free text once the dropdown is on 'Other', so no Rule::in here.
             'purpose'       => ['required', 'string', 'max:120'],
             'cold_chain'    => ['nullable', 'integer', 'in:0,1'],
             'hazardous'     => ['nullable', 'integer', 'in:0,1'],
             'dim_unit'      => ['required', 'in:cm,m'],
-            'length'        => ['required', 'numeric', 'min:0.01'],
-            'width'         => ['required', 'numeric', 'min:0.01'],
-            'height'        => ['required', 'numeric', 'min:0.01'],
-            'area'          => ['nullable', 'numeric', 'min:0'],
-            'volume'        => ['nullable', 'numeric', 'min:0'],
-            'status'        => ['nullable', 'integer', 'in:0,1'],
+            'length'        => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
+            'width'         => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
+            'height'        => ['required', 'numeric', 'min:0.01', 'max:9999999999'],
+            'area'          => ['nullable', 'numeric', 'min:0', 'max:999999999999'],
+            'volume'        => ['nullable', 'numeric', 'min:0', 'max:9999999999999'],
+            // No 'status' — setStatus() only, which refuses a shelf holding boxes.
         ];
     }
 
     /** Everything that is a comparison against the parent rack. */
     private function guard(array $d, Rack $rack, ?Shelf $editing): void
     {
-        if (!$rack->isActive()) {
-            abort(response()->json(['status' => false, 'message' => "{$rack->rack_name} is inactive."], 422));
+        // A new shelf only. One already in a rack switched off later must still
+        // be editable — it was refused even a rename.
+        if (!$editing && !$rack->isActive()) {
+            $this->reject("{$rack->rack_name} is inactive.", 'rack_id');
         }
 
         // A shelf can never be more permissive than the rack holding it.
         if (!empty($d['cold_chain']) && !$rack->cold_chain) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => "{$rack->rack_name} is not a cold-chain rack.",
-            ], 422));
+            $this->reject("{$rack->rack_name} is not a cold-chain rack.", 'cold_chain');
         }
         if (!empty($d['hazardous']) && !$rack->hazardous) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => "{$rack->rack_name} does not allow hazardous goods.",
-            ], 422));
+            $this->reject("{$rack->rack_name} does not allow hazardous goods.", 'hazardous');
         }
 
-        $taken = fn (string $column, $value) => Shelf::where('rack_id', $rack->id)
-            ->where($column, $column === 'shelf_name' ? 'ilike' : '=', $value)
+        $levelTaken = Shelf::where('rack_id', $rack->id)
+            ->where('level_no', $d['level_no'])
             ->when($editing, fn ($q) => $q->where('id', '!=', $editing->id))
             ->exists();
-
-        if ($taken('level_no', $d['level_no'])) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => "Level {$d['level_no']} already exists in this rack.",
-            ], 422));
+        if ($levelTaken) {
+            $this->reject("Level {$d['level_no']} already exists in this rack.", 'level_no');
         }
-        if ($taken('shelf_name', $d['shelf_name'])) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'This rack already has a shelf with this name.',
-            ], 422));
+        if ($this->nameTaken(Shelf::where('rack_id', $rack->id), 'shelf_name', $d['shelf_name'], $editing?->id)) {
+            $this->reject('This rack already has a shelf with this name.', 'shelf_name');
         }
 
         /* Length, width and height are capped by the rack — all compared in
@@ -451,32 +452,52 @@ class ShelfController extends BaseInventoryController
         $h     = $this->svc->toCm((float) $d['height'], $d['dim_unit']);
 
         if ($l > $rackL + 0.001) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'Cannot exceed the rack length (' . number_format($rackL, 2) . ' cm).',
-            ], 422));
+            $this->reject('Cannot exceed the rack length (' . number_format($rackL, 2) . ' cm).', 'length');
         }
         if ($w > $rackW + 0.001) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'Cannot exceed the rack width (' . number_format($rackW, 2) . ' cm).',
-            ], 422));
+            $this->reject('Cannot exceed the rack width (' . number_format($rackW, 2) . ' cm).', 'width');
         }
 
         $free = $this->svc->freeRackHeightCm($rack, $editing?->id);
         if ($h > $free + 0.001) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'Only ' . number_format($free, 2) . ' cm of rack height is free.',
-            ], 422));
+            $this->reject('Only ' . number_format($free, 2) . ' cm of rack height is free.', 'height');
         }
 
         // Lowering the limit under what is already stored would read as a loss.
         if ($editing && (float) $d['max_weight_kg'] < (float) $editing->used_weight_kg) {
-            abort(response()->json([
-                'status'  => false,
-                'message' => 'Cannot be below the ' . (float) $editing->used_weight_kg . ' kg already stored.',
-            ], 422));
+            $this->reject('Cannot be below the ' . (float) $editing->used_weight_kg . ' kg already stored.', 'max_weight_kg');
+        }
+
+        if ($editing && (int) $editing->boxes_count > 0) {
+            $this->guardOccupied($d, $editing, $l, $w, $h);
+        }
+    }
+
+    /**
+     * What a shelf holding boxes may not change: the boxes were put there on
+     * its flags and its size, and they do not move because the form did.
+     * Growing is fine; taking away is not.
+     */
+    private function guardOccupied(array $d, Shelf $shelf, float $l, float $w, float $h): void
+    {
+        $boxes = (int) $shelf->boxes_count . ' box(es)';
+
+        if (empty($d['cold_chain']) && $shelf->cold_chain) {
+            $this->reject("It holds {$boxes} — it must stay cold chain until they are moved.", 'cold_chain');
+        }
+        if (empty($d['hazardous']) && $shelf->hazardous) {
+            $this->reject("It holds {$boxes} — it must keep allowing hazardous goods until they are moved.", 'hazardous');
+        }
+
+        $was = fn ($v) => $this->svc->toCm((float) $v, $shelf->dim_unit);
+        foreach ([
+            'length' => [$l, $was($shelf->length), 'shorter'],
+            'width'  => [$w, $was($shelf->width), 'narrower'],
+            'height' => [$h, (float) $shelf->height_cm, 'lower'],
+        ] as $field => [$now, $before, $word]) {
+            if ($now + 0.001 < $before) {
+                $this->reject("It holds {$boxes} — it cannot be made {$word} until they are moved.", $field);
+            }
         }
     }
 
