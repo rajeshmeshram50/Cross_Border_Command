@@ -1,115 +1,109 @@
-/* =====================================================================
-   Master page styles
-   Extracted from resources/js/pages/master/MasterPage.tsx
-   Used by: Designations, Roles, KPIs, and other master modules
-   ===================================================================== */
-
-/* ---------------------------------------------------------------------
-   1. Page strip + table card — premium dark-mode glass treatment
-   --------------------------------------------------------------------- */
 .dsn-page-strip {
   position: relative;
   overflow: hidden;
   background: #ffffff;
-  /* Match the Clients header (.cl-cstrip): violet border + 16px radius + soft
-     shadow, with a 4px violet accent strip down the left edge. */
   border: 1px solid #c4b5fd;
   border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
 }
+
 .dsn-page-strip::before {
   content: '';
-  position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
   background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
   border-radius: 16px 0 0 16px;
 }
-/* Premium dark-mode glass strip — multi-stop gradient + colored glow +
-   crisp top sheen. Reads like the Plans page panels. */
+
+
 [data-bs-theme="dark"] .dsn-page-strip,
 [data-layout-mode="dark"] .dsn-page-strip {
   position: relative;
   background:
-    radial-gradient(120% 140% at 0% 0%, rgba(102,145,231,0.16) 0%, transparent 55%),
-    radial-gradient(120% 140% at 100% 100%, rgba(124,92,252,0.14) 0%, transparent 55%),
+    radial-gradient(120% 140% at 0% 0%, rgba(102, 145, 231, 0.16) 0%, transparent 55%),
+    radial-gradient(120% 140% at 100% 100%, rgba(124, 92, 252, 0.14) 0%, transparent 55%),
     linear-gradient(180deg,
       color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
       color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
   border: 1px solid color-mix(in srgb, #7c3aed 40%, var(--vz-border-color));
   box-shadow:
-    0 12px 32px rgba(0,0,0,0.36),
-    0 2px 6px rgba(0,0,0,0.20),
-    0 0 0 1px rgba(255,255,255,0.03),
-    inset 0 1px 0 rgba(255,255,255,0.10),
-    inset 0 -1px 0 rgba(0,0,0,0.20);
+    0 12px 32px rgba(0, 0, 0, 0.36),
+    0 2px 6px rgba(0, 0, 0, 0.20),
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20);
 }
-/* Premium dark-mode KPI cards — glossy gradient + inset highlight. */
+
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi,
 [data-bs-theme="dark"] .role-extras .role-kpi,
 [data-layout-mode="dark"] .role-extras .role-kpi,
-/* .kpi-card joined this list when its light-mode fill became a hardcoded
-   #ffffff — without a dark rule it would have stayed white on a dark page. */
 [data-bs-theme="dark"] .kpi-extras .kpi-card,
 [data-layout-mode="dark"] .kpi-extras .kpi-card {
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
-    color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
+      color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
+      color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
   border: 1px solid color-mix(in srgb, #ffffff 9%, transparent);
   box-shadow:
-    0 4px 14px rgba(0,0,0,0.28),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    inset 0 -1px 0 rgba(0,0,0,0.20);
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20);
 }
+
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi:hover,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi:hover,
 [data-bs-theme="dark"] .role-extras .role-kpi:hover,
 [data-layout-mode="dark"] .role-extras .role-kpi:hover {
   border-color: color-mix(in srgb, #6691e7 30%, transparent);
   box-shadow:
-    0 10px 26px rgba(0,0,0,0.36),
-    0 0 0 1px rgba(102,145,231,0.18),
-    inset 0 1px 0 rgba(255,255,255,0.10);
+    0 10px 26px rgba(0, 0, 0, 0.36),
+    0 0 0 1px rgba(102, 145, 231, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
-/* Hierarchy chip strip — glossy track with depth. */
+
 [data-bs-theme="dark"] .dsn-extras .dsn-hier-row,
 [data-layout-mode="dark"] .dsn-extras .dsn-hier-row {
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
-    color-mix(in srgb, var(--vz-card-bg) 96%, #ffffff) 100%);
+      color-mix(in srgb, var(--vz-card-bg) 80%, #ffffff) 0%,
+      color-mix(in srgb, var(--vz-card-bg) 96%, #ffffff) 100%);
   border-color: color-mix(in srgb, #ffffff 9%, transparent);
   box-shadow:
-    0 4px 14px rgba(0,0,0,0.24),
-    inset 0 1px 0 rgba(255,255,255,0.06);
+    0 4px 14px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* Section 2 (the .master-scroll-wrap sticky-header + scrollbar rules) is gone:
-   every master now renders components/ui/DataTable, which owns its own scroll
-   container, sticky header and scrollbar styling. */
-
-/* ---------------------------------------------------------------------
-   3. Designations — KPI strip (compact, responsive)
-   --------------------------------------------------------------------- */
-/* KPI strip — 7 → 4 → 3 → 2 columns */
 .dsn-extras .dsn-kpis {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
+
 @media (max-width: 1399px) {
-  .dsn-extras .dsn-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .dsn-extras .dsn-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
+
 @media (max-width: 991px) {
-  .dsn-extras .dsn-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dsn-extras .dsn-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
+
 @media (max-width: 575px) {
-  .dsn-extras .dsn-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .dsn-extras .dsn-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
 }
-/* Layout: top accent strip + [Label/Number on LEFT][Icon tile on RIGHT]
-   Matches the Department Master reference design. */
+
+
 .dsn-extras .dsn-kpi {
   position: relative;
-  /* White in light mode, same reasoning as .role-kpi / .dsn-hier-row. */
   background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 10px;
@@ -121,17 +115,22 @@
   overflow: hidden;
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
+
 .dsn-extras .dsn-kpi::before {
   content: '';
   position: absolute;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 3px;
   background: var(--kpi-accent, transparent);
 }
+
 .dsn-extras .dsn-kpi:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 22px rgba(0,0,0,0.07);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.07);
 }
+
 .dsn-extras .dsn-kpi-text {
   display: flex;
   flex-direction: column;
@@ -139,6 +138,7 @@
   line-height: 1.2;
   flex: 1;
 }
+
 .dsn-extras .dsn-kpi-icon {
   width: 36px;
   height: 36px;
@@ -149,6 +149,7 @@
   flex-shrink: 0;
   font-size: 16px;
 }
+
 .dsn-extras .dsn-kpi-num {
   font-size: 22px;
   font-weight: 800;
@@ -157,10 +158,12 @@
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
+
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi-num,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi-num {
-  color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+  color: var(--kpi-bright, rgba(255, 255, 255, 0.95)) !important;
 }
+
 .dsn-extras .dsn-kpi-label {
   font-size: 10.5px;
   font-weight: 700;
@@ -172,36 +175,37 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Dark-mode polish — brighter strip + subtle glow + bolder borders so
-   the KPI cards and hierarchy chips POP against the dark canvas. */
+
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi {
   background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
   border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
 }
+
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi-label,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi-label {
   color: rgba(255, 255, 255, 0.78);
 }
+
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi-icon,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi-icon {
   filter: brightness(1.1) saturate(1.1);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.05) inset;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
 }
+
 [data-bs-theme="dark"] .dsn-extras .dsn-hier-row,
 [data-layout-mode="dark"] .dsn-extras .dsn-hier-row {
   background: color-mix(in srgb, var(--vz-card-bg) 90%, #ffffff);
   border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
 }
+
 [data-bs-theme="dark"] .dsn-extras .dsn-hier-chip,
 [data-layout-mode="dark"] .dsn-extras .dsn-hier-chip {
   filter: brightness(1.05) saturate(1.1);
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
 }
 
-/* ---------------------------------------------------------------------
-   4. Designations — Hierarchy chip strip
-   --------------------------------------------------------------------- */
+
 .dsn-extras .dsn-hier-row {
   display: flex;
   align-items: center;
@@ -210,15 +214,17 @@
   padding: 10px 12px;
   border: 1px solid var(--vz-border-color);
   border-radius: 12px;
-  /* Plain white in light mode — var(--vz-card-bg) picks up the theme preset's
-     tinted card surface, which read grey against the white table below. The
-     dark-mode override near the top of this file still applies. */
   background: #ffffff;
   margin-bottom: 12px;
 }
+
 @media (max-width: 575px) {
-  .dsn-extras .dsn-hier-row { padding: 8px 10px; gap: 5px; }
+  .dsn-extras .dsn-hier-row {
+    padding: 8px 10px;
+    gap: 5px;
+  }
 }
+
 .dsn-extras .dsn-hier-label {
   font-size: 10.5px;
   font-weight: 700;
@@ -227,6 +233,7 @@
   text-transform: uppercase;
   margin-right: 4px;
 }
+
 .dsn-extras .dsn-hier-chip {
   display: inline-flex;
   align-items: center;
@@ -238,15 +245,24 @@
   line-height: 1.3;
   white-space: nowrap;
 }
+
 @media (max-width: 575px) {
-  .dsn-extras .dsn-hier-chip { font-size: 9.5px; padding: 2px 6px; }
-  .dsn-extras .dsn-hier-arrow { display: none; }
+  .dsn-extras .dsn-hier-chip {
+    font-size: 9.5px;
+    padding: 2px 6px;
+  }
+
+  .dsn-extras .dsn-hier-arrow {
+    display: none;
+  }
 }
+
 .dsn-extras .dsn-hier-arrow {
   color: var(--vz-secondary-color);
   opacity: 0.55;
   font-size: 12px;
 }
+
 .dsn-extras .dsn-hier-tail {
   margin-left: auto;
   font-size: 11px;
@@ -254,10 +270,12 @@
   font-style: italic;
 }
 
-/* ---------------------------------------------------------------------
-   5. Designations — inline filter group
-   --------------------------------------------------------------------- */
-.dsn-inline-filters .dsn-il-group { display: flex; align-items: center; gap: 6px; }
+.dsn-inline-filters .dsn-il-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .dsn-inline-filters .dsn-il-label {
   font-size: 11px;
   font-weight: 700;
@@ -265,60 +283,81 @@
   text-transform: uppercase;
   color: var(--vz-secondary-color);
 }
-.dsn-inline-filters .form-select-sm { min-width: 120px; }
 
-/* ---------------------------------------------------------------------
-   5b. Responsive — master pages on tablet / mobile
-   Makes every master page (shared MasterPage layout) adapt down to phones:
-   the flex KPI strip reflows 4→3→2 up, the header strip stacks its actions,
-   and the search/filter row + inline filters go full-width.
-   --------------------------------------------------------------------- */
-/* KPI flex strip (.mp-kpi-tile lives in a d-flex flex-wrap row with a 16px
-   gap and an inline min-width:180). Override the basis so tiles wrap evenly
-   instead of one tile stretching to fill a half-empty row. flex-grow:0 keeps
-   a lone trailing tile at its column width rather than spanning full width. */
+.dsn-inline-filters .form-select-sm {
+  min-width: 120px;
+}
+
+
 @media (max-width: 1199.98px) {
-  .mp-kpi-tile { flex: 0 1 calc(33.333% - 11px) !important; min-width: calc(33.333% - 11px) !important; }
+  .mp-kpi-tile {
+    flex: 0 1 calc(33.333% - 11px) !important;
+    min-width: calc(33.333% - 11px) !important;
+  }
 }
+
 @media (max-width: 767.98px) {
-  .mp-kpi-tile { flex: 0 1 calc(50% - 8px) !important; min-width: calc(50% - 8px) !important; }
+  .mp-kpi-tile {
+    flex: 0 1 calc(50% - 8px) !important;
+    min-width: calc(50% - 8px) !important;
+  }
 }
+
 @media (max-width: 479.98px) {
-  .mp-kpi-tile { flex: 1 1 100% !important; min-width: 100% !important; }
+  .mp-kpi-tile {
+    flex: 1 1 100% !important;
+    min-width: 100% !important;
+  }
 }
-/* Header strip — tighter padding on phones; the action cluster (Back) drops
-   below the title and aligns left instead of being squeezed on the right. */
+
 @media (max-width: 575.98px) {
-  .dsn-page-strip { padding: 14px 16px !important; }
-  .dsn-page-strip > .d-flex.flex-shrink-0 {
+  .dsn-page-strip {
+    padding: 14px 16px !important;
+  }
+
+  .dsn-page-strip>.d-flex.flex-shrink-0 {
     width: 100%;
     justify-content: flex-start !important;
     margin-top: 6px;
   }
-  /* Inline filter groups + their selects span the row so the dropdowns are
-     comfortably tappable rather than cramped. */
-  .dsn-inline-filters { width: 100%; }
-  .dsn-inline-filters .dsn-il-group { flex: 1 1 100%; }
-  .dsn-inline-filters .dsn-il-group > div { flex: 1 1 auto; min-width: 0 !important; }
+
+  .dsn-inline-filters {
+    width: 100%;
+  }
+
+  .dsn-inline-filters .dsn-il-group {
+    flex: 1 1 100%;
+  }
+
+  .dsn-inline-filters .dsn-il-group>div {
+    flex: 1 1 auto;
+    min-width: 0 !important;
+  }
 }
 
-/* ---------------------------------------------------------------------
-   6. Roles — KPI cards + segmented filter tabs
-   --------------------------------------------------------------------- */
+
 .role-extras .role-kpis {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
-@media (max-width: 1399px) { .role-extras .role-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 575px)  { .role-extras .role-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } }
+
+@media (max-width: 1399px) {
+  .role-extras .role-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575px) {
+  .role-extras .role-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+}
+
 .role-extras .role-kpi {
   position: relative;
-  /* Plain white in light mode — matches the generic .mp-kpi-tile strip every
-     other master renders. var(--vz-card-bg) picks up the theme preset's tinted
-     card surface, which read as grey next to the white table below. The
-     dark-mode block near the top of this file still overrides it. */
   background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 12px;
@@ -330,19 +369,25 @@
   overflow: hidden;
   transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
+
 .role-extras .role-kpi::before {
   content: '';
   position: absolute;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 3px;
   background: var(--kpi-accent, transparent);
 }
+
 .role-extras .role-kpi:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(64,81,137,0.10);
+  box-shadow: 0 10px 24px rgba(64, 81, 137, 0.10);
 }
+
 .role-extras .role-kpi-icon {
-  width: 36px; height: 36px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
   display: inline-flex;
   align-items: center;
@@ -352,7 +397,15 @@
   position: relative;
   z-index: 1;
 }
-.role-extras .role-kpi-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; flex: 1; }
+
+.role-extras .role-kpi-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+  flex: 1;
+}
+
 .role-extras .role-kpi-num {
   font-size: 22px;
   font-weight: 800;
@@ -361,10 +414,12 @@
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
+
 [data-bs-theme="dark"] .role-extras .role-kpi-num,
 [data-layout-mode="dark"] .role-extras .role-kpi-num {
-  color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+  color: var(--kpi-bright, rgba(255, 255, 255, 0.95)) !important;
 }
+
 .role-extras .role-kpi-label {
   font-size: 10.5px;
   font-weight: 700;
@@ -376,21 +431,25 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 [data-bs-theme="dark"] .role-extras .role-kpi-label,
-[data-layout-mode="dark"] .role-extras .role-kpi-label { color: rgba(255,255,255,0.78); }
+[data-layout-mode="dark"] .role-extras .role-kpi-label {
+  color: rgba(255, 255, 255, 0.78);
+}
+
 [data-bs-theme="dark"] .role-extras .role-kpi,
 [data-layout-mode="dark"] .role-extras .role-kpi {
   background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
   border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
 }
-/* The Roles filter tabs (.role-tabs / .role-tab) are gone: the All / Primary /
-   Ancillary rail moved into the shared DataTable toolbar, which brings its own
-   pill styling (.dt-tab). */
 
-/* ---------------------------------------------------------------------
-   7. Roles — inline filter group
-   --------------------------------------------------------------------- */
-.role-inline-filters .role-il-group { display: flex; align-items: center; gap: 6px; }
+
+.role-inline-filters .role-il-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .role-inline-filters .role-il-label {
   font-size: 11px;
   font-weight: 700;
@@ -398,6 +457,7 @@
   text-transform: uppercase;
   color: var(--vz-secondary-color);
 }
+
 .role-inline-filters .role-il-tail {
   font-size: 11.5px;
   color: var(--vz-secondary-color);
@@ -405,17 +465,27 @@
   margin-left: 4px;
 }
 
-/* ---------------------------------------------------------------------
-   8. KPIs — KPI cards
-   --------------------------------------------------------------------- */
+
 .kpi-extras .kpi-cards {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 12px;
 }
-@media (max-width: 1199px) { .kpi-extras .kpi-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 575px)  { .kpi-extras .kpi-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } }
+
+@media (max-width: 1199px) {
+  .kpi-extras .kpi-cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575px) {
+  .kpi-extras .kpi-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+}
+
 .kpi-extras .kpi-card {
   position: relative;
   /* White in light mode, matching .role-kpi / .dsn-kpi. */
@@ -430,17 +500,22 @@
   overflow: hidden;
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }
+
 .kpi-extras .kpi-card::before {
   content: '';
   position: absolute;
-  top: 0; left: 0; right: 0;
+  top: 0;
+  left: 0;
+  right: 0;
   height: 3px;
   background: var(--kpi-accent, transparent);
 }
+
 .kpi-extras .kpi-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 22px rgba(0,0,0,0.07);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.07);
 }
+
 .kpi-extras .kpi-card-text {
   display: flex;
   flex-direction: column;
@@ -448,8 +523,10 @@
   line-height: 1.2;
   flex: 1;
 }
+
 .kpi-extras .kpi-card-icon {
-  width: 36px; height: 36px;
+  width: 36px;
+  height: 36px;
   border-radius: 9px;
   display: inline-flex;
   align-items: center;
@@ -458,6 +535,7 @@
   color: #fff;
   flex-shrink: 0;
 }
+
 .kpi-extras .kpi-card-label {
   font-size: 10.5px;
   font-weight: 700;
@@ -469,6 +547,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .kpi-extras .kpi-card-num {
   font-size: 22px;
   font-weight: 800;
@@ -477,27 +556,38 @@
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
+
 [data-bs-theme="dark"] .kpi-extras .kpi-card-num,
 [data-layout-mode="dark"] .kpi-extras .kpi-card-num {
-  color: var(--kpi-bright, rgba(255,255,255,0.95)) !important;
+  color: var(--kpi-bright, rgba(255, 255, 255, 0.95)) !important;
 }
+
 [data-bs-theme="dark"] .kpi-extras .kpi-card-label,
-[data-layout-mode="dark"] .kpi-extras .kpi-card-label { color: rgba(255,255,255,0.78); }
+[data-layout-mode="dark"] .kpi-extras .kpi-card-label {
+  color: rgba(255, 255, 255, 0.78);
+}
+
 [data-bs-theme="dark"] .kpi-extras .kpi-card,
 [data-layout-mode="dark"] .kpi-extras .kpi-card {
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
-    color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
+      color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
+      color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
   border-color: color-mix(in srgb, #ffffff 9%, transparent);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-[data-bs-theme="dark"] .kpi-extras .kpi-card-sub,
-[data-layout-mode="dark"] .kpi-extras .kpi-card-sub { color: rgba(255,255,255,0.65); }
 
-/* ---------------------------------------------------------------------
-   9. KPIs — inline filter group
-   --------------------------------------------------------------------- */
-.kpi-inline-filters .kpi-il-group { display: flex; align-items: center; gap: 6px; }
+[data-bs-theme="dark"] .kpi-extras .kpi-card-sub,
+[data-layout-mode="dark"] .kpi-extras .kpi-card-sub {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+
+.kpi-inline-filters .kpi-il-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .kpi-inline-filters .kpi-il-label {
   font-size: 11px;
   font-weight: 700;
@@ -506,11 +596,7 @@
   color: var(--vz-secondary-color);
 }
 
-/* ---------------------------------------------------------------------
-   10. MasterFileInput — custom-styled file picker
-   Neutral, understated — same frame as MasterSelect/MasterDatePicker.
-   Quiet "Choose File" chip on the left, filename on the right.
-   --------------------------------------------------------------------- */
+
 .master-file-input {
   display: flex;
   align-items: center;
@@ -525,28 +611,30 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   overflow: hidden;
 }
+
 .master-file-input:hover:not(.disabled) {
   border-color: color-mix(in srgb, var(--vz-body-color) 25%, var(--vz-border-color));
 }
+
 .master-file-input:focus-visible,
 .master-file-input:focus-within {
   outline: none;
   border-color: color-mix(in srgb, var(--vz-body-color) 35%, var(--vz-border-color));
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--vz-body-color) 10%, transparent);
 }
+
 .master-file-input.invalid {
   border-color: var(--vz-danger, #f06548);
-  box-shadow: 0 0 0 2px rgba(240,101,72,0.12);
+  box-shadow: 0 0 0 2px rgba(240, 101, 72, 0.12);
 }
+
 .master-file-input.disabled {
   opacity: 0.65;
   cursor: not-allowed;
   background: color-mix(in srgb, var(--vz-body-color) 4%, var(--vz-card-bg));
 }
 
-/* "Choose File" chip — greyish glossy: subtle gradient + top sheen +
-   inset bottom shadow + soft drop shadow. Theme-aware via color-mix
-   so light and dark both get a polished gunmetal look. */
+
 .master-file-btn {
   display: inline-flex;
   align-items: center;
@@ -554,11 +642,9 @@
   height: 30px;
   padding: 0 12px;
   border-radius: 7px;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--vz-body-color) 4%, var(--vz-card-bg)) 0%,
-    color-mix(in srgb, var(--vz-body-color) 12%, var(--vz-card-bg)) 100%
-  );
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--vz-body-color) 4%, var(--vz-card-bg)) 0%,
+      color-mix(in srgb, var(--vz-body-color) 12%, var(--vz-card-bg)) 100%);
   border: 1px solid color-mix(in srgb, var(--vz-body-color) 14%, var(--vz-border-color));
   color: var(--vz-body-color);
   font-size: 12px;
@@ -566,29 +652,30 @@
   white-space: nowrap;
   flex-shrink: 0;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.55),
-    inset 0 -1px 0 rgba(0,0,0,0.04),
-    0 1px 2px rgba(0,0,0,0.05);
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.05);
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
+
 .master-file-input:hover:not(.disabled) .master-file-btn {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--vz-body-color) 6%, var(--vz-card-bg)) 0%,
-    color-mix(in srgb, var(--vz-body-color) 16%, var(--vz-card-bg)) 100%
-  );
+  background: linear-gradient(180deg,
+      color-mix(in srgb, var(--vz-body-color) 6%, var(--vz-card-bg)) 0%,
+      color-mix(in srgb, var(--vz-body-color) 16%, var(--vz-card-bg)) 100%);
   border-color: color-mix(in srgb, var(--vz-body-color) 22%, var(--vz-border-color));
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.65),
-    inset 0 -1px 0 rgba(0,0,0,0.06),
-    0 2px 4px rgba(0,0,0,0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.06),
+    0 2px 4px rgba(0, 0, 0, 0.08);
 }
+
 .master-file-input:active:not(.disabled) .master-file-btn {
   transform: translateY(0.5px);
   box-shadow:
-    inset 0 1px 2px rgba(0,0,0,0.10),
-    0 1px 1px rgba(0,0,0,0.04);
+    inset 0 1px 2px rgba(0, 0, 0, 0.10),
+    0 1px 1px rgba(0, 0, 0, 0.04);
 }
+
 .master-file-btn i {
   font-size: 14px;
   line-height: 1;
@@ -608,15 +695,18 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
 .master-file-name-text {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
 }
+
 .master-file-name.is-empty {
   color: var(--vz-secondary-color);
   font-weight: 400;
 }
+
 .master-file-size {
   color: var(--vz-secondary-color);
   font-size: 11px;
@@ -640,10 +730,12 @@
   flex-shrink: 0;
   transition: background 0.15s ease, color 0.15s ease;
 }
+
 .master-file-clear:hover {
   background: color-mix(in srgb, var(--vz-body-color) 10%, transparent);
   color: var(--vz-body-color);
 }
+
 .master-file-clear i {
   font-size: 14px;
   line-height: 1;
@@ -664,54 +756,51 @@
   background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
   border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
 }
-/* Dark-mode glossy gunmetal — deeper gradient, brighter top sheen so the
-   chip reads as a polished metal pill against the dark canvas. */
+
+
 [data-bs-theme="dark"] .master-file-btn,
 [data-layout-mode="dark"] .master-file-btn {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, #ffffff 12%, var(--vz-card-bg)) 0%,
-    color-mix(in srgb, #ffffff 4%, var(--vz-card-bg)) 100%
-  );
+  background: linear-gradient(180deg,
+      color-mix(in srgb, #ffffff 12%, var(--vz-card-bg)) 0%,
+      color-mix(in srgb, #ffffff 4%, var(--vz-card-bg)) 100%);
   border-color: color-mix(in srgb, #ffffff 16%, transparent);
-  color: rgba(255,255,255,0.88);
+  color: rgba(255, 255, 255, 0.88);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.10),
-    inset 0 -1px 0 rgba(0,0,0,0.20),
-    0 2px 4px rgba(0,0,0,0.30);
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.20),
+    0 2px 4px rgba(0, 0, 0, 0.30);
 }
+
 [data-bs-theme="dark"] .master-file-input:hover:not(.disabled) .master-file-btn,
 [data-layout-mode="dark"] .master-file-input:hover:not(.disabled) .master-file-btn {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, #ffffff 16%, var(--vz-card-bg)) 0%,
-    color-mix(in srgb, #ffffff 6%, var(--vz-card-bg)) 100%
-  );
+  background: linear-gradient(180deg,
+      color-mix(in srgb, #ffffff 16%, var(--vz-card-bg)) 0%,
+      color-mix(in srgb, #ffffff 6%, var(--vz-card-bg)) 100%);
   border-color: color-mix(in srgb, #ffffff 22%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.14),
-    inset 0 -1px 0 rgba(0,0,0,0.22),
-    0 4px 8px rgba(0,0,0,0.36);
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 4px 8px rgba(0, 0, 0, 0.36);
 }
+
 [data-bs-theme="dark"] .master-file-btn i,
 [data-layout-mode="dark"] .master-file-btn i {
-  color: rgba(255,255,255,0.65);
+  color: rgba(255, 255, 255, 0.65);
 }
+
 [data-bs-theme="dark"] .master-file-clear,
 [data-layout-mode="dark"] .master-file-clear {
-  color: rgba(255,255,255,0.55);
+  color: rgba(255, 255, 255, 0.55);
 }
+
 [data-bs-theme="dark"] .master-file-clear:hover,
 [data-layout-mode="dark"] .master-file-clear:hover {
   background: color-mix(in srgb, #ffffff 10%, transparent);
-  color: rgba(255,255,255,0.9);
+  color: rgba(255, 255, 255, 0.9);
 }
 
-/* Section 11 (the .sublist-* card list + inline editor) moved to
-   resources/js/components/ui/InlineSublist.css — it travels with the
-   component now, so the Branch form can use it too. */
 
-
-/* Master KPI tiles — force white in light mode; keep dark card surface in dark. */
 [data-bs-theme="dark"] .mp-kpi-tile,
-[data-layout-mode="dark"] .mp-kpi-tile { background: var(--vz-card-bg) !important; }
+[data-layout-mode="dark"] .mp-kpi-tile {
+  background: var(--vz-card-bg) !important;
+}

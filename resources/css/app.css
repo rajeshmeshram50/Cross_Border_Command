@@ -100,15 +100,6 @@ body {
   overflow-x: hidden;
 }
 
-/* Horizontal (IDIMS) shell: .main-content is the only scroller, so the
-   document itself must never scroll. Locking only #layout-wrapper was not
-   enough — html/body stayed `overflow: visible`, and in Edge (fractional zoom
-   rounding on 100dvh, extension-injected nodes like <loom-container>, stray
-   off-screen popovers) the document grew past the viewport. It then scrolled
-   into empty space below the footer, and its scrollbar toggling on and off
-   re-fired every innerHeight/ResizeObserver fit-to-height hook — the shake.
-   The height chain lets the wrapper be exactly 100% of the viewport with no
-   viewport-unit rounding. */
 html:has(#layout-wrapper.idims-active),
 html:has(#layout-wrapper.idims-active) body,
 html:has(#layout-wrapper.idims-active) #app {
@@ -139,11 +130,6 @@ html:has(#layout-wrapper.idims-active) #app {
 
 @media (min-width: 768px) {
 
-  /* Same lock as the horizontal shell above, for the same reason: here too
-     .main-content is the only scroller on desktop, so the document must not
-     be able to scroll or shake in Edge. Below 768px these layouts fall back to
-     ordinary body scroll, so the lock stays inside this query; :has() keeps
-     it off login/public pages, which share data-layout on <html>. */
   html:is([data-layout="vertical"], [data-layout="twocolumn"]):has(#layout-wrapper),
   html:is([data-layout="vertical"], [data-layout="twocolumn"]):has(#layout-wrapper) body,
   html:is([data-layout="vertical"], [data-layout="twocolumn"]):has(#layout-wrapper) #app {
@@ -152,8 +138,6 @@ html:has(#layout-wrapper.idims-active) #app {
     overscroll-behavior: none;
   }
 
-  /* 100%, not 100dvh — resolves through the html/body/#app chain above, so
-     there is no viewport-unit rounding at fractional zoom. */
   :is([data-layout="vertical"], [data-layout="twocolumn"]) #layout-wrapper {
     height: 100%;
     overflow: hidden;
@@ -200,11 +184,11 @@ html:has(#layout-wrapper.idims-active) #app {
 }
 
 :is(.frm-cstrip .frm-cstrip-title, .cl-cstrip .cl-cstrip-title,
-    .pl-cstrip .pl-cstrip-title, .pmt-cstrip .pmt-cstrip-title,
-    .br-cstrip .br-cstrip-title, .ms-cstrip .ms-cstrip-title,
-    .mp-cstrip .mp-cstrip-title, .ap-cstrip .ap-cstrip-title,
-    .pm-cstrip .pm-cstrip-title, .smc-cstrip .smc-cstrip-title,
-    .smcg-cstrip .smcg-cstrip-title) {
+  .pl-cstrip .pl-cstrip-title, .pmt-cstrip .pmt-cstrip-title,
+  .br-cstrip .br-cstrip-title, .ms-cstrip .ms-cstrip-title,
+  .mp-cstrip .mp-cstrip-title, .ap-cstrip .ap-cstrip-title,
+  .pm-cstrip .pm-cstrip-title, .smc-cstrip .smc-cstrip-title,
+  .smcg-cstrip .smcg-cstrip-title) {
   font-family: var(--font-sans);
   font-size: 18px;
   font-weight: 800;
@@ -212,11 +196,11 @@ html:has(#layout-wrapper.idims-active) #app {
 }
 
 :is(.frm-cstrip .frm-cstrip-sub, .cl-cstrip .cl-cstrip-sub,
-    .pl-cstrip .pl-cstrip-sub, .pmt-cstrip .pmt-cstrip-sub,
-    .br-cstrip .br-cstrip-sub, .ms-cstrip .ms-cstrip-sub,
-    .mp-cstrip .mp-cstrip-sub, .ap-cstrip .ap-cstrip-sub,
-    .pm-cstrip .pm-cstrip-sub, .smc-cstrip .smc-cstrip-sub,
-    .smcg-cstrip .smcg-cstrip-sub) {
+  .pl-cstrip .pl-cstrip-sub, .pmt-cstrip .pmt-cstrip-sub,
+  .br-cstrip .br-cstrip-sub, .ms-cstrip .ms-cstrip-sub,
+  .mp-cstrip .mp-cstrip-sub, .ap-cstrip .ap-cstrip-sub,
+  .pm-cstrip .pm-cstrip-sub, .smc-cstrip .smc-cstrip-sub,
+  .smcg-cstrip .smcg-cstrip-sub) {
   font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 500;
@@ -244,16 +228,14 @@ button.ms-cstrip-add {
   font-weight: 600 !important;
 }
 
-:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box)
-  :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
+:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box) :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
   height: 42px !important;
   border-radius: 999px !important;
   font-size: 13px !important;
   font-weight: 600 !important;
 }
 
-:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box)
-  :is(select, .form-select) {
+:is(.frm-cstrip, .cl-cstrip, .pl-cstrip, .pmt-cstrip, .br-cstrip, .ms-cstrip, .mp-cstrip, .page-title-box) :is(select, .form-select) {
   height: 42px !important;
   border-radius: 999px !important;
 }
@@ -340,7 +322,9 @@ button.ms-cstrip-add {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .footer.app-footer-auto { transition: none; }
+  .footer.app-footer-auto {
+    transition: none;
+  }
 }
 
 .wl-pager {
