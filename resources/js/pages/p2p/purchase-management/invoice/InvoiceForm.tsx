@@ -11,6 +11,7 @@ import {
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
+import Step4PutawayAllocation from './steps/Step4PutawayAllocation';
 import { draftFromPo, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
 import { legalFromVault } from '../order/create-po/supplier-checks';
@@ -444,6 +445,11 @@ export default function InvoiceForm({
                     onUpdateBox={spiId ? updateBox : undefined}
                     onDeleteBoxes={spiId ? deleteBoxes : undefined}
                   />
+                )}
+                {stage === 3 && (
+                  <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
+                    flagMaster={flagMaster} spiId={spiId}
+                    warehouse={savedWarehouse ?? warehouseLabel(input.storage)} readOnly={viewOnly} />
                 )}
               </div>
             </>

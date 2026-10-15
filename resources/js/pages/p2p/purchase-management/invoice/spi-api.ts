@@ -237,6 +237,51 @@ export type SpiPackingTotals = {
 
 export type ProductFlagOption = { id: number; flag_name: string | null };
 
+/** What the box itself demands, resolved server-side from its contents. */
+export type PutawayNeed = {
+  id: number; box_code: string;
+  weight_kg: number; height_cm: number; footprint_cm2: number; volume_cm3: number;
+  cold_chain: boolean; hazardous: boolean; fragile: boolean; is_stackable: boolean;
+  temp_min_c: number | null; temp_max_c: number | null;
+};
+
+export type PutawayShelf = {
+  id: number; name: string | null; code: string; level_no: number;
+  max_weight_kg: number; free_weight_kg: number; boxes: number;
+  used_pct: number; used_pct_after: number;
+  eligible: boolean;
+  /** Why it was refused, already worded by the engine; null when eligible. */
+  reason: string | null; reason_label: string | null;
+  held_by: number | null;
+  /** Only on an eligible shelf — 0-100, the engine's weights summed. */
+  score?: number;
+};
+
+export type PutawayRack = { id: number; name: string | null; code: string; shelves: PutawayShelf[]; total: number; eligible: number };
+
+export type PutawayZone = {
+  id: number; name: string | null; code: string; rack_mode: string | null;
+  cold_chain: number; hazardous: number;
+  /** What the zone is for, and the range it holds - what the door says. */
+  purpose: string | null; temp_min_c: number | null; temp_max_c: number | null;
+  racks: PutawayRack[]; total: number; eligible: number;
+};
+
+/** The engine's pick: the top shelf of the same ranked list, with the zone and
+ *  rack it sits in folded in so the card can name the whole path. */
+export type PutawayPick = PutawayShelf & {
+  zone_id: number; zone_name: string | null; zone_code: string;
+  rack_id: number; rack_name: string | null; rack_code: string;
+};
+
+export type PutawayLocations = {
+  box: PutawayNeed;
+  modes: { rack: number; norack: number };
+  zones: PutawayZone[];
+  total: number; eligible: number;
+  recommended: PutawayPick | null;
+};
+
 export const spiApi = {
   boxes: (spiId: number) =>
     call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`),
@@ -282,6 +327,23 @@ export const spiApi = {
           name: w.wh_name ?? `Warehouse ${w.id}`,
           location: [w.wh_code, w.location].filter(Boolean).join(' · ') || '—',
         }))),
+
+  /** Step 04 · Step 02 proper: the whole tree for one mode, plus the engine's
+   *  pick. One call, because the recommendation IS the top of that same ranked
+   *  list - asking twice would cost twice and could disagree with itself. */
+  putawayLocations: (spiId: number, boxId: number, mode: 'rack' | 'norack') =>
+    call('Putaway locations', () => api.get(`/p2p/spi/${spiId}/putaway/locations`, { params: { box_id: boxId, mode } }),
+      (b) => ((b as { data?: PutawayLocations } | null)?.data ?? null)),
+
+  /** Step 04 · Step 02's opening question: how many places of each kind this
+   *  box may go. Without a mode the server returns only the two counts, which
+   *  is all the chooser needs. */
+  putawayModes: (spiId: number, boxId: number) =>
+    call('Putaway locations', () => api.get(`/p2p/spi/${spiId}/putaway/locations`, { params: { box_id: boxId } }),
+      (b) => {
+        const m = (b as { data?: { modes?: { rack?: number; norack?: number } } } | null)?.data?.modes;
+        return { rack: Number(m?.rack ?? 0), norack: Number(m?.norack ?? 0) };
+      }),
 
   productFlags: (branchId?: number | null) =>
     call('Product flags', () => api.get('/inventory/product-flags/options',
