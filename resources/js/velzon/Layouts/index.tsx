@@ -157,16 +157,17 @@ const Layout = (props : any) => {
                     so only .main-content moves. That gives exactly one scrollbar
                     (no double scroll), starting below the navbar.
 
-                    Height is 100dvh, not 100vh, and that matters: 100vh is the
-                    LARGEST viewport, ignoring browser UI, so on a browser whose
-                    chrome is taller (Edge's tab strip + address bar + sidebar
-                    stack vs Chrome's) the wrapper ends up taller than the visible
-                    area. The body then gets its own scrollbar and the whole
-                    shell — header included — scrolls away. 100dvh tracks the
-                    actual visible viewport, so the frame stays put in every
-                    browser. The `overflow: hidden` here is what stops any inner
-                    content pushing the document itself. */}
-                <div id="layout-wrapper" className="idims-active" style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
+                    Height is 100% of html → body → #app, not a viewport unit.
+                    100vh is the LARGEST viewport and ignores browser UI, and
+                    100dvh still rounds differently from the real viewport at
+                    Edge's fractional zoom levels — either way the wrapper ends up
+                    taller than the visible area, the body gets its own scrollbar
+                    and the whole shell scrolls into empty space (and shakes as
+                    that scrollbar toggles). app.css gives html/body/#app
+                    height:100% + overflow:hidden whenever this wrapper is
+                    mounted, so the document can never scroll, whatever lands
+                    outside the wrapper. */}
+                <div id="layout-wrapper" className="idims-active" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
                     {/* padding-top is 8px, not 1rem. It has to equal the 8px
                         .page-content sets on its left and right (app.css) or the
                         page header card sits further from the menu than from the
