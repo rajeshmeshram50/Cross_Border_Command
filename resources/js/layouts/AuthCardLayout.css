@@ -611,8 +611,11 @@
   font-family: inherit !important;
   font-size: inherit !important;
 }
-/* The full-width primary buttons on those pages take the Log In gradient. */
+/* The full-width primary buttons on those pages take the Log In gradient and
+   pill shape. The radius is set here because the Velzon `button` reset beats
+   the Tailwind rounded-[999px] class, which left them square. */
 .kx-card button.bg-primary {
+  border-radius: 999px !important;
   background: linear-gradient(90deg, #1b90fe 0%, #454ffd 50%, #8438fc 100%) !important;
   box-shadow: 0 calc(10 * var(--u)) calc(26 * var(--u)) rgba(80, 90, 255, .35) !important;
 }
