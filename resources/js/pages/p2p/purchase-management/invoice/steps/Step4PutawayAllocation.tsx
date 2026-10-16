@@ -9,6 +9,7 @@ import type { InvoiceDraft } from '../invoice-draft';
 import StageSummary from './StageSummary';
 import PutawaySelectLocation from './PutawaySelectLocation';
 import PutawayConfirmPlacement, { findSpot } from './PutawayConfirmPlacement';
+import PutawayScanTask from './PutawayScanTask';
 import InspectionProductView from '../../order/physical-inspection/InspectionProductView';
 import { DEMO_LOCATIONS, DEMO_MODES } from './putaway-demo';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
@@ -106,6 +107,26 @@ function FsLayer({ host, children }: { host: HTMLElement | null; children: React
   return host ? createPortal(children, host) : <>{children}</>;
 }
 
+const IcoWh = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 21h18" /><path d="M5 21V10l7-5 7 5v11" /><rect x="9" y="14" width="6" height="7" />
+  </svg>
+);
+const IcoFlag = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" />
+  </svg>
+);
+const IcoShelfSm = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="1.5" /><line x1="3" y1="9.5" x2="21" y2="9.5" /><line x1="3" y1="15.5" x2="21" y2="15.5" />
+  </svg>
+);
+const IcoArrow = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="4" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" />
+  </svg>
+);
 const IcoCheck = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="20 6 9 17 4 12" />
@@ -584,7 +605,19 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
      Confirming straight off the button conflated the two. */
   const [methodAsk, setMethodAsk] = useState(false);
   const [methodPick, setMethodPick] = useState<'zebra' | 'manual' | null>(null);
-  const [scanTask, setScanTask] = useState(false);
+  /* The tick is the consent, not the button. Picking a method only says HOW;
+     this says the operator has read what it locks. It resets whenever the
+     method changes, because it was given about that method. */
+  const [methodOk, setMethodOk] = useState(false);
+  /* The raised Zebra task. An object, not a flag: the screen has to name the
+     task, and "which one" is the first thing an operator asks about it. */
+  const [scanTask, setScanTask] = useState<{ id: string; at: string } | null>(null);
+  /* The scan-task dialog is the next piece; the button that opens it is wired
+     here so the state it reads already exists. */
+  const [scanOpen, setScanOpen] = useState(false);
+  /* Set when a Zebra task completes, so the finished screen can say HOW the
+     box was placed. A manual confirmation leaves it null. */
+  const [placedVia, setPlacedVia] = useState<{ via: string; allocation: string } | null>(null);
   const [productViewId, setProductViewId] = useState<number | null>(null);
   const [modeAsk, setModeAsk] = useState<null | { loading: boolean; rack: number; norack: number; error: string | null }>(null);
   const [modePick, setModePick] = useState<'rack' | 'norack' | null>(null);
@@ -885,6 +918,12 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 </div>
 
                 <div className="s4h">
+                  {/* Steps 02 and 03 each open with their own teal band that
+                      already names the box and carries its state - the "where
+                      should this box go?" bar and the route strip. This one
+                      above them was the same band twice with the same B-003
+                      in it, so it only shows where nothing repeats it. */}
+                  {lcStep !== 1 && lcStep !== 2 && (
                   <div className="s4h-hero">
                     <div className="s4h-hero__id">
                       <div className="s4h-hero__ico"><IcoBoxSm size={21} /></div>
@@ -903,9 +942,21 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         : box.status === 'draft' ? 'Location allocated' : 'Awaiting putaway'}
                     </span>
                   </div>
+                  )}
 
                   {lcStep === 1 ? (
-                    <PutawaySelectLocation box={box} mode={putMode} state={loc} spot={spot} onSpot={setSpot} />
+                    <PutawaySelectLocation
+                      box={{
+                        ...box,
+                        /* Both from the hero band this bar replaced. */
+                        scenario: box.scenario,
+                        status: box.status === 'placed' ? 'Placed'
+                          : box.status === 'awaiting_scan' ? 'Awaiting Zebra scan'
+                          : box.status === 'draft' ? 'Location allocated'
+                          : 'Awaiting putaway',
+                      }}
+                      mode={putMode} state={loc} spot={spot} onSpot={setSpot}
+                    />
                   ) : lcStep === 2 ? (
                     <PutawayConfirmPlacement
                       box={{
@@ -916,10 +967,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       spot={findSpot(loc.data, spot)}
                       warehouse={warehouse}
                       assigned={placedAt !== null}
-                      qr={<BoxQr text={String(box.id)} size={150} />}
+                      qr={<BoxQr text={String(box.id)} size={128} />}
                       onChange={() => setLcStep(1)}
-                      awaitingScan={scanTask}
-                      onMethod={() => { setMethodPick(null); setMethodAsk(true); }}
+                      scan={scanTask}
+                      placedVia={placedVia}
+                      warehouseCode={warehouse || null}
+                      onMethod={() => { setMethodPick(null); setMethodOk(false); setMethodAsk(true); }}
+                      onCancelTask={() => setScanTask(null)}
+                      onOpenScanTask={() => setScanOpen(true)}
                       onViewProducts={() => setShowProducts(true)}
                     />
                   ) : lcStep > 0 ? (
@@ -1074,6 +1129,41 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           element when full screen is on. One wrapper rather than six, so a
           dialog added later cannot be forgotten. */}
       <FsLayer host={fs ? panelsRef.current : null}>
+      {scanOpen && scanTask && box && findSpot(loc.data, spot) && (() => {
+        const sp = findSpot(loc.data, spot)!;
+        /* What this box takes off the shelf, which is what the task holds
+           against it until the scans come back. */
+        const reserved = Math.max(0, Math.round((sp.shelf.used_pct_after - sp.shelf.used_pct) * 10) / 10);
+        return (
+          <PutawayScanTask
+            taskId={scanTask.id}
+            createdAt={new Date(scanTask.at).toLocaleString('en-GB',
+              { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+              .replace(',', ' ·')}
+            box={{ code: box.code, name: box.name }}
+            spot={{
+              warehouse: warehouse || null,
+              zone: sp.zone.code, rack: sp.rack.code,
+              shelf: sp.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1'),
+              shelfName: sp.shelf.name || `Level ${sp.shelf.level_no}`,
+            }}
+            reservedPct={reserved}
+            onClose={() => setScanOpen(false)}
+            onComplete={() => {
+              /* Both labels read: the box IS on the shelf now, so this is the
+                 moment it becomes placed - not when the task was raised. */
+              setPlacedAt(new Date().toISOString());
+              setPlacedVia({
+                via: 'Using Zebra Device',
+                allocation: `TPA-${scanTask.id.slice(3, 11)}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
+              });
+              setScanTask(null);
+              setScanOpen(false);
+            }}
+          />
+        );
+      })()}
+
       {showProducts && box && (
         <div
           className="s4qm s4vp-modal is-open"
@@ -1233,7 +1323,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     key={k}
                     className={`s4wz-opt s4pm-opt s4pm-opt--${k}${methodPick === k ? ' is-on' : ''}`}
                     aria-pressed={methodPick === k}
-                    onClick={() => setMethodPick(k)}
+                    onClick={() => { setMethodPick(k); setMethodOk(false); }}
                   >
                     <span className="s4wz-opt__ic">{k === 'zebra' ? <IcoScan /> : <IcoHand />}</span>
                     <span className="s4wz-opt__radio" aria-hidden />
@@ -1243,24 +1333,114 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   </button>
                 ))}
               </div>
+
+              {/* Everything below answers "confirm WHAT, exactly" - so it only
+                  appears once there is a method to confirm. */}
+              {methodPick && (() => {
+                const shelfCode = spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1');
+                const addr = [
+                  ['Warehouse', warehouse || '—', <IcoWh key="w" />],
+                  ['Zone', spotNow.zone.code, <IcoFlag key="z" />],
+                  ['Rack', spotNow.rack.code, <IcoList key="r" />],
+                  ['Shelf', shelfCode, <IcoShelfSm key="s" />],
+                ] as const;
+                const chain = <>
+                  {addr.map(([, v], i) => (
+                    <Fragment key={v + String(i)}>
+                      {i > 0 && <i className="s4pm-arr">→</i>}
+                      <b>{v}</b>
+                    </Fragment>
+                  ))}
+                </>;
+                return (
+                  <>
+                    {/* From this box, to that shelf. */}
+                    <div className="s4pm-route">
+                      <div className="s4pm-route__card s4pm-route__card--box">
+                        <span className="s4pm-route__ic s4pm-route__ic--box"><IcoBoxSm size={17} /></span>
+                        <div>
+                          <span className="s4pm-route__k">Box</span>
+                          <b className="s4pm-route__v">{box.code}</b>
+                        </div>
+                      </div>
+                      <span className="s4pm-route__go" aria-hidden><IcoArrow /></span>
+                      <div className="s4pm-route__card s4pm-route__card--shelf">
+                        <span className="s4pm-route__ic s4pm-route__ic--shelf"><IcoShelfSm size={17} /></span>
+                        <div>
+                          <span className="s4pm-route__k">Final shelf</span>
+                          <b className="s4pm-route__v">{shelfCode}</b>
+                          <span className="s4pm-route__s">{spotNow.shelf.name || `Level ${spotNow.shelf.level_no}`} · {spotNow.rack.code}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="s4pm-addr">
+                      <div className="s4pm-addr__k">Putaway address</div>
+                      <div className="s4pm-addr__row">
+                        {addr.map(([label, value, icon], i) => (
+                          <Fragment key={label}>
+                            {i > 0 && <span className="s4pm-addr__line" aria-hidden />}
+                            <div className={`s4pm-addr__step${i === addr.length - 1 ? ' is-last' : ''}`}>
+                              <span className="s4pm-addr__ic">{icon}</span>
+                              <span className="s4pm-addr__l">{label}</span>
+                              <b className="s4pm-addr__v">{value}</b>
+                            </div>
+                          </Fragment>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* The one thing that cannot be taken back, said before the
+                        tick rather than after it. */}
+                    <div className="s4pm-warn">
+                      <span className="s4pm-warn__ic" aria-hidden>!</span>
+                      <p>
+                        <b>This is final.</b> Once you tick the confirmation, shelf <b>{shelfCode}</b> is
+                        locked for <b>{box.code}</b> — it <b>cannot be undone</b> and the box location{' '}
+                        <b>cannot be changed</b>.
+                      </p>
+                    </div>
+
+                    <label className={`s4pm-ok${methodOk ? ' is-on' : ''}`}>
+                      <input type="checkbox" checked={methodOk} onChange={e => setMethodOk(e.target.checked)} />
+                      <span>
+                        I confirm that <b>{box.code}</b> is{' '}
+                        <u>{methodPick === 'zebra' ? 'ready to be scanned' : 'already physically placed'}</u> at{' '}
+                        {chain}
+                        {methodPick === 'zebra' ? ' and should be sent for Zebra verification.' : '.'}
+                      </span>
+                    </label>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="s4qm__ft">
               <button type="button" className="s4-btn-back" onClick={() => setMethodAsk(false)}>Cancel</button>
               <button
                 type="button"
-                className="s4-btn-next"
-                disabled={!methodPick}
+                className={`s4-btn-next s4pm-go${methodPick ? ` s4pm-go--${methodPick}` : ''}`}
+                /* Gated on the tick, not on the pick: the pick says how, the
+                   tick says the operator has read what it locks. */
+                disabled={!methodPick || !methodOk}
                 onClick={() => {
                   /* Manual confirmation IS the placement. A Zebra scan is a
                      task for the floor, so the box stays unplaced until the
                      scan comes back. */
-                  if (methodPick === 'manual') { setPlacedAt(new Date().toISOString()); setScanTask(false); }
-                  else { setScanTask(true); }
+                  if (methodPick === 'manual') { setPlacedAt(new Date().toISOString()); setScanTask(null); }
+                  else {
+                    const now = new Date();
+                    const ymd = now.getFullYear().toString()
+                      + String(now.getMonth() + 1).padStart(2, '0')
+                      + String(now.getDate()).padStart(2, '0');
+                    setScanTask({ id: `ZT-${ymd}-001`, at: now.toISOString() });
+                  }
                   setMethodAsk(false);
                 }}
               >
-                Select a method <IcoChevR />
+                {methodPick === 'zebra' ? <><IcoScan />Submit for Zebra Verification</>
+                  : methodPick === 'manual' ? <><IcoCheck />Complete Putaway</>
+                  : <>Select a method <IcoChevR /></>}
               </button>
             </div>
           </div>

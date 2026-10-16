@@ -92,6 +92,22 @@ const IcoList = ({ size = 13 }: { size?: number }) => (
     <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
   </svg>
 );
+const IcoScan = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+    <line x1="7" y1="12" x2="17" y2="12" />
+  </svg>
+);
+const IcoBan = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round">
+    <circle cx="12" cy="12" r="9" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+const IcoChev = ({ size = 12 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="9 18 15 12 9 6" />
+  </svg>
+);
 const IcoCheckSq = ({ size = 15 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
     <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
@@ -99,18 +115,26 @@ const IcoCheckSq = ({ size = 15 }: { size?: number }) => (
 );
 
 export default function PutawayConfirmPlacement({
-  box, spot, warehouse, assigned, awaitingScan = false, qr, onChange, onMethod, onViewProducts,
+  box, spot, warehouse, warehouseCode = null, assigned, scan = null, placedVia = null, qr,
+  onChange, onMethod, onViewProducts, onCancelTask, onOpenScanTask,
 }: {
   box: ConfirmBox;
   spot: ConfirmSpot | null;
   warehouse?: string | null;
+  /** The warehouse's own code for the task's address line. */
+  warehouseCode?: string | null;
   /** True once the placement has actually been committed. */
   assigned: boolean;
-  /** A Zebra scan task has been raised, so the floor still has to verify it.
+  /** The raised Zebra task, while one is outstanding.
    *  Deliberately NOT the same as assigned: the box is not on the shelf until
-   *  the scan comes back, and a screen that said "Placed" here would be
+   *  both scans come back, and a screen that said "Placed" here would be
    *  claiming something nobody has checked. */
-  awaitingScan?: boolean;
+  scan?: { id: string; at: string } | null;
+  /** How a placed box got there, when it went through Zebra verification.
+   *  Null after a manual confirmation, which has no device behind it. */
+  placedVia?: { via: string; allocation: string } | null;
+  onCancelTask?: () => void;
+  onOpenScanTask?: () => void;
   /** The box's QR, rendered by the parent so there is one QR component. */
   qr: ReactNode;
   onChange: () => void;
@@ -120,6 +144,12 @@ export default function PutawayConfirmPlacement({
   const [cond, condNote] = CONDITION[box.condition] ?? CONDITION.perfect;
   const sh = spot?.shelf;
   const adds = sh ? Math.max(0, sh.used_pct_after - sh.used_pct) : 0;
+  /** Outstanding: a task exists and the box is not on the shelf yet. */
+  const waiting = !!scan && !assigned;
+  /** The box's full address, as the task names it. */
+  const addr = spot
+    ? [warehouseCode, spot.zone.code, spot.rack.code, shortCode(spot.shelf.code)].filter(Boolean)
+    : [];
 
   return (
     <div className="s4cp">
@@ -128,8 +158,13 @@ export default function PutawayConfirmPlacement({
         <div className="s4cp-route__side">
           <span className="s4cp-route__ic"><IcoBox size={17} /></span>
           <div>
-            <div className="s4cp-route__k">Placing box</div>
+            {/* "Verifying", not "placing": once a task is out, the box is not
+                on its way to the shelf, it is waiting to be checked onto it. */}
+            <div className="s4cp-route__k">{waiting ? 'Verifying box' : 'Placing box'}</div>
             <span className="s4cp-route__code">{box.code}</span>
+            {/* Absorbed from the hero strip above, which this one replaced:
+                it is the only thing that band said that is not already here. */}
+            {box.scenario && <div className="s4cp-route__scn">{box.scenario}</div>}
           </div>
         </div>
 
@@ -158,22 +193,51 @@ export default function PutawayConfirmPlacement({
 
         {/* The one thing this screen could get wrong is looking committed
             before it is, so the state is stated, not implied. */}
-        <div className={`s4cp-route__state${assigned ? ' is-done' : ''}`}>
-          <b>{assigned ? '✓' : '?'}</b>
-          <span>{assigned ? 'Placed' : 'Yet to decide'}</span>
+        <div className={`s4cp-route__state${assigned ? ' is-done' : ''}${waiting ? ' is-wait' : ''}`}>
+          <b>{assigned && placedVia ? '2/2' : assigned ? '✓' : waiting ? '0/2' : '?'}</b>
+          <span>{assigned && placedVia ? 'Scanned' : assigned ? 'Placed' : waiting ? 'Awaiting' : 'Yet to decide'}</span>
         </div>
       </div>
 
+      {/* The task's own line, directly under the route it verifies. */}
+      {waiting && scan && spot && (
+        <div className="s4cp-task">
+          <span className="s4cp-task__k"><IcoScan />Zebra task</span>
+          <b className="s4cp-task__id">{scan.id}</b>
+          <span className="s4cp-task__codes">
+            <span className="s4sl-code s4sl-code--z">{spot.zone.code}</span><i>→</i>
+            <span className="s4sl-code s4sl-code--r">{spot.rack.code}</span><i>→</i>
+            <span className="s4sl-code s4sl-code--s">{shortCode(spot.shelf.code)}</span>
+          </span>
+          <span className="s4cp-task__r">Assigned · awaiting device scan</span>
+        </div>
+      )}
+
       <div className={`s4cp-status${assigned ? ' is-done' : ''}`}>
         <span className="s4cp-status__l">
-          <IcoPin />
-          {assigned ? 'Location assigned'
-            : awaitingScan ? 'Awaiting Zebra scan on the floor'
+          {assigned ? <IcoCheckSq size={13} /> : <IcoPin />}
+          {assigned && placedVia ? 'Putaway completed'
+            : assigned ? 'Location assigned'
+            : waiting ? 'Awaiting Zebra scan on the floor'
             : 'No location assigned yet'}
+          {assigned && placedVia && spot && (
+            <span className="s4cp-task__codes">
+              <span className="s4sl-code s4sl-code--z">{spot.zone.code}</span><i>→</i>
+              <span className="s4sl-code s4sl-code--r">{spot.rack.code}</span><i>→</i>
+              <span className="s4sl-code s4sl-code--s">{shortCode(spot.shelf.code)}</span>
+            </span>
+          )}
         </span>
         <span className="s4cp-status__r">
-          {spot
-            ? <>Step 02 location <b>{shortCode(spot.shelf.code)}</b> · {assigned ? 'confirmed' : 'click Putaway Method to confirm'}</>
+          {assigned && placedVia
+            ? <span className="s4cp-via">Placed · {placedVia.via}</span>
+            : spot
+            /* Not "click Putaway Method" while that button is locked - the
+               next move belongs to the floor, not to this screen. */
+            ? <>Step 02 location <b>{shortCode(spot.shelf.code)}</b> · {
+                assigned ? 'confirmed'
+                  : waiting ? 'locked until both QR scans are verified'
+                  : 'click Putaway Method to confirm'}</>
             : <>Go back to Step 02 and choose a shelf.</>}
         </span>
       </div>
@@ -209,8 +273,15 @@ export default function PutawayConfirmPlacement({
 
         {/* The join between the two, carrying the same state as the strip. */}
         <div className="s4cp-join" aria-hidden>
-          <span className={`s4cp-join__dot${assigned ? ' is-done' : ''}`}><IcoArrowR size={15} /></span>
-          <span className={`s4cp-join__tag${assigned ? ' is-done' : ''}`}>{assigned ? 'Placed' : 'Pending'}</span>
+          <span className={`s4cp-join__dot${assigned ? ' is-done' : ''}`}>
+            {/* Its own element: the dot's two pseudo-elements are the rails,
+                and the ring has to sit outside the white gap, not on it. */}
+            <i className="s4cp-join__ring" aria-hidden />
+            <IcoArrowR size={17} />
+          </span>
+          <span className={`s4cp-join__tag${assigned ? ' is-done' : ''}`}>
+            {assigned ? 'Placed' : waiting ? 'Awaiting scan' : 'Pending'}
+          </span>
         </div>
 
         {/* ── The shelf ── */}
@@ -257,20 +328,67 @@ export default function PutawayConfirmPlacement({
                 <KV k="Hazardous" v={spot.zone.hazardous ? 'Yes' : 'No'} />
               </div>
 
+              {/* Locked while a task is out: the method was submitted with
+                  the task, and changing it would leave the floor holding a
+                  scan for a decision that no longer stands. Cancel the task
+                  to get the choice back. */}
               <button
                 type="button"
-                className={`s4cp-method${assigned ? ' is-done' : ''}${awaitingScan && !assigned ? ' is-queued' : ''}`}
+                className={`s4cp-method${assigned ? ' is-done' : ''}`}
+                disabled={waiting}
                 onClick={onMethod}
               >
-                <IcoCheckSq />
-                {assigned ? 'Placement confirmed'
-                  : awaitingScan ? 'Scan task raised · change method'
-                  : 'Putaway Method'}
+                <IcoCheckSq />{assigned ? 'Placement confirmed' : 'Putaway Method'}
               </button>
             </>
           )}
         </section>
       </div>
+
+      {/* The receipt: where it went, by what means, under which allocation.
+          The same slot the outstanding task used, because it answers the
+          question that one left open. */}
+      {assigned && placedVia && (
+        <div className="s4cp-await is-done">
+          <span className="s4cp-await__ic"><IcoCheckSq size={19} /></span>
+          <div className="s4cp-await__tx">
+            <div className="s4cp-await__t">Putaway completed · PLACED</div>
+            <p className="s4cp-await__s">
+              <b>{box.code}</b> placed at <b>{addr.join(' → ')}</b> by {placedVia.via} (verified).
+              Allocation <b>{placedVia.allocation}</b>.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* What is outstanding, who has it, and the two ways out of it. Below
+          both cards because it is about the pair of them, not either one. */}
+      {waiting && scan && (
+        <div className="s4cp-await">
+          <span className="s4cp-await__ic"><IcoScan size={18} /></span>
+          <div className="s4cp-await__tx">
+            <div className="s4cp-await__t">Awaiting Zebra confirmation <i /></div>
+            <p className="s4cp-await__s">
+              Task <b>{scan.id}</b> created for <b>{[box.code, ...addr].join(' → ')}</b>.
+              The box is placed only after the warehouse operator scans the <b>Box QR</b> and
+              the <b>Shelf QR</b> with a Zebra handheld.
+            </p>
+            <div className="s4cp-await__chips">
+              <span className="s4cp-await__chip">Box QR</span>
+              <span className="s4cp-await__chip">Shelf QR</span>
+              <span className="s4cp-await__chip s4cp-await__chip--n">0 / 2 scans</span>
+            </div>
+          </div>
+          <div className="s4cp-await__acts">
+            <button type="button" className="s4cp-await__cancel" onClick={onCancelTask}>
+              <IcoBan />Cancel task
+            </button>
+            <button type="button" className="s4cp-await__open" onClick={onOpenScanTask}>
+              Open scan task <IcoChev />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

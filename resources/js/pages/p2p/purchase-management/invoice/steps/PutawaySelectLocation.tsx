@@ -25,6 +25,9 @@ export interface SelectLocationBox {
   dims: string | null;
   haz: boolean;
   cold: boolean;
+  /** Both absorbed from the hero band this bar replaced on Step 02. */
+  scenario?: string;
+  status?: string;
 }
 
 /** "RC-D02-SH-03" -> "SH-03". The rack is the heading directly above, so
@@ -155,13 +158,17 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
 
   return (
     <div className="s4sl">
-      {/* The carton restated where the eye already is: the left panel is a
-          list, and at this point the question is about one box and its
-          measurements. */}
+      {/* The only teal band on this step. It used to sit under a hero band
+          that named the same box and carried the same status, and to its
+          right was a second copy of the legend that now lives in Section B's
+          header, beside the colours it explains. */}
       <div className="s4sl-bar">
         <span className="s4sl-bar__ic"><IcoBox size={17} /></span>
         <div className="s4sl-bar__tx">
-          <div className="s4sl-bar__k">Where should this box go?</div>
+          <div className="s4sl-bar__k">
+            Where should this box go?
+            {box.scenario && <i className="s4sl-bar__scn">{box.scenario}</i>}
+          </div>
           <div className="s4sl-bar__v">
             <span className="s4sl-bar__code">{box.code}</span>
             <span>
@@ -172,13 +179,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
             </span>
           </div>
         </div>
-        <div className="s4sl-legend">
-          <span className="s4sl-legend__k">Shelf space used</span>
-          {([['low', 'Low', 'under 45%'], ['med', 'Medium', '45–74%'],
-             ['high', 'High', '75–99%'], ['full', 'Full', '100%']] as const).map(([k, t, r]) => (
-            <span className={`s4sl-lg s4sl-lg--${k}`} key={k}><i />{t} <em>{r}</em></span>
-          ))}
-        </div>
+        {box.status && <span className="s4sl-bar__st"><i />{box.status}</span>}
       </div>
 
       <div className="s4sl-cols">

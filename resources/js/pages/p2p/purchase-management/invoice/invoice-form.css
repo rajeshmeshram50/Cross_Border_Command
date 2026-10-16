@@ -3983,7 +3983,14 @@
 .s4-root .s4sl-bar { display:flex; align-items:center; gap:12px; padding:11px 14px; border-radius:14px; color:#fff; background:radial-gradient(120% 160% at 100% 0%, rgba(103,232,249,.3), transparent 55%), linear-gradient(135deg,#0e7490,#0891b2 60%,#06b6d4); box-shadow:0 6px 18px rgba(8,145,178,.22); }
 .s4-root .s4sl-bar__ic { flex:0 0 36px; height:36px; border-radius:11px; display:grid; place-items:center; background:rgba(255,255,255,.17); border:1px solid rgba(255,255,255,.3); }
 .s4-root .s4sl-bar__tx { min-width:0; flex:1; }
-.s4-root .s4sl-bar__k { font-size:9.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; opacity:.85; }
+.s4-root .s4sl-bar__k { display:flex; align-items:center; gap:8px; font-size:9.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; opacity:.85; }
+/* The scenario, from the hero band: it belongs beside the question, not on a
+   band of its own. */
+.s4-root .s4sl-bar__scn { font-style:normal; font-weight:700; letter-spacing:.02em; text-transform:none; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.26); }
+/* The status pill, from the same band. Same shape as the hero's, so the step
+   reads identically - it has simply moved onto the bar below it. */
+.s4-root .s4sl-bar__st { flex:0 0 auto; margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; padding:4px 10px; border-radius:999px; background:rgba(254,243,199,.95); color:#92400e; white-space:nowrap; }
+.s4-root .s4sl-bar__st i { width:6px; height:6px; border-radius:50%; background:#f59e0b; }
 .s4-root .s4sl-bar__v { display:flex; align-items:center; gap:9px; margin-top:4px; font-size:11.5px; font-weight:600; opacity:.95; flex-wrap:wrap; }
 .s4-root .s4sl-bar__code { font-family:'Geist Mono',ui-monospace,monospace; font-size:12px; font-weight:800; padding:3px 9px; border-radius:7px; background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.3); }
 
@@ -4820,6 +4827,80 @@
 [data-bs-theme="dark"] .s4-root .s4pm-badge--zebra { background:rgba(255,255,255,.07); color:var(--s4d-dim); border-color:var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4pm-badge--manual { background:rgba(16,185,129,.14); color:#6ee7b7; border-color:rgba(16,185,129,.3); }
 
+/* ── What exactly is being confirmed ───────────────────────────────────────
+ * From this box, to that shelf, by this address - then the one consequence
+ * that cannot be taken back, then the tick that accepts it. The order is the
+ * argument: say what, say what it costs, then ask.
+ * ─────────────────────────────────────────────────────────────────────────*/
+.s4-root .s4pm-route { display:grid; grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr); align-items:center; }
+.s4-root .s4pm-route__card { display:flex; align-items:center; gap:10px; min-width:0; padding:10px 12px; border-radius:11px; border:1px solid #e3eef3; background:#fff; border-left-width:3px; }
+.s4-root .s4pm-route__card--box { border-left-color:#22d3ee; }
+.s4-root .s4pm-route__card--shelf { border-left-color:#10b981; }
+.s4-root .s4pm-route__ic { flex:0 0 32px; height:32px; border-radius:10px; display:grid; place-items:center; color:#fff; }
+.s4-root .s4pm-route__ic--box { background:linear-gradient(135deg,#22d3ee,#0891b2); }
+.s4-root .s4pm-route__ic--shelf { background:linear-gradient(135deg,#34d399,#059669); }
+.s4-root .s4pm-route__k { display:block; font-size:8.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8; }
+.s4-root .s4pm-route__v { display:block; font-family:'Geist Mono',ui-monospace,monospace; font-size:15px; font-weight:800; color:#0f172a; letter-spacing:-.2px; }
+.s4-root .s4pm-route__s { display:block; font-size:10.5px; color:#64748b; margin-top:1px; }
+/* The dashes sit on the arrow, not on the column, so they stay on its line. */
+.s4-root .s4pm-route__go { position:relative; justify-self:center; width:26px; height:26px; border-radius:50%; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg,#22d3ee,#0891b2); }
+.s4-root .s4pm-route__go::before, .s4-root .s4pm-route__go::after { content:''; position:absolute; top:50%; margin-top:-1px; width:10px; height:2px; background-image:linear-gradient(90deg,#b6dfea 0 4px,transparent 4px 8px); background-size:8px 2px; }
+.s4-root .s4pm-route__go::before { right:100%; }
+.s4-root .s4pm-route__go::after { left:100%; }
+
+.s4-root .s4pm-addr { padding:10px 12px 11px; border-radius:11px; border:1px solid #e3eef3; background:#fbfdfe; }
+.s4-root .s4pm-addr__k { font-size:8.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8; margin-bottom:8px; }
+.s4-root .s4pm-addr__row { display:flex; align-items:flex-start; }
+.s4-root .s4pm-addr__step { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:72px; }
+.s4-root .s4pm-addr__ic { width:28px; height:28px; border-radius:9px; display:grid; place-items:center; background:#fff; border:1px solid #d9eef4; color:#0e7490; }
+.s4-root .s4pm-addr__l { font-size:8px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; }
+.s4-root .s4pm-addr__v { font-family:'Geist Mono',ui-monospace,monospace; font-size:12px; font-weight:800; color:#0f172a; }
+/* The shelf is the end of the address and the thing being locked. */
+.s4-root .s4pm-addr__step.is-last .s4pm-addr__ic { border-color:#86efac; color:#047857; background:#f0fdf4; }
+.s4-root .s4pm-addr__step.is-last .s4pm-addr__v { color:#047857; }
+.s4-root .s4pm-addr__line { flex:1 1 auto; height:1px; background:#dde8ee; margin-top:14px; }
+
+.s4-root .s4pm-warn { display:flex; gap:10px; padding:10px 12px; border-radius:11px; border:1px solid #fde68a; background:#fffbeb; }
+.s4-root .s4pm-warn__ic { flex:0 0 22px; height:22px; border-radius:50%; display:grid; place-items:center; background:#f97316; color:#fff; font-size:13px; font-weight:900; }
+.s4-root .s4pm-warn p { margin:0; font-size:11.5px; line-height:1.5; color:#92400e; }
+.s4-root .s4pm-warn b { font-weight:800; color:#7c2d12; }
+
+.s4-root .s4pm-ok { display:flex; gap:10px; padding:11px 12px; border-radius:11px; border:1px solid #cbe9f3; background:#f6fdff; cursor:pointer; transition:border-color .15s, background .15s; }
+.s4-root .s4pm-ok:hover { border-color:#7dd3e8; }
+.s4-root .s4pm-ok.is-on { border-color:#86efac; background:#f0fdf4; }
+.s4-root .s4pm-ok input { flex:0 0 auto; width:17px; height:17px; margin:1px 0 0; accent-color:#059669; cursor:pointer; }
+.s4-root .s4pm-ok > span { font-size:11.5px; line-height:1.5; color:#334155; }
+.s4-root .s4pm-ok b { font-family:'Geist Mono',ui-monospace,monospace; font-weight:800; color:#0e7490; }
+.s4-root .s4pm-ok u { text-decoration-color:#94a3b8; text-underline-offset:2px; }
+.s4-root .s4pm-arr { font-style:normal; color:#94a3b8; margin:0 3px; }
+
+/* The button says what it does, and carries the colour of the outcome. */
+.s4-root .s4pm-go { display:inline-flex; align-items:center; gap:7px; }
+.s4-root .s4pm-go--zebra:not(:disabled) { background:#0f172a; border-color:#0f172a; }
+.s4-root .s4pm-go--zebra:not(:disabled):hover { background:#1e293b; }
+.s4-root .s4pm-go--manual:not(:disabled) { background:linear-gradient(135deg,#10b981,#059669); border-color:transparent; }
+
+[data-bs-theme="dark"] .s4-root .s4pm-route__card { background:var(--s4d-bg); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4pm-route__card--box { border-left-color:#22d3ee; }
+[data-bs-theme="dark"] .s4-root .s4pm-route__card--shelf { border-left-color:#10b981; }
+[data-bs-theme="dark"] .s4-root .s4pm-route__v { color:var(--s4d-tx); }
+[data-bs-theme="dark"] .s4-root .s4pm-route__s { color:var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4pm-route__go::before,
+[data-bs-theme="dark"] .s4-root .s4pm-route__go::after { background-image:linear-gradient(90deg,#2a6a80 0 4px,transparent 4px 8px); }
+[data-bs-theme="dark"] .s4-root .s4pm-addr { background:rgba(255,255,255,.03); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4pm-addr__ic { background:var(--s4d-bg2); border-color:var(--s4d-line); color:#7dd3e8; }
+[data-bs-theme="dark"] .s4-root .s4pm-addr__v { color:var(--s4d-tx); }
+[data-bs-theme="dark"] .s4-root .s4pm-addr__line { background:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4pm-addr__step.is-last .s4pm-addr__ic { background:rgba(16,185,129,.14); border-color:rgba(16,185,129,.4); color:#6ee7b7; }
+[data-bs-theme="dark"] .s4-root .s4pm-addr__step.is-last .s4pm-addr__v { color:#6ee7b7; }
+[data-bs-theme="dark"] .s4-root .s4pm-warn { background:rgba(251,146,60,.12); border-color:rgba(251,146,60,.32); }
+[data-bs-theme="dark"] .s4-root .s4pm-warn p { color:#fcd9b0; }
+[data-bs-theme="dark"] .s4-root .s4pm-warn b { color:#fed7aa; }
+[data-bs-theme="dark"] .s4-root .s4pm-ok { background:rgba(34,211,238,.08); border-color:rgba(34,211,238,.28); }
+[data-bs-theme="dark"] .s4-root .s4pm-ok.is-on { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.38); }
+[data-bs-theme="dark"] .s4-root .s4pm-ok > span { color:var(--s4d-tx); }
+[data-bs-theme="dark"] .s4-root .s4pm-ok b { color:#7dd3e8; }
+
 [data-bs-theme="dark"] .s4-root .s4wz-modal { background:rgba(2,12,18,.7); }
 [data-bs-theme="dark"] .s4-root .s4wz-modal .s4qm__bd { background:radial-gradient(70% 60% at 50% 0%, rgba(34,211,238,.10), transparent 70%), var(--s4d-bg); }
 [data-bs-theme="dark"] .s4-root .s4wz-lead { color:var(--s4d-dim); }
@@ -4848,19 +4929,20 @@
 [data-bs-theme="dark"] .pkg-card__tag { background: rgba(34,211,238,.14); color: #7dd3e8; border-color: rgba(34,211,238,.3); }
 
 /* ── Stage 04 · Step 03 — Confirm Placement ─────────────────────────────── */
-.s4-root .s4cp { display:flex; flex-direction:column; gap:10px; }
+.s4-root .s4cp { display:flex; flex-direction:column; gap:8px; }
 
 /* From here, to there, and whether it has happened. */
-.s4-root .s4cp-route { display:flex; align-items:center; gap:14px; padding:12px 14px; border-radius:14px; color:#fff; background:radial-gradient(120% 160% at 100% 0%, rgba(103,232,249,.3), transparent 55%), linear-gradient(135deg,#0e7490,#0891b2 60%,#06b6d4); box-shadow:0 6px 18px rgba(8,145,178,.22); }
+.s4-root .s4cp-route { display:flex; align-items:center; gap:13px; padding:10px 13px; border-radius:14px; color:#fff; background:radial-gradient(120% 160% at 100% 0%, rgba(103,232,249,.3), transparent 55%), linear-gradient(135deg,#0e7490,#0891b2 60%,#06b6d4); box-shadow:0 6px 18px rgba(8,145,178,.22); }
 .s4-root .s4cp-route__side { display:flex; align-items:center; gap:10px; flex:0 0 auto; }
 .s4-root .s4cp-route__ic { width:36px; height:36px; border-radius:11px; display:grid; place-items:center; background:rgba(255,255,255,.17); border:1px solid rgba(255,255,255,.3); }
 .s4-root .s4cp-route__k { display:flex; align-items:center; gap:6px; font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; opacity:.85; }
 .s4-root .s4cp-route__kind { font-size:8.5px; padding:2px 7px; border-radius:999px; background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.3); letter-spacing:.06em; }
 .s4-root .s4cp-route__code { display:inline-block; margin-top:4px; font-family:'Geist Mono',ui-monospace,monospace; font-size:14px; font-weight:800; padding:4px 11px; border-radius:8px; background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.3); }
+.s4-root .s4cp-route__scn { margin-top:4px; font-size:10px; font-weight:600; opacity:.82; }
 .s4-root .s4cp-route__arrow { flex:0 0 auto; opacity:.8; }
 /* The destination gets its own well, so "where it is going" is one object
    rather than three loose lines on a gradient. */
-.s4-root .s4cp-route__target { flex:1; min-width:0; padding:9px 12px; border-radius:12px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); }
+.s4-root .s4cp-route__target { flex:1; min-width:0; padding:7px 11px; border-radius:12px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); }
 .s4-root .s4cp-route__codes { display:flex; align-items:center; gap:6px; margin-top:6px; flex-wrap:wrap; }
 .s4-root .s4cp-route__codes i { font-style:normal; color:rgba(255,255,255,.5); font-size:11px; }
 .s4-root .s4cp-route__path { margin-top:5px; font-size:11px; font-weight:500; opacity:.9; }
@@ -4868,19 +4950,227 @@
 .s4-root .s4cp-route__state b { font-size:16px; font-weight:900; line-height:1; }
 .s4-root .s4cp-route__state span { font-size:8px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; opacity:.85; text-align:center; }
 .s4-root .s4cp-route__state.is-done { background:rgba(16,185,129,.9); border-color:rgba(255,255,255,.4); }
+/* 0/2 is a count, not a word - it needs to fit, not to shout. */
+.s4-root .s4cp-route__state.is-wait b { font-size:14px; }
 
-.s4-root .s4cp-status { display:flex; align-items:center; gap:12px; padding:8px 13px; border-radius:11px; border:1px solid #fde68a; background:#fffbeb; }
-.s4-root .s4cp-status.is-done { border-color:#a7f3d0; background:#f0fdf4; }
-.s4-root .s4cp-status__l { display:inline-flex; align-items:center; gap:7px; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#b45309; }
+/* ── The Zebra task, while one is outstanding ──────────────────────────────
+ * A task line under the route it verifies, and a card under both columns
+ * saying what is outstanding, why the box is not placed yet, and the two
+ * ways out: cancel it, or go and watch it.
+ * ─────────────────────────────────────────────────────────────────────────*/
+.s4-root .s4cp-task { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:7px 13px; border-radius:11px; border:1px solid #ddd6fe; background:#faf9ff; }
+.s4-root .s4cp-task__k { display:inline-flex; align-items:center; gap:6px; font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#7c3aed; }
+.s4-root .s4cp-task__id { font-family:'Geist Mono',ui-monospace,monospace; font-size:11.5px; font-weight:800; color:#5b21b6; }
+.s4-root .s4cp-task__codes { display:inline-flex; align-items:center; gap:6px; }
+.s4-root .s4cp-task__codes i { font-style:normal; color:#c4b5fd; }
+.s4-root .s4cp-task__r { margin-left:auto; font-size:10.5px; font-weight:600; color:#94a3b8; }
+
+.s4-root .s4cp-await { display:flex; align-items:center; gap:13px; padding:13px 14px; border-radius:14px; border:1px solid #ddd6fe; background:#faf9ff; }
+.s4-root .s4cp-await__ic { flex:0 0 38px; height:38px; border-radius:11px; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg,#334155,#0f172a); }
+.s4-root .s4cp-await__tx { min-width:0; flex:1; }
+.s4-root .s4cp-await__t { display:flex; align-items:center; gap:7px; font-size:13px; font-weight:800; color:#5b21b6; }
+/* The dot pulses: the task is live, and something is still expected. */
+.s4-root .s4cp-await__t i { width:7px; height:7px; border-radius:50%; background:#f59e0b; animation:s4cpWait 1.6s ease-in-out infinite; }
+@keyframes s4cpWait { 0%,100% { opacity:1; } 50% { opacity:.25; } }
+.s4-root .s4cp-await__s { margin:3px 0 0; font-size:11.5px; line-height:1.5; color:#475569; }
+.s4-root .s4cp-await__s b { font-family:'Geist Mono',ui-monospace,monospace; font-weight:800; color:#6d28d9; }
+.s4-root .s4cp-await__chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; }
+.s4-root .s4cp-await__chip { font-size:10px; font-weight:800; padding:3px 9px; border-radius:7px; background:#fffbeb; color:#b45309; border:1px solid #fde68a; }
+.s4-root .s4cp-await__chip--n { background:#f1f5f9; color:#475569; border-color:#e2e8f0; }
+.s4-root .s4cp-await__acts { flex:0 0 auto; display:flex; align-items:center; gap:9px; }
+.s4-root .s4cp-await__cancel,
+.s4-root .s4cp-await__open { display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border-radius:10px; font:inherit; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; transition:background .15s, border-color .15s; }
+.s4-root .s4cp-await__cancel { border:1.5px solid #fecaca; background:#fff; color:#dc2626; }
+.s4-root .s4cp-await__cancel:hover { background:#fef2f2; border-color:#fca5a5; }
+.s4-root .s4cp-await__open { border:0; background:linear-gradient(135deg,#6d28d9,#4c1d95); color:#fff; box-shadow:0 4px 12px rgba(109,40,217,.28); }
+.s4-root .s4cp-await__open:hover { background:linear-gradient(135deg,#7c3aed,#5b21b6); }
+
+/* Locked, not styled as a second state: while a task is out the method was
+   already submitted with it. */
+.s4-root .s4cp-method:disabled { opacity:.55; cursor:not-allowed; box-shadow:none; transform:none; }
+.s4-root .s4cp-method:disabled:hover { transform:none; }
+
+[data-bs-theme="dark"] .s4-root .s4cp-task { background:rgba(167,139,250,.1); border-color:rgba(167,139,250,.28); }
+[data-bs-theme="dark"] .s4-root .s4cp-task__k { color:#c4b5fd; }
+[data-bs-theme="dark"] .s4-root .s4cp-task__id { color:#ddd6fe; }
+[data-bs-theme="dark"] .s4-root .s4cp-task__r { color:var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4cp-await { background:rgba(167,139,250,.1); border-color:rgba(167,139,250,.28); }
+[data-bs-theme="dark"] .s4-root .s4cp-await__t { color:#c4b5fd; }
+[data-bs-theme="dark"] .s4-root .s4cp-await__s { color:var(--s4d-tx); }
+[data-bs-theme="dark"] .s4-root .s4cp-await__s b { color:#c4b5fd; }
+[data-bs-theme="dark"] .s4-root .s4cp-await__chip { background:rgba(251,191,36,.14); color:#fcd34d; border-color:rgba(251,191,36,.3); }
+[data-bs-theme="dark"] .s4-root .s4cp-await__chip--n { background:rgba(255,255,255,.06); color:var(--s4d-dim); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4cp-await__cancel { background:transparent; border-color:rgba(220,38,38,.4); color:#fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4cp-await__cancel:hover { background:rgba(220,38,38,.12); }
+
+/* The same card, finished. */
+.s4-root .s4cp-await.is-done { border-color:#a7f3d0; background:#f0fdf4; }
+.s4-root .s4cp-await.is-done .s4cp-await__ic { background:linear-gradient(135deg,#34d399,#059669); }
+.s4-root .s4cp-await.is-done .s4cp-await__t { color:#047857; }
+.s4-root .s4cp-await.is-done .s4cp-await__s b { color:#047857; }
+.s4-root .s4cp-via { display:inline-flex; align-items:center; padding:4px 11px; border-radius:999px; background:linear-gradient(135deg,#10b981,#059669); color:#fff; font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+[data-bs-theme="dark"] .s4-root .s4cp-await.is-done { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.32); }
+[data-bs-theme="dark"] .s4-root .s4cp-await.is-done .s4cp-await__t,
+[data-bs-theme="dark"] .s4-root .s4cp-await.is-done .s4cp-await__s b { color:#6ee7b7; }
+
+/* ══ Zebra scan task dialog ═════════════════════════════════════════════════
+ * Two legs side by side, because the order matters and a column would hide
+ * it: the box is read first, and only then does the shelf unlock.
+ * ═════════════════════════════════════════════════════════════════════════*/
+.s4-root .s4zt-modal { background:rgba(6,32,44,.62); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+.s4-root .s4zt__dlg { width:min(1060px,100%); }
+/* align-items:stretch, as every other modal variant does. The base .s4qm__bd
+   centres its children, so the task card sized to its content and left a wide
+   blank gutter down the right of the dialog. */
+.s4-root .s4zt-modal .s4qm__bd { background:#f6fbfd; padding:13px; align-items:stretch; }
+.s4-root .s4zt-hchips { display:flex; align-items:center; gap:7px; margin-top:4px; }
+.s4-root .s4zt-hchips i { font-style:normal; opacity:.55; }
+.s4-root .s4zt-hchip { font-family:'Geist Mono',ui-monospace,monospace; font-size:11px; font-weight:800; padding:3px 10px; border-radius:999px; background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.3); }
+
+.s4-root .s4zt-card { display:flex; flex-direction:column; gap:10px; padding:13px 14px 14px; border-radius:16px; background:#fff; border:1px solid #e3eef3; }
+.s4-root .s4zt-top { display:flex; align-items:center; gap:11px; flex-wrap:wrap; padding-bottom:10px; border-bottom:1px dashed #e3eef3; }
+.s4-root .s4zt-top__ic { flex:0 0 38px; height:38px; border-radius:11px; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg,#334155,#0f172a); }
+.s4-root .s4zt-top__k { display:block; font-size:8.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8; }
+.s4-root .s4zt-top__id { display:block; font-family:'Geist Mono',ui-monospace,monospace; font-size:16px; font-weight:800; color:#0f172a; letter-spacing:-.2px; }
+.s4-root .s4zt-st { font-size:11px; font-weight:800; padding:5px 12px; border-radius:999px; border:1px solid; }
+.s4-root .s4zt-st--wait { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+.s4-root .s4zt-st--half { background:#ecfeff; color:#0e7490; border-color:#a5f3fc; }
+.s4-root .s4zt-st--ok { background:#ecfeff; color:#0e7490; border-color:#a5f3fc; }
+.s4-root .s4zt-st--bad { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
+.s4-root .s4zt-lockpill { margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:700; color:#64748b; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:999px; padding:5px 11px; }
+
+.s4-root .s4zt-err { display:flex; gap:9px; padding:9px 12px; border-radius:10px; border:1px solid #fecaca; background:#fef2f2; color:#b91c1c; }
+.s4-root .s4zt-err p { margin:0; font-size:11.5px; line-height:1.5; }
+
+.s4-root .s4zt-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }
+.s4-root .s4zt-f { min-width:0; padding:7px 11px; border-radius:10px; border:1px solid #eef3f6; background:#fbfdfe; }
+.s4-root .s4zt-f__k { display:block; font-size:8.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; }
+.s4-root .s4zt-f__v { display:block; margin-top:3px; font-size:12.5px; font-weight:700; color:#0f172a; overflow-wrap:anywhere; }
+.s4-root .s4zt-f__v.is-na { font-style:italic; font-weight:600; color:#aab4c0; }
+.s4-root .s4zt-mono { font-family:'Geist Mono',ui-monospace,monospace; font-weight:800; color:#0e7490; }
+
+.s4-root .s4zt-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:9px 12px; border-radius:11px; border:1px solid #cffafe; background:#f0fdff; }
+.s4-root .s4zt-bar__k { display:inline-flex; align-items:center; gap:7px; font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#0e7490; }
+.s4-root .s4zt-bar__k em { font-style:normal; font-weight:600; letter-spacing:0; text-transform:none; color:#94a3b8; }
+.s4-root .s4zt-proto { margin-left:auto; display:inline-flex; align-items:center; gap:9px; padding:5px 7px 5px 6px; border-radius:999px; border:1.5px solid #e2e8f0; background:#fff; font:inherit; font-size:11.5px; font-weight:700; color:#64748b; cursor:pointer; transition:border-color .15s, background .15s; }
+.s4-root .s4zt-proto i { width:30px; height:17px; border-radius:999px; background:#cbd5e1; position:relative; transition:background .18s; }
+.s4-root .s4zt-proto i::after { content:''; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:#fff; transition:transform .18s; }
+.s4-root .s4zt-proto b { font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; }
+.s4-root .s4zt-proto.is-on { border-color:#fbbf24; background:#fffbeb; color:#92400e; }
+.s4-root .s4zt-proto.is-on i { background:#f59e0b; }
+.s4-root .s4zt-proto.is-on i::after { transform:translateX(13px); }
+.s4-root .s4zt-proto.is-on b { color:#b45309; }
+
+.s4-root .s4zt-legs { display:grid; grid-template-columns:minmax(0,1fr) 30px minmax(0,1fr); align-items:stretch; }
+.s4-root .s4zt-legs__go { justify-self:center; align-self:center; width:26px; height:26px; border-radius:50%; display:grid; place-items:center; color:#64748b; background:#fff; border:1px solid #e2e8f0; }
+.s4-root .s4zt-leg { display:flex; flex-direction:column; gap:7px; padding:10px 11px 11px; border-radius:13px; border:2px solid #a5f3fc; background:#fff; }
+/* Locked reads as unavailable, not as broken: hatched, not red. */
+.s4-root .s4zt-leg.is-locked { border:1px solid #e2e8f0; background-image:repeating-linear-gradient(135deg,#fbfcfd 0 7px,#f3f6f9 7px 14px); color:#94a3b8; }
+.s4-root .s4zt-leg.is-ok { border-color:#86efac; background:#fff; }
+.s4-root .s4zt-leg.is-fail { border-color:#f87171; }
+.s4-root .s4zt-leg__hd { display:flex; align-items:center; gap:9px; }
+.s4-root .s4zt-leg__ic { flex:0 0 32px; height:32px; border-radius:10px; display:grid; place-items:center; color:#fff; background:linear-gradient(135deg,#22d3ee,#0891b2); }
+.s4-root .s4zt-leg.is-locked .s4zt-leg__ic { background:#e2e8f0; color:#94a3b8; }
+.s4-root .s4zt-leg.is-ok .s4zt-leg__ic { background:linear-gradient(135deg,#34d399,#059669); }
+.s4-root .s4zt-leg.is-fail .s4zt-leg__ic { background:linear-gradient(135deg,#f87171,#dc2626); }
+.s4-root .s4zt-leg__n { display:block; font-size:8.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8; }
+.s4-root .s4zt-leg__t { display:block; font-size:13.5px; font-weight:800; color:#0f172a; }
+.s4-root .s4zt-leg.is-locked .s4zt-leg__t { color:#94a3b8; }
+.s4-root .s4zt-leg__badge { margin-left:auto; font-size:9.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:4px 10px; border-radius:999px; background:#ecfeff; color:#0e7490; border:1px solid #a5f3fc; }
+.s4-root .s4zt-leg.is-locked .s4zt-leg__badge { background:#f1f5f9; color:#94a3b8; border-color:#e2e8f0; }
+.s4-root .s4zt-leg.is-ok .s4zt-leg__badge { background:#f0fdf4; color:#047857; border-color:#a7f3d0; }
+.s4-root .s4zt-leg.is-fail .s4zt-leg__badge { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
+.s4-root .s4zt-leg__id { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:10px; background:#f8fafc; border:1px solid #eef3f6; }
+.s4-root .s4zt-leg__id span { font-size:9px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#94a3b8; }
+.s4-root .s4zt-leg__id b { margin-left:auto; font-family:'Geist Mono',ui-monospace,monospace; font-size:15px; font-weight:800; color:#0e7490; }
+.s4-root .s4zt-leg.is-ok .s4zt-leg__id b { color:#047857; }
+.s4-root .s4zt-leg__sub { font-size:11px; color:#64748b; }
+/* No margin-top:auto. Pinned to the bottom it left a void of hatching in the
+   middle of the card, which reads as something missing rather than as a panel
+   that is not available yet. The locked card centres instead - see below. */
+.s4-root .s4zt-leg__lock { display:flex; align-items:center; gap:7px; padding:9px 12px; border-radius:10px; background:rgba(255,255,255,.6); border:1px solid #e8eef3; font-size:11px; font-weight:600; color:#94a3b8; }
+/* Its content sits in the middle of the hatching, so the extra height reads
+   as a disabled panel rather than as a gap where content should be. */
+.s4-root .s4zt-leg.is-locked { justify-content:center; }
+.s4-root .s4zt-leg__wait { display:flex; align-items:flex-start; gap:9px; padding:10px 12px; border-radius:10px; background:#fffbeb; border:1px solid #fde68a; }
+.s4-root .s4zt-leg__wait i { flex:0 0 9px; height:9px; margin-top:3px; border-radius:50%; background:#f59e0b; animation:s4cpWait 1.6s ease-in-out infinite; }
+.s4-root .s4zt-leg__wait b { display:block; font-size:12px; font-weight:800; color:#b45309; }
+.s4-root .s4zt-leg__wait span { display:block; font-size:11px; color:#a16207; }
+.s4-root .s4zt-leg__ok { margin-top:auto; display:flex; align-items:center; gap:7px; padding:9px 12px; border-radius:10px; background:#f0fdf4; border:1px solid #a7f3d0; font-size:11.5px; font-weight:700; color:#047857; }
+.s4-root .s4zt-leg__ok em { margin-left:auto; font-style:normal; font-size:8.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:6px; background:#fef3c7; color:#92400e; }
+.s4-root .s4zt-leg__bad { display:flex; align-items:center; gap:7px; padding:9px 12px; border-radius:10px; background:#fef2f2; border:1px solid #fecaca; font-size:11.5px; color:#b91c1c; }
+.s4-root .s4zt-leg__sim { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.s4-root .s4zt-sim { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:9px 10px; border-radius:10px; border:1.5px solid; background:#fff; font:inherit; font-size:11.5px; font-weight:800; cursor:pointer; }
+.s4-root .s4zt-sim--ok { border-color:#a7f3d0; color:#047857; background:#f6fffb; }
+.s4-root .s4zt-sim--ok:hover { background:#ecfdf5; }
+.s4-root .s4zt-sim--bad { border-color:#fecaca; color:#dc2626; background:#fffafa; }
+.s4-root .s4zt-sim--bad:hover { background:#fef2f2; }
+
+.s4-root .s4zt-dest { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 12px; border-radius:11px; border:1px solid #e3eef3; background:#fbfdfe; }
+.s4-root .s4zt-dest.is-done { border-color:#a7f3d0; background:#f0fdf4; }
+.s4-root .s4zt-dest__k { display:inline-flex; align-items:center; gap:7px; font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
+.s4-root .s4zt-dest.is-done .s4zt-dest__k { color:#047857; }
+.s4-root .s4zt-dest__chain { display:inline-flex; align-items:center; gap:7px; }
+.s4-root .s4zt-dest__chain > span { display:inline-flex; align-items:center; gap:7px; }
+.s4-root .s4zt-dest__chain i { font-style:normal; color:#cbd5e1; }
+.s4-root .s4zt-dest__st { margin-left:auto; display:inline-flex; align-items:center; gap:7px; font-size:11px; font-weight:800; padding:6px 12px; border-radius:999px; background:#f1f5f9; color:#64748b; }
+.s4-root .s4zt-dest.is-done .s4zt-dest__st { background:linear-gradient(135deg,#10b981,#059669); color:#fff; }
+
+.s4-root .s4zt-ft { justify-content:flex-start; gap:14px; }
+.s4-root .s4zt-foot { display:inline-flex; align-items:center; gap:8px; font-size:11.5px; font-weight:600; color:#94a3b8; }
+.s4-root .s4zt-foot i { width:8px; height:8px; border-radius:50%; background:#cbd5e1; }
+.s4-root .s4zt-foot.is-done { color:#047857; font-weight:800; }
+.s4-root .s4zt-foot.is-done i { background:#10b981; }
+
+[data-bs-theme="dark"] .s4-root .s4zt-modal .s4qm__bd { background:#0c212a; }
+[data-bs-theme="dark"] .s4-root .s4zt-card { background:var(--s4d-bg); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4zt-top { border-bottom-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4zt-top__id,
+[data-bs-theme="dark"] .s4-root .s4zt-leg__t,
+[data-bs-theme="dark"] .s4-root .s4zt-f__v { color:var(--s4d-tx); }
+[data-bs-theme="dark"] .s4-root .s4zt-lockpill { background:rgba(255,255,255,.06); border-color:var(--s4d-line); color:var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4zt-f { background:rgba(255,255,255,.03); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4zt-mono { color:#7dd3e8; }
+[data-bs-theme="dark"] .s4-root .s4zt-bar { background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.28); }
+[data-bs-theme="dark"] .s4-root .s4zt-bar__k { color:#7dd3e8; }
+[data-bs-theme="dark"] .s4-root .s4zt-proto { background:var(--s4d-bg2); border-color:var(--s4d-line); color:var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4zt-proto.is-on { background:rgba(251,191,36,.14); border-color:rgba(251,191,36,.42); color:#fcd34d; }
+[data-bs-theme="dark"] .s4-root .s4zt-leg { background:var(--s4d-bg2); border-color:rgba(34,211,238,.4); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg.is-locked { background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.02) 0 7px,rgba(255,255,255,.05) 7px 14px); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg.is-ok { border-color:rgba(16,185,129,.5); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg__id { background:rgba(255,255,255,.04); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg__sub { color:var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg__wait { background:rgba(251,191,36,.12); border-color:rgba(251,191,36,.3); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg__wait b { color:#fcd34d; }
+[data-bs-theme="dark"] .s4-root .s4zt-leg__wait span { color:#e0b464; }
+[data-bs-theme="dark"] .s4-root .s4zt-leg__ok { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.3); color:#6ee7b7; }
+[data-bs-theme="dark"] .s4-root .s4zt-leg__bad,
+[data-bs-theme="dark"] .s4-root .s4zt-err { background:rgba(220,38,38,.12); border-color:rgba(220,38,38,.3); color:#fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4zt-sim--ok { background:rgba(16,185,129,.1); border-color:rgba(16,185,129,.35); color:#6ee7b7; }
+[data-bs-theme="dark"] .s4-root .s4zt-sim--bad { background:rgba(220,38,38,.1); border-color:rgba(220,38,38,.35); color:#fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4zt-dest { background:rgba(255,255,255,.03); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4zt-dest.is-done { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.32); }
+[data-bs-theme="dark"] .s4-root .s4zt-dest__k { color:var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4zt-dest__st { background:rgba(255,255,255,.06); color:var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4zt-legs__go { background:var(--s4d-bg2); border-color:var(--s4d-line); color:var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4zt-foot { color:var(--s4d-dim); }
+
+/* Neutral, not amber. "No location assigned yet" is where the step STARTS -
+   nothing is wrong and nothing needs attention, the method simply has not
+   been chosen. Amber made an ordinary first state read as a warning. The
+   prototype's own values: .s4mn-res--pend is #e2e8f0 on #f8fafc with a slate
+   label, and it keeps the colour for --ok and --bad, which do mean something. */
+.s4-root .s4cp-status { display:flex; align-items:center; gap:12px; padding:8px 13px; border-radius:11px; border:1px solid #e2e8f0; background:#f8fafc; }
+.s4-root .s4cp-status.is-done { border-color:#86efac; background:#f0fdf4; }
+.s4-root .s4cp-status__l { display:inline-flex; align-items:center; gap:7px; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#475569; }
 .s4-root .s4cp-status.is-done .s4cp-status__l { color:#047857; }
 .s4-root .s4cp-status__r { margin-left:auto; font-size:11px; color:#94a3b8; }
 .s4-root .s4cp-status__r b { color:#0e7490; font-family:'Geist Mono',ui-monospace,monospace; }
 
 /* Box, join, shelf. The join is a fixed column so the two cards stay equal. */
-/* 76px, not 56: the dot is 34 and each rail 17 plus a 3px gap, which is 74 -
-   at 56 the rails had nowhere to go and the PENDING tag overhung the column. */
-.s4-root .s4cp-cols { display:grid; grid-template-columns:minmax(0,1fr) 76px minmax(0,1fr); gap:0; align-items:stretch; }
-.s4-root .s4cp-card { display:flex; flex-direction:column; gap:9px; padding:13px 14px 14px; border:1px solid #d9eef4; border-radius:16px; background:#fff; box-shadow:0 1px 2px rgba(12,44,58,.04); }
+/* 96px: dot 44, each rail 15 starting 11px out - 44 + 2x26 = 96. */
+.s4-root .s4cp-cols { display:grid; grid-template-columns:minmax(0,1fr) 96px minmax(0,1fr); gap:0; align-items:stretch; }
+.s4-root .s4cp-card { display:flex; flex-direction:column; gap:7px; padding:11px 13px 12px; border:1px solid #d9eef4; border-radius:16px; background:#fff; box-shadow:0 1px 2px rgba(12,44,58,.04); }
 .s4-root .s4cp-card__hd { display:flex; align-items:center; gap:10px; }
 .s4-root .s4cp-card__ic { flex:0 0 32px; height:32px; border-radius:10px; display:grid; place-items:center; color:#fff; }
 .s4-root .s4cp-card__ic--box { background:linear-gradient(135deg,#22d3ee,#0891b2); }
@@ -4891,16 +5181,18 @@
 .s4-root .s4cp-change:hover { background:#ecfeff; border-color:#7dd3e8; }
 
 /* The QR keeps a white card whatever the theme - a scanner wants contrast. */
-.s4-root .s4cp-qr { align-self:center; padding:12px; border-radius:14px; background:#fff; border:1px solid #e3eef3; box-shadow:0 2px 10px rgba(12,44,58,.1); }
+.s4-root .s4cp-qr { align-self:center; padding:9px; border-radius:12px; background:#fff; border:1px solid #e3eef3; box-shadow:0 2px 10px rgba(12,44,58,.1); }
 .s4-root .s4cp-qr__code { align-self:center; font-family:'Geist Mono',ui-monospace,monospace; font-size:17px; font-weight:800; letter-spacing:.05em; color:#0e7490; }
 
 .s4-root .s4cp-kvs { display:flex; flex-direction:column; }
-.s4-root .s4cp-kv { display:flex; align-items:center; gap:12px; padding:6px 0; border-bottom:1px dashed #edf3f6; font-size:11.5px; }
+/* 4px, not 6: a 34px row for an 11.5px line is mostly air, and there are
+   fourteen of them across the two cards. */
+.s4-root .s4cp-kv { display:flex; align-items:center; gap:12px; padding:4px 0; border-bottom:1px dashed #edf3f6; font-size:11px; }
 .s4-root .s4cp-kv:last-child { border-bottom:0; }
 .s4-root .s4cp-kv span { color:#64748b; }
 .s4-root .s4cp-kv b { margin-left:auto; text-align:right; color:#0f172a; font-weight:700; min-width:0; }
 
-.s4-root .s4cp-shelf { padding:10px 12px; border-radius:12px; background:#faf9ff; border:1px solid #ece9fe; }
+.s4-root .s4cp-shelf { padding:8px 11px; border-radius:12px; background:#faf9ff; border:1px solid #ece9fe; }
 .s4-root .s4cp-shelf__t { font-size:16px; font-weight:800; letter-spacing:-.3px; color:#0f172a; }
 .s4-root .s4cp-shelf__p { font-size:11px; color:#64748b; margin-top:2px; }
 .s4-root .s4cp-shelf .s4cp-route__codes i { color:#cbd5e1; }
@@ -4922,41 +5214,69 @@
  * thing on this screen that says "this box is going THERE", so it is the one
  * thing worth animating.
  * ──────────────────────────────────────────────────────────────────────────*/
-.s4-root .s4cp-join { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; position:relative; }
-.s4-root .s4cp-join__dot { position:relative; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; color:#0891b2; background:#fff; border:2px solid #22d3ee; box-shadow:0 2px 10px rgba(8,145,178,.2); }
+.s4-root .s4cp-join { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px; position:relative; }
+/* A filled disc, a white gap, then a ring that turns. The gap is the dot's
+   own border, so the ring can sit outside it without a third element. */
+.s4-root .s4cp-join__dot {
+  --c1:#22d3ee; --c2:#4f46e5;
+  position:relative; width:44px; height:44px; border-radius:50%;
+  display:grid; place-items:center; color:#fff;
+  background:linear-gradient(140deg,var(--c1),var(--c2));
+  border:3px solid #fff;
+  box-shadow:0 5px 16px rgba(79,70,229,.3);
+}
+/* conic fill + a radial mask that keeps only its outer 2px: one element
+   instead of two stacked circles, and it can spin without the fill moving. */
+.s4-root .s4cp-join__ring {
+  /* inset resolves against the dot's PADDING box, which box-sizing makes
+     38px here, not 44 - so -9 puts the ring 6px past the white border, the
+     gap the reference shows. */
+  position:absolute; inset:-9px; border-radius:50%; pointer-events:none;
+  background:conic-gradient(from 0deg,var(--c1),var(--c2),var(--c1));
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2.5px),#000 calc(100% - 2px));
+  mask:radial-gradient(farthest-side,transparent calc(100% - 2.5px),#000 calc(100% - 2px));
+  animation:s4cpSpin 3.2s linear infinite;
+}
+@keyframes s4cpSpin { to { transform:rotate(360deg); } }
 
 /* The rails hang off the dot, so they sit on ITS centre line rather than on
    the column's - the tag below would otherwise drag the midpoint down. */
 .s4-root .s4cp-join__dot::before,
 .s4-root .s4cp-join__dot::after {
-  content:''; position:absolute; top:50%; margin-top:-1px; width:17px; height:2px;
+  content:''; position:absolute; top:50%; margin-top:-1px; width:15px; height:2px;
   background-image:linear-gradient(90deg,#8ed3e6 0 6px,transparent 6px 12px);
   background-size:12px 2px; background-repeat:repeat-x;
   animation:s4cpFlow .85s linear infinite;
 }
-.s4-root .s4cp-join__dot::before { right:100%; margin-right:3px; }
-.s4-root .s4cp-join__dot::after { left:100%; margin-left:3px; }
+/* 11px clears the ring, which reaches 6px past the dot's border. */
+.s4-root .s4cp-join__dot::before { right:100%; margin-right:11px; }
+.s4-root .s4cp-join__dot::after { left:100%; margin-left:11px; }
 /* Marching one dash-period per cycle, so the loop is seamless. */
 @keyframes s4cpFlow { from { background-position:0 0; } to { background-position:12px 0; } }
 
 /* A ring leaving the dot, in the direction of travel. */
 @keyframes s4cpPulse {
-  0%   { box-shadow:0 2px 10px rgba(8,145,178,.2), 0 0 0 0 rgba(34,211,238,.5); }
-  70%  { box-shadow:0 2px 10px rgba(8,145,178,.2), 0 0 0 10px rgba(34,211,238,0); }
-  100% { box-shadow:0 2px 10px rgba(8,145,178,.2), 0 0 0 0 rgba(34,211,238,0); }
+  0%   { box-shadow:0 5px 16px rgba(79,70,229,.3), 0 0 0 6px rgba(99,102,241,.22); }
+  70%  { box-shadow:0 5px 16px rgba(79,70,229,.3), 0 0 0 16px rgba(99,102,241,0); }
+  100% { box-shadow:0 5px 16px rgba(79,70,229,.3), 0 0 0 6px rgba(99,102,241,0); }
 }
 @keyframes s4cpNudge { 0%,100% { transform:translateX(-1.5px); } 50% { transform:translateX(1.5px); } }
+/* The pulse rides on the ring now, so the shadow only has to lift the disc. */
 .s4-root .s4cp-join__dot:not(.is-done) { animation:s4cpPulse 2s ease-out infinite; }
 .s4-root .s4cp-join__dot:not(.is-done) > svg { animation:s4cpNudge 1.5s ease-in-out infinite; }
 
 /* Placed: the motion stops and the rails go solid. Nothing is in transit any
    more, so nothing should still be moving. */
-.s4-root .s4cp-join__dot.is-done { color:#fff; background:linear-gradient(135deg,#34d399,#059669); border-color:transparent; animation:none; }
+/* Placed: the ring stops and goes green with the disc. Nothing is in transit
+   any more, so nothing keeps turning. */
+.s4-root .s4cp-join__dot.is-done { --c1:#34d399; --c2:#059669; color:#fff; background:linear-gradient(135deg,var(--c1),var(--c2)); animation:none; }
+.s4-root .s4cp-join__dot.is-done .s4cp-join__ring { background:#6ee7b7; animation:none; }
 .s4-root .s4cp-join__dot.is-done::before,
 .s4-root .s4cp-join__dot.is-done::after { background-image:none; background-color:#6ee7b7; animation:none; }
 
 @media (prefers-reduced-motion: reduce) {
   .s4-root .s4cp-join__dot,
+  .s4-root .s4cp-join__ring,
   .s4-root .s4cp-join__dot > svg,
   .s4-root .s4cp-join__dot::before,
   .s4-root .s4cp-join__dot::after { animation:none !important; }
@@ -4984,13 +5304,15 @@
 [data-bs-theme="dark"] .s4-root .s4cp-shelf { background:rgba(167,139,250,.1); border-color:rgba(167,139,250,.28); }
 [data-bs-theme="dark"] .s4-root .s4cp-shelf__t { color:#e6f3f7; }
 [data-bs-theme="dark"] .s4-root .s4cp-shelf__p { color:#8fb0bd; }
-[data-bs-theme="dark"] .s4-root .s4cp-status { background:rgba(251,191,36,.12); border-color:rgba(251,191,36,.32); }
+[data-bs-theme="dark"] .s4-root .s4cp-status { background:rgba(255,255,255,.04); border-color:var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4cp-status.is-done { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.32); }
-[data-bs-theme="dark"] .s4-root .s4cp-status__l { color:#fcd34d; }
+[data-bs-theme="dark"] .s4-root .s4cp-status__l { color:var(--s4d-dim); }
 [data-bs-theme="dark"] .s4-root .s4cp-status.is-done .s4cp-status__l { color:#6ee7b7; }
 [data-bs-theme="dark"] .s4-root .s4cp-status__r { color:#8fb0bd; }
 [data-bs-theme="dark"] .s4-root .s4cp-status__r b { color:#7dd3e8; }
-[data-bs-theme="dark"] .s4-root .s4cp-join__dot { background:#13303c; }
+/* The white gap becomes the card surface, so the ring still reads as a ring
+   rather than as a bright collar. */
+[data-bs-theme="dark"] .s4-root .s4cp-join__dot { border-color:#0f2731; }
 [data-bs-theme="dark"] .s4-root .s4cp-join__dot::before,
 [data-bs-theme="dark"] .s4-root .s4cp-join__dot::after { background-image:linear-gradient(90deg,#2a6a80 0 6px,transparent 6px 12px); }
 [data-bs-theme="dark"] .s4-root .s4cp-join__dot.is-done::before,
