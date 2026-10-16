@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { PutawayLocations, PutawayShelf, PutawayZone } from '../spi-api';
+import type { PutawayFloorZone, PutawayLocations, PutawayShelf, PutawayZone } from '../spi-api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * STAGE 04 · STEP 02 — Select Location.
@@ -151,10 +151,14 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
   }, [state.data, rec]);
 
   useEffect(() => {
-    if (!openTo) return;
+    if (!openTo || mode === 'norack') return;
     setOpenZones(new Set([openTo.zone]));
     setOpenRacks(openTo.rack ? new Set([openTo.rack]) : new Set());
   }, [openTo?.zone, openTo?.rack]);
+
+  if (mode === 'norack') {
+    return <FloorSelect box={box} state={state} spot={spot} onSpot={onSpot} need={need} />;
+  }
 
   return (
     <div className="s4sl">
@@ -464,6 +468,156 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
                     </div>
                     )}
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function FloorSelect({ box, state, spot, onSpot, need }: {
+  box: SelectLocationBox;
+  state: { loading: boolean; data: PutawayLocations | null; error: string | null };
+  spot: number | null;
+  onSpot: (id: number | null) => void;
+  need: PutawayLocations['box'] | null;
+}) {
+  const zones: PutawayFloorZone[] = state.data?.floor ?? [];
+  const rec = state.data?.floorPick ?? null;
+  const eligible = zones.filter(z => z.eligible).length;
+  const taken = rec !== null && spot === rec.id;
+  const m3 = (v: number) => `${Number.isInteger(v) ? v : Number(v.toFixed(3))} m³`;
+
+  return (
+    <div className="s4sl">
+      <div className="s4sl-bar">
+        <span className="s4sl-bar__ic"><IcoBox size={17} /></span>
+        <div className="s4sl-bar__tx">
+          <div className="s4sl-bar__k">Where should this box go?</div>
+          <div className="s4sl-bar__v">
+            <span className="s4sl-bar__code">{box.code}</span>
+            <span>
+              {box.qty} {box.uom || 'units'}
+              {' · Handling '}{box.haz ? 'Hazardous' : box.cold ? 'Cold chain' : 'Standard'}
+              {box.dims ? ` · ${box.dims}` : ''}
+              {need?.volume_cm3 ? ` · ${m3(need.volume_cm3 / 1_000_000)}` : ''}
+            </span>
+          </div>
+        </div>
+        <div className="s4sl-legend">
+          <span className="s4sl-legend__k">Zone space used</span>
+          {([['low', 'Low', 'under 45%'], ['med', 'Medium', '45–74%'],
+             ['high', 'High', '75–99%'], ['full', 'Full', '100%']] as const).map(([k, t, r]) => (
+            <span className={`s4sl-lg s4sl-lg--${k}`} key={k}><i />{t} <em>{r}</em></span>
+          ))}
+        </div>
+      </div>
+
+      <div className="s4sl-cols">
+        <section className="s4sl-sec s4sl-sec--a">
+          <div className="s4sl-sec__hd">
+            <span className="s4sl-sec__ic">&#9733;</span>
+            <div className="s4sl-sec__tx">
+              <div className="s4sl-sec__k">Section A</div>
+              <div className="s4sl-sec__t">System Recommended Location</div>
+              <div className="s4sl-sec__s">The eligible zone this box fits most tightly</div>
+            </div>
+            <span className={`s4sl-rec${taken ? ' is-used' : ''}`}>{taken ? '✓ In use' : '☆ Recommended'}</span>
+          </div>
+
+          {state.error ? (
+            <div className="s4vp-none">{state.error}</div>
+          ) : state.loading ? (
+            <div className="s4vp-none">Ranking the zones for this box…</div>
+          ) : !rec ? (
+            <div className="s4vp-none">
+              No zone without racks can take this box.
+              {state.data ? ` ${eligible} of ${zones.length} zones eligible.` : ''}
+            </div>
+          ) : (
+            <>
+              <span className="s4sl-kind">Zone floor</span>
+              <div className="s4sl-pick">
+                <div className="s4sl-match" style={{ ['--p' as string]: Math.max(0, Math.min(100, Math.round(100 - rec.used_pct_after))) }}>
+                  <b>{pct(Math.max(0, 100 - rec.used_pct_after))}</b>
+                  <span>Free after</span>
+                </div>
+                <div className="s4sl-pick__tx">
+                  <div className="s4sl-pick__t">{rec.name || 'Unnamed zone'}</div>
+                  <div className="s4sl-pick__p">Straight into the zone · no rack or shelf</div>
+                  <div className="s4sl-codes"><span className="s4sl-code s4sl-code--z">{rec.code}</span></div>
+                </div>
+              </div>
+              <div className="s4sl-kvs">
+                {([
+                  ['Free space', m3(rec.free_m3)],
+                  ['Capacity', rec.capacity_m3 ? m3(rec.capacity_m3) : 'Not measured'],
+                  ['Boxes already here', String(rec.boxes)],
+                  ['Space used', `${pct(rec.used_pct)} → ${pct(rec.used_pct_after)}`],
+                  ['Cold chain', rec.cold_chain ? 'Yes' : 'No'],
+                  ['Hazardous', rec.hazardous ? 'Yes' : 'No'],
+                ] as const).map(([k, v]) => (
+                  <div className="s4sl-kv" key={k}><span>{k}</span><b>{v}</b></div>
+                ))}
+              </div>
+              <button type="button" className={`s4sl-take${taken ? ' is-taken' : ''}`}
+                onClick={() => onSpot(taken ? null : rec.id)}>
+                {taken ? '✓ Recommended zone selected' : '◉ Use recommended zone'}
+              </button>
+            </>
+          )}
+        </section>
+
+        <section className="s4sl-sec s4sl-sec--b">
+          <div className="s4sl-sec__hd">
+            <span className="s4sl-sec__ic">&#9776;</span>
+            <div className="s4sl-sec__tx">
+              <div className="s4sl-sec__k">Section B</div>
+              <div className="s4sl-sec__t">All Zones Without Rack</div>
+              <div className="s4sl-sec__s">Only eligible zones can be selected — a greyed one says why</div>
+            </div>
+            {state.data && <span className="s4sl-elig">{eligible} / {zones.length} eligible</span>}
+          </div>
+
+          {state.error ? (
+            <div className="s4vp-none">{state.error}</div>
+          ) : state.loading ? (
+            <div className="s4vp-none">Reading the zones…</div>
+          ) : zones.length === 0 ? (
+            <div className="s4vp-none">This warehouse has no storage zones without racks.</div>
+          ) : (
+            <div className="s4sl-tree">
+              {zones.map(z => {
+                const on = spot === z.id;
+                return (
+                  <button
+                    type="button"
+                    key={z.id}
+                    className={`s4sl-row s4sl-row--z${z.eligible ? '' : ' is-out'}${on ? ' is-on' : ''}`}
+                    disabled={!z.eligible}
+                    aria-pressed={on}
+                    title={z.eligible ? `Put ${box.code} in ${z.code}` : (z.reason_label ?? 'Not available')}
+                    onClick={() => onSpot(on ? null : z.id)}
+                  >
+                    <span className="s4sl-row__ic s4sl-row__ic--z">&#9873;</span>
+                    <span className="s4sl-chip s4sl-chip--z">{z.code}</span>
+                    <span className="s4sl-row__tx">
+                      <b>{z.name || 'Unnamed zone'}{rec?.id === z.id ? ' ★' : ''}</b>
+                      <span>
+                        {z.cold_chain ? 'Cold storage' : 'Storage'}{z.hazardous ? ' · Hazardous' : ''}
+                        {' · '}{m3(z.free_m3)} free
+                      </span>
+                    </span>
+                    <Fill pct={Math.round(z.used_pct)} />
+                    <span className="s4sl-row__n">
+                      {z.eligible
+                        ? <b className="is-ok">{on ? '✓ Selected' : 'Eligible'}</b>
+                        : <span>{z.reason_label || 'Not available'}</span>}
+                    </span>
+                  </button>
                 );
               })}
             </div>

@@ -271,12 +271,22 @@ export type PutawayBoard = {
   boxes: PutawayBoardBox[];
 };
 
+export type PutawayFloorZone = {
+  id: number; name: string | null; code: string; rack_mode: string | null;
+  cold_chain: number; hazardous: number;
+  capacity_m3: number; free_m3: number; boxes: number;
+  used_pct: number; used_pct_after: number;
+  eligible: boolean; reason: string | null; reason_label: string | null; held_by: number | null;
+};
+
 export type PutawayLocations = {
   box: PutawayNeed;
   modes: { rack: number; norack: number };
   zones: PutawayZone[];
   total: number; eligible: number;
   recommended: PutawayPick | null;
+  floor?: PutawayFloorZone[];
+  floorPick?: PutawayFloorZone | null;
 };
 
 export const spiApi = {
@@ -317,7 +327,17 @@ export const spiApi = {
 
   putawayLocations: (spiId: number, boxId: number, mode: 'rack' | 'norack') =>
     call('Putaway locations', () => api.get(`/p2p/spi/${spiId}/putaway/locations`, { params: { box_id: boxId, mode } }),
-      (b) => ((b as { data?: PutawayLocations } | null)?.data ?? null)),
+      (b) => {
+        const d = (b as { data?: PutawayLocations & { zones?: unknown[]; recommended?: unknown } } | null)?.data ?? null;
+        if (!d || mode === 'rack') return d;
+        return {
+          ...d,
+          zones: [],
+          recommended: null,
+          floor: (d.zones ?? []) as PutawayFloorZone[],
+          floorPick: (d.recommended ?? null) as PutawayFloorZone | null,
+        } as PutawayLocations;
+      }),
 
   putawayBoard: (spiId: number) =>
     call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),

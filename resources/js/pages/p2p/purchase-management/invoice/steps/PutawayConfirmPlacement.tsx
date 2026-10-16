@@ -40,7 +40,7 @@ export interface ConfirmSpot {
 export function findSpot(data: PutawayLocations | null, shelfId: number | null): ConfirmSpot | null {
   if (!data || shelfId == null) return null;
   for (const zone of data.zones) {
-    for (const rack of zone.racks) {
+    for (const rack of zone.racks ?? []) {
       const shelf = rack.shelves.find(s => s.id === shelfId);
       if (shelf) return { shelf, rack, zone };
     }

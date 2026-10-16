@@ -5322,3 +5322,9 @@
 [data-bs-theme="dark"] .s4-root .s4cp-occ > i { background:rgba(255,255,255,.08); }
 [data-bs-theme="dark"] .s4-root .s4cp-qr { background:#fff; border-color:#1d4454; }
 [data-bs-theme="dark"] .s4-root .s4cp-qr__code { color:#7dd3e8; }
+
+.s4-root .s4wz-modal .s4wz-opt.is-loading { cursor:progress; }
+.s4-root .s4wz-modal .s4wz-opt.is-loading:hover { transform:none; box-shadow:none; }
+.s4-root .s4wz-modal .s4wz-opt__n--sk { display:inline-flex; align-items:center; width:84px; height:22px; padding:0 10px; }
+.s4-root .s4wz-modal .s4wz-opt__n--sk .spi-sk-bar { width:100%; height:9px; border-radius:5px; background:#cdeff6; }
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt__n--sk .spi-sk-bar { background:rgba(34,211,238,.16); }
