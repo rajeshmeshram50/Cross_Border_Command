@@ -742,6 +742,23 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   // Cleared after onSaved fires so re-opens start clean.
   const dirtySavedRef = useRef(false);
 
+  /* The GST uniqueness answer, reported up from Stage1Identification.
+   * A ref rather than state: validateStage1 only needs the latest value at the
+   * moment it runs, and re-rendering the whole modal on every keystroke of the
+   * GST field to carry it would be a poor trade.
+   *
+   * These two live HERE, above `if (!open) return null`, and must stay here.
+   * They sat below it, so a closed modal ran 69 hooks and an open one ran 70 —
+   * React saw the hook list grow between renders and tore the tree down with
+   * "Rendered more hooks than during the previous render", which is the
+   * "Something went wrong" screen on the Customer button (#82). */
+  const gstGateRef = useRef<{ status: string; takenBy: string | null }>({ status: 'idle', takenBy: null });
+  /* Stable identity — the child reports through an effect that lists this in
+   * its deps, so a fresh arrow each render would re-fire it every render. */
+  const reportGstGate = useCallback((g: { status: string; takenBy: string | null }) => {
+    gstGateRef.current = g;
+  }, []);
+
   // Trade docs selection — populated solely from the segment rule's `td`
   // selections intersected with the party=Buyer trade-doc library (see the
   // segment-template effect below). Starts EMPTY: no hardcoded placeholder
@@ -1692,17 +1709,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     'addrType','addr','country','state','city','pin',
     'cpName','cpDesig','cpTel','cpEmail','cpWa',
   ];
-
-  /* The GST uniqueness answer, reported up from Stage1Identification.
-   * A ref rather than state: validateStage1 only needs the latest value at the
-   * moment it runs, and re-rendering the whole modal on every keystroke of the
-   * GST field to carry it would be a poor trade. */
-  const gstGateRef = useRef<{ status: string; takenBy: string | null }>({ status: 'idle', takenBy: null });
-  /* Stable identity — the child reports through an effect that lists this in
-   * its deps, so a fresh arrow each render would re-fire it every render. */
-  const reportGstGate = useCallback((g: { status: string; takenBy: string | null }) => {
-    gstGateRef.current = g;
-  }, []);
 
   /* ── Stage 1 validation. Runs when the user clicks Save & Next on
    *    Stage 1 (and on the final Submit on Stage 3 so a back-edit can't
@@ -2908,11 +2914,14 @@ function GstScrutinyManagePopup(props: {
                   {/* Read-only — the GST number is captured on the customer
                       (Stage 1) and flows in here. Edit it on the customer form;
                       it won't be re-typed per scrutiny entry. */}
+                  {/* A class, not an inline rgba: the inline grey was a
+                      translucent fill that the dark `.acm-field input` rule
+                      overrode with !important anyway, so this field looked
+                      exactly like the editable ones it is not. */}
                   <input
-                    className={errs.gstNumber ? 'acm-input-error' : ''}
+                    className={`acm-input-ro${errs.gstNumber ? ' acm-input-error' : ''}`}
                     value={draft.gstNumber}
                     readOnly
-                    style={{ background: 'rgba(120,120,120,.10)', cursor: 'not-allowed', opacity: .9 }}
                     title="Comes from the customer's GST Number — change it on the customer form"
                     placeholder="—"
                   />
@@ -6735,6 +6744,18 @@ const SCOPED_CSS = `
   color: #ffffff;
 }
 [data-bs-theme="dark"] .acm-root .master-select-toggle:disabled { color: #94a3b8; }
+/* MasterDatePicker never got the same treatment, so it kept Velzon's
+   --vz-input-bg (#262a2f) and rendered as a pale grey field beside the
+   #131c33 inputs and selects - the GST Last Filing Date in QA #99, and the
+   date fields in the KYC stage in #101. One modal, one field colour. */
+[data-bs-theme="dark"] .acm-root .master-datepicker-toggle {
+  background: #131c33;
+  border-color: rgba(167,139,250,0.50);
+  color: #ffffff;
+}
+[data-bs-theme="dark"] .acm-root .master-datepicker-toggle:hover { border-color: rgba(167,139,250,0.75); }
+[data-bs-theme="dark"] .acm-root .master-datepicker-toggle::placeholder { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-root .master-datepicker-toggle:disabled { color: #94a3b8; }
 
 /* Autofill paints its own background over any field Chrome filled, which no
    ordinary background overrides -- so a remembered value sat pale blue beside
@@ -6767,6 +6788,12 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .acm-field input::placeholder,
 [data-bs-theme="dark"] .acm-field textarea::placeholder { color: #94a3b8; }
+/* Read-only: one step off the editable surface in each theme, so "you cannot
+   type here" is visible without becoming a fourth colour in the form. */
+.acm-field input.acm-input-ro { background: #f5f3fb; color: #6b7280; cursor: not-allowed; }
+[data-bs-theme="dark"] .acm-field input.acm-input-ro {
+  background: #1b2440 !important; color: #94a3b8; cursor: not-allowed;
+}
 [data-bs-theme="dark"] .acm-field input:hover,
 [data-bs-theme="dark"] .acm-field select:hover,
 [data-bs-theme="dark"] .acm-field textarea:hover { border-color: rgba(167,139,250,0.75); }

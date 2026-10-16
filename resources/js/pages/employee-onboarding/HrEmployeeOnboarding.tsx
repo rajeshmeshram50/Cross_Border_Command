@@ -2829,7 +2829,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     return { ok: true };
   };
 
+  /* Is a write in flight, by ANY route?
+   *
+   * formLocked only covers the loud ones (Save Draft / Next Stage), which
+   * raise the veil. Switching stages from the rail saves SILENTLY -
+   * saveStage1(false, true, true) - so formLocked stays false and nothing
+   * stopped a second switch landing on top of the first. That is QA #20: the
+   * button was frozen, the stage list was not. */
+  const stageBusy = formLocked || s1Saving || s4Saving || nextLoading;
+
   const goToStage = async (target: number) => {
+    /* Refused, not queued. A switch mid-write would leave the previous
+       stage's save posting against a form the user has already left. */
+    if (stageBusy) return;
     if (target === activeStage) return;
     if (target > activeStage) {
       const gate = canAdvanceFromActiveStage();
@@ -3151,8 +3163,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             {stagesView.map(s => (
               <div
                 key={s.key}
-                className={`onb-init-stage-card ${activeStage === s.num ? 'is-active' : ''}`}
-                onClick={() => { void goToStage(s.num); }}
+                /* is-busy while a write is in flight: visibly inert rather
+                   than silently ignored, since a card that still lifts on
+                   hover and does nothing reads as a broken click. */
+                className={`onb-init-stage-card ${activeStage === s.num ? 'is-active' : ''}${stageBusy ? ' is-busy' : ''}`}
+                aria-disabled={stageBusy || undefined}
+                onClick={() => { if (!stageBusy) void goToStage(s.num); }}
               >
                 <span className={`onb-init-stage-num ${s.status === 'Completed' ? 'is-done' : ''}`}>
                   {s.status === 'Completed' ? <i className="ri-check-line" /> : s.num}

@@ -22,15 +22,23 @@ export default function SuccessModal({
           something more to be said. The measurements below are the same card
           at the same proportions, just not oversized: max-w-sm and rounded-2xl
           also match the organisation-picker popup on this screen. */}
-      <div className="relative bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in">
+      {/* bg-surface, not bg-white. The theme already flips --color-surface to
+          #111827 in dark, and --color-text / --color-secondary with it, so the
+          card followed the page everywhere except here: a white slab on the
+          dark login screen. The same token is why the title and message need
+          no dark: variants of their own. */}
+      <div className="relative bg-surface border border-border rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden animate-in">
         {/* Content */}
         <div className="px-6 py-7 text-center space-y-4">
           {/* Icon */}
           <div className="flex justify-center">
             <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center animate-bounce-subtle">
-                <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center">
-                  <CheckCircle size={30} className="text-emerald-500" />
+              {/* The two emerald tints are opaque fills, so on a dark card
+                  they read as a bright disc. Translucent green instead: the
+                  same two-ring shape, lit by the card rather than over it. */}
+              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center animate-bounce-subtle">
+                <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-500/20 flex items-center justify-center">
+                  <CheckCircle size={30} className="text-emerald-500 dark:text-emerald-400" />
                 </div>
               </div>
             </div>

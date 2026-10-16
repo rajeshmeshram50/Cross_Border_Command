@@ -1675,7 +1675,13 @@
  * The bar keeps a couple of chips and hands the rest to "+N more", so it is a
  * summary again rather than a wall. No cap and no scrolling: nothing wraps.
  * ──────────────────────────────────────────────────────────────────────────*/
-.smc-filterbar { max-height: none; overflow: visible; flex-wrap: nowrap; }
+/* 2px of bottom padding left the chips sitting on the table's header row.
+   The bar no longer wraps (the overflow went into "+N more"), so it is one
+   row of chips and can be centred and given a real gap below it. */
+.smc-filterbar {
+  max-height: none; overflow: visible; flex-wrap: nowrap;
+  align-items: center; padding: 10px 4px 12px;
+}
 .smc-filterchip { flex-shrink: 1; min-width: 0; }
 
 .smc-filterchip-more {

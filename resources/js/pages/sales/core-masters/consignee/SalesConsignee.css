@@ -1483,7 +1483,12 @@
  * The bar keeps a couple of chips and hands the rest to "+N more", so it is a
  * summary again rather than a wall. No cap and no scrolling: nothing wraps.
  * ──────────────────────────────────────────────────────────────────────────*/
-.smcg-filterbar { max-height: none; overflow: visible; flex-wrap: nowrap; }
+/* Same as Customers: 2px of bottom padding left the chips on the table's
+   header row, and the bar no longer wraps, so it centres with a real gap. */
+.smcg-filterbar {
+  max-height: none; overflow: visible; flex-wrap: nowrap;
+  align-items: center; padding: 10px 4px 12px;
+}
 .smcg-filterchip { flex-shrink: 1; min-width: 0; }
 
 .smcg-filterchip-more {

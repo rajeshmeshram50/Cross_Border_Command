@@ -638,6 +638,11 @@
         .onb-init-side-fill { height: 100%; background: linear-gradient(90deg,#7c3aed,#4c1d95); border-radius: 999px; }
         .onb-init-stage-card { display: flex; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; margin-bottom: 6px; background: transparent; transition: all .15s ease; }
         .onb-init-stage-card:hover { background: #fff; border-color: #ece9f6; }
+        /* A write is in flight: the rail is not a way around the lock. The
+           active card keeps its full strength so you can still see where you
+           are while you wait. */
+        .onb-init-stage-card.is-busy { cursor: wait; pointer-events: none; opacity: .45; }
+        .onb-init-stage-card.is-busy.is-active { opacity: 1; }
         .onb-init-stage-card.is-active { background: #ffffff; border-color: #c4b5fd; box-shadow: 0 4px 12px rgba(124,92,252,0.15); }
         .onb-init-stage-num { width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: #ece9f6; color: var(--vz-secondary-color); }
         .onb-init-stage-card.is-active .onb-init-stage-num { background: linear-gradient(135deg,#7c3aed,#4c1d95); color: #fff; }

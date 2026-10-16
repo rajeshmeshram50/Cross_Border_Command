@@ -4456,6 +4456,24 @@
   color: #a5a0c0;
 }
 
+/* MasterDatePicker is a shared widget: its dark rule forces Velzon's
+   --vz-input-bg (#262a2f) and a generic rgba(255,255,255,.45) placeholder,
+   neither of which belongs to this violet form. Without an override the
+   Issued Date box and its placeholder were the only ones that did not match
+   their neighbours. Same surface, border, text and placeholder as the fields
+   either side of it. */
+[data-bs-theme="dark"] .cev-reup-fld .master-datepicker-toggle {
+  background: #1f1637;
+  border-color: rgba(139, 92, 246, .30);
+  color: #ddd6fe;
+}
+[data-bs-theme="dark"] .cev-reup-fld .master-datepicker-toggle:hover:not(:disabled) {
+  border-color: #8b5cf6;
+}
+[data-bs-theme="dark"] .cev-reup-fld .master-datepicker-value { color: #ddd6fe; }
+[data-bs-theme="dark"] .cev-reup-fld .master-datepicker-placeholder { color: #a5a0c0; }
+[data-bs-theme="dark"] .cev-reup-fld .master-datepicker-icon { color: #a78bfa; }
+
 [data-bs-theme="dark"] .cev-reup-drop:hover,
 [data-bs-theme="dark"] .cev-reup-drop.has {
   background: rgba(139, 92, 246, .16);

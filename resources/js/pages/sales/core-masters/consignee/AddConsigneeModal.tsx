@@ -2353,7 +2353,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     <div className="acm-pop-info">
                       <div className="acm-pop-name">
                         {c.name}
-                        {isPrimary && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>}
+                        {isPrimary && <span className="acm-picked-primary">PRIMARY</span>}
                         {crossBorder && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#b45309', background: '#fef3c7', borderRadius: 20, padding: '1px 7px' }}>{isDomesticCountry(c.country) ? 'DOMESTIC' : 'INTERNATIONAL'}</span>}
                       </div>
                       <div className="acm-pop-meta">{c.id} • {truncSegment(c.segment)}{c.segments.length === 1 && <SegmentBadge status={c.segments[0].regulatory_status} style={{ marginLeft: 5 }} />} • {c.country}</div>
@@ -2384,7 +2384,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 <div className="acm-picked-info">
                   <div className="acm-picked-name">
                     {customer.name}
-                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>
+                    <span className="acm-picked-primary">PRIMARY</span>
                   </div>
                   <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)}{customer.segments.length === 1 && <SegmentBadge status={customer.segments[0].regulatory_status} style={{ marginLeft: 5 }} />} • {customer.country}</div>
                 </div>
@@ -8561,6 +8561,19 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-picked     { background: rgba(16,185,129,.12); border-color: #10b981; }
 [data-bs-theme="dark"] .acm-picked-name { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-picked-meta { color: #94a3b8; }
+/* The clear button was the one part of this card with no dark rule, so it
+   kept its light #fef2f2 fill and read as a white disc on the dark card. */
+[data-bs-theme="dark"] .acm-picked-clear {
+  background: rgba(220,38,38,.16); border-color: rgba(248,113,113,.45); color: #fca5a5;
+}
+[data-bs-theme="dark"] .acm-picked-clear:hover { background: rgba(220,38,38,.28); color: #fecaca; }
+/* Same omission on the PRIMARY badge beside the name: it is an inline style,
+   so it had no dark branch at all. Moved to a class that does. */
+.acm-picked-primary {
+  margin-left: 6px; font-size: 10px; font-weight: 700;
+  color: #0f766e; background: #ccfbf1; border-radius: 20px; padding: 1px 7px;
+}
+[data-bs-theme="dark"] .acm-picked-primary { color: #5eead4; background: rgba(45,212,191,.16); }
 [data-bs-theme="dark"] .acm-info       { background: rgba(30,64,175,.20); border-color: rgba(96,165,250,.30); color: #93c5fd; }
 [data-bs-theme="dark"] .acm-pick-footer { border-top-color: rgba(16,185,129,.20); background: #0a1f1a; }
 /* Cancel button (scoped to the picker) — dark surface to match. */

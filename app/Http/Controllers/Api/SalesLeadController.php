@@ -712,6 +712,23 @@ class SalesLeadController extends Controller
             ->value('completed_at');
         $lead->setAttribute('pi_signed_at', $piSignedAt ? \Illuminate\Support\Carbon::parse($piSignedAt)->toIso8601String() : null);
 
+        /* When the PI first went OUT for signature. Earlier than pi_signed_at:
+         * the counterparty has the document from this moment, so the lead's
+         * owner is the person they are dealing with and must stop changing
+         * underneath them (QA #83).
+         *
+         * 'inprogress' and 'completed' only. recalled and superseded are the
+         * explicit undo — the sender pulled it back or replaced it, so nothing
+         * is outstanding and the owner can still move. declined and expired
+         * likewise end the send; a new owner has to be able to re-issue. */
+        $piSentAt = \App\Models\ClmSignatureRequest::query()
+            ->where('lead_id', $lead->id)
+            ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+            ->whereIn('status', ['inprogress', 'completed'])
+            ->orderBy('created_at')
+            ->value('created_at');
+        $lead->setAttribute('pi_sent_for_signature_at', $piSentAt ? \Illuminate\Support\Carbon::parse($piSentAt)->toIso8601String() : null);
+
         // Opportunity date = the SAME source the lead list/header show as
         // "Opportunity Date" (inbound query_time, else the lead's created_at).
         // Exposed as ISO so the Victory-stage day count parses it reliably and
@@ -961,6 +978,33 @@ class SalesLeadController extends Controller
         // Snapshot the owner BEFORE saving so we can log an ownership change
         // when this edit (re)assigns the lead via the salesperson_id field.
         $prevSalesId = $lead->salesperson_id ? (int) $lead->salesperson_id : null;
+
+        /* Ownership is frozen once the PI is out for signature (QA #83).
+         *
+         * Enforced HERE and not only on the toolbar button: the button is a
+         * courtesy, this is the rule. The counterparty is holding a document
+         * that names an owner, and moving the lead underneath them would leave
+         * the signature request pointing at one person and the opportunity at
+         * another.
+         *
+         * Only a real change is refused — re-sending the same id is a no-op
+         * and must not fail an otherwise valid edit of other fields. */
+        if (array_key_exists('salesperson_id', $data)) {
+            $incomingSalesId = $data['salesperson_id'] ? (int) $data['salesperson_id'] : null;
+            if ($incomingSalesId !== $prevSalesId) {
+                $piOut = \App\Models\ClmSignatureRequest::query()
+                    ->where('lead_id', $lead->id)
+                    ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+                    ->whereIn('status', ['inprogress', 'completed'])
+                    ->exists();
+                if ($piOut) {
+                    return response()->json([
+                        'message' => 'The Proforma Invoice has been sent for signature, so this opportunity cannot be reassigned. Recall the PI first if the owner has to change.',
+                        'errors'  => ['salesperson_id' => ['Owner is fixed once the PI is sent for signature.']],
+                    ], 422);
+                }
+            }
+        }
 
         $lead->update($data);
 

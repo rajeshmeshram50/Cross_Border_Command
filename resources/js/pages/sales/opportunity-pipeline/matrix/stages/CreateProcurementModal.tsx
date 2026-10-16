@@ -1129,7 +1129,9 @@ const SCOPED_CSS = `
 /* A frozen field has to LOOK frozen, or the first thing anyone does is click it
    and wonder why nothing happens. Muted fill, no focus ring, default cursor. */
 .cps-row-input-ro {
-  background: #eef4f6; border-color: #cfe0e6; color: #475569;
+  /* Same surface as an editable row input (#79): read-only is carried by the
+     dimmed text and the cursor, not by a second box colour. */
+  background: #f7feff; border-color: #cfe0e6; color: #475569;
   cursor: default; font-weight: 600;
 }
 .cps-row-input-ro:focus { border-color: #cfe0e6; box-shadow: none; }
@@ -1321,6 +1323,18 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .cps-input, [data-bs-theme="dark"] .cps-textarea, [data-bs-theme="dark"] .cps-row-input {
   background: #13242e; border-color: rgba(255,255,255,.14); color: #e2f4f8;
 }
+/* The two picker widgets are shared components with their own dark rules:
+   MasterSelect keeps --vz-card-bg (#212529) and MasterDatePicker forces
+   --vz-input-bg (#262a2f), neither of which is this modal's #13242e. That is
+   three different field surfaces in one form - the inconsistency QA logged.
+   Scoped to .cps-modal so only this modal is affected. */
+[data-bs-theme="dark"] .cps-modal .master-select-toggle,
+[data-bs-theme="dark"] .cps-modal .master-datepicker-toggle {
+  background: #13242e; background-color: #13242e;
+  border-color: rgba(255,255,255,.14); color: #e2f4f8;
+}
+[data-bs-theme="dark"] .cps-modal .master-select-toggle::placeholder,
+[data-bs-theme="dark"] .cps-modal .master-datepicker-toggle::placeholder { color: #64748b; }
 [data-bs-theme="dark"] .cps-input::placeholder, [data-bs-theme="dark"] .cps-textarea::placeholder { color: #64748b; }
 [data-bs-theme="dark"] .cps-status-locked { background: rgba(8,145,178,.14); border-color: rgba(8,145,178,.40); color: #a5f3fc; }
 [data-bs-theme="dark"] .cps-status-main { color: #a5f3fc; }

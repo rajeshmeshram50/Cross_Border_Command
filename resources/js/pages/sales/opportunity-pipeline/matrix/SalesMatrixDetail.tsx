@@ -420,6 +420,9 @@ export default function SalesMatrixDetail() {
     whatsappReason?:      string | null;
     whatsappScreenshot?:  string | null;
     piSignedAt?:          string | null;
+    /** When the PI first went out for signature (QA #83). Earlier than
+     *  piSignedAt: from here the counterparty is dealing with this owner. */
+    piSentForSignatureAt?: string | null;
     oppDateIso?:          string | null;
     /* The lead's own enquiry identity — header fallback when no customer is
      * mapped yet, so we never fall through to the prototype DEFAULT. */
@@ -500,6 +503,7 @@ export default function SalesMatrixDetail() {
       read_only: boolean;
 
       pi_signed_at: string | null;
+      pi_sent_for_signature_at: string | null;
       opportunity_date_iso: string | null;
       /* Currency shared by the lead's mapped products; null until the first
        * product is mapped. Gates which customers may be picked. */
@@ -538,6 +542,7 @@ export default function SalesMatrixDetail() {
           readOnly:            !!d.read_only,
 
           piSignedAt:          d.pi_signed_at,
+          piSentForSignatureAt: d.pi_sent_for_signature_at,
           oppDateIso:          d.opportunity_date_iso,
           leadSenderName:      d.sender_name,
           leadSenderCompany:   d.sender_company,
@@ -905,6 +910,26 @@ export default function SalesMatrixDetail() {
    * applies to them. */
   const writeLocked   = isSigned || isReadOnlyLead;
   const onWriteLocked = isReadOnlyLead ? onReadOnlyClick : onLockedClick;
+
+  /* Owner change closes EARLIER than the rest of the toolbar (QA #83).
+   *
+   * Everything else stays open until the PI is signed. Ownership cannot: from
+   * the moment the PI goes out for signature the counterparty is dealing with
+   * a named person, and moving the lead underneath them leaves the signature
+   * request pointing at one owner and the opportunity at another.
+   *
+   * A recalled or superseded send does not count — see the controller — so
+   * pulling the PI back hands the choice of owner back too. */
+  const isPiSent     = !!serverHeader.piSentForSignatureAt;
+  const ownerLocked  = writeLocked || isPiSent;
+  const onOwnerLocked = useCallback(() => {
+    if (isReadOnlyLead) { onReadOnlyClick(); return; }
+    if (isSigned)       { onLockedClick();   return; }
+    toast.warning(
+      'Owner is fixed',
+      'The Proforma Invoice has been sent for signature, so this opportunity cannot be reassigned. Recall the PI first if the owner has to change.',
+    );
+  }, [isReadOnlyLead, isSigned, onReadOnlyClick, onLockedClick, toast]);
 
   const header: OppHeaderData = {
     ...seedHeader,
@@ -1336,7 +1361,7 @@ export default function SalesMatrixDetail() {
         <ActionBtn icon={<IconDollar />}   label="Share Prices"
           locked={writeLocked} onLocked={onWriteLocked}          onClick={() => setPriceSharedOpen(true)} />
         <ActionBtn icon={<IconUserCog />}  label="Change Owner"
-          locked={writeLocked} onLocked={onWriteLocked}          onClick={() => setChangeOwnerOpen(true)} />
+          locked={ownerLocked} onLocked={onOwnerLocked}         onClick={() => setChangeOwnerOpen(true)} />
         {/* Remark and Key Opportunity had no lock at all. They write to the
             lead just like the rest, so on a read-only lead they produced the
             same refused request — only with no explanation attached. */}

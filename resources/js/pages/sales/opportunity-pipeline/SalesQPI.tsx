@@ -6846,7 +6846,9 @@ const SCOPED_CSS = `
 }
 .qpi-input:hover  { border-color: #cbd5e1; }
 .qpi-input:focus  { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.14); }
-.qpi-input-readonly { background: #f8fafc; color: #64748b; cursor: not-allowed; }
+/* Same surface as an editable field in light too — read-only shows in the
+   dimmed text and the cursor, not in a second box colour. */
+.qpi-input-readonly { background: #fff; color: #64748b; cursor: not-allowed; }
 .qpi-input-num { text-align: right; }
 
 /* Row-level loader while a PDF (view / download / certificate) generates —
@@ -6921,9 +6923,13 @@ const SCOPED_CSS = `
   line-height: 1.2;
 }
 [data-bs-theme="dark"] .qpi-field.has-error .qpi-field-label { color: #fca5a5; }
+/* Opaque for the same reason as .qpi-input-readonly: rgba(239,68,68,.08)
+   takes its tint from whatever sits behind, so a flagged field looked one red
+   in the form grid and another in the draft row. #321d3b is that 8% red
+   already mixed against the modal body. */
 [data-bs-theme="dark"] .qpi-field.has-error .qpi-input,
 [data-bs-theme="dark"] .qpi-field.has-error .master-select-toggle {
-  background-color: rgba(239,68,68,.08) !important;
+  background-color: #321d3b !important;
   border-color: #f87171 !important;
 }
 [data-bs-theme="dark"] .qpi-field-error-msg { color: #fca5a5; }
@@ -7557,8 +7563,15 @@ const SCOPED_CSS = `
   border-color: #a78bfa;
   box-shadow: 0 0 0 3px rgba(167,139,250,.20);
 }
+/* ONE field colour, read-only or not (#80, #81 re-raised).
+   This was rgba(255,255,255,.04), which took its tint from whatever sat
+   behind it - ~#2b2342 over the modal body, ~#251e40 over the draft row. Made
+   opaque first, then matched to the editable fields outright: two deliberate
+   shades still read as "the boxes are different colours".
+   Read-only is carried by the dimmed text and the cursor instead, which does
+   not put a second surface in the form. */
 [data-bs-theme="dark"] .qpi-input-readonly {
-  background: rgba(255,255,255,.04); color: #9aa0b4;
+  background: #0f0c19; color: #9aa0b4; cursor: not-allowed;
 }
 [data-bs-theme="dark"] .qpi-field-label { color: #cbd5e1; }
 [data-bs-theme="dark"] .qpi-modal-body .master-select-toggle {
