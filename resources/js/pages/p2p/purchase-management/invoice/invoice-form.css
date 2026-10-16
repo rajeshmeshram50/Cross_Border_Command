@@ -3722,7 +3722,7 @@
 .s4-root .s4mx-proto label { font-weight:700; color:#0e7490; }
 .s4-root .s4mx-proto select { height:26px; border:1px solid #a5f3fc; border-radius:7px; padding:0 6px; font:inherit; font-size:11px; color:#0f172a; background:#fff; max-width:100%; }
 .s4-root .s4mx-proto__s { font-size:10.5px; color:#64748b; }
-.s4-root .s4vp-modal .s4vp__dlg { width:min(900px,100%); border-radius:20px; }
+.s4-root .s4vp-modal .s4vp__dlg { width:min(1040px,100%); border-radius:20px; }
 .s4-root .s4vp-modal .s4qm__hd { background:radial-gradient(120% 140% at 0% 0%, #22d3ee 0%, #0891b2 45%, #0e5a73 100%); padding:16px 20px; position:relative; overflow:hidden; }
 .s4-root .s4vp-modal .s4qm__hd::after { content:''; position:absolute; right:-40px; top:-60px; width:220px; height:220px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,.18), rgba(255,255,255,0) 70%); pointer-events:none; }
 .s4-root .s4vp-modal .s4qm__bd { background:linear-gradient(180deg,#f3fafc,#fff 160px); padding:8px 16px; gap:8px; align-items:stretch; }
@@ -3769,7 +3769,10 @@
 .s4-root .s4vp-modal .s4qm__bd { padding-bottom:8px; }
 .s4-root .s4mx-fin { display:none !important; }
 .s4-root .s4mx-proto { display:none !important; }
-.s4-root .s4vp-modal .s4mx-tr { grid-template-columns:48px minmax(0,1fr) minmax(0,1.4fr) minmax(0,1.8fr) minmax(0,.7fr) minmax(0,.6fr) 78px !important; }
+/* Six columns, not seven: code and name are one product, so they are one
+   cell. The freed width goes to the product and its description, which are
+   the only two that ever needed it. */
+.s4-root .s4vp-modal .s4mx-tr { grid-template-columns:48px minmax(0,1.4fr) minmax(0,2.2fr) minmax(0,.6fr) minmax(0,.6fr) 78px !important; }
 .s4-root .s4vp-modal .s4mx-tr > .s4lv-c { text-align:center; justify-self:center; }
 .s4-root .s4vp-modal .s4mx-row > summary { cursor:default; list-style:none; }
 .s4-root .s4vp-modal .s4mx-row > summary::-webkit-details-marker { display:none; }
@@ -3781,7 +3784,7 @@
 .s4-root .s4vp-btn { display:flex; align-items:center; justify-content:center; gap:7px; width:100%; margin-top:8px; padding:8px 12px; border-radius:10px; border:1.5px solid #a5f3fc; background:linear-gradient(180deg,#f0fdff,#fff); color:#0e7490; font:inherit; font-size:12px; font-weight:800; cursor:pointer; transition:background .15s, box-shadow .15s, transform .15s; }
 .s4-root .s4vp-btn:hover { background:#ecfeff; box-shadow:0 4px 12px rgba(8,145,178,.18); transform:translateY(-1px); }
 .s4-root .s4vp-n { font-family:'Geist Mono',ui-monospace,monospace; font-size:10px; color:#fff; background:#0891b2; border-radius:999px; padding:1px 7px; }
-.s4-root .s4vp-modal .s4vp__dlg { width:min(760px,100%); }
+.s4-root .s4vp-modal .s4vp__dlg { width:min(1040px,100%); }
 .s4-root .s4vp-modal .s4vp__bd { align-items:stretch; }
 .s4-root .s4vp-modal .s4mx-tbl { max-height:none; }
 .s4-root .s4vp-sum { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
@@ -3822,6 +3825,16 @@
    draws rather than borrowing a status colour. Mono, because it is read
    character by character against a label on a carton. */
 .s4-root .s4vp-code { display:inline-flex; align-items:center; font-family:'Geist Mono',ui-monospace,monospace; font-size:10.5px; font-weight:800; letter-spacing:.03em; padding:3px 9px; border-radius:7px; background:#f5f3ff; color:#6d28d9; border:1px solid #ddd6fe; white-space:nowrap; }
+
+/* ── The product cell: name over code ───────────────────────────────────────
+ * The same shape the 3-way match table uses, so a product looks like itself
+ * wherever the invoice shows one. The name wraps rather than truncating -
+ * there is a second line underneath it either way, so wrapping costs nothing
+ * in height, and a half-read product name is worth nothing.
+ * ──────────────────────────────────────────────────────────────────────────*/
+.s4-root .s4mx-pc { display:flex !important; flex-direction:column; gap:5px; min-width:0; overflow:visible !important; white-space:normal !important; text-overflow:clip !important; }
+.s4-root .s4mx-pc__nm { font-size:12.5px; font-weight:800; color:#0f2a38; line-height:1.3; word-break:break-word; }
+.s4-root .s4mx-pc__meta { display:flex; align-items:center; flex-wrap:wrap; gap:7px; row-gap:3px; }
 
 /* Five rows is the page, but a line with a long description read in full is
    taller than one clamped to a line - so the body still caps and scrolls
@@ -3882,7 +3895,18 @@
 
 /* Four flags, each stating its answer rather than only showing the ones that
    are true - "no hazard recorded" is itself the fact a packer needs. */
-.s4-root .s4pd-flgs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+/* The flag master is a tenant master - four flags or twenty, both have to
+   land here. auto-fill keeps four across at this dialog's width and drops to
+   three or two on a narrow one, instead of dividing a fixed four columns into
+   crushed cards. Past three rows the block scrolls rather than growing the
+   dialog past the viewport; the ON flags are sorted to the top, so what
+   scrolls out of sight is what does not apply. */
+.s4-root .s4pd-flgs { display:grid; grid-template-columns:repeat(auto-fill,minmax(176px,1fr)); gap:8px; max-height:152px; overflow-y:auto; }
+/* No reserved gutter: with four flags there is no scrollbar and the card
+   stays flush with the ones above and below it. */
+.s4-root .s4pd-flgs::-webkit-scrollbar { width:7px; }
+.s4-root .s4pd-flgs::-webkit-scrollbar-thumb { border-radius:7px; background:#cfdde6; }
+.s4-root .s4pd-flgs::-webkit-scrollbar-track { background:transparent; }
 .s4-root .s4pd-flg { display:flex; align-items:center; gap:9px; padding:9px 11px; border-radius:11px; border:1px solid #eef2f6; background:#f8fafc; min-width:0; }
 .s4-root .s4pd-flg__ic { flex:0 0 26px; height:26px; border-radius:8px; background:#e9eef3; }
 .s4-root .s4pd-flg b { display:block; font-size:11.5px; font-weight:800; color:#334155; }
@@ -3892,13 +3916,15 @@
 .s4-root .s4pd-flg.is-on b { color:#0c4a6e; }
 .s4-root .s4pd-flg.is-on span { color:#0284c7; }
 
-.s4-root .s4pd-cap { margin-left:auto; display:flex; align-items:center; gap:9px; font-size:10.5px; font-weight:700; letter-spacing:0; text-transform:none; color:#94a3b8; }
-.s4-root .s4pd-cap i { display:block; width:96px; height:5px; border-radius:5px; background:#eef2f6; overflow:hidden; }
-.s4-root .s4pd-cap i b { display:block; height:100%; border-radius:5px; background:linear-gradient(90deg,#34d399,#10b981); }
-
-.s4-root .s4pd-fields { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-.s4-root .s4pd-f { min-width:0; padding:8px 11px; border-radius:11px; border:1px solid #eef2f6; background:#fff; }
+/* Six traceability fields on ONE line, with Remarks on its own below. They
+   are six answers to the same question - how is this line traced - so they
+   read across in one sweep rather than as a 3x2 block that has to be scanned
+   twice. Remarks is prose, not an identifier, so it keeps the full width. */
+.s4-root .s4pd-fields { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:7px; }
+.s4-root .s4pd-f { min-width:0; padding:8px 9px; border-radius:11px; border:1px solid #eef2f6; background:#fff; }
 .s4-root .s4pd-f--wide { grid-column:1 / -1; }
+/* A narrow dialog cannot hold six; fall back rather than crush them. */
+@media (max-width:1180px) { .s4-root .s4pd-fields { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 .s4-root .s4pd-f span { display:block; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#64748b; }
 .s4-root .s4pd-f b { display:block; margin-top:2px; font-size:12px; font-weight:700; color:#0f172a; overflow-wrap:anywhere; }
 /* An empty field is hatched rather than blank, so a form with nothing in it
@@ -4263,6 +4289,7 @@
 [data-bs-theme="dark"] .s4-root .s4pd-flg { background: rgba(255,255,255,.04); border-color: var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4pd-flg b { color: var(--s4d-tx); }
 [data-bs-theme="dark"] .s4-root .s4pd-flg__ic { background: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .s4-root .s4pd-flgs::-webkit-scrollbar-thumb { background: rgba(255,255,255,.16); }
 [data-bs-theme="dark"] .s4-root .s4pd-f { background: var(--s4d-bg); border-color: var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4pd-f b { color: var(--s4d-tx); }
 /* The hatch has to be dark too, or an empty field glows white. */
@@ -4271,6 +4298,7 @@
 
 /* Code pills: the light tints are unreadable on a dark card. */
 [data-bs-theme="dark"] .s4-root .s4vp-code { background: rgba(167,139,250,.16); color: #c4b5fd; border-color: rgba(167,139,250,.32); }
+[data-bs-theme="dark"] .s4-root .s4mx-pc__nm { color: var(--s4d-tx); }
 [data-bs-theme="dark"] .s4-root .s4sl-code--z,
 [data-bs-theme="dark"] .s4-root .s4sl-chip--z { background: rgba(167,139,250,.16); color: #c4b5fd; border-color: rgba(167,139,250,.32); }
 [data-bs-theme="dark"] .s4-root .s4sl-code--r,

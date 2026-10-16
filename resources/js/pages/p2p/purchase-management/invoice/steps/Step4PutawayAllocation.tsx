@@ -6,6 +6,7 @@ import type { InvoiceDraft } from '../invoice-draft';
 import StageSummary from './StageSummary';
 import PutawaySelectLocation from './PutawaySelectLocation';
 import PutawayConfirmPlacement, { findSpot } from './PutawayConfirmPlacement';
+import InspectionProductView from '../../order/physical-inspection/InspectionProductView';
 import { DEMO_LOCATIONS, DEMO_MODES } from './putaway-demo';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
 
@@ -233,18 +234,27 @@ function BoxQr({ text, size = 76 }: { text: string; size?: number }) {
  *  own: a mixed carton can hold many, and the two cards beside it are about
  *  the BOX, not its contents. */
 interface BoxProduct {
+  /** Identity travels together in one cell - name over code - rather than in
+   *  two columns that each half-fit. `hsn` is kept for the per-line detail
+   *  dialog, which is where a tax fact belongs. */
   code: string; name: string; hsn: string;
   batch: string | null; expiry: string | null;
   /** The invoice line's description, or null where it carries none. */
   desc: string | null;
   /** Split from the UOM: the dialog's table gives each its own column. */
   qtyNum: string; uom: string | null;
+  /** The product master's own id, when the invoice line carries one. Without
+   *  it there is no record to open and Read more stays an inline expander. */
+  productId: number | null;
   /* ── the per-line detail dialog ── */
   /** What Step 03 marked this line as: correct, damaged, mismatched, extra. */
   remark: string;
   haz: boolean; cold: boolean; fragile: boolean;
   /** Null where the line carries no stackable answer at all. */
   stackable: boolean | null;
+  /** Everything else the line is flagged with, named. Any length - a tenant
+   *  can define as many flags as it likes, and all of them land here. */
+  extraFlags: string[];
   /** The seven optional traceability fields, in the order the dialog lists
    *  them. Null where the packer left one blank, which is most of them. */
   advanced: Array<[string, string | null]>;
@@ -275,11 +285,13 @@ function productsOf(box: SpiBox | undefined, lines: ProductLine[], flagMaster: P
       desc: dash(line?.description),
       qtyNum: String(num(it.quantity)),
       uom: dash(line?.uom),
+      productId: line?.productId ?? null,
       remark: REMARK_LABEL[String(it.remark ?? '')] ?? 'Not marked',
       haz: isHaz(flagNames([it], flagMaster)),
       cold: isCold(flagNames([it], flagMaster)),
       fragile: isFragile(flagNames([it], flagMaster)),
       stackable: it.is_stackable == null ? null : !!it.is_stackable,
+      extraFlags: extraFlagNames([it], flagMaster),
       advanced: [
         ['Serial no.', dash(it.serial_no)],
         ['Lot no.', dash(it.lot_no)],
@@ -308,7 +320,9 @@ const IcoEye = () => (
 /** One line in the Products dialog. View opens the detail dialog rather than
  *  expanding in place - the per-line record has four sections, which is a
  *  dialog's worth of content and not a drawer's. */
-function ProductRow({ p, n, onView }: { p: BoxProduct; n: number; onView: () => void }) {
+function ProductRow({ p, n, onView, onOpenProduct }: {
+  p: BoxProduct; n: number; onView: () => void; onOpenProduct: (id: number) => void;
+}) {
   /* The description is clamped to one line until asked for. Separate from
    * View: a long description is a reason to read, not a reason to open the
    * whole record. */
@@ -317,11 +331,29 @@ function ProductRow({ p, n, onView }: { p: BoxProduct; n: number; onView: () => 
     <div className="s4mx-row">
       <div className="s4mx-tr">
         <span className="s4mx-sr"><i className="s4mx-no">{n}</i></span>
-        <span className="s4mx-cd"><span className="s4vp-code">{p.code}</span></span>
-        <span className="s4mx-nm"><span className="s4mx-nm__t">{p.name}</span></span>
+        {/* One product, one cell. The code is not a separate fact about the
+            line - it is how the line is named - so it sits under the name with
+            the rest of the identity, exactly as the 3-way match table prints
+            it. */}
+        <span className="s4mx-pc">
+          <span className="s4mx-pc__nm">{p.name}</span>
+          {/* Name and code only. HSN and GST are tax facts - they belong on
+              the invoice line, not on a putaway sheet, where the question is
+              which carton goes where. */}
+          <span className="s4mx-pc__meta">
+            <span className="s4vp-code">{p.code}</span>
+          </span>
+        </span>
         <span className={`s4mx-dw${full ? ' is-open' : ''}`}>
           <span className="s4mx-ds">{p.desc ?? 'No description recorded'}</span>
-          {p.desc !== null && (
+          {p.productId != null ? (
+            /* The full description, the images, the segment and the handling
+               all live on the product record already - so Read more opens
+               that rather than growing a second copy of it in this row. */
+            <button type="button" className="s4mx-rm" onClick={() => onOpenProduct(p.productId!)}>
+              Read more
+            </button>
+          ) : p.desc !== null && (
             <button type="button" className="s4mx-rm" onClick={() => setFull(v => !v)}>
               {full ? 'Read less' : 'Read more'}
             </button>
@@ -378,6 +410,27 @@ function flagNames(items: SpiBoxItem[], master: ProductFlagOption[]): string[] {
 const isHaz = (names: string[]) => names.some(f => f.includes('haz'));
 const isCold = (names: string[]) => names.some(f => f.includes('cold') || f.includes('chill') || f.includes('frozen'));
 const isFragile = (names: string[]) => names.some(f => f.includes('fragile') || f.includes('brittle'));
+
+/** The flags a line carries that the four handling questions do not already
+ *  answer, in the master's own casing.
+ *
+ *  The master is a tenant master: a client can define twenty flags. Only four
+ *  of them drive the putaway engine; the rest were being resolved and then
+ *  dropped, so a carton marked "Lithium battery" read as carrying nothing at
+ *  all. They are named here instead. */
+function extraFlagNames(items: SpiBoxItem[], master: ProductFlagOption[]): string[] {
+  const byId = new Map(master.map(f => [f.id, (f.flag_name ?? '').trim()]));
+  const known = (n: string) => isHaz([n]) || isCold([n]) || isFragile([n]) || n.includes('stack');
+  const out: string[] = [];
+  for (const it of items) {
+    for (const id of Array.isArray(it.flags) ? it.flags : []) {
+      const name = byId.get(Number(id)) ?? '';
+      if (!name || known(name.toLowerCase())) continue;
+      if (!out.some(o => o.toLowerCase() === name.toLowerCase())) out.push(name);
+    }
+  }
+  return out;
+}
 
 /** SpiBox → PickBox. Kept out of the render so the markup stays readable. */
 function toPickBoxes(boxes: SpiBox[], flagMaster: ProductFlagOption[]): PickBox[] {
@@ -609,6 +662,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   /* When this box's placement was committed. Null until Step 03 confirms it,
    * and reset with the rest when the pane moves to another carton. */
   const [placedAt, setPlacedAt] = useState<string | null>(null);
+  /* The product master record behind a line. Opened from Read more, using the
+   * app's own product view rather than a second description panel here. */
+  const [productViewId, setProductViewId] = useState<number | null>(null);
   /* Step 01 -> Step 02 asks WHERE first: on a shelf, or straight into a zone.
    * The two are different trees, so the answer has to come before the picker
    * can be drawn at all. Null means the chooser is closed. */
@@ -1225,8 +1281,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 <div className="s4mx-tbl">
                   <div className="s4mx-tr s4mx-tr--hd">
                     <span>Sr. No.</span>
-                    <span>Product Code</span>
-                    <span>Product Name</span>
+                    <span>Product</span>
                     <span>Product Description</span>
                     <span>Quantity</span>
                     <span>UOM</span>
@@ -1240,6 +1295,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                          row 6 reads as the sixth line and not as the first. */
                       n={(prodPage - 1) * PRODUCTS_PER_PAGE + n + 1}
                       onView={() => setDetailIdx((prodPage - 1) * PRODUCTS_PER_PAGE + n)}
+                      onOpenProduct={setProductViewId}
                     />
                   ))}
                 </div>
@@ -1261,6 +1317,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </div>
           </div>
         </div>
+      )}
+
+      {productViewId != null && (
+        <InspectionProductView productId={productViewId} onClose={() => setProductViewId(null)} />
       )}
 
       {/* ── The box's code, large ── A sticker printed at 76px cannot be
@@ -1427,35 +1487,39 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
               <section className="s4pd-card">
                 <div className="s4pd-card__t">Handling &amp; storage flags</div>
+                {/* Four handling questions plus whatever else the tenant has
+                    flagged this line with, which can be any number. What
+                    APPLIES is listed first, because at twenty flags nobody
+                    reads to the end - and the grid auto-fits rather than
+                    forcing four across, so a card is never crushed. */}
                 <div className="s4pd-flgs">
-                  {([
-                    ['Hazardous', detail.haz],
-                    ['Cold chain', detail.cold],
-                    ['Fragile', detail.fragile],
-                    ['Stackable', detail.stackable],
-                  ] as const).map(([k, v]) => (
-                    <div className={`s4pd-flg${v === true ? ' is-on' : ''}`} key={k}>
-                      <i className="s4pd-flg__ic" aria-hidden />
-                      <div>
-                        <b>{k}</b>
-                        <span>{v === null ? 'Not recorded' : v ? 'Yes' : 'No'}</span>
+                  {[
+                    ...([
+                      ['Hazardous', detail.haz],
+                      ['Cold chain', detail.cold],
+                      ['Fragile', detail.fragile],
+                      ['Stackable', detail.stackable],
+                    ] as Array<[string, boolean | null]>),
+                    ...detail.extraFlags.map(n => [n, true] as [string, boolean | null]),
+                  ]
+                    .sort((a, b) => Number(b[1] === true) - Number(a[1] === true))
+                    .map(([k, v]) => (
+                      <div className={`s4pd-flg${v === true ? ' is-on' : ''}`} key={k}>
+                        <i className="s4pd-flg__ic" aria-hidden />
+                        <div>
+                          <b>{k}</b>
+                          <span>{v === null ? 'Not recorded' : v ? 'Yes' : 'No'}</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </section>
 
               <section className="s4pd-card">
-                <div className="s4pd-card__t">
-                  Advanced details
-                  {/* The packer fills these at the bench and usually fills
-                      none, so the count says so plainly instead of leaving
-                      seven identical empty boxes to be read one by one. */}
-                  <span className="s4pd-cap">
-                    <i><b style={{ width: `${Math.round(detail.advanced.filter(([, v]) => v).length / detail.advanced.length * 100)}%` }} /></i>
-                    {detail.advanced.filter(([, v]) => v).length} of {detail.advanced.length} captured
-                  </span>
-                </div>
+                {/* No capture meter: the hatched empty cells already say what
+                    is filled and what is not, and on one line they say it in
+                    a single glance. */}
+                <div className="s4pd-card__t">Advanced details</div>
                 <div className="s4pd-fields">
                   {detail.advanced.map(([k, v], i) => (
                     <div
