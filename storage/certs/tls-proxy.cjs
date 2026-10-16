@@ -67,11 +67,29 @@ const secure = https.createServer(
   },
 );
 
-/** Someone speaking HTTP to the TLS port — point them at the right scheme. */
+/**
+ * Someone speaking HTTP to the TLS port — point them at the right scheme.
+ *
+ * 307, NOT 301 and NOT 308.
+ *
+ * Not 301: a browser given one on a POST re-sends it as a GET with no body.
+ * The login request then arrives as `GET /api/login`, matches no API route,
+ * falls through to the SPA catch-all and comes back as 200 with an HTML page
+ * — a success status, no token, and a failure that looks like the app's.
+ *
+ * Not 308 either, though it preserves the method: 308 is PERMANENT, and a
+ * browser may remember it long after this proxy has stopped. Turn the proxy
+ * off, go back to plain `artisan serve`, and the browser keeps upgrading to
+ * HTTPS on its own — every request arrives as TLS bytes the PHP server cannot
+ * read. A dev box that flips between the two must not hand out a permanent
+ * anything.
+ *
+ * 307 keeps the method and body, and expires.
+ */
 const plain = http.createServer((req, res) => {
   const host = req.headers.host || `192.168.1.84:${LISTEN}`;
 
-  res.writeHead(301, { Location: `https://${host}${req.url}`, 'cache-control': 'no-store' });
+  res.writeHead(307, { Location: `https://${host}${req.url}`, 'cache-control': 'no-store' });
   res.end();
 });
 
