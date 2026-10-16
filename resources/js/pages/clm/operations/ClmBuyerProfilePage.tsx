@@ -927,7 +927,7 @@ export default function ClmBuyerProfilePage() {
       </div>
 
       {clmTab === 'txn' && (
-        <div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: 'linear-gradient(180deg,#67e8f9,#0891b2,#0e7490)', zIndex: 10, borderRadius: '14px 0 0 14px' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '8px 12px 8px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
@@ -1045,7 +1045,7 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
+                    <div style={{ marginTop: 'auto', flexShrink: 0 }}>
                       <WorklistPager page={wsEqPageSafe} total={wsEqRows.length} pageSize={txnPerPage} onPage={setWsEqPage} onPageSize={(n) => { setTxnManualSize(n); setWsEqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
@@ -1086,7 +1086,7 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
+                    <div style={{ marginTop: 'auto', flexShrink: 0 }}>
                       <WorklistPager page={wsNeqPageSafe} total={wsNeqRows.length} pageSize={txnPerPage} onPage={setWsNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWsNeqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
@@ -1132,7 +1132,7 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
+                    <div style={{ marginTop: 'auto', flexShrink: 0 }}>
                       <WorklistPager page={wosEqPageSafe} total={wosEqRows.length} pageSize={txnPerPage} onPage={setWosEqPage} onPageSize={(n) => { setTxnManualSize(n); setWosEqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
@@ -1176,7 +1176,7 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
+                    <div style={{ marginTop: 'auto', flexShrink: 0 }}>
                       <WorklistPager page={wosNeqPageSafe} total={wosNeqRows.length} pageSize={txnPerPage} onPage={setWosNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWosNeqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
