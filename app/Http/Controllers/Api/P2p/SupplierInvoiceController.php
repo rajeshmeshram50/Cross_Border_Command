@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api\P2p;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PoPaymentRequest;
 use App\Models\P2p\PurchaseOrder;
+use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiPoFulfilment;
+use App\Models\P2p\SpiPutaway;
 use App\Models\P2p\SupplierInvoice;
 use App\Services\P2p\SupplierInvoiceService;
 use Illuminate\Http\Request;
@@ -569,6 +571,34 @@ class SupplierInvoiceController extends Controller
                     'message' => number_format($pending['qty_pending'], 3)
                         . ' is still unpacked. Goods not in a box have no box code, '
                         . 'so they cannot be scanned, racked or inspected.',
+                ], 422));
+            }
+
+            /* Every box has to actually be somewhere.
+             *
+             * This call is what closes Stage 04, and until now it only checked
+             * PACKING — so an invoice could be submitted with a box that had
+             * never been allocated a shelf. The progress block already computed
+             * "complete: false" and then nothing acted on it.
+             *
+             * A box left behind this way is invisible afterwards: its stage is
+             * finished, so no screen lists it as outstanding, and if it was
+             * assigned its shelf stays reserved for a put-away nobody will
+             * finish. */
+            $unplaced = SpiBox::where('supplier_invoice_id', $spi->id)
+                ->whereDoesntHave('putaway', fn ($q) => $q->where('status', SpiPutaway::PLACED))
+                ->orderBy('box_code')
+                ->pluck('box_code');
+
+            if ($unplaced->isNotEmpty()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => $unplaced->count() === 1
+                        ? "{$unplaced->first()} has not been put away. Place it before submitting."
+                        : $unplaced->count() . ' boxes have not been put away: '
+                            . $unplaced->take(5)->implode(', ')
+                            . ($unplaced->count() > 5 ? ' …' : '') . '.',
+                    'unplaced' => $unplaced->all(),
                 ], 422));
             }
 

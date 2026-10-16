@@ -1,77 +1,17 @@
 {
     "info": {
-        "_postman_id": "30c57c41-6f1b-4cc7-b164-143ba2b68b31",
-        "name": "P2P \u00b7 Supplier Purchase Invoice (SPI)",
-        "description": "The Supplier Purchase Invoice flow end to end: Stage 01 supplier and PO, Stage 02 items (3-way match), Stage 03 box packaging, Stage 04 temporary put-away, close, Zoho Books, payment requests and the evidence vault.\n\nSet `base_url` and `token` in the collection variables, then run 'login' \u2014 it stores the token for you. `spi_id`, `box_id` and `putaway_id` are filled in by the test scripts on Create Draft, Create Box and Assign; `zone_id`, `rack_id` and `shelf_id` are filled in by 'Locations \u2014 tree and recommendation'.\n\nSTAGE 04 ORDER: Set storage type \u2192 Board \u2192 Locations (counts) \u2192 Locations (tree) \u2192 Assign \u2192 then either Confirm manually, or Send for Zebra verification \u2192 Cancel \u2192 Confirm manually.\n\nKnown gap: the device callback that completes a Zebra task is not built, so that branch cannot finish yet.",
-        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-        "_exporter_id": "50473128",
-        "_collection_link": "https://go.postman.co/collection/50473128-30c57c41-6f1b-4cc7-b164-143ba2b68b31?source=collection_link"
+        "_postman_id": "46d0d44d-fbb6-412c-9461-b882eb527eee",
+        "name": "P2P · Supplier Purchase Invoice (SPI)",
+        "description": "The SPI flow end to end: Stage 01 supplier and PO, Stage 02 items (3-way match), Stage 03 box packaging, Stage 04 put-away (office allocation AND the Zebra handheld), close, Zoho Books, payments and the evidence vault.\n\nSETUP\n  1. Set {{base_url}} and {{sticker_url}}.\n  2. Run 00 · Auth → Login. It stores {{token}}.\n  3. For folder 07 you also need {{device_token}} — add a device in folder 09, or copy the credential from Inventory → Scan Devices.\n\nIDS FILL THEMSELVES. Test scripts store spi_id, box_id, putaway_id, task_id, warehouse_id, zone_id, rack_id and shelf_id as you go.\n\nSTAGE 04 ORDER\n  Set storage type → Board → Locations (counts) → Locations (tree) → Assign\n  then EITHER  Confirm manually (06)\n  or           Send for Zebra verification (06) → scan it in 07\n  and finally  Submit (10), which refuses while any box is unplaced.\n\nTWO KINDS OF AUTH\n  Folders 00–06, 08–13 use the user bearer {{token}}.\n  Folder 07 uses X-Scan-Device: {{device_token}} and NO user token — the tenant comes off the device row.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "item": [
         {
-            "name": "Auth Copy 2",
+            "name": "00 · Auth",
             "item": [
                 {
-                    "name": "login",
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "const r = pm.response.json();\r\nif (r.token) {\r\n    pm.collectionVariables.set('token', r.token);\r\n    pm.collectionVariables.set('user_id', r.user.id);\r\n    console.log('token set \u00b7', r.user.name, '\u00b7 branch', r.user.branch_id);\r\n} else {\r\n    console.warn('no token in the response');\r\n}\r\n"
-                                ]
-                            }
-                        }
-                    ],
+                    "name": "Login",
                     "request": {
-                        "auth": {
-                            "type": "bearer"
-                        },
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\r\n    \"email\": \"agrotech@mailinator.com\",\r\n    \"password\": \"Test@123\"\r\n}",
-                            "options": {
-                                "raw": {
-                                    "language": "json"
-                                }
-                            }
-                        },
-                        "url": {
-                            "raw": "http://localhost:8000/api/login",
-                            "protocol": "http",
-                            "host": [
-                                "localhost"
-                            ],
-                            "port": "8000",
-                            "path": [
-                                "api",
-                                "login"
-                            ]
-                        }
-                    },
-                    "response": []
-                },
-                {
-                    "name": "change pass",
-                    "request": {
-                        "auth": {
-                            "type": "bearer",
-                            "bearer": [
-                                {
-                                    "key": "token",
-                                    "value": "{{token}}",
-                                    "type": "string"
-                                }
-                            ]
-                        },
                         "method": "POST",
                         "header": [
                             {
@@ -79,43 +19,58 @@
                                 "value": "application/json"
                             },
                             {
-                                "key": "Authorization",
-                                "value": "Bearer {{TOKEN}}"
-                            },
-                            {
                                 "key": "Content-Type",
                                 "value": "application/json"
                             }
                         ],
+                        "url": {
+                            "raw": "{{base_url}}/login",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "login"
+                            ]
+                        },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"user_id\": 11,\n    \"old_password\": \"ji3506\",\n    \"new_password\": \"NewPass123!\",\n    \"confirm_password\": \"NewPass123!\"\n}",
+                            "raw": "{\n  \"email\": \"agrotech@mailinator.com\",\n  \"password\": \"Test@123\"\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
                                 }
                             }
                         },
-                        "url": {
-                            "raw": "{{http://68.220.170.0}}/api/changePassword",
-                            "host": [
-                                "{{http://68.220.170.0}}"
-                            ],
-                            "path": [
-                                "api",
-                                "changePassword"
-                            ]
-                        }
+                        "description": "Stores {{token}} for every other request in the collection."
                     },
-                    "response": []
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.token) {",
+                                    "    pm.collectionVariables.set('token', r.token);",
+                                    "    pm.collectionVariables.set('user_id', r.user.id);",
+                                    "    console.log('token set ·', r.user.name, '· branch', r.user.branch_id);",
+                                    "} else {",
+                                    "    console.warn('no token in the response');",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
                 }
-            ]
+            ],
+            "description": "Run this first. Everything else reads {{token}}."
         },
         {
-            "name": "0 \u00b7 Lookups",
+            "name": "01 · Lookups",
             "item": [
                 {
-                    "name": "Next code (preview only)",
+                    "name": "Next SPI code (preview only)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -135,7 +90,7 @@
                                 "next-code"
                             ]
                         },
-                        "description": "Read only \u2014 nothing is locked or reserved. Two users with the form open both see 004; whoever saves first keeps it.\n\nThis is the first call to make after migrating: it exercises auth, the tenant middleware, the branch guard, the service and the FY logic in one go."
+                        "description": "Read only — nothing is locked or reserved. Two users with the form open both see the same number; whoever saves first keeps it."
                     },
                     "response": []
                 },
@@ -160,22 +115,14 @@
                                 "orders",
                                 "{{po_id}}",
                                 "lines"
-                            ],
-                            "query": [
-                                {
-                                    "key": "exclude_spi",
-                                    "value": "{{spi_id}}",
-                                    "description": "On an EDIT only \u2014 stops the invoice counting its own quantity against itself.",
-                                    "disabled": true
-                                }
                             ]
                         },
-                        "description": "Each line comes back with qty_open = po.quantity \u2212 everything already invoiced. The same service method backs the save-time guard, so the number shown is the number enforced."
+                        "description": "Each line carries qty_open = po.quantity − everything already invoiced. The same service method backs the save-time guard, so the number shown is the number enforced."
                     },
                     "response": []
                 },
                 {
-                    "name": "Suppliers (reused from the PO module)",
+                    "name": "Suppliers",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -195,37 +142,7 @@
                                 "suppliers"
                             ]
                         },
-                        "description": "Not an SPI route. The standalone flow picks a supplier directly and reuses PoLookupController."
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Warehouses (reused from Masters)",
-                    "request": {
-                        "method": "GET",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            }
-                        ],
-                        "url": {
-                            "raw": "{{base_url}}/master/warehouse_master?search=Own Warehouse",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "master",
-                                "warehouse_master"
-                            ],
-                            "query": [
-                                {
-                                    "key": "search",
-                                    "value": "Own Warehouse"
-                                }
-                            ]
-                        },
-                        "description": "wh_type is already a declared field on the master with exactly two values: 'Own Warehouse' and 'Third Party Warehouse'. The own/3PL split is never stored on the invoice."
+                        "description": "Not an SPI route — the standalone flow picks a supplier directly and reuses PoLookupController."
                     },
                     "response": []
                 },
@@ -250,7 +167,7 @@
                                 "options"
                             ]
                         },
-                        "description": "What Stage 04 actually allocates against. wh_type holds 'own' or a third-party value \u2014 the own/3PL split is read from here and never stored on the invoice.\n\nSave the id into {{warehouse_id}} for 'Set storage type'."
+                        "description": "What Stage 04 allocates against. wh_type holds 'own' or a third-party value; the own/3PL split is read from here and never stored on the invoice."
                     },
                     "response": [],
                     "event": [
@@ -261,7 +178,7 @@
                                 "exec": [
                                     "const r = pm.response.json();",
                                     "const first = (r.data && r.data[0]) || (Array.isArray(r) && r[0]);",
-                                    "if (first) { pm.collectionVariables.set('warehouse_id', first.id); console.log('warehouse_id =', first.id, '\u00b7', first.wh_name || first.name); }"
+                                    "if (first) { pm.collectionVariables.set('warehouse_id', first.id); console.log('warehouse_id =', first.id); }"
                                 ]
                             }
                         }
@@ -325,7 +242,7 @@
                                 }
                             ]
                         },
-                        "description": "Racks under one zone. A shelf must belong to a rack in the zone being assigned, or the assign call refuses it."
+                        "description": "A shelf must belong to a rack in the zone being assigned, or assign refuses it."
                     },
                     "response": []
                 },
@@ -351,17 +268,17 @@
                                 "shelves"
                             ]
                         },
-                        "description": "Shelves hang off their RACK \u2014 there is no /inventory/shelves/options.\n\nA shelf has no code column of its own: its code is the rack's stored code plus the level (RC-001-SH-05)."
+                        "description": "Shelves hang off their RACK — there is no /inventory/shelves/options.\n\nA shelf has no code column of its own: its code is the rack's code plus the level (RC-001-SH-05)."
                     },
                     "response": []
                 }
             ]
         },
         {
-            "name": "1 \u00b7 List and detail",
+            "name": "02 · List and detail",
             "item": [
                 {
-                    "name": "List \u2014 All SPI's",
+                    "name": "List — all SPIs",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -387,47 +304,15 @@
                                 {
                                     "key": "page",
                                     "value": "1"
-                                },
-                                {
-                                    "key": "po_mode",
-                                    "value": "with_po",
-                                    "description": "with_po | without_po",
-                                    "disabled": true
-                                },
-                                {
-                                    "key": "shipment_mode",
-                                    "value": "with_shipment",
-                                    "description": "with_shipment | without_shipment",
-                                    "disabled": true
-                                },
-                                {
-                                    "key": "status",
-                                    "value": "draft",
-                                    "disabled": true
-                                },
-                                {
-                                    "key": "vendor_id",
-                                    "value": "{{vendor_id}}",
-                                    "disabled": true
-                                },
-                                {
-                                    "key": "from",
-                                    "value": "2026-04-01",
-                                    "disabled": true
-                                },
-                                {
-                                    "key": "to",
-                                    "value": "2027-03-31",
-                                    "disabled": true
                                 }
                             ]
                         },
-                        "description": "Returns the flat 16-column row, plus `tabs` with the five counts (all / with_po / direct / with_shipment / without_shipment). The counts are unfiltered on purpose \u2014 a tab must still show its total while another tab is selected."
+                        "description": "Returns the flat row plus `tabs` with the five counts. The counts are unfiltered on purpose — a tab must still show its total while another tab is selected."
                     },
                     "response": []
                 },
                 {
-                    "name": "List \u2014 search box",
+                    "name": "List — search",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -452,7 +337,7 @@
                                 }
                             ]
                         },
-                        "description": "One query, LEFT JOINs out to the PO and through it to the shipment and opportunity.\n\nMatches: SPI code \u00b7 invoice_no \u00b7 status \u00b7 document_type \u00b7 po.code \u00b7 po.po_type \u00b7 po.procurement_request_code \u00b7 shipment_code \u00b7 opp_code \u00b7 vendor name \u00b7 vendor code.\n\nAlso: type 'direct spi without po' to pull up every standalone invoice \u2014 no column holds that phrase."
+                        "description": "One query, LEFT JOINs out to the PO and through it to the shipment and opportunity.\n\nAlso: type 'direct spi without po' to pull up every standalone invoice — no column holds that phrase."
                     },
                     "response": []
                 },
@@ -480,66 +365,92 @@
                         "description": "Invoice + items + owns_zoho_bill + packing_summary in one call, so the detail screen makes one request rather than three."
                     },
                     "response": []
-                }
-            ]
-        },
-        {
-            "name": "2 \u00b7 Stage 01 \u2014 supplier and PO",
-            "item": [
+                },
                 {
-                    "name": "Create draft (with PO)",
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "const r = pm.response.json();\nif (r.status && r.data && r.data.id) {\n    pm.collectionVariables.set('spi_id', r.data.id);\n    console.log('spi_id =', r.data.id, '\u00b7', r.data.code);\n}"
-                                ]
-                            }
-                        }
-                    ],
+                    "name": "Summary",
                     "request": {
-                        "method": "POST",
+                        "method": "GET",
                         "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer $TOKEN"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            },
                             {
                                 "key": "Accept",
                                 "value": "application/json"
                             }
                         ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/summary",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "summary"
+                            ]
+                        },
+                        "description": "The condensed header used by the stage screens."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "03 · Stage 01 — supplier and PO",
+            "item": [
+                {
+                    "name": "Create draft (with PO)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi"
+                            ]
+                        },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"purchase_order_id\": {{po_id}},\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouse_id}}\n}\n",
+                            "raw": "{\n  \"purchase_order_id\": {{po_id}},\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"domestic\",\n  \"warehouse_id\": {{warehouse_id}}\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
                                 }
                             }
                         },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi"
-                            ]
-                        },
-                        "description": "THE FIRST WRITE OF THE WHOLE FLOW. Opening the form writes nothing \u2014 the code is allocated here, inside the transaction, under a lock on the BRANCH row.\n\nThe sequence is per branch, so a new branch starts again at 001."
+                        "description": "THE FIRST WRITE OF THE FLOW. Opening the form writes nothing — the code is allocated here, inside the transaction, under a lock on the BRANCH row. The sequence is per branch, so a new branch starts again at 001."
                     },
-                    "response": []
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data && r.data.id) {",
+                                    "    pm.collectionVariables.set('spi_id', r.data.id);",
+                                    "    console.log('spi_id =', r.data.id, '·', r.data.code);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
                 },
                 {
-                    "name": "Create draft (standalone \u2014 no PO)",
+                    "name": "Create draft (standalone — no PO)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -552,10 +463,6 @@
                                 "value": "application/json"
                             }
                         ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"international\",\n  \"currency_code\": \"USD\",\n  \"exchange_rate\": 83.2,\n  \"invoice_no\": \"EXP-5521\",\n  \"invoice_date\": \"2026-10-02\"\n}"
-                        },
                         "url": {
                             "raw": "{{base_url}}/p2p/spi",
                             "host": [
@@ -566,7 +473,16 @@
                                 "spi"
                             ]
                         },
-                        "description": "purchase_order_id is null \u2014 the prototype's 'Without Purchase Order' flow. The supplier is picked directly, nothing consumes PO quantity, and THIS invoice owns its own Zoho bill.\n\ncurrency_code is required when document_type is international."
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"purchase_order_id\": null,\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"international\",\n  \"currency_code\": \"USD\",\n  \"exchange_rate\": 83.2,\n  \"invoice_no\": \"EXP-5521\",\n  \"invoice_date\": \"2026-10-02\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "purchase_order_id is null — the 'Without Purchase Order' flow. Nothing consumes PO quantity, and THIS invoice owns its own Zoho bill.\n\ncurrency_code is required when document_type is international."
                     },
                     "response": []
                 },
@@ -584,10 +500,6 @@
                                 "value": "application/json"
                             }
                         ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"purchase_order_id\": {{po_id}},\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"domestic\",\n  \"invoice_no\": \"INV-8841-A\",\n  \"invoice_date\": \"2026-10-02\"\n}"
-                        },
                         "url": {
                             "raw": "{{base_url}}/p2p/spi/{{spi_id}}/stage-1",
                             "host": [
@@ -600,24 +512,29 @@
                                 "stage-1"
                             ]
                         },
-                        "description": "Draft or mapped only. Changing purchase_order_id after items exist is refused \u2014 it would orphan every mapped line."
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"purchase_order_id\": {{po_id}},\n  \"vendor_id\": {{vendor_id}},\n  \"document_type\": \"domestic\",\n  \"invoice_no\": \"INV-8841-A\",\n  \"invoice_date\": \"2026-10-02\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Draft or mapped only. Changing purchase_order_id after items exist is refused — it would orphan every mapped line."
                     },
                     "response": []
                 }
             ]
         },
         {
-            "name": "3 \u00b7 Stage 02 \u2014 items (3-way match)",
+            "name": "04 · Stage 02 — items (3-way match)",
             "item": [
                 {
                     "name": "Save the grid",
                     "request": {
                         "method": "POST",
                         "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer $TOKEN"
-                            },
                             {
                                 "key": "Accept",
                                 "value": "application/json"
@@ -643,12 +560,12 @@
                                 },
                                 {
                                     "key": "items[0][po_item_id]",
-                                    "value": "3020",
+                                    "value": "{{po_item_id}}",
                                     "type": "text"
                                 },
                                 {
                                     "key": "items[0][product_id]",
-                                    "value": "84",
+                                    "value": "{{product_id}}",
                                     "type": "text"
                                 },
                                 {
@@ -662,139 +579,45 @@
                                     "type": "text"
                                 },
                                 {
-                                    "key": "items[0][extra_qty]",
-                                    "value": "0",
-                                    "type": "text"
-                                },
-                                {
                                     "key": "items[0][gst_pct]",
                                     "value": "12",
                                     "type": "text"
                                 },
                                 {
-                                    "key": "items[0][taxable_amount]",
-                                    "value": "12000",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "items[0][cgst_amount]",
-                                    "value": "720",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "items[0][sgst_amount]",
-                                    "value": "720",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "items[0][igst_amount]",
-                                    "value": "0",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "items[0][line_total]",
-                                    "value": "13440",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "taxable_total",
-                                    "value": "12000",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "total_cgst",
-                                    "value": "720",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "total_sgst",
-                                    "value": "720",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "total_igst",
-                                    "value": "0",
-                                    "type": "text"
-                                },
-                                {
-                                    "key": "grand_total",
-                                    "value": "13440",
-                                    "type": "text"
-                                },
-                                {
                                     "key": "invoice_file",
                                     "type": "file",
-                                    "src": [
-                                        "postman-cloud:///1f0eb041-a245-42b0-91f8-235ee3a80b27"
-                                    ]
+                                    "src": ""
                                 },
                                 {
                                     "key": "eway_file",
                                     "type": "file",
-                                    "src": [
-                                        "postman-cloud:///1f0eb041-a245-42b0-91f8-235ee3a80b27"
-                                    ]
+                                    "src": ""
                                 }
                             ]
                         },
                         "url": {
-                            "raw": "http://localhost:8000/api/p2p/spi/1/items",
-                            "protocol": "http",
-                            "host": [
-                                "localhost"
-                            ],
-                            "port": "8000",
-                            "path": [
-                                "api",
-                                "p2p",
-                                "spi",
-                                "1",
-                                "items"
-                            ]
-                        },
-                        "description": "The WHOLE grid saves at once \u2014 never row by row, or the header totals and the lines disagree between requests.\n\nThe server computes taxable_amount, the GST split and line_total; the client never sends an amount. On an international invoice the four tax columns are written NULL, not 0 \u2014 'does not apply' is a different fact from 'charged at zero rate'.\n\nResponse carries the recomputed packing_summary.\n\nRefused with 422 if qty_spi exceeds what is left on the PO line."
-                    },
-                    "response": []
-                }
-            ]
-        },
-        {
-            "name": "4 \u00b7 Stage 03 \u2014 box packaging",
-            "item": [
-                {
-                    "name": "Next Box Code",
-                    "request": {
-                        "method": "GET",
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer $TOKEN"
-                            }
-                        ],
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/1/boxes/next-codes?count=10",
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/items",
                             "host": [
                                 "{{base_url}}"
                             ],
                             "path": [
                                 "p2p",
                                 "spi",
-                                "1",
-                                "boxes",
-                                "next-codes"
-                            ],
-                            "query": [
-                                {
-                                    "key": "count",
-                                    "value": "10"
-                                }
+                                "{{spi_id}}",
+                                "items"
                             ]
-                        }
+                        },
+                        "description": "The WHOLE grid saves at once — never row by row, or the header totals and the lines disagree between requests.\n\nThe SERVER computes taxable_amount, the GST split and line_total; the client never sends an amount. On an international invoice the four tax columns are written NULL, not 0 — 'does not apply' is a different fact from 'charged at zero rate'.\n\n422 if qty_spi exceeds what is left on the PO line."
                     },
                     "response": []
-                },
+                }
+            ]
+        },
+        {
+            "name": "05 · Stage 03 — box packaging",
+            "item": [
                 {
-                    "name": "List boxes",
+                    "name": "Next box codes",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -804,7 +627,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes",
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/next-codes?count=10",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -812,9 +635,17 @@
                                 "p2p",
                                 "spi",
                                 "{{spi_id}}",
-                                "boxes"
+                                "boxes",
+                                "next-codes"
+                            ],
+                            "query": [
+                                {
+                                    "key": "count",
+                                    "value": "10"
+                                }
                             ]
-                        }
+                        },
+                        "description": "Preview only — nothing is reserved."
                     },
                     "response": []
                 },
@@ -840,66 +671,89 @@
                                 "packing-summary"
                             ]
                         },
-                        "description": "qty_packed is DERIVED \u2014 SUM(box_items.quantity) WHERE deleted_at IS NULL. Nothing is stored on the item.\n\nQA case: pack 10, delete a box of 4, confirm pending reads 4 and not 0. A missing soft-delete filter makes a removed box still count as packed."
+                        "description": "qty_packed is DERIVED — SUM(box_items.quantity) WHERE deleted_at IS NULL. Nothing is stored on the item.\n\nQA case: pack 10, delete a box of 4, confirm pending reads 4 and not 0. A missing soft-delete filter makes a removed box still count as packed."
                     },
                     "response": []
                 },
                 {
-                    "name": "Create box",
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "const r = pm.response.json();\nif (r.status && r.data && r.data.box) {\n    pm.collectionVariables.set('box_id', r.data.box.id);\n    console.log('box_id =', r.data.box.id, '\u00b7', r.data.box.box_code);\n}"
-                                ]
-                            }
-                        }
-                    ],
+                    "name": "List boxes (editable shape)",
                     "request": {
-                        "method": "POST",
+                        "method": "GET",
                         "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer $TOKEN"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            },
                             {
                                 "key": "Accept",
                                 "value": "application/json"
                             }
                         ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "boxes"
+                            ]
+                        },
+                        "description": "The row shape this stage's form posts back — ids, a raw flags array, invoice-item references. For the resolved read, use 'Packed boxes' below."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Create box",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "boxes"
+                            ]
+                        },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"scenario\": \"s2\",\n    \"length_cm\": 30, \"width_cm\": 20, \"height_cm\": 15,\n    \"weight_kg\": 6.25, \"net_weight_kg\": 5.9, \"gross_weight_kg\": 6.25,\n    \"condition\": \"perfect\",\n    \"items\": [\n      { \"supplier_invoice_item_id\": 1, \"quantity\": 0.5,\n        \"is_stackable\": true, \"remark\": \"correct\", \"flags\": [],\n        \"batch_no\": \"BT-2291\", \"expiry_date\": \"2027-04-30\" }\n    ]\n  }",
+                            "raw": "{\n  \"scenario\": \"s2\",\n  \"length_cm\": 30, \"width_cm\": 20, \"height_cm\": 15,\n  \"weight_kg\": 6.25, \"net_weight_kg\": 5.9, \"gross_weight_kg\": 6.25,\n  \"condition\": \"perfect\",\n  \"items\": [\n    { \"supplier_invoice_item_id\": {{spi_item_id}}, \"quantity\": 0.5,\n      \"is_stackable\": true, \"remark\": \"correct\", \"flags\": [],\n      \"batch_no\": \"BT-2291\", \"expiry_date\": \"2027-04-30\" }\n  ]\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
                                 }
                             }
                         },
-                        "url": {
-                            "raw": "http://localhost:8000/api/p2p/spi/1/boxes",
-                            "protocol": "http",
-                            "host": [
-                                "localhost"
-                            ],
-                            "port": "8000",
-                            "path": [
-                                "api",
-                                "p2p",
-                                "spi",
-                                "1",
-                                "boxes"
-                            ]
-                        },
-                        "description": "Box and contents in ONE payload \u2014 packed quantity is summed from the contents, so a box saved without them would read as empty.\n\nbox_code is allocated by the server, sequential WITHIN the invoice (BOX-01 \u2026 BOX-n). Three SPIs packed at once never interleave.\n\nAdvanced Details (batch, expiry, serial, lot) sit on the ITEM, not the box: one carton can hold two products from two batches.\n\nflags is an array of master ids \u2014 adding a flag is data, never a migration.\n\nResponse carries the recomputed packing_summary, so the 'remaining' table needs no second call."
+                        "description": "Box and contents in ONE payload — packed quantity is summed from the contents, so a box saved without them would read as empty.\n\nbox_code is allocated by the server, sequential WITHIN the invoice. Three SPIs packed at once never interleave.\n\nBatch, expiry, serial and lot sit on the ITEM, not the box: one carton can hold two products from two batches."
                     },
-                    "response": []
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data && r.data.box) {",
+                                    "    pm.collectionVariables.set('box_id', r.data.box.id);",
+                                    "    console.log('box_id =', r.data.box.id, '·', r.data.box.box_code);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
                 },
                 {
                     "name": "Update box",
@@ -915,10 +769,6 @@
                                 "value": "application/json"
                             }
                         ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"scenario\": \"s3\",\n  \"length_cm\": 40,\n  \"width_cm\": 30,\n  \"height_cm\": 25,\n  \"weight_kg\": 13.0,\n  \"condition\": \"minor\",\n  \"items\": [\n    {\n      \"supplier_invoice_item_id\": {{spi_item_id}},\n      \"quantity\": 3500,\n      \"remark\": \"damaged\",\n      \"remark_note\": \"Two bags torn in transit\",\n      \"batch_no\": \"BT-2291\",\n      \"expiry_date\": \"2027-04-30\"\n    }\n  ]\n}"
-                        },
                         "url": {
                             "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}",
                             "host": [
@@ -932,43 +782,16 @@
                                 "{{box_id}}"
                             ]
                         },
-                        "description": "Contents are replaced wholesale \u2014 a partial update would leave quantities from a product the user just removed.\n\nThe over-pack guard ignores THIS box's own current rows, or an edit could never keep its existing quantity."
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Print sticker (freezes the box code)",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"copies\": 1,\n  \"format\": \"pdf\"\n}"
+                            "raw": "{\n  \"scenario\": \"s3\",\n  \"length_cm\": 40, \"width_cm\": 30, \"height_cm\": 25,\n  \"weight_kg\": 13.0,\n  \"condition\": \"minor\",\n  \"items\": [\n    { \"supplier_invoice_item_id\": {{spi_item_id}}, \"quantity\": 3500,\n      \"remark\": \"damaged\", \"remark_note\": \"Two bags torn in transit\" }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
                         },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}/sticker",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "boxes",
-                                "{{box_id}}",
-                                "sticker"
-                            ]
-                        },
-                        "description": "Stamps sticker_printed_at and returns code_locked: true. From then on the box is never renumbered \u2014 the label is physically on a carton being scanned at put-away."
+                        "description": "Contents are replaced wholesale — a partial update would leave quantities from a product the user just removed.\n\nThe over-pack guard ignores THIS box's own current rows, or an edit could never keep its existing quantity."
                     },
                     "response": []
                 },
@@ -995,7 +818,77 @@
                                 "{{box_id}}"
                             ]
                         },
-                        "description": "Soft delete; the quantity goes back to pending. Returns `renumbered` \u2014 the boxes after it close the gap, EXCEPT any whose sticker is already printed.\n\nRefused when the box is already put away: it is on a shelf being scanned."
+                        "description": "Soft delete; the quantity goes back to pending. Returns `renumbered` — the boxes after it close the gap, EXCEPT any whose sticker is already printed.\n\nRefused when the box is already put away."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Print sticker (freezes the box code)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}/sticker",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "boxes",
+                                "{{box_id}}",
+                                "sticker"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"copies\": 1,\n  \"format\": \"pdf\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Stamps sticker_printed_at and returns code_locked: true. From then on the box is never renumbered — the label is physically on a carton being scanned at put-away."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Download sticker (PDF)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}/sticker/download",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "boxes",
+                                "{{box_id}}",
+                                "sticker",
+                                "download"
+                            ]
+                        },
+                        "description": "The 4x6in label as a PDF. Its QR carries the SIGNED STICKER URL — {{sticker_url}}/ps/CBC1.<tenant>.BOX.<id>.<nonce>.<sig> — so a phone that photographs it opens our server rather than being shown a bare string.\n\nStamps sticker_printed_at the first time."
                     },
                     "response": []
                 },
@@ -1021,43 +914,14 @@
                                 "packed-boxes"
                             ]
                         },
-                        "description": "Every packed box with its contents RESOLVED: the product named, the flags read from the master, the put-away location once it has one, the sticker and the attachments.\n\nNOT the same as 'List boxes' above. That returns the editable row shape this stage's form posts back \u2014 ids, a raw flags array, invoice-item references. This is the READ that Stage 04 Step 01 is built on: the box list, the detail panel and the products modal all come from here."
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Download box sticker (PDF)",
-                    "request": {
-                        "method": "GET",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            }
-                        ],
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/boxes/{{box_id}}/sticker/download",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "boxes",
-                                "{{box_id}}",
-                                "sticker",
-                                "download"
-                            ]
-                        },
-                        "description": "The 4x6in label as a PDF. Stamps sticker_printed_at the first time \u2014 a label in hand is a label about to go on a carton, and from then on the box is never renumbered."
+                        "description": "Every packed box with its contents RESOLVED: the product named, the flags read from the master, the put-away location once it has one, the sticker and the attachments.\n\nThis is the READ Stage 04 Step 01 is built on."
                     },
                     "response": []
                 }
             ]
         },
         {
-            "name": "5 \u00b7 Stage 04 \u2014 temporary put-away",
+            "name": "06 · Stage 04 — put-away allocation (office)",
             "item": [
                 {
                     "name": "Set storage type (choose warehouse)",
@@ -1073,10 +937,6 @@
                                 "value": "application/json"
                             }
                         ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"warehouse_id\": {{warehouse_id}}\n}"
-                        },
                         "url": {
                             "raw": "{{base_url}}/p2p/spi/{{spi_id}}/storage-type",
                             "host": [
@@ -1089,9 +949,62 @@
                                 "storage-type"
                             ]
                         },
-                        "description": "Only warehouse_id is stored. putaway_mode in the response is derived from master_warehouse_master.wh_type: 'full' for our own warehouse (rack \u2192 shelf), 'summary' for a 3PL (no rack/shelf allocation).\n\nOPEN: Stage 01 also accepts warehouse_id, so two places currently write this column."
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"warehouse_id\": {{warehouse_id}}\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Only warehouse_id is stored. putaway_mode in the response is derived from the warehouse master: 'full' for our own warehouse (rack → shelf), 'summary' for a 3PL."
                     },
                     "response": []
+                },
+                {
+                    "name": "Board — every box, its status and step",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/board",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "putaway",
+                                "board"
+                            ]
+                        },
+                        "description": "Step 01's left rail in ONE read: every box with its status (pending | draft | awaiting_scan | placed), its sub-step, its destination once assigned, and the counts behind the PLACED bar.\n\nDriven from the BOXES, not the put-away rows — a box nobody has started has no put-away row at all, and that is exactly the box the operator is looking for."
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.status && r.data && r.data.boxes && r.data.boxes.length) {",
+                                    "    const first = r.data.boxes[0];",
+                                    "    pm.collectionVariables.set('box_id', first.box_id);",
+                                    "    if (first.putaway_id) pm.collectionVariables.set('putaway_id', first.putaway_id);",
+                                    "    console.log('box_id =', first.box_id, '·', first.status, '· step', first.current_step);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
                 },
                 {
                     "name": "Put-away rows",
@@ -1115,279 +1028,12 @@
                                 "putaway"
                             ]
                         },
-                        "description": "Each row carries next_scan and ready_to_confirm, so the handheld knows what it owes without computing the chain itself."
+                        "description": "Every put-away row of the invoice. Use this before Submit to see which boxes are still unplaced."
                     },
                     "response": []
                 },
                 {
-                    "name": "Scan \u2014 box",
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "const r = pm.response.json();",
-                                    "if (r.status && r.data && r.data.id) {",
-                                    "    pm.collectionVariables.set('putaway_id', r.data.id);",
-                                    "    console.log('putaway_id =', r.data.id, '\u00b7 next:', r.data.next_scan);",
-                                    "}"
-                                ]
-                            }
-                        }
-                    ],
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"scan_type\": \"box\",\n  \"scanned_value\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\",\n  \"latency_ms\": 42\n}"
-                        },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "putaway",
-                                "scan"
-                            ]
-                        },
-                        "description": "POST, not PUT: each scan stamps its own timestamp, so it is not idempotent.\n\nEVERY attempt is written to p2p_spi_scan_logs, success and failure alike. A rejected scan never touches the put-away row, so without that log it would be invisible."
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Scan \u2014 location",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"scan_type\": \"location\",\n  \"scanned_value\": \"WH-001-Z03\",\n  \"box_code\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\"\n}"
-                        },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "putaway",
-                                "scan"
-                            ]
-                        }
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Scan \u2014 rack",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"scan_type\": \"rack\",\n  \"scanned_value\": \"R-14\",\n  \"box_code\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\"\n}"
-                        },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "putaway",
-                                "scan"
-                            ]
-                        }
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Scan \u2014 shelf",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"scan_type\": \"shelf\",\n  \"scanned_value\": \"S-56\",\n  \"box_code\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\"\n}"
-                        },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "putaway",
-                                "scan"
-                            ]
-                        }
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Scan \u2014 out of order (expect 422)",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"scan_type\": \"shelf\",\n  \"scanned_value\": \"S-56\",\n  \"box_code\": \"BOX-01\",\n  \"device_serial\": \"TC27-004\"\n}"
-                        },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/scan",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "putaway",
-                                "scan"
-                            ]
-                        },
-                        "description": "Run this BEFORE the location scan. Expect 422 'Scan the location before the shelf.' \u2014 and then check p2p_spi_scan_logs: the row is there with result=failed, failure_reason=out_of_order and expected_scan=location."
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Confirm put-away",
-                    "request": {
-                        "method": "PUT",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"condition_at_putaway\": \"minor\",\n  \"note\": \"Corner dented in transit\"\n}"
-                        },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/{{putaway_id}}/confirm",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "putaway",
-                                "{{putaway_id}}",
-                                "confirm"
-                            ]
-                        },
-                        "description": "Until confirmed_at is set the box is PICKED BUT NOT PLACED. condition_at_putaway records damage noticed AT THE RACK \u2014 a later moment than the condition recorded while unpacking in Stage 03."
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Board \u2014 every box, its status and step",
-                    "request": {
-                        "method": "GET",
-                        "header": [
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            }
-                        ],
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/board",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
-                                "putaway",
-                                "board"
-                            ]
-                        },
-                        "description": "Step 01's left rail in ONE read: every box of the invoice with its status (pending | draft | awaiting_scan | placed), its sub-step, its destination once assigned, and the counts behind the 0/7 PLACED bar.\n\nDriven from the BOXES, not from the put-away rows \u2014 a box nobody has started has no put-away row at all, and that is exactly the box the operator is looking for.\n\nstatus is DERIVED from confirmed_at + the location + any open task, so it cannot disagree with them."
-                    },
-                    "response": [],
-                    "event": [
-                        {
-                            "listen": "test",
-                            "script": {
-                                "type": "text/javascript",
-                                "exec": [
-                                    "const r = pm.response.json();",
-                                    "if (r.status && r.data && r.data.boxes && r.data.boxes.length) {",
-                                    "    const first = r.data.boxes[0];",
-                                    "    pm.collectionVariables.set('box_id', first.box_id);",
-                                    "    if (first.putaway_id) pm.collectionVariables.set('putaway_id', first.putaway_id);",
-                                    "    console.log('box_id =', first.box_id, '\u00b7', first.status, '\u00b7 step', first.current_step);",
-                                    "}"
-                                ]
-                            }
-                        }
-                    ]
-                },
-                {
-                    "name": "Locations \u2014 mode counts only (opening modal)",
+                    "name": "Locations — mode counts only (opening modal)",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -1415,12 +1061,12 @@
                                 }
                             ]
                         },
-                        "description": "Without `mode`, only the two numbers the opening modal asks for:\n\n  modes.rack   \u2014 shelves available in RACKED zones\n  modes.norack \u2014 active zones that hold boxes directly\n\nRequires the invoice to have a warehouse \u2014 run 'Set storage type' first or this returns 422."
+                        "description": "Without `mode`, only the two numbers the opening modal asks for:\n\n  modes.rack   — shelves available in RACKED zones\n  modes.norack — active zones that hold boxes directly\n\n422 unless the invoice has a warehouse — run 'Set storage type' first."
                     },
                     "response": []
                 },
                 {
-                    "name": "Locations \u2014 tree and recommendation",
+                    "name": "Locations — tree and recommendation",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -1452,7 +1098,7 @@
                                 }
                             ]
                         },
-                        "description": "With `mode=rack|norack`, ONE call serves both halves of the screen:\n\n  recommended \u2014 the best spot, its score and the parts that make it up\n  zones[]     \u2014 zone > rack > shelf, each with its fill, used_pct, used_pct_after and eligible counts\n\nThe recommendation is the TOP OF THE SAME ranked list the tree is built from, so the two cannot disagree.\n\nEvery ineligible shelf carries a reason: inactive \u00b7 in_use \u00b7 no_cold_chain \u00b7 no_hazardous \u00b7 no_temp_control \u00b7 temp_out_of_range \u00b7 too_tall \u00b7 full \u00b7 over_weight \u00b7 over_capacity.\n\nSave the recommendation's ids into {{zone_id}}, {{rack_id}} and {{shelf_id}} \u2014 the test script below does it."
+                        "description": "ONE call serves both halves of the screen:\n\n  recommended — the best spot, its score and the parts that make it up\n  zones[]     — zone > rack > shelf, each with its fill, used_pct, used_pct_after and eligible counts\n\nThe recommendation is the TOP OF THE SAME ranked list the tree is built from, so the two cannot disagree.\n\nScoring: fit 45 · consolidate 20 · ergonomics 20 · grouping 15 · proximity 0 (dormant until zones carry a layout sequence). Fit rewards the TIGHTEST fit, not the emptiest shelf.\n\nEvery ineligible shelf carries a reason: inactive · in_use · no_cold_chain · no_hazardous · no_temp_control · temp_out_of_range · too_tall · full · over_weight · over_capacity."
                     },
                     "response": [],
                     "event": [
@@ -1467,9 +1113,9 @@
                                     "    pm.collectionVariables.set('shelf_id', rec.id);",
                                     "    pm.collectionVariables.set('zone_id', rec.zone_id);",
                                     "    pm.collectionVariables.set('rack_id', rec.rack_id);",
-                                    "    console.log('recommended', rec.code, '\u00b7 score', rec.score, '\u00b7', rec.used_pct + '% ->' , rec.used_pct_after + '%');",
+                                    "    console.log('recommended', rec.code, '· score', rec.score);",
                                     "} else {",
-                                    "    console.warn('no eligible shelf for this box \u00b7', r.data ? r.data.eligible + '/' + r.data.total : '');",
+                                    "    console.warn('no eligible shelf ·', r.data ? r.data.eligible + '/' + r.data.total : '');",
                                     "}"
                                 ]
                             }
@@ -1503,7 +1149,6 @@
                                 "assign"
                             ]
                         },
-                        "description": "Step 02's commit, and the first write of Stage 04. ONE transaction: locks the location, RESERVES its capacity, creates the put-away row, resyncs the shelf counters and writes the activity trail.\n\nCAPACITY IS TAKEN HERE, not at confirmation \u2014 a Zebra task can sit open for hours and the shelf must not read as free meanwhile.\n\nCall it AGAIN with a different shelf and it is the Change button: the previous hold is released first, logged as 'reassigned' with both addresses.\n\n409 when another operator already holds that location.\n422 when the shelf is not on a rack in that zone, when the zone's rack_mode does not match, or when the box is already placed.\n\nFor a NO-RACK zone send mode=norack and leave rack_id and shelf_id out.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n  \"box_id\": {{box_id}},\n  \"mode\": \"rack\",\n  \"zone_id\": {{zone_id}},\n  \"rack_id\": {{rack_id}},\n  \"shelf_id\": {{shelf_id}},\n  \"suggested_shelf_id\": {{shelf_id}},\n  \"session_id\": \"postman\"\n}",
@@ -1512,7 +1157,8 @@
                                     "language": "json"
                                 }
                             }
-                        }
+                        },
+                        "description": "Step 02's commit, and the first write of Stage 04. ONE transaction: locks the location, RESERVES its capacity, creates the put-away row, resyncs the shelf counters and writes the activity trail.\n\nCAPACITY IS TAKEN HERE, not at confirmation — a Zebra task can sit open for hours and the shelf must not read as free meanwhile.\n\nCall it AGAIN with a different shelf and it is the Change button: the previous hold is released first, logged as 'reassigned' with both addresses.\n\n409 when another operator holds that location. 422 when the shelf is not on a rack in that zone, when rack_mode does not match, or when the box is already placed.\n\nFor a NO-RACK zone send mode=norack and omit rack_id and shelf_id."
                     },
                     "response": [],
                     "event": [
@@ -1524,7 +1170,7 @@
                                     "const r = pm.response.json();",
                                     "if (r.status && r.data && r.data.id) {",
                                     "    pm.collectionVariables.set('putaway_id', r.data.id);",
-                                    "    console.log('putaway_id =', r.data.id, '\u00b7', r.data.status, '\u00b7', r.data.destination);",
+                                    "    console.log('putaway_id =', r.data.id, '·', r.data.status, '·', r.data.destination);",
                                     "}"
                                 ]
                             }
@@ -1532,7 +1178,7 @@
                     ]
                 },
                 {
-                    "name": "Confirm manually \u2014 Option 02 (COMPLETES NOW)",
+                    "name": "Confirm manually — Option 02 (COMPLETES NOW)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -1559,7 +1205,6 @@
                                 "confirm-manual"
                             ]
                         },
-                        "description": "Step 03, Option 02. `confirmed` is the finality tick from the dialog and must be accepted \u2014 send false and it is refused with 422.\n\nFlips the occupancy reserved -> occupied, stamps confirmed_at and verify_method=manual, and releases the lock.\n\nTHE SHELF COUNTERS DO NOT MOVE here: the space was taken at assign. What changes is who says the box is on the shelf.\n\nRefused with 422 while a Zebra task is open on this box \u2014 cancel it first.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n  \"confirmed\": true,\n  \"condition_at_putaway\": \"perfect\",\n  \"note\": \"\"\n}",
@@ -1568,12 +1213,13 @@
                                     "language": "json"
                                 }
                             }
-                        }
+                        },
+                        "description": "Step 03, Option 02. `confirmed` is the finality tick from the dialog and must be accepted — send false and it is refused with 422.\n\nFlips the occupancy reserved → occupied, stamps confirmed_at and verify_method=manual, and releases the lock.\n\nTHE SHELF COUNTERS DO NOT MOVE here: the space was taken at assign. What changes is who says the box is on the shelf.\n\nRefused with 422 while a Zebra task is open on this box — cancel it first."
                     },
                     "response": []
                 },
                 {
-                    "name": "Send for Zebra verification \u2014 Option 01 (CREATES A SCAN TASK)",
+                    "name": "Send for Zebra verification — Option 01 (CREATES A TASK)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -1600,7 +1246,6 @@
                                 "scan-task"
                             ]
                         },
-                        "description": "Step 03, Option 01. Returns 201 with task_code ZT-YYYYMMDD-NNN, numbered per branch per day.\n\nTHE BOX STAYS UNPLACED: confirmed_at remains null, the row reads awaiting_scan, the capacity stays reserved, and the lock now follows the task's deadline rather than the screen's 30-minute idle timeout.\n\nA second task on the same box is refused, and so is manual confirmation while this one is open.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n  \"confirmed\": true,\n  \"ttl_hours\": 8\n}",
@@ -1609,7 +1254,8 @@
                                     "language": "json"
                                 }
                             }
-                        }
+                        },
+                        "description": "Step 03, Option 01. Returns 201 with task_code ZT-YYYYMMDD-NNN, numbered per branch per day.\n\nTHE BOX STAYS UNPLACED: confirmed_at remains null, the row reads awaiting_scan, the capacity stays reserved, and the lock follows the task's deadline rather than the screen's idle timeout.\n\nA second task on the same box is refused, and so is manual confirmation while this one is open."
                     },
                     "response": [],
                     "event": [
@@ -1621,42 +1267,310 @@
                                     "const r = pm.response.json();",
                                     "if (r.status && r.data && r.data.id) {",
                                     "    pm.collectionVariables.set('task_id', r.data.id);",
-                                    "    console.log('task', r.data.task_code, '\u00b7 next scan:', r.data.next_scan, '\u00b7', r.data.scans.done + '/' + r.data.scans.required);",
+                                    "    console.log('task', r.data.task_code, '·', r.data.scans.done + '/' + r.data.scans.required);",
                                     "}"
                                 ]
                             }
                         }
                     ]
+                }
+            ],
+            "description": "Order: Set storage type → Board → Locations (counts) → Locations (tree) → Assign → then EITHER 'Confirm manually', OR 'Send for Zebra verification' and finish it in folder 07."
+        },
+        {
+            "name": "07 · Stage 04 — Zebra handheld (device auth)",
+            "item": [
+                {
+                    "name": "Device session — who am I, what is open",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-Scan-Device",
+                                "value": "{{device_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan/putaway/session",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan",
+                                "putaway",
+                                "session"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "The first call the handheld makes. Returns the device, whether a person has CLAIMED it, and the open task queue the scan page lists.\n\n401 when the credential is unknown, 403 when the device is suspended or has no enrolled user."
+                    },
+                    "response": []
                 },
                 {
-                    "name": "Tasks of this invoice (the awaiting banner)",
+                    "name": "Scan — box",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-Scan-Device",
+                                "value": "{{device_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan/putaway/scan",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan",
+                                "putaway",
+                                "scan"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"scanned_value\": \"{{sticker_url}}/ps/CBC1.1.BOX.4.15DYC.0B5KQFG\",\n  \"task_id\": null,\n  \"staged_location\": null,\n  \"staged_kind\": null\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "scanned_value accepts every shape a scanner can produce: the signed URL, the bare key, the pipe form, 'SH:1', or a legacy bare box id. Case is normalised.\n\nWith no task_id the box's own open task is picked up. With one, a different box is refused by name — \"Wrong box — this task wants B-002.\"\n\nRefusals: already_placed · no_task · unknown_box · wrong_box · bad_signature · unreadable."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Scan — zone / rack / shelf",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-Scan-Device",
+                                "value": "{{device_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan/putaway/scan",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan",
+                                "putaway",
+                                "scan"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"scanned_value\": \"{{sticker_url}}/ps/CBC1.1.SHELF.1.B33B0.0227YS6\",\n  \"task_id\": {{task_id}}\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "ANY level of the address is accepted — zone, rack or shelf — in any order. Scanning the SHELF ticks its rack and zone too, because a shelf cannot be anywhere but its own rack.\n\nOnly the deepest assigned level finishes the location. The response carries `chain` (each level with scanned true/false) and `next_level`.\n\nThe KIND is checked before the id: shelf 1, rack 1 and zone 1 all exist, so comparing ids alone would take a rack label as proof of standing at the shelf.\n\nThree refusals in a row reset the task to the box."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Scan — a location with nothing due (lookup)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-Scan-Device",
+                                "value": "{{device_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan/putaway/scan",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan",
+                                "putaway",
+                                "scan"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"scanned_value\": \"{{sticker_url}}/ps/CBC1.1.SHELF.1.B33B0.0227YS6\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Scanned with no task in hand and nothing due there, the same call answers the OTHER question: what is currently in this location. Boxes, weight used, free capacity — reserved rows included and marked 'on its way'.\n\nWhen something IS due, it stages the location and waits for a box."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Task state (device read)",
                     "request": {
                         "method": "GET",
                         "header": [
                             {
                                 "key": "Accept",
                                 "value": "application/json"
+                            },
+                            {
+                                "key": "X-Scan-Device",
+                                "value": "{{device_token}}"
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/tasks",
+                            "raw": "{{base_url}}/scan/putaway/{{task_id}}",
                             "host": [
                                 "{{base_url}}"
                             ],
                             "path": [
-                                "p2p",
-                                "spi",
-                                "{{spi_id}}",
+                                "scan",
                                 "putaway",
-                                "tasks"
+                                "{{task_id}}"
                             ]
                         },
-                        "description": "The 'Awaiting Zebra confirmation' banner and its 0/2 scan chips, with this invoice's awaiting / placed / cancelled / expired counts."
+                        "description": "Everything the scan page draws: device, task, chain, box details, destination. Works on a FINISHED task too — a read never requires the task to still be open."
                     },
                     "response": []
                 },
                 {
-                    "name": "Queue \u2014 every open task in the branch",
+                    "name": "Confirm one slot (optional)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-Scan-Device",
+                                "value": "{{device_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan/putaway/{{task_id}}/confirm",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan",
+                                "putaway",
+                                "{{task_id}}",
+                                "confirm"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"slot\": \"box\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "slot: box | shelf | zone.\n\nNot normally needed — the scan that closes the pair completes the put-away by itself. Kept for a client that wants to acknowledge each half explicitly."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Complete the put-away",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "X-Scan-Device",
+                                "value": "{{device_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan/putaway/{{task_id}}/complete",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan",
+                                "putaway",
+                                "{{task_id}}",
+                                "complete"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Normally never called: once both halves are scanned the put-away completes on its own, because the barcodes have already proved everything a button press could.\n\nWhen it does run: occupancy reserved → occupied, put-away → placed with verify_method=scan, lock released, task → scanned.\n\n422 until both halves are scanned. 409 when the location is no longer held for this box."
+                    },
+                    "response": []
+                }
+            ],
+            "description": "Device-authenticated — send X-Scan-Device: {{device_token}}, NOT a user bearer token. The tenant is read off the device row, and the person who enrolled it authors every scan.\n\nFlow: Session → Scan box → Scan location → done. Either order works."
+        },
+        {
+            "name": "08 · Zebra tasks (office view)",
+            "item": [
+                {
+                    "name": "Queue — every open task in the branch",
                     "request": {
                         "method": "GET",
                         "header": [
@@ -1685,7 +1599,85 @@
                                 }
                             ]
                         },
-                        "description": "The Zebra Verification Tasks modal: the floor's queue ACROSS invoices, open tasks first, paginated.\n\nNote the path \u2014 this one is not scoped to an invoice."
+                        "description": "The floor's queue ACROSS invoices, open first, paginated. status: pending | scanned | cancelled | expired — omit it for everything.\n\nNote the path: this one is not scoped to an invoice."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Tasks of one invoice (the awaiting banner)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/putaway/tasks",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "putaway",
+                                "tasks"
+                            ]
+                        },
+                        "description": "The 'Awaiting Zebra confirmation' banner and its scan chips, with this invoice's awaiting / placed / cancelled / expired counts."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "One task — status",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/putaway/tasks/{{task_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "putaway",
+                                "tasks",
+                                "{{task_id}}"
+                            ]
+                        },
+                        "description": "Where this box is up to: step, step_label, is_open, is_done, ready_to_complete, attempts_left and every timestamp.\n\nCheap enough for a screen to poll — about 1.4 KB, against 22 KB for the activity read below."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "One task — activity (every scan, pass and fail)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/putaway/tasks/{{task_id}}/activity",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "putaway",
+                                "tasks",
+                                "{{task_id}}",
+                                "activity"
+                            ]
+                        },
+                        "description": "How the box got there, in order — and the ONLY place refusals survive.\n\nOn the task row a put-away that took four attempts and one wrong rack is indistinguishable from a clean one. The difference lives here.\n\nEach row: event, ok, meta.reason, meta.value (the raw string scanned), actor, device_id. Plus counts {total, passed, failed}."
                     },
                     "response": []
                 },
@@ -1715,7 +1707,6 @@
                                 "cancel"
                             ]
                         },
-                        "description": "Closes the task and NOTHING else.\n\nThe occupancy stays RESERVED and the location stays LOCKED, because the screen reopens on the same shelf offering manual confirmation \u2014 letting the shelf go in between would hand it to somebody else mid-decision.\n\nThe box returns to draft and Option 01 is greyed as SCAN TASK CANCELLED, so the only way on is Confirm manually.",
                         "body": {
                             "mode": "raw",
                             "raw": "{\n  \"reason\": \"handheld offline\"\n}",
@@ -1724,12 +1715,41 @@
                                     "language": "json"
                                 }
                             }
-                        }
+                        },
+                        "description": "Closes the task and NOTHING else.\n\nThe occupancy stays RESERVED and the location stays LOCKED, because the screen reopens on the same shelf offering manual confirmation — letting the shelf go in between would hand it to somebody else mid-decision.\n\nWorks on a PARTLY SCANNED task. Refused once the task is scanned, cancelled or expired.\n\nAfter cancelling, the SAME put-away id is confirmed by hand in folder 06."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "09 · Scan devices (admin)",
+            "item": [
+                {
+                    "name": "List devices",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan-devices",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan-devices"
+                            ]
+                        },
+                        "description": "The handheld allow-list for this client."
                     },
                     "response": []
                 },
                 {
-                    "name": "NOT BUILT \u2014 device callback (box QR then shelf QR)",
+                    "name": "Add a device",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -1743,37 +1763,156 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/putaway/tasks/{{task_id}}/scan",
+                            "raw": "{{base_url}}/scan-devices",
                             "host": [
                                 "{{base_url}}"
                             ],
                             "path": [
-                                "putaway",
-                                "tasks",
-                                "{{task_id}}",
-                                "scan"
+                                "scan-devices"
                             ]
                         },
-                        "description": "\u26d4 THIS ENDPOINT DOES NOT EXIST YET \u2014 it will 404.\n\nKept here as the known gap: the handheld's callback that verifies the box QR and then the shelf QR, and on the second one completes the task through the same confirm path as Option 02.\n\nUntil it is built the Zebra branch cannot COMPLETE \u2014 cancel then confirm manually is the only way out.",
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"scan_type\": \"box\",\n  \"scanned_value\": \"{{box_id}}\",\n  \"device_serial\": \"TC27-004\"\n}",
+                            "raw": "{\n  \"serial\": \"26013524701106\",\n  \"label\": \"Zebra TC27 · Bay 1\",\n  \"model\": \"TC27\",\n  \"location\": \"Bhiwandi Hub\"\n}",
                             "options": {
                                 "raw": {
                                     "language": "json"
                                 }
                             }
+                        },
+                        "description": "Returns the plaintext credential ONCE. Only its hash is stored, so it cannot be read back later."
+                    },
+                    "response": [],
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const r = pm.response.json();",
+                                    "if (r.token || (r.data && r.data.token)) {",
+                                    "    pm.collectionVariables.set('device_token', r.token || r.data.token);",
+                                    "    console.log('device_token stored');",
+                                    "}"
+                                ]
+                            }
                         }
+                    ]
+                },
+                {
+                    "name": "Rotate the credential",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan-devices/{{device_id}}/rotate",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan-devices",
+                                "{{device_id}}",
+                                "rotate"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Issues a new credential and invalidates the old one IMMEDIATELY. Any handheld holding the previous one stops working and must be enrolled again — and the old plaintext cannot be recovered."
                     },
                     "response": []
-                }
-            ]
-        },
-        {
-            "name": "6 \u00b7 Close",
-            "item": [
+                },
                 {
-                    "name": "Submit",
+                    "name": "Enroll — claim the device for a person",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan-devices/enroll",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan-devices",
+                                "enroll"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"token\": \"{{device_token}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Run ON the handheld, SIGNED IN. Whoever is signed in becomes the author of every put-away this device later confirms (scan_devices.enrolled_by).\n\nSkip it and scans fall back to created_by — the admin who added the device row, not the person moving boxes."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Device check (public, no user)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan/device-check",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan",
+                                "device-check"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"token\": \"{{device_token}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Is this credential allowed to scan right now. Public and throttled — it is a guessing surface."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update a device",
                     "request": {
                         "method": "PUT",
                         "header": [
@@ -1786,10 +1925,72 @@
                                 "value": "application/json"
                             }
                         ],
+                        "url": {
+                            "raw": "{{base_url}}/scan-devices/{{device_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan-devices",
+                                "{{device_id}}"
+                            ]
+                        },
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"note\": \"Short by 200 KG against the PO \u2014 supplier confirmed by mail.\"\n}"
+                            "raw": "{\n  \"label\": \"Zebra TC27 · Bay 2\",\n  \"status\": \"active\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
                         },
+                        "description": "status: active | suspended | retired. A suspended device is told so by name when it tries to scan."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete a device",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/scan-devices/{{device_id}}",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "scan-devices",
+                                "{{device_id}}"
+                            ]
+                        },
+                        "description": "Removes it from the allow-list."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "10 · Close",
+            "item": [
+                {
+                    "name": "Submit (closes Stage 04)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
                         "url": {
                             "raw": "{{base_url}}/p2p/spi/{{spi_id}}/submit",
                             "host": [
@@ -1802,7 +2003,16 @@
                                 "submit"
                             ]
                         },
-                        "description": "Refused while anything is unpacked: goods not in a box have no box code, so they cannot be scanned, racked or inspected.\n\nOPEN DECISION: whether full packing should be required is not yet agreed."
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"note\": \"Short by 200 KG against the PO — supplier confirmed by mail.\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Sets status=mapped and stage_completed=4. This is the ONLY place stage_completed is written — nothing auto-advances the invoice when the last box is placed.\n\nRefused while anything is UNPACKED: goods not in a box have no box code, so they cannot be scanned, racked or inspected.\n\nRefused while anything is UNPLACED, naming the boxes and returning them in `unplaced`."
                     },
                     "response": []
                 },
@@ -1827,14 +2037,14 @@
                                 "{{spi_id}}"
                             ]
                         },
-                        "description": "Soft delete. Before the invoice goes, every line gives its quantity BACK to the PO through the fulfilment ledger \u2014 skip that and the PO stays short forever with no trace why."
+                        "description": "Soft delete. Before the invoice goes, every line gives its quantity BACK to the PO through the fulfilment ledger — skip that and the PO stays short forever with no trace why."
                     },
                     "response": []
                 }
             ]
         },
         {
-            "name": "7 \u00b7 Zoho Books",
+            "name": "11 · Zoho Books",
             "item": [
                 {
                     "name": "Sync (standalone only)",
@@ -1850,10 +2060,6 @@
                                 "value": "application/json"
                             }
                         ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n  \"force\": false\n}"
-                        },
                         "url": {
                             "raw": "{{base_url}}/p2p/spi/{{spi_id}}/zoho-sync",
                             "host": [
@@ -1866,7 +2072,16 @@
                                 "zoho-sync"
                             ]
                         },
-                        "description": "Only an invoice with NO purchase order creates its own bill \u2014 with a PO the bill already exists on the order and must not be created twice.\n\nCurrently returns 501: the bill call is not written yet."
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"force\": false\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "description": "Only an invoice with NO purchase order creates its own bill — with a PO the bill already exists on the order and must not be created twice.\\n\\nCurrently returns 501: the bill call is not written yet."
                     },
                     "response": []
                 },
@@ -1892,24 +2107,84 @@
                                 "zoho-tracker"
                             ]
                         },
-                        "description": "When the invoice does NOT own the bill, the response names the PO that does \u2014 rather than an empty state that reads like a failed sync."
+                        "description": "When the invoice does NOT own the bill, the response names the PO that does — rather than an empty state that reads like a failed sync."
                     },
                     "response": []
                 }
             ]
         },
         {
-            "name": "SPI Payment Request",
+            "name": "12 · Payment requests",
             "item": [
                 {
-                    "name": "One payment request",
+                    "name": "List payment requests",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/payment-requests",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "payment-requests"
+                            ]
+                        },
+                        "description": "The payment history popup."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Raise a payment request",
                     "request": {
                         "method": "POST",
                         "header": [
                             {
-                                "key": "Authorization",
-                                "value": "Bearer $TOKEN"
+                                "key": "Accept",
+                                "value": "application/json"
                             },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/payment-requests",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "payment-requests"
+                            ]
+                        },
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"payment_type\": \"Advance Payment\",\n  \"requested_amount\": 13440,\n  \"percentage\": 100,\n  \"reason\": \"Advance against this invoice\",\n  \"requested_to\": {{user_id}}\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Record a payment against a request",
+                    "request": {
+                        "method": "POST",
+                        "header": [
                             {
                                 "key": "Accept",
                                 "value": "application/json"
@@ -1941,102 +2216,22 @@
                                 {
                                     "key": "proof",
                                     "type": "file",
-                                    "src": [
-                                        "5dzHBQ6jD/PO_2026-27_016.pdf"
-                                    ]
+                                    "src": ""
                                 }
                             ]
                         },
                         "url": {
-                            "raw": "{{base_url}}/p2p/spi/1/payment-requests/17/payments",
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/payment-requests/{{payment_request_id}}/payments",
                             "host": [
                                 "{{base_url}}"
                             ],
                             "path": [
                                 "p2p",
                                 "spi",
-                                "1",
+                                "{{spi_id}}",
                                 "payment-requests",
-                                "17",
+                                "{{payment_request_id}}",
                                 "payments"
-                            ]
-                        }
-                    },
-                    "response": []
-                },
-                {
-                    "name": "Payments against one reques",
-                    "request": {
-                        "method": "POST",
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer $TOKEN"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
-                            },
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n    \"payment_type\": \"Advance Payment\",\n    \"requested_amount\": 13440,\n    \"percentage\": 100,\n    \"reason\": \"Advance against SPI/2026-27/001\",\n    \"requested_to\": 4\n  }",
-                            "options": {
-                                "raw": {
-                                    "language": "json"
-                                }
-                            }
-                        },
-                        "url": {
-                            "raw": "http://localhost:8000/api/p2p/spi/1/payment-requests",
-                            "protocol": "http",
-                            "host": [
-                                "localhost"
-                            ],
-                            "port": "8000",
-                            "path": [
-                                "api",
-                                "p2p",
-                                "spi",
-                                "1",
-                                "payment-requests"
-                            ]
-                        }
-                    },
-                    "response": []
-                },
-                {
-                    "name": "SPI payment history popup",
-                    "request": {
-                        "method": "GET",
-                        "header": [
-                            {
-                                "key": "Authorization",
-                                "value": "Bearer $TOKEN"
-                            },
-                            {
-                                "key": "Accept",
-                                "value": "application/json"
-                            }
-                        ],
-                        "body": {
-                            "mode": "formdata",
-                            "formdata": []
-                        },
-                        "url": {
-                            "raw": "{{base_url}}/p2p/spi/1/payment-requests",
-                            "host": [
-                                "{{base_url}}"
-                            ],
-                            "path": [
-                                "p2p",
-                                "spi",
-                                "1",
-                                "payment-requests"
                             ]
                         }
                     },
@@ -2045,104 +2240,61 @@
             ]
         },
         {
-            "name": "P2P Masters",
-            "item": []
-        },
-        {
-            "name": "SPI Evidence vault",
-            "request": {
-                "method": "GET",
-                "header": [
-                    {
-                        "key": "Accept",
-                        "value": "application/json"
+            "name": "13 · Evidence vault",
+            "item": [
+                {
+                    "name": "SPI evidence vault",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/spi/{{spi_id}}/evidence-vault",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spi_id}}",
+                                "evidence-vault"
+                            ]
+                        },
+                        "description": "Every document attached to the invoice and its boxes, grouped."
                     },
-                    {
-                        "key": "Authorization",
-                        "value": "Bearer {{token}}"
-                    }
-                ],
-                "url": {
-                    "raw": "http://127.0.0.1:8000/api/p2p/spi/1/evidence-vault",
-                    "protocol": "http",
-                    "host": [
-                        "127",
-                        "0",
-                        "0",
-                        "1"
-                    ],
-                    "port": "8000",
-                    "path": [
-                        "api",
-                        "p2p",
-                        "spi",
-                        "1",
-                        "evidence-vault"
-                    ]
-                }
-            },
-            "response": []
-        },
-        {
-            "name": "PO Evidence Vault",
-            "request": {
-                "method": "GET",
-                "header": [
-                    {
-                        "key": "Accept",
-                        "value": "application/json"
-                    },
-                    {
-                        "key": "Authorization",
-                        "value": "Bearer {{token}}"
-                    }
-                ],
-                "url": {
-                    "raw": "http://127.0.0.1:8000/api/p2p/orders/1051/evidence-vault",
-                    "protocol": "http",
-                    "host": [
-                        "127",
-                        "0",
-                        "0",
-                        "1"
-                    ],
-                    "port": "8000",
-                    "path": [
-                        "api",
-                        "p2p",
-                        "orders",
-                        "1051",
-                        "evidence-vault"
-                    ]
-                }
-            },
-            "response": []
-        },
-        {
-            "name": "Packed Boxes",
-            "request": {
-                "method": "GET",
-                "header": [
-                    {
-                        "key": "Accept",
-                        "value": "application/json"
-                    }
-                ],
-                "url": {
-                    "raw": "{{base_url}}/p2p/spi/{{spi_id}}/packed-boxes",
-                    "host": [
-                        "{{base_url}}"
-                    ],
-                    "path": [
-                        "p2p",
-                        "spi",
-                        "{{spi_id}}",
-                        "packed-boxes"
-                    ]
+                    "response": []
                 },
-                "description": "Was an empty stub \u2014 no method, no URL, so it could not be sent. Pointed at the real endpoint; the same request also sits under '4 \u00b7 Stage 03 \u2014 box packaging'."
-            },
-            "response": []
+                {
+                    "name": "PO evidence vault",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/p2p/orders/{{po_id}}/evidence-vault",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "orders",
+                                "{{po_id}}",
+                                "evidence-vault"
+                            ]
+                        },
+                        "description": "The same read on the purchase order."
+                    },
+                    "response": []
+                }
+            ]
         }
     ],
     "auth": {
@@ -2161,7 +2313,19 @@
             "value": "http://localhost:8000/api"
         },
         {
+            "key": "sticker_url",
+            "value": "http://localhost:8000"
+        },
+        {
             "key": "token",
+            "value": ""
+        },
+        {
+            "key": "device_token",
+            "value": ""
+        },
+        {
+            "key": "device_id",
             "value": ""
         },
         {
@@ -2201,7 +2365,7 @@
             "value": ""
         },
         {
-            "key": "user_id",
+            "key": "task_id",
             "value": ""
         },
         {
@@ -2217,7 +2381,11 @@
             "value": ""
         },
         {
-            "key": "task_id",
+            "key": "user_id",
+            "value": ""
+        },
+        {
+            "key": "payment_request_id",
             "value": ""
         }
     ]
