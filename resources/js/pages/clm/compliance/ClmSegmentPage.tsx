@@ -108,6 +108,8 @@ export default function ClmSegmentPage() {
   const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta } =
     usePagedList<Segment, { counts: Counts }>('/clm/segments', reloadKey, params);
   const counts: Counts = meta.counts ?? { all: 0, highly: 0, less: 0 };
+  // Counts follow search + filter, so 0 here can mean "no match" rather than "none created".
+  const narrowed = !!search.trim() || bcFilter !== 'all';
 
   const firstLoad  = loading && (rows.length === 0 || replacing);
   const refreshing = loading && !firstLoad;
@@ -219,6 +221,31 @@ export default function ClmSegmentPage() {
           transition: border-color .15s ease, box-shadow .15s ease;
         }
         .clm-root .seg-filter-ms { flex: 0 0 auto; }
+        /* Customer ≠ Consignee filter wears the .clm-search skin (height, cyan
+           border, radius, shadow, focus ring) instead of MasterSelect's
+           default indigo form-field look, so the toolbar reads as one set. */
+        .clm-root .seg-filter-ms .master-select-toggle {
+          height: 34px; padding: 0 10px 0 12px;
+          border: 1.5px solid rgba(6,182,212,.22); border-radius: 8px;
+          background: #fff; color: #0c4a6e; font-size: 12px; font-weight: 600;
+          box-shadow: 0 1px 4px rgba(6,182,212,.07);
+          transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .clm-root .seg-filter-ms .master-select-value { color: #0c4a6e; }
+        .clm-root .seg-filter-ms .master-select-toggle:hover:not(:disabled) { border-color: rgba(8,145,178,.45); box-shadow: 0 1px 4px rgba(6,182,212,.12); }
+        .clm-root .seg-filter-ms .master-select-wrap.show .master-select-toggle { border-color: #0891b2 !important; box-shadow: 0 0 0 3px rgba(8,145,178,.12) !important; }
+        .clm-root .seg-filter-ms .master-select-chev { font-size: 16px; color: #94a3b8; }
+        .clm-root .seg-filter-ms .master-select-wrap.show .master-select-chev { color: #0891b2; }
+        div.master-select-menu.dropdown-menu.seg-filter-menu { border: 1.5px solid rgba(6,182,212,.22) !important; border-radius: 8px !important; box-shadow: 0 10px 24px rgba(8,145,178,.14), 0 2px 6px rgba(15,23,42,.05) !important; }
+        .seg-filter-menu .master-select-item { font-size: 12px !important; color: #0c4a6e !important; }
+        .seg-filter-menu .master-select-item:hover, .seg-filter-menu .master-select-item:focus { background: rgba(6,182,212,.08) !important; color: #0e7490 !important; }
+        .seg-filter-menu .master-select-item.active { background: rgba(6,182,212,.12) !important; color: #0891b2 !important; }
+        [data-bs-theme="dark"] .clm-root .seg-filter-ms .master-select-toggle { background: #1e293b; border-color: rgba(6,182,212,.25); color: #e2e8f0; }
+        [data-bs-theme="dark"] .clm-root .seg-filter-ms .master-select-value { color: #e2e8f0; }
+        [data-bs-theme="dark"] div.master-select-menu.dropdown-menu.seg-filter-menu { background-color: #1e293b !important; border-color: rgba(6,182,212,.25) !important; }
+        [data-bs-theme="dark"] .seg-filter-menu .master-select-item { color: #e2e8f0 !important; }
+        [data-bs-theme="dark"] .seg-filter-menu .master-select-item:hover, [data-bs-theme="dark"] .seg-filter-menu .master-select-item:focus { background: rgba(6,182,212,.16) !important; color: #a5f3fc !important; }
+        [data-bs-theme="dark"] .seg-filter-menu .master-select-item.active { background: rgba(6,182,212,.22) !important; color: #67e8f9 !important; }
         @media (max-width: 1280px) { .clm-root .clm-tabs-bar .seg-search { width: 220px; } }
         @media (max-width: 760px)  {
           .clm-root .clm-tabs-bar .seg-toolbar { width: 100%; margin-left: 0; }
@@ -277,6 +304,8 @@ export default function ClmSegmentPage() {
                       { value: 'not',     label: 'Not Allowed' },
                     ]}
                     onChange={(v) => { setBcFilter((v || 'all') as 'all'|'allowed'|'not'); setPage(1); }}
+                    searchable={false}
+                    menuClassName="seg-filter-menu"
                   />
                 </div>
                 <div className="clm-search seg-search">
@@ -289,14 +318,17 @@ export default function ClmSegmentPage() {
 
           <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
             {rows.length === 0 && !loading ? (
-              <div className="clm-empty">
+              // Same fill height as the table so a no-match search keeps the card full-page.
+              <div className="clm-empty" ref={scrollRef} style={{ minHeight: fillH }}>
                 <div className="clm-empty-ico">{ICO.bSeg}</div>
                 <div className="clm-empty-title">
-                  {tab === 'all'    && 'No Segments Yet'}
-                  {tab === 'highly' && 'No Highly Regulated Segments'}
-                  {tab === 'less'   && 'No Less Regulated Segments'}
+                  {narrowed ? 'No Matching Segments' : <>
+                    {tab === 'all'    && 'No Segments Yet'}
+                    {tab === 'highly' && 'No Highly Regulated Segments'}
+                    {tab === 'less'   && 'No Less Regulated Segments'}
+                  </>}
                 </div>
-                <div className="clm-empty-sub">{counts.all === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
+                <div className="clm-empty-sub">{!narrowed && counts.all === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
               </div>
             ) : (
               <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>

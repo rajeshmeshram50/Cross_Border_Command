@@ -167,6 +167,7 @@ export function MasterSelect({
   listBadgesOnly,
   searchable = true,
   onDisabledClick,
+  menuClassName,
 }: {
   name?: string;
   value?: string;
@@ -232,6 +233,9 @@ export function MasterSelect({
      caller can explain why — e.g. a toast "segment must match". The menu stays
      open so the message lands in context. */
   onDisabledClick?: (opt: { value: string; label: string; disabledReason?: string }) => void;
+  /* Extra class on the portalled menu. The menu renders under <body>, so a
+     page-scoped skin can't reach it through the trigger's ancestors. */
+  menuClassName?: string;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -422,7 +426,7 @@ export function MasterSelect({
             measured width — without this the menu inherits the body's
             width and renders as a full-screen strip. */}
         <DropdownMenu
-          className="master-select-menu"
+          className={`master-select-menu${menuClassName ? ` ${menuClassName}` : ''}`}
           container="body"
           strategy="fixed"
           /* Pin the portalled menu to the viewport so it can never drift

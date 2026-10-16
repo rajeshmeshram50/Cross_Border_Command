@@ -34,7 +34,19 @@ class ClmSegmentController extends Controller
         $q = ClmSegment::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-        // Tab counts cover the whole scoped set, independent of tab/filter/search.
+        $bc = $request->input('buyer_consignee');
+        if ($bc === 'allowed') {
+            $q->where('buyer_consignee', ClmSegment::BC_ALLOWED);
+        } elseif ($bc === 'not') {
+            $q->where(fn ($w) => $w->whereNull('buyer_consignee')->orWhere('buyer_consignee', '<>', ClmSegment::BC_ALLOWED));
+        }
+        if ($search = trim((string) $request->input('search', ''))) {
+            $like = '%' . $search . '%';
+            $q->where(fn ($w) => $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like));
+        }
+
+        // Tab counts follow search + filter (so a no-match search shows 0 everywhere)
+        // but not the active tab, so every tab still shows its own match count.
         $c = (clone $q)->reorder()->toBase()->selectRaw(
             'COUNT(*) AS total_all,
              COUNT(*) FILTER (WHERE regulatory_status = ?) AS total_highly,
@@ -45,16 +57,6 @@ class ClmSegmentController extends Controller
 
         if (in_array($reg = $request->input('regulatory_status'), ClmSegment::REG_VALUES, true)) {
             $q->where('regulatory_status', $reg);
-        }
-        $bc = $request->input('buyer_consignee');
-        if ($bc === 'allowed') {
-            $q->where('buyer_consignee', ClmSegment::BC_ALLOWED);
-        } elseif ($bc === 'not') {
-            $q->where(fn ($w) => $w->whereNull('buyer_consignee')->orWhere('buyer_consignee', '<>', ClmSegment::BC_ALLOWED));
-        }
-        if ($search = trim((string) $request->input('search', ''))) {
-            $like = '%' . $search . '%';
-            $q->where(fn ($w) => $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like));
         }
 
         // Paged only when per_page is sent; dropdown consumers still get every row.
