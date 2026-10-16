@@ -90,18 +90,9 @@ export type SpiStage1Body = {
 
 export type SpiHeader = {
   id: number; code: string; status: string; stage_completed: number;
-  /** The branch the invoice belongs to — which decides whose masters apply. */
   branch_id?: number | null;
 };
 
-/**
- * A PO line as Stage 02 needs it.
- *
- * qty_po is what the order asked for ONCE. The grid works from qty_open — what
- * is left after every other invoice on this PO — because only the server can see
- * those other invoices. qty_open never goes negative; qty_over carries how far
- * earlier invoices already went past the order, which is context, not a column.
- */
 export type SpiPoLine = {
   po_item_id: number; pi_item_id: number | null; product_id: number | null; description: string | null;
   qty_po: number; qty_billed: number; qty_open: number; qty_over: number; closed: boolean;
@@ -182,17 +173,12 @@ export type SpiBoxBody = {
   net_weight_kg: number | null;
   gross_weight_kg: number | null;
   condition: 'perfect' | 'minor' | 'major' | 'severe';
-  /** 0 or 1 — whether another carton may sit on this one. */
   is_stackable: 0 | 1;
-  /** Cold-chain range in °C; null when the box is not cold chain. */
   temp_min_c: number | null;
   temp_max_c: number | null;
   items: SpiBoxItemBody[];
 };
 
-/* The list endpoint returns the whole row, so a saved box can be read back
-   into the drawer that made it. Everything past `quantity` is what an edit
-   needs and a create does not. */
 export type SpiBoxItem = {
   id: number;
   supplier_invoice_item_id: number;
@@ -205,7 +191,6 @@ export type SpiBoxItem = {
   lot_no?: string | null;
   batch_no?: string | null;
   cat_no?: string | null;
-  /** Date-cast on the server, so it arrives as a full ISO timestamp. */
   expiry_date?: string | null;
   mfg_date?: string | null;
 };
@@ -215,13 +200,10 @@ export type SpiBox = {
   box_code: string;
   scenario: SpiBoxScenario;
   condition: string;
-  /** 0 or 1. Absent on boxes saved before the column existed. */
   is_stackable?: number | null;
-  /** Decimal-cast, so these arrive as strings like "2.00". */
   temp_min_c?: string | number | null;
   temp_max_c?: string | number | null;
   sticker_printed_at: string | null;
-  /** Decimal-cast, so these arrive as strings like "40.00". */
   length_cm?: string | number | null;
   width_cm?: string | number | null;
   height_cm?: string | number | null;
@@ -237,7 +219,6 @@ export type SpiPackingTotals = {
 
 export type ProductFlagOption = { id: number; flag_name: string | null };
 
-/** What the box itself demands, resolved server-side from its contents. */
 export type PutawayNeed = {
   id: number; box_code: string;
   weight_kg: number; height_cm: number; footprint_cm2: number; volume_cm3: number;
@@ -250,10 +231,8 @@ export type PutawayShelf = {
   max_weight_kg: number; free_weight_kg: number; boxes: number;
   used_pct: number; used_pct_after: number;
   eligible: boolean;
-  /** Why it was refused, already worded by the engine; null when eligible. */
   reason: string | null; reason_label: string | null;
   held_by: number | null;
-  /** Only on an eligible shelf — 0-100, the engine's weights summed. */
   score?: number;
 };
 
@@ -262,16 +241,34 @@ export type PutawayRack = { id: number; name: string | null; code: string; shelv
 export type PutawayZone = {
   id: number; name: string | null; code: string; rack_mode: string | null;
   cold_chain: number; hazardous: number;
-  /** What the zone is for, and the range it holds - what the door says. */
   purpose: string | null; temp_min_c: number | null; temp_max_c: number | null;
   racks: PutawayRack[]; total: number; eligible: number;
 };
 
-/** The engine's pick: the top shelf of the same ranked list, with the zone and
- *  rack it sits in folded in so the card can name the whole path. */
 export type PutawayPick = PutawayShelf & {
   zone_id: number; zone_name: string | null; zone_code: string;
   rack_id: number; rack_name: string | null; rack_code: string;
+};
+
+export type PutawayStatus = 'pending' | 'draft' | 'awaiting_scan' | 'placed';
+
+export type PutawayBoardBox = {
+  box_id: number;
+  box_code: string;
+  scenario: string;
+  condition: string;
+  weight_kg: number;
+  putaway_id: number | null;
+  status: PutawayStatus;
+  destination: string | null;
+  assigned_at: string | null;
+  draft_since: string | null;
+  task: { id: number; task_code: string; scans: { done: number; required: number }; expires_at: string | null } | null;
+};
+
+export type PutawayBoard = {
+  counts: { total: number; pending: number; draft: number; awaiting_scan: number; placed: number; remaining: number };
+  boxes: PutawayBoardBox[];
 };
 
 export type PutawayLocations = {
@@ -295,9 +292,6 @@ export const spiApi = {
     call('SPI box save', () => api.post(`/p2p/spi/${spiId}/boxes`, body),
       (b) => (b as { data?: { box: SpiBox; totals: SpiPackingTotals } } | null)?.data?.box as SpiBox),
 
-  /* Replaces a saved box in place: same box_code, new dimensions and new
-     contents. The server swaps the items wholesale, so dropping one product
-     out of a mixed carton is an edit here rather than a delete-and-rebuild. */
   updateBox: (spiId: number, boxId: number, body: SpiBoxBody) =>
     call('SPI box update', () => api.put(`/p2p/spi/${spiId}/boxes/${boxId}`, body),
       (b) => (b as { data?: { box: SpiBox } } | null)?.data?.box as SpiBox),
@@ -309,13 +303,6 @@ export const spiApi = {
     call('SPI packing summary', () => api.get(`/p2p/spi/${spiId}/packing-summary`),
       (b) => (b as { data?: { totals?: SpiPackingTotals } } | null)?.data?.totals ?? null),
 
-  /* The flag master of the INVOICE'S branch, not the switcher's.
-     Flag ids are per branch — branch 1's "Cold Chain" and branch 2's are
-     different rows — and the options endpoint answers for whichever branch the
-     switcher is on. Editing another branch's invoice therefore resolved the
-     Cold Chain chip to the wrong branch's id, which the server now refuses as
-     a flag that branch has never heard of. Asking for the invoice's own branch
-     is what makes the chip resolve to an id the box may actually carry. */
   warehouses: () =>
     call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
       ((b as { data?: Array<{ id: number; wh_code: string | null; wh_name: string | null; wh_type: string; location: string | null }> } | null)?.data ?? [])
@@ -328,16 +315,14 @@ export const spiApi = {
           location: [w.wh_code, w.location].filter(Boolean).join(' · ') || '—',
         }))),
 
-  /** Step 04 · Step 02 proper: the whole tree for one mode, plus the engine's
-   *  pick. One call, because the recommendation IS the top of that same ranked
-   *  list - asking twice would cost twice and could disagree with itself. */
   putawayLocations: (spiId: number, boxId: number, mode: 'rack' | 'norack') =>
     call('Putaway locations', () => api.get(`/p2p/spi/${spiId}/putaway/locations`, { params: { box_id: boxId, mode } }),
       (b) => ((b as { data?: PutawayLocations } | null)?.data ?? null)),
 
-  /** Step 04 · Step 02's opening question: how many places of each kind this
-   *  box may go. Without a mode the server returns only the two counts, which
-   *  is all the chooser needs. */
+  putawayBoard: (spiId: number) =>
+    call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),
+      (b) => ((b as { data?: PutawayBoard } | null)?.data ?? { counts: { total: 0, pending: 0, draft: 0, awaiting_scan: 0, placed: 0, remaining: 0 }, boxes: [] })),
+
   putawayModes: (spiId: number, boxId: number) =>
     call('Putaway locations', () => api.get(`/p2p/spi/${spiId}/putaway/locations`, { params: { box_id: boxId } }),
       (b) => {
