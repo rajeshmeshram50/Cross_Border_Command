@@ -10,8 +10,8 @@ import StageSummary from './StageSummary';
 import PutawaySelectLocation from './PutawaySelectLocation';
 import PutawayConfirmPlacement, { findSpot } from './PutawayConfirmPlacement';
 import InspectionProductView from '../../order/physical-inspection/InspectionProductView';
-import { DEMO_LOCATIONS, DEMO_MODES } from './putaway-demo';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
+import { PoApiError } from '../../order/api/po-api';
 
 type Disposition = 'ship' | 'inv' | 'damaged' | 'mismatch';
 
@@ -465,7 +465,6 @@ const TABS: Array<{ key: 'all' | Disposition; label: string; ico: ReactNode }> =
   { key: 'inv',      label: 'Inventory Stock (Extra Stock)',  ico: <IcoList /> },
 ];
 
-const DEMO_DATA = true;
 
 const PRODUCTS_PER_PAGE = 5;
 
@@ -614,7 +613,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
   useEffect(() => {
     if (lcStep !== 1 || !putMode) return;
-    if (DEMO_DATA) { setLoc({ loading: false, data: DEMO_LOCATIONS, error: null }); setSpot(null); return; }
     if (!spiId || !box) return;
     let live = true;
     setLoc({ loading: true, data: null, error: null });
@@ -622,7 +620,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     spiApi.putawayLocations(spiId, box.id, putMode)
       .then(d => { if (live) setLoc({ loading: false, data: d, error: null }); })
       .catch(e => { if (live) setLoc({ loading: false, data: null,
-        error: e instanceof Error ? e.message : 'Could not read the warehouse layout.' }); });
+        error: e instanceof PoApiError ? e.firstError
+          : e instanceof Error ? e.message : 'Could not read the warehouse layout.' }); });
     return () => { live = false; };
   }, [lcStep, putMode, spiId, box?.id]);
 
@@ -1037,10 +1036,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     onClick={() => {
                       if (lcStep !== 0) { setLcStep(n => Math.min(LIFECYCLE.length - 1, n + 1)); return; }
                       setModePick(null);
-                      if (DEMO_DATA) {
-                        setModeAsk({ loading: false, ...DEMO_MODES, error: null });
-                        return;
-                      }
                       setModeAsk({ loading: true, rack: 0, norack: 0, error: null });
                       if (!spiId || !box) {
                         setModeAsk({ loading: false, rack: 0, norack: 0, error: 'Save the invoice before allocating boxes.' });
@@ -1294,10 +1289,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
               {modeAsk.error ? (
                 <div className="s4vp-none">{modeAsk.error}</div>
-              ) : modeAsk.loading ? (
-                <div className="s4vp-none">Reading the warehouse layout…</div>
               ) : (
-                <div className="s4wz-opts">
+                <div className="s4wz-opts" aria-busy={modeAsk.loading}>
                   {([
                     ['rack', 'Storage Zone with Rack', 'Place the box on a shelf · Zone › Rack › Shelf',
                       modeAsk.rack, modeAsk.rack === 1 ? 'shelf' : 'shelves'],
@@ -1307,17 +1300,24 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     <button
                       type="button"
                       key={k}
-                      className={`s4wz-opt s4wz-opt--${k}${modePick === k ? ' is-on' : ''}`}
-                      disabled={n === 0}
+                      className={`s4wz-opt s4wz-opt--${k}${modePick === k ? ' is-on' : ''}${modeAsk.loading ? ' is-loading' : ''}`}
+                      disabled={!modeAsk.loading && n === 0}
+                      aria-disabled={modeAsk.loading}
                       aria-pressed={modePick === k}
-                      onClick={() => setModePick(k)}
+                      onClick={() => { if (!modeAsk.loading) setModePick(k); }}
                     >
                       <span className="s4wz-opt__ic">{k === 'rack' ? <IcoList /> : <IcoBoxSm size={16} />}</span>
                       <span className="s4wz-opt__radio" aria-hidden />
                       <span className="s4wz-opt__t">{title}</span>
-                      {k === 'rack' && modeAsk.rack > 0 && <span className="s4wz-opt__rec">&#9733; Recommended</span>}
+                      {k === 'rack' && !modeAsk.loading && modeAsk.rack > 0 && <span className="s4wz-opt__rec">&#9733; Recommended</span>}
                       <span className="s4wz-opt__s">{sub}</span>
-                      <span className="s4wz-opt__n">{n === 0 ? `No ${unit} available` : `${n} ${unit}`}</span>
+                      {modeAsk.loading ? (
+                        <span className="s4wz-opt__n s4wz-opt__n--sk" aria-label="Loading count">
+                          <span className="spi-sk-bar" />
+                        </span>
+                      ) : (
+                        <span className="s4wz-opt__n">{n === 0 ? `No ${unit} available` : `${n} ${unit}`}</span>
+                      )}
                     </button>
                   ))}
                 </div>
