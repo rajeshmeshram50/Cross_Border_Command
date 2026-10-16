@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import '../../p2p-detail.css';
@@ -43,6 +43,15 @@ export interface InvoiceFormInput {
   storage: StorageChoice;
   invoiceNo?: string;
 }
+
+const BOX_FIELD_LABEL: Record<string, string> = {
+  flags: 'product flags', quantity: 'quantity in box', serial_no: 'serial no.', lot_no: 'lot no.', batch_no: 'batch no.',
+  cat_no: 'cat no.', expiry_date: 'expiry date', mfg_date: 'MFG date', remark: 'product remark', remark_note: 'remark note',
+  supplier_invoice_item_id: 'product', is_stackable: 'stackable setting', length_cm: 'length', width_cm: 'width',
+  height_cm: 'height', weight_kg: 'weight', net_weight_kg: 'net weight', gross_weight_kg: 'gross weight',
+  condition: 'box condition', temp_min_c: 'minimum temperature', temp_max_c: 'maximum temperature',
+  scenario: 'packing scenario', items: 'products in the box',
+};
 
 export default function InvoiceForm({
   input, invoiceNo, onClose,
@@ -277,9 +286,28 @@ export default function InvoiceForm({
     return () => { live = false; };
   }, [stage, spiId, spiBranchId, reloadBoxes, toast]);
 
-  const boxError = (e: unknown) => {
+  const boxLinesRef = useRef(boxLines);
+  boxLinesRef.current = boxLines;
+  const describeBoxField = (path: string, body?: SpiBoxBody) => {
+    const parts = path.split('.');
+    if (parts[0] === 'items' && /^\d+$/.test(parts[1] ?? '')) {
+      const idx = Number(parts[1]);
+      const item = body?.items[idx];
+      const name = item ? boxLinesRef.current.find(l => l.spiItemId === item.supplier_invoice_item_id)?.spiName : undefined;
+      const field = BOX_FIELD_LABEL[parts[2] ?? ''] ?? (parts[2] ?? 'details').replace(/_/g, ' ');
+      return `${field} of ${name ? `"${name}"` : `product ${idx + 1}`}`;
+    }
+    return BOX_FIELD_LABEL[parts[0]] ?? parts[0].replace(/_/g, ' ');
+  };
+  const boxError = (e: unknown, body?: SpiBoxBody) => {
     if (!(e instanceof PoApiError)) return 'Please try again.';
-    return (e.status ?? 0) >= 500 ? 'The server could not save it — nothing was changed. Please try again.' : e.firstError;
+    if ((e.status ?? 0) >= 500) return 'The server could not save it — nothing was changed. Please try again.';
+    const [key, list] = Object.entries(e.fieldErrors ?? {})[0] ?? [];
+    const raw = list?.[0] ?? e.message;
+    const label = key ? describeBoxField(key, body) : null;
+    if (!label) return raw;
+    const cleaned = raw.replace(/^the\s+[\w.]+\s+field\s+/i, '').replace(/^the\s+[\w.]+\s+/i, '');
+    return cleaned === raw ? `${label[0].toUpperCase()}${label.slice(1)}: ${raw}` : `The ${label} ${cleaned}`;
   };
 
   const createBox = useCallback(async (body: SpiBoxBody): Promise<SpiBox | null> => {
@@ -290,7 +318,7 @@ export default function InvoiceForm({
       toast.success(`${box.box_code} saved`, `${body.items.length} product${body.items.length === 1 ? '' : 's'} packed in this box.`);
       return box;
     } catch (e) {
-      toast.error('Could not save the box', boxError(e));
+      toast.error('Could not save the box', boxError(e, body));
       return null;
     }
   }, [spiId, reloadBoxes, toast]);
@@ -303,7 +331,7 @@ export default function InvoiceForm({
       toast.success(`${box.box_code} updated`, `It now holds ${body.items.length} product${body.items.length === 1 ? '' : 's'}.`);
       return box;
     } catch (e) {
-      toast.error('Could not update the box', boxError(e));
+      toast.error('Could not update the box', boxError(e, body));
       return null;
     }
   }, [spiId, reloadBoxes, toast]);

@@ -512,8 +512,12 @@ class SpiBoxController extends Controller
             "{$p}items.*.is_stackable"             => ['nullable', 'boolean'],
             "{$p}items.*.remark"                   => ['nullable', Rule::in(SpiBoxItem::REMARKS)],
             "{$p}items.*.remark_note"              => ['nullable', 'string', 'max:500'],
-            "{$p}items.*.flags"                    => ['nullable', 'array', 'max:20'],
-            "{$p}items.*.flags.*"                  => ['integer', 'distinct', $flagExists],
+            "{$p}items.*.flags"                    => ['nullable', 'array', 'max:20', function ($attribute, $value, $fail) {
+                if (is_array($value) && count($value) !== count(array_unique(array_map('intval', $value)))) {
+                    $fail('The same product flag is selected twice on one product.');
+                }
+            }],
+            "{$p}items.*.flags.*"                  => ['integer', $flagExists],
             "{$p}items.*.serial_no"                => ['nullable', 'string', 'max:60'],
             "{$p}items.*.lot_no"                   => ['nullable', 'string', 'max:60'],
             "{$p}items.*.batch_no"                 => ['nullable', 'string', 'max:60'],

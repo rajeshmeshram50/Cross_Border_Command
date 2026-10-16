@@ -117,7 +117,7 @@ class ProductFlagController extends BaseInventoryController
             $branch = $this->branchScope($request, $user);
             $data = $request->validate($this->rules());
 
-            if ($this->nameTaken($user, $branch, $data['flag_name'], null)) {
+            if ($this->flagNameTaken($user, $branch, $data['flag_name'], null)) {
                 abort(response()->json([
                     'status'  => false,
                     'message' => 'A product flag with this name already exists.',
@@ -156,7 +156,7 @@ class ProductFlagController extends BaseInventoryController
             $flag = $this->scopeTenant(ProductFlag::query(), $user, $branch)->findOrFail($id);
             $data = $request->validate($this->rules());
 
-            if ($this->nameTaken($user, $branch, $data['flag_name'], $flag->id)) {
+            if ($this->flagNameTaken($user, $branch, $data['flag_name'], $flag->id)) {
                 abort(response()->json([
                     'status'  => false,
                     'message' => 'A product flag with this name already exists.',
@@ -240,7 +240,7 @@ class ProductFlagController extends BaseInventoryController
      * packing screen — which resolves its built-in chip by name — choosing
      * between two rows, and the box would carry whichever it happened to find.
      */
-    private function nameTaken($user, ?int $branchId, string $name, ?int $exceptId): bool
+    private function flagNameTaken($user, ?int $branchId, string $name, ?int $exceptId): bool
     {
         return $this->scopeTenant(ProductFlag::query(), $user, $branchId, true)->where('flag_name', 'ilike', $name)
             ->when($exceptId, fn($q) => $q->where('id', '!=', $exceptId))
