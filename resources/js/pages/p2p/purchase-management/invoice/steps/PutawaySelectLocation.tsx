@@ -323,26 +323,30 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
             </div>
           ) : (
             <div className="s4sl-tree">
+              {/* One header, not three. The title card, the legend and the
+                  "expand…" note were three bordered bands stacked on each
+                  other, all of them context for the same tree - so they cost
+                  three borders and three gaps to say one thing. */}
               <div className="s4sl-tree__hd">
-                <span className="s4sl-tree__ic"><IcoBox size={15} /></span>
-                <div className="s4sl-tree__tx">
-                  <b>{mode === 'rack' ? 'With Rack' : 'Without Rack'}</b>
-                  <span>{mode === 'rack' ? 'Zone › Rack › Shelf' : 'Zone'}</span>
+                <div className="s4sl-tree__top">
+                  <span className="s4sl-tree__ic"><IcoBox size={15} /></span>
+                  <div className="s4sl-tree__tx">
+                    <b>{mode === 'rack' ? 'With Rack' : 'Without Rack'}</b>
+                    <span>
+                      {mode === 'rack' ? 'Zone › Rack › Shelf' : 'Zone'} · expand to a shelf.
+                      Only eligible shelves can be selected — a greyed one says why.
+                    </span>
+                  </div>
+                  <span className="s4sl-elig">{state.data.eligible} / {state.data.total} eligible</span>
                 </div>
-                <span className="s4sl-elig">{state.data.eligible} / {state.data.total} eligible</span>
-              </div>
 
-              <div className="s4sl-legend s4sl-legend--light">
-                <span className="s4sl-legend__k">Shelf space used</span>
-                {([['low', 'Low', 'under 45%'], ['med', 'Medium', '45–74%'],
-                   ['high', 'High', '75–99%'], ['full', 'Full', '100%']] as const).map(([k, t, r]) => (
-                  <span className={`s4sl-lg s4sl-lg--${k}`} key={k}><i />{t} <em>{r}</em></span>
-                ))}
-              </div>
-
-              <div className="s4sl-tree__note">
-                Expand {mode === 'rack' ? 'Zone › Rack › Shelf' : 'a zone'}. Only eligible
-                shelves can be selected — a greyed one says why.
+                <div className="s4sl-legend s4sl-legend--light">
+                  <span className="s4sl-legend__k">Shelf space used</span>
+                  {([['low', 'Low', 'under 45%'], ['med', 'Medium', '45–74%'],
+                     ['high', 'High', '75–99%'], ['full', 'Full', '100%']] as const).map(([k, t, r]) => (
+                    <span className={`s4sl-lg s4sl-lg--${k}`} key={k}><i />{t} <em>{r}</em></span>
+                  ))}
+                </div>
               </div>
 
               {state.data.zones.map(z => {

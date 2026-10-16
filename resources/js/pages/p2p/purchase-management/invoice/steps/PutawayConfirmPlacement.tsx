@@ -99,13 +99,18 @@ const IcoCheckSq = ({ size = 15 }: { size?: number }) => (
 );
 
 export default function PutawayConfirmPlacement({
-  box, spot, warehouse, assigned, qr, onChange, onMethod, onViewProducts,
+  box, spot, warehouse, assigned, awaitingScan = false, qr, onChange, onMethod, onViewProducts,
 }: {
   box: ConfirmBox;
   spot: ConfirmSpot | null;
   warehouse?: string | null;
   /** True once the placement has actually been committed. */
   assigned: boolean;
+  /** A Zebra scan task has been raised, so the floor still has to verify it.
+   *  Deliberately NOT the same as assigned: the box is not on the shelf until
+   *  the scan comes back, and a screen that said "Placed" here would be
+   *  claiming something nobody has checked. */
+  awaitingScan?: boolean;
   /** The box's QR, rendered by the parent so there is one QR component. */
   qr: ReactNode;
   onChange: () => void;
@@ -160,7 +165,12 @@ export default function PutawayConfirmPlacement({
       </div>
 
       <div className={`s4cp-status${assigned ? ' is-done' : ''}`}>
-        <span className="s4cp-status__l"><IcoPin />{assigned ? 'Location assigned' : 'No location assigned yet'}</span>
+        <span className="s4cp-status__l">
+          <IcoPin />
+          {assigned ? 'Location assigned'
+            : awaitingScan ? 'Awaiting Zebra scan on the floor'
+            : 'No location assigned yet'}
+        </span>
         <span className="s4cp-status__r">
           {spot
             ? <>Step 02 location <b>{shortCode(spot.shelf.code)}</b> · {assigned ? 'confirmed' : 'click Putaway Method to confirm'}</>
@@ -247,8 +257,15 @@ export default function PutawayConfirmPlacement({
                 <KV k="Hazardous" v={spot.zone.hazardous ? 'Yes' : 'No'} />
               </div>
 
-              <button type="button" className={`s4cp-method${assigned ? ' is-done' : ''}`} onClick={onMethod}>
-                <IcoCheckSq />{assigned ? 'Placement confirmed' : 'Putaway Method'}
+              <button
+                type="button"
+                className={`s4cp-method${assigned ? ' is-done' : ''}${awaitingScan && !assigned ? ' is-queued' : ''}`}
+                onClick={onMethod}
+              >
+                <IcoCheckSq />
+                {assigned ? 'Placement confirmed'
+                  : awaitingScan ? 'Scan task raised · change method'
+                  : 'Putaway Method'}
               </button>
             </>
           )}

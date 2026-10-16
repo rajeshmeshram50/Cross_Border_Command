@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import {
   spiApi, type ProductFlagOption, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
@@ -91,6 +92,30 @@ const IcoExpand = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
     <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+  </svg>
+);
+/** Puts a dialog inside the full-screened element.
+ *
+ *  In full screen the browser paints ONLY that element's subtree. Every dialog
+ *  on this step is a sibling of `.s4-panels`, which is the element that goes
+ *  full screen - so all of them opened invisibly behind it. `position: fixed`
+ *  does not help: the issue is what gets rendered, not where it is placed.
+ *
+ *  Outside full screen `host` is null and nothing moves. */
+function FsLayer({ host, children }: { host: HTMLElement | null; children: ReactNode }) {
+  return host ? createPortal(children, host) : <>{children}</>;
+}
+
+const IcoCheck = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+/** The manual option: a hand placing the box, against the scanner's device. */
+const IcoHand = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v7M10 10.5V6a2 2 0 0 0-4 0v9" />
+    <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8v-1a2 2 0 1 1 4 0" />
   </svg>
 );
 const IcoCollapse = () => (
@@ -553,6 +578,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
   const [placedAt, setPlacedAt] = useState<string | null>(null);
+  /* How the placement gets confirmed. The two answers are not the same event:
+     a manual confirmation IS the placement, a Zebra scan only queues one for
+     the floor to verify - so the box is not placed until the scan comes back.
+     Confirming straight off the button conflated the two. */
+  const [methodAsk, setMethodAsk] = useState(false);
+  const [methodPick, setMethodPick] = useState<'zebra' | 'manual' | null>(null);
+  const [scanTask, setScanTask] = useState(false);
   const [productViewId, setProductViewId] = useState<number | null>(null);
   const [modeAsk, setModeAsk] = useState<null | { loading: boolean; rack: number; norack: number; error: string | null }>(null);
   const [modePick, setModePick] = useState<'rack' | 'norack' | null>(null);
@@ -886,7 +918,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       assigned={placedAt !== null}
                       qr={<BoxQr text={String(box.id)} size={150} />}
                       onChange={() => setLcStep(1)}
-                      onMethod={() => setPlacedAt(new Date().toISOString())}
+                      awaitingScan={scanTask}
+                      onMethod={() => { setMethodPick(null); setMethodAsk(true); }}
                       onViewProducts={() => setShowProducts(true)}
                     />
                   ) : lcStep > 0 ? (
@@ -1037,6 +1070,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         </div>
       </div>
 
+      {/* Every dialog on this step, moved as a group into the full-screened
+          element when full screen is on. One wrapper rather than six, so a
+          dialog added later cannot be forgotten. */}
+      <FsLayer host={fs ? panelsRef.current : null}>
       {showProducts && box && (
         <div
           className="s4qm s4vp-modal is-open"
@@ -1150,6 +1187,86 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           </div>
         </div>
       )}
+
+      {/* How the placement is confirmed. Same chrome as the storage-type
+          chooser above - two options and a footer - because it is the same
+          question shape, and a second dialog pattern for it would only be a
+          second thing to keep in step. */}
+      {methodAsk && box && findSpot(loc.data, spot) && (() => {
+      const spotNow = findSpot(loc.data, spot)!;
+      return (
+        <div
+          className="s4qm s4wz-modal s4pm-modal is-open"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Choose putaway confirmation method"
+        >
+          <div className="s4qm__dlg s4wz__dlg">
+            <div className="s4qm__hd">
+              <div className="s4qm__hico"><IcoCheck /></div>
+              <div className="s4qm__htx">
+                <div className="s4qm__t">Choose Putaway Confirmation Method</div>
+                <div className="s4qm__s">
+                  {/* The whole address of what is being confirmed, in the
+                      order it is read on the floor. */}
+                  {[box.code, warehouse, spotNow.zone.code, spotNow.rack.code,
+                    spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1')].filter(Boolean).join(' → ')}
+                </div>
+              </div>
+              <button type="button" className="s4qm__x" onClick={() => setMethodAsk(false)} aria-label="Close">
+                &times;
+              </button>
+            </div>
+
+            <div className="s4qm__bd">
+              <div className="s4wz-opts">
+                {([
+                  ['zebra', 'Option 01 · Using Zebra Device',
+                    'Send the assigned box to the warehouse for physical QR verification using a Zebra handheld device.',
+                    'Creates a scan task'],
+                  ['manual', 'Option 02 · Manual Confirmation',
+                    'Confirm that the box has been physically placed at the assigned location without using a Zebra device.',
+                    'Completes now'],
+                ] as const).map(([k, title, sub, badge]) => (
+                  <button
+                    type="button"
+                    key={k}
+                    className={`s4wz-opt s4pm-opt s4pm-opt--${k}${methodPick === k ? ' is-on' : ''}`}
+                    aria-pressed={methodPick === k}
+                    onClick={() => setMethodPick(k)}
+                  >
+                    <span className="s4wz-opt__ic">{k === 'zebra' ? <IcoScan /> : <IcoHand />}</span>
+                    <span className="s4wz-opt__radio" aria-hidden />
+                    <span className="s4wz-opt__t">{title}</span>
+                    <span className="s4wz-opt__s">{sub}</span>
+                    <span className={`s4pm-badge s4pm-badge--${k}`}>{badge}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="s4qm__ft">
+              <button type="button" className="s4-btn-back" onClick={() => setMethodAsk(false)}>Cancel</button>
+              <button
+                type="button"
+                className="s4-btn-next"
+                disabled={!methodPick}
+                onClick={() => {
+                  /* Manual confirmation IS the placement. A Zebra scan is a
+                     task for the floor, so the box stays unplaced until the
+                     scan comes back. */
+                  if (methodPick === 'manual') { setPlacedAt(new Date().toISOString()); setScanTask(false); }
+                  else { setScanTask(true); }
+                  setMethodAsk(false);
+                }}
+              >
+                Select a method <IcoChevR />
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+      })()}
 
       {modeAsk && box && (
         <div
@@ -1304,6 +1421,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           </div>
         </div>
       )}
+      </FsLayer>
     </div>
   );
 }
