@@ -87,7 +87,7 @@ export default function BoxStickerModal({
   const sku = mixed ? `${rows.length} SKUs` : `HSN ${first?.hsn ?? '—'}`;
 
   return createPortal(
-    <div className="spi-mdl-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="spi-mdl-backdrop">
       <div className="spi-mdl invf-stk" role="dialog" aria-modal="true" aria-labelledby="invf-stk-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">

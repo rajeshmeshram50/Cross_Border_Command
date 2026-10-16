@@ -9,6 +9,7 @@ import { type EditCustomer } from './AddCustomerModal';
 import { type CustomerLite } from './CustomerConsigneesModal';
 import { type CustomerVaultTarget } from './CustomerEvidenceVaultModal';
 import { ShimmerTable } from '../../../../components/ui/Shimmer';
+import FilterChipsBar from '../FilterChipsBar';
 import useDismissPopover from '../../../../hooks/useDismissPopover';
 import AddCustomerModalShimmer from './AddCustomerModalShimmer';
 import { useIsClipped } from '../../../../components/ui/DataTable';
@@ -100,13 +101,22 @@ const titleCase = (s: string): string => {
 };
 
 const TruncatedCell = ({ value, className, max = 60, caseSensitive = false, maxWidth = '100%' }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean; maxWidth?: number | string }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  /* A cell is cut two different ways: by the character cap below, and by the
+   * column being narrower than the text. Only the first is knowable from the
+   * string, so the second is measured - and measured with a ResizeObserver,
+   * because a table column settles AFTER first paint and keeps moving as rows
+   * load or the window changes. Measuring once on mount answered "not
+   * clipped" before the column had a width, and nothing ever asked again,
+   * which is why a visibly cut email offered no tooltip. */
   const raw = (value ?? '').trim();
+  const v = raw ? (caseSensitive ? raw : titleCase(raw)) : '';
+  const clipped = useIsClipped(ref, v);
   if (!raw) return <span className="text-muted">—</span>;
-  const v = caseSensitive ? raw : titleCase(raw);
-  const needsTooltip = v.length > max;
-  const display = needsTooltip ? v.slice(0, max) + '…' : v;
-  const inner = <span className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
-  return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+  const jsTrunc = v.length > max;
+  const display = jsTrunc ? v.slice(0, max) + '…' : v;
+  const inner = <span ref={ref} className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+  return (jsTrunc || clipped) ? <Tooltip label={v}>{inner}</Tooltip> : inner;
 };
 
 function useDebouncedValue<T>(value: T, ms = 300): T {
@@ -750,18 +760,7 @@ export default function SalesCustomers() {
 
         {/* Active filter chips + Clear all — applied filters shown outside the
             modal, each removable, mirroring the My Workplace filter bar. */}
-        {filterChips.length > 0 && (
-          <div className="smc-filterbar">
-            <span className="smc-filterbar-lbl">Filters:</span>
-            {filterChips.map((chip, i) => (
-              <span key={i} className="smc-filterchip">
-                {chip.label}
-                <button type="button" onClick={chip.onRemove} aria-label={`Remove ${chip.label}`}>×</button>
-              </span>
-            ))}
-            <button type="button" className="smc-filterbar-clear" onClick={() => setFilters({})}>Clear all</button>
-          </div>
-        )}
+        <FilterChipsBar chips={filterChips} onClearAll={() => setFilters({})} prefix="smc" />
 
         <div className="smc-table-wrap">
           {(loading && customers.length === 0) || tabSwitching ? (

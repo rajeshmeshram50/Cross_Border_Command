@@ -1026,8 +1026,22 @@ export function useIsClipped(ref: RefObject<HTMLElement | null>, value: unknown)
     measure();
     window.addEventListener('resize', measure);
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    if (el && ro) ro.observe(el);
+    if (el && ro) {
+      ro.observe(el);
+      /* The column can resize without the cell's own box being reported
+         first, so watch the container too. */
+      if (el.parentElement) ro.observe(el.parentElement);
+    }
+    /* And re-measure once the web fonts land. This is the case the observers
+       cannot see: the element's BOX never changes, only its content, so text
+       that grows from fitting to a few pixels too wide fires nothing. It is
+       how a clipped email kept its tooltip hidden while a very long segment
+       name - over by a mile under any font - got one. Fonts resolve once per
+       document, so this is one extra measurement per cell. */
+    let live = true;
+    void document.fonts?.ready.then(() => { if (live) measure(); });
     return () => {
+      live = false;
       window.removeEventListener('resize', measure);
       ro?.disconnect();
     };

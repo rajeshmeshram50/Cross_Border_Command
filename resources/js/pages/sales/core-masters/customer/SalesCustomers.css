@@ -1547,8 +1547,13 @@
 /* ── Active-filter chips bar (above the table) — applied filters shown outside
    the modal with per-chip remove (×) + Clear all. Violet palette. ── */
 .smc-filterbar {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px;
   padding: 10px 4px 2px;
+  /* Twenty-seven segments wrapped to seven rows and pushed the table off the
+     screen. Three rows is enough to see what is applied; past that the bar
+     scrolls on its own rather than growing into the page. */
+  max-height: 104px; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 .smc-filterbar-lbl { font-size: 12.5px; font-weight: 700; color: #475569; margin-right: 2px; }
 .smc-filterchip {
@@ -1556,7 +1561,14 @@
   font-size: 12px; font-weight: 600; color: #6d28d9;
   background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 20px;
   padding: 4px 6px 4px 12px; white-space: nowrap;
+  /* A segment name can be a whole sentence. Without a ceiling the chip ran
+     past the card's right edge; the full text is on the title attribute. */
+  max-width: 320px;
 }
+.smc-filterchip > span {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.smc-filterchip button { flex-shrink: 0; }
 .smc-filterchip button {
   display: inline-flex; align-items: center; justify-content: center;
   width: 18px; height: 18px; border-radius: 50%; border: none;
@@ -1658,3 +1670,43 @@
    exceeds the 600 it was designed around on a tall one. */
 .smc-wdh-body-wrap { --wdh-max: clamp(160px, calc(100vh - 500px), 600px); }
 .smc-wdh-card.is-open .smc-wdh-body-wrap { overflow-y: auto; overscroll-behavior: contain; }
+
+/* ── Applied filters · the overflow lives in a popover ──────────────────────
+ * The bar keeps a couple of chips and hands the rest to "+N more", so it is a
+ * summary again rather than a wall. No cap and no scrolling: nothing wraps.
+ * ──────────────────────────────────────────────────────────────────────────*/
+.smc-filterbar { max-height: none; overflow: visible; flex-wrap: nowrap; }
+.smc-filterchip { flex-shrink: 1; min-width: 0; }
+
+.smc-filterchip-more {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 700; color: #6d28d9;
+  background: #faf9ff; border: 1px dashed #ddd6fe; border-radius: 20px;
+  padding: 4px 12px; cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s;
+}
+.smc-filterchip-more:hover { background: #f5f3ff; border-style: solid; }
+
+/* The popover reuses the Segment column's own overflow card, so "there are
+   more of these than fit" looks the same wherever it happens. */
+.smc-filterpop-lbl {
+  flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: #6d28d9;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.smc-filterpop-x {
+  flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; border: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(109,40,217,.10); color: #6d28d9; font-size: 14px; line-height: 1; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.smc-filterpop-x:hover { background: #7c3aed; color: #fff; }
+.smc-filterpop-clear {
+  width: 100%; margin-top: 6px; padding: 7px 10px;
+  border: none; border-radius: 8px; cursor: pointer;
+  background: rgba(220,38,38,.08); color: #dc2626; font-size: 12px; font-weight: 700;
+}
+.smc-filterpop-clear:hover { background: rgba(220,38,38,.16); }
+[data-bs-theme="dark"] .smc-filterchip-more { background: rgba(124,58,237,.12); border-color: rgba(124,58,237,.35); color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-filterpop-lbl { color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-filterpop-x { background: rgba(255,255,255,.08); color: #c4b5fd; }

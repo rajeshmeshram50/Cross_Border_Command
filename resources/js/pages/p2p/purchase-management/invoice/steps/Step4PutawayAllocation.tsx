@@ -5,6 +5,7 @@ import type { ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
 import StageSummary from './StageSummary';
 import PutawaySelectLocation from './PutawaySelectLocation';
+import PutawayConfirmPlacement, { findSpot } from './PutawayConfirmPlacement';
 import { DEMO_LOCATIONS, DEMO_MODES } from './putaway-demo';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
 
@@ -605,6 +606,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
   /* The sticker's code, opened large enough to scan off the screen. */
   const [qrOpen, setQrOpen] = useState(false);
+  /* When this box's placement was committed. Null until Step 03 confirms it,
+   * and reset with the rest when the pane moves to another carton. */
+  const [placedAt, setPlacedAt] = useState<string | null>(null);
   /* Step 01 -> Step 02 asks WHERE first: on a shelf, or straight into a zone.
    * The two are different trees, so the answer has to come before the picker
    * can be drawn at all. Null means the chooser is closed. */
@@ -621,7 +625,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const detail = detailIdx == null ? null : products[detailIdx] ?? null;
   useEffect(() => {
     setShowProducts(false); setProdPage(1); setLcStep(0); setDetailIdx(null);
-    setModeAsk(null); setModePick(null); setPutMode(null); setQrOpen(false);
+    setModeAsk(null); setModePick(null); setPutMode(null); setQrOpen(false); setPlacedAt(null);
   }, [selected]);
   const pageOfProducts = products.slice((prodPage - 1) * PRODUCTS_PER_PAGE, prodPage * PRODUCTS_PER_PAGE);
 
@@ -993,6 +997,21 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
                   {lcStep === 1 ? (
                     <PutawaySelectLocation box={box} mode={putMode} state={loc} spot={spot} onSpot={setSpot} />
+                  ) : lcStep === 2 ? (
+                    <PutawayConfirmPlacement
+                      box={{
+                        code: box.code, scenario: box.scenario, skus: box.skus, qty: box.qty,
+                        uom: box.uom, dims: box.dims, netKg: box.netKg, grossKg: box.grossKg,
+                        condition: box.condition, products: products.length,
+                      }}
+                      spot={findSpot(loc.data, spot)}
+                      warehouse={warehouse}
+                      assigned={placedAt !== null}
+                      qr={<BoxQr text={String(box.id)} size={150} />}
+                      onChange={() => setLcStep(1)}
+                      onMethod={() => setPlacedAt(new Date().toISOString())}
+                      onViewProducts={() => setShowProducts(true)}
+                    />
                   ) : lcStep > 0 ? (
                     <div className="s4-step-todo">
                       <b>{LIFECYCLE[lcStep].label}</b>
@@ -1173,7 +1192,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           role="dialog"
           aria-modal="true"
           aria-label="Products in this box"
-          onClick={e => { if (e.target === e.currentTarget) setShowProducts(false); }}
         >
           <div className="s4qm__dlg s4vp__dlg">
             <div className="s4qm__hd">
@@ -1254,7 +1272,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           role="dialog"
           aria-modal="true"
           aria-label="Box QR code"
-          onClick={e => { if (e.target === e.currentTarget) setQrOpen(false); }}
         >
           <div className="s4qm__dlg">
             <div className="s4qm__hd">
@@ -1277,12 +1294,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 <div className="s4qm__kv"><span>Product</span><b>{box.name}</b></div>
                 <div className="s4qm__kv"><span>Box type</span><b>{box.type === 'ship' ? 'Dispatch' : box.type === 'damaged' ? 'QC hold' : box.type === 'mismatch' ? 'Return' : 'Inventory'}</b></div>
               </div>
-
-              <div className="s4qm__bc">
-                <div className="s4qm__bcl">Barcode · Code 128</div>
-                <div className="s4qm__bars" aria-hidden />
-                <div className="s4qm__bct">{box.code}</div>
-              </div>
             </div>
 
             <div className="s4qm__ft">
@@ -1303,7 +1314,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           role="dialog"
           aria-modal="true"
           aria-label="Where do you want to store this box?"
-          onClick={e => { if (e.target === e.currentTarget) setModeAsk(null); }}
         >
           <div className="s4qm__dlg s4wz__dlg">
             <div className="s4qm__hd">
@@ -1382,7 +1392,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           role="dialog"
           aria-modal="true"
           aria-label="Product details"
-          onClick={e => { if (e.target === e.currentTarget) setDetailIdx(null); }}
         >
           <div className="s4qm__dlg s4pd__dlg">
             <div className="s4qm__hd">

@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
-import SegmentBadge, { segmentLabel, SegmentBadgeLine, SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { SEG_TAG_DARK, segmentLabel, SegmentBadgeLine, SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -2895,7 +2895,7 @@ export default function AddVendorModal(props: {
                             const reg = <SegmentBadge status={segmentOpts.find(o => o.value === String(id))?.reg} />;
                             if (!t || t.size === 0) return reg;
                             const badge = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
-                              <span title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
+                              <span className="seg-type-badge" title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined, '--sb-dk': SEG_TAG_DARK[text] } as React.CSSProperties}>{text}</span>
                             );
                             const intl = () => badge('INT', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
                             const dom  = () => badge('DOM', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');

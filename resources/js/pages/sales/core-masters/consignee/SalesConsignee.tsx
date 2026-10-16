@@ -35,6 +35,8 @@ const ConsigneeEvidenceVaultModal = lazyPage(() => import('./ConsigneeEvidenceVa
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from '../customer/customerBundleCache';
 import SearchClear from '../../../../components/ui/SearchClear';
 import { lazyPage } from '../../../../utils/lazyPage';
+import FilterChipsBar from '../FilterChipsBar';
+import { useIsClipped } from '../../../../components/ui/DataTable';
 import useDismissPopover from '../../../../hooks/useDismissPopover';
 const RISK_COLORS: Record<string, { bg: string; color: string; dot: string }> = {
   'Low':    { bg:'rgba(34,197,94,0.12)',  color:'#16a34a', dot:'#10b981' },
@@ -53,23 +55,20 @@ const titleCase = (s: string): string => {
 
 const TruncatedCell = ({ value, className, max = 60, caseSensitive = false, maxWidth = '100%' }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean; maxWidth?: number | string }) => {
   const ref = useRef<HTMLSpanElement>(null);
-  // True when the cell is visually CLIPPED by its column width (not just by the
-  // char-count limit) — e.g. a 29-char email cut by a narrow column. Measured
-  // from the DOM so the tooltip appears whenever the text is actually cut off.
-  const [clipped, setClipped] = useState(false);
+  /* A cell is cut two different ways: by the character cap below, and by the
+   * column being narrower than the text. Only the first is knowable from the
+   * string, so the second is measured - and measured with a ResizeObserver,
+   * because a table column settles AFTER first paint and keeps moving as rows
+   * load or the window changes. Measuring once on mount answered "not
+   * clipped" before the column had a width, and nothing ever asked again,
+   * which is why a visibly cut email offered no tooltip. */
   const raw = (value ?? '').trim();
   const v = raw ? (caseSensitive ? raw : titleCase(raw)) : '';
-  useEffect(() => {
-    const measure = () => { const el = ref.current; if (el) setClipped(el.scrollWidth > el.clientWidth + 1); };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [v]);
+  const clipped = useIsClipped(ref, v);
   if (!raw) return <span className="text-muted">—</span>;
   const jsTrunc = v.length > max;
   const display = jsTrunc ? v.slice(0, max) + '…' : v;
   const inner = <span ref={ref} className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
-  // Tooltip when EITHER the char-limit truncates OR the column clips it visually.
   return (jsTrunc || clipped) ? <Tooltip label={v}>{inner}</Tooltip> : inner;
 };
 
@@ -103,6 +102,41 @@ const bottomReserve = (): number => {
   const fh = f?.offsetHeight ?? 0;
   return fh > 0 ? fh + 8 : 15;
 };
+
+/**
+ * The first segment in the Segment column, with a tooltip when - and only
+ * when - the name is actually cut off.
+ *
+ * This cell truncates with CSS (.smcg-seg-name is 130px with an ellipsis), so
+ * whether a name is cut depends on the COLUMN, not on how many characters it
+ * has. The old gate asked for more than 30 characters before offering a
+ * tooltip, which meant a 20-character name sat visibly clipped with no way to
+ * read it. Asking the element itself removes the guess.
+ */
+function SegmentPrimaryCell({ name }: { name: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [cut, setCut] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setCut(el.scrollWidth > el.clientWidth + 1);
+    measure();
+    /* The column resizes with the table, so the answer can change without the
+       name changing. */
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [name]);
+
+  return (
+    <Tooltip label={name} disabled={!cut}>
+      <span className="smcg-seg smcg-seg--withbadge">
+        <span className="smcg-seg-name" ref={ref}>{name}</span>
+        <SegmentNameBadge name={name} style={{ marginLeft: 0 }} />
+      </span>
+    </Tooltip>
+  );
+}
 
 export default function SalesConsignee() {
   const toast = useToast();
@@ -531,12 +565,7 @@ export default function SalesConsignee() {
         const rowId = (info.row.original as ConsigneeRow).id;
         return (
           <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
-            <Tooltip label={segList[0]} disabled={segList[0].length <= 30}>
-              <span className="smcg-seg smcg-seg--withbadge">
-                <span className="smcg-seg-name">{segList[0]}</span>
-                <SegmentNameBadge name={segList[0]} style={{ marginLeft: 0 }} />
-              </span>
-            </Tooltip>
+            <SegmentPrimaryCell name={segList[0]} />
             {extra > 0 && (
               <Tooltip label={`View ${extra} more`}>
                 <button
@@ -813,18 +842,7 @@ export default function SalesConsignee() {
 
         {/* Active filter chips + Clear all — mirrors the My Workplace filter bar
             so applied filters are visible and removable outside the modal. */}
-        {filterChips.length > 0 && (
-          <div className="smcg-filterbar">
-            <span className="smcg-filterbar-lbl">Filters:</span>
-            {filterChips.map((chip, i) => (
-              <span key={i} className="smcg-filterchip">
-                {chip.label}
-                <button type="button" onClick={chip.onRemove} aria-label={`Remove ${chip.label}`}>×</button>
-              </span>
-            ))}
-            <button type="button" className="smcg-filterbar-clear" onClick={() => setFilters({})}>Clear all</button>
-          </div>
-        )}
+        <FilterChipsBar chips={filterChips} onClearAll={() => setFilters({})} prefix="smcg" />
 
         <div className="smcg-table-wrap">
           {loading && rows.length === 0 ? (

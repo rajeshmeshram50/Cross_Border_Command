@@ -6,11 +6,27 @@ export type RegulatoryStatus = 'highly' | 'less';
 /* Colours match the Segment Master badges:
  *   Reg-High → red     #dc2626 (bg 7%, border 22%)
  *   Reg-Low  → emerald #0d9488 (bg 7%, border 22%)
- * Dark mode lifts brightness via the rule injected below. */
-const TONES: Record<RegulatoryStatus, { color: string; bg: string; border: string; short: string; full: string }> = {
-  highly: { color: '#dc2626', bg: 'rgba(220,38,38,.07)', border: 'rgba(220,38,38,.22)', short: 'High', full: 'Highly Regulated' },
-  less:   { color: '#0d9488', bg: 'rgba(13,148,136,.07)', border: 'rgba(13,148,136,.22)', short: 'Less', full: 'Less Regulated' },
+ * Dark mode swaps to the lighter `dark` tone via the rule injected below. */
+const TONES: Record<RegulatoryStatus, { color: string; bg: string; border: string; dark: string; short: string; full: string }> = {
+  highly: { color: '#dc2626', bg: 'rgba(220,38,38,.07)', border: 'rgba(220,38,38,.22)', dark: '#f87171', short: 'High', full: 'Highly Regulated' },
+  less:   { color: '#0d9488', bg: 'rgba(13,148,136,.07)', border: 'rgba(13,148,136,.22)', dark: '#2dd4bf', short: 'Less', full: 'Less Regulated' },
 };
+
+/** Dark-mode text colour for the segment rule-type tags (INT / DOM / +2) in the segment pickers. */
+export const SEG_TAG_DARK: Record<string, string> = { INT: '#a5b4fc', DOM: '#5eead4', '+2': '#c4b5fd' };
+
+/* One global dark rule for .seg-reg-badge and .seg-type-badge: the light
+ * colours are inline, so dark mode reads the badge's --sb-dk tone and
+ * derives a translucent fill + border from it (overrides need !important). */
+if (typeof document !== 'undefined' && !document.getElementById('seg-badge-dark')) {
+  const el = document.createElement('style');
+  el.id = 'seg-badge-dark';
+  el.textContent = '[data-bs-theme="dark"] :is(.seg-reg-badge,.seg-type-badge){'
+    + 'color:var(--sb-dk)!important;'
+    + 'background:color-mix(in srgb,var(--sb-dk) 14%,transparent)!important;'
+    + 'border-color:color-mix(in srgb,var(--sb-dk) 38%,transparent)!important}';
+  document.head.appendChild(el);
+}
 
 const isStatus = (v: unknown): v is RegulatoryStatus => v === 'highly' || v === 'less';
 
@@ -40,19 +56,16 @@ export default function SegmentBadge({ status, name, full = false, style }: Prop
         display: 'inline-block', padding: '1px 7px', borderRadius: 999,
         fontSize: 10, fontWeight: 600, lineHeight: 1.4, whiteSpace: 'nowrap',
         color: tone.color, background: tone.bg, border: `1px solid ${tone.border}`,
-        verticalAlign: 'middle', ...style,
-      }}
+        verticalAlign: 'middle', '--sb-dk': tone.dark, ...style,
+      } as CSSProperties}
     >
       {full ? tone.full : tone.short}
     </span>
   ) : null;
 
-  const darkRule = <style>{'[data-bs-theme="dark"] .seg-reg-badge{filter:brightness(1.35)}'}</style>;
-
-  if (!name) return badge ? <>{darkRule}{badge}</> : null;
+  if (!name) return badge;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%', minWidth: 0 }}>
-      {darkRule}
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
       {badge}
     </span>
@@ -83,9 +96,26 @@ function loadNameMap(): Promise<Map<string, string | null>> {
 }
 
 export function useSegmentStatusByName(): (name?: string | null) => string | null {
+  return useSegmentStatusByNameState().statusOf;
+}
+
+/** The same lookup, plus whether it has arrived.
+ *
+ *  The map is fetched once and cached for five minutes, so most callers get it
+ *  immediately. On the first open of a session it is still in flight, and a
+ *  badge that renders nothing until it lands lets the operator read and tick a
+ *  row before its regulatory tier appears - which is the one fact that would
+ *  have changed the choice. Knowing it is loading is what lets the row say so. */
+export function useSegmentStatusByNameState(): {
+  statusOf: (name?: string | null) => string | null;
+  loading: boolean;
+} {
   const [map, setMap] = useState<Map<string, string | null> | null>(null);
   useEffect(() => { let live = true; void loadNameMap().then(m => { if (live) setMap(m); }); return () => { live = false; }; }, []);
-  return (name) => map?.get((name ?? '').trim().toLowerCase()) ?? null;
+  return {
+    statusOf: (name) => map?.get((name ?? '').trim().toLowerCase()) ?? null,
+    loading: map === null,
+  };
 }
 
 /** Badge for a segment known only by name (Reg-High when the name has both). Renders nothing when unknown. */
@@ -96,8 +126,29 @@ export function SegmentItemBadge({ item, style }: { item: SegmentItem; style?: C
 }
 
 export function SegmentNameBadge({ name, style }: { name?: string | null; style?: CSSProperties }) {
-  const statusOf = useSegmentStatusByName();
+  const { statusOf, loading } = useSegmentStatusByNameState();
+  /* While the tiers are in flight the row holds their place and shimmers, so
+     the badges arrive in a space already reserved rather than appearing under
+     a cursor that has moved on. */
+  if (loading) return <SegmentBadgeSkeleton style={style} />;
   return <SegmentBadge status={statusOf(name)} style={{ marginLeft: 5, flexShrink: 0, ...style }} />;
+}
+
+/** The badge's own footprint, shimmering, using app.css's global keyframe. */
+export function SegmentBadgeSkeleton({ style }: { style?: CSSProperties }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        marginLeft: 5, flexShrink: 0, display: 'inline-block',
+        width: 42, height: 17, borderRadius: 999,
+        background: 'linear-gradient(90deg, rgba(148,163,184,.14) 0%, rgba(148,163,184,.3) 50%, rgba(148,163,184,.14) 100%)',
+        backgroundSize: '200% 100%',
+        animation: 'shimmer 1.3s ease-in-out infinite',
+        ...style,
+      }}
+    />
+  );
 }
 
 /** One-line "Sugar [Reg-High] +2": only the name truncates, so the badge and count stay visible. */

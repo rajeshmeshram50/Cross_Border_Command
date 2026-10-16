@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import SegmentBadge, { SegmentNameList } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { SEG_TAG_DARK, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -3299,7 +3299,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   if (!t || t.size === 0) return reg;
                   const both = t.has('international') && t.has('domestic');
                   const badge = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
-                    <span title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
+                    <span className="seg-type-badge" title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined, '--sb-dk': SEG_TAG_DARK[text] } as React.CSSProperties}>{text}</span>
                   );
                   const intl = () => badge('INT', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
                   const dom  = () => badge('DOM', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');

@@ -177,6 +177,16 @@ export default function Step3BoxPackaging({
     s3: s3Rows + selected.length,
   };
 
+  /* Boxes already SAVED under each scenario. scenarioUse above counts lines
+   * staged in the form, which is a different thing and reads zero once
+   * everything is packed - so on a finished invoice it would have claimed no
+   * scenario was used while the Packed Boxes table listed all three. */
+  const scenarioBoxes: Record<Scenario, number> = {
+    s1: boxes.filter(b => b.scenario === 's1').length,
+    s2: boxes.filter(b => b.scenario === 's2').length,
+    s3: boxes.filter(b => b.scenario === 's3').length,
+  };
+
   const slotKeys: string[] = [];
   for (const l of pendingLines) {
     const p = packing[l.code];
@@ -625,19 +635,28 @@ export default function Step3BoxPackaging({
         </div>
         <div className="pkg-box__body">
           {SCENARIOS.map(s => (
-            <div className="pkg-card" key={s.id}>
-              <div className="pkg-card__scenario">
-                <div className="pkg-card__scenario-line" />
-                {s.no}
-                {scenarioUse[s.id] > 0 && (
-                  <span className="pkg-card__use is-on">
-                    {scenarioUse[s.id]} Product{scenarioUse[s.id] === 1 ? '' : 's'}
-                  </span>
-                )}
+            /* A card in use is marked, because which shapes THIS invoice
+               actually packs in is the one thing the strip can say that the
+               three definitions cannot. */
+            <div className={`pkg-card${scenarioBoxes[s.id] > 0 || scenarioUse[s.id] > 0 ? ' is-used' : ''}`} key={s.id}>
+              <div className="pkg-card__top">
+                <div className="pkg-card__scenario">
+                  <div className="pkg-card__scenario-line" />
+                  {s.no}
+                </div>
+                <span className="pkg-card__tag">{s.tag}</span>
               </div>
               <div className="pkg-card__title">{s.title} <span>{s.arrow}</span> {s.tail}</div>
               <div className="pkg-card__desc">{s.desc}</div>
-              <span className="pkg-card__tag">{s.tag}</span>
+              {/* Saved boxes first, because that is what the invoice has
+                  actually done; staged lines are the work in hand. */}
+              <span className={`pkg-card__use${scenarioBoxes[s.id] > 0 || scenarioUse[s.id] > 0 ? ' is-on' : ''}`}>
+                {scenarioBoxes[s.id] > 0
+                  ? `${scenarioBoxes[s.id]} box${scenarioBoxes[s.id] === 1 ? '' : 'es'} packed this way`
+                  : scenarioUse[s.id] > 0
+                    ? `${scenarioUse[s.id]} product${scenarioUse[s.id] === 1 ? '' : 's'} staged`
+                    : 'Not used yet'}
+              </span>
             </div>
           ))}
         </div>

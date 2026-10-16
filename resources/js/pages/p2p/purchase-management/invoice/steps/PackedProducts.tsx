@@ -238,7 +238,7 @@ function BoxContentsModal({ box, onClose }: { box: PackedBox; onClose: () => voi
   const units = box.items.reduce((n, i) => n + i.qty, 0);
 
   return createPortal(
-    <div className="spi-mdl-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="spi-mdl-backdrop">
       <div className="spi-mdl spi-mdl--wide" role="dialog" aria-modal="true" aria-labelledby="invf-boxes-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">

@@ -494,6 +494,21 @@ const LDV_CSS = `
 [data-bs-theme="dark"] .ldv-value { color: #e2e8f0; }
 [data-bs-theme="dark"] .ldv-foot { background: #0f172a; border-color: #1e293b; }
 [data-bs-theme="dark"] .ldv-link { color: #67e8f9; }
+[data-bs-theme="dark"] .ldv-value-muted { color: #64748b; }
+
+/* Card icon tiles — iconBg/iconColor are inline pastel pairs, so in dark
+ * mode derive the tile from the icon's own colour (currentColor) instead:
+ * translucent fill + hairline ring, and lift the glyph toward white. */
+[data-bs-theme="dark"] .ldv-card-icon {
+  background: color-mix(in srgb, currentColor 18%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 32%, transparent);
+}
+[data-bs-theme="dark"] .ldv-card-icon svg { color: color-mix(in srgb, currentColor 55%, #fff); }
+
+[data-bs-theme="dark"] .ldv-chip-violet { background: rgba(167,139,250,.14); color: #c4b5fd; border-color: rgba(167,139,250,.38); }
+[data-bs-theme="dark"] .ldv-chip-green  { background: rgba(74,222,128,.12);  color: #86efac; border-color: rgba(74,222,128,.35); }
+[data-bs-theme="dark"] .ldv-chip-cyan   { background: rgba(34,211,238,.12);  color: #67e8f9; border-color: rgba(34,211,238,.38); }
+[data-bs-theme="dark"] .ldv-chip-slate  { background: rgba(148,163,184,.12); color: #cbd5e1; border-color: rgba(148,163,184,.32); }
 
 /* Lead-details shimmer in dark mode — the light-mode gradient
  * (#e2e8f0 → #f1f5f9) renders as glaring near-white bars against the
