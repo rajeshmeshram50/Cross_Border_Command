@@ -58,6 +58,15 @@
 
         .qr img { width: 118pt; height: 118pt; }
         .qr-cap { font-size: 6pt; letter-spacing: .5pt; color: #64748b; padding-top: 3pt; }
+        /* word-break, or a 60-char URL runs off a 4in label. */
+        .qr-url {
+            font-family: 'DejaVu Sans Mono', monospace;
+            font-size: 4.2pt;
+            color: #94a3b8;
+            line-height: 1.25;
+            word-break: break-all;
+            padding-top: 1pt;
+        }
 
         .dl td { padding: 2.5pt 0; font-size: 7.5pt; }
         .dl .k { color: #64748b; width: 42%; }
@@ -123,6 +132,8 @@
                     <img src="{{ $qr }}" alt="{{ $box->box_code }}">
                 @endif
                 <div class="qr-cap">SCAN TO VERIFY</div>
+                {{-- The payload in text: a scuffed code can still be typed in. --}}
+                <div class="qr-url">{{ $qrUrl }}</div>
             </td>
             <td style="padding-left: 8pt;">
                 <table class="dl">

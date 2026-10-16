@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiBoxItem;
 use App\Models\P2p\SupplierInvoice;
+use App\Services\Inventory\StickerKey;
 use App\Services\P2p\SupplierInvoiceService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use chillerlan\QRCode\QRCode;
@@ -328,9 +329,9 @@ class SpiBoxController extends Controller
     /**
      * GET /p2p/spi/{id}/boxes/{box}/sticker/download — the label, as a PDF.
      *
-     * 4x6in, the standard label stock. The QR carries the BOX CODE and nothing
-     * else: that is the exact string the put-away scanner matches on, so a URL
-     * or a json blob in it would break the scan.
+     * 4x6in, the standard label stock. The QR carries the signed sticker URL
+     * (see StickerKey) — the put-away scanner reads the id back out of it, and
+     * the box code stays printed in text for whoever is reading the carton.
      *
      * Downloading IS printing, so this stamps sticker_printed_at when it is
      * still null — the same lock the preview takes. Without it a label could be
@@ -413,11 +414,13 @@ class SpiBoxController extends Controller
             'dims'       => $dims,
             'packedOn'   => $box->created_at?->format('d M Y'),
             'printedOn'  => now()->format('d M Y H:i'),
-            /* The ID, not the code. A box id is unique across every invoice,
-               client and branch; B-001 exists on almost every SPI, so a QR
-               carrying the code cannot say which carton it is. The code is
-               printed in text beside it for the human. */
-            'qr'         => $this->qr((string) $box->id),
+            /* A signed URL, not bare text — the same payload the Inventory
+               labels carry, so one scanner reads every label in the building.
+               A stranger's camera OPENS it and meets "Device blocked"; a bare
+               id would just be shown to them. Carries the box ID, because
+               B-001 exists on almost every SPI. */
+            'qr'         => $this->qr($url = StickerKey::url('BOX', $box->id, $spi->client_id)),
+            'qrUrl'      => $url,
         ];
     }
 

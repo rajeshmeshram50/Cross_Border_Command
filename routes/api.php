@@ -101,6 +101,22 @@ Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 // guessing surface.
 Route::middleware('throttle:60,1')->post('/scan/device-check', [\App\Http\Controllers\Api\ScanDeviceController::class, 'check']);
 
+/* Stage 04 · the handheld that closes a put-away task.
+   Device-authenticated, no user session: the floor does not log in per carton,
+   so the credential installed at enrollment is the credential, and the person
+   who logged in to enrol authors every scan it makes. The tenant is read off
+   the DEVICE row, never off the request.
+   Throttled higher than device-check because a put-away is several calls, and
+   a bad scan is retried immediately by someone standing at a rack.
+   Separate from the Inventory Management scan screens, which are untouched. */
+Route::middleware('throttle:120,1')->prefix('scan/putaway')->group(function () {
+    Route::post('/session',         [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'session']);
+    Route::post('/scan',            [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'scan']);
+    Route::get ('/{task}',          [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'show'])->whereNumber('task');
+    Route::post('/{task}/confirm',  [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'confirm'])->whereNumber('task');
+    Route::post('/{task}/complete', [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'complete'])->whereNumber('task');
+});
+
 /* The one-off /tools/attendance-backfill route and its controller are gone.
    It generated four months of attendance for a fixed employee list, defaulting
    to client 10 / branch 27 — the only place in runtime code that hardcoded a
@@ -1331,6 +1347,9 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::apiResource('scan-devices', \App\Http\Controllers\Api\ScanDeviceController::class)
         ->only(['index', 'store', 'update', 'destroy']);
     Route::post('/scan-devices/{id}/rotate', [\App\Http\Controllers\Api\ScanDeviceController::class, 'rotate']);
+    // Finishing enrollment ON the handheld. Needs a login precisely because
+    // that logged-in person becomes the author of every later scan.
+    Route::post('/scan-devices/enroll', [\App\Http\Controllers\Api\ScanDeviceController::class, 'enroll']);
 
     /* The floor's own queue, across invoices — what is still out with the
        warehouse. Cancelling closes the task and NOTHING else: the shelf stays
@@ -1338,6 +1357,11 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
        offering manual confirmation. */
     Route::get ('/putaway/tasks',               [SpiPutawayTaskController::class, 'queue']);
     Route::post('/putaway/tasks/{task}/cancel', [SpiPutawayTaskController::class, 'cancel'])->whereNumber('task');
+    // One task as it stands — what a status chip needs, cheap enough to poll.
+    Route::get ('/putaway/tasks/{task}', [SpiPutawayTaskController::class, 'show'])->whereNumber('task');
+    // Every scan on that task, pass and fail, in order — the only place the
+    // refusals are readable. Back-office read, not a handheld one.
+    Route::get ('/putaway/tasks/{task}/activity', [SpiPutawayTaskController::class, 'activity'])->whereNumber('task');
 
 
     Route::get('/modules', [PermissionController::class, 'modules']);

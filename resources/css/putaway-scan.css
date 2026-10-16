@@ -1,0 +1,403 @@
+/*
+ * Stage 04 handheld put-away screen.
+ *
+ * Sized for a Zebra TC27 held at arm's length in a warehouse: large type, high
+ * contrast, targets a gloved thumb can hit. Dark by default because the screen
+ * is read under warehouse lighting all shift.
+ *
+ * Self-contained — it shares nothing with the Inventory Management scan
+ * screens, so changing one cannot move the other.
+ */
+
+.pwscan {
+    --pw-bg: #0b1220;
+    --pw-card: #151e31;
+    --pw-line: #27354e;
+    --pw-text: #e8edf7;
+    --pw-mute: #8d9cb8;
+    --pw-ok: #22c55e;
+    --pw-bad: #ef4444;
+    --pw-go: #3b82f6;
+
+    min-height: 100vh;
+    box-sizing: border-box;
+    padding: 14px 16px 40px;
+    background: var(--pw-bg);
+    color: var(--pw-text);
+    font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.pwscan *,
+.pwscan *::before,
+.pwscan *::after { box-sizing: border-box; }
+
+.pwscan-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 13px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--pw-line);
+}
+
+.pwscan-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--pw-ok);
+}
+
+.pwscan-muted { color: var(--pw-mute); }
+
+.pwscan-code {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--pw-mute);
+}
+
+/* ── the two slots ─────────────────────────────────────────────────────── */
+
+.pwscan-slots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 14px 0;
+}
+
+.pwscan-slot {
+    position: relative;
+    padding: 12px 14px;
+    border: 1px solid var(--pw-line);
+    border-radius: 12px;
+    background: var(--pw-card);
+}
+
+.pwscan-slot.is-active { border-color: var(--pw-go); box-shadow: 0 0 0 2px rgb(59 130 246 / .22); }
+.pwscan-slot.is-done   { border-color: var(--pw-ok); }
+
+.pwscan-slot-t {
+    display: block;
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--pw-mute);
+}
+
+.pwscan-slot-v {
+    display: block;
+    margin-top: 3px;
+    font-size: 17px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    word-break: break-all;
+}
+
+.pwscan-slot-m {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    font-size: 15px;
+    color: var(--pw-ok);
+}
+
+/* ── the instruction, the largest thing on the screen ──────────────────── */
+
+.pwscan-prompt {
+    margin: 4px 0 12px;
+    padding: 14px;
+    border-radius: 12px;
+    background: var(--pw-card);
+    border: 1px solid var(--pw-line);
+    font-size: 21px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.pwscan-prompt.is-done { border-color: var(--pw-ok); color: var(--pw-ok); }
+
+.pwscan-staged {
+    margin-bottom: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px dashed var(--pw-go);
+    font-size: 14px;
+}
+
+.pwscan-alert {
+    margin-bottom: 10px;
+    padding: 11px 13px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.pwscan-alert--bad { background: rgb(239 68 68 / .14); border: 1px solid var(--pw-bad); color: #fecaca; }
+.pwscan-alert--ok  { background: rgb(34 197 94 / .12); border: 1px solid var(--pw-ok);  color: #bbf7d0; }
+
+.pwscan-attempts {
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: #fbbf24;
+    text-align: center;
+}
+
+/* ── scan input ────────────────────────────────────────────────────────── */
+
+.pwscan-form { display: flex; gap: 8px; margin-bottom: 14px; }
+
+.pwscan-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 13px 14px;
+    font-size: 17px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: var(--pw-text);
+    background: var(--pw-card);
+    border: 1px solid var(--pw-line);
+    border-radius: 11px;
+}
+
+.pwscan-input:focus { outline: none; border-color: var(--pw-go); box-shadow: 0 0 0 3px rgb(59 130 246 / .25); }
+
+.pwscan-btn {
+    flex: 0 0 auto;
+    padding: 13px 18px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #fff;
+    background: #334e74;
+    border: 1px solid var(--pw-line);
+    border-radius: 11px;
+    cursor: pointer;
+}
+
+.pwscan-btn:disabled { opacity: .45; cursor: default; }
+.pwscan-btn--wide { width: 100%; padding: 16px; font-size: 17px; }
+.pwscan-btn--go   { width: 100%; padding: 18px; font-size: 18px; background: var(--pw-ok); border-color: var(--pw-ok); }
+
+.pwscan-actions { display: grid; gap: 10px; margin-top: 16px; }
+
+/* ── read-back panels ──────────────────────────────────────────────────── */
+
+.pwscan-panel {
+    margin-bottom: 12px;
+    padding: 13px 15px;
+    border: 1px solid var(--pw-line);
+    border-radius: 12px;
+    background: var(--pw-card);
+}
+
+.pwscan-panel h2 {
+    margin: 0 0 9px;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--pw-mute);
+}
+
+.pwscan-panel dl { margin: 0; display: grid; gap: 6px; }
+.pwscan-panel dl > div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.pwscan-panel dt { color: var(--pw-mute); }
+.pwscan-panel dd { margin: 0; font-weight: 600; text-align: right; }
+
+.pwscan-items { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+
+.pwscan-items li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    padding-top: 6px;
+    border-top: 1px solid var(--pw-line);
+}
+
+.pwscan-dest {
+    font-size: 18px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    word-break: break-word;
+}
+
+/* ── blocked ───────────────────────────────────────────────────────────── */
+
+.pwscan--blocked { display: flex; align-items: center; justify-content: center; }
+
+.pwscan-card {
+    max-width: 420px;
+    padding: 26px;
+    text-align: center;
+    border: 1px solid var(--pw-line);
+    border-radius: 14px;
+    background: var(--pw-card);
+}
+
+.pwscan-card h1 { margin: 12px 0 8px; font-size: 22px; }
+.pwscan-card p  { margin: 0 0 8px; font-size: 15px; line-height: 1.45; }
+
+.pwscan-blockmark {
+    width: 54px;
+    height: 54px;
+    margin: 0 auto;
+    display: grid;
+    place-items: center;
+    font-size: 26px;
+    color: #fff;
+    background: var(--pw-bad);
+    border-radius: 50%;
+}
+
+/* ── put-away complete ─────────────────────────────────────────────────── */
+
+.pwscan-done {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    box-sizing: border-box;
+    background: var(--pw-bg, #0b1220);
+    font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    animation: pwscan-in .22s ease-out;
+}
+
+@keyframes pwscan-in { from { opacity: 0; transform: scale(.96); } }
+
+.pwscan-done-card {
+    width: 100%;
+    max-width: 420px;
+    padding: 34px 26px 26px;
+    text-align: center;
+    color: #e8edf7;
+    background: #151e31;
+    border: 1px solid #22c55e;
+    border-radius: 18px;
+}
+
+.pwscan-done-mark {
+    width: 84px;
+    height: 84px;
+    margin: 0 auto 16px;
+    display: grid;
+    place-items: center;
+    font-size: 44px;
+    font-weight: 700;
+    color: #06230f;
+    background: #22c55e;
+    border-radius: 50%;
+    /* A ring that settles, so the eye lands on it from across an aisle. */
+    animation: pwscan-pop .45s cubic-bezier(.2, 1.4, .4, 1);
+}
+
+@keyframes pwscan-pop { from { transform: scale(0); } 60% { transform: scale(1.12); } }
+
+.pwscan-done-card h2 { margin: 0 0 14px; font-size: 24px; color: #22c55e; }
+
+.pwscan-done-box {
+    margin: 0 0 4px;
+    font-size: 30px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.pwscan-done-where {
+    margin: 0 0 22px;
+    font-size: 14px;
+    color: #8d9cb8;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    word-break: break-word;
+}
+
+/* ── pending queue ─────────────────────────────────────────────────────── */
+
+.pwscan-queue { margin: 0 0 14px; padding: 0; list-style: none; display: grid; gap: 8px; }
+
+.pwscan-queue button {
+    width: 100%;
+    display: block;
+    padding: 13px 15px;
+    text-align: left;
+    color: #e8edf7;
+    background: #151e31;
+    border: 1px solid #27354e;
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.pwscan-queue button:active { border-color: #3b82f6; }
+
+.pwscan-q-box {
+    display: block;
+    font-size: 18px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.pwscan-q-dest {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    color: #8d9cb8;
+    word-break: break-word;
+}
+
+.pwscan-q-meta { display: block; margin-top: 3px; font-size: 11px; color: #64748b; }
+
+/* ── location ladder ───────────────────────────────────────────────────── */
+
+.pwscan-slots--one { grid-template-columns: 1fr; }
+
+.pwscan-chain {
+    margin-bottom: 14px;
+    padding: 11px 13px;
+    border: 1px solid var(--pw-line);
+    border-radius: 12px;
+    background: var(--pw-card);
+}
+
+.pwscan-chain-t {
+    font-size: 11px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--pw-mute);
+    margin-bottom: 8px;
+}
+
+.pwscan-rung {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 7px 9px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+}
+
+/* Done fades back; the one still owed is the only thing competing for
+   attention, because that is the next physical act. */
+.pwscan-rung.is-done .pwscan-rung-m { color: var(--pw-ok); }
+.pwscan-rung.is-done .pwscan-rung-v { color: var(--pw-mute); }
+
+.pwscan-rung.is-next {
+    border-color: var(--pw-go);
+    background: rgb(59 130 246 / .12);
+}
+
+.pwscan-rung-m { width: 14px; font-size: 14px; color: #475569; }
+
+.pwscan-rung-k {
+    width: 46px;
+    flex: 0 0 auto;
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--pw-mute);
+}
+
+.pwscan-rung-v {
+    font-size: 15px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    word-break: break-all;
+}

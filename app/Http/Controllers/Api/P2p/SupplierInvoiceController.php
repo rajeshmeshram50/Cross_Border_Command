@@ -36,9 +36,25 @@ class SupplierInvoiceController extends Controller
         return $user;
     }
 
+    /**
+     * The invoice, or a 404 that says so in words.
+     *
+     * findOrFail() throws ModelNotFoundException, which renders as "No query
+     * results for model [App\Models\P2p\SupplierInvoice] 200" with the stack
+     * trace attached — true, and no use to whoever is reading it. The id is
+     * quoted back, so a wrong variable in a request is obvious at a glance.
+     */
     private function findSpi(int $id): SupplierInvoice
     {
-        return SupplierInvoice::findOrFail($id);
+        $spi = SupplierInvoice::find($id);
+        if (!$spi) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => "No supplier invoice found with id {$id}.",
+            ], 404));
+        }
+
+        return $spi;
     }
 
     /* ══════════════════════════ LOOKUPS ══════════════════════════ */
@@ -773,7 +789,19 @@ class SupplierInvoiceController extends Controller
             DB::beginTransaction();
 
             $this->tenantUser($request);
-            $body = app(\App\Services\P2p\SpiSummaryService::class)->packedBoxes($this->findSpi($id));
+
+            /* Paged and filtered on the server. An invoice can hold a hundred
+               boxes and a box carries its products and attachments, so the
+               whole list is far more than a screen of ten rows needs. */
+            $opts = $request->validate([
+                'bucket'   => ['nullable', 'in:all,ship,inv,damaged,mismatch'],
+                'handling' => ['nullable', 'in:haz,non_haz,cold'],
+                'search'   => ['nullable', 'string', 'max:120'],
+                'page'     => ['nullable', 'integer', 'min:1'],
+                'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            ]);
+
+            $body = app(\App\Services\P2p\SpiSummaryService::class)->packedBoxes($this->findSpi($id), $opts);
 
             DB::commit();
 

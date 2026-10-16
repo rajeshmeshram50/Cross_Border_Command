@@ -40,6 +40,25 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             'iclock/*',
         ]);
+
+        /* Behind a TLS terminator, believe the forwarded headers.
+         *
+         * Without this Laravel reads the scheme off the connection it can
+         * see — plain HTTP from the proxy — and builds every absolute URL as
+         * http:// on the HTTPS port. Assets 404, and anything signed is
+         * signed against the wrong URL, so it fails validation on the way
+         * back in.
+         *
+         * Only private ranges are trusted: these headers are forgeable, and a
+         * request that reached us from the internet has no business claiming
+         * to be anything other than what it is. */
+        $middleware->trustProxies(
+            at: ['127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'],
+            headers: Illuminate\Http\Request::HEADER_X_FORWARDED_FOR
+                | Illuminate\Http\Request::HEADER_X_FORWARDED_HOST
+                | Illuminate\Http\Request::HEADER_X_FORWARDED_PORT
+                | Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO,
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

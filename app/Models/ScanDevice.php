@@ -13,14 +13,32 @@ class ScanDevice extends Model
 {
     protected $fillable = [
         'client_id', 'serial', 'label', 'model', 'location', 'status',
-        'token_hash', 'last_seen_at', 'created_by',
+        'token_hash', 'last_seen_at', 'created_by', 'enrolled_by', 'enrolled_at',
     ];
 
     protected $hidden = ['token_hash'];
 
     protected $casts = [
         'last_seen_at' => 'datetime',
+        'enrolled_at'  => 'datetime',
     ];
+
+    /**
+     * Who a scan by this device is authored by.
+     *
+     * The floor does not log in per carton, so the person who logged in to
+     * enroll the handheld owns everything it confirms. Falls back to the admin
+     * who added the row, for devices enrolled before that was recorded.
+     */
+    public function actorId(): ?int
+    {
+        return $this->enrolled_by ?: $this->created_by;
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === 'active';
+    }
 
     /** Fresh credential: plaintext for the device, hash for the row. */
     public static function issueToken(): array

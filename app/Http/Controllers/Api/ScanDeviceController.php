@@ -123,6 +123,53 @@ class ScanDeviceController extends Controller
         ]);
     }
 
+    /**
+     * POST /scan-devices/enroll — finish enrollment on the handheld itself.
+     *
+     * Needs a logged-in user, and that is the whole point: the floor does not
+     * log in for every carton, so whoever is signed in HERE becomes the author
+     * of every put-away this device later confirms. created_by stays what it
+     * was — the admin who added the device to the allow-list, which is a
+     * different person answering a different question.
+     *
+     * The device must already be on this client's allow-list; this binds a
+     * person to it, it does not create one.
+     */
+    public function enroll(Request $request)
+    {
+        $data = $request->validate(['token' => ['required', 'string', 'max:100']]);
+
+        $device = ScanDevice::findByToken($data['token']);
+
+        if (!$device || (int) $device->client_id !== $this->clientId($request)) {
+            return response()->json([
+                'authorized' => false,
+                'code'       => 'rejected_unauthorized_device',
+                'message'    => 'That credential does not belong to any device on this account.',
+            ], 404);
+        }
+
+        if (!$device->isActive()) {
+            return response()->json([
+                'authorized' => false,
+                'code'       => $device->status === 'suspended' ? 'rejected_suspended_device' : 'rejected_unauthorized_device',
+                'message'    => "This device is {$device->status} and cannot be enrolled.",
+            ], 403);
+        }
+
+        $device->forceFill([
+            'enrolled_by'  => $request->user()->id,
+            'enrolled_at'  => now(),
+            'last_seen_at' => now(),
+        ])->save();
+
+        return response()->json([
+            'authorized' => true,
+            'code'       => 'device_ok',
+            'device'     => $device->toClient() + ['actor_id' => $device->actorId()],
+        ], 200);
+    }
+
     private function clientId(Request $request): int
     {
         $clientId = $request->user()->client_id;

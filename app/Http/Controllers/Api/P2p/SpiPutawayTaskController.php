@@ -38,6 +38,12 @@ class SpiPutawayTaskController extends Controller
         private SupplierInvoiceService $svc,
     ) {}
 
+    /** A 404 that names what was not found, rather than a framework trace. */
+    private function missing(string $message): never
+    {
+        abort(response()->json(['status' => false, 'message' => $message], 404));
+    }
+
     private function tenantUser(Request $request)
     {
         $user = $request->user();
@@ -58,8 +64,11 @@ class SpiPutawayTaskController extends Controller
     public function store(Request $request, int $id, int $rowId)
     {
         $user = $this->tenantUser($request);
-        $spi  = SupplierInvoice::findOrFail($id);
-        $row  = SpiPutaway::where('supplier_invoice_id', $id)->with('box:id,box_code')->findOrFail($rowId);
+        $spi  = SupplierInvoice::find($id);
+        if (!$spi) $this->missing("No supplier invoice found with id {$id}.");
+
+        $row  = SpiPutaway::where('supplier_invoice_id', $id)->with('box:id,box_code')->find($rowId);
+        if (!$row) $this->missing("No put-away found with id {$rowId} on {$spi->code}.");
 
         $request->validate([
             'confirmed'  => ['required', 'accepted'],
@@ -156,36 +165,152 @@ class SpiPutawayTaskController extends Controller
     /** GET /p2p/spi/{id}/putaway/tasks — this invoice's queue, with its counts. */
     public function index(Request $request, int $id)
     {
-        $this->tenantUser($request);
+        try {
+            DB::beginTransaction();
 
-        $tasks = SpiPutawayTask::where('supplier_invoice_id', $id)
-            ->with(['box:id,box_code', 'putaway:id,destination'])
-            ->orderByDesc('id')
-            ->get();
+            $this->tenantUser($request);
 
-        return response()->json(['status' => true, 'data' => [
-            'counts' => [
-                'awaiting_scan' => $tasks->where('status', SpiPutawayTask::PENDING)->count(),
-                'placed'        => $tasks->where('status', SpiPutawayTask::SCANNED)->count(),
-                'cancelled'     => $tasks->where('status', SpiPutawayTask::CANCELLED)->count(),
-                'expired'       => $tasks->where('status', SpiPutawayTask::EXPIRED)->count(),
-            ],
-            'tasks'  => $tasks->map(fn (SpiPutawayTask $t) => $this->body($t, $t->putaway))->all(),
-        ]], 200);
+            $tasks = SpiPutawayTask::where('supplier_invoice_id', $id)
+                ->with(['box:id,box_code', 'putaway:id,destination'])
+                ->orderByDesc('id')
+                ->get();
+
+            $body = [
+                'counts' => [
+                    'awaiting_scan' => $tasks->where('status', SpiPutawayTask::PENDING)->count(),
+                    'placed'        => $tasks->where('status', SpiPutawayTask::SCANNED)->count(),
+                    'cancelled'     => $tasks->where('status', SpiPutawayTask::CANCELLED)->count(),
+                    'expired'       => $tasks->where('status', SpiPutawayTask::EXPIRED)->count(),
+                ],
+                'tasks'  => $tasks->map(fn (SpiPutawayTask $t) => $this->body($t, $t->putaway))->all(),
+            ];
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /** GET /putaway/tasks — the branch-wide floor queue, open ones first. */
     public function queue(Request $request)
     {
-        $this->tenantUser($request);
+        try {
+            DB::beginTransaction();
 
-        $tasks = SpiPutawayTask::with(['box:id,box_code', 'invoice:id,code'])
-            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
-            ->orderByRaw("case when status = 'pending' then 0 else 1 end")
-            ->orderByDesc('id')
-            ->paginate((int) $request->input('per_page', 10));
+            $this->tenantUser($request);
 
-        return response()->json(['status' => true, 'data' => $tasks], 200);
+            $tasks = SpiPutawayTask::with(['box:id,box_code', 'invoice:id,code'])
+                ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
+                ->orderByRaw("case when status = 'pending' then 0 else 1 end")
+                ->orderByDesc('id')
+                ->paginate((int) $request->input('per_page', 10));
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $tasks], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * GET /putaway/tasks/{task} — one task, as it stands right now.
+     *
+     * Separate from /activity on purpose. This answers "where is this box up
+     * to", which a screen may poll; that one answers "how did it get there"
+     * and carries every scan ever made against the task. Dragging dozens of
+     * log rows along to render a status chip is the wrong trade.
+     */
+    public function show(Request $request, int $taskId)
+    {
+        $user = $this->tenantUser($request);
+
+        $task = SpiPutawayTask::where('client_id', $user->client_id)
+            ->with(['box:id,box_code', 'putaway:id,destination', 'invoice:id,code'])
+            ->find($taskId);
+
+        if (!$task) $this->missing("No put-away task found with id {$taskId}.");
+
+        return response()->json(['status' => true, 'data' => $this->body($task, $task->putaway) + [
+            'spi_code'   => $task->invoice?->code,
+            'step'       => $task->currentStep(),
+            'step_label' => $task->stepLabel(),
+            'ready_to_complete' => $task->readyToComplete(),
+            'attempts_left'     => max(0, SpiPutawayTask::MAX_FAILS - (int) $task->fail_count),
+            // What a status chip actually needs, already decided server-side.
+            'is_open'    => $task->isOpen(),
+            'is_done'    => $task->status === SpiPutawayTask::SCANNED,
+        ]], 200);
+    }
+
+    /**
+     * GET /putaway/tasks/{task}/activity — what happened, in order.
+     *
+     * The task row says WHERE it ended up; this says how it got there, and it
+     * is the only place the REFUSALS survive. A put-away that took four
+     * attempts and one wrong rack reads identically to a clean one on the task
+     * row alone — the difference lives here, and it is the difference worth
+     * reading when someone asks why a box took twenty minutes.
+     *
+     * Not on the handheld's device-authenticated routes: this is a back-office
+     * read, and the floor has no use for it mid-scan.
+     */
+    public function activity(Request $request, int $taskId)
+    {
+        $user = $this->tenantUser($request);
+
+        $task = SpiPutawayTask::where('client_id', $user->client_id)
+            ->with(['box:id,box_code', 'invoice:id,code'])
+            ->find($taskId);
+
+        if (!$task) $this->missing("No put-away task found with id {$taskId}.");
+
+        $rows = PutawayActivityLog::where('task_id', $task->id)
+            ->orderBy('id')
+            ->get()
+            ->map(fn (PutawayActivityLog $l) => [
+                'id'         => (int) $l->id,
+                'at'         => optional($l->created_at)->toIso8601String(),
+                'event'      => $l->event,
+                'ok'         => $l->event !== PutawayActivityLog::SCAN_FAILED,
+                'actor_type' => $l->actor_type,
+                'actor_id'   => $l->actor_id ? (int) $l->actor_id : null,
+                'actor'      => $l->actor_id ? DB::table('users')->where('id', $l->actor_id)->value('name') : null,
+                'device_id'  => $l->device_id ? (int) $l->device_id : null,
+                'meta'       => $l->meta,
+                'to'         => $l->to_location,
+            ]);
+
+        return response()->json(['status' => true, 'data' => [
+            'task' => [
+                'id'                 => (int) $task->id,
+                'task_code'          => $task->task_code,
+                'status'             => $task->status,
+                'box_code'           => $task->box?->box_code,
+                'spi_code'           => $task->invoice?->code,
+                'required_scans'     => (int) $task->required_scans,
+                'completed_scans'    => (int) $task->completed_scans,
+                'fail_count'         => (int) $task->fail_count,
+                'issued_at'          => optional($task->issued_at)->toIso8601String(),
+                'box_scan_at'        => optional($task->box_scan_at)->toIso8601String(),
+                'shelf_scan_at'      => optional($task->shelf_scan_at)->toIso8601String(),
+                'box_confirmed_at'   => optional($task->box_confirmed_at)->toIso8601String(),
+                'shelf_confirmed_at' => optional($task->shelf_confirmed_at)->toIso8601String(),
+                'completed_at'       => optional($task->completed_at)->toIso8601String(),
+                'cancelled_at'       => optional($task->cancelled_at)->toIso8601String(),
+                'device_serial'      => $task->device_serial,
+            ],
+            'timeline' => $rows,
+            'counts'   => [
+                'total'  => $rows->count(),
+                'passed' => $rows->where('ok', true)->count(),
+                'failed' => $rows->where('ok', false)->count(),
+            ],
+        ]], 200);
     }
 
     /* ══════════════════════════ CANCEL ══════════════════════════ */
@@ -201,7 +326,8 @@ class SpiPutawayTaskController extends Controller
     public function cancel(Request $request, int $taskId)
     {
         $user = $this->tenantUser($request);
-        $task = SpiPutawayTask::with('putaway')->findOrFail($taskId);
+        $task = SpiPutawayTask::with('putaway')->find($taskId);
+        if (!$task) $this->missing("No verification task found with id {$taskId}.");
 
         $data = $request->validate(['reason' => ['nullable', 'string', 'max:120']]);
 
@@ -297,6 +423,7 @@ class SpiPutawayTaskController extends Controller
     {
         return $task->toArray() + [
             'box_code'    => $task->box?->box_code,
+            'putaway_code' => $task->box?->box_code ? 'PUT-' . $task->box->box_code : null,
             'destination' => $row?->destination,
             'next_scan'   => $task->nextScan(),
             'scans'       => ['done' => (int) $task->completed_scans, 'required' => (int) $task->required_scans],
