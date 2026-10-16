@@ -4868,6 +4868,12 @@
 .s4-root .s4pm-ok { display:flex; gap:10px; padding:11px 12px; border-radius:11px; border:1px solid #cbe9f3; background:#f6fdff; cursor:pointer; transition:border-color .15s, background .15s; }
 .s4-root .s4pm-ok:hover { border-color:#7dd3e8; }
 .s4-root .s4pm-ok.is-on { border-color:#86efac; background:#f0fdf4; }
+/* Waiting for a method: present, readable, plainly not yet actionable. */
+.s4-root .s4pm-ok.is-idle { border-color:#e5eef3; background:#fbfdfe; cursor:default; }
+.s4-root .s4pm-ok.is-idle:hover { border-color:#e5eef3; }
+.s4-root .s4pm-ok.is-idle > span { color:#94a3b8; }
+.s4-root .s4pm-ok.is-idle b { color:#94a3b8; }
+.s4-root .s4pm-ok input:disabled { cursor:default; }
 .s4-root .s4pm-ok input { flex:0 0 auto; width:17px; height:17px; margin:1px 0 0; accent-color:#059669; cursor:pointer; }
 .s4-root .s4pm-ok > span { font-size:11.5px; line-height:1.5; color:#334155; }
 .s4-root .s4pm-ok b { font-family:'Geist Mono',ui-monospace,monospace; font-weight:800; color:#0e7490; }
@@ -4898,6 +4904,9 @@
 [data-bs-theme="dark"] .s4-root .s4pm-warn b { color:#fed7aa; }
 [data-bs-theme="dark"] .s4-root .s4pm-ok { background:rgba(34,211,238,.08); border-color:rgba(34,211,238,.28); }
 [data-bs-theme="dark"] .s4-root .s4pm-ok.is-on { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.38); }
+[data-bs-theme="dark"] .s4-root .s4pm-ok.is-idle { background:rgba(255,255,255,.03); border-color:var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4pm-ok.is-idle > span,
+[data-bs-theme="dark"] .s4-root .s4pm-ok.is-idle b { color:var(--s4d-dim); }
 [data-bs-theme="dark"] .s4-root .s4pm-ok > span { color:var(--s4d-tx); }
 [data-bs-theme="dark"] .s4-root .s4pm-ok b { color:#7dd3e8; }
 

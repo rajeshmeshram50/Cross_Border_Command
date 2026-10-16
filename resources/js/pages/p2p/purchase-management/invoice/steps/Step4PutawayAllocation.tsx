@@ -1329,9 +1329,12 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 ))}
               </div>
 
-              {/* Everything below answers "confirm WHAT, exactly" - so it only
-                  appears once there is a method to confirm. */}
-              {methodPick && (() => {
+              {/* Shown from the start, not gated on the choice. What is being
+                  confirmed does not change with the method - only the promise
+                  does - and a dialog that opens almost empty, then jumps to
+                  full height on the first click, hides the thing the operator
+                  most needs to read before deciding. */}
+              {(() => {
                 const shelfCode = spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1');
                 const addr = [
                   ['Warehouse', warehouse || '—', <IcoWh key="w" />],
@@ -1396,13 +1399,27 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       </p>
                     </div>
 
-                    <label className={`s4pm-ok${methodOk ? ' is-on' : ''}`}>
-                      <input type="checkbox" checked={methodOk} onChange={e => setMethodOk(e.target.checked)} />
+                    {/* The tick waits for a method, because the sentence it
+                        agrees to is different for each - but the row is
+                        visible either way, so the height does not jump. */}
+                    <label className={`s4pm-ok${methodOk ? ' is-on' : ''}${methodPick ? '' : ' is-idle'}`}>
+                      <input
+                        type="checkbox"
+                        checked={methodOk}
+                        disabled={!methodPick}
+                        onChange={e => setMethodOk(e.target.checked)}
+                      />
                       <span>
-                        I confirm that <b>{box.code}</b> is{' '}
-                        <u>{methodPick === 'zebra' ? 'ready to be scanned' : 'already physically placed'}</u> at{' '}
-                        {chain}
-                        {methodPick === 'zebra' ? ' and should be sent for Zebra verification.' : '.'}
+                        {methodPick ? (
+                          <>
+                            I confirm that <b>{box.code}</b> is{' '}
+                            <u>{methodPick === 'zebra' ? 'ready to be scanned' : 'already physically placed'}</u> at{' '}
+                            {chain}
+                            {methodPick === 'zebra' ? ' and should be sent for Zebra verification.' : '.'}
+                          </>
+                        ) : (
+                          <>Choose a confirmation method above, then tick here to lock <b>{box.code}</b> to {chain}.</>
+                        )}
                       </span>
                     </label>
                   </>
