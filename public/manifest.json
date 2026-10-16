@@ -1,0 +1,16 @@
+{
+  "name": "Cross Border Put-Away",
+  "short_name": "Put-Away",
+  "description": "Scan boxes and shelves to confirm warehouse put-aways.",
+  "start_url": "/putaway-scan",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    { "src": "/images/igc-logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/images/igc-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/images/igc-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

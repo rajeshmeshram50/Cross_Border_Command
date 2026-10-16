@@ -20,7 +20,24 @@
     @endphp
     <title>{{ $cbcBranding['platform_name'] }}</title>
     <link rel="icon" href="{{ $cbcBranding['favicon_url'] }}">
+    {{-- PWA. Chrome offers Install only over HTTPS, with a manifest AND a
+         registered service worker — all three, or it falls back to a plain
+         bookmark shortcut. The worker caches nothing on purpose; see sw.js. --}}
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0b1220">
+    <meta name="mobile-web-app-capable" content="yes">
+    <script>
+        if ('serviceWorker' in navigator && location.protocol === 'https:') {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('/sw.js').catch(function () { /* not fatal */ });
+            });
+        }
+    </script>
     <script>window.__CBC_BRANDING__ = @json($cbcBranding);</script>
+    {{-- Host for printed labels and the device-enrollment QR. A handheld scans
+         these off someone else's screen, so window.location.origin is wrong
+         whenever that screen says localhost. Same value the PDFs use. --}}
+    <script>window.__CBC_STICKER_URL__ = @json(rtrim((string) (config('inventory.sticker_url') ?: config('app.url')), '/'));</script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" media="print" onload="this.media='all'"

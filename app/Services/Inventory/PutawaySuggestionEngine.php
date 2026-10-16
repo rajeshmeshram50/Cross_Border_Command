@@ -130,6 +130,98 @@ class PutawaySuggestionEngine
         return null;
     }
 
+    /**
+     * Every check that was run, pass or fail — what the recommendation panel
+     * lists under "Parameter Checks".
+     *
+     * refuseShelf() answers a different question. It short-circuits on the
+     * first failure, which is right for greying out a tile: one chip, the most
+     * useful reason. But the panel is explaining a choice rather than refusing
+     * one, and "weight within limit · 48 kg ≤ 2,000 kg" is the part that makes
+     * an operator trust it. Same rules, read the other way round.
+     *
+     * @return array<int, array{key:string,pass:bool,label:string,detail:string}>
+     */
+    public function checkShelf(array $need, object $shelf, object $zone, float $freeWeightKg): array
+    {
+        $out = [];
+
+        /* Dimensions. Volume is the honest comparison for a carton going onto
+           a shelf that already holds things — a footprint check would pass a
+           box that fits the floor and not the height. */
+        $boxM3   = $need['volume_cm3'] / 1_000_000;
+        $shelfM3 = $this->shelfVolumeM3($shelf);
+        $tall    = $need['height_cm'] > 0 && (float) ($shelf->height_cm ?: 0) > 0
+            && $need['height_cm'] > (float) $shelf->height_cm;
+        $out[] = [
+            'key'    => 'dimensions',
+            'pass'   => !$tall && ($shelfM3 <= 0 || $boxM3 <= $shelfM3),
+            'label'  => 'Dimensions fit',
+            'detail' => $tall
+                ? sprintf('Box %.0f cm tall exceeds shelf clearance %.0f cm', $need['height_cm'], (float) $shelf->height_cm)
+                : ($shelfM3 > 0
+                    ? sprintf('Box %s m³ ≤ Shelf %s m³ available', $this->num($boxM3, 3), $this->num($shelfM3, 2))
+                    : sprintf('Box %s m³ · shelf volume not recorded', $this->num($boxM3, 3))),
+        ];
+
+        // Weight. An unmeasured shelf passes — unmeasured is not unlimited,
+        // but it cannot refuse, so it must not claim to have checked.
+        $cap = (float) ($shelf->max_weight_kg ?: 0);
+        $out[] = [
+            'key'    => 'weight',
+            'pass'   => $cap <= 0 || $need['weight_kg'] <= $freeWeightKg,
+            'label'  => 'Weight within limit',
+            'detail' => $cap > 0
+                ? sprintf('Box %s kg ≤ Shelf %s kg free of %s kg', $this->num($need['weight_kg'], 2), $this->num($freeWeightKg, 2), $this->num($cap, 2))
+                : sprintf('Box %s kg · shelf limit not recorded', $this->num($need['weight_kg'], 2)),
+        ];
+
+        $out[] = [
+            'key'    => 'stackable',
+            'pass'   => true,
+            'label'  => 'Stackable',
+            'detail' => $need['is_stackable'] ? 'Yes · can be stacked' : 'No · must stay on top',
+        ];
+
+        // Cold chain, hazardous and the temperature band, as one answer.
+        $cold = !$need['cold_chain'] || (int) $shelf->cold_chain || (int) $zone->cold_chain;
+        $haz  = !$need['hazardous']  || (int) $shelf->hazardous  || (int) $zone->hazardous;
+        $temp = $this->refuseTemperature($need, $zone) === null;
+        $out[] = [
+            'key'    => 'condition',
+            'pass'   => $cold && $haz && $temp,
+            'label'  => 'Storage condition',
+            'detail' => sprintf(
+                'Cold chain: %s · Hazardous: %s%s',
+                $need['cold_chain'] ? ($cold ? 'required, available' : 'required, NOT available') : 'No',
+                $need['hazardous']  ? ($haz  ? 'required, allowed'   : 'required, NOT allowed')   : 'No',
+                $need['temp_min_c'] === null && $need['temp_max_c'] === null
+                    ? ''
+                    : sprintf(' · Temp %s…%s °C %s', $need['temp_min_c'] ?? '–', $need['temp_max_c'] ?? '–', $temp ? 'covered' : 'NOT covered'),
+            ),
+        ];
+
+        return $out;
+    }
+
+    /** A shelf's own volume in m³, from whichever columns it carries. */
+    public function shelfVolumeM3(object $shelf): float
+    {
+        if ((float) ($shelf->volume ?? 0) > 0) return (float) $shelf->volume;
+
+        $l = (float) ($shelf->length ?? 0);
+        $w = (float) ($shelf->width ?? 0);
+        $h = (float) ($shelf->height ?? 0);
+
+        // Stored in cm on these masters, like every other dimension here.
+        return $l > 0 && $w > 0 && $h > 0 ? round($l * $w * $h / 1_000_000, 3) : 0.0;
+    }
+
+    /** Trim the trailing zeros a warehouse figure does not need. */
+    private function num(float $v, int $dp): string
+    {
+        return rtrim(rtrim(number_format($v, $dp, '.', ''), '0'), '.') ?: '0';
+    }
     /* ═══════════════════ HARD CONDITIONS · ZONE ═══════════════════ */
 
     /** The same questions where the zone itself is the location — no rack, no shelf. */

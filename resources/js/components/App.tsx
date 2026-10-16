@@ -130,6 +130,7 @@ const AdvanceRefundAdjustment = lazyPage(() => import('../pages/p2p/payment-mana
 const InventoryPutAway = lazyPage(() => import('../pages/inventory/InventoryPutAway'));
 const InventoryStickers = lazyPage(() => import('../pages/inventory/InventoryStickers'));
 const ScanLanding = lazyPage(() => import('../pages/inventory/ScanLanding'));
+const PutawayScan = lazyPage(() => import('../pages/p2p/putaway/PutawayScan'));
 const InventoryScanDevices = lazyPage(() => import('../pages/inventory/InventoryScanDevices'));
 const InventoryScanLog = lazyPage(() => import('../pages/inventory/InventoryScanLog'));
 const MyTeam = lazyPage(() => import('../pages/MyTeam'));
@@ -800,6 +801,24 @@ function Router() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/s/:key" element={<ScanLanding />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  {/* Stage 04 handheld. Outside the logged-in shell on purpose: it is
+      authenticated by the device credential, not by a user session. */}
+  // '/ps/:key' is where our printed labels point — distinct from '/s/' above,
+  // which belongs to the Inventory Management simulation.
+  if (location.pathname.startsWith('/putaway-scan') || location.pathname.startsWith('/ps/')) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          {/* 'enroll' before ':taskId', or it matches as a task id. */}
+          <Route path="/putaway-scan/enroll" element={<PutawayScan />} />
+          <Route path="/putaway-scan" element={<PutawayScan />} />
+          <Route path="/putaway-scan/:taskId" element={<PutawayScan />} />
+          <Route path="/ps/:scanKey" element={<PutawayScan />} />
         </Routes>
       </Suspense>
     );

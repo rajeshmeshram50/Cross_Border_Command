@@ -127,7 +127,7 @@ class LocationFinderService
 
                 $shelfRows = $rackShelves->map(function ($s) use ($loads, $locked, $mates, $need, $z, $r, $userId, &$total, &$eligible, &$best) {
                     $total++;
-                    $load  = $loads[$s->id] ?? ['weight_kg' => 0, 'boxes' => 0];
+                    $load  = $loads[$s->id] ?? ['weight_kg' => 0, 'volume_cm3' => 0, 'boxes' => 0];
                     $cap   = (float) ($s->max_weight_kg ?: 0);
                     $free  = max(0, $cap - $load['weight_kg']);
                     $hold  = $locked[$s->id] ?? null;
@@ -137,6 +137,9 @@ class LocationFinderService
 
                     $usedBefore = $cap > 0 ? round($load['weight_kg'] / $cap * 100, 1) : 0.0;
                     $usedAfter  = $cap > 0 ? round(($load['weight_kg'] + $need['weight_kg']) / $cap * 100, 1) : 0.0;
+
+                    $volM3  = $this->engine->shelfVolumeM3($s);
+                    $usedM3 = (float) ($load['volume_cm3'] ?? 0) / 1_000_000;
 
                     $row = [
                         'id'            => (int) $s->id,
@@ -149,6 +152,21 @@ class LocationFinderService
                         'boxes'         => $load['boxes'],
                         'used_pct'      => $usedBefore,
                         'used_pct_after' => $usedAfter,
+                        /* The shelf as it is, for the panel that explains the
+                           pick: its size, what is left of it, and the two
+                           conditions a box can be refused on. */
+                        'dimensions_cm' => [
+                            'length' => (float) ($s->length ?: 0),
+                            'width'  => (float) ($s->width ?: 0),
+                            'height' => (float) ($s->height_cm ?: $s->height ?: 0),
+                        ],
+                        'volume_m3'      => $volM3,
+                        'free_volume_m3' => $volM3 > 0 ? round(max(0, $volM3 - $usedM3), 3) : 0.0,
+                        'cold_chain'     => (bool) $s->cold_chain,
+                        'hazardous'      => (bool) $s->hazardous,
+                        'shelf_type'     => $s->shelf_type ?? null,
+                        // Every rule that ran, pass AND fail — not just the refusal.
+                        'checks'         => $this->engine->checkShelf($need, $s, $z, $free),
                         'eligible'      => $why === null,
                         'reason'        => $why,
                         'reason_label'  => $this->engine->label($why),
@@ -170,15 +188,31 @@ class LocationFinderService
                     return $row;
                 })->values();
 
+                /* A rack holds no counters of its own, on purpose — its fill is
+                   the sum of its shelves, and a stored copy would be free to
+                   drift from both. Summed here from rows already in hand. */
+                $rCap  = $shelfRows->sum('max_weight_kg');
+                $rFree = $shelfRows->sum('free_weight_kg');
+
                 return [
                     'id'       => (int) $r->id,
                     'name'     => $r->rack_name,
                     'code'     => $r->code,
+                    'max_weight_kg'  => round($rCap, 3),
+                    'free_weight_kg' => round($rFree, 3),
+                    'boxes'    => $shelfRows->sum('boxes'),
+                    'used_pct' => $rCap > 0 ? round(($rCap - $rFree) / $rCap * 100, 1) : 0.0,
                     'shelves'  => $shelfRows->all(),
                     'total'    => $shelfRows->count(),
                     'eligible' => $shelfRows->where('eligible', true)->count(),
                 ];
             })->values();
+
+            /* Same again one level up. A RACKED zone's fill comes from its
+               shelves; the used_* columns on inventory_zones are only written
+               for no-rack zones, where the zone itself holds the boxes. */
+            $zCap  = $rackRows->sum('max_weight_kg');
+            $zFree = $rackRows->sum('free_weight_kg');
 
             return [
                 'id'        => (int) $z->id,
@@ -187,6 +221,10 @@ class LocationFinderService
                 'rack_mode' => $z->rack_mode,
                 'cold_chain' => (int) $z->cold_chain,
                 'hazardous' => (int) $z->hazardous,
+                'max_weight_kg'  => round($zCap, 3),
+                'free_weight_kg' => round($zFree, 3),
+                'boxes'     => $rackRows->sum('boxes'),
+                'used_pct'  => $zCap > 0 ? round(($zCap - $zFree) / $zCap * 100, 1) : 0.0,
                 'racks'     => $rackRows->all(),
                 'total'     => $rackRows->sum('total'),
                 'eligible'  => $rackRows->sum('eligible'),

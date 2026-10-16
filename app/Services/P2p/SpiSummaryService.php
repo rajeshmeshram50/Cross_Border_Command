@@ -46,47 +46,126 @@ class SpiSummaryService
     }
 
     /**
-     * Every packed box of one invoice, with everything that was stored about it.
+     * Every packed box of one invoice — the INDEX the Stage 04 box list reads.
      *
-     * The packing screen's own /boxes endpoint returns the ROWS — ids, a flags
-     * array, an invoice-item reference — which is what a form being edited
-     * needs. A reader needs the same facts resolved: which product, named; what
-     * the flags mean; where the box was put away; what is attached to it. This
-     * is that view, and it is read-only.
+     * Two phases on purpose. One invoice can hold a hundred boxes, and a box
+     * carries its products, their flags and its attachments; a product name in
+     * live data runs past a thousand characters. Building all of that to show
+     * ten rows is most of a megabyte thrown away.
      *
-     * Resolved in a fixed number of queries whatever the box count: the flag
-     * master once, the put-away rows once, the products once.
+     *   1. CLASSIFY every box from its own columns and its items — no product
+     *      names, no attachments. That is what the tab counts, the handling
+     *      chips and the filters are computed from, so they stay invoice-wide
+     *      however small the page.
+     *   2. HYDRATE only the page: the products named, the flags resolved, the
+     *      put-away location, the sticker and the attachments.
      *
+     * The counts therefore never come from the rows returned. Computed from the
+     * page, "All Boxes 7" would read 10 the moment an invoice had more than one
+     * page of boxes.
+     *
+     * @param array{bucket?:string,handling?:string,search?:string,page?:int,per_page?:int} $opts
      * @return array<string, mixed>
      */
-    public function packedBoxes(SupplierInvoice $spi): array
+    public function packedBoxes(SupplierInvoice $spi, array $opts = []): array
     {
-        $boxes  = $spi->boxes()->with('items.invoiceItem')->orderBy('box_code')->get();
-        $places = $this->placements($spi, $boxes);
+        $perPage  = max(1, min((int) ($opts['per_page'] ?? 10), 100));
+        $page     = max(1, (int) ($opts['page'] ?? 1));
+        $bucket   = strtolower(trim((string) ($opts['bucket'] ?? 'all')));
+        $handling = strtolower(trim((string) ($opts['handling'] ?? '')));
+        $search   = trim((string) ($opts['search'] ?? ''));
+
+        /* ── phase 1 · classify, without touching a product name ────────── */
+
+        $boxes = $spi->boxes()->with('items')->orderBy('box_code')->get();
+        $flags = $this->flagBehaviours($spi);
+
+        $marks = $boxes->mapWithKeys(fn (SpiBox $b) => [$b->id => $this->classify($b, $flags)])->all();
+
+        // Counted over EVERY box, never over the page.
+        $counts = [
+            'all'      => $boxes->count(),
+            // Dispatch does not apply to an invoice; the tab is a placeholder.
+            'ship'     => 0,
+            'inv'      => 0,
+            'damaged'  => 0,
+            'mismatch' => 0,
+        ];
+        $handlingCounts = ['haz' => 0, 'non_haz' => 0, 'cold' => 0];
+        $scenarios      = ['s1' => 0, 's2' => 0, 's3' => 0];
+
+        foreach ($boxes as $b) {
+            $m = $marks[$b->id];
+            $counts[$m['bucket']] = ($counts[$m['bucket']] ?? 0) + 1;
+            $handlingCounts[$m['is_hazardous'] ? 'haz' : 'non_haz']++;
+            if ($m['is_cold']) $handlingCounts['cold']++;
+            if (isset($scenarios[$b->scenario])) $scenarios[$b->scenario]++;
+        }
+
+        $matchIds = $search === '' ? null : $this->searchBoxIds($spi, $search);
+
+        $filtered = $boxes->filter(function (SpiBox $b) use ($marks, $bucket, $handling, $matchIds) {
+            $m = $marks[$b->id];
+            if ($bucket !== '' && $bucket !== 'all' && $m['bucket'] !== $bucket) return false;
+            if ($handling === 'haz'     && !$m['is_hazardous']) return false;
+            if ($handling === 'non_haz' &&  $m['is_hazardous']) return false;
+            if ($handling === 'cold'    && !$m['is_cold'])      return false;
+            if ($matchIds !== null && !in_array((int) $b->id, $matchIds, true)) return false;
+
+            return true;
+        })->values();
+
+        $total = $filtered->count();
+        $pages = max(1, (int) ceil($total / $perPage));
+        $page  = min($page, $pages);
+        $slice = $filtered->slice(($page - 1) * $perPage, $perPage)->values();
+
+        /* ── phase 2 · hydrate the page only ────────────────────────────── */
+
+        /* Resolved ONCE for the whole invoice: the page reads its own rows
+           out of it, and the progress counts need every box anyway. */
+        $allPlaces = $this->placements($spi, $boxes);
+        $places    = $allPlaces;
         $master = $this->flagMaster($spi);
 
-        // One query for every product across every box.
-        $productIds = $boxes->flatMap->items
+        $productIds = $slice->flatMap->items
             ->map(fn (SpiBoxItem $i) => $i->invoiceItem?->product_id)
             ->filter()->unique()->values();
         $products = $productIds->isEmpty()
             ? collect()
             : DB::table('products')->whereIn('id', $productIds)->get(['id', 'product_code', 'name'])->keyBy('id');
 
-        // And one for the attachments of every box.
-        $files = $boxes->isEmpty()
+        $files = $slice->isEmpty()
             ? collect()
-            : SpiBoxAttachment::whereIn('box_id', $boxes->pluck('id'))->orderBy('id')->get()->groupBy('box_id');
+            : SpiBoxAttachment::whereIn('box_id', $slice->pluck('id'))->orderBy('id')->get()->groupBy('box_id');
 
-        $rows = $boxes->values()->map(function (SpiBox $b, int $i) use ($places, $master, $products, $files) {
+        $offset = ($page - 1) * $perPage;
+        $rows = $slice->map(function (SpiBox $b, int $i) use ($places, $master, $products, $files, $marks, $offset) {
             $p = $places[$b->id] ?? null;
+            $m = $marks[$b->id];
 
             return [
-                'sr_no'        => $i + 1,
+                // Keeps counting across pages: page two starts at 11, not 1.
+                'sr_no'        => $offset + $i + 1,
                 'id'           => $b->id,
                 'box_code'     => $b->box_code,
+                /* What Stage 04 puts on screen: the SAME code with a marker,
+                   never a second number. The sticker on the carton says B-001,
+                   and an operator at the rack has to match what they are
+                   holding to what the screen shows — two independent sequences
+                   for one box is how cartons get misplaced. Derived, so it
+                   cannot drift from the code it is built on. */
+                'putaway_code' => $b->box_code ? 'PUT-' . $b->box_code : null,
                 'scenario'     => $b->scenario,
                 'scenario_label' => $this->scenarioLabel($b),
+
+                /* Decided on the server from the products' flag BEHAVIOUR, not
+                   from the flag ids. Re-derived in the browser, the chip count
+                   and the group a box falls into drift apart. */
+                'bucket'       => $m['bucket'],
+                'is_hazardous' => $m['is_hazardous'],
+                'is_cold'      => $m['is_cold'],
+                'is_fragile'   => $m['is_fragile'],
 
                 // As measured, plus the volumetric figure the carrier charges on.
                 'length_cm'    => (float) $b->length_cm,
@@ -106,15 +185,29 @@ class SpiSummaryService
                 'qty'          => round($b->items->sum(fn ($it) => (float) $it->quantity), 3),
                 'product_count' => $b->items->pluck('supplier_invoice_item_id')->filter()->unique()->count(),
 
-                // Null until the box is actually scanned onto a shelf.
+                /* What the box still owes before Stage 04 will let it move on:
+                   a shelf cannot be chosen for a carton whose size and weight
+                   nobody wrote down. */
+                'blocking'     => $this->blockingFields($b),
+
+                /* Where it is and how far along. A box with no put-away row at
+                   all is 'pending' — and that is the box the operator is
+                   looking for, so it must never be missing from this list. */
                 'putaway'      => [
+                    'status'        => $p['status'] ?? 'pending',
+                    'putaway_id'    => $p['putaway_id'] ?? null,
                     'warehouse'     => $p['warehouse'] ?? null,
                     'zone'          => $p['zone'] ?? null,
                     'rack'          => $p['rack'] ?? null,
                     'shelf'         => $p['shelf'] ?? null,
                     'allocation_id' => $p['allocation_id'] ?? null,
+                    'destination'   => $p['destination'] ?? null,
                     'confirmed'     => (bool) ($p['confirmed'] ?? false),
-                ],
+                    'assigned_at'   => $p['assigned_at'] ?? null,
+                    'placed_at'     => $p['placed_at'] ?? null,
+                    'verified_by'   => $p['verified_by'] ?? null,
+                    'task'          => $p['task'] ?? null,
+                ] + \App\Models\P2p\SpiPutaway::stepFor($p['status'] ?? 'pending'),
 
                 /* The sticker is rendered on demand, so what is stored is only
                    WHETHER it has been printed — the link is the action. */
@@ -176,19 +269,168 @@ class SpiSummaryService
         })->all();
 
         return [
-            'spi'    => ['id' => $spi->id, 'code' => $spi->code, 'date' => $spi->invoice_date],
+            'spi'    => [
+                'id'            => $spi->id,
+                'code'          => $spi->code,
+                'date'          => $spi->invoice_date,
+                'invoice_no'    => $spi->invoice_no,
+                'document_type' => $spi->document_type,
+                'po_code'       => $spi->purchaseOrder?->code,
+            ],
+            /* Where the goods are going, and who they came from — the two
+               facts the Storage & Warehouse panel prints beside every box.
+               Resolved once for the invoice rather than copied onto each row:
+               they are the same for all of them, and a box that has not been
+               allocated yet still has to show them. */
+            'warehouse' => $this->warehouse($spi),
+            'supplier'  => $this->supplier($spi),
             'boxes'  => $rows,
+            'meta'   => [
+                'current_page' => $page,
+                'per_page'     => $perPage,
+                'last_page'    => $pages,
+                'total'        => $total,
+                'from'         => $total ? $offset + 1 : 0,
+                'to'           => min($offset + $perPage, $total),
+                // Invoice-wide, every one of them.
+                'counts'       => $counts,
+                'handling'     => $handlingCounts,
+                'scenarios'    => $scenarios,
+                'progress'     => [
+                    'placed'  => count(array_filter($allPlaces, fn ($p) => $p['confirmed'])),
+                    'total'   => $boxes->count(),
+                    'pending' => $boxes->count() - count(array_filter($allPlaces, fn ($p) => $p['confirmed'])),
+                ],
+                /* Over every box, including the ones with no put-away row —
+                   which is why this counts the BOXES and reads the state off
+                   the placements, rather than counting put-away rows. */
+                'putaway'      => $this->putawayCounts($boxes, $allPlaces),
+                'filters'      => ['bucket' => $bucket ?: 'all', 'handling' => $handling ?: null, 'search' => $search ?: null],
+            ],
+            // Over the WHOLE invoice, so the footer does not change with the page.
             'totals' => [
-                'boxes'        => count($rows),
+                'boxes'        => $boxes->count(),
                 'products'     => $this->distinctProducts($boxes),
                 'quantity'     => round($boxes->flatMap->items->sum(fn ($i) => (float) $i->quantity), 3),
                 'gross_weight_kg' => round($boxes->sum(fn (SpiBox $b) => (float) $b->gross_weight_kg), 3),
                 // What a carrier bills on: the greater of actual and volumetric.
                 'volumetric_weight_kg' => round($boxes->sum(fn (SpiBox $b) => (float) ($b->volumetricWeightKg() ?? 0)), 3),
-                'placed'       => count(array_filter($places, fn ($p) => $p['confirmed'])),
-                'attachments'  => $files->flatten()->count(),
+                'placed'       => count(array_filter($allPlaces, fn ($p) => $p['confirmed'])),
+                'attachments'  => SpiBoxAttachment::whereIn('box_id', $boxes->pluck('id'))->count(),
             ],
         ];
+    }
+
+    /**
+     * How many boxes sit in each Stage 04 state.
+     *
+     * @param array<int,array> $places
+     * @return array<string,int>
+     */
+    private function putawayCounts($boxes, array $places): array
+    {
+        $out = ['pending' => 0, 'draft' => 0, 'awaiting_scan' => 0, 'placed' => 0];
+        foreach ($boxes as $b) {
+            $state = $places[$b->id]['status'] ?? 'pending';
+            $out[$state] = ($out[$state] ?? 0) + 1;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Which list a box belongs in, and how it must be handled.
+     *
+     * Order matters: a damaged carton is damaged whatever else is true of it.
+     *
+     * NOTE the remark value. The column holds 'mismatched'; the HTML prototype
+     * tests 'mismatch'. Ported literally that bucket stays empty for ever, so
+     * both spellings are accepted here. 'extra' is not a bucket of its own —
+     * it is inventory, exactly as the prototype's own card label says.
+     *
+     * @param array<int,string> $behaviours flag id => behaviour
+     */
+    private function classify(SpiBox $b, array $behaviours): array
+    {
+        $haz = $cold = $fragile = false;
+        $damaged = in_array($b->condition, ['major', 'severe'], true);
+        $mismatch = false;
+
+        foreach ($b->items as $it) {
+            foreach (array_map('intval', (array) ($it->flags ?? [])) as $id) {
+                match ($behaviours[$id] ?? null) {
+                    'hazardous'  => $haz = true,
+                    'cold_chain' => $cold = true,
+                    'fragile'    => $fragile = true,
+                    default      => null,
+                };
+            }
+            if ($it->remark === 'damaged') $damaged = true;
+            if (in_array($it->remark, ['mismatch', 'mismatched'], true)) $mismatch = true;
+        }
+
+        return [
+            'bucket'       => $damaged ? 'damaged' : ($mismatch ? 'mismatch' : 'inv'),
+            'is_hazardous' => $haz,
+            'is_cold'      => $cold,
+            'is_fragile'   => $fragile,
+        ];
+    }
+
+    /** flag id => behaviour, for the tenant's own flags and the platform ones. */
+    private function flagBehaviours(SupplierInvoice $spi): array
+    {
+        return collect($this->flagMaster($spi))
+            ->mapWithKeys(fn ($f, $id) => [$id => $f['behaviour'] ?? 'none'])
+            ->all();
+    }
+
+    /**
+     * Boxes the search box matches, by box code or by anything about a product
+     * inside it. Ids only — the names are never loaded for boxes that will not
+     * be shown.
+     *
+     * @return array<int>
+     */
+    private function searchBoxIds(SupplierInvoice $spi, string $term): array
+    {
+        $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $term) . '%';
+
+        $byCode = DB::table('p2p_spi_boxes')
+            ->where('supplier_invoice_id', $spi->id)->whereNull('deleted_at')
+            ->where('box_code', 'ilike', $like)->pluck('id');
+
+        $byProduct = DB::table('p2p_spi_box_items as bi')
+            ->join('p2p_spi_boxes as b', 'b.id', '=', 'bi.box_id')
+            ->join('p2p_supplier_invoice_items as ii', 'ii.id', '=', 'bi.supplier_invoice_item_id')
+            ->leftJoin('products as p', 'p.id', '=', 'ii.product_id')
+            ->where('b.supplier_invoice_id', $spi->id)
+            ->whereNull('b.deleted_at')->whereNull('bi.deleted_at')
+            ->where(fn ($w) => $w->where('p.product_code', 'ilike', $like)
+                ->orWhere('p.name', 'ilike', $like)
+                ->orWhere('ii.description', 'ilike', $like))
+            ->pluck('bi.box_id');
+
+        return $byCode->merge($byProduct)->unique()->map(fn ($v) => (int) $v)->values()->all();
+    }
+
+    /**
+     * What Stage 04 will not let a box past without. Dimensions and weight
+     * decide which shelves can take it, so a box missing them cannot be
+     * allocated at all — the screen reads DATA MISSING and names these.
+     *
+     * @return array<int,string>
+     */
+    private function blockingFields(SpiBox $b): array
+    {
+        $missing = [];
+        if (!(float) $b->length_cm || !(float) $b->width_cm || !(float) $b->height_cm) {
+            $missing[] = 'Box dimensions (L × W × H) not recorded';
+        }
+        if (!(float) $b->gross_weight_kg) $missing[] = 'Gross weight not recorded';
+        if (!(float) $b->net_weight_kg)   $missing[] = 'Net weight not recorded';
+
+        return $missing;
     }
 
     /* ══════════════════════════ SECTIONS ══════════════════════════ */
@@ -411,6 +653,13 @@ class SpiSummaryService
         $rows = $spi->putaways()->get();
         if ($rows->isEmpty()) return [];
 
+        /* Which boxes are out with the warehouse. One query for the invoice —
+           a box is only "awaiting scan" while a task on it is still open, and
+           that is a different fact from the put-away row's own columns. */
+        $openTasks = \App\Models\P2p\SpiPutawayTask::where('supplier_invoice_id', $spi->id)
+            ->open()->get(['id', 'task_code', 'box_id', 'completed_scans', 'required_scans', 'expires_at'])
+            ->keyBy('box_id');
+
         $wh = DB::table('inventory_warehouses')->whereIn('id', $rows->pluck('warehouse_id')->filter()->unique())
             ->pluck('code', 'id');
         $zn = DB::table('inventory_zones')->whereIn('id', $rows->pluck('zone_id')->filter()->unique())
@@ -430,6 +679,8 @@ class SpiSummaryService
             $zone = $r->zone_id ? ($zn[$r->zone_id] ?? null) : null;
             $rack = $r->rack_id ? ($rk[$r->rack_id] ?? null) : null;
 
+            $task = $openTasks->get($r->box_id);
+
             $out[$r->box_id] = [
                 'warehouse' => $r->warehouse_id ? ($wh[$r->warehouse_id] ?? null) : null,
                 'zone'      => $zone,
@@ -439,6 +690,25 @@ class SpiSummaryService
                 // was actually scanned, in the order it was scanned.
                 'allocation_id' => implode('-', array_filter([$zone, $rack, $shelf])) ?: null,
                 'confirmed'     => $r->confirmed_at !== null,
+
+                /* The state the left rail groups and badges by. Derived, never
+                   read from a column that could disagree with confirmed_at:
+                     pending        nobody has started
+                     draft          a location is held, nothing confirmed it
+                     awaiting_scan  out with the floor on a Zebra task
+                     placed         confirmed. Final. */
+                'putaway_id'  => $r->id,
+                'status'      => $r->stage4Status((bool) $task),
+                'destination' => $r->destination,
+                'assigned_at' => optional($r->assigned_at)->toDateTimeString(),
+                'placed_at'   => optional($r->confirmed_at)->toDateTimeString(),
+                'verified_by' => $r->verify_method,
+                'task'        => $task ? [
+                    'id'         => $task->id,
+                    'task_code'  => $task->task_code,
+                    'scans'      => ['done' => (int) $task->completed_scans, 'required' => (int) $task->required_scans],
+                    'expires_at' => optional($task->expires_at)->toDateTimeString(),
+                ] : null,
             ];
         }
 
@@ -468,6 +738,8 @@ class SpiSummaryService
                 'id'         => (int) $f->id,
                 'code'       => $f->flag_code,
                 'name'       => $f->flag_name,
+                // What the flag MEANS, so a renamed one still routes a box.
+                'behaviour'  => $f->behaviour ?: 'none',
                 'is_default' => $f->client_id === null,
             ]])
             ->all();
@@ -521,6 +793,33 @@ class SpiSummaryService
             'code'   => $w->code,
             'name'   => $w->wh_name,
             'is_own' => $w->wh_type === 'own',
+        ];
+    }
+
+    /**
+     * The supplier this invoice is against.
+     *
+     * Off the INVOICE's own vendor_id, not the purchase order's. They are the
+     * same supplier — Stage 01 copies it down when the PO is linked — but a
+     * standalone invoice has no PO at all, and reading through one would leave
+     * the panel blank on exactly the invoices that have nowhere else to show it.
+     */
+    private function supplier(SupplierInvoice $spi): ?array
+    {
+        if (!$spi->vendor_id) return null;
+
+        $v = Vendor::withTrashed()->find($spi->vendor_id);
+        if (!$v) return null;
+
+        return [
+            'id'      => $v->id,
+            'code'    => $v->vendor_code,
+            'name'    => $v->company_name ?: $v->legal_name,
+            'country' => $v->primaryAddress?->country_id
+                ? DB::table('master_countries')->where('id', $v->primaryAddress->country_id)->value('name')
+                : null,
+            // Which order brought it here; null on a standalone invoice.
+            'po_code' => $spi->purchaseOrder?->code,
         ];
     }
 

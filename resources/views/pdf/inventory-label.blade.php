@@ -50,6 +50,16 @@
             color: #b91c1c;
             padding-top: 4pt;
         }
+
+        /* word-break, or a 60-char URL runs off a 4in label. */
+        .qr-url {
+            font-family: 'DejaVu Sans Mono', monospace;
+            font-size: 5pt;
+            color: #94a3b8;
+            line-height: 1.3;
+            word-break: break-all;
+            padding: 2pt 18pt 0;
+        }
     </style>
 </head>
 <body>
@@ -63,6 +73,10 @@
                 <div class="fallback">QR unavailable</div>
             @endif
             <div class="code">{{ $code }}</div>
+            @if (!empty($qrUrl))
+                {{-- The payload in text: a scuffed label can still be typed in. --}}
+                <div class="qr-url">{{ $qrUrl }}</div>
+            @endif
         </td>
     </tr>
 </table>

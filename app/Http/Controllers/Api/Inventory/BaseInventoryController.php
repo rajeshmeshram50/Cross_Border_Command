@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Inventory\LocationOccupancy;
 use App\Models\Inventory\Rack;
 use App\Models\Inventory\Shelf;
+use App\Services\Inventory\StickerKey;
 use Barryvdh\DomPDF\Facade\Pdf;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
@@ -358,8 +359,15 @@ abstract class BaseInventoryController extends Controller
      */
     protected function labelPdf(array $data, string $filename)
     {
+        /* The QR carries the signed URL, so a phone that photographs a rack
+           label lands on our server and is refused there. The short form
+           ('RC:7') stays on the API for the screens that show it — only what
+           gets PRINTED changes. */
+        $payload = $this->stickerPayload($data);
+
         $pdf = Pdf::loadView('pdf.inventory-label', $data + [
-            'qr'        => $this->qr($data['scan'] ?? $data['code']),
+            'qr'        => $this->qr($payload),
+            'qrUrl'     => str_starts_with($payload, 'http') ? $payload : null,
             'printedOn' => now()->format('d M Y H:i'),
         ])
             // Points, because the blade is laid out in points: 4in x 3in.
@@ -378,7 +386,33 @@ abstract class BaseInventoryController extends Controller
      */
     protected function scanValue(string $kind, int $id): string
     {
-        return strtoupper($kind) . ':' . $id;
+        $short = strtoupper($kind) . ':' . $id;
+
+        /* The signed sticker URL, so a phone that photographs this label opens
+           our server and is refused there rather than being shown a string it
+           can make sense of.
+           ONE source. This value reaches the printed PDF, the /qr endpoint,
+           the label preview and the four QR modals that draw their own canvas
+           in the browser — five places that each used to decide for
+           themselves, and drifted. Falls back to 'SH:1' when there is no
+           tenant in context, which still resolves on every scanner we have. */
+        return StickerKey::fromShort($short, auth()->user()?->client_id) ?: $short;
+    }
+
+    /**
+     * What a label encodes — ONE answer for the printed PDF and the /qr
+     * endpoint alike.
+     *
+     * These two drifted apart once before, and a QR saved off the screen then
+     * resolved to something different from the one glued to the rack. Both now
+     * come through here: the signed sticker URL, so a phone that photographs a
+     * rack label lands on our server and is refused there, falling back to the
+     * short 'RC:7' form when no URL can be built (no tenant in context).
+     */
+    protected function stickerPayload(array $data): string
+    {
+        // scanValue() already resolved this; nothing else may second-guess it.
+        return (string) ($data['scan'] ?? $data['code']);
     }
 
     /**
@@ -388,7 +422,7 @@ abstract class BaseInventoryController extends Controller
      * printed without the label around them. $size is the module scale, so the
      * image grows in whole pixels per module and never resamples blurry.
      */
-    protected function qrPng(string $code, int $scale = 10)
+    protected function qrPng(string $code, int $scale = 10, ?string $filename = null)
     {
         $png = (new QRCode(new QROptions([
             'eccLevel'    => 3,        // H — a scuffed warehouse label still reads
@@ -400,7 +434,9 @@ abstract class BaseInventoryController extends Controller
         return response($png, 200, [
             'Content-Type'        => 'image/png',
             // inline: the browser shows it in an <img>, rather than saving it.
-            'Content-Disposition' => 'inline; filename="' . $code . '.png"',
+            // Named from the CODE, never the payload — the payload is a URL,
+            // and its slashes would make a filename the browser cannot use.
+            'Content-Disposition' => 'inline; filename="' . preg_replace('/[^A-Za-z0-9._-]/', '-', $filename ?: $code) . '.png"',
             'Cache-Control'       => 'private, max-age=86400',
         ]);
     }

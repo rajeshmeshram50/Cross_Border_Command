@@ -156,6 +156,22 @@ export function makeKey(type: EntityType, id: string, tenant: string = TENANT): 
 export const SCAN_PATH = '/s/';
 
 /**
+ * Host to print on a label or an enrollment QR.
+ *
+ * NOT window.location.origin. These codes are scanned off this screen by a
+ * different device, so the admin opening the page at localhost would hand the
+ * handheld an address that resolves to the handheld itself. Server-configured
+ * (STICKER_URL), with the origin as a fallback for a plain dev page.
+ */
+function stickerOrigin(): string {
+  if (typeof window === 'undefined') return '';
+
+  const configured = (window as { __CBC_STICKER_URL__?: string }).__CBC_STICKER_URL__;
+
+  return (configured || window.location.origin).replace(/\/+$/, '');
+}
+
+/**
  * What actually gets printed on the label — a URL, not bare text.
  *
  * This is the whole reason an unauthorised scan can be answered at all. A
@@ -165,10 +181,9 @@ export const SCAN_PATH = '/s/';
  * still readable by anything — it just leads somewhere that refuses them.
  */
 export function makeSticker(type: EntityType, id: string, tenant: string = TENANT): string {
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
   // Dots instead of pipes so the key rides in a URL path without escaping,
   // which would otherwise bloat the printed code.
-  return `${origin}${SCAN_PATH}${makeKey(type, id, tenant).replace(/\|/g, '.')}`;
+  return `${stickerOrigin()}${SCAN_PATH}${makeKey(type, id, tenant).replace(/\|/g, '.')}`;
 }
 
 /**
@@ -267,9 +282,8 @@ export function isDeviceAuthorized(): boolean {
 
 /** URL the handheld opens (by scanning its QR) to install its credential. */
 export function makeEnrollUrl(token: string): string {
-  const origin = typeof window !== 'undefined' ? window.location.origin : '';
   // Fragment, not query: it never reaches server or proxy access logs.
-  return `${origin}${SCAN_PATH}enroll#${token}`;
+  return `${stickerOrigin()}${SCAN_PATH}enroll#${token}`;
 }
 
 /* Admin side — Inventory → Scan Devices. */

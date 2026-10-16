@@ -7,6 +7,7 @@ use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiPutaway;
 use App\Models\P2p\SpiScanLog;
 use App\Models\P2p\SupplierInvoice;
+use App\Services\Inventory\StickerKey;
 use App\Services\P2p\SupplierInvoiceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -133,8 +134,12 @@ class SpiPutawayController extends Controller
                 'warehouse_id' => $wh->id,
                 'wh_name'      => $wh->wh_name,
                 'wh_type'      => $wh->wh_type,
-                // A third party gets no rack or shelf allocation.
-                'putaway_mode' => $wh->wh_type === 'Own Warehouse' ? 'full' : 'summary',
+                /* A third party gets no rack or shelf allocation.
+                   Through isFullPutaway(), which reads the stored value 'own' —
+                   this line compared against the LABEL 'Own Warehouse' and so
+                   called every own warehouse a third party, sending the screen
+                   down the summary path the moment a warehouse was chosen. */
+                'putaway_mode' => $this->isFullPutaway((int) $wh->id) ? 'full' : 'summary',
             ]], 200);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -325,6 +330,10 @@ class SpiPutawayController extends Controller
 
         if ($value === '') return [null, null];
 
+        // The sticker URL, when that is what came off the carton. Older labels
+        // carry the bare id and still arrive as digits below.
+        if ($id = StickerKey::idFor($value, 'BOX')) $value = (string) $id;
+
         if (ctype_digit($value)) {
             $box = SpiBox::with('invoice:id,code')->find((int) $value);
 
@@ -419,6 +428,10 @@ class SpiPutawayController extends Controller
         $value = trim($value);
         $q     = DB::table($table);
 
+        // The sticker URL now printed on the label, read back to an id.
+        $type = ['ZN' => 'ZONE', 'RC' => 'RACK', 'SH' => 'SHELF', 'WH' => 'WAREHOUSE'][strtoupper($kind)] ?? '';
+        if ($id = StickerKey::idFor($value, $type)) return $q->where('id', $id);
+
         return preg_match('/^' . $kind . ':(\d+)$/i', $value, $m)
             ? $q->where('id', (int) $m[1])
             : $q->where('code', 'ilike', $value);
@@ -432,6 +445,8 @@ class SpiPutawayController extends Controller
     {
         $value = trim($value);
         $q     = DB::table('inventory_shelves');
+
+        if ($id = StickerKey::idFor($value, 'SHELF')) return $q->where('id', $id);
 
         if (preg_match('/^SH:(\d+)$/i', $value, $m)) {
             return $q->where('id', (int) $m[1]);

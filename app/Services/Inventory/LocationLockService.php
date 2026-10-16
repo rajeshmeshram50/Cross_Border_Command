@@ -45,7 +45,17 @@ class LocationLockService
         $this->reapExpired($type, $locationId);
 
         try {
-            $lock = LocationLock::create([
+            /* INSIDE A SAVEPOINT, and that is the whole trick.
+               The losing insert raises a unique violation on purpose — that is
+               how the race is settled. But Postgres aborts the entire
+               transaction on any failed statement, so caught or not, every
+               query after it dies with 25P02 "current transaction is aborted".
+               The caller is mid-transaction (assign() holds the shelf row), so
+               a bare try/catch poisoned the request and the clean 409 came back
+               as a 500. DB::transaction() nested inside an open transaction
+               issues a SAVEPOINT and rolls back to it, which contains the
+               failure and leaves the outer transaction usable. */
+            $lock = DB::transaction(fn () => LocationLock::create([
                 'client_id'         => $clientId,
                 'branch_id'         => $branchId,
                 'location_type'     => $type,
@@ -61,12 +71,12 @@ class LocationLockService
                 'expires_at'        => now()->addMinutes($ttlMinutes ?? self::IDLE_MINUTES),
                 'created_by'        => $userId,
                 'updated_by'        => $userId,
-            ]);
+            ]));
 
             return [$lock, null];
         } catch (QueryException $e) {
             // 23505 — unique_violation: somebody else holds it.
-            if ($e->getCode() !== '23505') throw $e;
+            if (($e->getCode() !== '23505') && !str_contains((string) $e->getMessage(), 'uq_loc_lock_live')) throw $e;
 
             return [null, $this->held($type, $locationId)];
         }

@@ -26251,6 +26251,38 @@
                             }
                         },
                         {
+                            "name": "Packed Boxes \u00b7 Supplier Invoice",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Accept",
+                                        "value": "application/json"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{base_url}}/api/p2p/spi/:id/packed-boxes",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "p2p",
+                                        "spi",
+                                        ":id",
+                                        "packed-boxes"
+                                    ],
+                                    "variable": [
+                                        {
+                                            "key": "id",
+                                            "value": "1"
+                                        }
+                                    ]
+                                },
+                                "description": "P2p\\SupplierInvoiceController@packedBoxes \u2014 GET /api/p2p/spi/{id}/packed-boxes \u2014 Auth: Bearer token required. Path params: {id}.\n\nEvery packed box of the invoice, resolved for reading: the product named, the flags resolved from the master, the put-away location if it has one, the sticker and the attachments.\n\nNot the same as /boxes, which returns the editable row shape the Stage 03 packing form posts back. This is the read Stage 04 Step 01 is built on."
+                            }
+                        },
+                        {
                             "name": "Packing Summary \u00b7 Spi Box",
                             "request": {
                                 "method": "GET",

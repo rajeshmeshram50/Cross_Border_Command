@@ -51,7 +51,47 @@ class SpiPutawayAllocationController extends Controller
 
     private function findSpi(int $id): SupplierInvoice
     {
-        return SupplierInvoice::findOrFail($id);
+        $spi = SupplierInvoice::find($id);
+        if (!$spi) $this->missing("No supplier invoice found with id {$id}.");
+
+        return $spi;
+    }
+
+    /**
+     * A 404 that says which thing was not found.
+     *
+     * findOrFail() throws ModelNotFoundException, which renders as "No query
+     * results for model [App\Models\P2p\SupplierInvoice] 200" with the stack
+     * trace attached — accurate, and no use to the person reading it. The id
+     * is quoted back so a wrong variable in a request is obvious at a glance.
+     */
+    private function missing(string $message): never
+    {
+        abort(response()->json(['status' => false, 'message' => $message], 404));
+    }
+
+    /** The box, proved to belong to this invoice rather than merely to exist. */
+    private function findBox(SupplierInvoice $spi, int $boxId): SpiBox
+    {
+        $box = SpiBox::where('supplier_invoice_id', $spi->id)->find($boxId);
+        if ($box) return $box;
+
+        // Say WHICH of the two it is — a box of another invoice is a different
+        // mistake from a box id that names nothing at all.
+        $elsewhere = SpiBox::with('invoice:id,code')->find($boxId);
+
+        $this->missing($elsewhere
+            ? "Box {$elsewhere->box_code} belongs to " . ($elsewhere->invoice?->code ?: 'another invoice') . ", not to {$spi->code}."
+            : "No box found with id {$boxId} on {$spi->code}.");
+    }
+
+    /** The put-away row of this invoice. */
+    private function findRow(SupplierInvoice $spi, int $rowId): SpiPutaway
+    {
+        $row = SpiPutaway::where('supplier_invoice_id', $spi->id)->with('box:id,box_code')->find($rowId);
+        if (!$row) $this->missing("No put-away found with id {$rowId} on {$spi->code}.");
+
+        return $row;
     }
 
     /* ══════════════════════════ STEP 02 — READ ══════════════════════════ */
@@ -65,24 +105,36 @@ class SpiPutawayAllocationController extends Controller
      */
     public function locations(Request $request, int $id)
     {
-        $user = $this->tenantUser($request);
-        $spi  = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        $data = $request->validate([
-            'box_id' => ['required', 'integer'],
-            'mode'   => ['nullable', Rule::in(['rack', 'norack'])],
-        ]);
+            $user = $this->tenantUser($request);
+            $spi  = $this->findSpi($id);
 
-        if (!$spi->warehouse_id) {
-            abort(response()->json(['status' => false, 'message' => 'Choose a warehouse before allocating boxes.'], 422));
+            $data = $request->validate([
+                'box_id' => ['required', 'integer'],
+                'mode'   => ['nullable', Rule::in(['rack', 'norack'])],
+            ]);
+
+            if (!$spi->warehouse_id) {
+                abort(response()->json(['status' => false, 'message' => 'Choose a warehouse before allocating boxes.'], 422));
+            }
+
+            $box = $this->findBox($spi, (int) $data['box_id']);
+
+            /* Reading inside a transaction, as every other read here does: the
+               tree, its occupancy and its locks are counted across several
+               queries, and a put-away committing between them would leave the
+               screen showing a shelf as free that has just been taken. */
+            $body = $this->finder->forBox($spi, $box, $data['mode'] ?? null, $user->id);
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
-
-        $box = SpiBox::where('supplier_invoice_id', $spi->id)->findOrFail($data['box_id']);
-
-        return response()->json([
-            'status' => true,
-            'data'   => $this->finder->forBox($spi, $box, $data['mode'] ?? null, $user->id),
-        ], 200);
     }
 
     /**
@@ -97,62 +149,75 @@ class SpiPutawayAllocationController extends Controller
      */
     public function board(Request $request, int $id)
     {
-        $this->tenantUser($request);
-        $spi = $this->findSpi($id);
+        try {
+            DB::beginTransaction();
 
-        $boxes = SpiBox::where('supplier_invoice_id', $spi->id)
-            ->orderBy('box_code')
-            ->get(['id', 'box_code', 'scenario', 'gross_weight_kg', 'condition']);
+            $this->tenantUser($request);
+            $spi = $this->findSpi($id);
 
-        $rows = SpiPutaway::where('supplier_invoice_id', $spi->id)->get()->keyBy('box_id');
+            $boxes = SpiBox::where('supplier_invoice_id', $spi->id)
+                ->orderBy('box_code')
+                ->get(['id', 'box_code', 'scenario', 'gross_weight_kg', 'condition']);
 
-        $openTasks = SpiPutawayTask::where('supplier_invoice_id', $spi->id)
-            ->open()->get(['id', 'task_code', 'putaway_id', 'box_id', 'completed_scans', 'required_scans', 'expires_at'])
-            ->keyBy('box_id');
+            $rows = SpiPutaway::where('supplier_invoice_id', $spi->id)->get()->keyBy('box_id');
 
-        $out = $boxes->map(function (SpiBox $b) use ($rows, $openTasks) {
-            $row  = $rows->get($b->id);
-            $task = $openTasks->get($b->id);
+            $openTasks = SpiPutawayTask::where('supplier_invoice_id', $spi->id)
+                ->open()->get(['id', 'task_code', 'putaway_id', 'box_id', 'completed_scans', 'required_scans', 'expires_at'])
+                ->keyBy('box_id');
 
-            // No row at all is a box nobody has started: pending, step 01.
-            $status = $row ? $row->stage4Status((bool) $task) : SpiPutaway::PENDING;
+            $out = $boxes->map(function (SpiBox $b) use ($rows, $openTasks) {
+                $row  = $rows->get($b->id);
+                $task = $openTasks->get($b->id);
 
-            return [
-                'box_id'      => (int) $b->id,
-                'box_code'    => $b->box_code,
-                'scenario'    => $b->scenario,
-                'condition'   => $b->condition,
-                'weight_kg'   => (float) ($b->gross_weight_kg ?: 0),
-                'putaway_id'  => $row?->id,
-                'status'      => $status,
-                'destination' => $row?->destination,
-                'assigned_at' => optional($row?->assigned_at)->toDateTimeString(),
-                'draft_since' => $row?->draftSince(),
-                'task'        => $task ? [
-                    'id' => $task->id, 'task_code' => $task->task_code,
-                    'scans' => ['done' => (int) $task->completed_scans, 'required' => (int) $task->required_scans],
-                    'expires_at' => optional($task->expires_at)->toDateTimeString(),
-                ] : null,
-            ] + SpiPutaway::stepFor($status);
-        })->values();
+                // No row at all is a box nobody has started: pending, step 01.
+                $status = $row ? $row->stage4Status((bool) $task) : SpiPutaway::PENDING;
 
-        $by = fn (string $s) => $out->where('status', $s)->count();
+                return [
+                    'box_id'      => (int) $b->id,
+                    'box_code'    => $b->box_code,
+                    // The same code with the Stage 04 marker — never a second number.
+                    'putaway_code' => $b->box_code ? 'PUT-' . $b->box_code : null,
+                    'scenario'    => $b->scenario,
+                    'condition'   => $b->condition,
+                    'weight_kg'   => (float) ($b->gross_weight_kg ?: 0),
+                    'putaway_id'  => $row?->id,
+                    'status'      => $status,
+                    'destination' => $row?->destination,
+                    'assigned_at' => optional($row?->assigned_at)->toDateTimeString(),
+                    'draft_since' => $row?->draftSince(),
+                    'task'        => $task ? [
+                        'id' => $task->id, 'task_code' => $task->task_code,
+                        'scans' => ['done' => (int) $task->completed_scans, 'required' => (int) $task->required_scans],
+                        'expires_at' => optional($task->expires_at)->toDateTimeString(),
+                    ] : null,
+                ] + SpiPutaway::stepFor($status);
+            })->values();
 
-        return response()->json(['status' => true, 'data' => [
-            'counts' => [
-                'total'         => $out->count(),
-                'pending'       => $by(SpiPutaway::PENDING),
-                'draft'         => $by(SpiPutaway::DRAFT),
-                'awaiting_scan' => $by(SpiPutaway::AWAITING_SCAN),
-                'placed'        => $by(SpiPutaway::PLACED),
-                // What the progress bar reads: "0 / 7 PLACED".
-                'remaining'     => $out->count() - $by(SpiPutaway::PLACED),
-            ],
-            'steps'  => collect(SpiPutaway::STEPS)->map(fn ($s, $k) => [
-                'status' => $k, 'step' => $s[0], 'label' => $s[1], 'boxes' => $by($k),
-            ])->values(),
-            'boxes'  => $out->all(),
-        ]], 200);
+            $by = fn (string $s) => $out->where('status', $s)->count();
+
+            $body = [
+                'counts' => [
+                    'total'         => $out->count(),
+                    'pending'       => $by(SpiPutaway::PENDING),
+                    'draft'         => $by(SpiPutaway::DRAFT),
+                    'awaiting_scan' => $by(SpiPutaway::AWAITING_SCAN),
+                    'placed'        => $by(SpiPutaway::PLACED),
+                    // What the progress bar reads: "0 / 7 PLACED".
+                    'remaining'     => $out->count() - $by(SpiPutaway::PLACED),
+                ],
+                'steps'  => collect(SpiPutaway::STEPS)->map(fn ($s, $k) => [
+                    'status' => $k, 'step' => $s[0], 'label' => $s[1], 'boxes' => $by($k),
+                ])->values(),
+                'boxes'  => $out->all(),
+            ];
+
+            DB::commit();
+
+            return response()->json(['status' => true, 'data' => $body], 200);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /* ══════════════════════════ STEP 02 — WRITE ══════════════════════════ */
@@ -184,7 +249,7 @@ class SpiPutawayAllocationController extends Controller
             'session_id' => ['nullable', 'string', 'max:64'],
         ]);
 
-        $box   = SpiBox::where('supplier_invoice_id', $spi->id)->findOrFail($data['box_id']);
+        $box   = $this->findBox($spi, (int) $data['box_id']);
         $place = $this->validatePlace($spi, $data);
 
         // A placed box is final. Re-allocating it is not a correction, it is a move.
@@ -308,7 +373,7 @@ class SpiPutawayAllocationController extends Controller
     {
         $user = $this->tenantUser($request);
         $spi  = $this->findSpi($id);
-        $row  = SpiPutaway::where('supplier_invoice_id', $id)->with('box:id,box_code')->findOrFail($rowId);
+        $row  = $this->findRow($spi, $rowId);
 
         $data = $request->validate([
             'confirmed'            => ['required', 'accepted'],
@@ -487,6 +552,7 @@ class SpiPutawayAllocationController extends Controller
 
         return $row->toArray() + [
             'box_code'    => $box?->box_code,
+            'putaway_code' => $box?->box_code ? 'PUT-' . $box->box_code : null,
             // Derived, never stored: see SpiPutaway::stage4Status().
             'status'      => $row->stage4Status((bool) $openTask),
             'draft_since' => $row->draftSince(),

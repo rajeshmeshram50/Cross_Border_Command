@@ -303,7 +303,7 @@ class ShelfController extends BaseInventoryController
             DB::commit();
 
             return response()->json(['status' => true, 'data' => $data + [
-                'qr'           => $this->qr($data['scan'] ?? $data['code']),
+                'qr'           => $this->qr($this->stickerPayload($data)),
                 'download_url' => url("/api/inventory/shelves/{$id}/label"),
             ]], 200);
         } catch (\Throwable $e) {
@@ -381,13 +381,11 @@ class ShelfController extends BaseInventoryController
     {
         $data = $this->labelData($request, $id);
 
-        /* The SCAN value, not the printed code — the same thing labelPdf()
-           encodes. Codes restart at 001 in every branch, so a scanner reading
-           "WH-001" cannot tell which branch's it is holding; the scan value
-           carries the row id, which does not repeat. This endpoint was still
-           encoding the human code, so a QR saved from here and one printed on
-           the label resolved to different things. */
-        return $this->qrPng($data['scan'] ?? $data['code'], (int) $request->input('scale', 10));
+        /* Whatever the printed label encodes, byte for byte — one source,
+           so a QR saved from this screen and one glued to the rack can never
+           resolve to different things. Carries the row id, because codes
+           restart at 001 in every branch and "WH-001" names three of them. */
+        return $this->qrPng($this->stickerPayload($data), (int) $request->input('scale', 10), $data['code'] ?? null);
     }
 
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
