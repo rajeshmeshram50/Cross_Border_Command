@@ -4001,7 +4001,34 @@
 /* Two sections, side by side: the engine's answer and the operator's own. */
 .s4-root .s4sl-cols { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; align-items:stretch; }
 .s4-root .s4sl-sec { border:1px solid #d9eef4; border-radius:16px; background:#fff; padding:12px 14px 14px; display:flex; flex-direction:column; gap:10px; box-shadow:0 1px 2px rgba(12,44,58,.04); }
-.s4-root .s4sl-sec--a { border-color:#a7e8c8; }
+/* ── The two section cards, at the prototype's weights ──────────────────────
+ * A was a 1px #a7e8c8 hairline - technically green, visibly nothing. The
+ * prototype gives the recommendation a 2px #34d399 border, a 4px glow and a
+ * lifted shadow, because it is the card the operator is meant to accept.
+ *
+ * The 3px cap bar is a background-image, not a ::before: .s4sl-sec is a flex
+ * column, so a pseudo-element would become its first child and push the
+ * header down. As a background it is clipped by the border-radius for free.
+ * ──────────────────────────────────────────────────────────────────────────*/
+.s4-root .s4sl-sec--a {
+  border:2px solid #34d399;
+  box-shadow:0 0 0 4px rgba(16,185,129,.1), 0 8px 22px rgba(16,185,129,.12);
+  background-image:linear-gradient(90deg,#10b981,#059669);
+  background-size:100% 3px; background-repeat:no-repeat; background-position:top;
+}
+/* B stays the quieter of the two - it is the alternative, not the answer -
+   but it is cyan rather than grey, so the pair reads as a pair. */
+.s4-root .s4sl-sec--b {
+  border:1.5px solid #a5f3fc;
+  box-shadow:0 2px 12px rgba(6,182,212,.08);
+  background-image:linear-gradient(90deg,#06b6d4,#0e7490);
+  background-size:100% 3px; background-repeat:no-repeat; background-position:top;
+}
+/* The header carries the same tint as its cap, as in the prototype. */
+.s4-root .s4sl-sec--a .s4sl-sec__hd { margin:-2px -4px 0; padding:6px 4px 9px; border-bottom:1px solid #d1fae5; background:linear-gradient(180deg,#ecfdf5,#fff); }
+.s4-root .s4sl-sec--b .s4sl-sec__hd { margin:-2px -4px 0; padding:6px 4px 9px; border-bottom:1px solid #cffafe; background:linear-gradient(180deg,#ecfeff,#fff); }
+.s4-root .s4sl-sec--a .s4sl-sec__k { color:#047857; }
+.s4-root .s4sl-sec--b .s4sl-sec__k { color:#0e7490; }
 .s4-root .s4sl-sec__hd { display:flex; align-items:flex-start; gap:10px; }
 .s4-root .s4sl-sec__ic { flex:0 0 30px; height:30px; border-radius:10px; display:grid; place-items:center; font-size:14px; color:#fff; background:linear-gradient(135deg,#34d399,#059669); }
 .s4-root .s4sl-sec__ic--b { background:linear-gradient(135deg,#22d3ee,#0891b2); }
@@ -4017,9 +4044,21 @@
 
 /* The pick: its score beside its name and its full path. */
 .s4-root .s4sl-pick { display:flex; align-items:center; gap:14px; }
-.s4-root .s4sl-match { flex:0 0 auto; text-align:center; }
-.s4-root .s4sl-match b { display:block; font-size:25px; font-weight:900; letter-spacing:-.03em; color:#059669; line-height:1; }
-.s4-root .s4sl-match span { display:block; margin-top:2px; font-size:8.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#94a3b8; }
+/* The match score is a ring, as the prototype draws it: 84px of conic fill to
+   --p percent against a pale rest, with a 66px white disc inside carrying the
+   number. A bare "95%" states the score; the ring also SHOWS it, which is the
+   point of putting a score on a recommendation at all. */
+.s4-root .s4sl-match {
+  position:relative; flex:0 0 84px; width:84px; height:84px; border-radius:50%;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1;
+  /* The fallback matters: an invalid calc() kills the whole declaration, so a
+     missing --p would erase the ring rather than draw an empty one. */
+  background:conic-gradient(#10b981 calc(var(--p, 0) * 1%), #d1fae5 0);
+}
+/* The disc, not a second element: the markup stays two children. */
+.s4-root .s4sl-match::before { content:''; position:absolute; inset:9px; border-radius:50%; background:#fff; }
+.s4-root .s4sl-match b { position:relative; font-size:20px; font-weight:900; letter-spacing:-.5px; color:#047857; }
+.s4-root .s4sl-match span { position:relative; margin-top:3px; font-size:8.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
 .s4-root .s4sl-pick__tx { min-width:0; flex:1; }
 .s4-root .s4sl-pick__t { font-size:19px; font-weight:800; letter-spacing:-.3px; color:#0f172a; }
 .s4-root .s4sl-pick__p { font-size:11px; color:#64748b; margin-top:2px; }
@@ -4077,7 +4116,85 @@
    and quieter, so the hierarchy reads without a second set of rules. */
 .s4-root .s4sl-row { display:flex; align-items:center; gap:9px; width:100%; text-align:left; padding:8px 10px; border-radius:11px; border:1px solid #e8f1f5; background:#fff; font:inherit; cursor:pointer; transition:border-color .15s, background .15s; }
 .s4-root .s4sl-row:hover { border-color:#a5e8f5; background:#f8fdff; }
-.s4-root .s4sl-row--r { margin-left:16px; background:#fcfeff; border-style:dashed; }
+/* ── Section B · the tree reads as three levels, not as one list ────────────
+ * Zone, rack and shelf were all drawn at roughly the same weight and placed
+ * by two margin-left values, with nothing enclosing anything. Expanded, a
+ * rack looked like a zone and the next zone looked like another rack.
+ *
+ * So: an open zone becomes a CARD that contains its racks; each rack's
+ * shelves hang off a rail in the rack's own colour; and the three levels step
+ * down in weight - zone strongest, shelf lightest - because what is nested is
+ * what should be quietest.
+ * ──────────────────────────────────────────────────────────────────────────*/
+.s4-root .s4sl-row--r { margin-left:0; padding:6px 9px; background:#fcfeff; border-color:#e8f1f5; }
+
+/* The open zone's card. Collapsed zones stay bare rows, so "which one am I
+   inside" never needs working out.
+   padding-top is 0 so the header can sit flush against the card's top edge. */
+/* 2px, not 1.5: Chrome floors a fractional border to whole device pixels, so
+   1.5px rendered as the 1px hairline it was meant to replace. */
+.s4-root .s4sl-z.is-open { padding:0 5px 5px; border:2px solid #bcdfed; border-radius:15px; background:#fbfeff; box-shadow:0 4px 14px rgba(12,44,58,.07); }
+
+/* No guide rails. They existed to show nesting back when nothing contained
+   anything; the zone card, the rack card and their header bars say it now, so
+   a coloured line down the side is a third voice repeating the same thing. A
+   small inset is all the nesting needs. */
+.s4-root .s4sl-zb { display:flex; flex-direction:column; gap:6px; margin:6px 4px 2px; }
+.s4-root .s4sl-r.is-open > .s4sl-row--r { background:#f2faff; border-color:#bae6fd; }
+
+/* The tree scrolls now, so give it the same slim bar as the flags grid. */
+.s4-root .s4sl-tree::-webkit-scrollbar { width:7px; }
+.s4-root .s4sl-tree::-webkit-scrollbar-thumb { border-radius:7px; background:#cfdde6; }
+.s4-root .s4sl-tree::-webkit-scrollbar-track { background:transparent; }
+[data-bs-theme="dark"] .s4-root .s4sl-tree::-webkit-scrollbar-thumb { background:rgba(255,255,255,.16); }
+
+/* ── The header BAR of each container, not a row floating inside it ─────────
+ * A rounded row inset from the card's edges reads as another list item. A
+ * header reaches the container's own edges, rounds only where the container
+ * rounds, and is separated from the body by a rule. Negative margins cancel
+ * the card's side padding; the radius is the card's minus its border.
+ *
+ * It is also sticky, so "which zone am I in" is answered by looking rather
+ * than by scrolling back up. That needs a fully opaque background, or the
+ * rows passing underneath show through it.
+ * ──────────────────────────────────────────────────────────────────────────*/
+.s4-root .s4sl-z.is-open > .s4sl-row--z {
+  position:sticky; top:0; z-index:3;
+  /* 100% + both negative margins. Plain width:100% shifts the bar left
+     instead of stretching it and leaves the right edge 10px short; width:auto
+     is worse, because a <button> sizes to fit-content, not to its container. */
+  width:calc(100% + 10px); margin:0 -5px; padding:9px 12px;
+  border:0; border-bottom:2px solid #bcdfed; border-radius:13px 13px 0 0;
+  background:#e4f3f9;
+  /* A sticky bar with nothing under it looks like the card beneath has been
+     sliced in half. The shadow says the content passes UNDER the header. */
+  box-shadow:0 7px 9px -8px rgba(12,44,58,.45);
+}
+.s4-root .s4sl-z.is-open > .s4sl-row--z:hover { background:#dcf0f7; }
+
+/* The same shape one level down and one shade quieter, so a rack header is
+   plainly a rack header and not a second zone. */
+.s4-root .s4sl-r.is-open { border:1px solid #d7ecf5; border-radius:12px; background:#fff; padding:0 4px 4px; }
+.s4-root .s4sl-r.is-open > .s4sl-row--r {
+  /* 52px is the zone bar's height: the rack bar parks directly under it. */
+  position:sticky; top:52px; z-index:2;
+  width:calc(100% + 8px); margin:0 -4px; padding:7px 10px;
+  border:0; border-bottom:1px solid #d7ecf5; border-radius:11px 11px 0 0;
+  background:#f1f9fe;
+  box-shadow:0 6px 8px -7px rgba(12,44,58,.4);
+}
+.s4-root .s4sl-r.is-open > .s4sl-row--r:hover { background:#e7f5fd; }
+.s4-root .s4sl-rb { display:flex; flex-direction:column; gap:6px; margin-top:5px; }
+.s4-root .s4sl-rb__none { padding:9px 12px; border-radius:10px; border:1px dashed #e2e8f0; background:#f8fafc; color:#94a3b8; font-size:11px; font-weight:700; }
+
+/* Blocked shelves are not choices. They collapse to one line carrying their
+   count, and open to the same cards with the same reasons - muted, never
+   removed, because "why not" is the question an operator asks next. */
+.s4-root .s4sl-blk { display:flex; align-items:center; gap:7px; align-self:flex-start; padding:5px 11px; border-radius:999px; border:1px dashed #e4d6d6; background:#fdf8f8; color:#9f6b6b; font:inherit; font-size:10.5px; font-weight:800; cursor:pointer; transition:background .15s, border-color .15s; }
+.s4-root .s4sl-blk:hover { background:#fef2f2; border-color:#fecaca; }
+.s4-root .s4sl-blk i { font-style:normal; font-size:11px; }
+.s4-root .s4sl-blk span { color:#c08c8c; font-weight:700; }
+.s4-root .s4sl-shelves--blk { opacity:.75; }
 .s4-root .s4sl-row__ic { flex:0 0 22px; height:22px; border-radius:7px; display:grid; place-items:center; font-size:11px; }
 .s4-root .s4sl-row__ic--z { background:#ede9fe; color:#6d28d9; }
 .s4-root .s4sl-row__ic--r { background:#e0f2fe; color:#0369a1; }
@@ -4090,7 +4207,13 @@
 .s4-root .s4sl-row__n { flex:0 0 auto; font-size:10px; font-weight:600; color:#94a3b8; white-space:nowrap; }
 .s4-root .s4sl-row__n b { font-weight:800; color:#94a3b8; }
 .s4-root .s4sl-row__n b.is-ok { color:#059669; }
-.s4-root .s4sl-row__cv { flex:0 0 14px; text-align:center; font-size:12px; color:#94a3b8; }
+/* A proper hit target with a proper icon in it: a 22px box matching the row's
+   leading icon, so the row ends the way it starts instead of trailing off into
+   a stray mark. The icon rotates rather than being swapped for a second glyph,
+   so open and closed are the same shape at the same weight. */
+.s4-root .s4sl-cv { flex:0 0 22px; height:22px; border-radius:7px; display:grid; place-items:center; color:#94a3b8; background:rgba(15,23,42,.04); transition:transform .18s ease, background .15s, color .15s; }
+.s4-root .s4sl-cv.is-open { transform:rotate(180deg); color:#0e7490; background:rgba(8,145,178,.1); }
+.s4-root .s4sl-row:hover .s4sl-cv { background:rgba(8,145,178,.12); color:#0e7490; }
 
 /* The fill bar, banded exactly as the legend says. */
 .s4-root .s4sl-fill { flex:0 0 auto; display:inline-flex; align-items:center; gap:7px; }
@@ -4111,19 +4234,28 @@
 
 /* Shelves are cards, not rows: each carries its own before/after and may be
    picked, which a row of text cannot express at this density. */
-.s4-root .s4sl-shelves { display:grid; grid-template-columns:repeat(auto-fill,minmax(136px,1fr)); gap:7px; margin:6px 0 2px 32px; }
-.s4-root .s4sl-sh { display:flex; flex-direction:column; gap:4px; text-align:left; padding:8px 10px 9px; border-radius:11px; border:1.5px solid #e2e8f0; background:#fff; font:inherit; cursor:pointer; transition:border-color .15s, box-shadow .15s, background .15s; }
+/* Four to a row, fixed. auto-fill sized to the widest card the rack happened
+   to hold, so a rack of five put four up and left the fifth alone on a row of
+   its own. A fixed four keeps every rack the same shape, and the cards are
+   tight enough that four fit without crushing. */
+.s4-root .s4sl-shelves { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin:6px 0 2px; }
+/* Four stops being four once the column is too narrow to read them. */
+@media (max-width:1500px) { .s4-root .s4sl-shelves { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:1150px) { .s4-root .s4sl-shelves { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+/* 1px, not 1.5: the shelves are the deepest level and were the heaviest thing
+   on screen. The weight belongs to selected and recommended, below. */
+.s4-root .s4sl-sh { display:flex; flex-direction:column; gap:3px; text-align:left; padding:6px 8px 7px; border-radius:9px; border:1px solid #e6eef3; background:#fff; font:inherit; cursor:pointer; transition:border-color .15s, box-shadow .15s, background .15s; }
 .s4-root .s4sl-sh:hover:not(:disabled) { border-color:#a5e8f5; background:#f8fdff; }
 .s4-root .s4sl-sh.is-on { border-color:#0891b2; background:#f6fdff; box-shadow:0 0 0 3px rgba(8,145,178,.12); }
-.s4-root .s4sl-sh__hd { display:flex; align-items:center; gap:6px; }
-.s4-root .s4sl-sh__code { flex:1; min-width:0; font-family:'Geist Mono',ui-monospace,monospace; font-size:11px; font-weight:800; color:#0e7490; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.s4-root .s4sl-sh__radio { flex:0 0 13px; height:13px; border-radius:50%; border:1.5px solid #cbd5e1; background:#fff; }
+.s4-root .s4sl-sh__hd { display:flex; align-items:center; gap:5px; }
+.s4-root .s4sl-sh__code { flex:1; min-width:0; font-family:'Geist Mono',ui-monospace,monospace; font-size:10.5px; font-weight:800; color:#0e7490; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.s4-root .s4sl-sh__radio { flex:0 0 12px; height:12px; border-radius:50%; border:1.5px solid #cbd5e1; background:#fff; }
 .s4-root .s4sl-sh.is-on .s4sl-sh__radio { border-color:#0891b2; box-shadow:inset 0 0 0 3px #0891b2; }
-.s4-root .s4sl-sh__nm { font-size:10.5px; font-weight:600; color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.s4-root .s4sl-sh__pct { font-size:10px; font-weight:800; color:#0f172a; }
+.s4-root .s4sl-sh__nm { font-size:10px; font-weight:600; color:#64748b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.s4-root .s4sl-sh__pct { font-size:9.5px; font-weight:800; color:#0f172a; }
 /* The refusal is the engine's own wording, in red where the number would be -
    the same place the eye already looks for the verdict. */
-.s4-root .s4sl-sh__why { font-size:10px; font-weight:800; color:#dc2626; }
+.s4-root .s4sl-sh__why { font-size:9.5px; font-weight:800; color:#dc2626; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .s4-root .s4sl-sh.is-out { background:#f8fafc; border-style:dashed; border-color:#e2e8f0; cursor:not-allowed; }
 .s4-root .s4sl-sh.is-out .s4sl-sh__code { color:#94a3b8; }
 .s4-root .s4sl-sh.is-out .s4sl-sh__radio { display:none; }
@@ -4139,7 +4271,7 @@
 .s4-root .s4sl-legend--light .s4sl-lg em { color:#94a3b8; opacity:1; }
 
 /* Why a whole zone is out, said once at its top rather than on every shelf. */
-.s4-root .s4sl-zwhy { display:flex; align-items:center; gap:7px; margin:6px 0 2px 16px; padding:7px 11px; border-radius:10px; background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; font-size:11px; font-weight:800; }
+.s4-root .s4sl-zwhy { display:flex; align-items:center; gap:7px; margin:0; padding:7px 11px; border-radius:10px; background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; font-size:11px; font-weight:800; }
 .s4-root .s4sl-zwhy i { font-style:normal; font-size:12px; }
 
 /* The engine's pick, marked where the operator is choosing. */
@@ -4212,12 +4344,27 @@
 [data-bs-theme="dark"] .s4-root .s4vp-btn:hover { background: rgba(34,211,238,.18); }
 
 /* Step 02 */
-[data-bs-theme="dark"] .s4-root .s4sl-sec { background: var(--s4d-bg); border-color: var(--s4d-line); }
-[data-bs-theme="dark"] .s4-root .s4sl-sec--a { border-color: rgba(52,211,153,.3); }
+/* background-color, not background: the shorthand would reset the cap bar's
+   background-image and erase it in dark mode. */
+[data-bs-theme="dark"] .s4-root .s4sl-sec { background-color: var(--s4d-bg); border-color: var(--s4d-line); }
+/* The cap bars and borders keep their hues; only the header tints and the
+   glow drop to something a dark surface can carry. */
+[data-bs-theme="dark"] .s4-root .s4sl-sec--a { border-color: #34d399; box-shadow: 0 0 0 4px rgba(16,185,129,.12); }
+[data-bs-theme="dark"] .s4-root .s4sl-sec--b { border-color: rgba(34,211,238,.45); box-shadow: none; }
+[data-bs-theme="dark"] .s4-root .s4sl-sec--a .s4sl-sec__hd { background: linear-gradient(180deg, rgba(16,185,129,.14), transparent); border-bottom-color: rgba(16,185,129,.28); }
+[data-bs-theme="dark"] .s4-root .s4sl-sec--b .s4sl-sec__hd { background: linear-gradient(180deg, rgba(34,211,238,.12), transparent); border-bottom-color: rgba(34,211,238,.26); }
+[data-bs-theme="dark"] .s4-root .s4sl-sec--a .s4sl-sec__k { color: #6ee7b7; }
+[data-bs-theme="dark"] .s4-root .s4sl-sec--b .s4sl-sec__k { color: #7dd3e8; }
 [data-bs-theme="dark"] .s4-root .s4sl-sec__t { color: var(--s4d-tx); }
 [data-bs-theme="dark"] .s4-root .s4sl-sec__s,
 [data-bs-theme="dark"] .s4-root .s4sl-sec__k { color: var(--s4d-dim); }
 [data-bs-theme="dark"] .s4-root .s4sl-kind { background: rgba(255,255,255,.05); color: var(--s4d-dim); }
+/* The ring keeps its green arc; only the unfilled rest and the disc change,
+   so the score reads the same in either theme. */
+[data-bs-theme="dark"] .s4-root .s4sl-match { background: conic-gradient(#10b981 calc(var(--p, 0) * 1%), rgba(16,185,129,.18) 0); }
+[data-bs-theme="dark"] .s4-root .s4sl-match::before { background: var(--s4d-bg); }
+[data-bs-theme="dark"] .s4-root .s4sl-match b { color: #6ee7b7; }
+[data-bs-theme="dark"] .s4-root .s4sl-match span { color: var(--s4d-dim); }
 [data-bs-theme="dark"] .s4-root .s4sl-pick__t { color: var(--s4d-tx); }
 [data-bs-theme="dark"] .s4-root .s4sl-pick__p { color: var(--s4d-dim); }
 [data-bs-theme="dark"] .s4-root .s4sl-occ { background: rgba(255,255,255,.03); border-color: var(--s4d-line); }
@@ -4235,7 +4382,22 @@
 [data-bs-theme="dark"] .s4-root .s4sl-tree__hd,
 [data-bs-theme="dark"] .s4-root .s4sl-row { background: var(--s4d-bg2); border-color: var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4sl-row:hover { background: #163844; border-color: rgba(34,211,238,.4); }
-[data-bs-theme="dark"] .s4-root .s4sl-row--r { background: rgba(255,255,255,.03); }
+[data-bs-theme="dark"] .s4-root .s4sl-row--r { background: rgba(255,255,255,.03); border-color: var(--s4d-line); }
+/* Same three levels in the dark: the open zone is the lighter surface, and
+   the two rails keep the zone/rack colours they have in the light. */
+[data-bs-theme="dark"] .s4-root .s4sl-z.is-open { background: var(--s4d-bg); border-color: var(--s4d-line); box-shadow: none; }
+/* Dark: the header bars stay opaque surfaces - sticky over scrolling content
+   cannot use a translucent tint - and keep the rule that separates them. */
+[data-bs-theme="dark"] .s4-root .s4sl-z.is-open { background: #0e2832; border-color: #23505f; }
+[data-bs-theme="dark"] .s4-root .s4sl-z.is-open > .s4sl-row--z { background: #17394a; border-bottom-color: #23505f; }
+[data-bs-theme="dark"] .s4-root .s4sl-z.is-open > .s4sl-row--z:hover { background: #1b4253; }
+[data-bs-theme="dark"] .s4-root .s4sl-r.is-open { background: #10303c; border-color: #1d4454; }
+[data-bs-theme="dark"] .s4-root .s4sl-r.is-open > .s4sl-row--r { background: #14394a; border-bottom-color: #1d4454; }
+[data-bs-theme="dark"] .s4-root .s4sl-r.is-open > .s4sl-row--r:hover { background: #184356; }
+[data-bs-theme="dark"] .s4-root .s4sl-rb__none { background: rgba(255,255,255,.03); border-color: var(--s4d-line); color: var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4sl-blk { background: rgba(220,38,38,.1); border-color: rgba(220,38,38,.3); color: #fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4sl-blk:hover { background: rgba(220,38,38,.18); }
+[data-bs-theme="dark"] .s4-root .s4sl-blk span { color: #d89a9a; }
 [data-bs-theme="dark"] .s4-root .s4sl-tree__tx b,
 [data-bs-theme="dark"] .s4-root .s4sl-row__tx b { color: var(--s4d-tx); }
 [data-bs-theme="dark"] .s4-root .s4sl-tree__tx span,
@@ -4438,6 +4600,9 @@
 [data-bs-theme="dark"] .s4-root .s4sl-sec__hd { border-bottom-color: rgba(255,255,255,.06); }
 [data-bs-theme="dark"] .s4-root .s4sl-checks__t,
 [data-bs-theme="dark"] .s4-root .s4sl-tree__note { color: #8fb0bd; }
+[data-bs-theme="dark"] .s4-root .s4sl-cv { background: rgba(255,255,255,.07); color: var(--s4d-dim); }
+[data-bs-theme="dark"] .s4-root .s4sl-cv.is-open,
+[data-bs-theme="dark"] .s4-root .s4sl-row:hover .s4sl-cv { background: rgba(34,211,238,.18); color: #7dd3e8; }
 [data-bs-theme="dark"] .s4-root .s4sl-row__ic--z { background: rgba(167,139,250,.18); color: #c4b5fd; }
 [data-bs-theme="dark"] .s4-root .s4sl-row__ic--r { background: rgba(56,189,248,.18); color: #7dd3fc; }
 [data-bs-theme="dark"] .s4-root .s4sl-rec { background: rgba(52,211,153,.16); color: #6ee7b7; }
@@ -4484,7 +4649,42 @@
    rather than each ending wherever its own content runs out. The tree takes
    the slack inside Section B; Section A pushes its button to the floor. */
 .s4-root .s4sl-sec { min-height: 0; }
-.s4-root .s4sl-sec--b .s4sl-tree { flex: 1; max-height: none; }
+/* ── Section B scrolls; it does not grow the page ───────────────────────────
+ * Expanding a zone used to make the tree taller, which made Section B taller,
+ * which stretched Section A to match it (the two are stretch-aligned grid
+ * cells) and pushed the whole step down the page. Opening a zone is browsing,
+ * not a layout change.
+ *
+ * The height is viewport-relative because the pane's own height does not
+ * propagate down to here - its children grow past it - so flex:1 alone
+ * resolves to the content's height and caps nothing. The floor keeps two or
+ * three rows visible on a short screen rather than crushing the tree to a
+ * sliver; below that the shortfall goes to this scrollbar.
+ *
+ * Scrolling here also puts the sticky zone header back in the right box: it
+ * now pins inside the tree, which is what actually moves.
+ * ──────────────────────────────────────────────────────────────────────────*/
+.s4-root .s4sl-sec--b .s4sl-tree {
+  /* flex-basis 0, so the tree contributes NOTHING to how tall Section B wants
+     to be. Section A then sets the grid row's height, B stretches to match it
+     (the cells are stretch-aligned), and the tree takes exactly the space
+     left over.
+     That is the whole trick. max-height let the tree grow to its content and
+     jerked both cards 126px on the first expand; a fixed height stopped the
+     jerking but left dead space under the zone list whenever the content was
+     shorter than the number. Sized from the row, it is always exactly full:
+     no growth, no gap, and the overflow goes to the scrollbar. */
+  flex: 1 1 0;
+  min-height: 220px;
+  overflow-y: auto;
+  /* No padding at the top. Chrome pins a sticky child to the scrollport's
+     CONTENT box, so the tree's 10px top padding left an 11px strip above the
+     pinned zone bar with rows sliding through it - which is what made the
+     header look like it was tearing off the card. The spacing moves onto the
+     first child, where it scrolls away like any other content. */
+  padding-top: 0;
+}
+.s4-root .s4sl-sec--b .s4sl-tree > :first-child { margin-top: 10px; }
 /* ── Step 01 · the sticker opens its code ───────────────────────────────── */
 .s4-root .s4s-stk__qrwrap { position:relative; display:inline-block; }
 .s4-root .s4s-stk__zoom { position:absolute; right:-7px; bottom:-7px; width:22px; height:22px; border-radius:50%; display:grid; place-items:center; border:1.5px solid #bae8f2; background:#fff; color:#0e7490; cursor:pointer; box-shadow:0 2px 6px rgba(12,44,58,.22); padding:0; }

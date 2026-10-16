@@ -56,6 +56,18 @@ const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : m
  *  100.0 reads 100. */
 const pct = (n: number) => `${Number.isInteger(n) ? n : Number(n.toFixed(1))}%`;
 
+/** The expand/collapse chevron. U+2303/U+2304 were being used as the arrows,
+ *  and they are typographic marks, not icons: they sit on the text baseline,
+ *  carry the font's own weight and render at whatever size the row's font is,
+ *  which is why they read as specks. One SVG that rotates instead. */
+const Chevron = ({ open }: { open: boolean }) => (
+  <span className={`s4sl-cv${open ? ' is-open' : ''}`} aria-hidden>
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  </span>
+);
+
 const IcoBox = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
@@ -101,10 +113,28 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
 
   const [openZones, setOpenZones] = useState<Set<number>>(new Set());
   const [openRacks, setOpenRacks] = useState<Set<number>>(new Set());
+  /** Blocked shelves, per rack. Shut by default: a shelf that cannot take the
+   *  box is not a choice, and on a full rack they outnumber the ones that are.
+   *  The reason stays one click away, never deleted. */
+  const [openBlocked, setOpenBlocked] = useState<Set<number>>(new Set());
   const toggle = (set: (f: (s: Set<number>) => Set<number>) => void) => (id: number) =>
     set(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const toggleZone = toggle(setOpenZones);
-  const toggleRack = toggle(setOpenRacks);
+  const toggleBlocked = toggle(setOpenBlocked);
+  /** Zones are an accordion too. Two zones open is two warehouses of shelves
+   *  in one column, and the box only goes to one of them. Opening a zone also
+   *  drops the rack open inside the previous one - otherwise its rack would
+   *  reappear expanded the next time the zone is opened. */
+  const toggleZone = (id: number) => setOpenZones(prev => {
+    if (prev.has(id)) return new Set<number>();
+    setOpenRacks(new Set<number>());
+    return new Set([id]);
+  });
+  /** Racks are an accordion: opening one closes the other. Several open at
+   *  once pushed the zone's own header off the screen and turned the card back
+   *  into the wall of shelves it was meant to replace - and only one rack can
+   *  be compared against the recommendation at a time anyway. */
+  const toggleRack = (id: number) =>
+    setOpenRacks(prev => (prev.has(id) ? new Set<number>() : new Set([id])));
 
   /* Open straight onto the engine's pick. The tree exists to be disagreed
    * with, and an operator cannot disagree with a branch they have to find
@@ -182,7 +212,9 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
               <span className="s4sl-kind">{mode === 'rack' ? 'Rack & shelf' : 'Zone floor'}</span>
 
               <div className="s4sl-pick">
-                <div className="s4sl-match">
+                {/* --p drives the ring's conic fill. The weights the engine
+                    scores with sum to 100, so the score IS the percentage. */}
+                <div className="s4sl-match" style={{ ['--p' as string]: Math.max(0, Math.min(100, Math.round(rec.score ?? 0))) }}>
                   <b>{pct(rec.score ?? 0)}</b>
                   <span>Match</span>
                 </div>
@@ -330,14 +362,20 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
                         {many(z.racks.length, 'rack', 'racks')} · {many(z.total, 'shelf', 'shelves')}
                         {' · '}<b className={z.eligible ? 'is-ok' : ''}>{z.eligible} eligible</b>
                       </span>
-                      <span className="s4sl-row__cv">{open ? '⌃' : '⌄'}</span>
+                      <Chevron open={open} />
                     </button>
 
-                    {open && z.eligible === 0 && oneReason(z) && (
+                    {/* An open zone OWNS what is under it. Without a body to
+                        hold them, its racks and shelves were loose rows that
+                        looked no different from the next zone's, and the only
+                        thing saying where ZN-002 ended was an icon. */}
+                    {open && (
+                    <div className="s4sl-zb">
+                    {z.eligible === 0 && oneReason(z) && (
                       <div className="s4sl-zwhy"><i>&#9940;</i>{oneReason(z)}</div>
                     )}
 
-                    {open && z.racks.map(r => {
+                    {z.racks.map(r => {
                       const rf = fillOf(r.shelves);
                       const ropen = openRacks.has(r.id);
                       return (
@@ -351,41 +389,75 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot }
                               {many(r.total, 'shelf', 'shelves')}
                               {' · '}<b className={r.eligible ? 'is-ok' : ''}>{r.eligible} eligible</b>
                             </span>
-                            <span className="s4sl-row__cv">{ropen ? '⌃' : '⌄'}</span>
+                            <Chevron open={ropen} />
                           </button>
 
-                          {ropen && (
-                            <div className="s4sl-shelves">
-                              {r.shelves.map(sh => (
-                                <button
-                                  type="button"
-                                  key={sh.id}
-                                  className={`s4sl-sh${sh.eligible ? '' : ' is-out'}${spot === sh.id ? ' is-on' : ''}`}
-                                  disabled={!sh.eligible}
-                                  aria-pressed={spot === sh.id}
-                                  onClick={() => onSpot(spot === sh.id ? null : sh.id)}
-                                >
-                                  <span className="s4sl-sh__hd">
-                                    <span className="s4sl-sh__code">{shortCode(sh.code)}</span>
-                                    {rec?.id === sh.id && <span className="s4sl-sh__star" title="Recommended">&#9733;</span>}
-                                    <span className="s4sl-sh__radio" aria-hidden />
-                                  </span>
-                                  <span className="s4sl-sh__nm">{sh.name || `Level ${sh.level_no}`}</span>
-                                  <Fill pct={sh.used_pct} thin />
-                                  {sh.eligible ? (
-                                    /* Before and after, because the number that
-                                       matters is what this box leaves behind. */
-                                    <span className="s4sl-sh__pct">{pct(sh.used_pct)} → {pct(sh.used_pct_after)}</span>
-                                  ) : (
-                                    <span className="s4sl-sh__why">{sh.reason_label || 'Not available'}</span>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-                          )}
+                          {ropen && (() => {
+                            /* Three groups, in the order they are worth
+                               reading: the engine's pick, then the rest of
+                               what fits, then what does not. Raw server order
+                               interleaved them, so a blocked shelf sat between
+                               two choices and the recommendation was fifth. */
+                            const card = (sh: PutawayShelf) => (
+                              <button
+                                type="button"
+                                key={sh.id}
+                                className={`s4sl-sh${sh.eligible ? '' : ' is-out'}${spot === sh.id ? ' is-on' : ''}${rec?.id === sh.id ? ' is-rec' : ''}`}
+                                disabled={!sh.eligible}
+                                aria-pressed={spot === sh.id}
+                                onClick={() => onSpot(spot === sh.id ? null : sh.id)}
+                              >
+                                <span className="s4sl-sh__hd">
+                                  <span className="s4sl-sh__code">{shortCode(sh.code)}</span>
+                                  {rec?.id === sh.id && <span className="s4sl-sh__star" title="Recommended">&#9733;</span>}
+                                  <span className="s4sl-sh__radio" aria-hidden />
+                                </span>
+                                <span className="s4sl-sh__nm">{sh.name || `Level ${sh.level_no}`}</span>
+                                <Fill pct={sh.used_pct} thin />
+                                {sh.eligible ? (
+                                  /* Before and after, because the number that
+                                     matters is what this box leaves behind. */
+                                  <span className="s4sl-sh__pct">{pct(sh.used_pct)} → {pct(sh.used_pct_after)}</span>
+                                ) : (
+                                  <span className="s4sl-sh__why">{sh.reason_label || 'Not available'}</span>
+                                )}
+                              </button>
+                            );
+                            const fits = [
+                              ...r.shelves.filter(s => s.eligible && rec?.id === s.id),
+                              ...r.shelves.filter(s => s.eligible && rec?.id !== s.id),
+                            ];
+                            const blocked = r.shelves.filter(s => !s.eligible);
+                            const bOpen = openBlocked.has(r.id);
+                            return (
+                              <div className="s4sl-rb">
+                                {fits.length > 0
+                                  ? <div className="s4sl-shelves">{fits.map(card)}</div>
+                                  : <div className="s4sl-rb__none">No shelf on this rack can take the box.</div>}
+
+                                {blocked.length > 0 && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className={`s4sl-blk${bOpen ? ' is-open' : ''}`}
+                                      onClick={() => toggleBlocked(r.id)}
+                                      aria-expanded={bOpen}
+                                    >
+                                      <i aria-hidden>&#9940;</i>
+                                      {many(blocked.length, 'blocked shelf', 'blocked shelves')}
+                                      <span>{bOpen ? 'Hide' : 'Show'}</span>
+                                    </button>
+                                    {bOpen && <div className="s4sl-shelves s4sl-shelves--blk">{blocked.map(card)}</div>}
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
+                    </div>
+                    )}
                   </div>
                 );
               })}
