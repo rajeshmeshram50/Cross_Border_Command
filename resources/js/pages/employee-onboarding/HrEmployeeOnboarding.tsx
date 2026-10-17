@@ -1415,18 +1415,18 @@ function SendWorkflowPreview({ templateId, employeeId }: { templateId: number | 
     <div className="d-flex flex-wrap align-items-center" style={{ gap: 8 }}>
       {signers.map((s, i) => (
         <div key={i} className="d-flex align-items-center" style={{ gap: 8 }}>
-          {/* Name on top, then the job title, then the role that selected
-              them — a signer is a person first, and "Reporting Manager" is
-              how they were chosen, not what their card says. */}
+          {/* Name on top, then the ROLE that selected them.
+              This led with the job title and pushed the role to a suffix,
+              which printed "Executive" where the routing spec asks for
+              "Reporting Manager". The route is defined in roles, so the role
+              leads here and in the sent-run stepper alike; the job title is
+              only the fallback for a slot with no role recorded. (#23) */}
           <div className={`ssw-step${s.unassigned ? ' is-unassigned' : ''}`}>
             <span className="ssw-step-num">{i + 1}</span>
             <div>
               <div className="ssw-step-role">{s.name || s.role_name || 'Unassigned'}</div>
-              {(s.designation || s.role_name) && (
-                <div className="ssw-step-desig">
-                  {s.designation || s.role_name}
-                  {s.designation && s.role_name && <span className="ssw-step-as"> · {s.role_name}</span>}
-                </div>
+              {(s.role_name || s.designation) && (
+                <div className="ssw-step-desig">{s.role_name || s.designation}</div>
               )}
               <div className="ssw-step-action">{s.action || 'Sign'}</div>
             </div>
@@ -6570,10 +6570,25 @@ function Stage5Policies({ emp, onProgress }: {
                         ? run.signers.map((s, i) => ({
                             name:   s.name || s.role_name || `Signer ${i + 1}`,
                             action: s.action,
-                            // Job title when the backend could resolve one,
-                            // else the workflow role — the stepper must say
-                            // who this person is either way (#23).
-                            desig:  s.designation || (s.name ? s.role_name : null) || null,
+                            /* The ROLE first, job title only as a fallback.
+                             *
+                             * This read `s.designation || s.role_name`, so any
+                             * signer whose employee record carried a title
+                             * printed "Executive" in the slot where the spec
+                             * asks for "Reporting Manager". The routing spec
+                             * is explicit — the row is role — name, and the
+                             * route reads CEO → Reporting Manager → Employee
+                             * — and #23's own examples for "designation" are
+                             * reporting manager, employee and CEO, which are
+                             * workflow roles rather than HR designations.
+                             *
+                             * Role also survives the data gap that made the
+                             * old order unreliable: it is stored on the run
+                             * itself at send time, whereas designation is
+                             * resolved live and comes back null for anyone
+                             * without a designation_id on their employee
+                             * record. (#23) */
+                            desig:  s.role_name || s.designation || null,
                             state:  s.status === 'Done' ? 'Completed'
                                   : s.status === 'Rejected' ? 'Rejected'
                                   : (i === run.current_index ? 'Awaiting' : 'Pending'),
@@ -6592,12 +6607,11 @@ function Stage5Policies({ emp, onProgress }: {
                         ? previewSigners[tpl.id].map((s, i) => ({
                             name:   s.name || s.role_name || `Signer ${i + 1}`,
                             action: s.action,
-                            /* Job title when one resolves, else the workflow
-                               role — the row must say who this person is in
-                               the org either way, and for a signer with no
-                               employee record (a client admin, say) the role
-                               is the only true answer. */
-                            desig:  s.designation || s.role_name || null,
+                            /* Role first, same as the sent branch above: the
+                               preview must show the route the send will
+                               actually create, and that route is named in
+                               roles. (#23) */
+                            desig:  s.role_name || s.designation || null,
                             state:  (s.unassigned ? 'Unassigned' : 'Pending') as string,
                             active: i === 0 && !s.unassigned,
                             at:     null as string | null,
