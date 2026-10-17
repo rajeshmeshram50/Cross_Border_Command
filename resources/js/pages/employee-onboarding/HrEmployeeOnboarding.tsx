@@ -1373,19 +1373,40 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
 }
 
 
-function SendWorkflowPreview({ templateId }: { templateId: number | null }) {
-  const [signers, setSigners] = useState<Array<{ role_name?: string | null; action?: string }>>([]);
+/* Who will sign, by NAME and job title — not by role label (#23).
+ *
+ * This read the TEMPLATE, which stores roles ("Employee", "Reporting
+ * Manager", "Client (CEO)") and a designation_name that is null on every
+ * template in practice. So the stepper could only print the bare role: no
+ * person, no designation, and "Employee" sitting where the manager belonged.
+ *
+ * preview-signers runs the same SignerResolver the send path uses, against
+ * THIS employee, so the stepper names the people who will actually be asked —
+ * and cannot drift from what sending does. */
+function SendWorkflowPreview({ templateId, employeeId }: { templateId: number | null; employeeId: number | null }) {
+  const [signers, setSigners] = useState<Array<{
+    role_name?: string | null; action?: string;
+    name?: string | null; designation?: string | null; unassigned?: boolean;
+  }>>([]);
   useEffect(() => {
     if (!templateId) { setSigners([]); return; }
     let cancelled = false;
     (async () => {
       try {
+        if (employeeId) {
+          const { data } = await api.get('/hr-document-signatures/preview-signers', {
+            params: { template_id: templateId, employee_id: employeeId },
+          });
+          if (!cancelled && Array.isArray(data)) { setSigners(data); return; }
+        }
+        /* No employee in hand (or the resolve failed): fall back to the
+           template's bare roles rather than showing nothing. */
         const { data } = await api.get(`/hr-document-templates/${templateId}`);
         if (!cancelled) setSigners(Array.isArray(data?.signers) ? data.signers : []);
       } catch { if (!cancelled) setSigners([]); }
     })();
     return () => { cancelled = true; };
-  }, [templateId]);
+  }, [templateId, employeeId]);
 
   if (signers.length === 0) {
     return <div style={{ fontSize: 12, color: 'var(--vz-secondary-color)', fontStyle: 'italic' }}>No signers configured on this template.</div>;
@@ -1394,10 +1415,19 @@ function SendWorkflowPreview({ templateId }: { templateId: number | null }) {
     <div className="d-flex flex-wrap align-items-center" style={{ gap: 8 }}>
       {signers.map((s, i) => (
         <div key={i} className="d-flex align-items-center" style={{ gap: 8 }}>
-          <div className="ssw-step">
+          {/* Name on top, then the job title, then the role that selected
+              them — a signer is a person first, and "Reporting Manager" is
+              how they were chosen, not what their card says. */}
+          <div className={`ssw-step${s.unassigned ? ' is-unassigned' : ''}`}>
             <span className="ssw-step-num">{i + 1}</span>
             <div>
-              <div className="ssw-step-role">{s.role_name || 'Unassigned'}</div>
+              <div className="ssw-step-role">{s.name || s.role_name || 'Unassigned'}</div>
+              {(s.designation || s.role_name) && (
+                <div className="ssw-step-desig">
+                  {s.designation || s.role_name}
+                  {s.designation && s.role_name && <span className="ssw-step-as"> · {s.role_name}</span>}
+                </div>
+              )}
               <div className="ssw-step-action">{s.action || 'Sign'}</div>
             </div>
           </div>
@@ -6693,12 +6723,25 @@ function Stage5Policies({ emp, onProgress }: {
           .send-sign-modal .ssw-step { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; }
           .send-sign-modal .ssw-step-num { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: #4338ca; color: #fff; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
           .send-sign-modal .ssw-step-role { font-size: 12px; font-weight: 700; color: #4338ca; line-height: 1.15; }
+          .send-sign-modal .ssw-step-desig { font-size: 10.5px; font-weight: 600; color: #4f46e5; line-height: 1.25; margin-top: 1px; }
+          .send-sign-modal .ssw-step-as { font-weight: 500; opacity: .75; }
           .send-sign-modal .ssw-step-action { font-size: 10px; font-weight: 500; color: #6366f1; }
+          /* Nobody resolves to this slot — the send is refused for the same
+             reason, so say it before the click rather than after. */
+          .send-sign-modal .ssw-step.is-unassigned { background: #fef2f2; border-color: #fecaca; }
+          .send-sign-modal .ssw-step.is-unassigned .ssw-step-role { color: #b91c1c; }
+          .send-sign-modal .ssw-step.is-unassigned .ssw-step-desig,
+          .send-sign-modal .ssw-step.is-unassigned .ssw-step-action { color: #dc2626; }
           .send-sign-modal .ssw-arrow { color: #9ca3af; font-size: 16px; }
           [data-bs-theme="dark"] .send-sign-modal .ssw-step { background: rgba(99,102,241,0.16); border-color: rgba(99,102,241,0.40); }
           [data-bs-theme="dark"] .send-sign-modal .ssw-step-num { background: #6366f1; }
           [data-bs-theme="dark"] .send-sign-modal .ssw-step-role { color: #c4b5fd; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step-desig { color: #a5b4fc; }
           [data-bs-theme="dark"] .send-sign-modal .ssw-step-action { color: #a5b4fc; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step.is-unassigned { background: rgba(220,38,38,.14); border-color: rgba(220,38,38,.38); }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step.is-unassigned .ssw-step-role { color: #fca5a5; }
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step.is-unassigned .ssw-step-desig,
+          [data-bs-theme="dark"] .send-sign-modal .ssw-step.is-unassigned .ssw-step-action { color: #f87171; }
           [data-bs-theme="dark"] .send-sign-modal .ssw-arrow { color: #6b7280; }
         `}</style>
         <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg, #fff)' }}>
@@ -6717,7 +6760,7 @@ function Stage5Policies({ emp, onProgress }: {
             <p style={{ marginBottom: 14 }}>
               Send <strong>{sendForTpl?.name}</strong> for <strong>{emp?.name}</strong>? The document will follow this signing workflow:
             </p>
-            <SendWorkflowPreview templateId={sendForTpl?.id ?? null} />
+            <SendWorkflowPreview templateId={sendForTpl?.id ?? null} employeeId={emp?.dbId ?? null} />
             <div className="ss-warn d-flex align-items-start gap-2" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, fontSize: 11.5 }}>
               <i className="ri-information-line" style={{ marginTop: 1, flexShrink: 0 }} />
               <span>Placeholders will be locked at send-time using this employee's data.</span>

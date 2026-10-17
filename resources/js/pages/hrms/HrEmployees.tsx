@@ -2369,11 +2369,20 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       const savedActual = [raw.first_name, raw.middle_name, raw.last_name]
         .filter(Boolean).join(' ').trim() || raw.display_name || row.name;
       setEActualName(savedActual);
-      // Editable when editing an existing employee too (not locked). Marked as
-      // "touched" so typing in First/Middle/Last name won't silently overwrite
-      // the saved value — the HR user edits the actual name directly.
+      /* Editable when editing an existing employee too (not locked).
+       *
+       * NOT marked as touched (#53). It was, to stop First/Middle/Last
+       * overwriting "the saved value" — but there is no saved value to
+       * protect: savedActual is composed from the saved name parts right
+       * above, and eActualName is never sent to the server. So the flag
+       * pinned an auto-generated string and renaming an employee left the
+       * actual name showing the OLD name while the display name updated.
+       *
+       * Touched still does its job where it is real: the field's own onChange
+       * sets it, so once an HR user types here in this session, their value
+       * stands and further name edits leave it alone. */
       setEActualNameLocked(false);
-      setEActualNameTouched(true);
+      setEActualNameTouched(false);
       setEWorkEmail(raw.email || '');
       setEMobile(raw.mobile || '');
       setEEmpId(raw.emp_code || '');
@@ -4565,7 +4574,21 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
         keyboard={false}
       >
 
-        <ModalBody className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden', ...(saving ? { cursor: 'wait' as const } : {}) }}>
+        {/* Every field in this wizard holds a proper noun — a person's name,
+            a town, an IFSC, an employee code. The browser spellchecker marks
+            all of them as misspellings, and a red wavy underline under a
+            required field reads as a validation error that nothing will ever
+            clear. Worse, it appeared under First Name while Display Name and
+            Actual Name held the SAME words unmarked, which is the field-level
+            inconsistency the UI keeps being pulled up on.
+
+            Set once on the container rather than per input: `spellcheck` is an
+            enumerated attribute whose default state inherits from the nearest
+            ancestor that sets it, so this covers all four steps and no field
+            added later can forget it. (Personal Email already carried its own
+            spellCheck={false} for exactly this reason — now it is the rule,
+            not a one-off.) */}
+        <ModalBody spellCheck={false} className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden', ...(saving ? { cursor: 'wait' as const } : {}) }}>
           <div
             style={{
               padding: '18px 22px',

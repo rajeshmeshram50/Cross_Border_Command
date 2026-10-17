@@ -88,6 +88,24 @@ export interface DataTableProps<T> {
    *  analytics) can raise this so the table never collapses to 2 rows on a big
    *  screen — the extra rows spill below the fold and the page scrolls. */
   minAutoRows?: number;
+  /** Always run `fitToViewport`'s viewport pin, even after the user picks a
+   *  rows-per-page by hand.
+   *
+   *  Without it a hand-picked size makes the card exactly as tall as those
+   *  rows, which is what the Employee / Employee Onboarding / Leave / Holiday
+   *  tickets asked for ("only 10 records without unnecessary blank space") —
+   *  the leftover space stays on the page background rather than inside a
+   *  white panel. Those screens keep that behaviour and must not pass this.
+   *
+   *  Some screens want the opposite and were built that way long before this
+   *  component: CLM Segment Master and Suppliers stretch unconditionally and
+   *  pin the pager to the card's lower edge. For a list that follows THAT
+   *  house pattern, a short result set leaving a band between the pager and
+   *  the page footer reads as the page being cut off (QA #71). Opt in here and
+   *  the card reaches the footer whatever the row count or the picked size.
+   *
+   *  Requires `fitToViewport`; on its own it does nothing. */
+  fillToFooter?: boolean;
   paginate?: boolean;
   /**
    * Hand paging to the server. Omit it and the table behaves exactly as it
@@ -214,6 +232,7 @@ export default function DataTable<T extends object>({
   pageSizeOptions = DEFAULT_SIZE_OPTIONS,
   autoFitRows = false,
   minAutoRows = 2,
+  fillToFooter = false,
   paginate = true,
   serverPagination,
   accent = 'violet',
@@ -573,7 +592,12 @@ export default function DataTable<T extends object>({
        *
        * A picked size TALLER than the window still grows past it and lets the
        * page scroll — natural height does that on its own. */
-      if (manualSize !== null) {
+      /* …unless the caller asked to reach the footer regardless (`fillToFooter`).
+       * Then the pin below applies whatever the picked size, which is the
+       * always-stretch behaviour CLM Segment Master and Suppliers already
+       * have. See the prop's own note for why this is opt-in rather than the
+       * default: four screens were explicitly fixed the other way. */
+      if (manualSize !== null && !fillToFooter) {
         /* Measured, not released. Clearing the height outright would let
          * `.dt-scroll` — `flex: 1; min-height: 0` — resolve against an
          * auto-height parent, where there is no free space to grow into and
@@ -615,7 +639,7 @@ export default function DataTable<T extends object>({
        sizes the card to the rows actually on the page: the LAST page usually
        holds fewer than a full page, and with the card pinned the observer on
        the parent sees no size change to react to. */
-  }, [fitToViewport, loading, manualSize, autoFitRows, pageSize, pageIndex, rows.length]);
+  }, [fitToViewport, loading, manualSize, autoFitRows, fillToFooter, pageSize, pageIndex, rows.length]);
 
   useEffect(() => {
     if (!autoFitRows) return;

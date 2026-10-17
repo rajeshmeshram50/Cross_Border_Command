@@ -682,6 +682,11 @@ export default function ExpenseSettlementModal({
       toast.success('Synced to Zoho', r?.message ?? 'Payment marked as synced to Zoho Books.');
       const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
       setSummary(s);
+      /* Tell the list too (QA #187). The refetch above only repaints THIS
+         modal, so the row behind it kept its old "Pending" Zoho status until
+         the page was reloaded. onDone is the parent's refresh and does not
+         close anything, so the list catches up while the modal stays open. */
+      onDone();
     } catch (e: any) {
       toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this payment to Zoho Books.');
     } finally { setSyncingId(null); }
@@ -702,6 +707,9 @@ export default function ExpenseSettlementModal({
       const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
       setSummary(s);
     } catch { /* keep current view on refetch failure */ }
+    /* Outside the try: even if the summary refetch fails, payments really did
+       sync, so the list must still be told (QA #187). */
+    if (ok > 0) onDone();
     setSelectedZoho(new Set());
     setBulkSyncing(false);
     if (fail === 0) toast.success('Synced to Zoho', `${ok} payment${ok === 1 ? '' : 's'} synced to Zoho Books.`);

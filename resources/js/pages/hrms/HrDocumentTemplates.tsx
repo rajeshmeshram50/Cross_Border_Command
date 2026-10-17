@@ -278,15 +278,45 @@ export default function HrDocumentTemplates() {
      different templates the moment the list reordered. */
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  /* A selection belongs to the list you are looking at.
+   *
+   * Keying by id (above) was meant to let picks survive paging, sorting and a
+   * refetch — but it also let them survive a CATEGORY or LEVEL switch, and
+   * nothing ever pruned the set. Tick five rows on Executive, move to
+   * Employee, and the bar still read "5 selected · Deprecate 5" over two
+   * unticked rows; pressing it deprecated the Executive templates you could no
+   * longer see. A destructive bulk action must never reach a row that is off
+   * screen.
+   *
+   * Pruning to the visible slice fixes it at the source: the count, the
+   * action and the bar all read from `filtered`, so they cannot disagree with
+   * the table. Paging and sorting still keep their picks, because `filtered`
+   * is the whole tab rather than the current page — the original intent
+   * survives, minus the part that was unsafe. */
+  const visibleIds = useMemo(() => new Set(filtered.map(r => r.id)), [filtered]);
+  useEffect(() => {
+    /* Not mid-fetch: `rows` is briefly empty during a refresh, and pruning
+       against that would quietly throw away picks the refresh is about to
+       hand straight back. */
+    if (loading) return;
+    setSelected(prev => {
+      if (prev.size === 0) return prev;
+      const next = new Set<number>();
+      for (const id of prev) if (visibleIds.has(id)) next.add(id);
+      // Same object when nothing was dropped, or this setState loops forever.
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visibleIds, loading]);
+
   const selCounts = useMemo(() => {
     let active = 0, deprecated = 0;
-    for (const r of rows) {
+    for (const r of filtered) {
       if (!selected.has(r.id)) continue;
       if (r.status === 'Active') active++;
       else if (r.status === 'Deprecated') deprecated++;
     }
     return { active, deprecated };
-  }, [rows, selected]);
+  }, [filtered, selected]);
 
   /* One action for both directions.
      Only "Deprecate selected" existed, so picking rows that were already
@@ -295,7 +325,9 @@ export default function HrDocumentTemplates() {
      row by row. */
   const bulkSetStatus = async (next: DocStatus) => {
     const from: DocStatus = next === 'Deprecated' ? 'Active' : 'Deprecated';
-    const targets = rows.filter(r => selected.has(r.id) && r.status === from);
+    /* `filtered`, not `rows`: the action may only touch what the table is
+       actually showing. See the note on `visibleIds`. */
+    const targets = filtered.filter(r => selected.has(r.id) && r.status === from);
     if (!targets.length) return;
     setBulkBusy(true);
     let done = 0; const failed: string[] = [];
@@ -383,13 +415,28 @@ export default function HrDocumentTemplates() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [selected]);
 
-  /* Columns for the shared <DataTable>. Widths sum to 100 (the table runs in
-     table-layout:fixed): 4+5+8+22+8+13+11+15+14. */
+  /* Columns for the shared <DataTable>, which runs table-layout:fixed.
+     4+5+11+19+8+14+11+15+20 — these are proportions, not percentages of the
+     table; they sum to 107 and the browser normalises them. */
   const columns = useMemo<DataTableColumn<TemplateRow>[]>(() => [
     {
       header: 'Code',
+      /* 11, not 8. The pill is monospace and sized by its text: "IT-EXE-005"
+         measures 81px but "NIT-EMP-014" measures 88px, because the Non-IT
+         prefix carries one more character. With cell padding that needs
+         104px, and 8 gave only 96px on a 1280-wide table — so IT codes
+         rendered whole while every Non-IT and Legal code was ellipsised.
+
+         11 gives 132px there, which also clears a four-digit code
+         ("NIT-EMP-1000", 94px + padding) before this needs looking at again.
+
+         The 3 comes from Template Name rather than Version or Actions:
+         Version below 8 clips its own header at every width, Actions at 17
+         leaves 3px for six icon buttons, and the name is already ellipsised
+         with the full text on hover — so it is the one column that can give
+         up room without losing anything. */
       accessorKey: 'code',
-      meta: { width: '8%' },
+      meta: { width: '11%' },
       cell: info => (
         <span className="dtm-code-pill" style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#fef3c7', color: '#a16207' }}>
           {String(info.getValue() ?? '')}
@@ -400,7 +447,9 @@ export default function HrDocumentTemplates() {
       header: 'Template Name',
       accessorKey: 'name',
       // wrap: the name can carry an "Approval" sub-pill on a second line.
-      meta: { width: '22%', wrap: true },
+      // 19 (was 22): the 3 funds the Code column, which was clipping real
+      // codes. This one ellipsises with the full name on hover either way.
+      meta: { width: '19%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -634,6 +683,13 @@ export default function HrDocumentTemplates() {
                mid-screen above a band of empty page. */
             fitToViewport
             autoFitRows
+            /* …and keep reaching the footer even once a rows-per-page is
+               picked by hand (QA #71). Without this the card drops to exactly
+               the height of its rows, so a level with one template — Team
+               Leader, Director / CEO — left a screen-deep band of page between
+               the pager and "2026 © IGC Group". The four screens that asked
+               for the opposite behaviour do not pass this prop. */
+            fillToFooter
             minWidth={1250}
             loading={loading}
             tabs={ROLE_TYPES.map(r => ({ key: r.value, label: r.short, count: levelCounts[r.value] || 0 }))}

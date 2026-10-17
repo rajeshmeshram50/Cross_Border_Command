@@ -441,10 +441,19 @@ export default function HrLeaveApprovals() {
             </table>
           </div>
 
-          {/* Pager. Hidden on a single page — a footer offering "1/1" and two
-              dead arrows is furniture, not information. Rendered while loading
-              too, so the row does not appear and disappear under the cursor. */}
-          {total > perPage && (
+          {/* Pager. Shown whenever there is anything to count, which is the
+              gate every other list in the app uses (CLM Segment Master, the
+              Clause/Trade-Document libraries, Suppliers).
+
+              It used to be `total > perPage`, i.e. only once a second page
+              existed. On a screen like Leave Approvals, where two pending
+              requests is a normal day, that meant the footer was never drawn
+              at all and the card just stopped under the last row. The count
+              is information even when it is small — "Showing 1–2 of 2" tells
+              you nothing is hidden — and Rows per page stays usable, so this
+              is not the dead "1/1 + two disabled arrows" the old gate was
+              written to avoid. */}
+          {!loading && total > 0 && (
             <WorklistPager
               total={total}
               page={page}
