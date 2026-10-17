@@ -37,10 +37,12 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
     text:          isDark ? '#e2e8f0' : '#334155',
     textMuted:     isDark ? '#94a3b8' : '#6b7280',
     border:        isDark ? 'rgba(148,163,184,.20)' : '#e5e7eb',
-    addBg:         isDark ? 'rgba(124,58,237,.14)' : '#faf5ff',
-    addBorder:     isDark ? 'rgba(124,58,237,.35)' : '#ede9fe',
-    mapBg:         isDark ? 'rgba(13,148,136,.14)' : '#f0fdfa',
-    mapBorder:     isDark ? 'rgba(13,148,136,.35)' : '#ccfbf1',
+    /* One tone for both choices. Add New used to be violet against Map
+       Existing's teal, which coloured them as if they came from different
+       parts of the app; both create a consignee, so they are one pair. The
+       icon and the heading tell them apart. */
+    choiceBg:      isDark ? 'rgba(13,148,136,.14)' : '#f0fdfa',
+    choiceBorder:  isDark ? 'rgba(13,148,136,.35)' : '#ccfbf1',
     btnBg:         isDark ? '#1b2233' : '#ffffff',
     label:         isDark ? '#cbd5e1' : '#334155',
   };
@@ -353,19 +355,23 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
       {chooseOpen && createPortal(
         <div onMouseDown={() => setChooseOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: pk.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
-            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff' }}>
+            {/* Teal, not violet. Violet is the customer's colour; everything
+                under this modal is consignee work, and the Map popup this one
+                leads into already wears teal — so the chooser was the single
+                violet step in an otherwise teal flow. */}
+            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#0e9f86,#14b8a6)', color: '#fff' }}>
               <div style={{ fontSize: 16, fontWeight: 800 }}>Add or Map Consignee</div>
               <div style={{ fontSize: 12.5, opacity: .9, marginTop: 2 }}>Create a brand-new consignee, or map an existing one to <strong>{customer.id}</strong>.</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 18 }}>
-              <button type="button" onClick={() => { setChooseOpen(false); setEditing(null); setAddOpen(true); }} style={{ textAlign: 'left', border: `1.5px solid ${pk.addBorder}`, borderRadius: 12, padding: 14, background: pk.addBg, cursor: 'pointer' }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(124,58,237,.35)' }}>
+              <button type="button" onClick={() => { setChooseOpen(false); setEditing(null); setAddOpen(true); }} style={{ textAlign: 'left', border: `1.5px solid ${pk.choiceBorder}`, borderRadius: 12, padding: 14, background: pk.choiceBg, cursor: 'pointer' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#0d9488,#0f766e)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(13,148,136,.35)' }}>
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 </div>
-                <div style={{ fontWeight: 800, color: isDark ? '#c4b5fd' : '#5b21b6', marginTop: 8 }}>Add New</div>
+                <div style={{ fontWeight: 800, color: isDark ? '#5eead4' : '#0f766e', marginTop: 8 }}>Add New</div>
                 <div style={{ fontSize: 11.5, color: pk.textMuted, marginTop: 2 }}>Create a new consignee under this customer.</div>
               </button>
-              <button type="button" onClick={openMapFlow} style={{ textAlign: 'left', border: `1.5px solid ${pk.mapBorder}`, borderRadius: 12, padding: 14, background: pk.mapBg, cursor: 'pointer' }}>
+              <button type="button" onClick={openMapFlow} style={{ textAlign: 'left', border: `1.5px solid ${pk.choiceBorder}`, borderRadius: 12, padding: 14, background: pk.choiceBg, cursor: 'pointer' }}>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#0d9488,#0f766e)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(13,148,136,.35)' }}>
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                 </div>

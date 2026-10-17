@@ -106,9 +106,9 @@ export default function FilterChipsBar({ chips, onClearAll, prefix }: {
                     </div>
                   ))}
                 </div>
-                <button type="button" className={`${prefix}-filterpop-clear`} onClick={() => { onClearAll(); setPop(null); }}>
-                  Clear all filters
-                </button>
+                {/* No "clear all" in here. The bar behind it already carries
+                    one, and two buttons for the same action a few pixels
+                    apart only make the user stop and read both. */}
               </div>
             </>
           );

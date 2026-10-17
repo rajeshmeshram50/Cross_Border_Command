@@ -6149,9 +6149,24 @@ const SCOPED_CSS = `
 .acm-gst-body { padding: 20px 22px 22px; overflow-y: auto; }
 /* Borderless form — the fields sit directly on the body (no boxed panel). */
 .acm-gst-form { padding: 0; margin: 0; }
-/* Wider add-form popup: equal 2-col rows so the long "Previous Non-GST 2A
-   Reflected Invoice" label sits on a single line. */
-.acm-gst-form-card .acm-gst-form .acm-row-2 { grid-template-columns: 1fr 1fr; }
+/* The tail row rides the SAME three-column track as the row above it.
+   Split 50/50 it had its own seam landing in the middle of the row above,
+   so the two rows read as two unrelated grids stacked on each other.
+   Red Flags takes the last two columns — it holds up to 300 characters,
+   while the invoice reference beside it is a short code, and one column is
+   still wide enough for the long "Previous Non-GST 2A Reflected Invoice"
+   label to stay on a single line.
+   The breakpoints follow .acm-row-3 (2 columns, then 1) so the rows keep
+   lining up as the popup narrows. */
+.acm-gst-form-card .acm-gst-form .acm-row-2 { grid-template-columns: repeat(3, 1fr); }
+.acm-gst-form-card .acm-gst-form .acm-row-2 > .acm-field:last-child { grid-column: span 2; }
+@media (max-width: 900px) {
+  .acm-gst-form-card .acm-gst-form .acm-row-2 { grid-template-columns: repeat(2, 1fr); }
+  .acm-gst-form-card .acm-gst-form .acm-row-2 > .acm-field:last-child { grid-column: auto; }
+}
+@media (max-width: 680px) {
+  .acm-gst-form-card .acm-gst-form .acm-row-2 { grid-template-columns: 1fr; }
+}
 .acm-gst-form-card .acm-gst-form .acm-field label { white-space: nowrap; }
 .acm-gst-form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 18px; }
 /* Keep form inputs solid white even in the error state (red border only). */
@@ -6190,8 +6205,18 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-gst-page-cur { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-gst-page-btn { background: rgba(167,139,250,0.10); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 
-[data-bs-theme="dark"] .acm-gst-card { background: #0f1729; }
-[data-bs-theme="dark"] .acm-gst-form { background: rgba(167,139,250,0.06); border-color: rgba(167,139,250,0.30); }
+/* The light build outlines the card in solid #fff, which against a white page
+   is invisible and only rounds the edge. On the dark page it became a lit ring
+   around the whole popup — brighter than anything inside it. Same violet the
+   rest of this popup's dark chrome uses, at a strength that reads as an edge
+   rather than a highlight. */
+[data-bs-theme="dark"] .acm-gst-card { background: #0f1729; border-color: rgba(167,139,250,0.22); }
+/* No wash on the form in dark mode. The light build states the intent above —
+   "borderless form, the fields sit directly on the body" — but the dark rule
+   gave it a violet fill, and because .acm-gst-body pads it in by 22px the
+   result was a lighter rectangle floating inside a darker frame instead of one
+   surface running out to the card border. The fields carry their own fills;
+   the sheet behind them does not need one. */
 [data-bs-theme="dark"] .acm-gst-table-wrap { border-color: rgba(167,139,250,0.25); }
 [data-bs-theme="dark"] .acm-gst-table thead tr { background: rgba(124,58,237,.12); }
 [data-bs-theme="dark"] .acm-gst-table th { background: transparent; color: #c4b5fd; border-bottom-color: rgba(167,139,250,.2); }
@@ -6209,6 +6234,11 @@ const SCOPED_CSS = `
    just a full-width block — the old flex/border/background here double-drew a
    half-width line above the pager. */
 .acm-doc-pag-wrap { display: block; padding: 0; border: 0; background: transparent; }
+/* Every row in this section is inset by 16px — the section head, the search
+   toolbar, and each table cell. The shared pager band carries its own 14px,
+   so it alone hung 2px proud on both sides, and its 12px top margin floated
+   it off the table it reports on. Match the column, close the gap. */
+.acm-doc-pag-wrap .wl-pager { margin-top: 0; padding-left: 16px; padding-right: 16px; }
 .acm-doc-pag-info { font-size: 11px; color: #6b7280; font-weight: 500; }
 .acm-pagination { display: inline-flex; gap: 4px; }
 .acm-page-btn { min-width: 28px; height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid #e5e1f3; background: #fff; color: #6b7280; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s; }
@@ -7078,6 +7108,8 @@ const SCOPED_CSS = `
   .acm-btn-mini-cancel, .acm-btn-save, .acm-doc-save { width: 100%; flex: 0 0 auto; }
   /* Map-Consignee popup (if present), Stage 2 toolbar */
   .acm-doc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+  /* Follows the toolbar down to 12px so the column holds on phone too. */
+  .acm-doc-pag-wrap .wl-pager { padding-left: 12px; padding-right: 12px; }
   .acm-doc-search { max-width: 100%; }
   .acm-doc-count { align-self: flex-start; }
   /* Stage 2 sub-tabs wrap */

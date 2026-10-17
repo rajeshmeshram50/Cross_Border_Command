@@ -1707,12 +1707,6 @@
   transition: background .15s, color .15s;
 }
 .smc-filterpop-x:hover { background: #7c3aed; color: #fff; }
-.smc-filterpop-clear {
-  width: 100%; margin-top: 6px; padding: 7px 10px;
-  border: none; border-radius: 8px; cursor: pointer;
-  background: rgba(220,38,38,.08); color: #dc2626; font-size: 12px; font-weight: 700;
-}
-.smc-filterpop-clear:hover { background: rgba(220,38,38,.16); }
 [data-bs-theme="dark"] .smc-filterchip-more { background: rgba(124,58,237,.12); border-color: rgba(124,58,237,.35); color: #c4b5fd; }
 [data-bs-theme="dark"] .smc-filterpop-lbl { color: #c4b5fd; }
 [data-bs-theme="dark"] .smc-filterpop-x { background: rgba(255,255,255,.08); color: #c4b5fd; }

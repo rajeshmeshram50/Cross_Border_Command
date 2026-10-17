@@ -59,6 +59,13 @@ const STATUS_TONE_DARK: Record<string, { bg: string; fg: string }> = {
   Skipped:   { bg: 'rgba(255,255,255,0.06)', fg: '#94a3b8' },
 };
 
+/* The leave-type chip was the one pill still carrying its light pastel inline,
+   so it stayed a bright sticker on the dark table while every status beside it
+   had already been toned down. Same treatment as the maps above: a translucent
+   fill of the page's violet with a light label. */
+const TYPE_TONE      = { bg: '#ece6ff',               fg: '#5a3fd1' };
+const TYPE_TONE_DARK = { bg: 'rgba(124,92,252,0.20)', fg: '#c4b5fd' };
+
 function fmtDate(raw: string | null | undefined): string {
   if (!raw) return '—';
   const d = new Date(String(raw));
@@ -117,6 +124,7 @@ export default function HrLeaveApprovals() {
   const { theme } = useTheme();
   const dark = theme === 'dark';
   const statusTone = (s: string) => (dark ? STATUS_TONE_DARK : STATUS_TONE)[s] || (dark ? STATUS_TONE_DARK.Pending : STATUS_TONE.Pending);
+  const typeTone = dark ? TYPE_TONE_DARK : TYPE_TONE;
   const [rows, setRows] = useState<ApiLeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
   /* Server-side paging. The queue used to render every matching request in one
@@ -412,7 +420,7 @@ export default function HrLeaveApprovals() {
                         </div>
                       </td>
                       <td>
-                        <span className="rec-pill" style={{ background: '#ece6ff', color: '#5a3fd1', fontSize: 11 }}>
+                        <span className="rec-pill" style={{ background: typeTone.bg, color: typeTone.fg, fontSize: 11 }}>
                           {r.leave_type?.name ?? '—'}
                         </span>
                       </td>

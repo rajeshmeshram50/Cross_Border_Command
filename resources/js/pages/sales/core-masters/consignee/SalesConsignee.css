@@ -1140,6 +1140,12 @@
 
 [data-bs-theme="dark"] .smcg-toolbar {
   background: transparent;
+  /* The light band is a mint gradient under a solid #6ee7b7 rule, and the two
+     read as one soft edge. Dropping only the gradient left that mint rule
+     sitting on a near-black page, where it stopped being a divider and became
+     a lit bar across the width. Translucent, the way the Customers toolbar
+     already handles its own. */
+  border-bottom-color: rgba(16,185,129,0.35);
 }
 [data-bs-theme="dark"] .smcg-toolbar .smcg-search {
   background: rgba(255,255,255,0.04);
@@ -1514,12 +1520,6 @@
   transition: background .15s, color .15s;
 }
 .smcg-filterpop-x:hover { background: #10b981; color: #fff; }
-.smcg-filterpop-clear {
-  width: 100%; margin-top: 6px; padding: 7px 10px;
-  border: none; border-radius: 8px; cursor: pointer;
-  background: rgba(220,38,38,.08); color: #dc2626; font-size: 12px; font-weight: 700;
-}
-.smcg-filterpop-clear:hover { background: rgba(220,38,38,.16); }
 [data-bs-theme="dark"] .smcg-filterchip-more { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.35); color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-filterpop-lbl { color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-filterpop-x { background: rgba(255,255,255,.08); color: #6ee7b7; }
