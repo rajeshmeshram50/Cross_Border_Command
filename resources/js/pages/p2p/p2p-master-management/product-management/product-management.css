@@ -7210,10 +7210,29 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   color: #a78bfa;
 }
 
+/* A dropdown at rest is a field you can type into, so it carries the SAME
+   surface as .apm-input — #110c25, not a violet-lifted one.
+
+   It was color-mix(#a78bfa 12%, #110c25), i.e. rgb(35,27,63) against the
+   inputs' rgb(17,12,37). Two problems came out of that one value: Segment sat
+   visibly lighter than Product Name beside it (#86), and it was the exact
+   shade this file uses for a DISABLED input below — so an open dropdown read
+   as greyed out while a greyed-out text box read as editable. One surface for
+   "you can edit this", one for "you cannot", and no overlap. */
 [data-bs-theme="dark"] .apm-master-select .master-select-wrap .master-select-toggle {
-  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
+  background: #110c25 !important;
   border-color: #3b2a6b !important;
   color: #ede9fe !important;
+}
+
+/* The disabled dropdown had no dark rule at all, so the light-mode
+   `background: #f5f3ff !important` painted it near-WHITE on a dark form.
+   Same oversight the disabled input note below describes, and the same fix:
+   carry the disabled surface, not the light one. */
+[data-bs-theme="dark"] .apm-master-select .master-select-wrap.disabled .master-select-toggle {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
+  border-color: #3b2a6b !important;
+  color: #6d6391 !important;
 }
 
 [data-bs-theme="dark"] .apm-master-select .master-select-wrap .master-select-toggle:hover {

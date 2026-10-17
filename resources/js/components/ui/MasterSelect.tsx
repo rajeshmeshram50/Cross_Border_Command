@@ -99,20 +99,40 @@ export function OptBadge({ b, staticPill, shrink }: { b: OptBadgeSpec; staticPil
     return <span title={b.title ?? b.text} style={style}>{b.text}</span>;
   }
 
-  const toggle = () => {
+  const place = () => {
     if (ref.current) {
       const r = ref.current.getBoundingClientRect();
       setPos({ top: r.bottom + 4, left: r.left });
     }
-    setOpen(o => !o);
   };
+  const toggle = () => { place(); setOpen(o => !o); };
 
+  /* Hover says what the pill DOES; click does it (#87).
+   *
+   * The pill carried a `title`, so the hidden names were reachable — but only
+   * through the browser's own tooltip, which waits about a second and renders
+   * one flat comma-joined line. QA read that as no tooltip at all.
+   *
+   * The app already answers this elsewhere: a "+N" pill shows the shared dark
+   * "View N more" tooltip on hover and opens its list on click (Consignee's
+   * chip columns, SegmentTags on the sourcing cards). Same component and the
+   * same wording here, so every "+N" in the product and supplier screens now
+   * behaves like the ones QA was comparing it against.
+   *
+   * Hover deliberately does NOT open the list itself: the list is a popover
+   * you read and click inside, and opening it on pointer-over makes it appear
+   * while you are only passing across the row. */
   return (
+    <Tooltip label={`View ${b.items!.length} more`}>
     <span
       ref={ref}
       role="button"
       tabIndex={0}
-      title={b.title ?? b.text}
+      /* No `title`: the Tooltip above supplies the hover text, and the native
+         one would float a second, slower pill over it. The names themselves
+         stay on aria-label, which is what a screen reader reads — it never
+         sees the popover. */
+      aria-label={b.title ?? b.text}
       // Stop the pill's clicks from selecting the option / closing the menu.
       onMouseDown={e => e.stopPropagation()}
       onClick={e => { e.preventDefault(); e.stopPropagation(); toggle(); }}
@@ -140,6 +160,7 @@ export function OptBadge({ b, staticPill, shrink }: { b: OptBadgeSpec; staticPil
         document.body,
       )}
     </span>
+    </Tooltip>
   );
 }
 
