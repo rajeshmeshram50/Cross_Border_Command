@@ -85,7 +85,8 @@ export default function Step2ProductDetails({ draft, set, ctx }: { draft: PoDraf
               onClick: () => setEditingSupplier(true),
             } : undefined} />
           <span className="spi-dt-dots">⋮</span>
-          <RefPill icon={<IcoPin />} label="STATE CODE" value={sup?.stateCode ?? '—'} />
+          {/* International supplier has no Indian GST state code → N/A, not — (#29). */}
+          <RefPill icon={<IcoPin />} label="STATE CODE" value={draft.docType === 'International' ? 'N/A' : (sup?.stateCode ?? '—')} />
           {!standalone && (
             <>
               <span className="spi-dt-dots">⋮</span>

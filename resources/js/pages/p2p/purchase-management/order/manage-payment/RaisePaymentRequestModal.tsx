@@ -107,7 +107,12 @@ export default function RaisePaymentRequestModal({
   const [error, setError] = useState('');
 
   const amount = Math.max(0, Math.round(parseFloat(amtText) || 0));
-  const overBudget = amount > available;
+  /* Whole rupees open to request. `available` can carry paise (percentages,
+     TDS), and the display rounds it UP, so filling/typing the shown figure used
+     to round past the real cap and trip a false "exceeds" error (#147). Floor
+     once and use it for the fill, the check and the shown balance alike. */
+  const openCap = Math.floor(available);
+  const overBudget = amount > openCap;
   const pctPaid = row.net > 0 ? Math.round((row.paid / row.net) * 100) : 0;
   const progPct = row.total > 0 ? Math.round((row.paid / row.total) * 100) : 0;
 
@@ -138,10 +143,9 @@ export default function RaisePaymentRequestModal({
      percentage with what is still open to request, rather than leaving both blank. */
   const pickType = (t: string) => {
     setType(t);
-    if (t === 'Balance Payment' && available > 0) {
-      const a = Math.round(available);
-      setAmtText(String(a));
-      setPctText(String(pctOf(a)));
+    if (t === 'Balance Payment' && openCap > 0) {
+      setAmtText(String(openCap));
+      setPctText(String(pctOf(openCap)));
     }
   };
 
@@ -150,14 +154,14 @@ export default function RaisePaymentRequestModal({
       setError('This PO is paid in full — no further payment requests can be raised.');
       return;
     }
-    if (available <= 0) {
+    if (openCap <= 0) {
       setError('The remaining balance is already covered by open requests. Wait for a decision on those before raising another.');
       return;
     }
     if (!amount) { setError('Enter a payment request amount before submitting.'); return; }
     if (amount < 1) { setError(`The payment request amount must be at least ${sym}1.`); return; }
-    if (amount > available) {
-      setError(`The requested amount exceeds the ${money(available)} still open to request — the rest is already pending, approved or paid.`);
+    if (amount > openCap) {
+      setError(`The requested amount exceeds the ${money(openCap)} still open to request — the rest is already pending, approved or paid.`);
       return;
     }
     if (!type) { setError('Select a payment type before submitting.'); return; }
@@ -185,9 +189,9 @@ export default function RaisePaymentRequestModal({
       <Stat mod="mpr-stat--bal" icon={STAT_ICONS.clock} label="Awaiting For Approval" value={money(pendingAmt)} sub={`${pendingCount} with the approver now`} />
       <Stat mod="mpr-stat--gst" icon={STAT_ICONS.check} label="Total Approved Amount" value={money(approvedTotal)} sub={`${money(approvedUnpaid)} awaiting release`} />
       <Stat mod="mpr-stat--paid" icon={STAT_ICONS.wallet} label="Total Paid Amount" value={money(row.paid)} sub={`${pctPaid}% of net payable released`} />
-      <Stat mod="mpr-stat--tds" icon={STAT_ICONS.trend} label="Balance Amount" value={money(available)} sub={complete ? 'Fully settled' : 'Open to request'} />
+      <Stat mod="mpr-stat--tds" icon={STAT_ICONS.trend} label="Balance Amount" value={money(openCap)} sub={complete ? 'Fully settled' : 'Open to request'} />
     </div>
-  ), [row, requested, requestCount, pendingAmt, pendingCount, approvedTotal, approvedUnpaid, pctPaid, available, complete]);
+  ), [row, requested, requestCount, pendingAmt, pendingCount, approvedTotal, approvedUnpaid, pctPaid, openCap, complete]);
 
   return createPortal(
     <div className="spi-mdl-backdrop">
@@ -222,7 +226,7 @@ export default function RaisePaymentRequestModal({
           <Box
             label="Request"
             title="Payment Request Details"
-            sub={`${money(row.paid)} of ${money(row.total)} paid · ${progPct}% · ${money(available)} open for this request`}
+            sub={`${money(row.paid)} of ${money(row.total)} paid · ${progPct}% · ${money(openCap)} open for this request`}
             icon={ICON_PENCIL}
             className="rpr-details-box"
             headerExtra={<div className="rpr-hdstats">{requestStats}</div>}
@@ -269,7 +273,7 @@ export default function RaisePaymentRequestModal({
                     inputMode="decimal"
                     className="rpr-amtwrap__in"
                     min={0}
-                    max={available}
+                    max={openCap}
                     placeholder="0"
                     value={amtText}
                     onChange={(e) => fromAmt(e.target.value)}
@@ -278,7 +282,7 @@ export default function RaisePaymentRequestModal({
                 </div>
                 {overBudget && (
                   <span className="rpr-amthint is-err">
-                    Amount exceeds the {money(available)} still open to request.
+                    Amount exceeds the {money(openCap)} still open to request.
                   </span>
                 )}
               </div>
