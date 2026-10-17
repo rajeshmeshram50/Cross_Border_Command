@@ -2764,12 +2764,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Without these the row sizes to its longest child instead of its panel, so
-     a very long segment name widened the whole row and carried the badge off
-     the right edge rather than being clipped itself. */
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
   padding: 8px 10px;
   border-radius: 8px;
   font-size: 12px;
@@ -2790,23 +2784,12 @@
   white-space: nowrap;
 }
 
-/* Any OTHER text in the row clips like the label does. The regulatory badge
-   is excluded: it is not text, and flex:1 1 auto let a 255-character segment
-   name shrink it to nothing — the row then showed a name with no tier at all,
-   which is the one thing the badge is there to say. */
-.prd-filter-row>span:not(.prd-filter-row-txt):not(.seg-reg-badge) {
+.prd-filter-row>span:not(.prd-filter-row-txt) {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* The badge keeps its size and its place at the end of the row, whatever the
-   name does. */
-.prd-filter-row>.seg-reg-badge {
-  flex: 0 0 auto;
-  margin-left: auto;
 }
 .prd-filter-row:has(input:checked) {
   background: #f3eeff;

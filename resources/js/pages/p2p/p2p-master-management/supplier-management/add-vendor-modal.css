@@ -39,7 +39,13 @@
   background: rgba(40, 44, 52, .42);
   backdrop-filter: blur(7px) saturate(118%);
   -webkit-backdrop-filter: blur(7px) saturate(118%);
-  display: flex; align-items: center; justify-content: center;
+  /* Pin to the top, do NOT centre vertically (QA #133). The modal is sized to
+     its content, and Stage 1 / Stage 2 differ in height; centred, a resize on
+     Save moved the top edge — the whole header slid up/down. Anchored to the
+     top, a height change only grows the bottom, so the header stays static.
+     (Centring hid this on short laptops where both stages hit the max-height
+     cap, but showed on tall monitors where the modal is shorter than the cap.) */
+  display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
   font-family: var(--font-sans);
@@ -57,16 +63,16 @@
      protecting — every tab with a normal amount of content lands on it, so
      switching between them still moves nothing. Only a genuinely long tab
      grows, and it stops at the viewport and scrolls inside (.avm-body). */
-  height: auto;
-  /* No margin:auto here. Auto margins absorb free space in both directions and
-     override align-items — including NEGATIVE free space, so the moment the
-     dialog is taller than the backdrop its top is pushed out of the scroll
-     range and cannot be reached. The backdrop centres it instead (safe now
-     that max-height keeps it inside the viewport). */
-  min-height: min(660px, calc(100vh - 48px));
-  min-height: min(660px, calc(100dvh - 48px));
-  max-height: calc(100vh - 48px);
-  max-height: calc(100dvh - 48px);
+  /* FIXED height, not content-sized (QA #133). Content-sized made Stage 1, the
+     loading skeleton and Stage 2 three different heights, so the box resized on
+     every Save — the "shaking". A single fixed height makes all three identical,
+     and the body (flex:1) scrolls inside for anything taller. Capped to the
+     viewport via min() for short laptops. 880px is modest enough that content
+     fills it (no empty lavender wash, the reason flat 100vh was dropped) and
+     tall enough that normal steps do not scroll. No margin:auto — the backdrop
+     places it (align-items:flex-start, pinned to the top). */
+  height: min(880px, calc(100vh - 48px));
+  height: min(880px, calc(100dvh - 48px));
   /* Figma lavender wash (.sf-modal) — soft glows over a light gradient so the
      white section cards read as elevated, not flat on plain white. */
   background:
@@ -304,6 +310,9 @@
 /* Body — plain white surface like the Client / Master forms */
 .avm-body {
   flex: 1; overflow-y: auto;
+  /* Reserve the scrollbar track so content does not shift sideways when the
+     inner scrollbar appears/disappears between stages (QA #133). */
+  scrollbar-gutter: stable;
   padding: 12px 22px 14px;
   background: transparent;   /* show the modal's lavender wash (Figma) */
   scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;

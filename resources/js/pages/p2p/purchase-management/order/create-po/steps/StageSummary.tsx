@@ -175,12 +175,13 @@ export default function StageSummary({ draft, ctx, upto }: { draft: PoDraft; ctx
             </div>
             <div className="spi-dt-sumstep-body">
               <Group label="PO Terms & Conditions">
+                {/* ONLY the terms captured in Stage 03 — the typed Terms &
+                    Condition. The General and Segment library layers are NOT
+                    shown in this recap (QA #155): the recap mirrors what the
+                    step recorded, not the document's composed clauses. Those
+                    layers still compose the printed PO via terms_layers.
+                    NOTE: this reverses QA #11, which had surfaced them here. */}
                 <RO label="Terms & Condition" value={dash(draft.terms)} full />
-                {/* The global entry and the segment-matched clauses, exactly as
-                    the PDF composes them. They used to exist only on the printed
-                    PO, so editing the T&C library changed the document and
-                    nothing on screen (QA #11). */}
-                <TncLayers layers={ctx.detail?.terms_layers} />
               </Group>
             </div>
           </div>
@@ -196,49 +197,6 @@ function Group({ label, children }: { label: string; children: React.ReactNode }
       <div className="spi-dt-rogroup-hd">{label}</div>
       <div className="spi-dt-robox"><div className="spi-dt-rogrid">{children}</div></div>
     </div>
-  );
-}
-
-/**
- * The global and segment Terms & Conditions of this purchase order.
- *
- * Read off the PO detail the step already has — `terms_layers`, composed by
- * SalesPdfController so the screen prints what the PDF prints, de-duplication
- * included. No request of its own: the record is loaded once and this is part
- * of it.
- *
- * Silent when there is nothing to show: a PO with no matching library entry
- * should read as the typed terms alone, not as an empty heading.
- */
-function TncLayers({ layers }: { layers?: { global?: string[]; segment?: Array<{ segment?: string; content?: string }> } | null }) {
-  const globals = layers?.global ?? [];
-  const segments = layers?.segment ?? [];
-  if (!globals.length && !segments.length) return null;
-
-  return (
-    <>
-      {globals.length > 0 && (
-        <div className="spi-dt-tnc">
-          <div className="spi-dt-tnc-h">General Terms &amp; Conditions</div>
-          {globals.map((html, i) => (
-            <div key={i} className="spi-dt-tnc-body" dangerouslySetInnerHTML={{ __html: html }} />
-          ))}
-        </div>
-      )}
-      {segments.length > 0 && (
-        <div className="spi-dt-tnc">
-          <div className="spi-dt-tnc-h">Segment Terms &amp; Conditions</div>
-          {segments.map((row, i) => (
-            <div key={i} className="spi-dt-tnc-body">
-              {/* Labelled, so the name reads as the segment these clauses belong
-                  to rather than as a heading of its own. */}
-              {row.segment && <div className="spi-dt-tnc-seg">Segment - {row.segment}</div>}
-              <div dangerouslySetInnerHTML={{ __html: row.content ?? '' }} />
-            </div>
-          ))}
-        </div>
-      )}
-    </>
   );
 }
 

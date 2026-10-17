@@ -1631,7 +1631,7 @@ export default function Order() {
             save, a tab, page or search change — shows the shimmer. Dimming the
             old rows instead left the list looking washed out. */}
         {list.loading || list.replacing ? (
-          <OrderListSkeleton phone={isPhone} />
+          <OrderListSkeleton phone={isPhone} rows={fitSize || DEFAULT_PAGE_SIZE} />
         ) : rows.length === 0 ? (
           <div className="ord-empty">
             {search.trim()
@@ -1767,7 +1767,7 @@ function CreatePoSkeleton() {
 /* List shimmer. Mirrors the real grid — same column widths, same two-line
    invoice rows — so the table doesn't jump when the rows arrive. On a phone it
    mirrors the cards instead. The shimmer bar is a shared P2P style. */
-function OrderListSkeleton({ phone }: { phone: boolean }) {
+function OrderListSkeleton({ phone, rows = DEFAULT_PAGE_SIZE }: { phone: boolean; rows?: number }) {
   if (phone) {
     return (
       <div className="ord-cards">
@@ -1802,19 +1802,19 @@ function OrderListSkeleton({ phone }: { phone: boolean }) {
             ))}
           </tr>
         </thead>
-        {Array.from({ length: 4 }).map((_, rowIndex) => (
-          <tbody key={rowIndex}>
-            {[0, 1].map((line) => (
-              <tr key={line} className="ord-skel-tr">
-                {ORDER_COLUMNS.map((col) => (
-                  <td key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>
-                    <span className="spi-sk-bar" style={{ width: Math.round(col.width * 0.6) }} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        ))}
+        {/* One row per PO, as many as a full page shows, so the shimmer fills
+            the whole list instead of only the top few rows (QA #159). */}
+        <tbody>
+          {Array.from({ length: Math.max(1, rows) }).map((_, rowIndex) => (
+            <tr key={rowIndex} className="ord-skel-tr">
+              {ORDER_COLUMNS.map((col) => (
+                <td key={col.label} className={col.groupEnd ? 'ord-table__group-end' : undefined}>
+                  <span className="spi-sk-bar" style={{ width: Math.round(col.width * 0.6) }} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
       </table>
     </div>
   );
