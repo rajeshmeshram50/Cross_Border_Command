@@ -96,10 +96,6 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   const [busy, setBusy] = useState<string | null>(null);
   const [tracking, setTracking] = useState<PoDocument | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  // Ticks made in the last moment, waiting to go out as one Necessary call.
-  const pendingNeeds = useRef(new Map<number, boolean>());
-  const needsTimer = useRef<number | null>(null);
-  useEffect(() => () => { if (needsTimer.current) window.clearTimeout(needsTimer.current); }, []);
   /* The CLM library documents handed to the signature modal — trade documents
      by library id, agreements alongside them in the same envelope. */
   const [signing, setSigning] = useState<{
@@ -168,12 +164,12 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [poId, awaitingSign]);
 
-  /* The tick and the answer are one thing, so a Necessary row comes up ticked
-     and an unticked row reads Not necessary. Rows already out for signature
-     are settled — they carry the locked chip instead of a tick. */
-  useEffect(() => {
-    setSelected(docs.filter((d) => isNeeded(d) && !isSettled(d)).map((d) => d.id));
-  }, [docs]);
+  /* The tick is SELECTION ONLY, not the answer (QA #140). A row's Necessary
+     state lives in its chip, driven by the Mark buttons; the checkbox just
+     picks which rows those buttons — and Send — act on. So selection starts
+     empty and is never auto-synced to which rows are Necessary; ticking a
+     trade document no longer drags the always-Necessary Purchase Order in
+     with it. */
 
   /* Eight rows are the window, the rest come on the scroll. Measured rather than
      a fixed height: a row grows with zoom and with a name that wraps. */
@@ -218,6 +214,17 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
         needed ? 'They have to be signed for this PO.' : 'They will not be chased for this PO.',
       );
     });
+  };
+
+  /* Unticking clears the saved Necessary mark, so re-ticking starts Not
+     necessary again until Mark Necessary is pressed (QA #140). Silent — no
+     toast, optimistic, then persisted so a reload cannot resurrect the mark. */
+  const clearNeeds = (ids: number[]) => {
+    const targets = docs.filter((d) => ids.includes(d.id) && !isMandatory(d) && !isSettled(d) && d.needed === 'yes');
+    if (!targets.length) return;
+    const hit = new Set(targets.map((d) => d.id));
+    setDocs((all) => all.map((d) => (hit.has(d.id) ? { ...d, needed: 'no' as const } : d)));
+    poDocumentApi.setNeeds(poId as number, targets.map((d) => ({ id: d.id, needed: false }))).then(setDocs).catch(fail);
   };
 
   /* The Purchase Order PDF is built from the PO itself. It is normally rendered
@@ -286,13 +293,12 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
   });
 
   const chosen = docs.filter((d) => selected.includes(d.id));
-  /* The Purchase Order always goes with the order, so the server refuses to
-     mark it not necessary — "… always goes with the order and cannot be marked
-     not necessary". The button was still offered on a selection containing it,
-     which made a refusal the only way to find the rule out. It is said before
-     the press instead; ticking the row stays allowed, because the same tick is
-     what sends it for email or signature. */
-  const lockedNeeded = chosen.filter((d) => d.doc_kind === 'purchase_order');
+  /* The Purchase Order rides in the same signature envelope, so a send cannot
+     go without it ticked (QA #140). This drives both the disabled Send button
+     and the gate inside sendForSignature. Once the PO is sent/signed there is
+     no open PO row, so there is nothing left to require. */
+  const openPo = docs.find((d) => isMandatory(d) && !isSettled(d));
+  const poSelected = !openPo || selected.includes(openPo.id);
   // Email sends stored files; the Purchase Order's is rendered on demand.
   const noFile = chosen.filter((d) => !d.file_path && d.doc_kind !== 'purchase_order');
   const notPending = chosen.filter((d) => d.status !== 'pending');
@@ -303,6 +309,18 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
      state to settle; the footer passes nothing and the whole ticked set goes. */
   const sendForSignature = (rows?: PoDocument[]) => {
     const chosen = rows ?? docs.filter((d) => selected.includes(d.id));
+    /* The Purchase Order rides in the SAME signature envelope, so a bulk send
+       cannot go without it ticked (QA #140). It is pre-ticked but can be
+       removed; this is the gate that catches an unticked PO at send time. A
+       single-row resend (rows passed) is exempt — it chases one existing row. */
+    if (!rows) {
+      const poRow = docs.find((d) => isMandatory(d) && !isSettled(d));
+      if (poRow && !chosen.some((d) => d.id === poRow.id)) {
+        toast.warning('Purchase Order not marked necessary',
+          'Tick the Purchase Order to mark it necessary — it must go for signature with the order.');
+        return;
+      }
+    }
     const notPending = chosen.filter((d) => d.status !== 'pending');
     if (notPending.length) { toast.warning('Already sent', `${notPending.map((d) => d.name).join(', ')} is already sent or signed.`); return; }
     const unneeded = chosen.filter((d) => !isNeeded(d));
@@ -370,61 +388,44 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
       await run('email', async () => {
         await Promise.all(chosen.map(ensureFile));
         const res = await poDocumentApi.email(poId as number, selected);
-        setSelected(stickyIds);
+        setSelected([]);
         toast.success('Email sent', `${res.count} document${res.count === 1 ? '' : 's'} emailed to ${res.to}.`);
       });
     })();
   };
 
-  /* The Purchase Order is ticked from the start and cannot be unticked.
-   *
-   * It always goes with the order — the server refuses to mark it not
-   * necessary, and nothing is sent without it — so leaving its tick to be
-   * found and set was busywork that could also be got wrong. Kept in the
-   * selection through select-all, clear and a completed send alike.
-   *
-   * Settled rows are excluded: one already out for signature is not ticked by
-   * anything, and forcing it back would offer to send it twice. */
-  const stickyIds = docs.filter((d) => isMandatory(d) && !isSettled(d)).map((d) => d.id);
+  /* Pre-tick ONCE on first load: the Purchase Order plus whatever was already
+     saved Necessary (needed='yes'), so reopening the PO shows the necessary set
+     as it was left. After that every tick is the user's own (QA #140) — we do
+     not keep forcing rows back on later docs refreshes. */
+  const preselectIds = docs
+    .filter((d) => !isSettled(d) && (isMandatory(d) || d.needed === 'yes'))
+    .map((d) => d.id);
+  const didPreselect = useRef(false);
   useEffect(() => {
-    if (!stickyIds.length) return;
-    setSelected((all) => (stickyIds.every((id) => all.includes(id))
-      ? all
-      : [...all, ...stickyIds.filter((id) => !all.includes(id))]));
-  }, [stickyIds.join(',')]);
+    if (didPreselect.current || !preselectIds.length) return;
+    didPreselect.current = true;
+    setSelected((all) => [...all, ...preselectIds.filter((id) => !all.includes(id))]);
+  }, [preselectIds.join(',')]);
 
   // Rows already out for signature / signed cannot be ticked, so "all" means the rest.
   const selectable = docs.filter((d) => !isSettled(d));
   const allSelected = selectable.length > 0 && selectable.every((d) => selected.includes(d.id));
-  /* The tick IS the answer: ticking a row marks it Necessary, and answering No
-     takes the tick off again (see setNeeds). Untick on its own only drops the
-     row from the selection — it does not decide anything.
-     Quick ticks ride together: one request for the whole burst, and no toast,
-     because the tick itself is the feedback. */
-  const queueNeeds = (ids: number[], needed: boolean) => {
-    for (const id of ids) pendingNeeds.current.set(id, needed);
-    if (needsTimer.current) window.clearTimeout(needsTimer.current);
-    needsTimer.current = window.setTimeout(() => {
-      const batch = [...pendingNeeds.current].map(([id, needed]) => ({ id, needed }));
-      pendingNeeds.current.clear();
-      needsTimer.current = null;
-      if (!batch.length || !poId) return;
-      poDocumentApi.setNeeds(poId, batch).then(setDocs).catch(fail);
-    }, 220);
-  };
+
+  /* Selection is now JUST selection (QA #140). A tick neither marks a row
+     Necessary nor pulls the Purchase Order in — it only chooses which rows the
+     Mark buttons and Send act on. Necessity is changed solely through the Mark
+     Necessary / Mark Not necessary buttons (setNeeds). The PO stays ticked. */
   const toggleAll = () => {
-    const move = selectable.filter((d) => !isMandatory(d) && d.needed === (allSelected ? 'yes' : 'no'));
-    setSelected(allSelected ? selectable.filter(isMandatory).map((d) => d.id) : selectable.map((d) => d.id));
-    if (move.length) queueNeeds(move.map((d) => d.id), !allSelected);
+    if (allSelected) { clearNeeds(selected); setSelected([]); }
+    else setSelected(selectable.map((d) => d.id));
   };
   const toggleOne = (id: number) => {
     const doc = docs.find((d) => d.id === id);
-    // The Purchase Order's tick does not come off — see stickyIds.
-    if (doc && isMandatory(doc) && selected.includes(id)) return;
-    const ticking = !selected.includes(id);
+    if (doc && isSettled(doc)) return;                       // settled can't be picked
+    const removing = selected.includes(id);
     setSelected((all) => (all.includes(id) ? all.filter((c) => c !== id) : [...all, id]));
-    // The Purchase Order always stays Necessary; its tick only picks it for sending.
-    if (doc && !isMandatory(doc) && doc.needed !== (ticking ? 'yes' : 'no')) queueNeeds([id], ticking);
+    if (removing) clearNeeds([id]);                          // untick drops the mark
   };
 
   const vaultTarget = draft.supplier ? vaultTargetOf(draft.supplier) : null;
@@ -599,10 +600,10 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                     <tr key={doc.id}>
                       <td className="cdoc-check">
                         <input type="checkbox" checked={selected.includes(doc.id)} onChange={() => toggleOne(doc.id)} aria-label={`Select ${doc.name}`}
-                          disabled={isSettled(doc) || (isMandatory(doc) && selected.includes(doc.id))}
+                          disabled={isSettled(doc)}
                           title={isSettled(doc)
                             ? 'Already sent for signature — nothing more to do on this row'
-                            : isMandatory(doc) ? 'The Purchase Order always goes with the order' : undefined} />
+                            : isMandatory(doc) ? 'The Purchase Order must stay ticked to mark anything Necessary' : undefined} />
                       </td>
                       <td>{i + 1}</td>
                       {/* A library row is known by its CLM master code. The Purchase
@@ -635,29 +636,33 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
                         </div>
                       </td>
                       <td>
-                        {isMandatory(doc) || isSettled(doc) ? (
-                          <Tooltip label={isMandatory(doc)
-                            ? 'The Purchase Order always goes with the order — it cannot be marked not necessary'
-                            : 'Already sent for signature — what it was marked no longer changes'} themed>
+                        {isMandatory(doc) ? (
+                          /* The Purchase Order's necessity follows its tick now
+                             (QA #140): ticked reads NECESSARY, unticked reads NOT
+                             NECESSARY — the same gate Send for Signature checks. */
+                          <Tooltip label={selected.includes(doc.id)
+                            ? 'Ticked — the Purchase Order goes with the order'
+                            : 'Unticked — tick the Purchase Order to send it with the order'} themed>
+                            <span className={`cdoc-req${selected.includes(doc.id) ? ' cdoc-req--need' : ' cdoc-req--opt'}`}>
+                              {selected.includes(doc.id) ? 'NECESSARY' : 'NOT NECESSARY'}
+                            </span>
+                          </Tooltip>
+                        ) : isSettled(doc) ? (
+                          <Tooltip label={'Already sent for signature — what it was marked no longer changes'} themed>
                             {/* It said NECESSARY whatever the row held, so a document
                                 sent while Not necessary read as the opposite. */}
                             <span className="cdoc-req">{isNeeded(doc) ? 'NECESSARY' : 'NOT NECESSARY'}</span>
                           </Tooltip>
                         ) : (
-                          /* The TICK is the answer, so this column only reports
-                             it. A Yes / No pair used to appear here on a ticked
-                             row, which asked the same question the tick had just
-                             answered — and let the two disagree on screen until
-                             the save came back. One control, one answer.
-
-                             CS-414: a document starts Not necessary and is
-                             promoted after someone has read it — no third
-                             "not decided yet" state to work through. */
-                          <Tooltip label={doc.needed === 'yes'
-                            ? 'Marked necessary — untick the row to mark it not necessary'
-                            : 'Not necessary — tick the row to mark it necessary'} themed>
-                            <span className={`cdoc-req${doc.needed === 'yes' ? ' cdoc-req--need' : ' cdoc-req--opt'}`}>
-                              {doc.needed === 'yes' ? 'NECESSARY' : 'NOT NECESSARY'}
+                          /* NECESSARY only when BOTH ticked and marked (QA #140):
+                             an unticked row is never necessary, and ticking alone
+                             does not promote it — Mark Necessary does. */
+                          <Tooltip label={!selected.includes(doc.id)
+                            ? (doc.needed === 'yes' ? 'Marked necessary but unticked — tick it to include it' : 'Not necessary — tick it, then Mark Necessary')
+                            : doc.needed === 'yes' ? 'Necessary — untick to drop it from this PO'
+                            : 'Ticked but not necessary — click Mark Necessary to require it'} themed>
+                            <span className={`cdoc-req${selected.includes(doc.id) && doc.needed === 'yes' ? ' cdoc-req--need' : ' cdoc-req--opt'}`}>
+                              {selected.includes(doc.id) && doc.needed === 'yes' ? 'NECESSARY' : 'NOT NECESSARY'}
                             </span>
                           </Tooltip>
                         )}
@@ -736,17 +741,11 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             {selected.length > 0 ? (
               <span className="cdoc-selbar">
                 <b>{selected.length}</b> selected
-                <button type="button" className="cdoc-selbar__x" aria-label="Clear selection" onClick={() => setSelected(stickyIds)}>×</button>
+                <button type="button" className="cdoc-selbar__x" aria-label="Clear selection" onClick={() => setSelected([])}>×</button>
+                {/* No "Mark Not necessary" button (QA #140): unticking a row
+                    already clears its mark, so that is the one way to undo it. */}
                 <button type="button" className="cdoc-markbtn" disabled={busy === 'needs'} onClick={() => setNeeds(selected, true)}>
                   Mark Necessary
-                </button>
-                <button type="button" className="cdoc-markbtn"
-                  disabled={busy === 'needs' || lockedNeeded.length > 0}
-                  title={lockedNeeded.length
-                    ? `${lockedNeeded.map((d) => d.name).join(', ')} always goes with the order and cannot be marked not necessary`
-                    : undefined}
-                  onClick={() => setNeeds(selected, false)}>
-                  Mark Not necessary
                 </button>
               </span>
             ) : (
@@ -755,10 +754,13 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             <button type="button" className="cdoc-send" disabled={selected.length === 0 || busy === 'email'} onClick={sendEmail}>
               <IcoMail size={13} /> {busy === 'email' ? 'Sending…' : 'Send Selected Via Email'}
             </button>
-            {/* Nothing ticked is Necessary → nothing to send; say why on hover. */}
+            {/* Blocked unless the PO is ticked and something Necessary is chosen;
+                say which on hover. The PO must go in the same envelope (#140). */}
             <button type="button" className="cdoc-send cdoc-send--sign"
               disabled={!chosen.some(isNeeded) || busy === 'sign'}
-              title={chosen.length && !chosen.some(isNeeded) ? 'Only necessary documents can be sent for signature — mark them Necessary first' : undefined}
+              title={!poSelected
+                ? 'The Purchase Order is not marked necessary — tick it to send for signature'
+                : chosen.length && !chosen.some(isNeeded) ? 'Only necessary documents can be sent for signature — mark them Necessary first' : undefined}
               onClick={() => sendForSignature()}>
               <IcoSend size={13} /> {busy === 'sign' ? 'Preparing PO…' : 'Send Selected for Signature'}
             </button>

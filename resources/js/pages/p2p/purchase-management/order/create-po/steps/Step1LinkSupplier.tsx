@@ -446,7 +446,7 @@ export default function Step1LinkSupplier({ draft, set, ctx, supplierLoading, on
             </Field>
             <Field label="COUNTRY"><EditSelect readOnly value={v(sup?.country)} options={[]} onChange={() => {}} /></Field>
             <Field label="STATE"><EditSelect readOnly value={v(sup?.state)} options={[]} onChange={() => {}} /></Field>
-            <Field label="STATE CODE"><input className="spi-dt-inp" readOnly value={v(sup?.stateCode)} placeholder="—" /></Field>
+            <Field label="STATE CODE"><input className="spi-dt-inp" readOnly value={isInternational ? NA : v(sup?.stateCode)} placeholder="—" /></Field>
             <Field label="CITY"><input className="spi-dt-inp" readOnly value={v(sup?.city)} placeholder="—" /></Field>
             <Field label="CONTACT PERSON NAME"><input className="spi-dt-inp" readOnly value={v(sup?.contact)} placeholder="—" /></Field>
             <Field label="DESIGNATION"><input className="spi-dt-inp" readOnly value={v(sup?.desig)} placeholder="—" /></Field>

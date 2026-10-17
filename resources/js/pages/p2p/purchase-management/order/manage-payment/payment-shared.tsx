@@ -153,7 +153,10 @@ export function Stat({ mod, icon, label, value, sub }: {
       <div className="mpr-stat__ico">{statIco(icon)}</div>
       <div>
         <div className="mpr-stat__lbl">{label}</div>
-        <div className="mpr-stat__val">{value}</div>
+        {/* A large amount is cut with an ellipsis in the card; the tooltip
+            shows it in full. Same FitTip the hero chips use — it only appears
+            when the value is actually clipped, so short amounts get no tip. */}
+        <FitTip label={value}><div className="mpr-stat__val">{value}</div></FitTip>
         {sub && <div className="mpr-stat__sub">{sub}</div>}
       </div>
     </div>
