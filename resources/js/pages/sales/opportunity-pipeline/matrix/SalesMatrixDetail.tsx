@@ -1943,8 +1943,12 @@ export default function SalesMatrixDetail() {
                owner. The modal awaits this whole handler before closing. */
             await reloadLead();
             toast.success('Owner updated', `Reassigned to ${opt.label}`);
-          } catch (e) {
-            toast.error('Update failed', 'Could not reassign the lead');
+          } catch (e: any) {
+            /* The server says WHY it refused — the PI-sent guard, a salesperson
+               that has since been deactivated, a lead no longer writable by
+               this user. A flat "Could not reassign the lead" threw all of
+               that away and left the user with nothing to act on. */
+            toast.error('Update failed', e?.response?.data?.message ?? 'Could not reassign the lead');
             // Re-thrown so the modal stays open for a retry instead of
             // closing on a write that never landed.
             throw e;

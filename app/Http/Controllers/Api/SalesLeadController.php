@@ -721,12 +721,23 @@ class SalesLeadController extends Controller
          * explicit undo — the sender pulled it back or replaced it, so nothing
          * is outstanding and the owner can still move. declined and expired
          * likewise end the send; a new owner has to be able to re-issue. */
-        $piSentAt = \App\Models\ClmSignatureRequest::query()
+        /* Read the ROW, not just its created_at. The reassign guard in update()
+         * asks only whether such a row EXISTS, and this attribute is what locks
+         * the Change Owner button — so the two have to answer the same
+         * question. Pulling created_at on its own did not: a row carrying no
+         * created_at came back null, the toolbar left Change Owner enabled, and
+         * the user only learned the owner was fixed when the PUT came back 422.
+         * Fall back to whatever timestamp the row does have — the instant is
+         * for display, it is the row's presence that sets the lock. */
+        $piSentRow = \App\Models\ClmSignatureRequest::query()
             ->where('lead_id', $lead->id)
             ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PROFORMA_INVOICE)
             ->whereIn('status', ['inprogress', 'completed'])
             ->orderBy('created_at')
-            ->value('created_at');
+            ->first();
+        $piSentAt = $piSentRow
+            ? ($piSentRow->created_at ?? $piSentRow->updated_at ?? $lead->updated_at)
+            : null;
         $lead->setAttribute('pi_sent_for_signature_at', $piSentAt ? \Illuminate\Support\Carbon::parse($piSentAt)->toIso8601String() : null);
 
         // Opportunity date = the SAME source the lead list/header show as

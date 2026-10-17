@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { SegmentNameBadge, SegmentNameList } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 /* Force-download helper. A cross-origin <a download> is IGNORED by the browser
@@ -791,7 +791,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * row whose Segment column lists all its segments comma-separated (rather than
    * a duplicate row per segment). De-duped by db_id (the trade-doc master id),
    * falling back to doc_code + reference + name when db_id is missing. */
-  type TradeDocRow = SegmentTradeDoc & { segmentName: string; segmentCode: string };
+  /* The segment's regulatory tier travels WITH the row. It is already on the
+     segment this row was flattened out of, and carrying it here is what lets
+     the badge render with the table instead of waiting on a lookup by name. */
+  type TradeDocRow = SegmentTradeDoc & { segmentName: string; segmentCode: string; segmentRegulatory: 'highly' | 'less' };
   const tradeDocs = useMemo(() => {
     const byKey = new Map<string, TradeDocRow>();
     (payload?.segments ?? []).forEach(seg =>
@@ -812,8 +815,12 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
           }
           // A verified upload in any segment satisfies the requirement.
           if (td.status === 'Verified') existing.status = 'Verified';
+          /* One row, several segments, one badge: the stricter tier wins. The
+             name lookup resolves a shared name the same way, so a merged row
+             reads as it did before. */
+          if (seg.regulatory === 'highly') existing.segmentRegulatory = 'highly';
         } else {
-          byKey.set(key, { ...td, segmentName: seg.name, segmentCode: seg.code });
+          byKey.set(key, { ...td, segmentName: seg.name, segmentCode: seg.code, segmentRegulatory: seg.regulatory });
         }
       }));
     return Array.from(byKey.values());
@@ -1841,7 +1848,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               <div className="lasm-doc-sub">{td.reference}</div>
                             </td>
                             <td>
-                              {(() => { const seg = td.segmentName ?? ''; const long = seg.length > 30; return <Tooltip label={seg} disabled={!long}><div className="lasm-doc-name" style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{long ? seg.slice(0, 30) + '…' : seg}</span><SegmentNameBadge name={seg} style={{ marginLeft: 0 }} /></div></Tooltip>; })()}
+                              {(() => { const seg = td.segmentName ?? ''; const long = seg.length > 30; return <Tooltip label={seg} disabled={!long}><div className="lasm-doc-name" style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{long ? seg.slice(0, 30) + '…' : seg}</span><SegmentBadge status={td.segmentRegulatory} style={{ marginLeft: 0, flexShrink: 0 }} /></div></Tooltip>; })()}
                               <div className="lasm-doc-sub">{td.segmentCode}</div>
                             </td>
                             <td>
