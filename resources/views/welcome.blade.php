@@ -20,18 +20,36 @@
     @endphp
     <title>{{ $cbcBranding['platform_name'] }}</title>
     <link rel="icon" href="{{ $cbcBranding['favicon_url'] }}">
-    {{-- PWA. Chrome offers Install only over HTTPS, with a manifest AND a
-         registered service worker — all three, or it falls back to a plain
-         bookmark shortcut. The worker caches nothing on purpose; see sw.js. --}}
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#0b1220">
-    <meta name="mobile-web-app-capable" content="yes">
+    {{-- PWA — SCANNER PAGE ONLY. The manifest and service worker exist so the
+         put-away scanner can be installed as an app. They must NOT load on the
+         rest of the ERP: a registered service worker intercepts every request
+         and shows it twice in DevTools (the page's call + the worker's fetch),
+         and a service worker is sticky — once registered it keeps controlling
+         the whole site until explicitly unregistered. So: manifest + register
+         only under the scanner path, and actively UNREGISTER anywhere else to
+         clean up browsers that picked it up while it was site-wide. --}}
+    @php $isScannerPwa = request()->is('putaway-scan*') || request()->is('ps/*'); @endphp
+    @if ($isScannerPwa)
+        <link rel="manifest" href="/manifest.json">
+        <meta name="theme-color" content="#0b1220">
+        <meta name="mobile-web-app-capable" content="yes">
+    @endif
     <script>
-        if ('serviceWorker' in navigator && location.protocol === 'https:') {
-            window.addEventListener('load', function () {
-                navigator.serviceWorker.register('/sw.js').catch(function () { /* not fatal */ });
-            });
-        }
+        (function () {
+            if (!('serviceWorker' in navigator)) return;
+            var onScanner = {{ $isScannerPwa ? 'true' : 'false' }};
+            if (onScanner && location.protocol === 'https:') {
+                window.addEventListener('load', function () {
+                    navigator.serviceWorker.register('/sw.js').catch(function () { /* not fatal */ });
+                });
+            } else {
+                // Everywhere else: remove any worker a previous site-wide
+                // registration left behind, so the ERP stops going through it.
+                navigator.serviceWorker.getRegistrations().then(function (rs) {
+                    rs.forEach(function (r) { r.unregister(); });
+                }).catch(function () {});
+            }
+        })();
     </script>
     <script>window.__CBC_BRANDING__ = @json($cbcBranding);</script>
     {{-- Host for printed labels and the device-enrollment QR. A handheld scans
