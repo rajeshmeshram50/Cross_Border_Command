@@ -60,11 +60,15 @@
   border-radius: 14px;
   background: linear-gradient(180deg, #f4fdff, #eafafd);
 }
-.ord-list .spi-segrow .spi-search svg { left: 16px; color: #7ba6b8; }
+/* The MAGNIFIER only — a direct child. Written as a bare `svg` it also caught
+   the × inside the clear button, and at 0,4,1 it outranked that button's own
+   `color: currentColor`, so the × came out muted blue-grey instead of the
+   button's ink. Visible in light, nearly invisible on the dark bar. */
+.ord-list .spi-segrow .spi-search>svg { left: 16px; color: #7ba6b8; }
 .ord-list .spi-segrow .spi-search input { font-size: 13px; }
 .ord-list .spi-segrow .spi-search input::placeholder { color: #9fb7c2; }
 [data-bs-theme="dark"] .ord-list .spi-segrow .spi-search { border-color: rgba(34, 211, 238, .2); background: rgba(12, 38, 48, .55); }
-[data-bs-theme="dark"] .ord-list .spi-segrow .spi-search svg { color: #5f8ea1; }
+[data-bs-theme="dark"] .ord-list .spi-segrow .spi-search>svg { color: #5f8ea1; }
 /* 5 tabs: keep them on one row that scrolls sideways instead of wrapping. */
 .ord-list .spi-seg {
   flex-direction: row; /* the shared file stacks tabs vertically on small screens */

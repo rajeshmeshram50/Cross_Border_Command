@@ -191,7 +191,10 @@
   border-color: #14b8a6;
   box-shadow: 0 0 0 3px rgba(20,184,166,.1);
 }
-.td-root .td-search-wrap svg { flex-shrink: 0; }
+/* The magnifier only. A bare `svg` also catches the x inside the shared
+   clear button and outranks that button's own colour, so the x stops
+   matching every other search bar in the app. */
+.td-root .td-search-wrap>svg { flex-shrink: 0; }
 .td-root .td-search-wrap input {
   border: none; background: transparent;
   font-family: inherit; font-size: 11.5px;
@@ -1199,7 +1202,7 @@
 }
 [data-bs-theme="dark"] .td-root .td-search-wrap input { color: #e2e8f0; }
 [data-bs-theme="dark"] .td-root .td-search-wrap input::placeholder { color: #475569; }
-[data-bs-theme="dark"] .td-root .td-search-wrap svg { stroke: #5eead4; }
+[data-bs-theme="dark"] .td-root .td-search-wrap>svg { stroke: #5eead4; }
 
 /* Table card */
 [data-bs-theme="dark"] .td-root .td-table-card {

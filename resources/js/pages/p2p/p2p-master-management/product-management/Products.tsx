@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
-import SegmentBadge, { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import SegmentBadge, { SegmentNameBadge, segmentLabel, useSegmentStatusByName } from '../../../../components/ui/SegmentBadge';
 import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
 import './product-management.css';
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
@@ -806,7 +806,9 @@ export default function Products() {
             >
               Clear All
             </button>
-            <Tooltip label="Close">
+            {/* Same drawer, same reason: above .prd-filter-drawer or the tip
+                opens behind the panel it belongs to. */}
+            <Tooltip label="Close" zIndex={2000010}>
               <button
                 type="button"
                 className="prd-filter-icon-btn close"
@@ -996,7 +998,13 @@ function FrozenRows(props: { options: string[] }) {
 }
 
 function CheckRow(props: { label: string; checked: boolean; onChange: () => void; tip?: string; segment?: boolean }) {
-  const tip = props.tip ?? props.label;
+  /* A segment's tooltip carries its regulatory tier as well as its name.
+     The badge sits at the end of the row, so on a long name it is the first
+     thing to go out of view — and the tier is the one fact that would change
+     whether somebody ticks the row. Putting it in the tooltip means the
+     answer is still reachable when the badge is not. */
+  const segStatus = useSegmentStatusByName();
+  const tip = props.tip ?? (props.segment ? segmentLabel(props.label, segStatus(props.label)) : props.label);
   /* The tooltip used to depend on the label being longer than 28 characters,
      which is a guess about width, not a measurement of it. A segment row also
      carries its regulatory badge, so the text has whatever the badge leaves —
@@ -1019,8 +1027,11 @@ function CheckRow(props: { label: string; checked: boolean; onChange: () => void
   return (
     <label className="prd-filter-row">
       <input type="checkbox" checked={props.checked} onChange={props.onChange} />
-      {/* An explicit tip is a different sentence from the label, so it always shows. */}
-      <Tooltip label={tip} disabled={props.tip === undefined && !cut}>{span}</Tooltip>
+      {/* An explicit tip is a different sentence from the label, so it always shows.
+          zIndex above .prd-filter-drawer (2000001): the tooltip portals to
+          <body> at 260000 by default, which puts it UNDER the drawer it was
+          opened from — it rendered, and nobody could see it. */}
+      <Tooltip label={tip} disabled={props.tip === undefined && !cut} zIndex={2000010}>{span}</Tooltip>
       {props.segment && <SegmentNameBadge name={props.label} style={{ flex: '0 0 auto', alignSelf: 'center', marginLeft: 'auto' }} />}
     </label>
   );
