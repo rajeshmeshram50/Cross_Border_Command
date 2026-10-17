@@ -1622,9 +1622,43 @@ const SCOPED_CSS = `
 }
 .pdm-form-input::placeholder { color: #cbd5e1; font-weight: 400; }
 
-/* MasterSelect inside the form picks up the same chrome via its
-   class. If your MasterSelect doesn't honour it, the violet border
-   on the wrapper still hints at the form's design language. */
+/* MasterSelect inside this form wears the SAME chrome as .pdm-form-input-wrap.
+
+   The note that used to sit here assumed it already did — "picks up the same
+   chrome via its class" — but no such rule was ever written, so the dropdowns
+   fell through to MasterSelect.css and its Velzon defaults: var(--vz-card-bg)
+   and var(--vz-border-color), a neutral surface beside the form's violet-tinted
+   one, and 38px tall against the inputs' 40px. Select Product and Currency
+   therefore read as a different kind of control from Quantity and Target Price
+   sitting between them (#88).
+
+   Every value below is the one .pdm-form-input-wrap already uses, so the two
+   stay in step: change the wrap and change these together. */
+.pdm-form-field .master-select-wrap .master-select-toggle {
+  height: 40px;
+  background: #fff;
+  border: 1.5px solid #e9d5ff;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: #1e293b;
+}
+.pdm-form-field .master-select-placeholder { color: #cbd5e1; font-weight: 400; }
+/* MasterSelect.css marks its open state !important, so matching the wrap's
+   focus ring has to as well. */
+.pdm-form-field .master-select-wrap.show .master-select-toggle {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.16) !important;
+}
+.pdm-form-field .master-select-wrap.invalid .master-select-toggle {
+  border-color: #ef4444 !important;
+}
+.pdm-form-field .master-select-toggle:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  opacity: 1;
+}
 
 /* ── Helper note (info icon + asterisk reminder) ── */
 .pdm-form-note {
@@ -1688,6 +1722,28 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .pdm-form-input { color: #ede9fe; }
 [data-bs-theme="dark"] .pdm-form-input::placeholder { color: rgba(196, 181, 253, .45); }
+/* …and the dropdowns take the same dark surface as the input wrap above,
+   rather than Velzon's neutral --vz-card-bg (#88). */
+[data-bs-theme="dark"] .pdm-form-field .master-select-wrap .master-select-toggle {
+  background: #1f1845;
+  border-color: rgba(167, 139, 250, .30);
+  color: #ede9fe;
+}
+[data-bs-theme="dark"] .pdm-form-field .master-select-placeholder {
+  color: rgba(196, 181, 253, .45);
+}
+[data-bs-theme="dark"] .pdm-form-field .master-select-wrap.show .master-select-toggle {
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, .22) !important;
+}
+/* A locked picker (Select Product while editing, Currency once the lead has
+   one) must still read as part of this form — the Velzon default put a light
+   --vz-secondary-bg here, which is the brightest thing on a dark dialog. */
+[data-bs-theme="dark"] .pdm-form-field .master-select-toggle:disabled {
+  background: #181334;
+  color: rgba(196, 181, 253, .55);
+  opacity: 1;
+}
 [data-bs-theme="dark"] .pdm-form-note {
   background: #14102a; border-color: rgba(167, 139, 250, .25); color: #d8b4fe;
 }
