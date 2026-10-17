@@ -1081,8 +1081,14 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             key:   code || `deal-${r.sr ?? i}`,
             code,
             label: code || 'SHP-001',
-            title: r.customer || r.supplier || '—',
-            sub:   r.consignee || '',
+            /* The SUPPLIER, never the customer. This is the supplier's vault:
+               who they sold to is the sales side's business, and naming the
+               buyer here put a counterparty's identity on a page opened to
+               check a supplier's paperwork (QA #40).
+               The API still sends customer/consignee — shared with the
+               Customer and Consignee vaults, which do need them. */
+            title: r.supplier || '—',
+            sub:   '',
             rows: [
               ...(r.docs ?? []).map(d => ({ doc: d, cat: 'td' as const })),
               ...(r.agreements ?? []).map(d => ({ doc: d, cat: 'agreement' as const })),
@@ -2450,8 +2456,8 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
               {mode === 'with'
                 ? <th style={DEAL_THC}>Purchase Orders</th>
                 : <><th style={{ ...DEAL_TH, textAlign: 'left' }}>PO ID</th><th style={{ ...DEAL_TH, textAlign: 'left' }}>PO Date</th></>}
-              {mode === 'with' && <th style={{ ...DEAL_TH, textAlign: 'left' }}>Customer</th>}
-              {mode === 'with' && <th style={{ ...DEAL_TH, textAlign: 'left' }}>Consignee</th>}
+              {/* Customer and Consignee columns removed: a supplier vault
+                  does not name the buyer side (QA #40). */}
               <th style={{ ...DEAL_TH, textAlign: 'left' }}>Supplier</th>
               <th style={DEAL_THC}>KYC</th>
               <th style={DEAL_THC}>Due Dil.</th>
@@ -2498,8 +2504,6 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
                         </td>
                       </>
                     )}
-                    {mode === 'with' && <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealAvatar name={r.customer || '—'} grad={DEAL_AV_GRADS[idx % DEAL_AV_GRADS.length]} /></td>}
-                    {mode === 'with' && <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}>{r.consignee ? <DealAvatar name={r.consignee} grad="linear-gradient(135deg,#059669,#10b981)" tag="Consignee" /> : <span style={{ fontSize: 10, color: 'var(--dl-muted)' }}>—</span>}</td>}
                     <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealAvatar name={r.supplier} grad="linear-gradient(135deg,#0891b2,#06b6d4)" /></td>
                     <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.kyc)}</td>
                     <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.dd)}</td>
@@ -2549,7 +2553,8 @@ function ShipmentTable({ rows }: { rows: VaultShipmentRow[] }) {
               <th style={{ width: 56 }}>SR</th>
               <th>Shipment ID</th>
               <th>Opportunity ID</th>
-              <th>Customer</th>
+              {/* No Customer column — a supplier vault does not name the
+                  buyer side (QA #40). */}
               <th>Country</th>
               <th>Due Dil.</th>
               <th>KYC</th>
@@ -2561,18 +2566,12 @@ function ShipmentTable({ rows }: { rows: VaultShipmentRow[] }) {
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={11} className="cev-empty">No shipments match the filter.</td></tr>
+              <tr><td colSpan={10} className="cev-empty">No shipments match the filter.</td></tr>
             ) : filtered.map((r, i) => (
               <tr key={r.id}>
                 <td>{i + 1}</td>
                 <td><span className="cev-chip-pill">● {r.shipment_id}</span></td>
                 <td><span className="cev-chip-pill cev-chip-pill-warm">● {r.opportunity_id}</span></td>
-                <td>
-                  <span className="cev-cust-cell">
-                    <span className="cev-cust-mono">{r.customer.charAt(0)}</span>
-                    {r.customer}
-                  </span>
-                </td>
                 <td>{r.country}</td>
                 <td><Ratio r={r.due_dil} /></td>
                 <td><Ratio r={r.kyc} /></td>

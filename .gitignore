@@ -45,3 +45,4 @@ Thumbs.db
 # it is a tool, not a secret. See docs/p2p/PUTAWAY_APP_INSTALL.md.
 /storage/certs/*.pem
 /public/cbc-ca.crt
+/storage/certs/*.p12
