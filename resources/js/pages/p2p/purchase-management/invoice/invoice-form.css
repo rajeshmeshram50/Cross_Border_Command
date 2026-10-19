@@ -5849,3 +5849,1122 @@
 .s4-root .s4wz-modal .s4wz-opt__n--sk { display:inline-flex; align-items:center; width:84px; height:22px; padding:0 10px; }
 .s4-root .s4wz-modal .s4wz-opt__n--sk .spi-sk-bar { width:100%; height:9px; border-radius:5px; background:#cdeff6; }
 [data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt__n--sk .spi-sk-bar { background:rgba(34,211,238,.16); }
+
+/* ── Stage 04 · Step 01 — Review Box Details ────────────────────────────────
+   Ported from the P2P prototype. Scoped under .s4-root so it cannot reach the
+   packing step's own field styles, which share several names. */
+.s4-root .s4rv { display: flex; flex-direction: column; gap: 10px; }
+
+/* The identity band. A teal gradient, because it is the one part of this pane
+   that states WHICH box you are holding — everything under it is detail. */
+.s4-root .s4rv-hero {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 14px;
+  padding: 14px 16px; border-radius: 16px;
+  background: linear-gradient(115deg, #0b5f73 0%, #0e7490 35%, #0891b2 70%, #22d3ee 100%);
+  box-shadow: 0 14px 30px -22px rgba(8,145,178,.7);
+}
+.s4-root .s4rv-hero::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle at 88% -30%, rgba(255,255,255,.3), transparent 45%),
+              radial-gradient(circle at 0% 140%, rgba(255,255,255,.14), transparent 40%);
+}
+.s4-root .s4rv-hero > * { position: relative; z-index: 1; }
+.s4-root .s4rv-hero__ico {
+  width: 52px; height: 52px; flex-shrink: 0; border-radius: 15px;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: rgba(255,255,255,.16);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.4), 0 10px 20px -10px rgba(0,0,0,.35);
+}
+.s4-root .s4rv-hero__tx { min-width: 0; }
+.s4-root .s4rv-hero__ttl { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 800; color: #fff; }
+.s4-root .s4rv-sec-pill { font-size: 9.5px; font-weight: 800; padding: 3px 10px; border-radius: 999px; border: 1px solid; background: #fff; white-space: nowrap; }
+.s4-root .s4rv-sec-pill--ship { color: #4f46e5; border-color: #c7d2fe; }
+.s4-root .s4rv-sec-pill--inv  { color: #7c3aed; border-color: #ddd6fe; }
+.s4-root .s4rv-sec-pill--dmg  { color: #ea580c; border-color: #fed7aa; }
+.s4-root .s4rv-sec-pill--mis  { color: #be185d; border-color: #fbcfe8; }
+.s4-root .s4rv-hks { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+.s4-root .s4rv-hk {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  padding: 7px 12px; border-radius: 10px;
+  background: rgba(255,255,255,.13); border: 1px solid rgba(255,255,255,.3);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.s4-root .s4rv-hk > span { font-size: 8.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: rgba(255,255,255,.72); }
+.s4-root .s4rv-hk b { font-size: 12px; font-weight: 800; color: #fff; white-space: nowrap; }
+.s4-root .s4rv-hk b em {
+  font-style: normal; font-size: 9.5px; font-weight: 800; color: #0e7490;
+  background: #ecfeff; border: 1px solid #cffafe; border-radius: 999px; padding: 1px 7px; margin-left: 6px;
+}
+.s4-root .s4rv-mono { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; letter-spacing: .04em; }
+.s4-root .s4rv-hero__r { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.s4-root .s4rv-status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 800; padding: 4px 10px; border-radius: 999px;
+  color: #b45309; background: #fffbeb; border: 1px solid #fde68a; white-space: nowrap;
+}
+.s4-root .s4rv-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.s4-root .s4rv-status.is-done { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.s4-root .s4rv-stkwrap { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.s4-root .s4rv-stklbl { font-size: 8.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: rgba(255,255,255,.72); }
+.s4-root .s4rv-stk {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
+  border: 1px solid rgba(255,255,255,.4); border-radius: 10px; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 800; color: #0e7490;
+  background: #fff; box-shadow: 0 6px 14px -6px rgba(0,0,0,.4);
+  transition: transform .12s, box-shadow .12s;
+}
+.s4-root .s4rv-stk:hover { transform: translateY(-1px); box-shadow: 0 10px 18px -8px rgba(0,0,0,.45); }
+
+/* The three detail blocks share one card shell. */
+.s4-root .s4rv-sec { background: #fff; border: 1px solid #e0f0f5; border-radius: 14px; overflow: hidden; }
+.s4-root .s4rv-sec__hd {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  font-size: 11.5px; font-weight: 800; color: #0c4a6e;
+  background: linear-gradient(180deg, #f4fcfe, #fff); border-bottom: 1px solid #eaf5f8;
+}
+.s4-root .s4rv-sec__ico {
+  width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #0e7490; background: #ecfeff; border: 1px solid #cffafe;
+}
+.s4-root .s4rv-sec__cnt {
+  margin-left: auto; font-size: 9.5px; font-weight: 800; color: #0e7490;
+  background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 999px; padding: 2px 9px; white-space: nowrap;
+}
+
+/* Measurements. Read-only, so they are values on a tile rather than inputs —
+   a disabled text box invites a click that will not do anything. */
+.s4-root .s4rv-flds { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; padding: 12px 14px; }
+.s4-root .s4rv-fld {
+  display: flex; flex-direction: column; gap: 5px; min-width: 0;
+  padding: 9px 11px; border-radius: 11px;
+  background: linear-gradient(180deg, #f8fcfe, #f1f9fb); border: 1px solid #e0f0f5;
+}
+.s4-root .s4rv-fld.is-auto { background: linear-gradient(135deg, #cffafe, #a5f3fc); border-color: #67e8f9; }
+.s4-root .s4rv-fld__lbl { display: flex; align-items: center; gap: 5px; font-size: 8.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #6b8a97; }
+.s4-root .s4rv-fld__unit,
+.s4-root .s4rv-fld__auto {
+  font-size: 7.5px; font-weight: 800; padding: 1px 5px; border-radius: 4px;
+  background: #e0f7fc; border: 1px solid #b6e9f3; color: #0e7490; letter-spacing: .04em;
+}
+.s4-root .s4rv-fld__v { font-size: 13px; font-weight: 800; color: #0c2c3a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Remark, condition and flags, as recorded. */
+.s4-root .s4rv-marks { display: grid; grid-template-columns: auto auto 1fr; gap: 0; border-top: 1px solid #eaf5f8; }
+.s4-root .s4rv-mark { display: flex; flex-direction: column; gap: 6px; padding: 11px 14px; border-right: 1px solid #eaf5f8; min-width: 0; }
+.s4-root .s4rv-mark:last-child { border-right: none; }
+.s4-root .s4rv-mark__lbl { font-size: 8px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #0891b2; opacity: .75; }
+.s4-root .s4rv-mark__v {
+  align-self: flex-start; display: inline-flex; align-items: center;
+  padding: 7px 14px; border-radius: 10px; font-size: 11.5px; font-weight: 800; white-space: nowrap;
+}
+.s4-root .s4rv-mark__v.is-ok { color: #fff; background: linear-gradient(145deg, #22c55e, #16a34a); box-shadow: 0 2px 8px rgba(34,197,94,.3); }
+.s4-root .s4rv-mark__v.is-warn { color: #b45309; background: #fffbeb; border: 1.5px solid #fde68a; }
+.s4-root .s4rv-flagwrap { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.s4-root .s4rv-flag { font-size: 9.5px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: #f1f8fa; border: 1px solid #d8ecf2; color: #476b7e; white-space: nowrap; }
+.s4-root .s4rv-stack { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; color: #94a3b8; }
+.s4-root .s4rv-stack i { width: 26px; height: 15px; border-radius: 999px; background: #cbd5e1; position: relative; transition: background .16s; }
+.s4-root .s4rv-stack i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: #fff; transition: transform .16s; }
+.s4-root .s4rv-stack.is-on { color: #0e7490; }
+.s4-root .s4rv-stack.is-on i { background: #06b6d4; }
+.s4-root .s4rv-stack.is-on i::after { transform: translateX(11px); }
+
+/* What is inside. */
+.s4-root .s4rv-tblwrap { overflow-x: auto; }
+.s4-root .s4rv-ptbl { width: 100%; border-collapse: collapse; font-size: 11px; }
+.s4-root .s4rv-ptbl th {
+  padding: 9px 8px; font-size: 8.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  color: #6b8a97; text-align: center; white-space: nowrap;
+  background: linear-gradient(180deg, #e9f9fc, #f2fcfd); border-bottom: 1px solid #e3f1f5;
+}
+.s4-root .s4rv-ptbl td { padding: 9px 8px; text-align: center; vertical-align: middle; border-bottom: 1px solid #eff5f8; white-space: nowrap; }
+.s4-root .s4rv-ptbl tr:last-child td { border-bottom: none; }
+.s4-root .s4rv-ptbl th:nth-child(2), .s4-root .s4rv-ptbl td:nth-child(2) { text-align: left; }
+.s4-root .s4rv-ptbl th:first-child, .s4-root .s4rv-ptbl td:first-child { padding-left: 14px; }
+.s4-root .s4rv-sr { font-weight: 800; color: #7c93a3; }
+.s4-root .s4rv-pn { font-size: 12px; font-weight: 800; color: #0c4a6e; }
+.s4-root .s4rv-pm { margin-top: 3px; display: flex; align-items: center; gap: 8px; font-size: 10px; color: #64748b; }
+.s4-root .s4rv-pcode { font-weight: 800; color: #0e7490; background: #ecfeff; border: 1px solid #cffafe; border-radius: 6px; padding: 1px 7px; }
+.s4-root .s4rv-qty {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 24px; padding: 0 8px;
+  border-radius: 8px; font-size: 12px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2);
+}
+.s4-root .s4rv-uom { font-size: 10px; font-weight: 800; color: #476b7e; background: #f1f8fa; border: 1px solid #e0f0f5; border-radius: 6px; padding: 2px 8px; }
+.s4-root .s4rv-val { font-size: 11px; font-weight: 800; color: #0c2c3a; }
+.s4-root .s4rv-na { color: #9fb2c0; font-weight: 600; font-size: 11px; }
+
+/* The note. A left rule rather than a heading, so an empty one still reads as
+   the place a note would go. */
+.s4-root .s4rv-remark {
+  margin: 12px 14px; padding: 12px 14px; border-radius: 11px;
+  background: linear-gradient(135deg, #f0fdff, #fff); border: 1px solid #cffafe; border-left: 3px solid #22d3ee;
+  font-size: 12px; font-weight: 600; color: #0c2c3a; line-height: 1.5;
+}
+.s4-root .s4rv-remark.is-empty { color: #9fb2c0; font-style: italic; border-left-color: #cfe7ef; background: #fafdfe; }
+
+.s4-root .s4rv-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 0 4px; }
+.s4-root .s4rv-next {
+  display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px;
+  border: none; border-radius: 11px; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
+  box-shadow: 0 8px 18px -8px rgba(8,145,178,.8);
+  transition: transform .12s, box-shadow .12s;
+}
+.s4-root .s4rv-next:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 24px -10px rgba(8,145,178,.9); }
+.s4-root .s4rv-next:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+
+@media (max-width: 1440px) {
+  .s4-root .s4rv-flds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .s4-root .s4rv-marks { grid-template-columns: 1fr; }
+  .s4-root .s4rv-mark { border-right: none; border-bottom: 1px solid #eaf5f8; }
+  .s4-root .s4rv-mark:last-child { border-bottom: none; }
+}
+@media (max-width: 900px) {
+  .s4-root .s4rv-hero { grid-template-columns: auto 1fr; }
+  .s4-root .s4rv-hero__r { grid-column: 1 / -1; align-items: stretch; flex-direction: row; justify-content: space-between; }
+  .s4-root .s4rv-flds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Dark mode. The band keeps its gradient; the cards take the step's surfaces. */
+[data-bs-theme="dark"] .s4-root .s4rv-sec { background: #0e1b24; border-color: rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .s4-root .s4rv-sec__hd { background: linear-gradient(180deg, #11242e, #0e1b24); border-bottom-color: rgba(34,211,238,.14); color: #d7eef5; }
+[data-bs-theme="dark"] .s4-root .s4rv-sec__ico { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .s4-root .s4rv-sec__cnt { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); color: #7dd3e8; }
+[data-bs-theme="dark"] .s4-root .s4rv-fld { background: linear-gradient(180deg, #11242e, #0f2029); border-color: rgba(34,211,238,.16); }
+[data-bs-theme="dark"] .s4-root .s4rv-fld.is-auto { background: linear-gradient(135deg, rgba(34,211,238,.22), rgba(8,145,178,.14)); border-color: rgba(34,211,238,.45); }
+[data-bs-theme="dark"] .s4-root .s4rv-fld__v { color: #e6f3f7; }
+[data-bs-theme="dark"] .s4-root .s4rv-fld__unit,
+[data-bs-theme="dark"] .s4-root .s4rv-fld__auto { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.3); color: #7dd3e8; }
+[data-bs-theme="dark"] .s4-root .s4rv-marks,
+[data-bs-theme="dark"] .s4-root .s4rv-mark { border-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .s4-root .s4rv-flag { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.26); color: #cbd5e1; }
+[data-bs-theme="dark"] .s4-root .s4rv-ptbl th { background: linear-gradient(180deg, #11242e, #0e1b24); border-bottom-color: rgba(34,211,238,.16); color: #8fb0bd; }
+[data-bs-theme="dark"] .s4-root .s4rv-ptbl td { border-bottom-color: rgba(34,211,238,.1); }
+[data-bs-theme="dark"] .s4-root .s4rv-pn { color: #d7eef5; }
+[data-bs-theme="dark"] .s4-root .s4rv-val { color: #e6f3f7; }
+[data-bs-theme="dark"] .s4-root .s4rv-pcode { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .s4-root .s4rv-uom { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.26); color: #cbd5e1; }
+[data-bs-theme="dark"] .s4-root .s4rv-remark { background: rgba(34,211,238,.07); border-color: rgba(34,211,238,.22); color: #d7eef5; }
+[data-bs-theme="dark"] .s4-root .s4rv-remark.is-empty { background: rgba(255,255,255,.02); border-left-color: rgba(34,211,238,.25); color: #7f97a5; }
+
+/* ── Stage 04 — the three-step strip ───────────────────────────────────────
+   Three cards on a teal band, from the prototype. It replaces four numbered
+   circles joined by rules, which gave Putaway Summary equal billing with the
+   three steps you actually take. */
+.s4-root .s4bj {
+  display: flex; align-items: stretch; gap: 0;
+  padding: 14px 16px; border-radius: 14px;
+  background: linear-gradient(110deg, #0e7490 0%, #0891b2 50%, #22d3ee 100%);
+  box-shadow: 0 8px 22px -12px rgba(8,145,178,.6);
+}
+.s4-root .s4bj-step {
+  flex: 1 1 0; min-width: 0;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 14px;
+  background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22);
+  transition: background .2s, border-color .2s, box-shadow .2s;
+}
+.s4-root .s4bj-ico {
+  position: relative; width: 42px; height: 42px; flex-shrink: 0; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: rgba(255,255,255,.18);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
+}
+.s4-root .s4bj-num {
+  position: absolute; right: -5px; bottom: -5px;
+  width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9.5px; font-weight: 800; color: #0e7490;
+  background: #fff; border: 1.5px solid #a5f3fc; box-shadow: 0 2px 4px rgba(8,145,178,.2);
+}
+.s4-root .s4bj-tx { min-width: 0; }
+.s4-root .s4bj-k2 { font-size: 8.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.6); }
+.s4-root .s4bj-t { margin-top: 1px; font-size: 12.5px; font-weight: 800; color: rgba(255,255,255,.88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s4-root .s4bj-s { margin-top: 2px; font-size: 10.5px; font-weight: 600; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s4-root .s4bj-pill {
+  flex-shrink: 0; margin-left: auto;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase;
+  padding: 4px 10px; border-radius: 999px; color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2); box-shadow: 0 3px 8px -3px rgba(8,145,178,.6);
+  white-space: nowrap;
+}
+/* The step in hand becomes a solid card — the one place on the band that is
+   not translucent, so it reads first. */
+.s4-root .s4bj-step.is-active {
+  background: linear-gradient(135deg, #ecfeff 0%, #ffffff 70%);
+  border: 1.5px solid #fff;
+  box-shadow: 0 0 0 3px rgba(255,255,255,.18), 0 10px 22px -14px rgba(0,0,0,.5);
+}
+.s4-root .s4bj-step.is-active .s4bj-k2 { color: #0891b2; }
+.s4-root .s4bj-step.is-active .s4bj-t { color: #0c2c3a; }
+.s4-root .s4bj-step.is-active .s4bj-s { color: #0891b2; }
+.s4-root .s4bj-step.is-active .s4bj-ico {
+  color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  box-shadow: 0 6px 14px -6px rgba(8,145,178,.7);
+}
+.s4-root .s4bj-step.is-active .s4bj-num { color: #fff; background: #0e7490; border-color: #fff; }
+.s4-root .s4bj-step.is-done .s4bj-ico {
+  color: #fff; background: linear-gradient(135deg, #4ade80, #16a34a);
+  box-shadow: 0 6px 14px -6px rgba(22,163,74,.6);
+}
+.s4-root .s4bj-step.is-done .s4bj-num { color: #fff; background: #16a34a; border-color: #fff; }
+.s4-root .s4bj-step.is-done .s4bj-pill { background: linear-gradient(135deg, #4ade80, #16a34a); box-shadow: 0 3px 8px -3px rgba(22,163,74,.55); }
+.s4-root .s4bj-step.is-done .s4bj-t { color: #fff; }
+/* The chevron between cards, which also carries progress. */
+.s4-root .s4bj-line {
+  flex: 0 0 auto; width: 34px; display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,.45);
+}
+.s4-root .s4bj-line.is-done { color: #fff; }
+
+@media (max-width: 1440px) {
+  .s4-root .s4bj-s { display: none; }
+  .s4-root .s4bj-line { width: 20px; }
+}
+@media (max-width: 1100px) {
+  .s4-root .s4bj { flex-wrap: wrap; row-gap: 8px; }
+  .s4-root .s4bj-step { flex: 1 1 100%; }
+  .s4-root .s4bj-line { display: none; }
+}
+
+[data-bs-theme="dark"] .s4-root .s4bj {
+  background: linear-gradient(110deg, #0a3b49 0%, #0c5265 45%, #0b7f9c 100%);
+  box-shadow: 0 8px 22px -12px rgba(0,0,0,.6);
+}
+[data-bs-theme="dark"] .s4-root .s4bj-step.is-active {
+  background: linear-gradient(135deg, #11343f, #0e2a34);
+  border-color: rgba(34,211,238,.5);
+}
+[data-bs-theme="dark"] .s4-root .s4bj-step.is-active .s4bj-t { color: #e6f3f7; }
+[data-bs-theme="dark"] .s4-root .s4bj-step.is-active .s4bj-k2,
+[data-bs-theme="dark"] .s4-root .s4bj-step.is-active .s4bj-s { color: #67e8f9; }
+[data-bs-theme="dark"] .s4-root .s4bj-num { background: #0e1b24; border-color: rgba(34,211,238,.5); color: #67e8f9; }
+
+
+/* ── Stage 04 — the disposition rail ──────────────────────────────────────
+   Full View sits on the rail, to the right of the filters: it expands the
+   whole stage, so it belongs with the controls that scope the stage rather
+   than with the right pane's own title. */
+.s4-root .spi-segrow { display: flex; align-items: center; gap: 12px; }
+.s4-root .spi-segrow .spi-seg { flex: 1 1 auto; min-width: 0; }
+.s4-root .s4fs-btn--rail { flex: 0 0 auto; }
+/* Scan Logs replaces Full screen in the pane head; disabled until a scan task
+   exists, since there is nothing to show before a location is chosen. */
+.s4-root .s4-scanlogs { margin-left: auto; }
+.s4-root .s4-scanlogs:disabled { opacity: .5; cursor: not-allowed; }
+
+.s4-root .s4ztq-btn--rail { flex: 0 0 auto; }
+
+/* ── Stage 04 — "What We Are Doing Here" ──────────────────────────────────
+   The bref-box shape the app already uses for this (Shipment 360, the CLM
+   masters), ported here in its teal variant only. The original lives under
+   .s360m in shipment-360.css, which this page does not load; porting the teal
+   values directly avoids pulling in a purple base just to override it. */
+.s4-root .s4bref {
+  position: relative; overflow: hidden; margin-bottom: 10px;
+  border: 1.5px solid #9ce1ee; border-radius: 16px; background: #fff;
+  box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 8px 28px rgba(6,182,212,.2), 0 2px 8px rgba(0,0,0,.06);
+}
+.s4-root .s4bref::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; z-index: 10;
+  background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490); border-radius: 16px 0 0 16px;
+}
+.s4-root .s4bref .bref-box__header {
+  position: relative; overflow: hidden; width: 100%;
+  display: flex; align-items: center; gap: 12px; padding: 7px 12px; min-height: 48px;
+  background: linear-gradient(110deg, #f0fdff 0%, #e8fbfd 25%, #cffafe 55%, #bff0f7 85%, #a5e9f3 100%);
+  border: none; border-bottom: 1px solid #9ce1ee;
+  cursor: pointer; user-select: none; text-align: left; font-family: inherit;
+  -webkit-appearance: none; appearance: none;
+}
+.s4-root .s4bref.is-collapsed .bref-box__header { border-bottom-color: transparent; }
+.s4-root .s4bref .bref-box__header::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(ellipse at 10% 50%, rgba(103,232,249,.45) 0%, transparent 50%),
+                    radial-gradient(ellipse at 90% 50%, rgba(34,211,238,.28) 0%, transparent 55%);
+}
+.s4-root .s4bref .bref-box__header::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.5), transparent);
+}
+.s4-root .s4bref .bref-box__header-ico {
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; position: relative; z-index: 1;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 0 0 3px rgba(6,182,212,.25), 0 4px 14px rgba(8,145,178,.45);
+}
+.s4-root .s4bref .bref-box__header-mid { flex: 1; display: flex; flex-direction: column; gap: 3px; min-width: 0; position: relative; z-index: 1; }
+.s4-root .s4bref .bref-box__header-row { display: flex; align-items: center; gap: 9px; }
+.s4-root .s4bref .bref-box__header-label { font-size: 9.5px; font-weight: 800; letter-spacing: -.2px; color: #0891b2; line-height: 1; white-space: nowrap; flex-shrink: 0; }
+.s4-root .s4bref .bref-box__header-sep { width: 1px; height: 13px; background: #9ce1ee; flex-shrink: 0; }
+.s4-root .s4bref .bref-box__header-title { font-size: 11px; font-weight: 800; color: #0c4a6e; letter-spacing: -.2px; line-height: 1; white-space: nowrap; }
+.s4-root .s4bref .bref-box__header-sub { font-size: 9.5px; font-weight: 500; color: #0e7490; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s4-root .s4bref .bref-box__header-right { flex-shrink: 0; display: flex; align-items: center; gap: 6px; position: relative; z-index: 1; }
+.s4-root .s4bref-wh {
+  font-size: 9.5px; font-weight: 800; color: #0e7490; white-space: nowrap;
+  background: rgba(255,255,255,.8); border: 1px solid rgba(8,145,178,.25);
+  border-radius: 999px; padding: 4px 11px;
+}
+.s4-root .s4bref .bref-box__toggle {
+  width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.75); border: 1.5px solid rgba(8,145,178,.22); color: #0891b2;
+  transition: transform .24s cubic-bezier(.22,1,.36,1);
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), inset 0 1px 0 rgba(255,255,255,.9);
+}
+.s4-root .s4bref.is-collapsed .bref-box__toggle { transform: rotate(-90deg); }
+.s4-root .s4bref .bref-box__body {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0;
+  background: linear-gradient(180deg, #f4fdff 0%, #f8fafc 100%);
+  overflow: hidden; max-height: 320px; opacity: 1;
+  transition: max-height .3s cubic-bezier(.22,1,.36,1), opacity .22s;
+}
+.s4-root .s4bref.is-collapsed .bref-box__body { max-height: 0; opacity: 0; }
+.s4-root .s4bref .bref-item {
+  position: relative; display: flex; flex-direction: column; overflow: hidden; cursor: default;
+  margin: 7px 5px; padding: 10px 11px 11px; border-radius: 11px;
+  background: #fff; border: 1.5px solid #e2f3f7; box-shadow: 0 1px 4px rgba(15,23,42,.04);
+  transition: box-shadow .18s, border-color .18s, transform .18s;
+}
+.s4-root .s4bref .bref-item:first-child { margin-left: 7px; }
+.s4-root .s4bref .bref-item:last-child { margin-right: 7px; }
+.s4-root .s4bref .bref-item:hover { border-color: #9ce1ee; box-shadow: 0 6px 18px rgba(8,145,178,.14), 0 1px 4px rgba(15,23,42,.04); transform: translateY(-2px); }
+.s4-root .s4bref .bref-item::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  border-radius: 11px 11px 0 0; background: linear-gradient(90deg, #22d3ee, #0891b2);
+}
+.s4-root .s4bref .bref-item__top { display: flex; align-items: center; gap: 6px; }
+.s4-root .s4bref .bref-item__ico { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #0891b2; }
+.s4-root .s4bref .bref-item__num { font-size: 8.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; line-height: 1; }
+.s4-root .s4bref .bref-item__title { margin: 5px 0 3px; font-size: 11px; font-weight: 800; color: #0f172a; letter-spacing: -.2px; line-height: 1.25; }
+.s4-root .s4bref .bref-item__desc { font-size: 9.5px; font-weight: 500; color: #94a3b8; line-height: 1.4; }
+
+@media (max-width: 1100px) { .s4-root .s4bref .bref-box__body { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 700px)  { .s4-root .s4bref .bref-box__body { grid-template-columns: 1fr; } }
+
+[data-bs-theme="dark"] .s4-root .s4bref { background: #0e1b24; border-color: rgba(34,211,238,.26); box-shadow: 0 8px 28px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__header {
+  background: linear-gradient(110deg, #0d2b36 0%, #0f3340 45%, #11404f 100%);
+  border-bottom-color: rgba(34,211,238,.2);
+}
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__header::before { background-image: none; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__header::after { display: none; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__header-label { color: #67e8f9; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__header-title { color: #e6f3f7; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__header-sub { color: #8fb0bd; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__header-sep { background: rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .s4-root .s4bref-wh { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__toggle { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-box__body { background: #0c1820; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-item { background: #11242e; border-color: rgba(34,211,238,.16); box-shadow: none; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-item:hover { border-color: rgba(34,211,238,.4); box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-item__title { color: #e6f3f7; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-item__desc { color: #7f97a5; }
+[data-bs-theme="dark"] .s4-root .s4bref .bref-item__num { color: #7f97a5; }
+
+/* ── Stage 04 — Pick a Box: group headers and box cards ───────────────────
+   The panel was a dashboard: a progress ring, a search box, three handling
+   filters and a "pinned" wrapper around the selected card. The design is a
+   list you choose from — four groups, each saying what it holds, and a card
+   per box carrying what you check against the carton in your hand. */
+
+.s4-root .s4grp {
+  display: flex; align-items: center; gap: 10px;
+  margin: 10px 10px 8px; padding: 9px 11px; border-radius: 12px;
+  border: 1px solid; background: #fff;
+}
+.s4-root .s4grp__ico {
+  width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+}
+.s4-root .s4grp__tx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.s4-root .s4grp__t { font-size: 11.5px; font-weight: 800; letter-spacing: -.1px; }
+.s4-root .s4grp__s { font-size: 9.5px; font-weight: 500; color: #7c93a3; }
+.s4-root .s4grp__n {
+  flex-shrink: 0; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: 800; background: rgba(255,255,255,.75);
+}
+/* One hue per disposition, the same four the rail uses. */
+.s4-root .s4grp--ship     { background: #eef2ff; border-color: #c7d2fe; }
+.s4-root .s4grp--ship .s4grp__ico { background: linear-gradient(135deg, #818cf8, #4f46e5); }
+.s4-root .s4grp--ship .s4grp__t, .s4-root .s4grp--ship .s4grp__n { color: #4f46e5; }
+.s4-root .s4grp--inv      { background: #f5f3ff; border-color: #ddd6fe; }
+.s4-root .s4grp--inv .s4grp__ico { background: linear-gradient(135deg, #a78bfa, #7c3aed); }
+.s4-root .s4grp--inv .s4grp__t, .s4-root .s4grp--inv .s4grp__n { color: #7c3aed; }
+.s4-root .s4grp--damaged  { background: #fff7ed; border-color: #fed7aa; }
+.s4-root .s4grp--damaged .s4grp__ico { background: linear-gradient(135deg, #fb923c, #ea580c); }
+.s4-root .s4grp--damaged .s4grp__t, .s4-root .s4grp--damaged .s4grp__n { color: #ea580c; }
+.s4-root .s4grp--mismatch { background: #fdf2f8; border-color: #fbcfe8; }
+.s4-root .s4grp--mismatch .s4grp__ico { background: linear-gradient(135deg, #f472b6, #be185d); }
+.s4-root .s4grp--mismatch .s4grp__t, .s4-root .s4grp--mismatch .s4grp__n { color: #be185d; }
+.s4-root .s4grp__empty {
+  margin: 0 10px 8px; padding: 10px; border-radius: 10px; text-align: center;
+  font-size: 10px; font-weight: 600; font-style: italic; color: #9fb2c0;
+  background: #fafdfe; border: 1px dashed #dceaf0;
+}
+
+/* The card. */
+.s4-root .s4pkc {
+  margin: 0 10px 8px; border-radius: 13px; overflow: hidden; cursor: pointer;
+  background: #fff; border: 1.5px solid #dceaf0;
+  box-shadow: 0 1px 4px rgba(12,44,58,.05);
+  transition: border-color .16s, box-shadow .16s, transform .16s;
+}
+.s4-root .s4bc:hover { border-color: #9ce1ee; box-shadow: 0 6px 18px rgba(8,145,178,.14); transform: translateY(-1px); }
+/* Selected is a ring, not a fill: the card's own head is already teal, so a
+   tinted body would leave nothing to distinguish it. */
+.s4-root .s4pkc.is-active { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.18), 0 8px 20px -10px rgba(8,145,178,.5); }
+.s4-root .s4pkc.is-placed .s4pkc__hd { background: linear-gradient(110deg, #15803d, #16a34a 55%, #22c55e); }
+.s4-root .s4pkc__hd {
+  display: flex; align-items: center; gap: 8px; padding: 9px 11px;
+  background: linear-gradient(110deg, #0b5f73, #0e7490 45%, #0891b2);
+}
+.s4-root .s4pkc__ico {
+  width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
+}
+.s4-root .s4pkc__id {
+  font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12.5px; font-weight: 800; letter-spacing: .04em; color: #fff; white-space: nowrap;
+}
+.s4-root .s4pkc__stk {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  padding: 4px 9px; border-radius: 7px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.92);
+  font-family: inherit; font-size: 9.5px; font-weight: 800; color: #0e7490;
+  transition: background .14s;
+}
+.s4-root .s4pkc__stk:hover { background: #fff; }
+.s4-root .s4pkc__st {
+  margin-left: auto; flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 9px; font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fde68a;
+  white-space: nowrap;
+}
+.s4-root .s4pkc__st i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.s4-root .s4pkc__st.is-done { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.s4-root .s4pkc__bd { padding: 10px 11px 11px; }
+.s4-root .s4pkc__scn { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.s4-root .s4pkc__scnno {
+  font-size: 8.5px; font-weight: 800; letter-spacing: .06em;
+  padding: 2px 8px; border-radius: 999px;
+  color: #0891b2; background: #f0fdff; border: 1px solid rgba(8,145,178,.25);
+}
+.s4-root .s4pkc__scnt { font-size: 11px; font-weight: 700; color: #0c4a6e; }
+/* Four figures across, divided — one row, so they read as a set. */
+.s4-root .s4pkc__mets {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 9px; border: 1px solid #e8f3f7; border-radius: 10px; overflow: hidden;
+  background: #fbfeff;
+}
+.s4-root .s4pkc__met { display: flex; flex-direction: column; gap: 3px; padding: 8px 9px; border-right: 1px solid #e8f3f7; min-width: 0; }
+.s4-root .s4pkc__met:last-child { border-right: none; }
+.s4-root .s4pkc__met > span { font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #8aa5b2; }
+.s4-root .s4pkc__met > b { font-size: 11.5px; font-weight: 800; color: #0c2c3a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s4-root .s4pkc__met > b i { font-style: normal; font-size: 9px; font-weight: 700; color: #8aa5b2; }
+.s4-root .s4pkc__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; }
+.s4-root .s4pkc__chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px; font-size: 9.5px; font-weight: 700; white-space: nowrap;
+}
+.s4-root .s4pkc__chip i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.s4-root .s4pkc__chip.is-ok   { color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; }
+.s4-root .s4pkc__chip.is-warn { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; }
+.s4-root .s4pkc__chip.is-haz  { color: #b45309; background: #fffbeb; border: 1px solid #fcd34d; }
+.s4-root .s4pkc__chip.is-cold { color: #0e7490; background: #ecfeff; border: 1px solid #a5f3fc; }
+.s4-root .s4pkc__noflag { font-size: 9.5px; font-weight: 600; font-style: italic; color: #9fb2c0; }
+
+[data-bs-theme="dark"] .s4-root .s4grp { background: #11242e; border-color: rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .s4-root .s4grp__s { color: #7f97a5; }
+[data-bs-theme="dark"] .s4-root .s4grp__n { background: rgba(255,255,255,.08); }
+[data-bs-theme="dark"] .s4-root .s4grp--ship     { background: rgba(79,70,229,.14); border-color: rgba(129,140,248,.34); }
+[data-bs-theme="dark"] .s4-root .s4grp--ship .s4grp__t, [data-bs-theme="dark"] .s4-root .s4grp--ship .s4grp__n { color: #a5b4fc; }
+[data-bs-theme="dark"] .s4-root .s4grp--inv      { background: rgba(124,58,237,.14); border-color: rgba(167,139,250,.34); }
+[data-bs-theme="dark"] .s4-root .s4grp--inv .s4grp__t, [data-bs-theme="dark"] .s4-root .s4grp--inv .s4grp__n { color: #c4b5fd; }
+[data-bs-theme="dark"] .s4-root .s4grp--damaged  { background: rgba(234,88,12,.14); border-color: rgba(251,146,60,.34); }
+[data-bs-theme="dark"] .s4-root .s4grp--damaged .s4grp__t, [data-bs-theme="dark"] .s4-root .s4grp--damaged .s4grp__n { color: #fdba74; }
+[data-bs-theme="dark"] .s4-root .s4grp--mismatch { background: rgba(190,24,93,.14); border-color: rgba(244,114,182,.34); }
+[data-bs-theme="dark"] .s4-root .s4grp--mismatch .s4grp__t, [data-bs-theme="dark"] .s4-root .s4grp--mismatch .s4grp__n { color: #f9a8d4; }
+[data-bs-theme="dark"] .s4-root .s4grp__empty { background: rgba(255,255,255,.02); border-color: rgba(34,211,238,.18); color: #7f97a5; }
+[data-bs-theme="dark"] .s4-root .s4pkc { background: #0e1b24; border-color: rgba(34,211,238,.18); box-shadow: none; }
+[data-bs-theme="dark"] .s4-root .s4bc:hover { border-color: rgba(34,211,238,.45); box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+[data-bs-theme="dark"] .s4-root .s4pkc__scnt { color: #d7eef5; }
+[data-bs-theme="dark"] .s4-root .s4pkc__scnno { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .s4-root .s4pkc__mets { background: rgba(255,255,255,.02); border-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .s4-root .s4pkc__met { border-right-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .s4-root .s4pkc__met > b { color: #e6f3f7; }
+[data-bs-theme="dark"] .s4-root .s4pkc__met > span { color: #7f97a5; }
+[data-bs-theme="dark"] .s4-root .s4pkc__chip.is-ok   { background: rgba(34,197,94,.14); border-color: rgba(34,197,94,.32); color: #86efac; }
+[data-bs-theme="dark"] .s4-root .s4pkc__chip.is-warn,
+[data-bs-theme="dark"] .s4-root .s4pkc__chip.is-haz  { background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.32); color: #fcd34d; }
+[data-bs-theme="dark"] .s4-root .s4pkc__chip.is-cold { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); color: #67e8f9; }
+
+/* The list is a COLUMN FLEX container, and a flex item whose overflow is not
+   visible has an automatic minimum size of zero — so .s4pkc, which hides its
+   overflow to clip the rounded head, was free to shrink to nothing. With two
+   boxes they fit and nothing showed; with thirteen every card collapsed to a
+   stripe. Items in this list keep their height. */
+.s4-root .s4-panel--left .s4-panel__body > * { flex-shrink: 0; }
+.s4-root .s4pkc,
+.s4-root .s4grp,
+.s4-root .s4grp__empty { flex-shrink: 0; }
+
+/* The four figures become 2x2 rather than four slivers.
+   At four fixed columns a narrow panel crushed each cell to about 30px, which
+   turned "DIMENSIONS 40x30x25 cm" into "DIMENSI 1." — the labels and the
+   values both clipped. auto-fit with a floor lets the row break instead. */
+.s4-root .s4pkc__mets { grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); }
+.s4-root .s4pkc__met { border-bottom: 1px solid #e8f3f7; }
+.s4-root .s4pkc__met > b { white-space: normal; }
+[data-bs-theme="dark"] .s4-root .s4pkc__met { border-bottom-color: rgba(34,211,238,.14); }
+/* A little more room for the list, closer to the design's split. */
+.s4-root .s4-panel--left { flex: 2.4; }
+.s4-root .s4-panel--left .s4-panel__head-count {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 10px; font-weight: 800; color: #0e7490;
+  background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 999px; padding: 3px 10px;
+  white-space: nowrap;
+}
+[data-bs-theme="dark"] .s4-root .s4-panel--left .s4-panel__head-count {
+  background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); color: #7dd3e8;
+}
+
+/* Explicit, so a future class of the same name cannot decide the layout:
+   .s4bc was already a chip elsewhere in this stage (inline-flex), and the
+   card inherited its display before the rename. */
+.s4-root .s4pkc { display: block; }
+
+/* Nothing in the Review pane may be crushed.
+   .s4rv is a column flex container nested inside the pane's own column flex,
+   and the hero and each section hide their overflow to clip rounded corners —
+   which gives a flex item an automatic minimum size of ZERO. With the pane
+   shorter than its content the hero was squeezed out of existence, so Box
+   Core Details appeared to sit straight under the step strip. Same cause as
+   the box cards collapsing to stripes in the list. */
+.s4-root .s4rv > * { flex-shrink: 0; }
+.s4-root .s4rv-hero { min-height: 84px; }
+
+/* The group header sticks to the top of the list while its own boxes scroll
+   under it, so you always know which group you are looking at.
+   It has to be fully opaque and above the cards to do that: half-transparent
+   it reads as floating over the card rather than heading it, which is what
+   the overlap in the scrolled list looked like. The panel body is the scroll
+   container, so top:0 pins to its padding edge. */
+.s4-root .s4-panel--left .s4-panel__body .s4grp {
+  position: sticky; top: 0; z-index: 3;
+  /* The group tints are translucent over the panel ground; an opaque base
+     underneath keeps the card from showing through when it scrolls past. */
+  background-color: #fff;
+  background-image: linear-gradient(var(--s4grp-tint, transparent), var(--s4grp-tint, transparent));
+  box-shadow: 0 6px 12px -10px rgba(12,44,58,.5);
+}
+.s4-root .s4grp--ship     { --s4grp-tint: #eef2ff; }
+.s4-root .s4grp--inv      { --s4grp-tint: #f5f3ff; }
+.s4-root .s4grp--damaged  { --s4grp-tint: #fff7ed; }
+.s4-root .s4grp--mismatch { --s4grp-tint: #fdf2f8; }
+/* A card must never paint over the header it belongs to. */
+.s4-root .s4pkc { position: relative; z-index: 1; }
+[data-bs-theme="dark"] .s4-root .s4-panel--left .s4-panel__body .s4grp { background-color: #0c1820; }
+[data-bs-theme="dark"] .s4-root .s4grp--ship     { --s4grp-tint: rgba(79,70,229,.14); }
+[data-bs-theme="dark"] .s4-root .s4grp--inv      { --s4grp-tint: rgba(124,58,237,.14); }
+[data-bs-theme="dark"] .s4-root .s4grp--damaged  { --s4grp-tint: rgba(234,88,12,.14); }
+[data-bs-theme="dark"] .s4-root .s4grp--mismatch { --s4grp-tint: rgba(190,24,93,.14); }
+
+/* ── Review pane: the chosen remark, condition and flags ──────────────────
+   Sized to the design: a two-line button for each choice, the same words the
+   packing step used, and the flags as pills rather than loose text. */
+.s4-root .s4rv-mark__v {
+  flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 9px 16px; min-height: 48px; justify-content: center; line-height: 1.2;
+}
+.s4-root .s4rv-mark__v b { font-size: 12.5px; font-weight: 800; }
+.s4-root .s4rv-mark__v em { font-style: normal; font-size: 10px; font-weight: 600; opacity: .85; }
+/* "Nothing recorded", as a shape rather than two grey letters adrift in the
+   cell — it has to sit on the same baseline as the buttons beside it. */
+.s4-root .s4rv-napill {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 48px; min-height: 48px; padding: 0 16px; border-radius: 10px;
+  font-size: 11px; font-weight: 700; color: #9fb2c0;
+  background: #fafdfe; border: 1.5px dashed #d8e7ee;
+}
+/* The stackable switch: one pill, label inside. */
+.s4-root .s4rv-stack {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 8px 16px 8px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 800; color: #64748b;
+  background: #f1f5f9; border: 1.5px solid #e2e8f0;
+}
+.s4-root .s4rv-stack i { width: 34px; height: 19px; flex-shrink: 0; }
+.s4-root .s4rv-stack i::after { width: 15px; height: 15px; }
+.s4-root .s4rv-stack.is-on { color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2); border-color: transparent; box-shadow: 0 3px 10px -4px rgba(8,145,178,.7); }
+.s4-root .s4rv-stack.is-on i { background: rgba(255,255,255,.35); }
+.s4-root .s4rv-stack.is-on i::after { transform: translateX(15px); background: #fff; }
+/* The three cells share a baseline, so the buttons line up across them. */
+.s4-root .s4rv-marks { align-items: stretch; }
+.s4-root .s4rv-mark { justify-content: flex-start; }
+.s4-root .s4rv-flagwrap { align-items: center; min-height: 48px; }
+[data-bs-theme="dark"] .s4-root .s4rv-napill { background: rgba(255,255,255,.02); border-color: rgba(34,211,238,.22); color: #7f97a5; }
+[data-bs-theme="dark"] .s4-root .s4rv-stack { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.26); color: #cbd5e1; }
+
+/* Tile height is set by the TALLEST label, and "VOL. WEIGHT KG AUTO" wrapped
+   to two lines in its narrower column — so one wrapping label pushed all
+   seven tiles up by a line. The label stays on one line and ellipsises if it
+   must; the unit and AUTO chips never shrink, since they are the part that
+   says what the number means. */
+.s4-root .s4rv-fld { padding: 10px 11px; gap: 4px; }
+.s4-root .s4rv-fld__lbl { flex-wrap: nowrap; white-space: nowrap; min-width: 0; overflow: hidden; }
+.s4-root .s4rv-fld__lbl > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.s4-root .s4rv-fld__unit,
+.s4-root .s4rv-fld__auto { flex-shrink: 0; }
+.s4-root .s4rv-fld__v { font-size: 14px; line-height: 1.25; }
+
+.s4-root .s4rv-fld__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Stage 04 — Temporary Putaway Sticker ─────────────────────────────────
+   Ported from the P2P prototype's sticker preview. Not scoped under .s4-root:
+   the dialog is portalled to <body>, so it is outside that subtree. */
+.vsm-bd {
+  position: fixed; inset: 0; z-index: 12000;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: rgba(8, 47, 73, .55); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  animation: vsm-fade .14s ease-out;
+}
+@keyframes vsm-fade { from { opacity: 0; } to { opacity: 1; } }
+.vsm-box {
+  width: min(440px, 100%); max-height: calc(100vh - 40px); overflow: auto;
+  border-radius: 16px; background: #fff; outline: none;
+  box-shadow: 0 24px 70px rgba(8,47,73,.45);
+  animation: vsm-rise .16s ease-out;
+}
+@keyframes vsm-rise { from { opacity: 0; transform: translateY(8px) scale(.994); } to { opacity: 1; transform: none; } }
+.vsm-head {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 13px 14px; border-radius: 16px 16px 0 0;
+  background: linear-gradient(110deg, #0a5f75 0%, #0891b2 60%, #22d3ee 100%);
+}
+.vsm-hl { display: flex; align-items: center; gap: 11px; min-width: 0; position: relative; z-index: 1; }
+.vsm-ico {
+  width: 38px; height: 38px; flex-shrink: 0; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
+}
+.vsm-ht { font-size: 14px; font-weight: 800; color: #fff; letter-spacing: -.2px; }
+.vsm-hs { margin-top: 3px; display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 600; color: rgba(255,255,255,.75); flex-wrap: wrap; }
+.vsm-hsd { width: 3px; height: 3px; border-radius: 50%; background: rgba(255,255,255,.45); flex-shrink: 0; }
+.vsm-hb {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(255,255,255,.9); color: #0e7490;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+}
+.vsm-cl {
+  position: relative; z-index: 1; flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 7px; cursor: pointer;
+  border: 1.5px solid rgba(255,255,255,.28); background: rgba(255,255,255,.14);
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,.9); font-size: 15px; line-height: 1; transition: background .14s;
+}
+.vsm-cl:hover { background: rgba(255,255,255,.26); }
+/* The label sits on a grey bed, the way a printed sticker sits on a sheet. */
+.vsm-body { padding: 12px 12px 10px; background: linear-gradient(145deg, #eef2f7, #e4eaf2); }
+.vsm-card {
+  background: #fff; border-radius: 12px; overflow: hidden;
+  border: 1.5px solid rgba(6,182,212,.2);
+  box-shadow: 0 4px 20px rgba(6,182,212,.1), 0 1px 4px rgba(0,0,0,.06);
+}
+.vsm-strip {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; padding: 9px 14px;
+  background: linear-gradient(98deg, #0a5f75 0%, #0891b2 65%, #0fb8de 100%);
+}
+.vsm-strip::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.1), transparent); }
+.vsm-sl, .vsm-sr { display: flex; flex-direction: column; gap: 2px; position: relative; z-index: 1; }
+.vsm-sr { align-items: flex-end; }
+.vsm-ll { font-size: 6.5px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; color: rgba(255,255,255,.5); line-height: 1; }
+.vsm-sv { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 12px; font-weight: 800; color: #fff; letter-spacing: .04em; }
+.vsm-bv { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 15px; font-weight: 900; color: #fff; letter-spacing: .07em; }
+.vsm-info { padding: 10px 14px 9px; border-bottom: 1px solid rgba(6,182,212,.1); }
+.vsm-pn { font-size: 12px; font-weight: 600; color: #0c4a6e; line-height: 1.3; margin-bottom: 7px; }
+.vsm-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+.vsm-tag { display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: 8px; font-size: 9.5px; font-weight: 600; }
+.vsm-tc { background: rgba(6,182,212,.1); border: 1px solid rgba(6,182,212,.22); color: #0891b2; font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-weight: 700; }
+.vsm-tm { background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.2); color: #4338ca; }
+.vsm-tg { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.25); color: #15803d; }
+.vsm-qr { display: flex; align-items: stretch; border-bottom: 1px solid rgba(6,182,212,.1); }
+.vsm-qf {
+  flex-shrink: 0; width: 130px; padding: 12px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(145deg, #f4fbff, #edf7fc); border-right: 1px solid rgba(6,182,212,.1);
+}
+.vsm-qi {
+  width: 106px; height: 106px; border-radius: 8px; padding: 5px;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1.5px solid rgba(6,182,212,.18);
+}
+.vsm-qi svg, .vsm-qi canvas, .vsm-qi img { width: 100%; height: 100%; }
+.vsm-qr-right { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 10px 14px; background: #fff; }
+.vsm-scl { font-size: 7px; font-weight: 700; color: #0891b2; letter-spacing: .22em; text-transform: uppercase; opacity: .65; margin-bottom: 8px; }
+.vsm-dr { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(6,182,212,.07); }
+.vsm-dr:last-child { border-bottom: none; }
+.vsm-dl { font-size: 8px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: .12em; white-space: nowrap; }
+.vsm-dv { font-size: 11px; font-weight: 700; color: #0c4a6e; text-align: right; }
+.vsm-dvm { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; font-weight: 800; color: #0891b2; text-align: right; }
+.vsm-ft { display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: linear-gradient(98deg, #f0fdff, #f8feff); }
+.vsm-qty { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #0c4a6e; }
+.vsm-dot { width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, #06b6d4, #0891b2); box-shadow: 0 0 5px rgba(6,182,212,.5); }
+.vsm-dt { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; font-weight: 500; color: #64748b; }
+.vsm-mft { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid rgba(6,182,212,.1); background: #fff; border-radius: 0 0 16px 16px; }
+.vsm-hint { font-size: 9.5px; font-weight: 500; color: #94a3b8; font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; }
+.vsm-acts { display: flex; gap: 8px; }
+.vsm-bpdf {
+  display: inline-flex; align-items: center; gap: 5px; padding: 8px 15px;
+  border-radius: 9px; border: 1.5px solid rgba(6,182,212,.28); background: #fff;
+  color: #0891b2; font-family: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.vsm-bpdf:hover { background: #f0fdff; border-color: #0891b2; }
+.vsm-bprint {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px;
+  border-radius: 9px; border: none;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); color: #fff;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(6,182,212,.38); transition: all .15s;
+}
+.vsm-bprint:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(6,182,212,.48); }
+
+@media (max-width: 520px) {
+  .vsm-bd { padding: 10px; }
+  .vsm-qr { flex-direction: column; }
+  .vsm-qf { width: 100%; border-right: none; border-bottom: 1px solid rgba(6,182,212,.1); }
+  .vsm-mft { flex-direction: column; align-items: stretch; }
+  .vsm-acts > * { flex: 1 1 0; justify-content: center; }
+}
+
+[data-bs-theme="dark"] .vsm-box { background: #0e1b24; }
+[data-bs-theme="dark"] .vsm-body { background: linear-gradient(145deg, #0b1620, #0a131b); }
+[data-bs-theme="dark"] .vsm-card { background: #11242e; border-color: rgba(34,211,238,.22); }
+[data-bs-theme="dark"] .vsm-info { border-bottom-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .vsm-pn { color: #d7eef5; }
+[data-bs-theme="dark"] .vsm-qf { background: rgba(255,255,255,.03); border-right-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .vsm-qi { background: #fff; }
+[data-bs-theme="dark"] .vsm-qr, [data-bs-theme="dark"] .vsm-dr { border-color: rgba(34,211,238,.12); }
+[data-bs-theme="dark"] .vsm-qr-right { background: #11242e; }
+[data-bs-theme="dark"] .vsm-dv { color: #d7eef5; }
+[data-bs-theme="dark"] .vsm-ft { background: rgba(34,211,238,.07); }
+[data-bs-theme="dark"] .vsm-qty { color: #d7eef5; }
+[data-bs-theme="dark"] .vsm-mft { background: #0e1b24; border-top-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .vsm-bpdf { background: transparent; border-color: rgba(34,211,238,.35); color: #67e8f9; }
+[data-bs-theme="dark"] .vsm-bpdf:hover { background: rgba(34,211,238,.12); }
+
+/* The stackable switch is an OUTLINE pill, not a filled one.
+   Filled teal, it competed with the two green choices beside it — and it is
+   not a choice, it is a property of the box. White ground, teal border, teal
+   label, and the switch itself carries the colour. */
+.s4-root .s4rv-stack.is-on {
+  color: #0e7490;
+  background: #fff;
+  border: 1.5px solid #67e8f9;
+  box-shadow: 0 1px 4px rgba(8,145,178,.12);
+}
+.s4-root .s4rv-stack.is-on i { background: linear-gradient(135deg, #22d3ee, #0891b2); }
+.s4-root .s4rv-stack.is-on i::after { background: #fff; }
+/* "Nothing recorded": wider than tall, like the design, so it reads as an
+   empty field rather than a button. */
+.s4-root .s4rv-napill { min-width: 60px; min-height: 44px; padding: 0 18px; border-radius: 10px; }
+/* The two choices keep the 48px the buttons need for two lines. */
+.s4-root .s4rv-mark__v { min-height: 48px; border-radius: 10px; }
+.s4-root .s4rv-flagwrap { min-height: 48px; }
+[data-bs-theme="dark"] .s4-root .s4rv-stack.is-on {
+  color: #67e8f9; background: rgba(34,211,238,.10); border-color: rgba(34,211,238,.45); box-shadow: none;
+}
+
+/* The separator between HSN and GST, and the Sr. No as a bordered badge —
+   both as the design draws them. */
+.s4-root .s4rv-pdot { color: #cbd5e1; }
+.s4-root .s4rv-sr {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 24px; padding: 0 7px; border-radius: 7px;
+  background: #fafdfe; border: 1px solid #e0f0f5; color: #476b7e; font-size: 11px; font-weight: 800;
+}
+[data-bs-theme="dark"] .s4-root .s4rv-sr { background: rgba(255,255,255,.03); border-color: rgba(34,211,238,.18); color: #8fb0bd; }
+[data-bs-theme="dark"] .s4-root .s4rv-pdot { color: #51636f; }
+
+/* The label must FIT, not truncate.
+   "Vol. Weight" was ellipsising to "VOL. WEIG…" because the label, its unit
+   chip and the AUTO chip together outgrew the narrowest column. Tightening
+   the tracking and the two chips buys the ~14px it needed — truncation stays
+   as the last resort for a much narrower pane, not the normal case. */
+.s4-root .s4rv-fld__lbl { gap: 4px; letter-spacing: .04em; }
+.s4-root .s4rv-fld__unit,
+.s4-root .s4rv-fld__auto { font-size: 7px; padding: 1px 4px; letter-spacing: .02em; }
+/* The tiles carry the design's teal edge rather than a grey one — on a card
+   that is itself white, a grey border makes them read as disabled inputs. */
+.s4-root .s4rv-fld { border: 1.5px solid #cfe9f1; background: linear-gradient(180deg, #f9fdfe, #f2f9fc); }
+.s4-root .s4rv-fld.is-auto { border-color: #67e8f9; }
+.s4-root .s4rv-fld.is-auto .s4rv-fld__unit,
+.s4-root .s4rv-fld.is-auto .s4rv-fld__auto { background: #0891b2; border-color: #0891b2; color: #fff; }
+[data-bs-theme="dark"] .s4-root .s4rv-fld { border-color: rgba(34,211,238,.2); }
+
+/* The field grid responds to the PANE, not the window.
+   It was seven fixed columns with a viewport breakpoint, so a narrow pane in
+   a wide window still squeezed all seven in and the labels ellipsised. The
+   floor is the width the longest label needs with its unit and AUTO chips, so
+   the row drops to six, five or four columns instead of clipping. */
+.s4-root .s4rv-flds { grid-template-columns: repeat(auto-fit, minmax(152px, 1fr)); }
+@media (max-width: 1440px) { .s4-root .s4rv-flds { grid-template-columns: repeat(auto-fit, minmax(152px, 1fr)); } }
+@media (max-width: 900px)  { .s4-root .s4rv-flds { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); } }
+
+/* ── Stage 04 dark mode: the white chips on the teal heads ────────────────
+   The box card's Sticker button, the Pending pill and the Box Details
+   sticker are all solid white on a teal band. That is right in light mode,
+   where the page around them is white too — on a dark page they become the
+   brightest things on screen, and a card full of them reads as a row of
+   lights. Translucent on the band instead, which keeps them legible against
+   the teal without competing with the data. */
+[data-bs-theme="dark"] .s4-root .s4pkc__stk {
+  background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.3); color: #e6f3f7;
+}
+[data-bs-theme="dark"] .s4-root .s4pkc__stk:hover { background: rgba(255,255,255,.24); }
+[data-bs-theme="dark"] .s4-root .s4pkc__st {
+  background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.4); color: #fcd34d;
+}
+[data-bs-theme="dark"] .s4-root .s4pkc__st.is-done {
+  background: rgba(34,197,94,.18); border-color: rgba(34,197,94,.4); color: #86efac;
+}
+[data-bs-theme="dark"] .s4-root .s4rv-stk {
+  background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.32); color: #e6f3f7;
+}
+[data-bs-theme="dark"] .s4-root .s4rv-stk:hover { background: rgba(255,255,255,.24); }
+[data-bs-theme="dark"] .s4-root .s4rv-status {
+  background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.4); color: #fcd34d;
+}
+[data-bs-theme="dark"] .s4-root .s4rv-status.is-done {
+  background: rgba(34,197,94,.18); border-color: rgba(34,197,94,.4); color: #86efac;
+}
+/* The disposition pill on the Box Details band is white too. */
+[data-bs-theme="dark"] .s4-root .s4rv-sec-pill { background: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .s4-root .s4rv-sec-pill--ship { color: #a5b4fc; border-color: rgba(129,140,248,.45); }
+[data-bs-theme="dark"] .s4-root .s4rv-sec-pill--inv  { color: #c4b5fd; border-color: rgba(167,139,250,.45); }
+[data-bs-theme="dark"] .s4-root .s4rv-sec-pill--dmg  { color: #fdba74; border-color: rgba(251,146,60,.45); }
+[data-bs-theme="dark"] .s4-root .s4rv-sec-pill--mis  { color: #f9a8d4; border-color: rgba(244,114,182,.45); }
+/* The "Box 1 of 3" chip inside the scenario key box. */
+[data-bs-theme="dark"] .s4-root .s4rv-hk b em { background: rgba(34,211,238,.18); border-color: rgba(34,211,238,.4); color: #67e8f9; }
+
+/* The chooser's context chips: which box, which warehouse.
+   They sit in the dialog header so the decision does not depend on
+   remembering what was on the screen behind it. */
+.s4-root .s4wz-ctx { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+.s4wz-ctx { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0; }
+.s4wz-ctx__i {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 13px; border-radius: 11px;
+  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+  color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.s4wz-ctx__i > svg { flex-shrink: 0; opacity: .85; }
+.s4wz-ctx__i > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.s4wz-ctx__i em { font-style: normal; font-size: 7.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(255,255,255,.7); }
+.s4wz-ctx__i b { font-size: 12px; font-weight: 800; white-space: nowrap; }
+/* The lead reads as a label for the two options below it. */
+.s4-root .s4wz-lead, .s4wz-lead {
+  font-size: 8.5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #6b8a97;
+}
+@media (max-width: 820px) {
+  .s4wz-ctx { display: none; }
+}
+
+/* ── Storage-type chooser: the two option cards ───────────────────────────
+   Icon, then the text, then the radio — left to right: what it is, what it
+   means, whether it is chosen. The previous grid stacked the icon above the
+   title, which pushed the card tall and left the radio floating beside the
+   icon rather than at the edge where a radio belongs. */
+.s4-root .s4wz-opt, .s4wz-opt {
+  display: flex !important; align-items: flex-start; gap: 13px;
+  padding: 15px 16px; text-align: left;
+}
+.s4wz-opt__ic { flex-shrink: 0; }
+.s4wz-opt__tx { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.s4wz-opt__t { font-size: 13.5px; font-weight: 800; }
+.s4wz-opt__s { font-size: 11px; font-weight: 500; line-height: 1.4; }
+.s4wz-opt__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.s4wz-opt__n, .s4wz-opt__d {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; white-space: nowrap; border: 1px solid;
+}
+/* The count takes the card's own colour; the trait stays neutral, so the
+   figure you act on is the one that carries it. */
+.s4wz-opt--rack   .s4wz-opt__n { color: #0e7490; background: #ecfeff; border-color: #a5f3fc; }
+.s4wz-opt--norack .s4wz-opt__n { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+.s4wz-opt__d { color: #64748b; background: #f8fafc; border-color: #e2e8f0; }
+.s4wz-opt:disabled .s4wz-opt__n { color: #94a3b8; background: #f1f5f9; border-color: #e2e8f0; }
+.s4wz-opt__radio { flex-shrink: 0; align-self: flex-start; margin-left: 4px; }
+[data-bs-theme="dark"] .s4wz-opt--rack   .s4wz-opt__n { color: #67e8f9; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.34); }
+[data-bs-theme="dark"] .s4wz-opt--norack .s4wz-opt__n { color: #fcd34d; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.34); }
+[data-bs-theme="dark"] .s4wz-opt__d { color: #94a3b8; background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.26); }
+[data-bs-theme="dark"] .s4wz-opt:disabled .s4wz-opt__n { color: #7f97a5; background: rgba(148,163,184,.1); border-color: rgba(148,163,184,.22); }
+
+/* The chooser is a WIDE dialog: two option cards side by side, each holding a
+   title, a sentence and two chips on one line. At 712px every one of those
+   wrapped — the title to two lines, the chips stacked — which is what made it
+   read as a different component from the design. */
+.s4-root .s4wz-modal .s4wz__dlg { width: min(1120px, 94vw); }
+.s4-root .s4wz-modal .s4wz-opts { gap: 14px; }
+/* The sub-line was monospace: styled back when it printed a box code. It is a
+   sentence now, and the code has its own chip. */
+.s4-root .s4wz-modal .s4qm__s { font-family: inherit; font-weight: 500; letter-spacing: 0; }
+/* One line each, now that there is room for them. */
+.s4-root .s4wz-opt__t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s4-root .s4wz-opt__chips { flex-wrap: nowrap; }
+.s4-root .s4wz-opt__radio { align-self: flex-start; margin-top: 2px; }
+@media (max-width: 1000px) {
+  /* Below this the cards cannot sit side by side, so they stack and the
+     text is allowed to wrap again rather than being clipped. */
+  .s4-root .s4wz-modal .s4wz-opts { grid-template-columns: 1fr; }
+  .s4-root .s4wz-opt__t { white-space: normal; }
+  .s4-root .s4wz-opt__chips { flex-wrap: wrap; }
+}
+
+/* The count chip kept `grid-area: n` and a top margin from when the card was
+   a grid and it sat on its own row. Inside the chips row the grid properties
+   are inert but the margin is not — it dropped the count 6px below the trait
+   beside it. The row supplies the spacing now. */
+.s4-root .s4wz-modal .s4wz-opt__chips .s4wz-opt__n,
+.s4-root .s4wz-opt__chips .s4wz-opt__n { margin-top: 0; }
+.s4-root .s4wz-opt__chips { align-items: center; }
+
+/* The two chips must be the SAME height, or they sit on one line but with
+   different tops — misaligned, and indistinguishable from having wrapped.
+   Rule 5330 gave the count 4px/10px padding against the trait's 3px/10px. */
+.s4-root .s4wz-modal .s4wz-opt__chips .s4wz-opt__n,
+.s4-root .s4wz-modal .s4wz-opt__chips .s4wz-opt__d {
+  padding: 4px 11px; border-width: 1px; border-style: solid;
+  font-size: 10px; line-height: 1.4; border-radius: 999px; margin-top: 0;
+}
+
+/* The chosen card's radio is a filled tick, as the design draws it — a ring
+   with a dot reads as "selectable", a tick reads as "selected". */
+.s4-root .s4wz-opt.is-on .s4wz-opt__radio {
+  background: linear-gradient(135deg, #22d3ee, #0891b2); border-color: #0891b2;
+  box-shadow: 0 2px 8px rgba(8,145,178,.4);
+  position: relative;
+}
+.s4-root .s4wz-opt.is-on .s4wz-opt__radio::after {
+  content: ''; position: absolute; left: 50%; top: 47%;
+  width: 5px; height: 9px; margin: -6px 0 0 -3px;
+  border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+/* A zero count is information, not a barrier: the card stays usable and only
+   its count chip goes quiet. */
+.s4-root .s4wz-modal .s4wz-opt__n.is-none { color: #94a3b8; background: #f1f5f9; border-color: #e2e8f0; }
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt__n.is-none { color: #7f97a5; background: rgba(148,163,184,.1); border-color: rgba(148,163,184,.22); }
+
+/* A chosen card is marked in ITS OWN colour, not in the dialog's.
+   Each option already carries a hue — teal for racked storage, amber for
+   open-floor — through its icon tile and its count chip. Selecting one was
+   painting a teal border and a teal tick on both, so the amber card changed
+   colour at the moment of being chosen, which is when it should be most
+   recognisable. */
+.s4-root .s4wz-modal .s4wz-opt--rack.is-on {
+  border-color: #22d3ee;
+  background: linear-gradient(135deg, #f0fdff, #fff 65%);
+  box-shadow: 0 0 0 3px rgba(34,211,238,.16), 0 10px 22px -14px rgba(8,145,178,.6);
+}
+.s4-root .s4wz-modal .s4wz-opt--rack.is-on .s4wz-opt__radio {
+  background: linear-gradient(135deg, #22d3ee, #0891b2); border-color: #0891b2;
+  box-shadow: 0 2px 8px rgba(8,145,178,.4);
+}
+.s4-root .s4wz-modal .s4wz-opt--norack.is-on {
+  border-color: #f59e0b;
+  background: linear-gradient(135deg, #fffbeb, #fff 65%);
+  box-shadow: 0 0 0 3px rgba(245,158,11,.16), 0 10px 22px -14px rgba(180,83,9,.5);
+}
+.s4-root .s4wz-modal .s4wz-opt--norack.is-on .s4wz-opt__radio {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b); border-color: #d97706;
+  box-shadow: 0 2px 8px rgba(245,158,11,.45);
+}
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt--rack.is-on {
+  background: linear-gradient(135deg, rgba(34,211,238,.14), rgba(34,211,238,.04) 65%);
+  box-shadow: 0 0 0 3px rgba(34,211,238,.18);
+}
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt--norack.is-on {
+  background: linear-gradient(135deg, rgba(245,158,11,.14), rgba(245,158,11,.04) 65%);
+  box-shadow: 0 0 0 3px rgba(245,158,11,.2);
+}
+
+/* The title row: name, then the Recommended pill beside it. */
+.s4-root .s4wz-opt__ttl { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.s4-root .s4wz-modal .s4wz-opt__rec {
+  flex-shrink: 0; position: static; margin: 0;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px;
+  background: #dcfce7; border: 1px solid #a7f3d0; color: #15803d;
+  font-size: 9.5px; font-weight: 800; white-space: nowrap;
+}
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt__rec {
+  background: rgba(34,197,94,.16); border-color: rgba(34,197,94,.35); color: #86efac;
+}
+
+/* ── Storage chooser: the prototype's own colour scheme ───────────────────
+   Driven by per-card variables rather than hand-picked values, exactly as
+   #s4bZoneRoot .s4z-card does it. Picking the colours by eye had the rack
+   border on --c1 instead of --c2, both rings too faint, the tint at the
+   wrong angle and stop, and the tick running c1 -> c2 rather than c1 -> c3. */
+.s4-root .s4wz-modal .s4wz-opt {
+  --c1: #22d3ee; --c2: #0891b2; --c3: #0e7490;
+  --soft: #ecfeff; --ring: rgba(34,211,238,.25);
+}
+.s4-root .s4wz-modal .s4wz-opt--norack {
+  --c1: #fbbf24; --c2: #f59e0b; --c3: #d97706;
+  --soft: #fffbeb; --ring: rgba(245,158,11,.22);
+}
+.s4-root .s4wz-modal .s4wz-opt:hover:not(.is-on) {
+  border-color: var(--c1);
+  box-shadow: 0 16px 30px -20px rgba(8,90,112,.5);
+}
+.s4-root .s4wz-modal .s4wz-opt--rack.is-on,
+.s4-root .s4wz-modal .s4wz-opt--norack.is-on {
+  border-color: var(--c2);
+  box-shadow: 0 0 0 4px var(--ring), 0 18px 34px -20px rgba(8,90,112,.55);
+  background: linear-gradient(160deg, var(--soft) 0%, #fff 55%);
+}
+.s4-root .s4wz-modal .s4wz-opt--rack.is-on .s4wz-opt__radio,
+.s4-root .s4wz-modal .s4wz-opt--norack.is-on .s4wz-opt__radio {
+  border-color: var(--c2);
+  background: linear-gradient(135deg, var(--c1), var(--c3));
+  color: #fff;
+  box-shadow: 0 4px 10px -3px var(--c2);
+}
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt--rack.is-on,
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt--norack.is-on {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--c2) 16%, transparent) 0%, transparent 55%);
+}
+
+/* Card geometry, from the prototype's own card rather than approximated.
+   The selected border reads brighter in the design than #0891b2 alone would,
+   because the 4px ring sits just outside a THIN border and the two blend —
+   which only works if the border really is 1.5px and the radius 14px.
+   Mine were heavier and rounder, so the ring had less edge to bleed past. */
+.s4-root .s4wz-modal .s4wz-opt {
+  padding: 16px 18px; gap: 14px; border-radius: 14px;
+  border: 1.5px solid #dcecf2; background: #fff;
+  align-items: flex-start;
+  transition: border-color .18s, box-shadow .18s, transform .18s;
+}
+.s4-root .s4wz-modal .s4wz-opt:hover:not(.is-on) { transform: translateY(-2px); }
+/* The icon tile and the radio are the prototype's sizes too — 46px and 22px,
+   with the radio pinned to the corner rather than sharing the text row. */
+.s4-root .s4wz-modal .s4wz-opt__ic { width: 46px; height: 46px; border-radius: 13px; }
+.s4-root .s4wz-modal .s4wz-opt { position: relative; }
+.s4-root .s4wz-modal .s4wz-opt__radio {
+  position: absolute; top: 14px; right: 14px;
+  width: 22px; height: 22px; border: 2px solid #cfe2e9; margin: 0;
+}
+.s4-root .s4wz-modal .s4wz-opt__tx { padding-right: 30px; gap: 6px; }
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt { background: #11242e; border-color: rgba(34,211,238,.2); }
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt__radio { border-color: rgba(148,163,184,.4); background: transparent; }

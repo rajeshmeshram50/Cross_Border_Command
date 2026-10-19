@@ -7,7 +7,10 @@ import {
 import type { ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
 import StageSummary from './StageSummary';
+import PutawayStageBrief from './PutawayStageBrief';
+import PutawayBoxSticker from './PutawayBoxSticker';
 import PutawaySelectLocation from './PutawaySelectLocation';
+import PutawayReviewBox from './PutawayReviewBox';
 import PutawayConfirmPlacement, { findSpot } from './PutawayConfirmPlacement';
 import PutawayScanTask from './PutawayScanTask';
 import InspectionProductView from '../../order/physical-inspection/InspectionProductView';
@@ -186,47 +189,74 @@ const IcoList = () => (
   </svg>
 );
 
-function BoxCard({ b, seq, selected, readOnly, className = '', onPick }: {
-  b: PickBox; seq: number; selected: boolean; readOnly: boolean;
-  className?: string; onPick: () => void;
+/* The disposition a box belongs to, as the design writes it: a tinted tile, a
+   name and a line saying why those boxes are together. */
+const GROUPS: Array<{ key: Disposition; title: string; sub: string }> = [
+  { key: 'ship',     title: 'Shipment Dispatch Boxes',             sub: 'Correct product — ready for dispatch' },
+  { key: 'inv',      title: 'Inventory Stock (Extra Stock) Boxes', sub: 'Extra quantity — staged for storage' },
+  { key: 'damaged',  title: 'Damaged / Rejected Boxes',            sub: 'Not accepted — held for QC' },
+  { key: 'mismatch', title: 'Mismatch Boxes',                      sub: 'Wrong item — held for return' },
+];
+/* What the packer marked, read back off the disposition — the pick list does
+   not carry the remark itself, and the two are the same fact. */
+const REMARK_OF: Record<Disposition, string> = {
+  ship: 'Correct Product', inv: 'Extra Quantity',
+  damaged: 'Damaged / Rejected', mismatch: 'Mismatched',
+};
+
+function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
+  b: PickBox; selected: boolean; readOnly: boolean;
+  onPick: () => void; onSticker: () => void;
 }) {
+  const placed = !!b.location;
   return (
     <div
-      className={`s4-box-card spi4bc s4pk-card s4pk-card--${b.haz ? 'haz' : b.type}`
-        + `${selected ? ' is-active' : ''}${b.location ? ' is-putaway' : ''}${b.cold && !b.haz ? ' is-cold' : ''}`
-        + `${className ? ` ${className}` : ''}`}
+      className={`s4pkc${selected ? ' is-active' : ''}${placed ? ' is-placed' : ''}`}
       data-boxid={b.code}
-      data-type={b.type}
       onClick={() => { if (!readOnly) onPick(); }}
     >
-      <div className="s4pk-card__ico">
-        <span>{b.haz ? <IcoHazard /> : b.cold ? <IcoSnow /> : <IcoBoxSm size={16} />}</span>
-        <em>{String(seq).padStart(2, '0')}</em>
+      {/* The teal head carries the things you identify a carton by: its id,
+          its label, and whether it has been put away. */}
+      <div className="s4pkc__hd">
+        <span className="s4pkc__ico"><IcoBoxSm size={15} /></span>
+        <span className="s4pkc__id">{b.code}</span>
+        <button
+          type="button"
+          className="s4pkc__stk"
+          onClick={e => { e.stopPropagation(); onSticker(); }}
+        >
+          <IcoPrintSm /> Sticker
+        </button>
+        <span className={`s4pkc__st${placed ? ' is-done' : ''}`}>
+          <i />{placed ? 'Placed' : b.status === 'awaiting_scan' ? 'Awaiting scan' : b.status === 'draft' ? 'Allocated' : 'Pending'}
+        </span>
       </div>
-      <div className="s4pk-card__body">
-        <div className="s4pk-card__r1">
-          <span className="s4pk-card__id">{b.code}</span>
-          {b.location
-            ? <span className="s4pk-st"><i />Placed</span>
-            : <span className="s4pk-st s4pk-st--pend" title={b.destination ?? undefined}>
-              <i />{b.status === 'awaiting_scan' ? 'Awaiting scan' : b.status === 'draft' ? 'Allocated' : 'Pending'}
-            </span>}
+      <div className="s4pkc__bd">
+        <div className="s4pkc__scn">
+          <span className="s4pkc__scnno">{(SCENARIO_NO[b.scenarioKey] ?? 'Scenario 01').toUpperCase()}</span>
+          <span className="s4pkc__scnt">{b.scenario}</span>
         </div>
-        <div className="s4pk-card__nm">{b.name}</div>
-        <div className="s4pk-card__cat">{b.scenario}</div>
-        <div className="s4pk-card__meta">
-          <span className="s4pk-qty"><IcoUnits />{b.qty} units</span>
-          {b.haz && <span className="s4pk-tag s4pk-tag--haz">&#9888; Haz</span>}
-          {b.cold && <span className="s4pk-tag s4pk-tag--cold">&#10052; Cold</span>}
-          <span className="s4pk-dest">
-            {b.type === 'ship' ? 'Dispatch'
-              : b.type === 'damaged' ? 'QC Hold'
-              : b.type === 'mismatch' ? 'Return'
-              : 'Storage'}
+        {/* Four figures, divided — the ones a person checks against the carton
+            in front of them before committing it to a slot. */}
+        <div className="s4pkc__mets">
+          <div className="s4pkc__met"><span>Box Qty</span><b>{b.qty} <i>units</i></b></div>
+          <div className="s4pkc__met"><span>Dimensions</span><b>{b.dims ?? '—'}</b></div>
+          <div className="s4pkc__met"><span>Net Wt.</span><b>{b.netKg ? <>{b.netKg} <i>kg</i></> : '—'}</b></div>
+          <div className="s4pkc__met"><span>Gross Wt.</span><b>{b.grossKg ? <>{b.grossKg} <i>kg</i></> : '—'}</b></div>
+        </div>
+        <div className="s4pkc__chips">
+          <span className="s4pkc__chip is-ok"><i />{REMARK_OF[b.type]}</span>
+          <span className={`s4pkc__chip${b.condition === 'perfect' ? ' is-ok' : ' is-warn'}`}>
+            <i />{CONDITION_LABEL[b.condition] ?? 'Perfect'}
           </span>
+          {b.haz || b.cold
+            ? <>
+              {b.haz && <span className="s4pkc__chip is-haz"><i />Hazardous</span>}
+              {b.cold && <span className="s4pkc__chip is-cold"><i />Cold Chain</span>}
+            </>
+            : <span className="s4pkc__noflag">No flags</span>}
         </div>
       </div>
-      <span className="s4pk-card__go"><IcoChevR /></span>
     </div>
   );
 }
@@ -249,6 +279,9 @@ function BoxQr({ text, size = 76 }: { text: string; size?: number }) {
 
 interface BoxProduct {
   code: string; name: string; hsn: string;
+  /** The line's GST rate. The sticker and the review table both print it, and
+   *  it is a property of the product rather than of the packing. */
+  gst: string | null;
   batch: string | null; expiry: string | null;
   desc: string | null;
   qtyNum: string; uom: string | null;
@@ -279,6 +312,7 @@ function productsOf(box: SpiBox | undefined, lines: ProductLine[], flagMaster: P
       code: dash(line?.code) ?? '—',
       name: dash(line?.spiName) ?? dash(line?.description) ?? '—',
       hsn: dash(line?.hsn) ?? '—',
+      gst: line?.gst == null ? null : String(line.gst),
       batch: dash(it.batch_no),
       expiry: it.expiry_date ? String(it.expiry_date).slice(0, 10) : null,
       desc: dash(line?.description),
@@ -478,16 +512,119 @@ function tempOf(b: SpiBox): string | null {
   return lo != null ? `${f(lo)} and above` : `up to ${f(hi)}`;
 }
 
+/* Full names, in the design's order. They were abbreviated — "Dispatch",
+   "Damage/Rejected" — and ordered with Inventory last, which put the two
+   exception buckets between the two ordinary ones. Dispatch and Inventory are
+   where boxes normally go; Damaged and Mismatch are the exceptions, and they
+   read better as a pair at the end. */
 const TABS: Array<{ key: 'all' | Disposition; label: string; ico: ReactNode }> = [
-  { key: 'all',      label: 'All',                            ico: <IcoBoxSm /> },
-  { key: 'ship',     label: 'Dispatch',                       ico: <IcoTruck /> },
-  { key: 'damaged',  label: 'Damage/Rejected',                ico: <IcoWarn /> },
-  { key: 'mismatch', label: 'Mismatch',                       ico: <IcoSwap /> },
-  { key: 'inv',      label: 'Inventory Stock (Extra Stock)',  ico: <IcoList /> },
+  { key: 'all',      label: 'All Boxes',                            ico: <IcoBoxSm /> },
+  { key: 'ship',     label: 'Shipment Dispatch Boxes',              ico: <IcoTruck /> },
+  { key: 'inv',      label: 'Inventory Stock (Extra Stock) Boxes',  ico: <IcoList /> },
+  { key: 'damaged',  label: 'Damaged / Rejected Boxes',             ico: <IcoWarn /> },
+  { key: 'mismatch', label: 'Mismatch Boxes',                       ico: <IcoSwap /> },
 ];
 
 
 const PRODUCTS_PER_PAGE = 5;
+
+/* Labels the Review pane prints verbatim. Kept beside the Disposition type
+   they key off, so a new disposition cannot quietly fall through to blank. */
+const SECTION_LABEL: Record<Disposition, string> = {
+  ship: 'Shipment Dispatch Boxes',
+  inv: 'Inventory Stock (Extra Stock) Boxes',
+  damaged: 'Damaged / Rejected Boxes',
+  mismatch: 'Mismatch Boxes',
+};
+/* The short form the printed label uses — a sticker has no room for
+   "Multiple Products → 1 Box". */
+const STICKER_SCENARIO: Record<string, string> = {
+  s1: 'S1 — Single', s2: 'S2 — Split', s3: 'S3 — Mixed',
+};
+const SCENARIO_NO: Record<string, string> = {
+  s1: 'Scenario 01', s2: 'Scenario 02', s3: 'Scenario 03',
+};
+const CONDITION_LABEL: Record<string, string> = {
+  perfect: 'Perfect', minor: 'Minor Damage', major: 'Critical Damage', severe: 'Critical Damage',
+  Perfect: 'Perfect', 'Minor Damage': 'Minor Damage', 'Critical Damage': 'Critical Damage',
+};
+
+/** dd/mm/yyyy from whatever the row carries, or null. */
+const packedOnOf = (b: SpiBox | undefined): string | null => {
+  const raw = (b as unknown as { created_at?: string | null } | undefined)?.created_at;
+  const d = raw ? new Date(raw) : new Date();
+  if (Number.isNaN(d.getTime())) return null;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
+};
+
+/** The seven measurements, as strings, with volumetric derived the same way
+ *  the packing step derives it (L x W x H / 5000). */
+const coreOf = (b: SpiBox | undefined) => {
+  const n = (v: unknown): string | null => {
+    const x = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+    return Number.isFinite(x) ? String(Math.round(x * 100) / 100) : null;
+  };
+  const cc = (Number(b?.length_cm) || 0) * (Number(b?.width_cm) || 0) * (Number(b?.height_cm) || 0);
+  return {
+    length: n(b?.length_cm), width: n(b?.width_cm), height: n(b?.height_cm),
+    weight: n(b?.weight_kg), net: n(b?.net_weight_kg), gross: n(b?.gross_weight_kg),
+    vol: cc > 0 ? (cc / 5000).toFixed(2) : null,
+    unit: 'cm',
+  };
+};
+
+/** The note the packer left, if any. */
+const noteOf = (b: SpiBox | undefined): string | null => {
+  const t = String(b?.items?.[0]?.remark_note ?? '').trim();
+  return t && t !== '—' ? t : null;
+};
+
+/* The three steps the design shows. LIFECYCLE below still drives the pane's
+   own headings and its four internal states — including Putaway Summary,
+   which is the receipt after the work rather than a step you take — but the
+   strip names only the three you actually do. */
+const IcoPrintSm = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <rect x="6" y="14" width="12" height="8" />
+  </svg>
+);
+const IcoClock = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" />
+  </svg>
+);
+const IcoTick = () => (
+  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+);
+const IcoHome = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /><path d="M9.5 21v-6h5v6" />
+  </svg>
+);
+const IcoWarehouse = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 21V9l9-5 9 5v12" /><path d="M9 21v-7h6v7" />
+  </svg>
+);
+const IcoShield = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" />
+  </svg>
+);
+const STEPPER = [
+  { no: '01', label: 'Review Box Details',       sub: 'Verify the packed box', ico: <IcoBoxSm size={18} /> },
+  { no: '02', label: 'Select Putaway Location',  sub: 'Choose a temporary slot', ico: <IcoPin /> },
+  { no: '03', label: 'Confirm Putaway Allocation', sub: 'Lock the placement', ico: <IcoShield /> },
+];
 
 const LIFECYCLE = [
   { no: '01', label: 'Review Box',        sub: 'Box details & QR',
@@ -515,7 +652,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 }) {
   const [tab, setTab] = useState<'all' | Disposition>('all');
   const [selected, setSelected] = useState<string | null>(null);
-  const [scn, setScn] = useState<'' | 's1' | 's2' | 's3'>('');
   const [leftOpen, setLeftOpen] = useState(true);
   const [lcStep, setLcStep] = useState(0);
   const panelsRef = useRef<HTMLDivElement>(null);
@@ -531,7 +667,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
     else void el.requestFullscreen().catch(() => {});
   };
-  const [query, setQuery] = useState('');
   const [flag, setFlag] = useState<'' | 'haz' | 'nonhaz' | 'cold'>('');
 
   const [board, setBoard] = useState<PutawayBoard | null>(null);
@@ -561,16 +696,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     inv: all.filter(b => b.type === 'inv').length,
   }), [all]);
 
-  const scope = all.filter(b =>
-    (tab === 'all' || b.type === tab) && (scn === '' || b.scenarioKey === scn));
+  const scope = all.filter(b => tab === 'all' || b.type === tab);
 
-  const q = query.trim().toLowerCase();
   const shown = all.filter(b =>
     (tab === 'all' || b.type === tab)
-    && (scn === '' || b.scenarioKey === scn)
-    && (flag === '' || (flag === 'haz' ? b.haz : flag === 'nonhaz' ? !b.haz : b.cold))
-    && (!q || [b.code, b.scenario, b.destination ?? '', ...b.productNames, ...b.productCodes]
-      .some(v => v.toLowerCase().includes(q))));
+    && (flag === '' || (flag === 'haz' ? b.haz : flag === 'nonhaz' ? !b.haz : b.cold)));
 
   const exceptionView = tab === 'damaged' || tab === 'mismatch';
   const group = exceptionView
@@ -589,10 +719,30 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         { cls: 'stored', label: 'Stored',           rows: shown.filter(b => !!b.location) },
       ].filter(s => s.rows.length > 0);
 
-  const products = useMemo(
-    () => productsOf(boxes.find(b => b.box_code === selected), lines, flagMaster),
-    [boxes, selected, lines, flagMaster],
+  const rawBox = useMemo(
+    () => boxes.find(b => b.box_code === selected),
+    [boxes, selected],
   );
+  const products = useMemo(() => productsOf(rawBox, lines, flagMaster), [rawBox, lines, flagMaster]);
+  /* Flags are stored per item; a box's flags are the union of its items'. */
+  const boxFlagNames = useMemo(
+    () => (rawBox ? flagNames(rawBox.items ?? [], flagMaster) : []),
+    [rawBox, flagMaster],
+  );
+  /* "Box 1 of 3" for a split set, read off the saved boxes of the same line —
+     the only place that relationship still exists once packing is finished. */
+  const modeLabelOf = (b: PickBox): string | null => {
+    if (b.scenarioKey === 's3') return 'Mixed Carton';
+    if (b.scenarioKey !== 's2') return 'Single Box';
+    const itemId = rawBox?.items?.[0]?.supplier_invoice_item_id;
+    if (itemId == null) return null;
+    const set = boxes
+      .filter(x => x.scenario === 's2' && x.items?.[0]?.supplier_invoice_item_id === itemId)
+      .map(x => x.box_code)
+      .sort((p, q) => p.localeCompare(q, undefined, { numeric: true }));
+    const i = set.indexOf(b.code);
+    return i >= 0 && set.length > 0 ? `Box ${i + 1} of ${set.length}` : null;
+  };
   const [showProducts, setShowProducts] = useState(false);
   const [prodPage, setProdPage] = useState(1);
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
@@ -644,6 +794,38 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     setSelected(firstAwaiting);
   }, [firstAwaiting, selected, shownCodes]);
 
+  /* "Select Putaway Location" asks HOW before it asks WHERE.
+     The chooser existed but nothing ever opened it — setModeAsk was only
+     called to clear it — so the button jumped straight to the location
+     picker with no storage type chosen, and the picker then had nothing to
+     fetch. One call gives both counts: the locations endpoint returns
+     `modes: { rack, norack }` whichever mode you ask it for. */
+  const askStorageMode = () => {
+    if (!box) return;
+    setModePick(null);
+    if (!spiId) {
+      setModeAsk({ loading: false, rack: 0, norack: 0, error: 'Save the invoice before allocating a location.' });
+      return;
+    }
+    setModeAsk({ loading: true, rack: 0, norack: 0, error: null });
+    /* putawayModes, not putawayLocations: there is an endpoint for exactly
+       this question, and asking for the whole layout to read two counts off
+       it fetches every zone, rack and shelf to show "41 shelves available". */
+    spiApi.putawayModes(spiId, box.id)
+      .then(m => {
+        setModeAsk({ loading: false, rack: m.rack, norack: m.norack, error: null });
+        /* With only one kind of storage configured there is nothing to
+           choose, so the choice is made and the dialog just confirms it. */
+        if (m.rack > 0 && m.norack === 0) setModePick('rack');
+        else if (m.norack > 0 && m.rack === 0) setModePick('norack');
+      })
+      .catch(e => setModeAsk({
+        loading: false, rack: 0, norack: 0,
+        error: e instanceof PoApiError ? e.firstError
+          : e instanceof Error ? e.message : 'Could not read the warehouse layout.',
+      }));
+  };
+
   useEffect(() => {
     if (lcStep !== 1 || !putMode) return;
     if (!spiId || !box) return;
@@ -658,16 +840,12 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     return () => { live = false; };
   }, [lcStep, putMode, spiId, box?.id]);
 
-  const firstScn = (['s1', 's2', 's3'] as const).find(k =>
-    all.some(b => (tab === 'all' || b.type === tab) && b.scenarioKey === k)) ?? '';
-  useEffect(() => {
-    if (scn !== '' && all.some(b => (tab === 'all' || b.type === tab) && b.scenarioKey === scn)) return;
-    setScn(firstScn);
-  }, [firstScn, scn, tab, all]);
-
   return (
     <div className="s4-root">
       <StageSummary draft={draft} upto={3} />
+      {/* What this stage is for, and in which warehouse — the brief the
+          design puts between the recap and the work. */}
+      <PutawayStageBrief warehouse={warehouse} />
 
       <div className="spi-segrow">
         <div className="spi-seg" role="tablist" aria-label="Box disposition">
@@ -686,50 +864,46 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </button>
           ))}
         </div>
-      </div>
-
-      <div className="spi-sub">
-        <div className="spi-subtabs" role="tablist" aria-label="Packing scenario">
-          {([
-            ['s1', 'Scenario 1', SCENARIO_LABEL.s1],
-            ['s2', 'Scenario 2', SCENARIO_LABEL.s2],
-            ['s3', 'Scenario 3', SCENARIO_LABEL.s3],
-          ] as const).map(([k, no, label]) => {
-            const inTab = all.filter(b => tab === 'all' || b.type === tab);
-            const n = inTab.filter(b => b.scenarioKey === k).length;
-            return (
-              <button
-                key={k}
-                type="button"
-                role="tab"
-                aria-selected={scn === k}
-                className={`spi-subtab ${scn === k ? 'is-active' : ''}`}
-                onClick={() => setScn(k)}
-              >
-                <IcoBoxSm /> {`${no}: ${label}`}
-                <span className="spi-subtab-c">{n}</span>
-              </button>
-            );
-          })}
-        </div>
+        {/* On the rail, not in the right panel's head: it expands the whole
+            stage, so it belongs with the controls that scope the stage rather
+            than with the pane's own title. */}
         <button
           type="button"
-          className="s4ztq-btn s4ztq-btn--row"
-          style={{ marginLeft: 'auto' }}
+          className="s4ztq-btn s4ztq-btn--rail"
           aria-label="Zebra verification task queue"
         >
           <IcoScan /><span>Zebra tasks</span><b>{zebraOpen}</b>
         </button>
+        <button
+          type="button"
+          className="s4fs-btn s4fs-btn--rail"
+          title={fs ? 'Exit full view' : 'Full view'}
+          aria-pressed={fs}
+          onClick={toggleFs}
+        >
+          {fs ? <IcoCollapse /> : <IcoExpand />}
+          <span className="s4fs-t">{fs ? 'Exit Full View' : 'Full View'}</span>
+        </button>
       </div>
+
+      {/* The Scenario 1 / 2 / 3 sub-tabs are gone. The design has one tab row,
+          and the second filtered a list the left panel already groups by
+          disposition — two filters over the same boxes, one above the other.
+          Zebra tasks moves up to the rail rather than going with them. */}
 
       <div className={`s4-panels${fs ? ' is-fs' : ''}`} ref={panelsRef}>
         <div className="s4-panel s4-panel--left" style={leftOpen ? undefined : { flex: '0 0 52px' }}>
           <div className="s4-panel__head" onClick={() => setLeftOpen(o => !o)}>
             <div className="s4-panel__head-ico"><IcoBoxSm /></div>
             <div className="s4-panel__head-text">
+              {/* No sub-line: the design has the count instead, which is the
+                  thing that changes. "Choose the next box to put away" told
+                  you what the panel is while the groups below already do. */}
               <div className="s4-panel__head-title">Pick a Box</div>
-              <div className="s4-panel__head-sub">Choose the next box to put away</div>
             </div>
+            <span className="s4-panel__head-count">
+              {shown.length} Box{shown.length === 1 ? '' : 'es'}
+            </span>
             <button
               type="button"
               className="s4-panel__toggle"
@@ -742,108 +916,33 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           </div>
 
           <div className="s4-panel__body s4-boxlist">
-            <div className="s4pk-top">
-              <div className="s4pk-prog">
-                <div
-                  className={`s4pk-ring${`${placed}/${scope.length}`.length > 5 ? ' is-long' : ''}`}
-                  style={{ ['--p' as string]: pct }}
-                  role="img"
-                  aria-label={`${placed} of ${scope.length} boxes placed`}
-                >
-                  <div><b>{placed}/{scope.length}</b><span>placed</span></div>
-                </div>
-                <div className="s4pk-prog__tx">
-                  <div className="s4pk-prog__t">Putaway progress</div>
-                  <div className="s4pk-prog__s">
-                    <span className="pd">{scope.length - placed} not allocated</span>{' · '}
-                    <span className="dn">{placed} placed</span>
-                    {hazCount > 0 && <>{' · '}<span className="hz">{hazCount} hazardous</span></>}
-                    {boardError && <>{' · '}<span className="hz" title={boardError}>status not loaded</span></>}
-                  </div>
-                  <div className="s4pk-bar"><i style={{ width: `${pct}%` }} /></div>
-                </div>
-              </div>
-              <div className="s4pk-search">
-                <IcoSearch />
-                <input
-                  type="text"
-                  placeholder="Search box ID or product…"
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                />
-              </div>
-
-              <div className="s4pk-flags" role="group" aria-label="Handling filter">
-                {([
-                  ['haz',    'HAZ',        '⚠', hazCount],
-                  ['nonhaz', 'NON-HAZ',    null, scope.length - hazCount],
-                  ['cold',   'COLD CHAIN', '❄', coldCount],
-                ] as const).map(([k, label, glyph, n]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    className={`s4pk-fl s4pk-fl--${k === 'haz' ? 'haz' : k === 'cold' ? 'cold' : 'non'}${flag === k ? ' is-on' : ''}`}
-                    aria-pressed={flag === k}
-                    onClick={() => setFlag(f => (f === k ? '' : k))}
-                  >
-                    {glyph ? `${glyph} ${label}` : label} <b>{n}</b>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className={`s4-grp-hdr s4-grp-hdr--${group.cls}`}>
-              <div className="s4-grp-hdr__icon">{group.icon}</div>
-              <div className="s4-grp-hdr__text">
-                <div className="s4-grp-hdr__title">{group.title}</div>
-                <div className="s4-grp-hdr__sub">{group.sub}</div>
-              </div>
-              <div className="s4-grp-hdr__count">{shown.length}</div>
-            </div>
-
-            {sections.map(sec => {
-              const pinnedHere = box && sec.rows.some(b => b.code === box.code) ? box : null;
-              const rows = pinnedHere ? sec.rows.filter(b => b.code !== pinnedHere.code) : sec.rows;
-              const seqOf = (b: PickBox) => sec.rows.findIndex(r => r.code === b.code) + 1;
+            {/* Every disposition, every time. A category with nothing in it
+                still says so: "no damaged boxes" is an answer, and a list
+                whose groups come and go is one you have to re-read. */}
+            {GROUPS.map(g => {
+              const rows = shown.filter(x => x.type === g.key);
               return (
-                <Fragment key={sec.cls}>
-                  <div className={`s4-sec-hdr s4pk-sec s4pk-sec--${sec.cls}${sec.rows.length ? '' : ' is-empty'}`}>
-                    <span className="s4pk-sec__dot" />
-                    <span className="s4pk-sec__t">{sec.label}</span>
-                    <span className="s4pk-sec__line" />
-                    <span className="s4pk-sec__n">{sec.rows.length || 'None'}</span>
+                <Fragment key={g.key}>
+                  <div className={`s4grp s4grp--${g.key}`}>
+                    <span className="s4grp__ico">{TABS.find(t => t.key === g.key)?.ico}</span>
+                    <span className="s4grp__tx">
+                      <span className="s4grp__t">{g.title}</span>
+                      <span className="s4grp__s">{g.sub}</span>
+                    </span>
+                    <span className="s4grp__n">{rows.length}</span>
                   </div>
-
-                  {pinnedHere && (
-                    <div className="s4pin">
-                      <div className="s4pin__hd">
-                        <span className="s4pin__ic"><IcoPin /></span>
-                        Pinned
-                        <span className="s4pin__st">
-                          Working on · Step {LIFECYCLE[lcStep].no} · {LIFECYCLE[lcStep].label}
-                        </span>
-                      </div>
+                  {rows.length === 0
+                    ? <div className="s4grp__empty">No boxes in this category</div>
+                    : rows.map(bx => (
                       <BoxCard
-                        b={pinnedHere}
-                        seq={seqOf(pinnedHere)}
-                        selected
+                        key={bx.id}
+                        b={bx}
+                        selected={selected === bx.code}
                         readOnly={readOnly}
-                        className="s4pin__card"
-                        onPick={() => {}}
+                        onPick={() => setSelected(bx.code)}
+                        onSticker={() => { setSelected(bx.code); setQrOpen(true); }}
                       />
-                    </div>
-                  )}
-
-                  {rows.map(b => (
-                    <BoxCard
-                      key={b.id}
-                      b={b}
-                      seq={seqOf(b)}
-                      selected={selected === b.code}
-                      readOnly={readOnly}
-                      onPick={() => setSelected(b.code)}
-                    />
-                  ))}
+                    ))}
                 </Fragment>
               );
             })}
@@ -852,9 +951,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <div className="s4pk-none">
                 {all.length === 0
                   ? 'No boxes yet — pack cartons in Step 03 first.'
-                  : query.trim()
-                    ? 'No boxes match your search'
-                    : 'No boxes in this view'}
+                  : 'No boxes in this view'}
               </div>
             )}
           </div>
@@ -864,37 +961,53 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           <div className="s4-panel__head">
             <div className="s4-panel__head-ico"><IcoGrid /></div>
             <div className="s4-panel__head-text">
-              <div className="s4-panel__head-title">Temporary Putaway &amp; Rack Allocation</div>
-              <div className="s4-panel__head-sub">Step-by-step placement workflow</div>
+              {/* "Temporary Putaway Allocation" — the stage's own name, as the
+                  step card above says it. "& Rack Allocation" described a
+                  mechanism that only applies when the zone HAS racks, and the
+                  sub-line repeated what the strip underneath already shows. */}
+              <div className="s4-panel__head-title">Temporary Putaway Allocation</div>
             </div>
             <button
               type="button"
-              className="s4fs-btn"
-              title={fs ? 'Exit full screen' : 'Full screen'}
-              aria-pressed={fs}
-              onClick={toggleFs}
+              className="s4fs-btn s4-scanlogs"
+              title={scanTask ? 'Open the scan task for this box' : 'No scan task yet — pick a location first'}
+              disabled={!scanTask}
+              onClick={() => setScanOpen(true)}
             >
-              {fs ? <IcoCollapse /> : <IcoExpand />}
-              <span className="s4fs-t">{fs ? 'Exit full screen' : 'Full screen'}</span>
+              <IcoClock /> <span className="s4fs-t">Scan Logs</span>
             </button>
-            <span className="s4-panel__head-count">4 Steps</span>
           </div>
 
-          <div className="s4-lifecycle">
-            {LIFECYCLE.map((s, i) => {
-              const state = i < lcStep ? 'done' : i === lcStep ? 'active' : 'pending';
+          {/* The journey, as three cards on a teal band.
+              It was four numbered circles joined by rules, which gave Putaway
+              Summary — a receipt you read after the work, not a thing you do —
+              equal billing with the three real steps. The design shows the
+              three, each naming itself and carrying its own state; once the
+              box is placed all three read Completed, which is the summary. */}
+          <div className="s4bj">
+            {STEPPER.map((s, i) => {
+              const state = i < lcStep ? 'done' : i === lcStep ? 'active' : 'idle';
               return (
                 <Fragment key={s.no}>
-                  <div className="s4-lc-step" data-state={state}>
-                    <div className="s4-lc-step-num">Step {s.no}</div>
-                    <div className="s4-lc-circle">{state === 'done' ? '✓' : s.no}</div>
-                    <div className="s4-lc-texts">
-                      <div className="s4-lc-label">{s.label}</div>
-                      <div className="s4-lc-sub">{s.sub}</div>
+                  {i > 0 && (
+                    <div className={`s4bj-line${i <= lcStep ? ' is-done' : ''}`}>
+                      <span className="s4bj-chev"><IcoChevR /></span>
                     </div>
+                  )}
+                  <div className={`s4bj-step is-${state}`}>
+                    <div className="s4bj-ico">
+                      {s.ico}
+                      <span className="s4bj-num">{state === 'done' ? <IcoTick /> : s.no}</span>
+                    </div>
+                    <div className="s4bj-tx">
+                      <div className="s4bj-k2">Step {s.no}</div>
+                      <div className="s4bj-t">{s.label}</div>
+                      <div className="s4bj-s">{s.sub}</div>
+                    </div>
+                    {state !== 'idle' && (
+                      <span className="s4bj-pill">{state === 'done' ? 'Completed' : 'In Progress'}</span>
+                    )}
                   </div>
-                  {i < LIFECYCLE.length - 1
-                    && <div className={`s4-lc-connector${i < lcStep ? ' is-done' : ''}`} />}
                 </Fragment>
               );
             })}
@@ -905,24 +1018,21 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <div className="s4pk-none">Pick a box on the left to start its putaway.</div>
             ) : (
               <div className="s4-c2-pane is-visible">
-                <div className="s4-pane-top">
-                  <div className="s4-pane-top__left">
-                    <span className="s4-pane-top__badge">Step {LIFECYCLE[lcStep].no}</span>
-                    <div className="s4-pane-top__divider" />
-                    <span className="s4-pane-top__title">{LIFECYCLE[lcStep].label}</span>
-                    <div className="s4-pane-top__dot" />
-                    <span className="s4-pane-top__sub">{LIFECYCLE[lcStep].hint}</span>
-                  </div>
-                  <span className="s4-pane-status s4-pane-status--active">Active</span>
-                </div>
-
+                {/* No "Step 01 · Review Box · Active" bar here.
+                    The strip directly above already carries the number, the
+                    name and the state — this said all three again, a few
+                    pixels lower, in different words. The design has one
+                    statement of where you are, and it is the strip. */}
                 <div className="s4h">
                   {/* Steps 02 and 03 each open with their own teal band that
                       already names the box and carries its state - the "where
                       should this box go?" bar and the route strip. This one
                       above them was the same band twice with the same B-003
                       in it, so it only shows where nothing repeats it. */}
-                  {lcStep !== 1 && lcStep !== 2 && (
+                  {/* …and not on step 0 either: the Review pane opens with its
+                      own Box Details band, so this one repeated the id, the
+                      scenario and the status directly above it. */}
+                  {lcStep === 3 && (
                   <div className="s4h-hero">
                     <div className="s4h-hero__id">
                       <div className="s4h-hero__ico"><IcoBoxSm size={21} /></div>
@@ -988,90 +1098,40 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         </span>
                       )}
                     </div>
-                  ) : (<>
-                  <div className="s4s-grid s4s-grid--more">
-                    <div className="s4s-card s4s-card--id">
-                      <div className="s4s-hd">
-                        <span className="s4s-hd__n">01</span>
-                        <span className="s4s-hd__t">Box Identification</span>
-                        <span className="s4s-hd__x" />
-                      </div>
-                      <div className="s4id2">
-                        <div className="s4id2__l">
-                          <div className="s4s-stk">
-                            <div className="s4s-stk__band">
-                              <span>TEMPORARY PUTAWAY</span>
-                              <span>{warehouse || '—'}</span>
-                            </div>
-                            <div className="s4s-stk__body">
-                              <div>
-                                <div className="s4s-stk__id">{box.code}</div>
-                                <div className="s4s-stk__qrwrap">
-                                  <BoxQr text={String(box.id)} />
-                                  <button
-                                    type="button"
-                                    className="s4s-stk__zoom"
-                                    onClick={() => setQrOpen(true)}
-                                    aria-label="Open the box QR code"
-                                    title="Open the box QR code"
-                                  >
-                                    <IcoZoom />
-                                  </button>
-                                </div>
-                                <div className="s4s-stk__code">{box.code}</div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="s4id2__r">
-                          <KV k="Box Condition" v={<span className="s4bc s4bc--ok"><b>{condLabel(box.condition)}</b><i>{condNote(box.condition)}</i></span>} />
-                          <KV k="Packaging scenario" v={box.scenario} />
-                          <KV k="Total products in box" v={`${box.skus} Product${box.skus === 1 ? '' : 's'}`} />
-                          <KV k="Total quantity in box" v={`${box.qty} ${box.uom || 'units'}`} />
-                          <KV k="Dimensions (L×W×H)" v={box.dims || <span className="s4s-na">Not Available</span>} />
-                          <KV k="Net weight" v={box.netKg || <span className="s4s-na">Not Available</span>} />
-                          <KV k="Gross weight" v={box.grossKg || <span className="s4s-na">Not Available</span>} />
-                          <button
-                            type="button"
-                            className="s4vp-btn"
-                            aria-haspopup="dialog"
-                            onClick={() => setShowProducts(true)}
-                          >
-                            <IcoList />
-                            View Products
-                            <span className="s4vp-n">{products.length}</span>
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="s4s-card s4s-card--store">
-                      <div className="s4s-hd">
-                        <span className="s4s-hd__n">02</span>
-                        <span className="s4s-hd__t">Storage &amp; Warehouse</span>
-                      </div>
-                      <KV k="Cold chain required" v={box.cold
-                        ? <span className="s4s-pill s4s-pill--cold">❄ Yes</span>
-                        : <span className="s4s-pill s4s-pill--pend">No</span>} />
-                      <KV k="Temperature range" v={<span className="s4tu-val">{box.temp || 'No controlled range'}</span>} />
-                      <KV k="Hazardous" v={box.haz
-                        ? <span className="s4s-pill s4s-pill--bad">⚠ Yes</span>
-                        : <span className="s4s-pill s4s-pill--pend">No</span>} />
-                      <KV k="Stackable" v={box.stackable === null
-                        ? <span className="s4s-na">Not Available</span>
-                        : box.stackable
-                          ? <span className="s4s-pill s4s-pill--ok">Yes</span>
-                          : <span className="s4s-pill s4s-pill--bad">No</span>} />
-                      <KV k="Warehouse" v={warehouse || <span className="s4s-na">Not Available</span>} />
-                      <KV k="Supplier / source" v={(draft.legalName || draft.supplier)
-                        ? `${draft.legalName || draft.supplier} · SPI Temporary Box Packaging`
-                        : <span className="s4s-na">Not Available</span>} />
-                    </div>
-
-                  </div>
-                  </>)}
+                  ) : (
+                    /* Step 01 — Review Box Details.
+                       Was a "Box Identification" grid led by a large sticker
+                       preview and a QR: the right thing at the printer, but
+                       not what you check with the carton already in hand. The
+                       design reviews the box itself — what it is, what it
+                       measures, what is inside, what was noted. */
+                    <PutawayReviewBox
+                      boxId={box.code}
+                      sectionKey={box.type === 'damaged' ? 'dmg' : box.type === 'mismatch' ? 'mis' : box.type}
+                      sectionLabel={SECTION_LABEL[box.type]}
+                      scenarioNo={SCENARIO_NO[box.scenarioKey] ?? 'Scenario 01'}
+                      scenarioText={box.scenario}
+                      modeLabel={modeLabelOf(box)}
+                      packedOn={packedOnOf(rawBox)}
+                      done={placedAt !== null || box.status === 'placed'}
+                      core={coreOf(rawBox)}
+                      remark={products[0]?.remark && products[0].remark !== 'Not marked' ? products[0].remark : null}
+                      condition={CONDITION_LABEL[box.condition] ?? null}
+                      flags={boxFlagNames}
+                      stackable={box.stackable}
+                      products={products}
+                      totalQty={box.qty}
+                      note={noteOf(rawBox)}
+                      onSticker={() => setQrOpen(true)}
+                      onNext={askStorageMode}
+                    />
+                  )}
                 </div>
 
+                {/* Not on step 01. The Review pane ends with its own
+                    "Select Putaway Location", so this footer put a second
+                    button for the same move directly beneath it. */}
+                {lcStep > 0 && (
                 <div className="s4-pane-footer">
                   <button
                     type="button"
@@ -1114,6 +1174,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     <IcoChevR />
                   </button>
                 </div>
+                )}
               </div>
             )}
           </div>
@@ -1238,39 +1299,24 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         <InspectionProductView productId={productViewId} onClose={() => setProductViewId(null)} />
       )}
 
+      {/* The sticker as it will print, not a bare QR.
+          The old dialog showed the code and the box id — enough to scan,
+          not enough to check you are labelling the right carton. */}
       {qrOpen && box && (
-        <div
-          className="s4qm s4qm-modal is-open"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Box QR code"
-        >
-          <div className="s4qm__dlg">
-            <div className="s4qm__hd">
-              <div className="s4qm__hico"><IcoScan /></div>
-              <div className="s4qm__htx">
-                <div className="s4qm__t">Box QR Code</div>
-                <div className="s4qm__s">Temporary putaway box identification</div>
-              </div>
-              <button type="button" className="s4qm__x" onClick={() => setQrOpen(false)} aria-label="Close">&times;</button>
-            </div>
-
-            <div className="s4qm__bd">
-              <div className="s4qm__qr"><BoxQr text={String(box.id)} size={200} /></div>
-              <div className="s4qm__id">{box.code}</div>
-              <div className="s4qm__pl">Encoded value · <b>{box.id}</b></div>
-
-              <div className="s4qm__kvs">
-                <div className="s4qm__kv"><span>Product</span><b>{box.name}</b></div>
-                <div className="s4qm__kv"><span>Box type</span><b>{box.type === 'ship' ? 'Dispatch' : box.type === 'damaged' ? 'QC hold' : box.type === 'mismatch' ? 'Return' : 'Inventory'}</b></div>
-              </div>
-            </div>
-
-            <div className="s4qm__ft">
-              <button type="button" className="s4-btn-back" onClick={() => setQrOpen(false)}>Close</button>
-            </div>
-          </div>
-        </div>
+        <PutawayBoxSticker
+          boxId={box.code}
+          spiNumber={draft.invoiceNumber || '—'}
+          scenario={STICKER_SCENARIO[box.scenarioKey] ?? 'S1 — Single'}
+          product={box.name}
+          code={box.productCodes[0] ?? '—'}
+          mode={SCENARIO_LABEL[box.scenarioKey] ?? box.scenario}
+          condition={CONDITION_LABEL[box.condition] ?? 'Perfect'}
+          sku={products[0]?.hsn ? `HSN ${products[0].hsn}` : '—'}
+          qty={box.qty}
+          date={packedOnOf(rawBox) ?? '—'}
+          qr={<BoxQr text={String(box.id)} size={96} />}
+          onClose={() => setQrOpen(false)}
+        />
       )}
 
       {/* How the placement is confirmed. Same chrome as the storage-type
@@ -1469,10 +1515,22 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         >
           <div className="s4qm__dlg s4wz__dlg">
             <div className="s4qm__hd">
-              <div className="s4qm__hico">?</div>
+              <div className="s4qm__hico"><IcoPin /></div>
               <div className="s4qm__htx">
                 <div className="s4qm__t">Where do you want to store this box?</div>
-                <div className="s4qm__s">{box.code}</div>
+                {/* The sub-line says what the choice IS. It printed the box
+                    code, which the chip on the right now carries — and a bare
+                    id under the question answered nothing. */}
+                <div className="s4qm__s">Choose the storage zone type for this box.</div>
+              </div>
+              {/* Which box, and which warehouse it is going into — the two
+                  facts the decision depends on, so neither has to be
+                  remembered from the screen behind the dialog. */}
+              <div className="s4wz-ctx">
+                <span className="s4wz-ctx__i"><IcoPin /><span><em>Box ID</em><b>{box.code}</b></span></span>
+                {warehouse && (
+                  <span className="s4wz-ctx__i"><IcoWarehouse /><span><em>Warehouse</em><b>{warehouse}</b></span></span>
+                )}
               </div>
               <button type="button" className="s4qm__x" onClick={() => setModeAsk(null)} aria-label="Close">
                 &times;
@@ -1481,7 +1539,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
             <div className="s4qm__bd">
               <div className="s4wz-lead">
-                Choose the storage zone type for Step 02 · {LIFECYCLE[1].label}
+                Choose the storage zone type for Step 02 · {STEPPER[1].label}
               </div>
 
               {modeAsk.error ? (
@@ -1490,31 +1548,59 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 <div className="s4wz-opts" aria-busy={modeAsk.loading}>
                   {([
                     ['rack', 'Storage Zone with Rack', 'Place the box on a shelf · Zone › Rack › Shelf',
-                      modeAsk.rack, modeAsk.rack === 1 ? 'shelf' : 'shelves'],
+                      modeAsk.rack, modeAsk.rack === 1 ? 'shelf' : 'shelves', 'Organised · traceable'],
                     ['norack', 'Storage Zone without Rack', 'Place the box directly in the zone · no rack or shelf',
-                      modeAsk.norack, modeAsk.norack === 1 ? 'zone' : 'zones'],
-                  ] as const).map(([k, title, sub, n, unit]) => (
+                      modeAsk.norack, modeAsk.norack === 1 ? 'zone' : 'zones', 'Bulk · floor staging'],
+                  ] as const).map(([k, title, sub, n, unit, trait]) => (
                     <button
                       type="button"
                       key={k}
                       className={`s4wz-opt s4wz-opt--${k}${modePick === k ? ' is-on' : ''}${modeAsk.loading ? ' is-loading' : ''}`}
-                      disabled={!modeAsk.loading && n === 0}
+                      /* Not disabled on a zero count.
+                         A warehouse with no open zones today may have one by
+                         the time the box is carried over, and the count is
+                         read once when the dialog opens. Blocking the choice
+                         on a number that old leaves the only route forward
+                         greyed out with no way to say otherwise — the chip
+                         already says "No zones available", which is the
+                         warning without being the wall. */
                       aria-disabled={modeAsk.loading}
                       aria-pressed={modePick === k}
                       onClick={() => { if (!modeAsk.loading) setModePick(k); }}
                     >
-                      <span className="s4wz-opt__ic">{k === 'rack' ? <IcoList /> : <IcoBoxSm size={16} />}</span>
-                      <span className="s4wz-opt__radio" aria-hidden />
-                      <span className="s4wz-opt__t">{title}</span>
-                      {k === 'rack' && !modeAsk.loading && modeAsk.rack > 0 && <span className="s4wz-opt__rec">&#9733; Recommended</span>}
-                      <span className="s4wz-opt__s">{sub}</span>
-                      {modeAsk.loading ? (
-                        <span className="s4wz-opt__n s4wz-opt__n--sk" aria-label="Loading count">
-                          <span className="spi-sk-bar" />
+                      {/* Icon beside the text, not above it, and the radio at
+                          the far edge — the design reads left to right:
+                          what it is, what it means, is it chosen. */}
+                      <span className="s4wz-opt__ic">{k === 'rack' ? <IcoList /> : <IcoHome />}</span>
+                      <span className="s4wz-opt__tx">
+                        {/* Title and the Recommended pill share a line, as the
+                            design has them. The pill shows only on racked
+                            storage and only when it HAS shelves — recommending
+                            a kind of storage with no room in it would be
+                            advice that cannot be taken. */}
+                        <span className="s4wz-opt__ttl">
+                          <span className="s4wz-opt__t">{title}</span>
+                          {k === 'rack' && !modeAsk.loading && modeAsk.rack > 0 && (
+                            <span className="s4wz-opt__rec">&#9733; Recommended</span>
+                          )}
                         </span>
-                      ) : (
-                        <span className="s4wz-opt__n">{n === 0 ? `No ${unit} available` : `${n} ${unit}`}</span>
-                      )}
+                        <span className="s4wz-opt__s">{sub}</span>
+                        <span className="s4wz-opt__chips">
+                          {modeAsk.loading ? (
+                            <span className="s4wz-opt__n s4wz-opt__n--sk" aria-label="Loading count">
+                              <span className="spi-sk-bar" />
+                            </span>
+                          ) : (
+                            <span className={`s4wz-opt__n${n === 0 ? ' is-none' : ''}`}>
+                              {n === 0 ? `No ${unit} available` : `${n} ${unit} available`}
+                            </span>
+                          )}
+                          {/* What this kind of storage is LIKE — the count says
+                              whether you can use it, this says why you would. */}
+                          <span className="s4wz-opt__d">{trait}</span>
+                        </span>
+                      </span>
+                      <span className="s4wz-opt__radio" aria-hidden />
                     </button>
                   ))}
                 </div>
@@ -1529,7 +1615,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 disabled={!modePick}
                 onClick={() => { setPutMode(modePick); setModeAsk(null); setLcStep(1); }}
               >
-                Continue to {LIFECYCLE[1].label} <IcoChevR />
+                Continue to Select Location <IcoChevR />
               </button>
             </div>
           </div>
