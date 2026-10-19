@@ -626,6 +626,16 @@ export default function Step3BoxPackaging({
       toast.info('Save the invoice first', 'A box can be edited once Stage 02 is saved.');
       return;
     }
+    /* The drawer only renders when the box's items resolve to lines on this
+       invoice (`editingBox && editContents.length > 0`). Setting the id
+       regardless left the row marked as open — lit pencil, highlighted row —
+       with no dialog anywhere, and nothing to close it again. Refuse the open
+       instead and say why. */
+    const resolvable = box.items.some(i => codeOfItem.has(i.supplier_invoice_item_id));
+    if (!resolvable) {
+      toast.warning('Cannot open this box', `${box.box_code} holds products that are no longer on this invoice.`);
+      return;
+    }
     setDropped([]);
     setEditQty(null);
     setEditingId(box.id);

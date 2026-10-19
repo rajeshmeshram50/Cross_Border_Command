@@ -159,17 +159,24 @@
 .pkg-toggle { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; background: rgba(255,255,255,.8); border: 1.5px solid rgba(8,145,178,.2); display: flex; align-items: center; justify-content: center; color: #0891b2; transition: all .2s; box-shadow: inset 0 1px 0 rgba(255,255,255,.9); }
 .pkg-toggle svg { transition: transform .25s cubic-bezier(.22,1,.36,1); }
 .pkg-box.is-collapsed .pkg-toggle svg { transform: rotate(-90deg); }
-.pkg-box__body { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px; background: #fbfeff; overflow: hidden; max-height: 340px; transition: max-height .3s cubic-bezier(.22,1,.36,1), opacity .22s, padding .3s; opacity: 1; }
+/* COLUMNS of one panel, not three cards.
+   The design draws the scenarios flush, divided by a hairline and capped by a
+   teal rule along the top — one surface listing three options, which is what
+   they are: definitions you read, not cards you pick between. An earlier pass
+   gave each its own border, radius and ground with a 12px gap; three bordered
+   boxes inside a bordered box is a frame around a frame, and the gaps broke
+   the top rule into three. */
+.pkg-box__body { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: 0; background: #fff; border-top: 2px solid #22d3ee; overflow: hidden; max-height: 340px; transition: max-height .3s cubic-bezier(.22,1,.36,1), opacity .22s, padding .3s; opacity: 1; }
 .pkg-box.is-collapsed .pkg-box__body { max-height: 0; opacity: 0; }
-/* Three options read as three cards, not as columns of one table: each gets
-   its own border and ground, and the grid's gap does the separating that a
-   hairline used to. */
-.pkg-card { display: flex; flex-direction: column; gap: 6px; padding: 13px 14px 12px; border: 1.5px solid #dbeef5; border-radius: 14px; background: #fff; box-shadow: 0 1px 2px rgba(12,44,58,.04); transition: border-color .18s, box-shadow .18s, background .18s; }
-/* The top accent is kept for the used card only - see .is-used below. */
-.pkg-card:hover { border-color: #a5e8f5; box-shadow: 0 4px 14px rgba(8,145,178,.12); }
-/* A scenario this invoice actually packs in is lifted; the rest stay quiet,
-   so the strip answers "which of these am I using" at a glance. */
-.pkg-card.is-used { border-color: #67e8f9; background: linear-gradient(180deg, #f3fdff, #fff 60%); box-shadow: 0 4px 16px rgba(8,145,178,.14); }
+.pkg-card { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px 15px; border: none; border-radius: 0; background: transparent; box-shadow: none; transition: background .18s; }
+/* The hairline sits BETWEEN columns, so the first one does not carry an edge
+   against the panel's own border. */
+.pkg-card + .pkg-card { border-left: 1px solid #e4eef4; }
+.pkg-card:hover { background: rgba(6,182,212,.04); box-shadow: none; }
+/* A scenario this invoice actually packs in is marked by its own share of the
+   top rule going solid teal, plus a faint ground — emphasis that works on a
+   column, where a lifted card border has nothing to lift away from. */
+.pkg-card.is-used { background: linear-gradient(180deg, #f1fdff, #fff 70%); box-shadow: inset 0 3px 0 #0891b2; }
 .pkg-card__top { display: flex; align-items: center; gap: 8px; }
 .pkg-card__scenario { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 9px; font-weight: 800; color: #0891b2; letter-spacing: .12em; text-transform: uppercase; }
 .pkg-card__scenario-line { width: 18px; height: 2.5px; border-radius: 2px; background: linear-gradient(90deg, #22d3ee, #0891b2); flex-shrink: 0; }
@@ -211,7 +218,9 @@
 /* The all-packed note joins the rows that do not light up: there is nothing
    under the pointer to act on, and in dark mode the light-theme hover turned
    the whole strip white. */
-.vti-table tbody tr:not(.vti-extra-section):not(.vti-extra-label-row):not(.invf-allpacked-row):hover { background:#F5FEFF; }
+/* The drawer and multi-box rows are containers for the box editor, not rows
+   you point at, so they are excluded along with the other non-rows. */
+.vti-table tbody tr:not(.vti-extra-section):not(.vti-extra-label-row):not(.invf-allpacked-row):not(.vti-drawer-row):not(.vti-multibox-container-row):hover { background:#F5FEFF; }
 .vti-cb { width:14px; height:14px; border-radius:4px; border:1.5px solid #BAE6FD; cursor:pointer; display:flex; align-items:center; justify-content:center; background:#F0FDFF; transition:all .15s; flex-shrink:0; }
 .vti-cb:hover { border-color:#0891b2; background:#E0F9FD; }
 .vti-prod-cell { display:flex; align-items:center; gap:9px; }
@@ -1103,7 +1112,8 @@
    them or the stack is clipped to the height of one row. */
 @media (max-width: 1080px) {
   .pkg-box__body { grid-template-columns: 1fr; max-height: 620px; }
-  .pkg-card { border-right: none; border-bottom: 1px solid #E4EEF4; }
+  .pkg-card { border-right: none; border-left: none; }
+  .pkg-card + .pkg-card { border-left: none; border-top: 1px solid #E4EEF4; }
   .pkg-card:last-child { border-bottom: none; }
 }
 
@@ -1177,6 +1187,14 @@
 .invf-packed .invf-packed-table tr.has-stack td { vertical-align: top; padding-top: 12px; }
 .invf-pb-row:hover { background: rgba(6,182,212,.04); }
 .invf-pb-row.is-open { background: rgba(6,182,212,.07); box-shadow: inset 3px 0 0 #0891b2; }
+/* In dark mode a 7% teal wash lifts the row's background without touching its
+   text, which lowers contrast and reads as the row being faded rather than
+   selected. A deeper fill and a brighter edge mark it instead. */
+[data-bs-theme="dark"] .invf-pb-row.is-open {
+  background: rgba(34,211,238,.10);
+  box-shadow: inset 3px 0 0 #22d3ee;
+}
+[data-bs-theme="dark"] .invf-pb-row:hover { background: rgba(34,211,238,.06); }
 /* Date, or "Box 1 of 5" — which set this carton came from. */
 .invf-pb-sub { margin-top: 3px; font-size: 9.5px; font-weight: 600; color: #94a3b8; letter-spacing: .02em; }
 .invf-scn-no {
@@ -1903,6 +1921,20 @@
 [data-bs-theme="dark"] .vti-table thead tr { border-bottom-color: rgba(34, 211, 238, .2); }
 [data-bs-theme="dark"] .vti-prod-row { border-bottom-color: rgba(148, 163, 184, .12); }
 
+/* The select checkbox had no dark rules at all, so it kept #F0FDFF on a
+   #BAE6FD border — a solid white square in the header of a dark table, and the
+   brightest thing on the row.
+   Only the UNCHECKED state needs changing: checked and indeterminate are
+   already a teal gradient with a white tick, which reads on either theme. */
+[data-bs-theme="dark"] .vti-cb {
+  background: rgba(34, 211, 238, .08);
+  border-color: rgba(34, 211, 238, .38);
+}
+[data-bs-theme="dark"] .vti-cb:hover {
+  background: rgba(34, 211, 238, .16);
+  border-color: #22d3ee;
+}
+
 /* Remove was a white chip with a red glyph -- the white is what carried, so a
    row of them read as the brightest column in the table. The red carries it
    instead. */
@@ -2231,6 +2263,23 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, .06) 0%, transparent 100%);
 }
 
+/* The active box tab is a near-white pill — right for the design's light
+   theme, where the bar is a bright teal, but on the darkened bar above it is
+   a piece of light mode sitting in the middle of a dark screen.
+   It takes the same cyan fill the selection bar's primary button uses, so the
+   two "this is the chosen one" surfaces in Stage 3 agree. */
+[data-bs-theme="dark"] .vmb-tab.is-active {
+  background: linear-gradient(135deg, #22d3ee, #06b6d4);
+  border-color: rgba(34, 211, 238, .85);
+  color: #04303d;
+  box-shadow: 0 2px 10px rgba(34, 211, 238, .28);
+}
+/* The count chip inside it keys off the new fill rather than the white one. */
+[data-bs-theme="dark"] .vmb-tab.is-active .vmb-tab-qty {
+  background: rgba(4, 48, 61, .20);
+  color: #04303d;
+}
+
 /* The chosen unit reads as pressed INTO the band rather than as a white tile
    on top of it -- darker than its surroundings, lit text. An off-white chip
    was still the brightest thing in the row. */
@@ -2297,7 +2346,13 @@
    light hover is (0,5,2) and this was (0,5,0), so every hovered row in dark
    mode was painted #F5FEFF by the light theme. A specificity difference of two
    element selectors is invisible when reading either rule on its own. */
-[data-bs-theme="dark"] .vti-table tbody tr.vti-prod-row:hover:not(.is-expanded):not(.is-selected) {
+/* Mirrors the light rule's selector rather than naming one row type.
+   It used to read `tr.vti-prod-row`, which left every OTHER row in the table —
+   the drawer row, the multi-box container — falling through to the light
+   theme's #F5FEFF, so hovering them turned a band of the dark page white.
+   Same exclusions as above, plus the two selected states, and one class more
+   than the light rule so it still wins. */
+[data-bs-theme="dark"] .vti-table tbody tr:not(.vti-extra-section):not(.vti-extra-label-row):not(.invf-allpacked-row):not(.vti-drawer-row):not(.vti-multibox-container-row):not(.is-expanded):not(.is-selected):hover {
   background: rgba(34, 211, 238, .11);
 }
 [data-bs-theme="dark"] .vti-dw-adv-toggle:hover,
@@ -5389,10 +5444,11 @@
 
 .pkg-box.is-collapsed .pkg-box__body { padding-top: 0; padding-bottom: 0; }
 
-[data-bs-theme="dark"] .pkg-box__body { background: #0c212a; }
-[data-bs-theme="dark"] .pkg-card { background: #13303c; border-color: #1d4454; }
-[data-bs-theme="dark"] .pkg-card:hover { border-color: rgba(34,211,238,.4); }
-[data-bs-theme="dark"] .pkg-card.is-used { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.45); }
+[data-bs-theme="dark"] .pkg-box__body { background: #0c212a; border-top-color: rgba(34,211,238,.55); }
+[data-bs-theme="dark"] .pkg-card { background: transparent; }
+[data-bs-theme="dark"] .pkg-card + .pkg-card { border-left-color: rgba(34,211,238,.16); }
+[data-bs-theme="dark"] .pkg-card:hover { background: rgba(34,211,238,.06); }
+[data-bs-theme="dark"] .pkg-card.is-used { background: rgba(34,211,238,.10); box-shadow: inset 0 3px 0 #22d3ee; }
 [data-bs-theme="dark"] .pkg-card__title { color: #e6f3f7; }
 [data-bs-theme="dark"] .pkg-card__desc { color: #8fb0bd; }
 [data-bs-theme="dark"] .pkg-card__use { background: rgba(255,255,255,.06); color: #8fb0bd; border-color: #1d4454; }
