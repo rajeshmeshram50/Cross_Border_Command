@@ -751,25 +751,36 @@ export default function Step3BoxPackaging({
             /* A card in use is marked, because which shapes THIS invoice
                actually packs in is the one thing the strip can say that the
                three definitions cannot. */
-            <div className={`pkg-card${scenarioBoxes[s.id] > 0 || scenarioUse[s.id] > 0 ? ' is-used' : ''}`} key={s.id}>
+            <div className="pkg-card" key={s.id}>
               <div className="pkg-card__top">
                 <div className="pkg-card__scenario">
                   <div className="pkg-card__scenario-line" />
                   {s.no}
+                  {/* A count beside the scenario number, and nothing more.
+                      This strip is a reference — three definitions you read to
+                      decide which shape your goods arrive in — so a scenario
+                      the invoice happens to use is noted, not highlighted. It
+                      used to tint the whole column and cap it with a teal
+                      rule, which made a read-only panel look like a chooser
+                      with something selected.
+
+                      Saved boxes first: that is what the invoice has actually
+                      done, where staged lines are only the work in hand. */}
+                  {(() => {
+                    const packed = scenarioBoxes[s.id];
+                    const staged = scenarioUse[s.id];
+                    const label = packed > 0
+                      ? `${packed} Box${packed === 1 ? '' : 'es'}`
+                      : staged > 0
+                        ? `${staged} Product${staged === 1 ? '' : 's'}`
+                        : null;
+                    return label ? <span className="pkg-card__use">{label}</span> : null;
+                  })()}
                 </div>
                 <span className="pkg-card__tag">{s.tag}</span>
               </div>
               <div className="pkg-card__title">{s.title} <span>{s.arrow}</span> {s.tail}</div>
               <div className="pkg-card__desc">{s.desc}</div>
-              {/* Saved boxes first, because that is what the invoice has
-                  actually done; staged lines are the work in hand. */}
-              <span className={`pkg-card__use${scenarioBoxes[s.id] > 0 || scenarioUse[s.id] > 0 ? ' is-on' : ''}`}>
-                {scenarioBoxes[s.id] > 0
-                  ? `${scenarioBoxes[s.id]} box${scenarioBoxes[s.id] === 1 ? '' : 'es'} packed this way`
-                  : scenarioUse[s.id] > 0
-                    ? `${scenarioUse[s.id]} product${scenarioUse[s.id] === 1 ? '' : 's'} staged`
-                    : 'Not used yet'}
-              </span>
             </div>
           ))}
         </div>

@@ -173,10 +173,10 @@
    against the panel's own border. */
 .pkg-card + .pkg-card { border-left: 1px solid #e4eef4; }
 .pkg-card:hover { background: rgba(6,182,212,.04); box-shadow: none; }
-/* A scenario this invoice actually packs in is marked by its own share of the
-   top rule going solid teal, plus a faint ground — emphasis that works on a
-   column, where a lifted card border has nothing to lift away from. */
-.pkg-card.is-used { background: linear-gradient(180deg, #f1fdff, #fff 70%); box-shadow: inset 0 3px 0 #0891b2; }
+/* No .is-used state: the strip is read-only reference, and the count pill
+   beside the scenario number is the whole of the mark. Tinting the column and
+   capping it in teal made a panel you only read look like a chooser with
+   something selected. */
 .pkg-card__top { display: flex; align-items: center; gap: 8px; }
 .pkg-card__scenario { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 9px; font-weight: 800; color: #0891b2; letter-spacing: .12em; text-transform: uppercase; }
 .pkg-card__scenario-line { width: 18px; height: 2.5px; border-radius: 2px; background: linear-gradient(90deg, #22d3ee, #0891b2); flex-shrink: 0; }
@@ -996,8 +996,9 @@
 
 .vti-selection-bar { display: none; align-items: center; justify-content: space-between; padding: 10px 18px; background: linear-gradient(98deg, #0a5f75 0%, #0891b2 55%, #0fb8de 100%); border-bottom: 1px solid rgba(6,182,212,.3); gap: 12px; animation: selBarIn .2s ease both; }
 .vti-selection-bar.is-visible { display: flex; }
-.pkg-card__use { display:none; align-items:center; gap:4px; margin-left:2px; padding:1px 7px; border-radius:20px; background:#ECFEFF; border:1px solid #A5E9F5; color:#0E7490; font-size:8.5px; font-weight:800; letter-spacing:.05em; }
-.pkg-card__use.is-on { display:inline-flex; }
+/* Renders only when there is something to count, so an unused scenario is
+   simply three lines of text, as the design has it. */
+.pkg-card__use { display:inline-flex; align-items:center; margin-left:2px; padding:2px 7px; border-radius:20px; background:#ECFEFF; border:1px solid #A5E9F5; color:#0E7490; font-size:8.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
 /* ── Packed Products ────────────────────────────────────────────────────────
    The table a product moves into once its boxes are saved. It wears the same
    vti-* chrome as the table above so a row reads identically after it moves;
@@ -2070,7 +2071,7 @@
 [data-bs-theme="dark"] .pkg-card__title { color: #e2e8f0; }
 [data-bs-theme="dark"] .pkg-card__title span { color: #22d3ee; }
 [data-bs-theme="dark"] .pkg-card__tag,
-[data-bs-theme="dark"] .pkg-card__use.is-on {
+[data-bs-theme="dark"] .pkg-card__use {
   background: rgba(34, 211, 238, .12);
   border-color: rgba(34, 211, 238, .3);
   color: #7dd3fc;
@@ -5437,22 +5438,15 @@
 [data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt__n { border-color:rgba(34,211,238,.3); }
 [data-bs-theme="dark"] .s4-root .s4wz-modal .s4qm__ft { background:var(--s4d-bg); }
 
-/* The live usage line. It always renders, so the three cards keep one shape
-   whether or not the invoice uses them - and "not used" is itself an answer. */
-.pkg-card__use { align-self: flex-start; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: #f1f5f9; color: #94a3b8; border: 1px solid #e8eef3; }
-.pkg-card__use.is-on { background: #ecfeff; color: #0e7490; border-color: #a5e8f5; }
-
 .pkg-box.is-collapsed .pkg-box__body { padding-top: 0; padding-bottom: 0; }
 
 [data-bs-theme="dark"] .pkg-box__body { background: #0c212a; border-top-color: rgba(34,211,238,.55); }
 [data-bs-theme="dark"] .pkg-card { background: transparent; }
 [data-bs-theme="dark"] .pkg-card + .pkg-card { border-left-color: rgba(34,211,238,.16); }
 [data-bs-theme="dark"] .pkg-card:hover { background: rgba(34,211,238,.06); }
-[data-bs-theme="dark"] .pkg-card.is-used { background: rgba(34,211,238,.10); box-shadow: inset 0 3px 0 #22d3ee; }
 [data-bs-theme="dark"] .pkg-card__title { color: #e6f3f7; }
 [data-bs-theme="dark"] .pkg-card__desc { color: #8fb0bd; }
-[data-bs-theme="dark"] .pkg-card__use { background: rgba(255,255,255,.06); color: #8fb0bd; border-color: #1d4454; }
-[data-bs-theme="dark"] .pkg-card__use.is-on { background: rgba(34,211,238,.16); color: #7dd3e8; border-color: rgba(34,211,238,.35); }
+[data-bs-theme="dark"] .pkg-card__use { background: rgba(34,211,238,.16); color: #7dd3e8; border-color: rgba(34,211,238,.35); }
 [data-bs-theme="dark"] .pkg-card__tag { background: rgba(34,211,238,.14); color: #7dd3e8; border-color: rgba(34,211,238,.3); }
 
 /* ── Stage 04 · Step 03 — Confirm Placement ─────────────────────────────── */
