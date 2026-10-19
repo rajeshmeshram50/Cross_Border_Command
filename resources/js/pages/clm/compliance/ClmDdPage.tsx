@@ -31,6 +31,7 @@ export default function ClmDdPage() {
   const toast = useToast();
   const [rows, setRows]         = useState<Dd[]>([]);
   const [count, setCount]       = useState(0);
+  const [nextCode, setNextCode] = useState('');
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   // Full-page shimmer on the first load only; a search or page change after
@@ -64,13 +65,14 @@ export default function ClmDdPage() {
   const reload = () => {
     setLoading(true);
     const token = ++reqRef.current;
-    api.get<{ status: boolean; data: Dd[]; count: number; total?: number }>('/clm/dd-documents', {
+    api.get<{ status: boolean; data: Dd[]; count: number; total?: number; next_code?: string }>('/clm/dd-documents', {
       params: { page, per_page: rpp, ...(debouncedSearch ? { search: debouncedSearch } : {}) },
     })
       .then(({ data }) => {
         if (token !== reqRef.current) return;
         setRows(data.data ?? []);
         setCount(Number(data.total ?? data.count ?? 0));
+        if (data.next_code) setNextCode(data.next_code);
       })
       .catch(() => toast.error('Load failed', 'Could not load DD documents'))
       .finally(() => setLoading(false));
@@ -260,7 +262,7 @@ export default function ClmDdPage() {
 
       {modalOpen && (
         <Suspense fallback={null}>
-          <DdModal existing={editing} authorities={auths} nextCode={`DD-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
+          <DdModal existing={editing} authorities={auths} nextCode={nextCode} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
         </Suspense>
       )}
       <DeleteConfirmModal

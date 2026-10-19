@@ -72,6 +72,7 @@ class ClmDdController extends Controller
            
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
+            'next_code' => ClmDocCode::preview('DD', ClmDdDocument::class, (int) $user->client_id, $user->branch_id),
         ]);
     }
 
