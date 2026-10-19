@@ -319,7 +319,7 @@ export default function ClmAgreementsToApprovePage() {
             })}
           </div>
           <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, boxSizing: 'border-box', padding: '0 14px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}`, flex: '0 1 320px', minWidth: 200 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, boxSizing: 'border-box', padding: '0 14px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}`, flex: '0 1 520px', minWidth: 220 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title, created by, approver…"
               style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.text, background: 'transparent', flex: 1, minWidth: 0 }} />
@@ -474,7 +474,7 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
             <th style={{ ...TH, width: 120 }}>STATUS</th>
             {isRej && <th style={THL}>REJECTION REASON</th>}
             <th style={{ ...TH, width: 100 }}>EXPIRY DATE</th>
-            <th style={{ ...TH, width: 185 }}>ACTION</th>
+            <th style={{ ...TH, width: 220 }}>ACTION</th>
           </tr></thead>
           <tbody>
             {slice.map((c, i) => {
@@ -557,7 +557,7 @@ function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSi
             <th style={THL}>AGREEMENT TITLE</th>
             <th style={{ ...THL, width: 120 }}>CREATED BY</th>
             <th style={{ ...THL, width: 120 }}>APPROVER</th>
-            <th style={THL}>CLARIFICATION QUERY</th>
+            <th style={{ ...THL, width: 120 }}>QUERY</th>
             <th style={{ ...TH, width: 100 }}>EXPIRY DATE</th>
             <th style={{ ...TH, width: 220 }}>ACTION</th>
           </tr></thead>
@@ -577,8 +577,8 @@ function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSi
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><ApproverList c={c} t={t} /></td>
-                  <td style={{ ...TD_L, maxWidth: 220 }}>
-                    <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{latest?.query ?? '—'}</div></Tooltip>
+                  <td style={{ ...TD_L, maxWidth: 120 }}>
+                    <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{latest?.query ?? '—'}</div></Tooltip>
                     {hasResp && <div style={{ fontSize: 9.5, color: '#059669', fontWeight: 600, marginTop: 2 }}>✓ Response provided</div>}
                   </td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.expDate)}</span></td>
