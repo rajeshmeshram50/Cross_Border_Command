@@ -1,11 +1,7 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
-/* The Add/Edit form is code-split: its chunk downloads the first time a
-   user opens it, not on the list's first paint. Same pattern the Customer
-   and Supplier masters use for their heavy modals. */
 const KycModal = lazyPage(() => import('./ClmKycModal'));
 import WorklistPager from "../../../components/ui/WorklistPager";
-import { createPortal } from 'react-dom';
 import api from '../../../api';
 import ClmDocImportExport from '../shared/ClmDocImportExport';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
@@ -15,15 +11,10 @@ import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
-import { MasterMultiSelect } from '../../../components/ui/MasterMultiSelect';
-import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
+import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
 import { lazyPage } from '../../../utils/lazyPage';
 
-/* Central CLM → KYC Documents Master. 3-card faithful port. */
-
-// `authority` holds comma-joined authority IDs; `authority_names` is the
-// resolved display string returned by the API.
 export type Kyc = { id: number; code: string; name: string; authority: string; authority_names?: string; status: 'active'|'inactive'; in_use?: boolean; used_in?: string[] };
 export type Authority = { id: number; code: string; name: string };
 
@@ -32,32 +23,25 @@ export default function ClmKycPage() {
   const [rows, setRows]         = useState<Kyc[]>([]);
   const [count, setCount]       = useState(0);
   const [auths, setAuths]       = useState<Authority[]>([]);
-  const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
-  // Full-page shimmer on the first load only; a search or page change after
-  // that just shimmers the table rows.
+  const [loading, setLoading]   = useState(true);
   const [booted, setBooted]     = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
-  // Dynamic pagination: rows-per-page auto-fits the visible table height.
   const [rpp, setRpp]           = useState(PER_PAGE);
   const autoFitRef              = useRef(true);
 
-  /* Typing is not a request — one fetch per pause, not per keystroke. */
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
     return () => clearTimeout(t);
   }, [search]);
 
-  /* Newest-request token. A page move, a size change and a debounced
-     search can each be in flight together; only the newest may paint. */
   const reqRef = useRef(0);
   const scrollRef               = useRef<HTMLDivElement | null>(null);
-  const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Kyc | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
+  useScrollLock(modalOpen);
   const [pendingDelete, setPendingDelete] = useState<Kyc | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -75,49 +59,21 @@ export default function ClmKycPage() {
       .catch(() => toast.error('Load failed', 'Could not load KYC documents'))
       .finally(() => setLoading(false));
   };
-  /* Coalesced, not fired per change.
-     On mount this effect runs with the default rows-per-page, and a moment
-     later useAutoFitRows measures the viewport and changes it — so every page
-     load used to cost TWO requests, one of which was thrown away. That was
-     free while paging happened in the browser; now that the row count is a
-     query parameter it is a second round trip, and on a slow server it
-     doubles the time to first table.
-     A short timer lets the count settle before anything is asked for, and it
-     also absorbs fast clicks through the pager. */
   useEffect(() => {
     const t = setTimeout(() => { reload(); }, 60);
     return () => clearTimeout(t);
   }, [page, rpp, debouncedSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* Back to page 1 when the result SET changes rather than the position
-     in it — staying on page 9 of a search with two pages shows nothing. */
   useEffect(() => { setPage(1); }, [debouncedSearch, rpp]);
 
-  /* Authority options for the Add/Edit form's picker — mount ONLY.
-     reload() runs after every save and every delete, and it used to
-     Promise.all this alongside the list, so saving one row also
-     re-downloaded the whole authority master for a dropdown whose
-     contents had not changed. */
   useEffect(() => {
     api.get<{ status: boolean; data: Authority[] }>('/clm/authorities', { params: { view: 'options' } })
       .then(({ data }) => setAuths(data.data ?? []))
-      .catch(() => { /* the list's own failure toast already covers a dead API */ });
+      .catch(() => {});
   }, []);
 
-  /* `rows` IS the page — the endpoint sorted, searched and sliced it.
-     The client-side filter that used to live here would now be
-     re-filtering ten already-filtered rows, and reporting its own page
-     size as the result count. */
-  const slice     = rows;
-  const start     = (page - 1) * rpp;
-  const safePage  = page;
-  const pageCount = Math.max(1, Math.ceil(count / rpp));
+  const start = (page - 1) * rpp;
 
-  /* Dynamic rows-per-page — the shared hook, floored at PER_PAGE (10).
-     The inline copy this replaces floored at 4, so a short viewport
-     served four-row pages and the same tenant looked different on every
-     machine. It is also debounced against settled resizes, which matters
-     now that a size change is a refetch, not a re-slice. */
   const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
   const onSave = async (form: { name: string; authority: string }, id?: number) => {
@@ -129,12 +85,10 @@ export default function ClmKycPage() {
       const status = e?.response?.status;
       const err = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const first = err ? Object.values(err)[0]?.[0] : undefined;
-      // 422 field-validation errors are shown inline below the field by the
-      // modal — don't ALSO toast (was showing the same message twice).
       if (!(status === 422 && err && Object.keys(err).length)) {
         toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
       }
-      throw e;   // let the modal surface field-level (422) errors below the field
+      throw e;
     }
   };
   const onDelete = async () => {
@@ -146,7 +100,7 @@ export default function ClmKycPage() {
   };
 
   return (
-    <div className="clm-root" ref={rootRef}>
+    <div className="clm-root">
       <style>{CLM_CSS}</style>
       {loading && !booted && <ShimmerClmMaster cols={5} />}
 
@@ -196,8 +150,8 @@ export default function ClmKycPage() {
           </div>
         </div>
 
-        <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 && !loading ? (
+        <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
+          {rows.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bKyc}</div>
               <div className="clm-empty-title">No KYC documents yet</div>
@@ -216,7 +170,7 @@ export default function ClmKycPage() {
                 </tr></thead>
                 <tbody>
                   {loading && <ClmSkeletonRows cols={5} />}
-                  {!loading && slice.map((r, i) => (
+                  {!loading && rows.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
@@ -234,7 +188,7 @@ export default function ClmKycPage() {
               </table>
               </div>
               {!loading && count > 0 && (
-                <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
+                <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}
