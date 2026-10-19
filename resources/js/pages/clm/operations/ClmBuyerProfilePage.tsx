@@ -47,100 +47,15 @@ type BpData = {
 };
 const EMPTY_BP: BpData = { buyers: [], consignees: [], ws_eq: [], ws_neq: [], wos_eq: [], wos_neq: [] };
 
-const bpBuyerData: BuyerRow[] = [
-  { sr: 1, id: 'C-001', name: 'Shree Exports Pvt Ltd', seg: ['Dry Fruits', 'Agro'], sc: '#0e7490', sb: '#f0fdff', country: 'India', cn: 3, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
-  { sr: 2, id: 'C-002', name: 'GreenHarvest Global', seg: ['Agro', 'Rice & Grains'], sc: '#065f46', sb: '#f0fdf4', country: 'India', cn: 5, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, ship: 3 },
-  { sr: 3, id: 'C-003', name: 'GreenHarvest Agri-Exports', seg: ['Rice & Grains'], sc: '#065f46', sb: '#f0fdf4', country: 'India', cn: 2, kyc: { d: 0, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, ship: 0 },
-  { sr: 4, id: 'C-004', name: 'International Buyer LLC', seg: ['Spices', 'Dry Fruits'], sc: '#92400e', sb: '#fffbeb', country: 'UAE', cn: 4, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
-  { sr: 5, id: 'C-005', name: 'QuickTrade Resellers', seg: ['Pulses', 'Millets'], sc: '#7f1d1d', sb: '#fef2f2', country: 'India', cn: 1, kyc: { d: 1, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, ship: 0 },
-  { sr: 6, id: 'C-006', name: 'Fit Nation Pvt Ltd', seg: ['Dry Fruits', 'Organic Foods'], sc: '#92400e', sb: '#fffbeb', country: 'India', cn: 2, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 7, id: 'C-007', name: 'Manoj Jacob Foods', seg: ['Coconut Oil', 'Agro'], sc: '#065f46', sb: '#f0fdf4', country: 'India', cn: 3, kyc: { d: 4, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 8, id: 'C-008', name: 'FreshMart Retailers', seg: ['Basmati Rice', 'Spices'], sc: '#0e7490', sb: '#f0fdff', country: 'India', cn: 1, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, ship: 2 },
-  { sr: 9, id: 'C-009', name: 'Bharat Agro Traders', seg: ['Millets', 'Pulses'], sc: '#92400e', sb: '#fffbeb', country: 'India', cn: 4, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 10, id: 'C-010', name: 'NatureFresh Exports', seg: ['Organic Foods', 'Dry Fruits'], sc: '#0e7490', sb: '#f0fdff', country: 'Germany', cn: 2, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
-  { sr: 11, id: 'C-011', name: 'AgriWorld Trading Co.', seg: ['Agro', 'Spices'], sc: '#065f46', sb: '#f0fdf4', country: 'UAE', cn: 3, kyc: { d: 3, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 12, id: 'C-012', name: 'PrimeTrade International', seg: ['Spices', 'Rice & Grains'], sc: '#92400e', sb: '#fffbeb', country: 'UK', cn: 2, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, ship: 3 },
-  { sr: 13, id: 'C-013', name: 'Sunrise Food Products', seg: ['Dry Fruits'], sc: '#0e7490', sb: '#f0fdff', country: 'India', cn: 1, kyc: { d: 2, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 0, t: 2 }, ship: 0 },
-  { sr: 14, id: 'C-014', name: 'GlobalGrain Suppliers', seg: ['Rice & Grains', 'Agro'], sc: '#065f46', sb: '#f0fdf4', country: 'Bangladesh', cn: 3, kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
-  { sr: 15, id: 'C-015', name: 'EastCoast Commodities', seg: ['Pulses', 'Basmati Rice'], sc: '#7f1d1d', sb: '#fef2f2', country: 'India', cn: 2, kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-];
-
-const bpConsData: ConsRow[] = [
-  { sr: 1, id: 'CS-001', cid: 'C-001', name: 'Dubai Trade Hub LLC', seg: 'Dry Fruits', sc: '#0e7490', sb: '#f0fdff', country: 'UAE', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 2 }, ship: 2 },
-  { sr: 2, id: 'CS-002', cid: 'C-001', name: 'Al Reem Distributors', seg: 'Dry Fruits', sc: '#0e7490', sb: '#f0fdff', country: 'UAE', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 3, id: 'CS-003', cid: 'C-001', name: 'Khalid & Sons Trading', seg: 'Dry Fruits', sc: '#0e7490', sb: '#f0fdff', country: 'Kuwait', kyc: { d: 3, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 4, id: 'CS-004', cid: 'C-002', name: 'Amsterdam Fresh BV', seg: 'Agro', sc: '#065f46', sb: '#f0fdf4', country: 'Netherlands', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, ship: 2 },
-  { sr: 5, id: 'CS-005', cid: 'C-002', name: 'GreenCargo Rotterdam', seg: 'Agro', sc: '#065f46', sb: '#f0fdf4', country: 'Netherlands', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 3, t: 3 }, ship: 3 },
-  { sr: 6, id: 'CS-006', cid: 'C-002', name: 'EuroAgri Imports GmbH', seg: 'Agro', sc: '#065f46', sb: '#f0fdf4', country: 'Germany', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
-  { sr: 7, id: 'CS-007', cid: 'C-002', name: 'Antwerp Commodities SA', seg: 'Agro', sc: '#065f46', sb: '#f0fdf4', country: 'Belgium', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, ship: 2 },
-  { sr: 8, id: 'CS-008', cid: 'C-002', name: 'Nordic Trade Partners', seg: 'Agro', sc: '#065f46', sb: '#f0fdf4', country: 'Sweden', kyc: { d: 3, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 9, id: 'CS-009', cid: 'C-003', name: 'Dhaka Grain Corp.', seg: 'Rice & Grains', sc: '#065f46', sb: '#f0fdf4', country: 'Bangladesh', kyc: { d: 0, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, ship: 0 },
-  { sr: 10, id: 'CS-010', cid: 'C-003', name: 'Bengal Export House', seg: 'Rice & Grains', sc: '#065f46', sb: '#f0fdf4', country: 'Bangladesh', kyc: { d: 0, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, ship: 0 },
-  { sr: 11, id: 'CS-011', cid: 'C-004', name: 'Gulf Spice Trading LLC', seg: 'Spices', sc: '#92400e', sb: '#fffbeb', country: 'UAE', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
-  { sr: 12, id: 'CS-012', cid: 'C-004', name: 'Muscat Commodity House', seg: 'Spices', sc: '#92400e', sb: '#fffbeb', country: 'Oman', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
-  { sr: 13, id: 'CS-013', cid: 'C-004', name: 'Sharjah Food Traders', seg: 'Spices', sc: '#92400e', sb: '#fffbeb', country: 'UAE', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 14, id: 'CS-014', cid: 'C-004', name: 'Bahrain Imports Co.', seg: 'Spices', sc: '#92400e', sb: '#fffbeb', country: 'Bahrain', kyc: { d: 3, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 15, id: 'CS-015', cid: 'C-005', name: 'Mumbai Resale Hub', seg: 'Pulses', sc: '#7f1d1d', sb: '#fef2f2', country: 'India', kyc: { d: 1, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 }, ship: 0 },
-  { sr: 16, id: 'CS-016', cid: 'C-006', name: 'London Health Foods Ltd', seg: 'Dry Fruits', sc: '#92400e', sb: '#fffbeb', country: 'UK', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 17, id: 'CS-017', cid: 'C-006', name: 'Paris Organic Imports', seg: 'Dry Fruits', sc: '#92400e', sb: '#fffbeb', country: 'France', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 18, id: 'CS-018', cid: 'C-007', name: 'Singapore Coconut Trading', seg: 'Coconut Oil', sc: '#065f46', sb: '#f0fdf4', country: 'Singapore', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 19, id: 'CS-019', cid: 'C-007', name: 'KL Food Industries Sdn Bhd', seg: 'Coconut Oil', sc: '#065f46', sb: '#f0fdf4', country: 'Malaysia', kyc: { d: 4, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 1, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 20, id: 'CS-020', cid: 'C-007', name: 'Jakarta Agro Processors', seg: 'Coconut Oil', sc: '#065f46', sb: '#f0fdf4', country: 'Indonesia', kyc: { d: 3, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 0, t: 2 }, ship: 0 },
-  { sr: 21, id: 'CS-021', cid: 'C-008', name: 'Tokyo Rice Importers KK', seg: 'Basmati Rice', sc: '#0e7490', sb: '#f0fdff', country: 'Japan', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 }, ship: 2 },
-  { sr: 22, id: 'CS-022', cid: 'C-009', name: 'Riyadh Grain Traders', seg: 'Millets', sc: '#92400e', sb: '#fffbeb', country: 'Saudi Arabia', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 23, id: 'CS-023', cid: 'C-009', name: 'Jeddah Food Distribution', seg: 'Millets', sc: '#92400e', sb: '#fffbeb', country: 'Saudi Arabia', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 24, id: 'CS-024', cid: 'C-009', name: 'Dammam Wholesale Co.', seg: 'Millets', sc: '#92400e', sb: '#fffbeb', country: 'Saudi Arabia', kyc: { d: 3, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 0, t: 2 }, ship: 0 },
-  { sr: 25, id: 'CS-025', cid: 'C-009', name: 'Abu Dhabi Commodities LLC', seg: 'Millets', sc: '#92400e', sb: '#fffbeb', country: 'UAE', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 }, ship: 1 },
-  { sr: 26, id: 'CS-026', cid: 'C-010', name: 'Berlin Organic Hub GmbH', seg: 'Organic Foods', sc: '#0e7490', sb: '#f0fdff', country: 'Germany', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 3 }, ship: 2 },
-];
-
-const wsEqData: WsEqRow[] = [
-  { sr: 1, shp: 'SHP-001', opp: 'OPP-101', customer: 'Shree Exports Pvt Ltd', pi: 'PI-2024-001', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 2, shp: 'SHP-002', opp: 'OPP-102', customer: 'GreenHarvest Global', pi: 'PI-2024-002', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 3, shp: 'SHP-003', opp: 'OPP-103', customer: 'International Buyer LLC', pi: 'PI-2024-003', reg: 'Both', kyc: { d: 2, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 0, t: 2 } },
-  { sr: 4, shp: 'SHP-004', opp: 'OPP-104', customer: 'Fit Nation Pvt Ltd', pi: 'PI-2024-004', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 5, shp: 'SHP-005', opp: 'OPP-105', customer: 'FreshMart Retailers', pi: 'PI-2024-005', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 } },
-  { sr: 6, shp: 'SHP-006', opp: 'OPP-106', customer: 'NatureFresh Exports', pi: 'PI-2024-006', reg: 'Both', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 7, shp: 'SHP-007', opp: 'OPP-107', customer: 'QuickTrade Resellers', pi: 'PI-2024-007', reg: 'High', kyc: { d: 1, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 0, t: 4 }, agr: { d: 0, t: 2 } },
-];
-
-const wsNeqData: WsNeqRow[] = [
-  { sr: 1, shp: 'SHP-008', opp: 'OPP-108', customer: 'Bharat Agro Traders', consignee: 'AgroLink FZE', pi: 'PI-2024-008', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 2, shp: 'SHP-009', opp: 'OPP-109', customer: 'PrimeTrade International', consignee: 'Gulf Foods LLC', pi: 'PI-2024-009', reg: 'Both', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 1, t: 2 } },
-  { sr: 3, shp: 'SHP-010', opp: 'OPP-110', customer: 'GlobalGrain Suppliers', consignee: 'Dhaka Imports Co.', pi: 'PI-2024-010', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 4, shp: 'SHP-011', opp: 'OPP-111', customer: 'Sunrise Food Products', consignee: 'EuroMart GmbH', pi: 'PI-2024-011', reg: 'High', kyc: { d: 2, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 0, t: 2 } },
-  { sr: 5, shp: 'SHP-012', opp: 'OPP-112', customer: 'AgriWorld Trading Co.', consignee: 'Emirates Spice House', pi: 'PI-2024-012', reg: 'Both', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 6, shp: 'SHP-013', opp: 'OPP-113', customer: 'EastCoast Commodities', consignee: 'London Grain Ltd', pi: 'PI-2024-013', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 1, t: 2 } },
-];
-
-const wosEqData: WosEqRow[] = [
-  { sr: 1, opp: 'OPP-201', customer: 'Shree Exports Pvt Ltd', pi: 'PI-2024-101', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 2, opp: 'OPP-202', customer: 'GreenHarvest Global', pi: '', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 0, t: 0 } },
-  { sr: 3, opp: 'OPP-203', customer: 'International Buyer LLC', pi: 'PI-2024-103', reg: 'Both', kyc: { d: 2, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 } },
-  { sr: 4, opp: 'OPP-204', customer: 'Fit Nation Pvt Ltd', pi: 'PI-2024-104', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 5, opp: 'OPP-205', customer: 'FreshMart Retailers', pi: '', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 2, t: 4 }, agr: { d: 0, t: 0 } },
-  { sr: 6, opp: 'OPP-206', customer: 'NatureFresh Exports', pi: 'PI-2024-106', reg: 'Both', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-];
-
-const wosNeqData: WosNeqRow[] = [
-  { sr: 1, opp: 'OPP-301', customer: 'Bharat Agro Traders', consignee: 'AgroLink FZE', pi: 'PI-2024-201', reg: 'High', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 2, opp: 'OPP-302', customer: 'PrimeTrade International', consignee: 'Gulf Foods LLC', pi: '', reg: 'Both', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 3, t: 4 }, agr: { d: 0, t: 0 } },
-  { sr: 3, opp: 'OPP-303', customer: 'GlobalGrain Suppliers', consignee: 'Dhaka Imports Co.', pi: 'PI-2024-203', reg: 'Low', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 2, t: 2 } },
-  { sr: 4, opp: 'OPP-304', customer: 'Sunrise Food Products', consignee: 'EuroMart GmbH', pi: 'PI-2024-204', reg: 'High', kyc: { d: 2, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 0, t: 3 }, td: { d: 1, t: 4 }, agr: { d: 1, t: 2 } },
-  { sr: 5, opp: 'OPP-305', customer: 'AgriWorld Trading Co.', consignee: 'Emirates Spice House', pi: '', reg: 'Both', kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 4, t: 4 }, agr: { d: 0, t: 0 } },
-];
-
 const BP_PER_PAGE = 10;
 const SEG_CHIP_COL = 150;
 
 const HOME_COUNTRY = 'india';
 const isDomesticCountry = (c: string) => (c || '').trim().toLowerCase() === HOME_COUNTRY;
 const isDomesticBuyer = isDomesticCountry;
-const WS_PER_PAGE = 10;
-const WOS_PER_PAGE = 10;
 
 function useDynamicPerPage(
-  ref: React.RefObject<HTMLElement>,
+  ref: React.RefObject<HTMLElement | null>,
   { rowHeight = 46, min = 5, footer = 56, gap = 18, deps = [] as unknown[] } = {},
 ): number {
   const [perPage, setPerPage] = useState(BP_PER_PAGE);
@@ -182,7 +97,7 @@ function settle(calc: () => void): () => void {
 }
 
 function useFillHeight(
-  ref: React.RefObject<HTMLElement>,
+  ref: React.RefObject<HTMLElement | null>,
   { gap = 14, min = 240, deps = [] as unknown[] } = {},
 ): number | undefined {
   const [h, setH] = useState<number | undefined>(undefined);
@@ -510,55 +425,6 @@ function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box';
         </button>
       </Tooltip>
     </td>
-  );
-}
-
-function TxnPager({ page, total, perPage, noun, onPage, onPageSize }: { page: number; total: number; perPage: number; noun: string; onPage: (p: number) => void; onPageSize?: (n: number) => void }) {
-  const totalPages = Math.ceil(total / perPage) || 1;
-  const start = (page - 1) * perPage;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-      <span style={{ fontSize: '11.5px', color: '#0e7490', fontWeight: 500 }}>
-        Showing <b style={{ color: '#0c4a6e' }}>{start + 1}–{Math.min(start + perPage, total)}</b> of <b style={{ color: '#0c4a6e' }}>{total}</b> {noun}{total !== 1 ? 's' : ''}
-      </span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-        {onPageSize && (
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '11px', color: '#0e7490', fontWeight: 600, whiteSpace: 'nowrap' }}>
-            Rows per page
-            <select value={perPage} onChange={(e) => onPageSize(Number(e.target.value))}
-              style={{ height: 28, borderRadius: 7, border: '1.5px solid rgba(6,182,212,.22)', background: '#fff', color: '#0891b2', fontFamily: 'inherit', fontSize: '11px', fontWeight: 700, padding: '0 6px', cursor: 'pointer' }}>
-              {Array.from(new Set([perPage, 10, 25, 50])).sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-        )}
-        <button onClick={() => page > 1 && onPage(page - 1)} style={{
-          width: '28px', height: '28px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.22)',
-          background: '#fff', color: '#0891b2', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center',
-          justifyContent: 'center', opacity: page === 1 ? .4 : 1, cursor: page === 1 ? 'default' : 'pointer',
-        }}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-        </button>
-        {[page, page + 1].filter((p) => p >= 1 && p <= totalPages).map((p) => {
-          const a = p === page;
-          return (
-            <button key={p} onClick={() => onPage(p)} style={{
-              width: '28px', height: '28px', borderRadius: '7px',
-              border: a ? '1.5px solid #0891b2' : '1.5px solid rgba(6,182,212,.2)',
-              background: a ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#fff',
-              color: a ? '#fff' : '#0891b2', fontSize: '10.5px', fontWeight: a ? 800 : 600,
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}>{p}</button>
-          );
-        })}
-        <button onClick={() => page < totalPages && onPage(page + 1)} style={{
-          width: '28px', height: '28px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.22)',
-          background: '#fff', color: '#0891b2', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center',
-          justifyContent: 'center', opacity: page === totalPages ? .4 : 1, cursor: page === totalPages ? 'default' : 'pointer',
-        }}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
-        </button>
-      </div>
-    </div>
   );
 }
 
