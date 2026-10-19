@@ -29,6 +29,8 @@ export default function ClmQcPage() {
   const [nextCode, setNextCode] = useState('');
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [booted, setBooted]     = useState(false);
+  useEffect(() => { if (!loading) setBooted(true); }, [loading]);
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
   const [rpp, setRpp]           = useState(PER_PAGE);
@@ -106,7 +108,7 @@ export default function ClmQcPage() {
   return (
     <div className="clm-root">
       <style>{CLM_CSS}</style>
-      {loading && <ShimmerClmMaster cols={6} />}
+      {loading && !booted && <ShimmerClmMaster cols={6} />}
 
       <ClmPageHeader
         icon={ICO.hQc}
