@@ -112,6 +112,7 @@ export default function ClmAuthorityPage() {
   const start    = (page - 1) * rpp;
   const safePage = page;
   const pageCount = Math.max(1, Math.ceil(count / rpp));
+  const isEmpty = !loading && slice.length === 0;
 
   /* Dynamic rows-per-page — the shared hook the Clause Library and Trade
      Document masters use, so all three behave identically.
@@ -307,20 +308,13 @@ export default function ClmAuthorityPage() {
             and the header row scrolled away with it. Pinning with
             height + maxHeight and giving the rows their own scroll box keeps
             the head and the pager still while the rows move. */}
-        <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 && !loading ? (
-            <div className="clm-empty">
-              <div className="clm-empty-ico">{ICO.bShield}</div>
-              <div className="clm-empty-title">No authorities yet</div>
-              <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Authority to create the first record.' : 'No results match the current search.'}</div>
-            </div>
-          ) : (
+        <div className="clm-tab-body has-data">
             <div
-              className="clm-table-wrap clm-table-fill"
+              className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`}
               ref={scrollRef}
               style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}
             >
-              <div className="clm-rows-scroll">
+              <div className="clm-rows-scroll" style={isEmpty ? { flex: '0 0 auto' } : undefined}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -365,13 +359,19 @@ export default function ClmAuthorityPage() {
                 </tbody>
               </table>
               </div>
+              {isEmpty && (
+                <div className="clm-empty" style={{ flex: 1 }}>
+                  <div className="clm-empty-ico">{ICO.bShield}</div>
+                  <div className="clm-empty-title">{debouncedSearch ? 'No matching authorities' : 'No authorities yet'}</div>
+                  <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add Authority to create the first record.'}</div>
+                </div>
+              )}
               {/* Outside the scroll box — the pager is how you leave a page, so
                   it must not scroll away with the rows it pages through. */}
               {!loading && count > 0 && (
                 <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
-          )}
         </div>
       </div>
 
