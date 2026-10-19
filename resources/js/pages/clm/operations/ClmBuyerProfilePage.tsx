@@ -147,6 +147,110 @@ function useExactFitRows(
 }
 
 const BP_CSS = `
+:where(.bpx-1) { font-size: 9px !important; font-weight: 500 !important; color: #94a3b8 !important; }
+:where(.bpx-2) { width: 24px !important; height: 24px !important; border-radius: 6px !important; background: linear-gradient(135deg,#0e7490,#0891b2) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }
+:where(.bpx-3) { font-size: 9px !important; font-weight: 800 !important; color: #fff !important; }
+:where(.bpx-4) { padding: 8px 10px !important; text-align: center !important; }
+:where(.bpx-5) { font-size: 10px !important; color: #94a3b8 !important; }
+:where(.bpx-6) { display: inline-flex !important; align-items: center !important; gap: 6px !important; vertical-align: middle !important; max-width: 100% !important; }
+:where(.bpx-7) { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; min-width: 0 !important; }
+:where(.bpx-8) { display: inline-flex !important; align-items: center !important; justify-content: center !important; min-width: 20px !important; height: 20px !important; padding: 0 6px !important; border-radius: 20px !important; background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490) !important; color: #fff !important; font-size: 10px !important; font-weight: 800 !important; cursor: pointer !important; flex-shrink: 0 !important; box-shadow: 0 2px 8px rgba(8,145,178,.4) !important; border: none !important; font-family: inherit !important; }
+:where(.bpx-9) { background: linear-gradient(110deg,#e0f9fd 0%,#cef8ff 18%,#d0f4f9 45%,#baeef7 75%,#a0e8f2 100%) !important; }
+:where(.bpx-10) { position: relative !important; overflow: hidden !important; display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 0 18px !important; min-height: 58px !important; }
+:where(.bpx-11) { position: absolute !important; left: 0 !important; top: 0 !important; bottom: 0 !important; width: 5px !important; background: linear-gradient(180deg,#22d3ee,#0891b2,#0e7490) !important; }
+:where(.bpx-12) { position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important; height: 50% !important; background: linear-gradient(180deg,rgba(255,255,255,.5),transparent) !important; pointer-events: none !important; }
+:where(.bpx-13) { position: absolute !important; inset: 0 !important; background-image: radial-gradient(circle,rgba(6,182,212,.07) 1px,transparent 1px) !important; background-size: 18px 18px !important; pointer-events: none !important; }
+:where(.bpx-14) { display: flex !important; align-items: center !important; gap: 14px !important; z-index: 1 !important; padding-left: 10px !important; }
+:where(.bpx-15) { position: relative !important; flex-shrink: 0 !important; }
+:where(.bpx-16) { width: 42px !important; height: 42px !important; border-radius: 12px !important; display: flex !important; align-items: center !important; justify-content: center !important; background: linear-gradient(135deg,#06b6d4,#0891b2,#0e7490) !important; box-shadow: 0 0 0 3px rgba(6,182,212,.22),0 4px 12px rgba(8,145,178,.4) !important; }
+:where(.bpx-17) { position: absolute !important; bottom: -1px !important; right: -1px !important; width: 10px !important; height: 10px !important; border-radius: 50% !important; background: linear-gradient(135deg,#4ade80,#22c55e) !important; border: 2px solid #cef8ff !important; box-shadow: 0 0 5px rgba(34,197,94,.45) !important; }
+:where(.bpx-18) { font-size: 16px !important; font-weight: 500 !important; color: #0c4a6e !important; letter-spacing: -.4px !important; line-height: 1.15 !important; }
+:where(.bpx-19) { font-size: 11px !important; font-weight: 500 !important; color: #0e7490 !important; opacity: 0.9 !important; margin-top: 3px !important; }
+:where(.bpx-20) { z-index: 1 !important; flex-shrink: 0 !important; }
+:where(.bpx-21) { border: none !important; border-radius: 0 !important; box-shadow: none !important; margin: 0 !important; }
+:where(.bpx-22) { display: flex !important; flex-direction: column !important; gap: 8px !important; }
+:where(.bpx-23) { padding: 0 !important; overflow: hidden !important; position: relative !important; }
+:where(.bpx-24) { position: absolute !important; left: 0 !important; top: 0 !important; bottom: 0 !important; width: 4px !important; background: linear-gradient(180deg,#67e8f9,#0891b2,#0e7490) !important; z-index: 10 !important; border-radius: 14px 0 0 14px !important; }
+:where(.bpx-25) { display: flex !important; align-items: center !important; justify-content: space-between !important; flex-wrap: wrap !important; gap: 8px !important; padding: 8px 12px 8px 20px !important; background: linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%) !important; border-bottom: 1px solid #A5F3FC !important; min-height: 48px !important; }
+:where(.bpx-26) { display: flex !important; align-items: center !important; gap: 10px !important; }
+:where(.bpx-27) { width: 34px !important; height: 34px !important; border-radius: 10px !important; background: linear-gradient(135deg,#06b6d4,#0891b2) !important; display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0 !important; box-shadow: 0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32) !important; }
+:where(.bpx-28) { display: flex !important; align-items: center !important; gap: 7px !important; }
+:where(.bpx-29) { font-size: 9px !important; font-weight: 800 !important; color: #0891b2 !important; }
+:where(.bpx-30) { width: 1px !important; height: 12px !important; background: #A5E8F5 !important; display: inline-block !important; }
+:where(.bpx-31) { font-size: 10.5px !important; font-weight: 800 !important; color: #0c4a6e !important; letter-spacing: -.2px !important; }
+:where(.bpx-32) { font-size: 7.5px !important; font-weight: 700 !important; color: #0891b2 !important; background: rgba(6,182,212,.1) !important; border: 1px solid rgba(6,182,212,.25) !important; padding: 1px 6px !important; border-radius: 20px !important; }
+:where(.bpx-33) { font-size: 9px !important; font-weight: 500 !important; color: #0e7490 !important; margin-top: 2px !important; }
+:where(.bpx-34) { display: flex !important; align-items: center !important; gap: 8px !important; }
+:where(.bpx-35) { display: flex !important; gap: 3px !important; padding: 3px !important; height: 34px !important; border-radius: 9px !important; background: rgba(6,182,212,.08) !important; border: 1.5px solid #A5F3FC !important; }
+:where(.bpx-36) { width: 26px !important; height: 26px !important; border-radius: 7px !important; background: rgba(255,255,255,.75) !important; border: 1.5px solid rgba(8,145,178,.22) !important; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; color: #0891b2 !important; transition: all .15s !important; flex-shrink: 0 !important; }
+:where(.bpx-37) { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)) !important; gap: 6px !important; }
+:where(.bpx-38) { display: flex !important; align-items: center !important; justify-content: space-between !important; margin-bottom: 5px !important; }
+:where(.bpx-39) { display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 16px 10px 20px !important; background: linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%) !important; border-bottom: 1px solid #A5F3FC !important; min-height: 52px !important; flex-shrink: 0 !important; }
+:where(.bpx-40) { font-size: 13px !important; font-weight: 800 !important; color: #0c4a6e !important; letter-spacing: -.2px !important; }
+:where(.bpx-41) { font-size: 8px !important; font-weight: 700 !important; color: #0891b2 !important; background: rgba(6,182,212,.1) !important; border: 1px solid rgba(6,182,212,.25) !important; padding: 2px 7px !important; border-radius: 20px !important; white-space: nowrap !important; }
+:where(.bpx-42) { font-size: 10px !important; font-weight: 500 !important; color: #0891b2 !important; margin-top: 2px !important; }
+:where(.bpx-43) { display: flex !important; align-items: center !important; gap: 8px !important; height: 36px !important; padding: 0 14px !important; border-radius: 9px !important; background: #fff !important; border: 1.5px solid #A5F3FC !important; box-shadow: 0 1px 4px rgba(6,182,212,.08) !important; transition: border-color .15s,box-shadow .15s !important; flex: 1 !important; max-width: 680px !important; }
+:where(.bpx-44) { flex-shrink: 0 !important; opacity: 0.7 !important; }
+:where(.bpx-45) { border: none !important; outline: none !important; font-size: 11.5px !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; background: transparent !important; min-width: 0 !important; }
+:where(.bpx-46) { display: flex !important; flex-direction: column !important; flex: 1 !important; min-height: 0 !important; background: linear-gradient(180deg,#f0fdff,#f8feff) !important; }
+:where(.bpx-47) { display: flex !important; align-items: center !important; padding: 8px 16px 0 16px !important; gap: 0 !important; border-bottom: 1.5px solid rgba(6,182,212,.15) !important; background: linear-gradient(110deg,#f0fdff,#e8fbfd) !important; flex-shrink: 0 !important; }
+:where(.bpx-48) { overflow: auto !important; flex: 1 !important; min-height: 0 !important; display: flex !important; flex-direction: column !important; }
+:where(.bpx-49) { width: 100% !important; border-collapse: collapse !important; font-family: inherit !important; }
+:where(.bpx-50) { padding: 9px 11px !important; text-align: center !important; font-size: 11px !important; color: #b0c4d4 !important; font-weight: 600 !important; }
+:where(.bpx-51) { padding: 9px 11px !important; text-align: center !important; }
+:where(.bpx-52) { margin-top: auto !important; flex-shrink: 0 !important; }
+:where(.bpx-53) { display: flex !important; gap: 6px !important; padding: 10px 16px 2px !important; }
+:where(.bpx-54) { font-size: 11px !important; font-weight: 600 !important; color: #b0c4d4 !important; }
+:where(.bpx-55) { font-size: 10px !important; font-weight: 500 !important; color: #b0c4d4 !important; font-style: italic !important; }
+:where(.bpx-56) { padding: 0 !important; overflow: hidden !important; }
+:where(.bpx-57) { position: relative !important; }
+:where(.bpx-58) { width: 26px !important; height: 26px !important; border-radius: 7px !important; background: rgba(255,255,255,.75) !important; border: 1.5px solid rgba(8,145,178,.22) !important; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; color: #0891b2 !important; transition: all .15s !important; }
+:where(.bpx-59) { display: flex !important; align-items: center !important; justify-content: space-between !important; flex-wrap: wrap !important; gap: 10px !important; padding: 12px 18px !important; background: linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%) !important; border-bottom: 1.5px solid #A5F3FC !important; min-height: 60px !important; flex-shrink: 0 !important; }
+:where(.bpx-60) { width: 36px !important; height: 36px !important; border-radius: 10px !important; background: linear-gradient(135deg,#06b6d4,#0891b2) !important; display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0 !important; box-shadow: 0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3) !important; }
+:where(.bpx-61) { font-size: 9.5px !important; color: #0891b2 !important; font-weight: 500 !important; margin-top: 1px !important; }
+:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 7px !important; height: 38px !important; padding: 0 12px !important; border-radius: 9px !important; background: #fff !important; border: 1.5px solid #A5F3FC !important; box-shadow: 0 1px 4px rgba(6,182,212,.08) !important; width: 380px !important; max-width: 100% !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
+:where(.bpx-63) { border: none !important; outline: none !important; font-size: 11.5px !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; min-width: 0 !important; background: transparent !important; }
+:where(.bpx-64) { display: flex !important; gap: 3px !important; padding: 3px !important; height: 38px !important; border-radius: 9px !important; background: rgba(6,182,212,.08) !important; border: 1.5px solid #A5F3FC !important; }
+:where(.bpx-65) { overflow: auto !important; flex: 1 !important; min-height: 0 !important; }
+:where(.bpx-66) { padding: 9px 12px !important; text-align: center !important; }
+:where(.bpx-67) { font-size: 11px !important; font-weight: 700 !important; color: #0891b2 !important; }
+:where(.bpx-68) { font-size: 10px !important; font-weight: 700 !important; color: #0891b2 !important; background: rgba(6,182,212,.08) !important; border: 1px solid rgba(6,182,212,.18) !important; padding: 2px 7px !important; border-radius: 5px !important; white-space: nowrap !important; display: inline-block !important; }
+:where(.bpx-69) { padding: 9px 11px !important; font-size: 12px !important; font-weight: 700 !important; color: #0c4a6e !important; white-space: nowrap !important; }
+:where(.bpx-70) { padding: 9px 11px !important; text-align: left !important; vertical-align: middle !important; min-width: 196px !important; }
+:where(.bpx-71) { display: flex !important; flex-wrap: nowrap !important; gap: 4px !important; justify-content: flex-start !important; align-items: center !important; }
+:where(.bpx-72) { padding: 9px 11px !important; font-size: 11px !important; color: #475569 !important; text-align: center !important; }
+:where(.bpx-73) { width: 24px !important; height: 24px !important; border-radius: 6px !important; background: linear-gradient(135deg,#06b6d4,#0891b2) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; transition: transform .15s,box-shadow .15s !important; }
+:where(.bpx-74) { padding: 9px 12px !important; }
+:where(.bpx-75) { display: flex !important; align-items: center !important; justify-content: center !important; gap: 5px !important; }
+:where(.bpx-76) { font-size: 10px !important; font-weight: 700 !important; color: #0e7490 !important; background: rgba(6,182,212,.08) !important; border: 1px solid rgba(6,182,212,.18) !important; padding: 2px 7px !important; border-radius: 5px !important; white-space: nowrap !important; display: inline-block !important; }
+:where(.bpx-77) { font-size: 10px !important; font-weight: 700 !important; color: #0891b2 !important; background: rgba(6,182,212,.06) !important; border: 1px solid rgba(6,182,212,.14) !important; padding: 2px 7px !important; border-radius: 5px !important; }
+:where(.bpx-78) { position: fixed !important; inset: 0 !important; z-index: 200000 !important; }
+:where(.bpx-79) { font-size: 8px !important; font-weight: 800 !important; letter-spacing: .1em !important; text-transform: uppercase !important; color: #0891b2 !important; padding: 4px 8px 7px !important; }
+:where(.bpx-80) { font-size: 10px !important; font-weight: 600 !important; color: #0c4a6e !important; word-break: break-word !important; }
+:where(.bpx-81) { font-size: 8.5px !important; font-weight: 800 !important; color: #fff !important; background: linear-gradient(135deg, #06b6d4, #0891b2) !important; padding: 2px 8px !important; border-radius: 20px !important; white-space: nowrap !important; border: none !important; cursor: pointer !important; font-family: inherit !important; }
+:where(.bpx-82) { min-width: 0 !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+:where(.bpx-83) { position: fixed !important; inset: 0 !important; z-index: 200000 !important; background: rgba(7,30,50,.55) !important; backdrop-filter: blur(6px) !important; -webkit-backdrop-filter: blur(6px) !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 24px !important; font-family: var(--font-sans) !important; }
+:where(.bpx-84) { width: 100% !important; max-width: 1180px !important; max-height: calc(100vh - 48px) !important; background: #fff !important; border-radius: 16px !important; overflow: hidden !important; display: flex !important; flex-direction: column !important; box-shadow: 0 28px 70px rgba(15,23,42,.45) !important; }
+:where(.bpx-85) { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 16px !important; padding: 16px 22px !important; background: linear-gradient(110deg,#0c6680 0%,#0e7490 35%,#0891b2 75%,#06b6d4 100%) !important; color: #fff !important; flex-shrink: 0 !important; }
+:where(.bpx-86) { display: inline-flex !important; align-items: center !important; gap: 14px !important; min-width: 0 !important; }
+:where(.bpx-87) { width: 44px !important; height: 44px !important; border-radius: 12px !important; background: rgba(255,255,255,.18) !important; border: 1.5px solid rgba(255,255,255,.28) !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0 !important; }
+:where(.bpx-88) { min-width: 0 !important; }
+:where(.bpx-89) { font-size: 19px !important; font-weight: 800 !important; letter-spacing: -.01em !important; }
+:where(.bpx-90) { font-size: 12px !important; color: rgba(255,255,255,.86) !important; margin-top: 2px !important; }
+:where(.bpx-91) { display: inline-flex !important; align-items: center !important; gap: 8px !important; flex-shrink: 0 !important; }
+:where(.bpx-92) { font-size: 9.5px !important; font-weight: 800 !important; letter-spacing: .12em !important; color: rgba(255,255,255,.78) !important; }
+:where(.bpx-93) { width: 34px !important; height: 34px !important; border-radius: 9px !important; background: rgba(255,255,255,.14) !important; border: 1px solid rgba(255,255,255,.22) !important; color: #fff !important; cursor: pointer !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; }
+:where(.bpx-94) { flex: 1 !important; min-height: 0 !important; overflow-y: auto !important; background: #fff !important; }
+:where(.bpx-95) { padding: 30px !important; text-align: center !important; font-size: 12.5px !important; color: #64748b !important; }
+:where(.bpx-96) { padding: 9px 11px !important; text-align: left !important; min-width: 140px !important; }
+:where(.bpx-97) { display: flex !important; flex-wrap: wrap !important; gap: 3px !important; justify-content: flex-start !important; align-items: center !important; }
+:where(.bpx-98) { display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 18px !important; background: linear-gradient(110deg,#f0fdff,#e8fafb) !important; border-top: 1.5px solid #A5F3FC !important; flex-shrink: 0 !important; }
+:where(.bpx-99) { font-size: 11px !important; font-weight: 600 !important; color: #0891b2 !important; }
+:where(.bpx-100) { width: 100% !important; max-width: 1120px !important; max-height: calc(100vh - 48px) !important; background: #fff !important; border-radius: 16px !important; overflow: hidden !important; display: flex !important; flex-direction: column !important; box-shadow: 0 28px 70px rgba(15,23,42,.45) !important; }
+:where(.bpx-101) { background: #fff !important; border-bottom: 1px solid rgba(6,182,212,.07) !important; }
+:where(.bpx-102) { font-size: 7.5px !important; font-weight: 800 !important; padding: 1px 6px !important; border-radius: 20px !important; background: rgba(6,182,212,.12) !important; border: 1px solid rgba(6,182,212,.25) !important; color: #0891b2 !important; letter-spacing: .04em !important; }
+:where(.bpx-103) { font-size: 7.5px !important; font-weight: 800 !important; padding: 1px 6px !important; border-radius: 20px !important; background: rgba(148,163,184,.1) !important; border: 1px solid rgba(148,163,184,.2) !important; color: #64748b !important; letter-spacing: .04em !important; }
+
 .seg-page { background: #F4F6FB; min-height: 100%; padding: 8px; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 .seg-page-card {
   background: #fff;
@@ -213,15 +317,38 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bpa-seg { background: rgba(255,255,255,.05) !important; }
 [data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(224, 249, 253)"],
+[data-bs-theme="dark"] .seg-page .bpx-9,
 [data-bs-theme="dark"] .seg-page [style*="rgb(206, 248, 255)"],
+[data-bs-theme="dark"] .seg-page .bpx-9,
+[data-bs-theme="dark"] .seg-page .bpx-17,
 [data-bs-theme="dark"] .seg-page [style*="rgb(244, 254, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(248, 254, 255)"],
+[data-bs-theme="dark"] .seg-page .bpx-46,
 [data-bs-theme="dark"] .seg-page [style*="rgb(240, 253, 255)"],
+[data-bs-theme="dark"] .seg-page .bpx-25,
+[data-bs-theme="dark"] .seg-page .bpx-39,
+[data-bs-theme="dark"] .seg-page .bpx-46,
+[data-bs-theme="dark"] .seg-page .bpx-47,
+[data-bs-theme="dark"] .seg-page .bpx-59,
+[data-bs-theme="dark"] .seg-page .bpx-98,
 [data-bs-theme="dark"] .seg-page [style*="rgb(232, 250, 251)"],
+[data-bs-theme="dark"] .seg-page .bpx-98,
 [data-bs-theme="dark"] .seg-page [style*="rgb(236, 254, 255)"],
-[data-bs-theme="dark"] .seg-page [style*="rgb(232, 251, 253)"] { background: #16263a !important; }
-[data-bs-theme="dark"] .seg-page [style*="linear-gradient(110deg"] { background: linear-gradient(110deg,#103a48,#0c2e3a) !important; }
-[data-bs-theme="dark"] .seg-page [style*="rgba(255, 255, 255, 0.5)"] { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(232, 251, 253)"] ,
+[data-bs-theme="dark"] .seg-page .bpx-25 ,
+[data-bs-theme="dark"] .seg-page .bpx-39 ,
+[data-bs-theme="dark"] .seg-page .bpx-47 ,
+[data-bs-theme="dark"] .seg-page .bpx-59 { background: #16263a !important; }
+[data-bs-theme="dark"] .seg-page [style*="linear-gradient(110deg"] ,
+[data-bs-theme="dark"] .seg-page .bpx-9 ,
+[data-bs-theme="dark"] .seg-page .bpx-25 ,
+[data-bs-theme="dark"] .seg-page .bpx-39 ,
+[data-bs-theme="dark"] .seg-page .bpx-47 ,
+[data-bs-theme="dark"] .seg-page .bpx-59 ,
+[data-bs-theme="dark"] .seg-page .bpx-85 ,
+[data-bs-theme="dark"] .seg-page .bpx-98 { background: linear-gradient(110deg,#103a48,#0c2e3a) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgba(255, 255, 255, 0.5)"] ,
+[data-bs-theme="dark"] .seg-page .bpx-12 { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
 [data-bs-theme="dark"] .bref-box__header::after { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
 [data-bs-theme="dark"] .bpa-tab::before { background: linear-gradient(180deg,rgba(255,255,255,.04),transparent) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(238, 240, 255)"],
@@ -232,16 +359,51 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgb(67, 57, 202)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(124, 58, 237)"] { color: #c7d2fe !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(248, 250, 252)"] { background: rgba(148, 163, 184, .18) !important; }
-[data-bs-theme="dark"] .seg-page [style*="rgba(6, 182, 212, 0.1)"] { background: rgba(148, 163, 184, .30) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgba(6, 182, 212, 0.1)"] ,
+[data-bs-theme="dark"] .seg-page .bpx-32 ,
+[data-bs-theme="dark"] .seg-page .bpx-41 { background: rgba(148, 163, 184, .30) !important; }
 [data-bs-theme="dark"] .seg-page [style*="background: rgb(255, 255, 255)"],
-[data-bs-theme="dark"] .seg-page [style*="background:rgb(255, 255, 255)"] { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .seg-page .bpx-43,
+[data-bs-theme="dark"] .seg-page .bpx-62,
+[data-bs-theme="dark"] .seg-page .bpx-84,
+[data-bs-theme="dark"] .seg-page .bpx-94,
+[data-bs-theme="dark"] .seg-page .bpx-100,
+[data-bs-theme="dark"] .seg-page .bpx-101,
+[data-bs-theme="dark"] .seg-page [style*="background:rgb(255, 255, 255)"] ,
+[data-bs-theme="dark"] .seg-page .bpx-43 ,
+[data-bs-theme="dark"] .seg-page .bpx-62 ,
+[data-bs-theme="dark"] .seg-page .bpx-84 ,
+[data-bs-theme="dark"] .seg-page .bpx-94 ,
+[data-bs-theme="dark"] .seg-page .bpx-100 ,
+[data-bs-theme="dark"] .seg-page .bpx-101 { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(12, 74, 110)"],
+[data-bs-theme="dark"] .seg-page .bpx-18,
+[data-bs-theme="dark"] .seg-page .bpx-31,
+[data-bs-theme="dark"] .seg-page .bpx-40,
+[data-bs-theme="dark"] .seg-page .bpx-45,
+[data-bs-theme="dark"] .seg-page .bpx-63,
+[data-bs-theme="dark"] .seg-page .bpx-69,
+[data-bs-theme="dark"] .seg-page .bpx-80,
 [data-bs-theme="dark"] .seg-page [style*="rgb(15, 23, 42)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(31, 41, 55)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(71, 85, 105)"],
-[data-bs-theme="dark"] .seg-page [style*="rgb(14, 116, 144)"] { color: #cfe8f3 !important; }
-[data-bs-theme="dark"] .seg-page [style*="rgb(148, 163, 184)"] { color: #94c9dd !important; }
-[data-bs-theme="dark"] .seg-page [style*="rgb(100, 116, 139)"] { color: #94c9dd !important; }
+[data-bs-theme="dark"] .seg-page .bpx-72,
+[data-bs-theme="dark"] .seg-page [style*="rgb(14, 116, 144)"] ,
+[data-bs-theme="dark"] .seg-page .bpx-2 ,
+[data-bs-theme="dark"] .seg-page .bpx-8 ,
+[data-bs-theme="dark"] .seg-page .bpx-11 ,
+[data-bs-theme="dark"] .seg-page .bpx-16 ,
+[data-bs-theme="dark"] .seg-page .bpx-19 ,
+[data-bs-theme="dark"] .seg-page .bpx-24 ,
+[data-bs-theme="dark"] .seg-page .bpx-33 ,
+[data-bs-theme="dark"] .seg-page .bpx-76 ,
+[data-bs-theme="dark"] .seg-page .bpx-85 { color: #cfe8f3 !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(148, 163, 184)"] ,
+[data-bs-theme="dark"] .seg-page .bpx-1 ,
+[data-bs-theme="dark"] .seg-page .bpx-5 { color: #94c9dd !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(100, 116, 139)"] ,
+[data-bs-theme="dark"] .seg-page .bpx-95 ,
+[data-bs-theme="dark"] .seg-page .bpx-103 { color: #94c9dd !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(224, 247, 250)"] { background: rgba(8,145,178,.16) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(236, 253, 245)"] { background: rgba(16,185,129,.18) !important; border-color: rgba(16,185,129,.4) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(254, 243, 199)"] { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.4) !important; }
@@ -259,21 +421,57 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
-[data-bs-theme="dark"] .seg-page [style*="rgb(165, 243, 252)"] { border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .seg-page [style*="rgb(165, 243, 252)"] ,
+[data-bs-theme="dark"] .seg-page .bpx-25 ,
+[data-bs-theme="dark"] .seg-page .bpx-35 ,
+[data-bs-theme="dark"] .seg-page .bpx-39 ,
+[data-bs-theme="dark"] .seg-page .bpx-43 ,
+[data-bs-theme="dark"] .seg-page .bpx-59 ,
+[data-bs-theme="dark"] .seg-page .bpx-62 ,
+[data-bs-theme="dark"] .seg-page .bpx-64 ,
+[data-bs-theme="dark"] .seg-page .bpx-98 { border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .bp-buyer-row:hover { background: rgba(8,145,178,.14)!important; box-shadow: inset 3px 0 0 #22d3ee; }
 [data-bs-theme="dark"] .bp-prog.is-complete { background: rgba(16,185,129,.18) !important; border-color: rgba(16,185,129,.38) !important; color: #6ee7b7 !important; }
 [data-bs-theme="dark"] .bp-prog.is-partial  { background: rgba(245,158,11,.18) !important; border-color: rgba(245,158,11,.38) !important; color: #fcd34d !important; }
 [data-bs-theme="dark"] .bp-prog.is-none     { background: rgba(148,163,184,.16) !important; border-color: rgba(148,163,184,.30) !important; color: #cbd5e1 !important; }
 [data-bs-theme="dark"] .bcm-overlay > div { background: #1e293b !important; }
 [data-bs-theme="dark"] .bcm-overlay [style*="background: rgb(255, 255, 255)"],
-[data-bs-theme="dark"] .bcm-overlay [style*="background:rgb(255, 255, 255)"] { background: #0f172a !important; }
-[data-bs-theme="dark"] .bcm-overlay [style*="rgb(240, 253, 255)"] { background: #16263a !important; }
+[data-bs-theme="dark"] .bcm-overlay .bpx-43,
+[data-bs-theme="dark"] .bcm-overlay .bpx-62,
+[data-bs-theme="dark"] .bcm-overlay .bpx-84,
+[data-bs-theme="dark"] .bcm-overlay .bpx-94,
+[data-bs-theme="dark"] .bcm-overlay .bpx-100,
+[data-bs-theme="dark"] .bcm-overlay .bpx-101,
+[data-bs-theme="dark"] .bcm-overlay [style*="background:rgb(255, 255, 255)"] ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-43 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-62 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-84 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-94 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-100 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-101 { background: #0f172a !important; }
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(240, 253, 255)"] ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-25 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-39 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-46 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-47 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-59 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-98 { background: #16263a !important; }
 [data-bs-theme="dark"] .bcm-overlay table thead tr { background: #16263a !important; }
 [data-bs-theme="dark"] .bcm-overlay tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
 [data-bs-theme="dark"] .bcm-overlay tbody td { color: #cbd5e1 !important; }
 [data-bs-theme="dark"] .bcm-overlay [style*="rgb(12, 74, 110)"],
+[data-bs-theme="dark"] .bcm-overlay .bpx-18,
+[data-bs-theme="dark"] .bcm-overlay .bpx-31,
+[data-bs-theme="dark"] .bcm-overlay .bpx-40,
+[data-bs-theme="dark"] .bcm-overlay .bpx-45,
+[data-bs-theme="dark"] .bcm-overlay .bpx-63,
+[data-bs-theme="dark"] .bcm-overlay .bpx-69,
+[data-bs-theme="dark"] .bcm-overlay .bpx-80,
 [data-bs-theme="dark"] .bcm-overlay [style*="rgb(71, 85, 105)"],
-[data-bs-theme="dark"] .bcm-overlay [style*="rgb(100, 116, 139)"] { color: #cfe8f3 !important; }
+[data-bs-theme="dark"] .bcm-overlay .bpx-72,
+[data-bs-theme="dark"] .bcm-overlay [style*="rgb(100, 116, 139)"] ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-95 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-103 { color: #cfe8f3 !important; }
 [data-bs-theme="dark"] .seg-pop { background: #1e293b !important; border-color: rgba(6,182,212,.3) !important; box-shadow: 0 18px 50px rgba(0,0,0,.5) !important; }
 [data-bs-theme="dark"] .seg-pop span { color: #cfe8f3 !important; }
 
@@ -354,7 +552,7 @@ function ProgCell({ obj, big = true, onClick }: { obj: Prog; big?: boolean; onCl
       >
         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: big ? '5px' : '4px', minWidth: minW }}>
           <span className={`bp-prog ${isComplete ? 'is-complete' : isPartial ? 'is-partial' : 'is-none'}`} style={{ fontSize: '11px', fontWeight: 900, color: numC, background: numBg, border: `1px solid ${numBd}`, padding: pad, borderRadius: '20px', letterSpacing: '-.2px', lineHeight: 1.4 }}>
-            {d}<span style={{ fontSize: '9px', fontWeight: 500, color: '#94a3b8' }}>/{t}</span>
+            {d}<span className="bpx-1">/{t}</span>
           </span>
           <div style={{ width: barW, height: barH, borderRadius: '5px', background: 'rgba(6,182,212,.1)', overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${pct}%`, background: barGrad, borderRadius: '5px', transition: 'width .5s cubic-bezier(.22,1,.36,1)' }} />
@@ -367,8 +565,8 @@ function ProgCell({ obj, big = true, onClick }: { obj: Prog; big?: boolean; onCl
 
 function NumBadge({ n }: { n: number }) {
   return (
-    <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg,#0e7490,#0891b2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-      <span style={{ fontSize: '9px', fontWeight: 800, color: '#fff' }}>{n}</span>
+    <div className="bpx-2">
+      <span className="bpx-3">{n}</span>
     </div>
   );
 }
@@ -394,7 +592,7 @@ function RegBadge({ reg }: { reg: Reg }) {
       ? { bg: '#ECFDF5', bd: '#A7F3D0', c: '#059669', dot: '#10B981' }
       : { bg: '#EEF2FF', bd: '#C7D2FE', c: '#4338CA', dot: '#6366F1' };
   return (
-    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+    <td className="bpx-4">
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 8px', borderRadius: '20px', background: cfg.bg, border: `1px solid ${cfg.bd}`, fontSize: '9px', fontWeight: 700, color: cfg.c, whiteSpace: 'nowrap' }}>
         <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: cfg.dot, display: 'inline-block' }} />
         {reg}
@@ -409,7 +607,7 @@ function WsProgCell({ obj }: { obj: Prog }) {
 
 function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box'; onClick?: () => void; disabled?: boolean }) {
   return (
-    <td style={{ padding: '8px 10px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+    <td className="bpx-4" onClick={(e) => e.stopPropagation()}>
       <Tooltip label={icon === 'shield' ? 'Shipment Evidence Vault' : 'Opportunity Evidence Vault'}>
         <button
           onClick={onClick}
@@ -581,14 +779,14 @@ export default function ClmBuyerProfilePage() {
   };
   const renderSegCell = (key: string, names: string[]) => {
     const segs = names.map((s) => s.trim()).filter(Boolean);
-    if (segs.length === 0) return <span style={{ fontSize: '10px', color: '#94a3b8' }}>—</span>;
+    if (segs.length === 0) return <span className="bpx-5">—</span>;
     const extra = segs.length - 1;
-    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, verticalAlign: 'middle', maxWidth: '100%' }}>
+    return <span className="bpx-6">
       <span style={{ maxWidth: SEG_CHIP_COL, flexShrink: 1, display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
-        <Tooltip label={segs[0]}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, boxSizing: 'border-box', minWidth: 0 }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{segs[0]}</span><SegmentNameBadge name={segs[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
+        <Tooltip label={segs[0]}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: SEG_CHIP_COL, fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', lineHeight: 1.6, boxSizing: 'border-box', minWidth: 0 }}><span className="bpx-7">{segs[0]}</span><SegmentNameBadge name={segs[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
       </span>
       {extra > 0 && (
-        <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)', border: 'none', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>
+        <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} className="bpx-8">+{extra}</button></Tooltip>
       )}
     </span>;
   };
@@ -719,24 +917,24 @@ export default function ClmBuyerProfilePage() {
     <div className="seg-page">
       <style>{BP_CSS}</style>
 
-      <div className="seg-page-card" style={{ background: 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 18%,#d0f4f9 45%,#baeef7 75%,#a0e8f2 100%)' }}>
-        <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: '58px' }}>
-          <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '5px', background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)' }} />
-          <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.5),transparent)', pointerEvents: 'none' }} />
-          <span style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle,rgba(6,182,212,.07) 1px,transparent 1px)', backgroundSize: '18px 18px', pointerEvents: 'none' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', zIndex: 1, paddingLeft: '10px' }}>
-            <div style={{ position: 'relative', flexShrink: 0 }}>
-              <div style={{ width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#06b6d4,#0891b2,#0e7490)', boxShadow: '0 0 0 3px rgba(6,182,212,.22),0 4px 12px rgba(8,145,178,.4)' }}>
+      <div className="seg-page-card bpx-9">
+        <div className="bpx-10">
+          <span className="bpx-11" />
+          <span className="bpx-12" />
+          <span className="bpx-13" />
+          <div className="bpx-14">
+            <div className="bpx-15">
+              <div className="bpx-16">
                 <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
               </div>
-              <span style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '10px', height: '10px', borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #cef8ff', boxShadow: '0 0 5px rgba(34,197,94,.45)' }} />
+              <span className="bpx-17" />
             </div>
             <div>
-              <div style={{ fontSize: '16px', fontWeight: 500, color: '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.15 }}>Customer Profile</div>
-              <div style={{ fontSize: '11px', fontWeight: 500, color: '#0e7490', opacity: .9, marginTop: '3px' }}>Track customer onboarding, compliance verification, agreements, and overall CLM readiness.</div>
+              <div className="bpx-18">Customer Profile</div>
+              <div className="bpx-19">Track customer onboarding, compliance verification, agreements, and overall CLM readiness.</div>
             </div>
           </div>
-          <div style={{ zIndex: 1, flexShrink: 0 }}>
+          <div className="bpx-20">
             <div className="bpa-seg">
               <button className={`bpa-tab ${clmTab === 'party' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => setClmTab('party')}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
@@ -752,7 +950,7 @@ export default function ClmBuyerProfilePage() {
       </div>
 
       <div className="seg-page-card">
-        <div className={`bref-box${brefCollapsed ? ' is-collapsed' : ''}`} style={{ border: 'none', borderRadius: 0, boxShadow: 'none', margin: 0 }}>
+        <div className={`bref-box${brefCollapsed ? ' is-collapsed' : ''} bpx-21`}>
           <div className="bref-box__header" onClick={() => setBrefCollapsed((c) => !c)}>
             <div className="bref-box__header-ico">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
@@ -793,26 +991,26 @@ export default function ClmBuyerProfilePage() {
       </div>
 
       {clmTab === 'txn' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
-            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: 'linear-gradient(180deg,#67e8f9,#0891b2,#0e7490)', zIndex: 10, borderRadius: '14px 0 0 14px' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '8px 12px 8px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32)' }}>
+        <div className="bpx-22">
+          <div className="seg-page-card bpx-23">
+            <div className="bpx-24" />
+            <div className="bpx-25">
+              <div className="bpx-26">
+                <div className="bpx-27">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><line x1="0" y1="20" x2="24" y2="20" /></svg>
                 </div>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                    <span style={{ fontSize: '9px', fontWeight: 800, color: '#0891b2' }}>Transaction wise</span>
-                    <span style={{ width: '1px', height: '12px', background: '#A5E8F5', display: 'inline-block' }} />
-                    <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Analytics Overview</span>
-                    <span style={{ fontSize: '7.5px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.25)', padding: '1px 6px', borderRadius: '20px' }}>7 metrics</span>
+                  <div className="bpx-28">
+                    <span className="bpx-29">Transaction wise</span>
+                    <span className="bpx-30" />
+                    <span className="bpx-31">Analytics Overview</span>
+                    <span className="bpx-32">7 metrics</span>
                   </div>
-                  <div style={{ fontSize: '9px', fontWeight: 500, color: '#0e7490', marginTop: '2px' }}>Live snapshot of transaction compliance status, pending actions and document health.</div>
+                  <div className="bpx-33">Live snapshot of transaction compliance status, pending actions and document health.</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '34px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
+              <div className="bpx-34">
+                <div className="bpx-35">
                   {([['international', 'International Transactions'], ['domestic', 'Domestic Transactions']] as const).map(([key, label]) => {
                     const on = txnScope === key;
                     return (
@@ -825,13 +1023,13 @@ export default function ClmBuyerProfilePage() {
                     );
                   })}
                 </div>
-                <div className="bp-chev-toggle" onClick={() => setTxnAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s', flexShrink: 0 }}>
+                <div className="bp-chev-toggle bpx-36" onClick={() => setTxnAnalyticsOpen((o) => !o)}>
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" style={{ transition: 'transform .24s cubic-bezier(.22,1,.36,1)', transform: txnAnalyticsOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}><polyline points="6 9 12 15 18 9" /></svg>
                 </div>
               </div>
             </div>
             <div style={{ maxHeight: txnAnalyticsOpen ? '200px' : '0px', opacity: txnAnalyticsOpen ? 1 : 0, padding: txnAnalyticsOpen ? '6px 8px 8px' : '0 8px', background: 'linear-gradient(180deg,#f0fdff,#f4feff)', overflow: 'hidden', transition: 'max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(130px, 100%), 1fr))', gap: '6px' }}>
+              <div className="bpx-37">
                 {[
                   { num: pad(txnTotal), label: 'Total Transactions', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg> },
                   { num: pad(txnCompliant), label: 'Fully Compliant', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -843,7 +1041,7 @@ export default function ClmBuyerProfilePage() {
                 ].map((c, idx) => (
                   <div key={idx} style={cardStyle} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                     <div style={cardTopBar} />
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <div className="bpx-38">
                       <div style={cardIco}>{c.ico}</div>
                       <span style={pill(c.tagC)}>{c.tag}</span>
                     </div>
@@ -856,36 +1054,36 @@ export default function ClmBuyerProfilePage() {
           </div>
 
           <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: txnCardFill }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px 10px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '52px', flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32)' }}>
+            <div className="bpx-39">
+              <div className="bpx-26">
+                <div className="bpx-27">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                 </div>
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>International Transactions</span>
-                    <span style={{ fontSize: '8px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.25)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>With Shipment ID</span>
+                  <div className="bpx-28">
+                    <span className="bpx-40">International Transactions</span>
+                    <span className="bpx-41">With Shipment ID</span>
                   </div>
-                  <div style={{ fontSize: '10px', fontWeight: 500, color: '#0891b2', marginTop: '2px' }}>Cross-border shipment-linked transactions mapped to customers, opportunities &amp; compliance progress.</div>
+                  <div className="bpx-42">Cross-border shipment-linked transactions mapped to customers, opportunities &amp; compliance progress.</div>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', transition: 'border-color .15s,box-shadow .15s', flex: 1, maxWidth: '680px' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0, opacity: .7 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                <input autoComplete="off" type="text" placeholder="Search by Shipment ID, Opportunity ID, Customer, Consignee, PI or Status..." value={txnSearch} onChange={(e) => { setTxnSearch(e.target.value); setWsEqPage(1); setWsNeqPage(1); setWosEqPage(1); setWosNeqPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
+              <div className="bpx-43">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" className="bpx-44"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <input autoComplete="off" type="text" placeholder="Search by Shipment ID, Opportunity ID, Customer, Consignee, PI or Status..." value={txnSearch} onChange={(e) => { setTxnSearch(e.target.value); setWsEqPage(1); setWsNeqPage(1); setWosEqPage(1); setWosNeqPage(1); }} className="bpx-45" />
                 <SearchClear show={txnSearch} onClear={() => { setTxnSearch(''); }} />
               </div>
             </div>
 
             {shipTab === 'with' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)', flexShrink: 0 }}>
+              <div className="bpx-46">
+                <div className="bpx-47">
                   <SubTab active={wsSub === 'eq'} kind="eq" onClick={() => setWsSub('eq')} />
                   <SubTab active={wsSub === 'neq'} kind="neq" onClick={() => setWsSub('neq')} />
                 </div>
 
                 {wsSub === 'eq' && (
-                  <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+                  <div ref={txnTableRef} className="bpx-48">
+                    <table className="bpx-49">
                       <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
@@ -898,11 +1096,11 @@ export default function ClmBuyerProfilePage() {
                           const bg = rowBg(i);
                           return (
                             <tr key={r.shp} style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }} {...txnRowHover(bg)}>
-                              <td style={{ padding: '9px 11px', textAlign: 'center', fontSize: '11px', color: '#b0c4d4', fontWeight: 600 }}>{r.sr}</td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={idChip}>{r.shp}</span></td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={oppChip}>{r.opp}</span></td>
+                              <td className="bpx-50">{r.sr}</td>
+                              <td className="bpx-51"><span style={idChip}>{r.shp}</span></td>
+                              <td className="bpx-51"><span style={oppChip}>{r.opp}</span></td>
                               <td style={customerTd}>{r.customer}</td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={piChip}>{r.pi}</span></td>
+                              <td className="bpx-51"><span style={piChip}>{r.pi}</span></td>
                               <RegBadge reg={r.reg} />
                               <WsProgCell obj={r.kyc} /><WsProgCell obj={r.dd} /><WsProgCell obj={r.tl} /><WsProgCell obj={r.td} /><WsProgCell obj={r.agr} />
                               <EvidenceVaultBtn icon="shield" disabled={!r.custId} onClick={() => openTxnBuyerVault(r.custId, r.customer, r.country)} />
@@ -911,19 +1109,19 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ marginTop: 'auto', flexShrink: 0 }}>
+                    <div className="bpx-52">
                       <WorklistPager page={wsEqPageSafe} total={wsEqRows.length} pageSize={txnPerPage} onPage={setWsEqPage} onPageSize={(n) => { setTxnManualSize(n); setWsEqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
 
                 {wsSub === 'neq' && (
-                  <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', gap: 6, padding: '10px 16px 2px' }}>
+                  <div ref={txnTableRef} className="bpx-48">
+                    <div className="bpx-53">
                       <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer Transactions</button>
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
                     </div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+                    <table className="bpx-49">
                       <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'Consignee', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
@@ -936,12 +1134,12 @@ export default function ClmBuyerProfilePage() {
                           const bg = rowBg(i);
                           return (
                             <tr key={r.shp} style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }} {...txnRowHover(bg)}>
-                              <td style={{ padding: '9px 11px', textAlign: 'center', fontSize: '11px', color: '#b0c4d4', fontWeight: 600 }}>{r.sr}</td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={idChip}>{r.shp}</span></td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={oppChip}>{r.opp}</span></td>
+                              <td className="bpx-50">{r.sr}</td>
+                              <td className="bpx-51"><span style={idChip}>{r.shp}</span></td>
+                              <td className="bpx-51"><span style={oppChip}>{r.opp}</span></td>
                               <td style={customerTd}>{r.customer}</td>
                               <td style={customerTd}>{r.consignee}</td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={piChip}>{r.pi}</span></td>
+                              <td className="bpx-51"><span style={piChip}>{r.pi}</span></td>
                               <RegBadge reg={r.reg} />
                               <WsProgCell obj={neqParty === 'consignee' ? (r.c_kyc ?? r.kyc) : r.kyc} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_dd ?? r.dd) : r.dd} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_tl ?? r.tl) : r.tl} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_td ?? r.td) : r.td} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_agr ?? r.agr) : r.agr} />
                               {neqParty === 'consignee'
@@ -952,7 +1150,7 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ marginTop: 'auto', flexShrink: 0 }}>
+                    <div className="bpx-52">
                       <WorklistPager page={wsNeqPageSafe} total={wsNeqRows.length} pageSize={txnPerPage} onPage={setWsNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWsNeqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
@@ -961,15 +1159,15 @@ export default function ClmBuyerProfilePage() {
             )}
 
             {shipTab === 'without' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'linear-gradient(180deg,#f0fdff,#f8feff)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)', flexShrink: 0 }}>
+              <div className="bpx-46">
+                <div className="bpx-47">
                   <SubTab active={wosSub === 'eq'} kind="eq" onClick={() => setWosSub('eq')} />
                   <SubTab active={wosSub === 'neq'} kind="neq" onClick={() => setWosSub('neq')} />
                 </div>
 
                 {wosSub === 'eq' && (
-                  <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+                  <div ref={txnTableRef} className="bpx-48">
+                    <table className="bpx-49">
                       <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
@@ -982,13 +1180,13 @@ export default function ClmBuyerProfilePage() {
                           const bg = rowBg(i);
                           return (
                             <tr key={r.opp} style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }} {...txnRowHover(bg)}>
-                              <td style={{ padding: '9px 11px', textAlign: 'center', fontSize: '11px', color: '#b0c4d4', fontWeight: 600 }}>{r.sr}</td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '11px', fontWeight: 600, color: '#b0c4d4' }}>—</span></td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={oppChipMono}>{r.opp}</span></td>
+                              <td className="bpx-50">{r.sr}</td>
+                              <td className="bpx-51"><span className="bpx-54">—</span></td>
+                              <td className="bpx-51"><span style={oppChipMono}>{r.opp}</span></td>
                               <td style={customerTd}>{r.customer}</td>
                               {r.pi
-                                ? <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={piChip}>{r.pi}</span></td>
-                                : <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 500, color: '#b0c4d4', fontStyle: 'italic' }}>—</span></td>}
+                                ? <td className="bpx-51"><span style={piChip}>{r.pi}</span></td>
+                                : <td className="bpx-51"><span className="bpx-55">—</span></td>}
                               <RegBadge reg={r.reg} />
                               <WsProgCell obj={r.kyc} /><WsProgCell obj={r.dd} /><WsProgCell obj={r.tl} /><WsProgCell obj={r.td} />
                               <WosAgrCell row={r} />
@@ -998,19 +1196,19 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ marginTop: 'auto', flexShrink: 0 }}>
+                    <div className="bpx-52">
                       <WorklistPager page={wosEqPageSafe} total={wosEqRows.length} pageSize={txnPerPage} onPage={setWosEqPage} onPageSize={(n) => { setTxnManualSize(n); setWosEqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
 
                 {wosSub === 'neq' && (
-                  <div ref={txnTableRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', gap: 6, padding: '10px 16px 2px' }}>
+                  <div ref={txnTableRef} className="bpx-48">
+                    <div className="bpx-53">
                       <button onClick={() => setNeqParty('buyer')} style={neqTabStyle(neqParty === 'buyer')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer Transactions</button>
                       <button onClick={() => setNeqParty('consignee')} style={neqTabStyle(neqParty === 'consignee')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee Transactions</button>
                     </div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+                    <table className="bpx-49">
                       <thead style={stickyThead}>
                         <tr style={txnTableHeaderRow}>
                           {['SR No', 'Shipment ID', 'Opportunity ID', 'Customer', 'Consignee', 'PI Number', 'Reg. Status', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Agreements', 'Action'].map((h, i) => (
@@ -1023,14 +1221,14 @@ export default function ClmBuyerProfilePage() {
                           const bg = rowBg(i);
                           return (
                             <tr key={r.opp} style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }} {...txnRowHover(bg)}>
-                              <td style={{ padding: '9px 11px', textAlign: 'center', fontSize: '11px', color: '#b0c4d4', fontWeight: 600 }}>{r.sr}</td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '11px', fontWeight: 600, color: '#b0c4d4' }}>—</span></td>
-                              <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={oppChipMono}>{r.opp}</span></td>
+                              <td className="bpx-50">{r.sr}</td>
+                              <td className="bpx-51"><span className="bpx-54">—</span></td>
+                              <td className="bpx-51"><span style={oppChipMono}>{r.opp}</span></td>
                               <td style={customerTd}>{r.customer}</td>
                               <td style={customerTd}>{r.consignee}</td>
                               {r.pi
-                                ? <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={piChip}>{r.pi}</span></td>
-                                : <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 500, color: '#b0c4d4', fontStyle: 'italic' }}>—</span></td>}
+                                ? <td className="bpx-51"><span style={piChip}>{r.pi}</span></td>
+                                : <td className="bpx-51"><span className="bpx-55">—</span></td>}
                               <RegBadge reg={r.reg} />
                               <WsProgCell obj={neqParty === 'consignee' ? (r.c_kyc ?? r.kyc) : r.kyc} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_dd ?? r.dd) : r.dd} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_tl ?? r.tl) : r.tl} /><WsProgCell obj={neqParty === 'consignee' ? (r.c_td ?? r.td) : r.td} />
                               <WosAgrCell row={neqParty === 'consignee' ? { ...r, agr: r.c_agr ?? r.agr } : r} />
@@ -1042,7 +1240,7 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
-                    <div style={{ marginTop: 'auto', flexShrink: 0 }}>
+                    <div className="bpx-52">
                       <WorklistPager page={wosNeqPageSafe} total={wosNeqRows.length} pageSize={txnPerPage} onPage={setWosNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWosNeqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
@@ -1055,37 +1253,37 @@ export default function ClmBuyerProfilePage() {
 
       {clmTab === 'party' && (
         <div>
-          <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: 'linear-gradient(180deg,#67e8f9,#0891b2,#0e7490)', zIndex: 10, borderRadius: '14px 0 0 14px' }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '8px 12px 8px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32)' }}>
+          <div className="seg-page-card bpx-56">
+            <div className="bpx-57">
+              <div className="bpx-24" />
+              <div className="bpx-25">
+                <div className="bpx-26">
+                  <div className="bpx-27">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><line x1="0" y1="20" x2="24" y2="20" /></svg>
                   </div>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                      <span style={{ fontSize: '9px', fontWeight: 800, color: '#0891b2' }}>Customer & Consignee</span>
-                      <span style={{ width: '1px', height: '12px', background: '#A5E8F5', display: 'inline-block' }} />
-                      <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Analytics Overview</span>
-                      <span style={{ fontSize: '7.5px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.1)', border: '1px solid rgba(6,182,212,.25)', padding: '1px 6px', borderRadius: '20px' }}>7 metrics</span>
+                    <div className="bpx-28">
+                      <span className="bpx-29">Customer & Consignee</span>
+                      <span className="bpx-30" />
+                      <span className="bpx-31">Analytics Overview</span>
+                      <span className="bpx-32">7 metrics</span>
                     </div>
-                    <div style={{ fontSize: '9px', fontWeight: 500, color: '#0e7490', marginTop: '2px' }}>Live snapshot of compliance status, pending actions and document health.</div>
+                    <div className="bpx-33">Live snapshot of compliance status, pending actions and document health.</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="bpx-34">
                   <div className="bpa-seg">
                     <button className={`bpa-tab ${bpaTab === 'buyer' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('buyer'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>Customer</button>
                     <button className={`bpa-tab ${bpaTab === 'consignee' ? 'bpa-tab-active' : 'bpa-tab-inactive'}`} onClick={() => { setBpaTab('consignee'); setCardFilter('all'); }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>Consignee</button>
                   </div>
-                  <div className="bp-chev-toggle" onClick={() => setPartyAnalyticsOpen((o) => !o)} style={{ width: '26px', height: '26px', borderRadius: '7px', background: 'rgba(255,255,255,.75)', border: '1.5px solid rgba(8,145,178,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#0891b2', transition: 'all .15s' }}>
+                  <div className="bp-chev-toggle bpx-58" onClick={() => setPartyAnalyticsOpen((o) => !o)}>
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" style={{ transition: 'transform .24s cubic-bezier(.22,1,.36,1)', transform: partyAnalyticsOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }}><polyline points="6 9 12 15 18 9" /></svg>
                   </div>
                 </div>
               </div>
               <div className="bpa-cards-wrap" style={{ maxHeight: partyAnalyticsOpen ? '200px' : '0px', opacity: partyAnalyticsOpen ? 1 : 0, padding: partyAnalyticsOpen ? '6px 8px 8px' : '0 8px', background: 'linear-gradient(180deg,#f0fdff,#f4feff)' }}>
                 {bpaTab === 'buyer' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(130px, 100%), 1fr))', gap: '6px' }}>
+                  <div className="bpx-37">
                     {[
                       { num: pad(buyerTotal), label: `Total ${buyerScope === 'domestic' ? 'Domestic' : 'International'} Customers`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(buyerCompliant), label: 'Compliant Customers', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -1097,7 +1295,7 @@ export default function ClmBuyerProfilePage() {
                     ].map((c, idx) => (
                       <div key={idx} onClick={() => { const k = CARD_KEYS[idx]; setCardFilter(cardFilter === k ? 'all' : k); setBuyerPage(1); setConsPage(1); }} style={{ ...cardStyle, cursor: 'pointer', ...(cardFilter === CARD_KEYS[idx] && CARD_KEYS[idx] !== 'all' ? { background: '#ecfeff', borderColor: '#0891b2' } : {}) }} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                        <div className="bpx-38">
                           <div style={cardIco}>{c.ico}</div>
                           <span style={pill(c.tagC)}>{c.tag}</span>
                         </div>
@@ -1108,7 +1306,7 @@ export default function ClmBuyerProfilePage() {
                   </div>
                 )}
                 {bpaTab === 'consignee' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(130px, 100%), 1fr))', gap: '6px' }}>
+                  <div className="bpx-37">
                     {[
                       { num: pad(consTotal), label: `Total ${consScope === 'domestic' ? 'Domestic' : 'International'} Consignees`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(consCompliant), label: 'Compliant Consignees', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -1120,7 +1318,7 @@ export default function ClmBuyerProfilePage() {
                     ].map((c, idx) => (
                       <div key={idx} onClick={() => { const k = CARD_KEYS[idx]; setCardFilter(cardFilter === k ? 'all' : k); setBuyerPage(1); setConsPage(1); }} style={{ ...cardStyle, cursor: 'pointer', ...(cardFilter === CARD_KEYS[idx] && CARD_KEYS[idx] !== 'all' ? { background: '#ecfeff', borderColor: '#0891b2' } : {}) }} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                        <div className="bpx-38">
                           <div style={cardIco}>{c.ico}</div>
                           <span style={pill(c.tagC)}>{c.tag}</span>
                         </div>
@@ -1137,23 +1335,23 @@ export default function ClmBuyerProfilePage() {
           {bpaTab === 'buyer' && (
             <div>
               <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: buyerCardFill, maxHeight: buyerCardFill }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
+                <div className="bpx-59">
+                  <div className="bpx-26">
+                    <div className="bpx-60">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
                     </div>
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Customer List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : `${buyerListTotal} registered across all segments`}</div>
+                      <div className="bpx-40">Customer List</div>
+                      <div className="bpx-61">{buyerSearch.trim() ? `${buyerListTotal} of ${buyerTotal} customers match` : `${buyerListTotal} registered across all segments`}</div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', width: '380px', maxWidth: '100%', flexShrink: 0, boxSizing: 'border-box' }}>
+                  <div className="bpx-34">
+                    <div className="bpx-62">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={buyerSearch} onChange={(e) => { setBuyerSearch(e.target.value); setBuyerPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, minWidth: 0, background: 'transparent' }} />
+                      <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={buyerSearch} onChange={(e) => { setBuyerSearch(e.target.value); setBuyerPage(1); }} className="bpx-63" />
                       <SearchClear show={buyerSearch} onClear={() => { setBuyerSearch(''); }} />
                     </div>
-                    <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '38px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
+                    <div className="bpx-64">
                       {([['international', 'International Customers'], ['domestic', 'Domestic Customers']] as const).map(([key, label]) => {
                         const on = buyerScope === key;
                         return (
@@ -1168,8 +1366,8 @@ export default function ClmBuyerProfilePage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }} ref={buyerTableRef}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+                <div className="bpx-65" ref={buyerTableRef}>
+                  <table className="bpx-49">
                     <thead style={stickyThead}>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
@@ -1185,31 +1383,31 @@ export default function ClmBuyerProfilePage() {
                           <tr key={r.id} className="bp-buyer-row" style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,249,253,.7)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}>
-                            <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{(buyerPageSafe - 1) * bpPerPage + i + 1}</span></td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
-                            <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                            <td style={{ padding: '9px 11px', textAlign: 'left', verticalAlign: 'middle', minWidth: '196px' }}>
-                              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'flex-start', alignItems: 'center' }}>
+                            <td className="bpx-66" onClick={(e) => e.stopPropagation()}><span className="bpx-67">{(buyerPageSafe - 1) * bpPerPage + i + 1}</span></td>
+                            <td className="bpx-51" onClick={(e) => e.stopPropagation()}><span className="bpx-68">{r.id}</span></td>
+                            <td className="bpx-69">{r.name}</td>
+                            <td className="bpx-70">
+                              <div className="bpx-71">
                                 {renderSegCell(`buyer-${r.id}`, r.seg)}
                               </div>
                             </td>
-                            <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                              <Tooltip label="View consignees for this customer"><div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform .15s,box-shadow .15s' }}
+                            <td className="bpx-72">{r.country}</td>
+                            <td className="bpx-51" onClick={(e) => e.stopPropagation()}>
+                              <Tooltip label="View consignees for this customer"><div className="bpx-73"
                                 onClick={() => setConsListBuyer(r)}
                                 onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.15)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(6,182,212,.45)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}>
-                                <span style={{ fontSize: '9px', fontWeight: 800, color: '#fff' }}>{r.cn}</span>
+                                <span className="bpx-3">{r.cn}</span>
                               </div></Tooltip>
                             </td>
                             <ProgCell obj={r.kyc} onClick={() => openBuyerDocs(r, 'kyc')} />
                             <ProgCell obj={r.dd} onClick={() => openBuyerDocs(r, 'dd')} />
                             <ProgCell obj={r.tl} onClick={() => openBuyerDocs(r, 'tl')} />
                             <ProgCell obj={r.td} onClick={() => openBuyerDocs(r, 'td')} />
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
+                            <td className="bpx-51"><NumBadge n={r.ship} /></td>
                             <ProgCell obj={r.agr} onClick={() => openBuyerDocs(r, 'agr')} />
-                            <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                            <td className="bpx-74" onClick={(e) => e.stopPropagation()}>
+                              <div className="bpx-75">
                                 <Tooltip label="Evidence Vault"><button style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openBuyerVault(r, 'company-dd')}><VaultIcon /></button></Tooltip>
                               </div>
                             </td>
@@ -1227,23 +1425,23 @@ export default function ClmBuyerProfilePage() {
           {bpaTab === 'consignee' && (
             <div>
               <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: consCardFill, maxHeight: consCardFill }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
+                <div className="bpx-59">
+                  <div className="bpx-26">
+                    <div className="bpx-60">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
                     </div>
                     <div>
-                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0c4a6e', letterSpacing: '-.2px' }}>Consignee List</div>
-                      <div style={{ fontSize: '9.5px', color: '#0891b2', fontWeight: 500, marginTop: '1px' }}>{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : `${consListTotal} registered across all customers`}</div>
+                      <div className="bpx-40">Consignee List</div>
+                      <div className="bpx-61">{consSearch.trim() ? `${consListTotal} of ${consTotal} consignees match` : `${consListTotal} registered across all customers`}</div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '7px', height: '38px', padding: '0 12px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', width: '380px', maxWidth: '100%', flexShrink: 0, boxSizing: 'border-box' }}>
+                  <div className="bpx-34">
+                    <div className="bpx-62">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                      <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={consSearch} onChange={(e) => { setConsSearch(e.target.value); setConsPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, minWidth: 0, background: 'transparent' }} />
+                      <input autoComplete="off" type="text" placeholder="Search by name, segment, country, ID..." value={consSearch} onChange={(e) => { setConsSearch(e.target.value); setConsPage(1); }} className="bpx-63" />
                       <SearchClear show={consSearch} onClear={() => { setConsSearch(''); }} />
                     </div>
-                    <div style={{ display: 'flex', gap: '3px', padding: '3px', height: '38px', borderRadius: '9px', background: 'rgba(6,182,212,.08)', border: '1.5px solid #A5F3FC' }}>
+                    <div className="bpx-64">
                       {([['international', 'International Consignees'], ['domestic', 'Domestic Consignees']] as const).map(([key, label]) => {
                         const on = consScope === key;
                         return (
@@ -1258,8 +1456,8 @@ export default function ClmBuyerProfilePage() {
                     </div>
                   </div>
                 </div>
-                <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }} ref={consTableRef}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+                <div className="bpx-65" ref={consTableRef}>
+                  <table className="bpx-49">
                     <thead style={stickyThead}>
                       <tr style={txnTableHeaderRow}>
                         {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'Customer', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs', 'Total Shipments', 'Agreements', 'Action'].map((h, i) => (
@@ -1277,32 +1475,32 @@ export default function ClmBuyerProfilePage() {
                           <tr key={r.id} className="bp-buyer-row" style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,249,253,.7)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}>
-                            <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{(consPageSafe - 1) * consPerPage + i + 1}</span></td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
-                            <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                            <td style={{ padding: '9px 11px', textAlign: 'left', verticalAlign: 'middle', minWidth: '196px' }}>
-                              <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'flex-start', alignItems: 'center' }}>
+                            <td className="bpx-66" onClick={(e) => e.stopPropagation()}><span className="bpx-67">{(consPageSafe - 1) * consPerPage + i + 1}</span></td>
+                            <td className="bpx-51" onClick={(e) => e.stopPropagation()}><span className="bpx-76">{r.id}</span></td>
+                            <td className="bpx-51" onClick={(e) => e.stopPropagation()}><span className="bpx-77">{r.cid}</span></td>
+                            <td className="bpx-69">{r.name}</td>
+                            <td className="bpx-70">
+                              <div className="bpx-71">
                                 {renderSegCell(`cons-${r.id}`, r.seg.split(','))}
                               </div>
                             </td>
-                            <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
-                              <Tooltip label="View customer for this consignee"><div style={{ width: '24px', height: '24px', borderRadius: '6px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform .15s,box-shadow .15s' }}
+                            <td className="bpx-72">{r.country}</td>
+                            <td className="bpx-51" onClick={(e) => e.stopPropagation()}>
+                              <Tooltip label="View customer for this consignee"><div className="bpx-73"
                                 onClick={() => setCustForCons(r)}
                                 onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.15)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(6,182,212,.45)'; }}
                                 onMouseLeave={(e) => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = ''; }}>
-                                <span style={{ fontSize: '9px', fontWeight: 800, color: '#fff' }}>{custCount}</span>
+                                <span className="bpx-3">{custCount}</span>
                               </div></Tooltip>
                             </td>
                             <ProgCell obj={r.kyc} onClick={() => openConsDocs(r, 'kyc')} />
                             <ProgCell obj={r.dd} onClick={() => openConsDocs(r, 'dd')} />
                             <ProgCell obj={r.tl} onClick={() => openConsDocs(r, 'tl')} />
                             <ProgCell obj={r.td} onClick={() => openConsDocs(r, 'td')} />
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
+                            <td className="bpx-51"><NumBadge n={r.ship} /></td>
                             <ProgCell obj={r.agr} onClick={() => openConsDocs(r, 'agr')} />
-                            <td style={{ padding: '9px 12px' }} onClick={(e) => e.stopPropagation()}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                            <td className="bpx-74" onClick={(e) => e.stopPropagation()}>
+                              <div className="bpx-75">
                                 <Tooltip label="Evidence Vault"><button style={vaultBtnStyle} disabled={!r.db_id} onClick={() => openConsVault(r, 'company-dd')}><VaultIcon /></button></Tooltip>
                               </div>
                             </td>
@@ -1351,12 +1549,12 @@ export default function ClmBuyerProfilePage() {
 
       {segOpen && createPortal(
         <>
-          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
+          <div onClick={() => setSegOpen(null)} className="bpx-78" />
           <div className="seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 240), top: segOpen.flipUp ? undefined : segOpen.y, bottom: segOpen.flipUp ? (window.innerHeight - segOpen.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: 'var(--font-sans)' }}>
-            <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
+            <div className="bpx-79">Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '5px 8px', borderRadius: 8, background: i % 2 ? 'rgba(6,182,212,.05)' : 'transparent' }}>
-                <span style={{ fontSize: 10, fontWeight: 600, color: '#0c4a6e', wordBreak: 'break-word' }}>{name}</span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                <span className="bpx-80">{name}</span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} />
               </div>
             ))}
           </div>
@@ -1370,7 +1568,7 @@ export default function ClmBuyerProfilePage() {
 function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string }) {
   const [open, setOpen] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
   const segs = names.map((s) => s.trim()).filter(Boolean);
-  if (segs.length === 0) return <span style={{ fontSize: '10px', color: '#94a3b8' }}>—</span>;
+  if (segs.length === 0) return <span className="bpx-5">—</span>;
   const toggle = (e: React.MouseEvent) => {
     if (open) { setOpen(null); return; }
     const b = e.currentTarget.getBoundingClientRect();
@@ -1382,15 +1580,15 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
   return <>
     <Tooltip label={segs[0]}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, verticalAlign: 'middle', fontSize: '8.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{segs[0].length > 30 ? `${segs[0].slice(0, 30)}…` : segs[0]}<SegmentNameBadge name={segs[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
     {segs.length > 1 && (
-      <Tooltip label="View all segments"><button type="button" onClick={toggle} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button></Tooltip>
+      <Tooltip label="View all segments"><button type="button" onClick={toggle} className="bpx-81">+{segs.length - 1}</button></Tooltip>
     )}
     {open && createPortal(
       <>
-        <div onMouseDown={() => setOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 200000 }} />
+        <div onMouseDown={() => setOpen(null)} className="bpx-78" />
         <div className="seg-pop" style={{ position: 'fixed', left: Math.min(open.x, window.innerWidth - 240), top: open.flipUp ? undefined : open.y, bottom: open.flipUp ? (window.innerHeight - open.y) : undefined, zIndex: 200001, width: 220, maxHeight: 280, overflowY: 'auto', background: '#fff', borderRadius: 12, padding: 8, boxShadow: '0 18px 50px rgba(15,23,42,.30)', border: '1px solid rgba(6,182,212,.18)', fontFamily: 'var(--font-sans)' }}>
-          <div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#0891b2', padding: '4px 8px 7px' }}>Segments ({segs.length})</div>
+          <div className="bpx-79">Segments ({segs.length})</div>
           {segs.map((name, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}><span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} /></div>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5, fontWeight: 600, color: '#0c4a6e', padding: '5px 8px', borderRadius: 7, background: i % 2 === 0 ? 'rgba(6,182,212,.05)' : 'transparent' }}><span className="bpx-82">{name}</span><SegmentNameBadge name={name} style={{ marginLeft: 'auto', flexShrink: 0 }} /></div>
           ))}
         </div>
       </>,
@@ -1410,32 +1608,31 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
   const headChip: CSSProperties = { fontSize: '12px', fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.26)', borderRadius: '8px', padding: '5px 12px', whiteSpace: 'nowrap' };
 
   return createPortal(
-    <div className="bcm-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true"
-      style={{ position: 'fixed', inset: 0, zIndex: 200000, background: 'rgba(7,30,50,.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: 'var(--font-sans)' }}>
-      <div onMouseDown={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 1180, maxHeight: 'calc(100vh - 48px)', background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 28px 70px rgba(15,23,42,.45)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '16px 22px', background: 'linear-gradient(110deg,#0c6680 0%,#0e7490 35%,#0891b2 75%,#06b6d4 100%)', color: '#fff', flexShrink: 0 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.28)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <div className="bcm-overlay bpx-83" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true">
+      <div onMouseDown={(e) => e.stopPropagation()} className="bpx-84">
+        <div className="bpx-85">
+          <div className="bpx-86">
+            <div className="bpx-87">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
             </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>Consignees</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>Consignee identity, shipment delivery ownership & compliance readiness for this customer.</div>
+            <div className="bpx-88">
+              <div className="bpx-89">Consignees</div>
+              <div className="bpx-90">Consignee identity, shipment delivery ownership & compliance readiness for this customer.</div>
             </div>
           </div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.12em', color: 'rgba(255,255,255,.78)' }}>CONSIGNEES FOR</span>
+          <div className="bpx-91">
+            <span className="bpx-92">CONSIGNEES FOR</span>
             <span style={headChip}>{buyer.id}</span>
             <span style={headChip}>{buyer.name}</span>
             {buyer.country && buyer.country !== '—' && <span style={headChip}>{buyer.country}</span>}
-            <button type="button" onClick={onClose} aria-label="Close" style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.14)', border: '1px solid rgba(255,255,255,.22)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button type="button" onClick={onClose} aria-label="Close" className="bpx-93">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
           </div>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: '#fff' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+        <div className="bpx-94">
+          <table className="bpx-49">
             <thead>
               <tr style={txnTableHeaderRow}>
                 {['SR No', 'Consignee ID', 'Customer ID', 'Company Name', 'Segment', 'Country', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs & Agreements', 'Total Shipments'].map((h, i) => (
@@ -1445,30 +1642,30 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
             </thead>
             <tbody>
               {rows.length === 0 ? (
-                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>No consignees mapped to this customer yet.</td></tr>
+                <tr><td colSpan={11} className="bpx-95">No consignees mapped to this customer yet.</td></tr>
               ) : rows.map((r, i) => (
                 <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : 'rgba(240,253,255,.45)', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
-                  <td style={{ padding: '9px 12px', textAlign: 'center' }}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{i + 1}</span></td>
-                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
-                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
-                  <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
-                  <td style={{ padding: '9px 11px', textAlign: 'left', minWidth: '140px' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'flex-start', alignItems: 'center' }}>
+                  <td className="bpx-66"><span className="bpx-67">{i + 1}</span></td>
+                  <td className="bpx-51"><span className="bpx-76">{r.id}</span></td>
+                  <td className="bpx-51"><span className="bpx-77">{r.cid}</span></td>
+                  <td className="bpx-69">{r.name}</td>
+                  <td className="bpx-96">
+                    <div className="bpx-97">
                       <SegCell names={r.seg.split(',')} sc={r.sc} sb={r.sb} />
                     </div>
                   </td>
-                  <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
+                  <td className="bpx-72">{r.country}</td>
                   <ProgCell obj={r.kyc} /><ProgCell obj={r.dd} /><ProgCell obj={r.tl} />
                   <ProgCell obj={{ d: r.td.d + r.agr.d, t: r.td.t + r.agr.t }} />
-                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={r.ship} /></td>
+                  <td className="bpx-51"><NumBadge n={r.ship} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC', flexShrink: 0 }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: '#0891b2' }}>Showing <strong>{rows.length}</strong> consignee{rows.length === 1 ? '' : 's'}</span>
+        <div className="bpx-98">
+          <span className="bpx-99">Showing <strong>{rows.length}</strong> consignee{rows.length === 1 ? '' : 's'}</span>
         </div>
       </div>
     </div>,
@@ -1487,31 +1684,30 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
   const headChip: CSSProperties = { fontSize: '12px', fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,.16)', border: '1px solid rgba(255,255,255,.26)', borderRadius: '8px', padding: '5px 12px', whiteSpace: 'nowrap' };
 
   return createPortal(
-    <div className="bcm-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true"
-      style={{ position: 'fixed', inset: 0, zIndex: 200000, background: 'rgba(7,30,50,.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', fontFamily: 'var(--font-sans)' }}>
-      <div onMouseDown={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 1120, maxHeight: 'calc(100vh - 48px)', background: '#fff', borderRadius: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 28px 70px rgba(15,23,42,.45)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '16px 22px', background: 'linear-gradient(110deg,#0c6680 0%,#0e7490 35%,#0891b2 75%,#06b6d4 100%)', color: '#fff', flexShrink: 0 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.28)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <div className="bcm-overlay bpx-83" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }} role="dialog" aria-modal="true">
+      <div onMouseDown={(e) => e.stopPropagation()} className="bpx-100">
+        <div className="bpx-85">
+          <div className="bpx-86">
+            <div className="bpx-87">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
             </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>{customers.length > 1 ? 'Customers' : 'Customer'}</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>{customers.length > 1 ? 'The customers this consignee is mapped to, with their compliance readiness.' : 'The customer this consignee is mapped to, with its compliance readiness.'}</div>
+            <div className="bpx-88">
+              <div className="bpx-89">{customers.length > 1 ? 'Customers' : 'Customer'}</div>
+              <div className="bpx-90">{customers.length > 1 ? 'The customers this consignee is mapped to, with their compliance readiness.' : 'The customer this consignee is mapped to, with its compliance readiness.'}</div>
             </div>
           </div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <span style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: '.12em', color: 'rgba(255,255,255,.78)' }}>CUSTOMER FOR</span>
+          <div className="bpx-91">
+            <span className="bpx-92">CUSTOMER FOR</span>
             <span style={headChip}>{consignee.id}</span>
             <span style={headChip}>{consignee.name}</span>
-            <button type="button" onClick={onClose} aria-label="Close" style={{ width: 34, height: 34, borderRadius: 9, background: 'rgba(255,255,255,.14)', border: '1px solid rgba(255,255,255,.22)', color: '#fff', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button type="button" onClick={onClose} aria-label="Close" className="bpx-93">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
           </div>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: '#fff' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'inherit' }}>
+        <div className="bpx-94">
+          <table className="bpx-49">
             <thead>
               <tr style={txnTableHeaderRow}>
                 {['Customer ID', 'Company Name', 'Segment', 'Country', 'Consignees', 'KYC', 'Due Diligence', 'Trade Licenses', 'Trade Docs & Agreements', 'Total Shipments'].map((h, i) => (
@@ -1521,29 +1717,29 @@ function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: 
             </thead>
             <tbody>
               {customers.length === 0 ? (
-                <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>None of this consignee's mapped customers are in the current list scope.</td></tr>
+                <tr><td colSpan={10} className="bpx-95">None of this consignee's mapped customers are in the current list scope.</td></tr>
               ) : customers.map((customer) => (
-                <tr key={customer.id} style={{ background: '#fff', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
-                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{customer.id}</span></td>
-                  <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{customer.name}</td>
-                  <td style={{ padding: '9px 11px', textAlign: 'left', minWidth: '140px' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'flex-start', alignItems: 'center' }}>
+                <tr key={customer.id} className="bpx-101">
+                  <td className="bpx-51"><span className="bpx-68">{customer.id}</span></td>
+                  <td className="bpx-69">{customer.name}</td>
+                  <td className="bpx-96">
+                    <div className="bpx-97">
                       <SegCell names={customer.seg} sc={customer.sc} sb={customer.sb} />
                     </div>
                   </td>
-                  <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{customer.country}</td>
-                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={customer.cn} /></td>
+                  <td className="bpx-72">{customer.country}</td>
+                  <td className="bpx-51"><NumBadge n={customer.cn} /></td>
                   <ProgCell obj={customer.kyc} /><ProgCell obj={customer.dd} /><ProgCell obj={customer.tl} />
                   <ProgCell obj={{ d: customer.td.d + customer.agr.d, t: customer.td.t + customer.agr.t }} />
-                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={customer.ship} /></td>
+                  <td className="bpx-51"><NumBadge n={customer.ship} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC', flexShrink: 0 }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: '#0891b2' }}>Consignee <strong>{consignee.id}</strong> → <strong>{customers.length}</strong> mapped customer{customers.length === 1 ? '' : 's'}</span>
+        <div className="bpx-98">
+          <span className="bpx-99">Consignee <strong>{consignee.id}</strong> → <strong>{customers.length}</strong> mapped customer{customers.length === 1 ? '' : 's'}</span>
         </div>
       </div>
     </div>,
@@ -1565,8 +1761,8 @@ function SubTab({ active, kind, onClick }: { active: boolean; kind: 'eq' | 'neq'
         : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="17" y1="11" x2="23" y2="11" /><line x1="17" y1="15" x2="23" y2="15" /></svg>}
       {isEq ? 'Customer = Consignee' : 'Customer ≠ Consignee'}
       {isEq
-        ? <span style={{ fontSize: '7.5px', fontWeight: 800, padding: '1px 6px', borderRadius: '20px', background: 'rgba(6,182,212,.12)', border: '1px solid rgba(6,182,212,.25)', color: '#0891b2', letterSpacing: '.04em' }}>SAME</span>
-        : <span style={{ fontSize: '7.5px', fontWeight: 800, padding: '1px 6px', borderRadius: '20px', background: 'rgba(148,163,184,.1)', border: '1px solid rgba(148,163,184,.2)', color: '#64748b', letterSpacing: '.04em' }}>DIFF</span>}
+        ? <span className="bpx-102">SAME</span>
+        : <span className="bpx-103">DIFF</span>}
     </button>
   );
 }
@@ -1574,8 +1770,8 @@ function SubTab({ active, kind, onClick }: { active: boolean; kind: 'eq' | 'neq'
 function WosAgrCell({ row }: { row: WosEqRow }) {
   if (!row.pi) {
     return (
-      <td style={{ padding: '9px 11px', textAlign: 'center' }}>
-        <span style={{ fontSize: '10px', fontWeight: 500, color: '#b0c4d4', fontStyle: 'italic' }}>No PI</span>
+      <td className="bpx-51">
+        <span className="bpx-55">No PI</span>
       </td>
     );
   }
