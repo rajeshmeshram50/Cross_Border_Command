@@ -88,6 +88,9 @@ class ClmQcController extends Controller
                 'cert' => (int) ($counts->cert_c ?? 0),
                 'comp' => (int) ($counts->comp_c ?? 0),
             ],
+            // Add-form code preview — the browser only holds one page, so it
+            // can't derive this itself. Same scope store() allocates in.
+            'next_code' => ClmDocCode::preview('QC', ClmQcDocument::class, (int) $user->client_id, $user->branch_id),
         ]);
     }
 

@@ -100,4 +100,39 @@ class ClmDocCode
     {
         return self::allocate($prefix, $modelClass, $clientId, $branchId, 1)[0];
     }
+
+    /**
+     * The code next() would hand out right now, without reserving it: no row
+     * lock and no counter write, so a list endpoint can show it as the Add
+     * form's preview. The real allocation still happens in store().
+     */
+    public static function preview(string $prefix, string $modelClass, int $clientId, ?int $branchId): string
+    {
+        $q = $modelClass::query()->where('client_id', $clientId);
+        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+
+        $n = 0;
+        $taken = [];
+        foreach ($q->pluck('code') as $c) {
+            $c = (string) $c;
+            $taken[$c] = true;
+            if (preg_match('/^' . preg_quote($prefix, '/') . '-(\d+)$/', $c, $m) && (int) $m[1] > $n) {
+                $n = (int) $m[1];
+            }
+        }
+
+        if (Schema::hasTable('clm_doc_code_counters')) {
+            $last = DB::table('clm_doc_code_counters')
+                ->where(['client_id' => $clientId, 'branch_key' => (int) ($branchId ?? 0), 'prefix' => $prefix])
+                ->value('last_n');
+            $n = max($n, (int) $last);
+        }
+
+        do {
+            $n++;
+            $code = sprintf('%s-%03d', $prefix, $n);
+        } while (isset($taken[$code]));
+
+        return $code;
+    }
 }

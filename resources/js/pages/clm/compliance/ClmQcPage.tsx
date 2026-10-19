@@ -26,6 +26,7 @@ export default function ClmQcPage() {
   const toast = useToast();
   const [rows, setRows]         = useState<Qc[]>([]);
   const [count, setCount]       = useState(0);
+  const [nextCode, setNextCode] = useState('');
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
@@ -50,13 +51,14 @@ export default function ClmQcPage() {
   const reload = () => {
     setLoading(true);
     const token = ++reqRef.current;
-    api.get<{ status: boolean; data: Qc[]; count?: number; total?: number }>('/clm/qc-documents', {
+    api.get<{ status: boolean; data: Qc[]; count?: number; total?: number; next_code?: string }>('/clm/qc-documents', {
       params: { page, per_page: rpp, ...(debouncedSearch ? { search: debouncedSearch } : {}) },
     })
       .then(({ data }) => {
         if (token !== reqRef.current) return;
         setRows(data.data ?? []);
         setCount(Number(data.total ?? data.count ?? 0));
+        if (data.next_code) setNextCode(data.next_code);
       })
       .catch(() => toast.error('Load failed', 'Could not load QC documents'))
       .finally(() => setLoading(false));
@@ -136,7 +138,7 @@ export default function ClmQcPage() {
           <div className="clm-total">
             <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
             <div className="clm-total-lbl">Total QC Documents</div>
-            <div className="clm-total-num">{rows.length}</div>
+            <div className="clm-total-num">{count}</div>
           </div>
         </div>
 
@@ -144,8 +146,8 @@ export default function ClmQcPage() {
           {rows.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bCheck}</div>
-              <div className="clm-empty-title">No QC documents yet</div>
-              <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add QC Document to create the first record.' : 'No results match the current search.'}</div>
+              <div className="clm-empty-title">{debouncedSearch ? 'No matching QC documents' : 'No QC documents yet'}</div>
+              <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add QC Document to create the first record.'}</div>
             </div>
           ) : (
             <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
@@ -191,7 +193,7 @@ export default function ClmQcPage() {
 
       {modalOpen && (
         <Suspense fallback={null}>
-          <QcModal existing={editing} authorities={auths} nextCode={`QC-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
+          <QcModal existing={editing} authorities={auths} nextCode={nextCode} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
         </Suspense>
       )}
       <DeleteConfirmModal
