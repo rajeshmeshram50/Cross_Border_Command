@@ -1109,6 +1109,12 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
+                    {!bpLoading && wsEqSlice.length === 0 && (
+                      <div className="bpx-95" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#0c4a6e', marginBottom: 4 }}>{txnSearch.trim() ? 'No results found' : 'No records found'}</div>
+                        <div>{txnSearch.trim() ? `No transactions match “${txnSearch.trim()}”.` : 'No transactions to show.'}</div>
+                      </div>
+                    )}
                     <div className="bpx-52">
                       <WorklistPager page={wsEqPageSafe} total={wsEqRows.length} pageSize={txnPerPage} onPage={setWsEqPage} onPageSize={(n) => { setTxnManualSize(n); setWsEqPage(1); }} className="bp-wl" />
                     </div>
@@ -1150,6 +1156,12 @@ export default function ClmBuyerProfilePage() {
                         })}
                       </tbody>
                     </table>
+                    {!bpLoading && wsNeqSlice.length === 0 && (
+                      <div className="bpx-95" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#0c4a6e', marginBottom: 4 }}>{txnSearch.trim() ? 'No results found' : 'No records found'}</div>
+                        <div>{txnSearch.trim() ? `No transactions match “${txnSearch.trim()}”.` : 'No transactions to show.'}</div>
+                      </div>
+                    )}
                     <div className="bpx-52">
                       <WorklistPager page={wsNeqPageSafe} total={wsNeqRows.length} pageSize={txnPerPage} onPage={setWsNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWsNeqPage(1); }} className="bp-wl" />
                     </div>
@@ -1366,7 +1378,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                   </div>
                 </div>
-                <div className="bpx-65" ref={buyerTableRef}>
+                <div className="bpx-65" ref={buyerTableRef} style={!bpLoading && buyerSlice.length === 0 ? { display: 'flex', flexDirection: 'column' } : undefined}>
                   <table className="bpx-49">
                     <thead style={stickyThead}>
                       <tr style={txnTableHeaderRow}>
@@ -1416,6 +1428,12 @@ export default function ClmBuyerProfilePage() {
                       })}
                     </tbody>
                   </table>
+                  {!bpLoading && buyerSlice.length === 0 && (
+                    <div className="bpx-95" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0c4a6e', marginBottom: 4 }}>{buyerSearch.trim() ? 'No results found' : 'No records found'}</div>
+                      <div>{buyerSearch.trim() ? `No ${buyerScope} customers match “${buyerSearch.trim()}”.` : `No ${buyerScope} customers to show.`}</div>
+                    </div>
+                  )}
                 </div>
                 <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { buyerAutoFitRef.current = false; setBpManualSize(n); setBuyerPage(1); }} pageSizeOptions={[5, 10, 15, 25, 50]} className="bp-wl" />
               </div>
@@ -1456,7 +1474,7 @@ export default function ClmBuyerProfilePage() {
                     </div>
                   </div>
                 </div>
-                <div className="bpx-65" ref={consTableRef}>
+                <div className="bpx-65" ref={consTableRef} style={!bpLoading && consSlice.length === 0 ? { display: 'flex', flexDirection: 'column' } : undefined}>
                   <table className="bpx-49">
                     <thead style={stickyThead}>
                       <tr style={txnTableHeaderRow}>
@@ -1509,6 +1527,12 @@ export default function ClmBuyerProfilePage() {
                       })}
                     </tbody>
                   </table>
+                  {!bpLoading && consSlice.length === 0 && (
+                    <div className="bpx-95" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0c4a6e', marginBottom: 4 }}>{consSearch.trim() ? 'No results found' : 'No records found'}</div>
+                      <div>{consSearch.trim() ? `No ${consScope} consignees match “${consSearch.trim()}”.` : `No ${consScope} consignees to show.`}</div>
+                    </div>
+                  )}
                 </div>
                 <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { consAutoFitRef.current = false; setConsManualSize(n); setConsPage(1); }} pageSizeOptions={[5, 10, 15, 25, 50]} className="bp-wl" />
               </div>
