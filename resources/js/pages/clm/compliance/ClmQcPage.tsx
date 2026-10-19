@@ -12,6 +12,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
+import AuthorityBadges from './AuthorityBadges';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { clip, ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
@@ -207,7 +208,7 @@ export default function ClmQcPage() {
                   <th style={{ width: 110, textAlign: 'center' }}>QC ID</th>
                   <th>QC DOCUMENT NAME</th>
                   <th>PURPOSE</th>
-                  <th style={{ width: 150, textAlign: 'center' }}>ISSUED BY</th>
+                  <th style={{ width: 200, textAlign: 'left' }}>ISSUED BY</th>
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
@@ -218,8 +219,8 @@ export default function ClmQcPage() {
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                       <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
                       <Tooltip label={r.purpose}><td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.purpose}</div></td></Tooltip>
-                      <td style={{ textAlign: 'center' }}>
-                        <span className="clm-badge clm-badge-teal"><span className="clm-badge-dot" />{r.issued_by_names || '—'}</span>
+                      <td style={{ textAlign: 'left' }}>
+                        <AuthorityBadges value={r.issued_by_names} />
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
