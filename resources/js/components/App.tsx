@@ -510,6 +510,7 @@ function AuthRoutes() {
       } />
       <Route path="/forgot-password" element={
         <ForgotPassword
+          initialEmail={resetEmail}
           onBackToLogin={() => navigate('/login')}
           onEmailSubmitted={(email: string) => { setResetEmail(email); navigate('/verify-otp', { state: { email } }); }}
         />

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import AuthCardLayout from '../../layouts/AuthCardLayout';
 import Button from '../../components/ui/Button';
-import { AlertCircle, Loader2, Mail } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, Mail } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 
@@ -208,10 +208,12 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
         </form>
 
         <button
+          type="button"
           onClick={onBackToForgotPassword}
-          className="text-[13px] font-bold text-primary hover:underline transition-all duration-200"
+          className="flex items-center justify-center gap-2 w-full text-[13px] font-bold text-primary hover:underline transition-all duration-200"
         >
-          Back to Login
+          <ArrowLeft size={16} />
+          Back
         </button>
       </div>
     </AuthCardLayout>

@@ -245,11 +245,12 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
         </form>
 
         <button
+          type="button"
           onClick={onBackToVerifyOTP}
           className="flex items-center justify-center gap-2 w-full text-[13px] font-bold text-primary hover:underline transition-all duration-200"
         >
           <ArrowLeft size={16} />
-          Back to Login
+          Back
         </button>
       </AuthCardLayout>
     </>

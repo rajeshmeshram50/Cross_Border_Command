@@ -8,13 +8,14 @@ import api from '../../api';
 interface ForgotPasswordProps {
   onBackToLogin: () => void;
   onEmailSubmitted?: (email: string) => void;
+  initialEmail?: string;
 }
 
 const COOLDOWN = 120; // 2 minutes
 
-export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: ForgotPasswordProps) {
+export default function ForgotPassword({ onBackToLogin, onEmailSubmitted, initialEmail = '' }: ForgotPasswordProps) {
   const toast = useToast();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail);
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
