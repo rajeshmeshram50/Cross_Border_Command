@@ -19,7 +19,6 @@ class ClmTradeLicenseController extends Controller
     use \App\Http\Controllers\Concerns\ChecksClmDocUsage;
     use \App\Http\Controllers\Concerns\ImportsClmDocMaster;
 
-   
     public function import(Request $request)
     {
         return $this->importClmDocRows($request, ClmTradeLicense::class, 'TL', 'validity', 'trade licence');
@@ -30,11 +29,9 @@ class ClmTradeLicenseController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        
-        $q = ClmTradeLicense::query()->orderByDesc('id');   // newest entry first
+        $q = ClmTradeLicense::query()->orderByDesc('id');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-       
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
            
@@ -45,7 +42,6 @@ class ClmTradeLicenseController extends Controller
             });
         }
 
-      
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -54,11 +50,9 @@ class ClmTradeLicenseController extends Controller
 
         $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
-       
         $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('authority')));
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
-      
         $usage = $this->clmDocUsageSets((int) $user->client_id);
         $rows->each(function ($r) use ($usage) {
             $labels = $this->clmDocUsageLabels($usage, $r->code, $r->branch_id);
@@ -69,7 +63,6 @@ class ClmTradeLicenseController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-          
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
             'next_code' => ClmDocCode::preview('TL', ClmTradeLicense::class, (int) $user->client_id, $user->branch_id),
@@ -92,9 +85,6 @@ class ClmTradeLicenseController extends Controller
         $name = trim($data['name']);
         $dupe = ClmTradeLicense::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        // The name alone must be unique — a second licence with the same name
-        // under a different authority is still a duplicate to the people reading
-        // the list.
         if ($dupe->exists()) {
             $msg = "A trade licence named \"{$name}\" already exists.";
             
@@ -105,7 +95,6 @@ class ClmTradeLicenseController extends Controller
             ], 422);
         }
 
-      
         $data['authority'] = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
         if ($data['authority'] === '') {
             throw ValidationException::withMessages(['authority' => 'Select at least one valid authority.']);
@@ -186,7 +175,6 @@ class ClmTradeLicenseController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-     
         $usedIn = $this->clmDocUsageLabels($this->clmDocUsageSets($row->client_id), $row->code, $row->branch_id);
         if (!empty($usedIn)) {
             return response()->json([
@@ -201,14 +189,10 @@ class ClmTradeLicenseController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
 
-        /* The counter never reissues a number, even after the row that
-           held it is deleted — a recycled code would drag the old
-           document's segment rules and uploads onto the new row. */
         return ClmDocCode::next('TL', ClmTradeLicense::class, $clientId, $branchId);
     }
 }

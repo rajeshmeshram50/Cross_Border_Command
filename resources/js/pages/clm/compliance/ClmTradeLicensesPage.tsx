@@ -1,8 +1,7 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 const TlModal = lazyPage(() => import('./ClmTlModal'));
 import WorklistPager from "../../../components/ui/WorklistPager";
-import { createPortal } from 'react-dom';
 import api from '../../../api';
 import ClmDocImportExport from '../shared/ClmDocImportExport';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
@@ -11,11 +10,10 @@ import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
-import { MasterMultiSelect } from '../../../components/ui/MasterMultiSelect';
-import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCommon';
+import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
 import { lazyPage } from '../../../utils/lazyPage';
-import useDismissPopover from '../shared/useDismissPopover';
+import AuthorityBadges from './AuthorityBadges';
 
 
 export type Tl = { id: number; code: string; name: string; authority: string; authority_names?: string; status: 'active'|'inactive'; in_use?: boolean; used_in?: string[] };
@@ -43,14 +41,11 @@ export default function ClmTradeLicensesPage() {
 
   const reqRef = useRef(0);
   const scrollRef               = useRef<HTMLDivElement | null>(null);
-  const rootRef                 = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing]   = useState<Tl | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   useScrollLock(modalOpen);
   const [pendingDelete, setPendingDelete] = useState<Tl | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [authPop, setAuthPop] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
-  useDismissPopover(!!authPop, () => setAuthPop(null));
 
   const reload = () => {
     setLoading(true);
@@ -80,10 +75,7 @@ export default function ClmTradeLicensesPage() {
       .catch(() => {});
   }, []);
 
-  const slice     = rows;
-  const start     = (page - 1) * rpp;
-  const safePage  = page;
-  const pageCount = Math.max(1, Math.ceil(count / rpp));
+  const start = (page - 1) * rpp;
 
   const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
@@ -111,7 +103,7 @@ export default function ClmTradeLicensesPage() {
   };
 
   return (
-    <div className="clm-root" ref={rootRef}>
+    <div className="clm-root">
       <style>{CLM_CSS}</style>
       {loading && !booted && <ShimmerClmMaster cols={5} />}
 
@@ -161,8 +153,8 @@ export default function ClmTradeLicensesPage() {
           </div>
         </div>
 
-        <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 && !loading ? (
+        <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
+          {rows.length === 0 && !loading ? (
             <div className="clm-empty" ref={scrollRef} style={{ minHeight: fillH }}>
               <div className="clm-empty-ico">{ICO.bDoc}</div>
               <div className="clm-empty-title">No trade licences yet</div>
@@ -180,39 +172,12 @@ export default function ClmTradeLicensesPage() {
                 </tr></thead>
                 <tbody>
                   {loading && <ClmSkeletonRows rows={rpp} cols={5} />}
-                  {!loading && slice.map((r, i) => (
+                  {!loading && rows.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                       <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
-                      <td className="clm-td-desc">
-                        {(() => {
-                          const list = (r.authority_names ?? '').split(',').map(s => s.trim()).filter(Boolean);
-                          if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
-                          const extra = list.length - 1;
-                          return (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                              <span className="clm-badge clm-badge-teal">{list[0]}</span>
-                              {extra > 0 && (
-                                <Tooltip label="View all authorities"><button
-                                  type="button"
-                                  onClick={e => {
-                                    if (authPop?.id === r.id) { setAuthPop(null); return; }
-                                    const b = e.currentTarget.getBoundingClientRect();
-                                    const estH = Math.min(280, 34 + list.length * 30);
-                                    const below = window.innerHeight - b.bottom - 12;
-                                    const above = b.top - 12;
-                                    const flipUp = below < estH && above > below;
-                                    setAuthPop({ id: r.id, names: list, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp, maxH: Math.max(120, Math.min(280, flipUp ? above : below)) });
-                                  }}
-                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
-                                  +{extra}
-                                </button></Tooltip>
-                              )}
-                            </span>
-                          );
-                        })()}
-                      </td>
+                      <td className="clm-td-desc"><AuthorityBadges value={r.authority_names} /></td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
                           <Tooltip label="Edit"><button type="button" aria-label="Edit" className="clm-act clm-act-edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
@@ -224,7 +189,7 @@ export default function ClmTradeLicensesPage() {
                 </tbody>
               </table>
               {!loading && count > 0 && (
-                <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
+                <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}
@@ -245,21 +210,6 @@ export default function ClmTradeLicensesPage() {
         onClose={() => setPendingDelete(null)}
         onConfirm={onDelete}
       />
-
-      {authPop && createPortal(
-        <>
-          <div onClick={() => setAuthPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authPop.x, window.innerWidth - 230), top: authPop.flipUp ? undefined : authPop.y, bottom: authPop.flipUp ? (window.innerHeight - authPop.y) : undefined, zIndex: 601, width: 210, maxHeight: authPop.maxH, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
-            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Authorities ({authPop.names.length})</div>
-            {authPop.names.map((name, i) => (
-              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-badge clm-badge-teal">{name}</span>
-              </div>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
     </div>
   );
 }
