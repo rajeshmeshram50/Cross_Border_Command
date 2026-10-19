@@ -8,11 +8,11 @@ import SegmentBadge from '../../../components/ui/SegmentBadge';
 
 
 export type DcpFilters = {
-  document_type?: string[];     // 'domestic' | 'international'
-  regulatory_status?: string[]; // 'highly' | 'less'
-  buyer_consignee?: string[];   // 'allowed' | 'not'
-  authorities?: string[];       // authority names
-  segment_code?: string[];      // segment codes
+  document_type?: string[];
+  regulatory_status?: string[];
+  buyer_consignee?: string[];
+  authorities?: string[];
+  segment_code?: string[];
 };
 
 type FacetKey = 'documentType' | 'regulatory' | 'buyerConsignee' | 'authorities' | 'segment';
@@ -20,8 +20,6 @@ type Opt = { value: string; label: string; reg?: string };
 
 const EMPTY_FILTERS: DcpFilters = {};
 
-/** Total individually-selected values across every facet — drives the button
- *  badge and the modal header "N selected" pill. */
 export const countDcpFilters = (f: DcpFilters): number =>
   (f.document_type?.length ?? 0) + (f.regulatory_status?.length ?? 0)
   + (f.buyer_consignee?.length ?? 0) + (f.authorities?.length ?? 0)
@@ -92,14 +90,10 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<DcpFilters>(initial ?? EMPTY_FILTERS);
 
-  // Seed the draft only when the modal OPENS. Keying on `initial` too made
-  // Reset All (which applies {} while the modal stays open) re-run this and
-  // yank the user back to Document Type mid-session.
   useEffect(() => {
     if (open) { setFilters(initial ?? EMPTY_FILTERS); setActive('documentType'); setSearch(''); }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Scroll lock — reserves the scrollbar width so the page doesn't shake on open.
   useScrollLock(open);
 
   useEffect(() => {
@@ -115,8 +109,6 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
     return STATIC_OPTS[k] ?? [];
   };
 
-  /* Toggle a value in a facet's array — multi-select. Drops the field entirely
-   * once its last value is unchecked so empty arrays never linger. */
   const toggle = (k: FacetKey, value: string) => {
     const field = FACET_FIELD[k];
     setFilters(prev => {
@@ -149,8 +141,6 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
   return createPortal((
     <div className="lfm-backdrop dcp-filter-scope">
       <style>{LFM_CSS}</style>
-      {/* Wider FILTER BY sidebar for the DCP modal only — the shared LFM_CSS
-          uses 178px; scope the override so the Leads filter is unaffected. */}
       <style>{`
         .dcp-filter-scope .lfm-left { width: 230px; }
         @media (max-width: 640px) { .dcp-filter-scope .lfm-left { width: 100%; } }
@@ -208,9 +198,6 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
                 <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
 
-            {/* Keyed per facet: a fresh scroller each time, so a long list
-                (Authorities / Segment Name) always paints its scrollbar and
-                starts at the top instead of inheriting the last facet's box. */}
             <div className="lfm-options" key={active}>
               {searched.length === 0 ? (
                 <div className="lfm-empty">No options available</div>
