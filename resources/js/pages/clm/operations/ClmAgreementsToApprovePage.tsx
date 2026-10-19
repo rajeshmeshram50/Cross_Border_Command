@@ -14,6 +14,7 @@ import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
+import SearchClear from '../../../components/ui/SearchClear';
 import { useIsClipped } from '../../../components/ui/DataTable';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
@@ -83,6 +84,7 @@ export default function ClmAgreementsToApprovePage() {
   const { user } = useAuth();
   const t = useOpsTheme('cyan');
   const [tab, setTab]   = useState<AtaTab>('pending');
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   // Dynamic rows-per-page — auto-fits the table to the viewport (like the CTC /
   // Sent pages); the user's explicit pick from the pager sticks thereafter.
@@ -136,7 +138,14 @@ export default function ClmAgreementsToApprovePage() {
     rejected:      ata.filter(c => c.status === 'rejected').length,
   }), [ata]);
 
-  const list = useMemo(() => tab === 'all' ? ata : ata.filter(c => c.status === tab), [ata, tab]);
+  const list = useMemo(() => {
+    const byTab = tab === 'all' ? ata : ata.filter(c => c.status === tab);
+    const q = search.trim().toLowerCase();
+    if (!q) return byTab;
+    return byTab.filter(c =>
+      [c.id, c.title, c.createdBy, c.approver, ...(c.approvers ?? []).map(a => a.name)]
+        .some(v => String(v ?? '').toLowerCase().includes(q)));
+  }, [ata, tab, search]);
   const actionContract = ata.find(c => c.id === actionId) || null;
   const reviewContract = ata.find(c => c.id === reviewId) || null;
 
@@ -309,14 +318,21 @@ export default function ClmAgreementsToApprovePage() {
               );
             })}
           </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, boxSizing: 'border-box', padding: '0 14px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}`, flex: '0 1 320px', minWidth: 200 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title, created by, approver…"
+              style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.text, background: 'transparent', flex: 1, minWidth: 0 }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
+          </div>
         </div>
 
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           {loading
             ? <ShimmerTable rows={6} cols={9} />
             : tab === 'clarification'
-            ? <ClarificationTable rows={list} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} onChat={(id) => { setActionChoice('clarify'); setActionId(id); }} t={t} />
-            : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} onDownload={downloadCtcPdf} dlId={dlId} t={t} />}
+            ? <ClarificationTable searching={!!search.trim()} rows={list} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} onChat={(id) => { setActionChoice('clarify'); setActionId(id); }} t={t} />
+            : <StandardTable searching={!!search.trim()} rows={list} tab={tab} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} onDownload={downloadCtcPdf} dlId={dlId} t={t} />}
         </div>
       </div>
 
@@ -437,28 +453,16 @@ function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
   );
 }
 
-function StandardTable({ rows, tab, page, setPage, pageSize, onPageSize, onReview, onDownload, dlId, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onReview: (id: string) => void; onDownload: (id: string) => void; dlId: string | null; t: OpsTokens }) {
+function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSize, onReview, onDownload, dlId, t }: { searching: boolean; rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onReview: (id: string) => void; onDownload: (id: string) => void; dlId: string | null; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * pageSize;
   const slice = rows.slice(start, start + pageSize);
   const isRej = tab === 'rejected';
 
-  if (!slice.length) {
-    return (
-      <div style={{ background: t.dark ? t.tableBg : '#F0FDFF', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 48, height: 48, borderRadius: 13, background: 'linear-gradient(135deg,#E0F7FA,#A5F3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#164e63', marginBottom: 5 }}>No Agreements Found</div>
-          <div style={{ fontSize: 10.5, color: t.textMuted, maxWidth: 280, lineHeight: 1.6 }}>No {tab === 'all' ? 'agreements received' : tab + ' agreements'} yet.</div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ overflowX: 'auto', flex: 1 }}>
+      <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)' }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -514,26 +518,37 @@ function StandardTable({ rows, tab, page, setPage, pageSize, onPageSize, onRevie
             })}
           </tbody>
         </table>
+        {!slice.length && (
+          <AtaEmpty t={t} title={searching ? 'No Matching Agreements' : 'No Agreements Found'} sub={searching ? 'No results match the current search.' : `No ${tab === 'all' ? 'agreements received' : tab + ' agreements'} yet.`} />
+        )}
       </div>
       <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
     </div>
   );
 }
 
-function ClarificationTable({ rows, page, setPage, pageSize, onPageSize, onReview, onChat, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onReview: (id: string) => void; onChat: (id: string) => void; t: OpsTokens }) {
+function AtaEmpty({ t, title, sub }: { t: OpsTokens; title: string; sub: string }) {
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', position: 'sticky', left: 0 }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: 48, height: 48, borderRadius: 13, background: 'linear-gradient(135deg,#E0F7FA,#A5F3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#164e63', marginBottom: 5 }}>{title}</div>
+        <div style={{ fontSize: 10.5, color: t.textMuted, maxWidth: 280, lineHeight: 1.6 }}>{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSize, onReview, onChat, t }: { searching: boolean; rows: AtaContract[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onReview: (id: string) => void; onChat: (id: string) => void; t: OpsTokens }) {
   const toast = useToast();
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * pageSize;
   const slice = rows.slice(start, start + pageSize);
 
-  if (!slice.length) {
-    return <div style={{ background: t.dark ? t.tableBg : '#F0FDFF', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}><div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#164e63' }}>No clarification requests.</div></div>;
-  }
-
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ overflowX: 'auto', flex: 1 }}>
+      <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)' }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -581,6 +596,9 @@ function ClarificationTable({ rows, page, setPage, pageSize, onPageSize, onRevie
             })}
           </tbody>
         </table>
+        {!slice.length && (
+          <AtaEmpty t={t} title={searching ? 'No Matching Agreements' : 'No Clarification Requests'} sub={searching ? 'No results match the current search.' : 'No agreements are awaiting clarification.'} />
+        )}
       </div>
       <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
     </div>
