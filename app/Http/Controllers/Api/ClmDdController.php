@@ -18,7 +18,6 @@ class ClmDdController extends Controller
     use \App\Http\Controllers\Concerns\ChecksClmDocUsage;
     use \App\Http\Controllers\Concerns\ImportsClmDocMaster;
 
- 
     public function import(Request $request)
     {
         return $this->importClmDocRows($request, ClmDdDocument::class, 'DD', 'expiry', 'due-diligence document');
@@ -29,11 +28,9 @@ class ClmDdController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-      
-        $q = ClmDdDocument::query()->orderByDesc('id');   // newest entry first
+        $q = ClmDdDocument::query()->orderByDesc('id');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-       
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
          
@@ -44,8 +41,6 @@ class ClmDdController extends Controller
             });
         }
 
-        /* PAGINATION — opt-in via per_page, so every existing caller that
-           wants the whole list is unchanged. */
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -54,11 +49,9 @@ class ClmDdController extends Controller
 
         $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
-        // `authority` stores authority ids; expose the resolved current names.
         $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('authority')));
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
-    
         $usage = $this->clmDocUsageSets((int) $user->client_id);
         $rows->each(function ($r) use ($usage) {
             $labels = $this->clmDocUsageLabels($usage, $r->code, $r->branch_id);
@@ -69,9 +62,9 @@ class ClmDdController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-           
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
+            'next_code' => ClmDocCode::preview('DD', ClmDdDocument::class, (int) $user->client_id, $user->branch_id),
         ]);
     }
 
@@ -91,16 +84,12 @@ class ClmDdController extends Controller
         $name = trim($data['name']);
         $dupe = ClmDdDocument::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        // The name alone must be unique — a second document with the same name
-        // under a different authority is still a duplicate to the people reading
-        // the list.
         if ($dupe->exists()) {
             throw ValidationException::withMessages([
                 'name' => "A due-diligence document named \"{$name}\" already exists.",
             ]);
         }
 
-        // Store authority by id (resolve names → ids); reject if nothing valid.
         $data['authority'] = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
         if ($data['authority'] === '') {
             throw ValidationException::withMessages(['authority' => 'Select at least one valid authority.']);
@@ -109,7 +98,7 @@ class ClmDdController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmDdDocument::create([
                 'client_id'  => $user->client_id,
-                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'  => $user->branch_id,
                 'code'       => $this->nextCode($user->client_id, $user->branch_id),
                 'name'       => trim($data['name']),
                 'authority'  => $data['authority'],
@@ -178,7 +167,6 @@ class ClmDdController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Same branch-scoped sets the list's in_use flag reads, so the two agree.
         $usedIn = $this->clmDocUsageLabels($this->clmDocUsageSets($row->client_id), $row->code, $row->branch_id);
         if (!empty($usedIn)) {
             return response()->json([
@@ -193,14 +181,10 @@ class ClmDdController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
 
-        /* The counter never reissues a number, even after the row that
-           held it is deleted — a recycled code would drag the old
-           document's segment rules and uploads onto the new row. */
         return ClmDocCode::next('DD', ClmDdDocument::class, $clientId, $branchId);
     }
 }

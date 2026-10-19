@@ -122,6 +122,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+  const isEmpty = !loading && filtered.length === 0;
 
   // Dynamic pagination: rows-per-page auto-fits the visible table height and
   // the card stretches to cover the page. Anchored via closest('.clm-root').
@@ -177,15 +178,8 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
         </Tooltip>
       </div>
 
-      <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 && !loading ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bAgr}</div>
-            <div className="clm-empty-title">No agreement types yet</div>
-            <div className="clm-empty-sub">Click + Add Agreement Type to create the first record.</div>
-          </div>
-        ) : (
-          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+      <div className="clm-tab-body has-data">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -226,11 +220,17 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                 ))}
               </tbody>
             </table>
+            {isEmpty && (
+              <div className="clm-empty" style={{ flex: 1 }}>
+                <div className="clm-empty-ico">{ICO.bAgr}</div>
+                <div className="clm-empty-title">{search.trim() ? 'No matching agreement types' : 'No agreement types yet'}</div>
+                <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Click + Add Agreement Type to create the first record.'}</div>
+              </div>
+            )}
             {!loading && filtered.length > 0 && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
-        )}
       </div>
 
       {modalOpen && <SimpleDescModal title={editing ? 'Edit Agreement Type' : 'Add Agreement Type'} namePlaceholder="e.g. Sales Agreement, Service Agreement" descPlaceholder="Short description of when this agreement type is used" code={editing?.code ?? `AT-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initialName={editing?.name ?? ''} initialDesc={editing?.description ?? ''} existingRows={rows} editingId={editing?.id ?? null} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
@@ -278,6 +278,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+  const isEmpty = !loading && filtered.length === 0;
 
   // Dynamic pagination: rows-per-page auto-fits the visible table height and
   // the card stretches to cover the page. Anchored via closest('.clm-root').
@@ -413,15 +414,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
         </Tooltip>
       </div>
 
-      <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 && !loading ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bAgr}</div>
-            <div className="clm-empty-title">No agreements yet</div>
-            <div className="clm-empty-sub">Click + Add Agreement to create the first record.</div>
-          </div>
-        ) : (
-          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+      <div className="clm-tab-body has-data">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table" style={{ minWidth: 960 }}>
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -569,11 +563,17 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                 })}
               </tbody>
             </table>
+            {isEmpty && (
+              <div className="clm-empty" style={{ flex: 1 }}>
+                <div className="clm-empty-ico">{ICO.bAgr}</div>
+                <div className="clm-empty-title">{search.trim() ? 'No matching agreements' : 'No agreements yet'}</div>
+                <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Click + Add Agreement to create the first record.'}</div>
+              </div>
+            )}
             {!loading && filtered.length > 0 && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
-        )}
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete agreement?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}

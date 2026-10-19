@@ -83,6 +83,7 @@ export default function ClmSegmentPage() {
     usePagedList<Segment, { counts: Counts }>('/clm/segments', reloadKey, params);
   const counts: Counts = meta.counts ?? { all: 0, highly: 0, less: 0 };
   const narrowed = !!search.trim() || bcFilter !== 'all';
+  const isEmpty = !loading && rows.length === 0;
 
   const [booted, setBooted] = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
@@ -266,21 +267,8 @@ export default function ClmSegmentPage() {
               </div>
           </div>
 
-          <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
-            {rows.length === 0 && !loading ? (
-              <div className="clm-empty" ref={scrollRef} style={{ minHeight: fillH }}>
-                <div className="clm-empty-ico">{ICO.bSeg}</div>
-                <div className="clm-empty-title">
-                  {narrowed ? 'No Matching Segments' : <>
-                    {tab === 'all'    && 'No Segments Yet'}
-                    {tab === 'highly' && 'No Highly Regulated Segments'}
-                    {tab === 'less'   && 'No Less Regulated Segments'}
-                  </>}
-                </div>
-                <div className="clm-empty-sub">{!narrowed && counts.all === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
-              </div>
-            ) : (
-              <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+          <div className="clm-tab-body has-data">
+              <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
                 <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%', opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
                   <thead><tr>
                     <th style={{ width: '6%', textAlign: 'center' }}>SR. NO</th>
@@ -336,11 +324,23 @@ export default function ClmSegmentPage() {
                     ))}
                   </tbody>
                 </table>
+                {isEmpty && (
+                  <div className="clm-empty" style={{ flex: 1 }}>
+                    <div className="clm-empty-ico">{ICO.bSeg}</div>
+                    <div className="clm-empty-title">
+                      {narrowed ? 'No Matching Segments' : <>
+                        {tab === 'all'    && 'No Segments Yet'}
+                        {tab === 'highly' && 'No Highly Regulated Segments'}
+                        {tab === 'less'   && 'No Less Regulated Segments'}
+                      </>}
+                    </div>
+                    <div className="clm-empty-sub">{!narrowed && counts.all === 0 ? 'Click "+ Add Segment" to create your first segment entry.' : 'No segments match the current tab / search.'}</div>
+                  </div>
+                )}
                 {!loading && total > 0 && (
                   <WorklistPager total={total} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
                 )}
               </div>
-            )}
           </div>
         </div>
       </div>

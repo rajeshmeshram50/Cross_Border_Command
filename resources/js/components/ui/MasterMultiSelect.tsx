@@ -30,6 +30,7 @@ export function MasterMultiSelect({
   collapseNoun,
   loading,
   showDone,
+  menuClassName,
   onChange,
 }: {
   values: string[];
@@ -53,6 +54,8 @@ export function MasterMultiSelect({
   loading?: boolean;
   /** Render a "Done" button in the dropdown footer that closes the menu. */
   showDone?: boolean;
+  /** Extra class on the portalled dropdown, so a host can theme it. */
+  menuClassName?: string;
   onChange: (next: string[]) => void;
 }) {
   void _addMorePlaceholder;
@@ -208,7 +211,7 @@ export function MasterMultiSelect({
       {open && !disabled && menuRect && createPortal(
         <div
           ref={menuRef}
-          className="mms-menu"
+          className={`mms-menu ${menuClassName ?? ''}`}
           style={{ top: menuRect.top, bottom: menuRect.bottom, left: menuRect.left, width: menuRect.width, maxHeight: menuRect.maxH }}
           onMouseDown={e => e.stopPropagation()}
         >

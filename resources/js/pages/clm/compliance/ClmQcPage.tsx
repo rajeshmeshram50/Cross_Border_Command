@@ -29,6 +29,8 @@ export default function ClmQcPage() {
   const [nextCode, setNextCode] = useState('');
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [booted, setBooted]     = useState(false);
+  useEffect(() => { if (!loading) setBooted(true); }, [loading]);
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
   const [rpp, setRpp]           = useState(PER_PAGE);
@@ -77,6 +79,7 @@ export default function ClmQcPage() {
   }, []);
 
   const start = (page - 1) * rpp;
+  const isEmpty = !loading && rows.length === 0;
 
   const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
@@ -106,7 +109,7 @@ export default function ClmQcPage() {
   return (
     <div className="clm-root">
       <style>{CLM_CSS}</style>
-      {loading && <ShimmerClmMaster cols={6} />}
+      {loading && !booted && <ShimmerClmMaster cols={6} />}
 
       <ClmPageHeader
         icon={ICO.hQc}
@@ -142,15 +145,8 @@ export default function ClmQcPage() {
           </div>
         </div>
 
-        <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
-          {rows.length === 0 && !loading ? (
-            <div className="clm-empty" ref={scrollRef} style={{ minHeight: fillH }}>
-              <div className="clm-empty-ico">{ICO.bCheck}</div>
-              <div className="clm-empty-title">{debouncedSearch ? 'No matching QC documents' : 'No QC documents yet'}</div>
-              <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add QC Document to create the first record.'}</div>
-            </div>
-          ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+        <div className="clm-tab-body has-data">
+            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -181,11 +177,17 @@ export default function ClmQcPage() {
                   ))}
                 </tbody>
               </table>
+              {isEmpty && (
+                <div className="clm-empty" style={{ flex: 1 }}>
+                  <div className="clm-empty-ico">{ICO.bCheck}</div>
+                  <div className="clm-empty-title">{debouncedSearch ? 'No matching QC documents' : 'No QC documents yet'}</div>
+                  <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add QC Document to create the first record.'}</div>
+                </div>
+              )}
               {!loading && count > 0 && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
-          )}
         </div>
       </div>
 

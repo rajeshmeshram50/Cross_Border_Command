@@ -18,7 +18,6 @@ class ClmKycController extends Controller
     use \App\Http\Controllers\Concerns\ChecksClmDocUsage;
     use \App\Http\Controllers\Concerns\ImportsClmDocMaster;
 
-  
     public function import(Request $request)
     {
         return $this->importClmDocRows($request, ClmKycDocument::class, 'KYC', 'expiry', 'KYC document');
@@ -29,12 +28,9 @@ class ClmKycController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Branch-scoped read: a branch admin sees its own rows + client-level
-        // (shared) rows; sibling branches stay hidden (CBC-433/KYC).
-        $q = ClmKycDocument::query()->orderByDesc('id');   // newest entry first
+        $q = ClmKycDocument::query()->orderByDesc('id');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-        
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
            
@@ -45,7 +41,6 @@ class ClmKycController extends Controller
             });
         }
 
-       
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -54,11 +49,9 @@ class ClmKycController extends Controller
 
         $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
-   
         $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('authority')));
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
-       
         $usage = $this->clmDocUsageSets((int) $user->client_id);
         $rows->each(function ($r) use ($usage) {
             $labels = $this->clmDocUsageLabels($usage, $r->code, $r->branch_id);
@@ -69,9 +62,9 @@ class ClmKycController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $rows,
-            
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
+            'next_code' => ClmDocCode::preview('KYC', ClmKycDocument::class, (int) $user->client_id, $user->branch_id),
         ]);
     }
 
@@ -91,16 +84,12 @@ class ClmKycController extends Controller
         $name = trim($data['name']);
         $dupe = ClmKycDocument::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
-        // The name alone must be unique — a second document with the same name
-        // under a different authority is still a duplicate to the people reading
-        // the list.
         if ($dupe->exists()) {
             throw ValidationException::withMessages([
                 'name' => "A KYC document named \"{$name}\" already exists.",
             ]);
         }
 
-        // Store authority by id (resolve names → ids); reject if nothing valid.
         $data['authority'] = ClmAuthority::normalizeIds($data['authority'] ?? null, $user->client_id);
         if ($data['authority'] === '') {
             throw ValidationException::withMessages(['authority' => 'Select at least one valid authority.']);
@@ -109,7 +98,7 @@ class ClmKycController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmKycDocument::create([
                 'client_id'  => $user->client_id,
-                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'  => $user->branch_id,
                 'code'       => $this->nextCode($user->client_id, $user->branch_id),
                 'name'       => trim($data['name']),
                 'authority'  => $data['authority'],
@@ -178,7 +167,6 @@ class ClmKycController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Same branch-scoped sets the list's in_use flag reads, so the two agree.
         $usedIn = $this->clmDocUsageLabels($this->clmDocUsageSets($row->client_id), $row->code, $row->branch_id);
         if (!empty($usedIn)) {
             return response()->json([
@@ -197,9 +185,6 @@ class ClmKycController extends Controller
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
 
-        /* The counter never reissues a number, even after the row that
-           held it is deleted — a recycled code would drag the old
-           document's segment rules and uploads onto the new row. */
         return ClmDocCode::next('KYC', ClmKycDocument::class, $clientId, $branchId);
     }
 }

@@ -442,6 +442,8 @@ export const CLM_CSS = `
 .clm-rows-scroll .clm-table thead th { position: sticky; top: 0; z-index: 2; }
 .clm-table-fill { display: flex; flex-direction: column; background: linear-gradient(180deg, #fafeff, #f3fafc); }
 .clm-table-fill > .clm-table { background: #fff; }
+.clm-table-fill.clm-fill-empty { background: #fff; }
+[data-bs-theme="dark"] .clm-table-fill.clm-fill-empty { background: #0f172a; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
 /* The pager lives inside the horizontally-scrolling table wrap. Without this it
  * stretches to the table's full scroll width (e.g. 1100px), so on zoom / narrow
@@ -815,6 +817,40 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-modal-body .clm-select,
 [data-bs-theme="dark"] .clm-modal-body .clm-input,
 [data-bs-theme="dark"] .clm-modal-body .clm-textarea { background-color: #1e293b; }
+
+/* MasterMultiSelect (authority pickers) wears the same field skin as
+   .clm-input inside a CLM modal, instead of its own grey/indigo look. */
+.clm-modal-body .mms-toggle {
+  min-height: 34px; padding: 4px 34px 4px 12px;
+  border: 1.5px solid rgba(6,182,212,.25); border-radius: 9px;
+  background: #fff; color: #0c4a6e; font-size: 12.5px;
+  box-shadow: 0 1px 4px rgba(6,182,212,.08), inset 0 1px 0 rgba(255,255,255,.9);
+}
+.clm-modal-body .mms-toggle:hover:not(.is-disabled) { border-color: rgba(8,145,178,.45); }
+.clm-modal-body .mms-toggle.is-open { border-color: #0891b2; box-shadow: 0 0 0 3.5px rgba(8,145,178,.14), inset 0 1px 0 rgba(255,255,255,.9); }
+.clm-modal-body .mms-toggle.is-invalid { border-color: #ef4444; }
+.clm-modal-body .mms-toggle.is-open .mms-chev { color: #0891b2; }
+.clm-modal-body .mms-placeholder { color: #94A3B8; }
+[data-bs-theme="dark"] .clm-modal-body .mms-toggle { background: #1e293b; border-color: rgba(6,182,212,.25); color: #e2e8f0; box-shadow: none; }
+.clm-modal-body .mms-chip { background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%); border-color: #a5f3fc; color: #0e7490; }
+.clm-modal-body .mms-chip-x { background: rgba(8,145,178,.12); color: #0e7490; }
+.clm-modal-body .mms-chip-x:hover { background: #0891b2; color: #fff; }
+.clm-modal-body .mms-more { background: #ecfeff; border-color: #a5f3fc; color: #0e7490; }
+.clm-modal-body .mms-more:hover { background: #cffafe; border-color: #67e8f9; }
+[data-bs-theme="dark"] .clm-modal-body .mms-chip { background: rgba(8,145,178,.22); border-color: rgba(34,211,238,.4); color: #a5f3fc; }
+[data-bs-theme="dark"] .clm-modal-body .mms-chip-x { background: rgba(165,243,252,.16); color: #a5f3fc; }
+
+/* The dropdown is portalled to <body>, so it is themed through the
+   clm-mms-menu class CLM forms pass as menuClassName. */
+.mms-menu.clm-mms-menu { border-color: rgba(6,182,212,.25); }
+.clm-mms-menu .mms-search:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.14); }
+.clm-mms-menu .mms-item:hover { background: rgba(6,182,212,.07); }
+.clm-mms-menu .mms-item.is-on { background: rgba(6,182,212,.12); color: #0e7490; }
+.clm-mms-menu .mms-item.is-on .mms-check { background: #0891b2; border-color: #0891b2; }
+.clm-mms-menu .mms-done { background: #0891b2; }
+.clm-mms-menu .mms-done:hover { background: #0e7490; }
+[data-bs-theme="dark"] .clm-mms-menu .mms-item.is-on { background: rgba(6,182,212,.18); color: #67e8f9; }
+[data-bs-theme="dark"] .clm-mms-menu .mms-item:hover { background: rgba(6,182,212,.10); }
 
 /* Auto code strip — same logic: parent body gap handles spacing below */
 .clm-autocode {
