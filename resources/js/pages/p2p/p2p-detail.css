@@ -501,8 +501,17 @@
 .spi-dt-step.is-active .spi-dt-step-title { color:#fff; }
 .spi-dt-step-desc { font-size:10px; font-weight:500; line-height:1.4; color:#a3acba; }
 .spi-dt-step.is-active .spi-dt-step-desc { color: rgba(255,255,255,.65); }
-.spi-dt-step-ghost { position:absolute; right:6px; bottom:-12px; font-size:68px; font-weight:900; line-height:1; letter-spacing:-5px;
+/* Clear of the chevron.
+   The card is clipped to an arrow — 12px is shaved off its right edge at the
+   top and bottom — and the ghost sat at right:6px with bottom:-12px, so the
+   diagonal sliced straight through the glyph near the bottom of the card.
+   That is the "cut" look on steps 02-04; step 01 escaped it only because the
+   active card's own fill hid the seam. 24px puts the whole number inside the
+   straight part of the shape. */
+.spi-dt-step-ghost { position:absolute; right:24px; bottom:-12px; font-size:68px; font-weight:900; line-height:1; letter-spacing:-5px;
   color: rgba(148,163,184,.14); pointer-events:none; }
+/* The last card has no chevron, so it does not need the clearance. */
+.spi-dt-step:last-child .spi-dt-step-ghost { right:12px; }
 .spi-dt-step.is-active .spi-dt-step-ghost { color: rgba(255,255,255,.1); }
 
 /* Sections */
@@ -754,7 +763,8 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
   .spi-dt-steps { grid-template-columns:1fr; gap:10px; padding:10px; }
   /* stacked step cards must drop the sideways arrow clip or they look broken */
   .spi-dt-step, .spi-dt-step:last-child { clip-path:none; padding:12px 14px; min-height:auto; }
-  .spi-dt-step-ghost { font-size:52px; right:4px; bottom:-8px; }
+  .spi-dt-step-ghost { font-size:52px; right:20px; bottom:-8px; }
+  .spi-dt-step:last-child .spi-dt-step-ghost { right:10px; }
   /* section-header pills (supplier code / state / PO / PI) overflow — hide on mobile */
   .spi-dt-secpills { display:none; }
   .spi-dt-sec-head { gap:9px; padding:8px 12px; }
@@ -817,6 +827,11 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 [data-bs-theme="dark"] .spi-dt-step-desc { color:#71818f; }
 [data-bs-theme="dark"] .spi-dt-step-big { color:#33475a; }
 [data-bs-theme="dark"] .spi-dt-step-lbl { color:#71818f; }
+/* The watermark had no dark rule, so a not-yet-reached step kept the light
+   theme's slate at 14% — which over the dark #0e1b24 card stops being a
+   watermark and reads as content. Matched to the done step's 7%. */
+[data-bs-theme="dark"] .spi-dt-step-ghost { color: rgba(148,163,184,.07); }
+[data-bs-theme="dark"] .spi-dt-step.is-active .spi-dt-step-ghost { color: rgba(255,255,255,.12); }
 [data-bs-theme="dark"] .spi-dt-step-badge-done { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); color:#7fe6f8; }
 /* Card headers + field labels + toggles inside the wizard body */
 [data-bs-theme="dark"] .spi-dt-card-title { color:#e8f2f6; }

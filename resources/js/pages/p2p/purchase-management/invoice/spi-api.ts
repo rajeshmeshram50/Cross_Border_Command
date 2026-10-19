@@ -198,6 +198,10 @@ export type SpiBoxItem = {
 export type SpiBox = {
   id: number;
   box_code: string;
+  /** When the carton was packed — the date the Packed Boxes row shows under
+   *  the box id. Optional: rows saved before it was returned fall back to
+   *  today, which is right for anything packed in this session. */
+  created_at?: string | null;
   scenario: SpiBoxScenario;
   condition: string;
   is_stackable?: number | null;
