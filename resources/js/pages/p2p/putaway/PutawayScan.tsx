@@ -223,10 +223,11 @@ export default function PutawayScan() {
     }
   }, []);
 
-  /* Open the session, and the task when the URL names one. */
+  /* Open the session, and the task when the URL names one. The handheld is
+     identified by its client certificate (the browser sends it, the front door
+     verifies it and passes the device in), so no token is required here — the
+     server refuses with a clear message if the cert does not resolve a device. */
   useEffect(() => {
-    if (!token) { setBlocked('This device has not been enrolled yet.'); return; }
-
     (async () => {
       try {
         /* Landed here BY scanning: feed that label straight in, so the carton

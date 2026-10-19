@@ -30,13 +30,46 @@ const HERE = __dirname;
 const LISTEN = Number(process.env.TLS_PORT || 8000);
 const TARGET = Number(process.env.TARGET_PORT || 8001);
 
-/** Everything that arrives over TLS is proxied straight through. */
+/* Scanner surface that MUST present a device certificate: the scan API and the
+   handheld pages. Everything else (the whole ERP) is left alone. Deliberately
+   NOT /api/scan-devices — that is admin enrolment, done logged-in on a PC. */
+const needsDeviceCert = (url) => {
+  const p = (url || '').split('?')[0];
+  return p.startsWith('/api/scan/putaway')
+      || p.startsWith('/api/scan/device-check')
+      || p === '/ps' || p.startsWith('/ps/')
+      || p.startsWith('/putaway-scan');
+};
+
+/* TLS front door, now with MUTUAL TLS on the scanner paths. `requestCert` asks
+   every client for a cert and `ca` checks it against the CBC Device CA, but
+   `rejectUnauthorized:false` still lets cert-less clients (the laptop) in — we
+   only REFUSE when a scanner path is hit without a valid device cert. So the
+   scanner URL is useless on a phone that has not installed the cert. */
 const secure = https.createServer(
   {
     cert: fs.readFileSync(path.join(HERE, 'cbc.pem')),
     key: fs.readFileSync(path.join(HERE, 'cbc-key.pem')),
+    ca: [fs.readFileSync(path.join(HERE, 'device-ca.pem'))],
+    requestCert: true,
+    rejectUnauthorized: false,
   },
   (req, res) => {
+    const peer = req.socket.getPeerCertificate();
+    const hasDeviceCert = req.socket.authorized && peer && peer.subject && peer.subject.CN;
+
+    if (needsDeviceCert(req.url) && !hasDeviceCert) {
+      res.writeHead(403, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
+      res.end('This device is not authorised to scan — install the device certificate.\n');
+      return;
+    }
+
+    // Trusted header for Laravel: the enrolled device's cert CN, stripped from
+    // the incoming request first so a client can never forge it.
+    const headers = { ...req.headers };
+    delete headers['x-scan-cert-cn'];
+    if (hasDeviceCert) headers['x-scan-cert-cn'] = peer.subject.CN;
+
     const upstream = http.request(
       {
         host: '127.0.0.1',
@@ -44,7 +77,7 @@ const secure = https.createServer(
         method: req.method,
         path: req.url,
         headers: {
-          ...req.headers,
+          ...headers,
           // Laravel builds absolute URLs from these. Without them it reads the
           // scheme off the connection it can see — plain HTTP from this proxy —
           // and signs URLs against an address that will never validate.

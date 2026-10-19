@@ -102,7 +102,16 @@ class ScanDeviceController extends Controller
      */
     public function check(Request $request)
     {
-        $device = ScanDevice::findByToken((string) $request->input('token', ''));
+        // Cert-only first: the front door verifies the client certificate and
+        // passes its CN (stripping any client-sent copy), so the device is known
+        // without a token. CN is "zebra-<serial>". Token stays as a fallback.
+        $device = null;
+        $cn = trim((string) $request->header('X-Scan-Cert-CN'));
+        if ($cn !== '') {
+            $serial = trim(preg_replace('/^zebra-/i', '', $cn));
+            if ($serial !== '') $device = ScanDevice::where('serial', $serial)->first();
+        }
+        $device = $device ?: ScanDevice::findByToken((string) $request->input('token', ''));
 
         if (!$device) {
             return response()->json(['authorized' => false, 'code' => 'rejected_unauthorized_device', 'device' => null]);

@@ -608,13 +608,17 @@ class SpiPutawayScanController extends Controller
      */
     private function device(Request $request): ScanDevice
     {
-        $token  = $request->header('X-Scan-Device') ?: $request->input('device_token');
-        $device = ScanDevice::findByToken((string) $token);
+        // Cert-only first: the front door (proxy / Apache) verifies the client
+        // certificate and passes its CN here, having stripped any client-sent
+        // copy — so this header is trustworthy and the device needs no token.
+        // The old X-Scan-Device token still works as a fallback.
+        $device = $this->deviceFromCert($request)
+            ?: ScanDevice::findByToken((string) ($request->header('X-Scan-Device') ?: $request->input('device_token')));
 
         if (!$device) {
             abort(response()->json([
                 'status' => false, 'code' => 'rejected_unauthorized_device',
-                'message' => 'This device is not enrolled.',
+                'message' => 'This device is not authorised to scan.',
             ], 401));
         }
 
@@ -668,6 +672,21 @@ class SpiPutawayScanController extends Controller
         $device->forceFill(['last_seen_at' => now()])->save();
 
         return $device;
+    }
+
+    /**
+     * Resolve the handheld from its client certificate's CN, which the front
+     * door injects as X-Scan-Cert-CN after verifying it against the Device CA.
+     * The CN is "zebra-<serial>"; the serial is the device's own serial. Null
+     * when no cert CN is present, so the caller falls back to the token.
+     */
+    private function deviceFromCert(Request $request): ?ScanDevice
+    {
+        $cn = trim((string) $request->header('X-Scan-Cert-CN'));
+        if ($cn === '') return null;
+
+        $serial = trim(preg_replace('/^zebra-/i', '', $cn));
+        return $serial === '' ? null : ScanDevice::where('serial', $serial)->first();
     }
 
     private function findTask(ScanDevice $device, int $taskId, bool $mustBeOpen = true): SpiPutawayTask

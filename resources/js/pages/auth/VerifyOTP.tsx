@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import AuthCardLayout from '../../layouts/AuthCardLayout';
 import Button from '../../components/ui/Button';
-import { AlertCircle, Loader2, Mail } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, Mail } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 
@@ -13,18 +13,11 @@ interface VerifyOTPProps {
 
 export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified }: VerifyOTPProps) {
   const toast = useToast();
-  // Default cooldown matches backend RESEND_COOLDOWN_SECONDS (120). Both
-  // the initial mount AND the resend handler use the value the API returns
-  // (`resend_after`) so the timer never drifts from what the server is
-  // actually enforcing.
   const DEFAULT_RESEND_COOLDOWN = 120;
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(DEFAULT_RESEND_COOLDOWN);
-  // Guards against rapid double-clicks on Resend — without this, every click
-  // races the server's 120s cooldown and stacks one "Please wait Xs" toast per
-  // click. While `resending` is true the button is disabled and shows a spinner.
   const [resending, setResending] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -41,14 +34,12 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
   }, [resendTimer]);
 
   const handleInputChange = (index: number, value: string) => {
-    // Only allow digits
     if (!/^\d*$/.test(value)) return;
     
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
 
-    // Auto move to next input
     if (value && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -114,9 +105,6 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
     if (resending || resendTimer > 0) return;
     setResending(true);
     try {
-      // Server is the source of truth for the cooldown — pull the value it
-      // returns and use it for the next countdown so the UI never gets out
-      // of sync with what the API will actually accept.
       const { data } = await api.post('/forgot-password/send-otp', { email });
       setResendTimer(Number(data?.resend_after) || DEFAULT_RESEND_COOLDOWN);
       setOtp(['', '', '', '', '', '']);
@@ -124,7 +112,6 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
       inputRefs.current[0]?.focus();
       toast.success('Code sent', 'New verification code sent to your email');
     } catch (err: any) {
-      // 429 throttle — server tells us the exact remaining seconds.
       const retryAfter = Number(err.response?.data?.retry_after);
       if (retryAfter > 0) setResendTimer(retryAfter);
       const msg = err.response?.data?.message || 'Failed to resend code';
@@ -147,7 +134,6 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
        
 
         <form onSubmit={handleSubmit} className="space-y-6 pt-2">
-          {/* OTP Input Boxes */}
           <div className="flex gap-2 justify-center">
             {otp.map((digit, index) => (
               <input
@@ -168,7 +154,6 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
             ))}
           </div>
 
-          {/* Resend Link */}
           <div className="text-center text-[13px] font-medium text-[#5e6b85] pt-2">
             {resendTimer > 0 ? (
               <p>Resend code in <span className="font-bold text-primary">{resendTimer}s</span></p>
@@ -195,9 +180,6 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
           <div className="pt-2">
             <button
               disabled={loading}
-              /* rounded-[999px] — see ForgotPassword: Tailwind 4's
-                 rounded-full loses to the Velzon `button { border-radius: 0 }`
-                 reset, leaving a square button mid-flow. */
               className="w-full h-14 rounded-[999px] bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
               type="submit"
             >
@@ -208,10 +190,12 @@ export default function VerifyOTP({ email, onBackToForgotPassword, onOTPVerified
         </form>
 
         <button
+          type="button"
           onClick={onBackToForgotPassword}
-          className="text-[13px] font-bold text-primary hover:underline transition-all duration-200"
+          className="flex items-center justify-center gap-2 w-full text-[13px] font-bold text-primary hover:underline transition-all duration-200"
         >
-          Back to Login
+          <ArrowLeft size={16} />
+          Back
         </button>
       </div>
     </AuthCardLayout>

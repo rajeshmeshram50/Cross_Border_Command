@@ -8,13 +8,14 @@ import api from '../../api';
 interface ForgotPasswordProps {
   onBackToLogin: () => void;
   onEmailSubmitted?: (email: string) => void;
+  initialEmail?: string;
 }
 
-const COOLDOWN = 120; // 2 minutes
+const COOLDOWN = 120;
 
-export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: ForgotPasswordProps) {
+export default function ForgotPassword({ onBackToLogin, onEmailSubmitted, initialEmail = '' }: ForgotPasswordProps) {
   const toast = useToast();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail);
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
@@ -82,7 +83,6 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
       icon={<Mail size={18} />}
     >
       <div className="text-center space-y-6">
-        {/* Info Note */}
         <div className="flex items-start gap-1 px-4 py-3 rounded-xl   text-left">
           <AlertCircle size={16} className="text-primary mt-1.5 shrink-0" />
           <p className="text-[14px] text-[#5e6b85] font-medium leading-relaxed">
@@ -106,12 +106,6 @@ export default function ForgotPassword({ onBackToLogin, onEmailSubmitted }: Forg
           <div className="pt-2">
             <button
               disabled={isDisabled}
-              /* rounded-[999px], not rounded-full. Tailwind 4 compiles
-                 rounded-full to `border-radius: 3.40282e38px`, and the Velzon
-                 bundle carries a bare `button { border-radius: 0 }` — where
-                 that scientific-notation value is dropped the reset wins and
-                 the button renders square. A plain 999px is what the login
-                 page's own .kx-submit uses, so the two now match. */
               className="w-full h-14 rounded-[999px] bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               type="submit"
             >

@@ -11,18 +11,11 @@ import { bustAllMasterBundles } from '../../../utils/bustMasterBundles';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import BaseTooltip from '../../../components/ui/Tooltip';
-/* Themed by default so tooltips follow the active light/dark app theme
- * instead of the always-dark pill (QA #18) — mirrors the consignee page's
- * wrapper so tooltips look the same everywhere. */
 const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
 import ClmDcpFilterModal, { type DcpFilters, countDcpFilters } from './ClmDcpFilterModal';
 import AuthorityBadges from './AuthorityBadges';
-/* The four document forms, code-split.
-   These were plain imports FROM THE MASTER PAGES, which dragged each entire
-   page — table, toolbar, pager, shimmer and all their dependencies — into
-   this chunk, four times over, to reuse four modals. */
 const KycModal = lazyPage(() => import('./ClmKycModal'));
 const DdModal  = lazyPage(() => import('./ClmDdModal'));
 const QcModal  = lazyPage(() => import('./ClmQcModal'));
@@ -31,18 +24,8 @@ import SearchClear from '../../../components/ui/SearchClear';
 import SegmentBadge, { segmentLabel } from '../../../components/ui/SegmentBadge';
 import { lazyPage } from '../../../utils/lazyPage';
 
-/* Central CLM → Document Control Panel.
- *
- * Lists Segment Rules — one per (segment × regulatory tier) configuration
- * with per-category document-count badges. The Add/Edit modal is a 2-stage
- * flow: Stage 1 picks segment + auto-maps authorities, Stage 2 toggles
- * Mandatory/Optional per document across KYC/DD/TL/QC.
- */
 
 type DocSel = Record<string, 'M' | 'O'>;
-/* Trade Documents (td) was removed from the Document Control Panel — it is no
- * longer a configurable category. The Bootstrap payload may still ship a `td`
- * array, but the panel neither renders nor saves it. */
 type DocSelections = { kyc?: DocSel; dd?: DocSel; tl?: DocSel; qc?: DocSel };
 type DocType = 'domestic' | 'international';
 
@@ -71,17 +54,12 @@ const CAT_KEYS: Array<keyof DocSelections> = ['kyc', 'dd', 'tl', 'qc'];
 const CAT_LABELS: Record<keyof DocSelections, string> = {
   kyc: 'KYC', dd: 'Due Diligence', tl: 'Trade Licenses', qc: 'Quality & Compliance',
 };
-/* Short labels for the quick-add buttons (+ Add KYC / DD / TL / QC) and the
- * master endpoint each category's quick-add POSTs to. */
 const CAT_SHORT: Record<keyof DocSelections, string> = { kyc: 'KYC', dd: 'DD', tl: 'TL', qc: 'QC' };
 const CAT_ENDPOINT: Record<keyof DocSelections, string> = {
   kyc: '/clm/kyc-documents', dd: '/clm/dd-documents', tl: '/clm/trade-licenses', qc: '/clm/qc-documents',
 };
 
-/* Hardcoded segment→authority mapping mirrors the prototype's
- * _srGetAuthsForSeg lookup so the auto-mapping behavior is identical. */
 const SEG_AUTH_MAP: Record<string, string[]> = {
-  // Highly regulated
   'S-011': ['AUTH-002','AUTH-003','AUTH-004','AUTH-010'],
   'S-012': ['AUTH-002','AUTH-003','AUTH-004','AUTH-010'],
   'S-013': ['AUTH-003','AUTH-004','AUTH-002'],
@@ -92,7 +70,6 @@ const SEG_AUTH_MAP: Record<string, string[]> = {
   'S-018': ['AUTH-006','AUTH-007','AUTH-002'],
   'S-019': ['AUTH-003','AUTH-002','AUTH-005'],
   'S-020': ['AUTH-003','AUTH-002','AUTH-008'],
-  // Less regulated
   'S-001': ['AUTH-002','AUTH-012'], 'S-002': ['AUTH-002','AUTH-012'],
   'S-003': ['AUTH-002','AUTH-003'], 'S-004': ['AUTH-002','AUTH-012'],
   'S-005': ['AUTH-002','AUTH-006'], 'S-006': ['AUTH-002','AUTH-012'],
@@ -100,13 +77,13 @@ const SEG_AUTH_MAP: Record<string, string[]> = {
   'S-009': ['AUTH-002','AUTH-006'], 'S-010': ['AUTH-002','AUTH-012'],
 };
 
+const CHIP_LIMIT = 8;
+
 function authsForSegment(segCode: string, allAuths: Authority[]): Authority[] {
   const codes = SEG_AUTH_MAP[segCode] ?? ['AUTH-002', 'AUTH-012'];
   return allAuths.filter(a => codes.includes(a.code));
 }
 
-/* Tab bar restyled to match the My Workplace (Sales Lead Worksheet) pills —
- * a cyan gradient bar of pills with the count inline as "(N)". */
 const DCP_TABS_CSS = `
 .dcp-pre-table { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 16px 18px 0; margin-bottom: 14px; }
 .dcp-pills {
@@ -131,24 +108,22 @@ const DCP_TABS_CSS = `
   box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 [data-bs-theme="dark"] .dcp-pills { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(8,145,178,.10)); border-color: rgba(34,211,238,.30); box-shadow: 0 2px 10px rgba(0,0,0,.25) inset; }
-/* Right-aligned toolbar: Regulatory + Customer≠Consignee filters + a compact search. */
-/* nowrap + a shrinkable search: with wrap on, the fixed 480px search claimed
-   the whole line and pushed the Filter button onto a row of its own. The
-   search now gives up width first and the toolbar stays a single strip. */
-.dcp-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.dcp-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: nowrap; flex: 1 1 auto; min-width: 0; }
 .dcp-filter-ms { flex: 0 0 auto; }
 .dcp-toolbar .dcp-filter-btn { flex-shrink: 0; }
-.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 480px; min-width: 180px; max-width: 100%; }
+.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 680px; min-width: 180px; max-width: 100%; }
+@media (max-width: 1400px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 480px; } }
 @media (max-width: 1100px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 300px; } }
 @media (max-width: 760px) {
   .dcp-toolbar { width: 100%; flex-wrap: wrap; }
   .dcp-pre-table .dcp-toolbar .clm-search { width: 100%; }
   .dcp-filter-ms { flex: 1 1 auto; }
 }
+.clm-table-fill.dcp-fill-empty { background: #fff; }
+[data-bs-theme="dark"] .clm-table-fill.dcp-fill-empty { background: #0f172a; }
 [data-bs-theme="dark"] .dcp-pill { color: #67e8f9; }
 [data-bs-theme="dark"] .dcp-pill:hover { background: rgba(8,145,178,.22); color: #a5f3fc; }
 [data-bs-theme="dark"] .dcp-pill.active { background: linear-gradient(135deg, #0891b2, #155e75); color: #fff; }
-/* Filter button — always wears the active tab pill's dark-cyan gradient. */
 .dcp-filter-btn {
   display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
   height: 38px; padding: 0 20px; border-radius: 14px;
@@ -167,8 +142,6 @@ const DCP_TABS_CSS = `
   background: rgba(255,255,255,.28); color: #fff;
 }
 [data-bs-theme="dark"] .dcp-filter-btn { background: linear-gradient(135deg, #0891b2, #155e75); color: #fff; }
-/* Document Type badge — light + dark variants (the inline dark text was
-   invisible on the dark table background). */
 .dcp-doctype-badge {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
@@ -183,34 +156,21 @@ export default function ClmDcpPage() {
   const toast = useToast();
 
   const [rows, setRows]       = useState<SegRule[]>([]);
-  const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
+  const [loading, setLoading] = useState(true);
   const [tab, setTab]         = useState<'all'|'highly'|'less'>('all');
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
-  // "My Workplace"-style filter panel — Document Type, Regulatory Status,
-  // Customer ≠ Consignee, Authorities and Segment Name facets.
   const [filterOpen, setFilterOpen] = useState(false);
+  const [chipsExpanded, setChipsExpanded] = useState(false);
   const [dcpFilters, setDcpFilters] = useState<DcpFilters>({});
 
   const [boot, setBoot]       = useState<Bootstrap | null>(null);
   const [editing, setEditing] = useState<SegRule | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  /* Arrived from the Segment master after saving a new segment and answering
-     yes to "add a document rule?". Open the Add popup on that segment so the
-     user does not have to hunt for it again in a list of thirteen. The
-     navigation state is cleared straight away: a refresh, or coming Back to
-     this page later, must not re-open the popup. */
   const location = useLocation();
   const navigate = useNavigate();
   const [prefillSegmentCode, setPrefillSegmentCode] = useState<string | null>(null);
-  /* Set only when the Segment master sent us here. It survives the prefill
-     being cleared on modal open, because it answers a different question:
-     "where should saving return to?" */
   const [returnToSegments, setReturnToSegments] = useState(false);
-  /* One place decides it, so the two save paths cannot drift apart. Saving
-     hands the user back to the list they started from; closing the popup
-     without saving leaves them on the panel, where they may well have more
-     to do. */
   const finishRuleSave = () => {
     setModalOpen(false); setEditing(null); setPrefillSegmentCode(null); reload();
     if (returnToSegments) { setReturnToSegments(false); navigate('/clm/segment'); }
@@ -218,8 +178,6 @@ export default function ClmDcpPage() {
   useEffect(() => {
     const seg = (location.state as { openRuleForSegment?: { code?: string } } | null)?.openRuleForSegment;
     if (!seg?.code) return;
-    /* Consume it first, then act: replace: true drops it from history so a
-       refresh or a Back does not fire this again. */
     navigate(location.pathname, { replace: true, state: null });
     setPrefillSegmentCode(seg.code);
     setReturnToSegments(true);
@@ -241,9 +199,6 @@ export default function ClmDcpPage() {
   };
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refresh just the document masters (KYC/DD/TL/QC catalog) without touching
-  // the rules table — used after the modal's "+ Add KYC/DD/TL/QC" quick-add so
-  // the new document immediately shows in the configure list.
   const reloadBootstrap = async () => {
     try {
       const b = await api.get<{ status: boolean; data: Bootstrap }>('/clm/segment-rules/bootstrap');
@@ -253,25 +208,9 @@ export default function ClmDcpPage() {
     }
   };
 
-  // A segment's regulatory tier is owned by the Segment Master — use that as
-  // the source of truth so the list never shows a stale tier the rule was
-  // saved with (bug: Rice showed "High" though it's a less-regulated segment).
   const regOf = (r: SegRule) => boot?.segments.find(seg => seg.code === r.segment_code)?.regulatory_status ?? r.regulatory_status;
   const bcOf = (r: SegRule) => boot?.segments.find(seg => seg.code === r.segment_code)?.buyer_consignee;
 
-  // Real-time authorities for the AUTHORITIES column. The column must reflect
-  // the authorities of the documents actually selected in each rule (KYC / DD /
-  // Trade License / QC) rather than the static auths_json (which stored party
-  // types like "Customer"). Build a per-category map of document code → its
-  // authority/type (the same value shown in the configure modal's
-  // "Authority / Type" column), then collect the distinct authorities across
-  // every selected document on a rule.
-  // The bootstrap ships each document's resolved authority names BOTH as a
-  // comma-joined display string (`authority`/`issued_by`) and as a structured
-  // array (`authority_list`). Prefer the array — splitting the joined string on
-  // commas over-counts authorities whose own names contain commas (e.g.
-  // "Aadhaar, Passport, Voter ID, Driving License" would split into 4). Fall
-  // back to the string split only for older payloads that omit the array.
   const docAuthByCat = useMemo(() => {
     const make = (list: DocItem[] = []) => {
       const m = new Map<string, string[]>();
@@ -300,10 +239,6 @@ export default function ClmDcpPage() {
     return Array.from(set);
   };
 
-  /* Document id → name, across all four catalogues, so the search box can find
-   * a rule by the documents inside it. Searching "KYC-001" found nothing before
-   * — only rule codes, segment codes and segment names were matched, and the
-   * document ids are the column people read off the master pages. */
   const docNameByCode = useMemo(() => {
     const m = new Map<string, string>();
     for (const list of [boot?.kyc, boot?.dd, boot?.tl, boot?.qc]) {
@@ -312,7 +247,6 @@ export default function ClmDcpPage() {
     return m;
   }, [boot]);
 
-  /** Does any document picked in this rule match the query, by id or by name? */
   const ruleHasDocMatching = (r: SegRule, s: string): boolean =>
     CAT_KEYS.some(c => Object.keys(r.doc_selections?.[c] ?? {}).some(code => {
       const lc = code.toLowerCase();
@@ -322,9 +256,6 @@ export default function ClmDcpPage() {
   
   const allRows = useMemo<SegRule[]>(() => rows, [rows]);
 
-  // Rows matching the Filter panel + search box, IGNORING the active tab. The
-  // tab only partitions this set by regulatory tier, and the tab counts are
-  // derived from it — so applying a filter updates the tab counts too.
   const filterMatched = useMemo(() => {
     const f = dcpFilters;
     let base = allRows;
@@ -348,16 +279,12 @@ export default function ClmDcpPage() {
     return base;
   }, [allRows, search, boot, dcpFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Tab counts derived from the segment-master tier — over the FILTER-MATCHED
-  // set so they track the active filters/search (matches the badges).
   const tierCounts = useMemo<Counts>(() => ({
     all:    filterMatched.length,
     highly: filterMatched.filter(r => regOf(r) === 'highly').length,
     less:   filterMatched.filter(r => regOf(r) === 'less').length,
   }), [filterMatched, boot]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Option lists for the filter panel — Authorities (union across all rules)
-  // and Segment Name (the segments actually present in the rules).
   const filterOptions = useMemo(() => {
     const authSet = new Set<string>();
     const segMap = new Map<string, string>();
@@ -382,7 +309,6 @@ export default function ClmDcpPage() {
   );
   const dcpCount = countDcpFilters(dcpFilters);
 
-  // Active-filter chips — one per selected value, each removable inline.
   const filterChips = useMemo(() => {
     const chips: Array<{ field: keyof DcpFilters; value: string; label: string }> = [];
     for (const v of dcpFilters.document_type ?? [])     chips.push({ field: 'document_type', value: v, label: `Type: ${v === 'international' ? 'International' : 'Domestic'}` });
@@ -408,9 +334,6 @@ export default function ClmDcpPage() {
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
 
-  // Dynamic pagination: rows-per-page auto-fits the visible table height and
-  // the card stretches to cover the page. Anchored via closest('.clm-root')
-  // so it works inside sub-panes too.
   useEffect(() => {
     const recompute = () => {
       const el = scrollRef.current;
@@ -425,10 +348,6 @@ export default function ClmDcpPage() {
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    // Not observing the page root: the "What We Are Doing Here" box animates its
-    // height on expand/collapse, so observing the root fired this recompute every
-    // animation frame and visibly disturbed the layout. Recompute only on mount
-    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
     return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
@@ -437,23 +356,14 @@ export default function ClmDcpPage() {
     try {
       if (id) { await api.put(`/clm/segment-rules/${id}`, form); toast.success('Updated', `${form.segment_code} rules saved`); }
       else    { await api.post('/clm/segment-rules', form);     toast.success('Added',   `${form.segment_code} rules created`); }
-      // A DCP rule decides whether a segment is exposed by the cached dropdown
-      // bundles at all (they only return segments with >=1 configured doc), so
-      // a rule change must drop those caches too — QA #23.
       bustAllMasterBundles();
       finishRuleSave();
     } catch (e: any) {
-      // 409: another rule already exists for this segment — refresh rows
-      // so the modal pivots into edit-mode on next open.
       if (e?.response?.status === 409) { toast.info('Already exists', e.response.data?.message ?? 'A rule already exists for this segment.'); reload(); return; }
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
     }
   };
 
-  /* Bulk save — used by the Less-Regulatory multi-select. Fires one PUT
-   * or POST per picked segment, then closes + reloads once at the end so
-   * the table refreshes a single time regardless of selection size. The
-   * 409 path still runs per segment to handle race conditions cleanly. */
   const onBulkSave = async (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => {
     let created = 0, updated = 0;
     const failed: string[] = [];
@@ -470,8 +380,6 @@ export default function ClmDcpPage() {
     if (failed.length && !created && !updated) toast.error('Save failed', failed.join('; '));
     else if (failed.length) toast.info('Some skipped', failed.join('; '));
     if (created || updated) bustAllMasterBundles();
-    // Only hand back to the segment list when something actually saved; if
-    // every row was skipped the user should stay and see why.
     if (created || updated) finishRuleSave();
     else { setModalOpen(false); setEditing(null); setPrefillSegmentCode(null); reload(); }
   };
@@ -540,27 +448,28 @@ export default function ClmDcpPage() {
         {filterChips.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '0 18px 12px' }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Filters:</span>
-            {filterChips.map(c => (
-              <span key={`${c.field}-${c.value}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#0e7490', background: 'rgba(8,145,178,.09)', border: '1px solid rgba(8,145,178,.22)', borderRadius: 999, padding: '3px 6px 3px 11px' }}>
-                {c.label}
+            {(chipsExpanded ? filterChips : filterChips.slice(0, CHIP_LIMIT)).map(c => (
+              <span key={`${c.field}-${c.value}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 260, fontSize: 11.5, fontWeight: 600, color: '#0e7490', background: 'rgba(8,145,178,.09)', border: '1px solid rgba(8,145,178,.22)', borderRadius: 999, padding: '3px 6px 3px 11px' }}>
+                <Tooltip label={c.label}>
+                  <span style={{ display: 'block', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}</span>
+                </Tooltip>
                 <button type="button" onClick={() => removeChip(c.field, c.value)} aria-label={`Remove ${c.label}`}
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'rgba(8,145,178,.16)', color: '#0e7490', lineHeight: 1, fontSize: 12 }}>×</button>
               </span>
             ))}
+            {filterChips.length > CHIP_LIMIT && (
+              <button type="button" onClick={() => setChipsExpanded(x => !x)}
+                style={{ fontSize: 11, fontWeight: 700, color: '#0e7490', background: 'rgba(8,145,178,.09)', border: '1px dashed rgba(8,145,178,.35)', borderRadius: 999, cursor: 'pointer', padding: '3px 10px' }}>
+                {chipsExpanded ? 'Show less' : `+${filterChips.length - CHIP_LIMIT} more`}
+              </button>
+            )}
             <button type="button" onClick={() => { setDcpFilters({}); setPage(1); }}
               style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>Clear all</button>
           </div>
         )}
 
-        <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 && !loading ? (
-            <div className="clm-empty">
-              <div className="clm-empty-ico">{ICO.bDcp}</div>
-              <div className="clm-empty-title">No Segment Rules Yet</div>
-              <div className="clm-empty-sub">Click "+ Add Segment Rule" to create your first rule.</div>
-            </div>
-          ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+        <div className="clm-tab-body has-data">
+            <div className={`clm-table-wrap clm-table-fill ${!loading && slice.length === 0 ? 'dcp-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table" style={{ minWidth: 1100 }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -569,7 +478,7 @@ export default function ClmDcpPage() {
                   <th style={{ width: 130, textAlign: 'center' }}>REGULATORY STATUS</th>
                   <th style={{ width: 120, textAlign: 'center' }}>DOCUMENT TYPE</th>
                   <th style={{ width: 140, textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
-                  <th style={{ width: 180, textAlign: 'center' }}>AUTHORITIES</th>
+                  <th style={{ width: 180, textAlign: 'left' }}>AUTHORITIES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>KYC</th>
                   <th style={{ width: 90, textAlign: 'center' }}>DUE DILIGENCE</th>
                   <th style={{ width: 95, textAlign: 'center' }}>TRADE LICENSES</th>
@@ -577,7 +486,6 @@ export default function ClmDcpPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTION</th>
                 </tr></thead>
                 <tbody>
-                  {/* Shimmer disabled by request — empty tbody while loading. */}
                   {!loading && slice.map((r, i) => {
                     const seg = boot?.segments.find(s => s.code === r.segment_code);
                     const isHigh = (seg?.regulatory_status ?? r.regulatory_status) === 'highly';
@@ -608,7 +516,7 @@ export default function ClmDcpPage() {
                             ? <span style={{ color: '#16a34a', fontWeight: 700, fontSize: 12 }}>✓ Yes</span>
                             : <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 12 }}>✗ No</span>}
                         </td>
-                        <td style={{ textAlign: 'center' }}>
+                        <td style={{ textAlign: 'left' }}>
                           <AuthorityBadges value={authsForRule(r)} />
                         </td>
                         {CAT_KEYS.map(c => {
@@ -637,11 +545,17 @@ export default function ClmDcpPage() {
                   })}
                 </tbody>
               </table>
+              {!loading && slice.length === 0 && (
+                <div className="clm-empty" style={{ flex: 1 }}>
+                  <div className="clm-empty-ico">{ICO.bDcp}</div>
+                  <div className="clm-empty-title">{rows.length === 0 ? 'No Segment Rules Yet' : 'No Matching Segment Rules'}</div>
+                  <div className="clm-empty-sub">{rows.length === 0 ? 'Click "+ Add Segment Rule" to create your first rule.' : 'No segment rules match the current tab / search / filters.'}</div>
+                </div>
+              )}
               {!loading && filtered.length > 0 && (
                 <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
-          )}
         </div>
       </div>
 
@@ -678,74 +592,36 @@ export default function ClmDcpPage() {
   );
 }
 
-/* ─── 2-stage Segment Rule modal ─── */
 
 function SegmentRuleModal(props: {
   existing: SegRule | null; existingRules: SegRule[]; boot: Bootstrap;
   onClose: () => void;
   onSave: (f: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }, ruleId?: number) => void;
-  /** Bulk save — used when the Less-Regulatory multi-select mode picks
-   *  multiple segments. Parent loops the API calls and triggers a single
-   *  reload + close on completion. Optional: when omitted the modal
-   *  falls back to looping the single onSave (with N reloads). */
   onBulkSave?: (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => void;
-  /** Refresh the document masters after a quick-add so the new doc appears. */
   onDocAdded?: () => Promise<void> | void;
-  /** Segment code to start on — set when the user arrives straight from
-   *  saving a new segment and answered yes to "add a document rule?".
-   *  Only the code is passed; the regulatory status is read off the
-   *  bootstrap so the two can never disagree. Document Type is deliberately
-   *  left unset: a segment holds one rule per type, so that is the user's
-   *  choice to make, and it is the first thing step 1 asks. */
   prefillSegmentCode?: string | null;
 }) {
   const { existing, existingRules, boot, onClose, onSave, onBulkSave, onDocAdded, prefillSegmentCode } = props;
   const toast = useToast();
   const [stage, setStage]     = useState<1 | 2>(1);
-  /* A prefilled segment brings its own regulatory status with it — the
-     segment picker is scoped by that, so seeding one without the other would
-     leave the selection invisible. */
   const prefillSeg = prefillSegmentCode
     ? (boot.segments.find(sg => sg.code === prefillSegmentCode) ?? null)
     : null;
-  // Status comes from the segment itself; an older rule may have saved the wrong one.
   const existingSeg = existing ? boot.segments.find(sg => sg.code === existing.segment_code) : undefined;
   const [reg, setReg]         = useState<'highly'|'less'|null>(existingSeg?.regulatory_status ?? existing?.regulatory_status ?? prefillSeg?.regulatory_status ?? null);
-  /* Domestic / International — defaults to International for every new rule
-   * (a segment can hold one rule per type). Scopes the segment picker, the
-   * "already ruled" exclusion, and the matched-rule (Add → Edit) pivot. */
-  // Add starts empty so the user must pick a type first (that gates the rest of
-  // step 1); Edit locks to the rule's existing type.
   const [docType, setDocType] = useState<DocType | null>(existing?.document_type ?? null);
-  /* Multi-select segment codes. Always an array internally; in edit mode
-   * and in High-Regulatory create mode the UI forces it to length ≤ 1.
-   * In Less-Regulatory create mode the user can pick many — each becomes
-   * its own SR-NNN row at save time, all sharing the Stage 2 doc rules. */
   const [segCodes, setSegCodes] = useState<string[]>(existing?.segment_code ? [existing.segment_code] : (prefillSeg ? [prefillSeg.code] : []));
   const [docSel, setDocSel]   = useState<DocSelections>(existing?.doc_selections ?? {});
   const [activeCat, setActiveCat] = useState<keyof DocSelections>('kyc');
-  /* Stage 2 per-tab search. Kept per category (not one shared string) so
-   * switching KYC → DD doesn't carry a stale KYC query into the DD list. */
   const [docSearch, setDocSearch] = useState<Record<string, string>>({});
   const [saving, setSaving]   = useState(false);
 
-  // Lock the background page from scrolling while the modal is open (reserves
-  // the scrollbar's width so the page doesn't jump/shake on open).
   useScrollLock();
-  // Block selecting/copying the background while the modal is open (mounted only when open).
   useSelectionLock();
 
-  /* Less-Regulatory create-mode flips on multi-select. Edit mode locks to
-   * single because each edit targets exactly one rule, and High keeps a
-   * single-select dropdown by design (high-regulated segments need per-
-   * segment review and tend to be configured one at a time). */
   const isMulti = !existing && reg === 'less';
   const segCode = segCodes[0] ?? '';
 
-  /* In single-segment mode (edit / high / single-less) the matched-rule
-   * banner pivots Add → Edit for the picked segment. In multi mode every
-   * already-configured segment in the picked set is collected so the
-   * banner can list them and the save handler can PUT them individually. */
   const matchedRules = useMemo(
     () => existingRules.filter(r => r.id !== existing?.id && segCodes.includes(r.segment_code) && r.document_type === docType),
     [existingRules, segCodes, existing?.id, docType]
@@ -753,10 +629,6 @@ function SegmentRuleModal(props: {
   const matchedRule = matchedRules[0] ?? null;
   const isEdit = !!existing || (!isMulti && !!matchedRule);
 
-  /* Hydrate state from the matched rule the first time it's encountered so
-   * the user can immediately see and tweak the existing requirements. Only
-   * runs in single-segment mode — multi-select keeps a fresh blank Stage 2
-   * since the user is explicitly batching new rules. */
   useEffect(() => {
     if (!existing && !isMulti && matchedRule) {
       setReg(boot.segments.find(sg => sg.code === matchedRule.segment_code)?.regulatory_status ?? matchedRule.regulatory_status);
@@ -764,11 +636,6 @@ function SegmentRuleModal(props: {
     }
   }, [matchedRule, existing, isMulti]);
 
-  /* Segments that already have a saved rule OF THE SELECTED DOCUMENT TYPE —
-     hidden from the "Select Segment" dropdown so a segment can't be configured
-     twice for the same type (CBC-453). A segment with only a Domestic rule
-     stays selectable while configuring its International rule, and vice-versa.
-     The rule being edited is excluded so its own segment stays selectable. */
   const ruledCodes = useMemo(
     () => new Set(existingRules.filter(r => r.id !== existing?.id && r.document_type === docType).map(r => r.segment_code)),
     [existingRules, existing?.id, docType]
@@ -799,11 +666,6 @@ function SegmentRuleModal(props: {
     kyc: boot.kyc, dd: boot.dd, tl: boot.tl, qc: boot.qc,
   };
 
-  /* Documents shown in the active tab after its search query. `srNo` carries
-   * the document's position in the FULL catalog so the Sr. No column stays
-   * stable while filtering (a doc doesn't renumber just because it's the only
-   * hit). Matches on code, document name/title and authority / type — the
-   * three columns the list actually renders. */
   const activeQuery = (docSearch[activeCat] ?? '').trim().toLowerCase();
   const visibleDocs = useMemo(() => {
     const rows = catData[activeCat].map((d, i) => ({ d, srNo: i + 1 }));
@@ -815,12 +677,6 @@ function SegmentRuleModal(props: {
     });
   }, [boot, activeCat, activeQuery]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* Quick-add: opens the SAME master document form used on the KYC / DD / TL /
-   * QC master pages (KycModal / DdModal / TlModal / QcModal), reused here so
-   * the user can add a brand-new compliance document without leaving the rule
-   * form. The modal's onSave hands back the form fields; we POST them to the
-   * matching master endpoint, refresh the catalog, and pre-tick the new doc as
-   * Mandatory. */
   const [addOpen, setAddOpen] = useState(false);
   const openAddDoc = () => setAddOpen(true);
   const addDocViaModal = async (f: Record<string, unknown> & { name?: unknown }) => {
@@ -830,13 +686,10 @@ function SegmentRuleModal(props: {
       await onDocAdded?.();
       const created = (data?.data ?? null) as { code?: string } | null;
       if (created?.code) setDocReq(cat, created.code, 'M');
-      // Drop the tab's search query — otherwise the freshly added (and
-      // auto-ticked) document can land outside the active filter and look lost.
       setDocSearch(prev => (prev[cat] ? { ...prev, [cat]: '' } : prev));
       toast.success('Added', `${String(f.name ?? 'Document')} added to ${CAT_LABELS[cat]}.`);
       setAddOpen(false);
     } catch (e: any) {
-      // Keep the modal open so the user can correct + retry.
       toast.error('Add failed', e?.response?.data?.message ?? 'Could not add the document.');
     }
   };
@@ -846,10 +699,6 @@ function SegmentRuleModal(props: {
   const optCount  = (cat: keyof DocSelections) => Object.values(docSel[cat] ?? {}).filter(v => v === 'O').length;
   const grandTotal = CAT_KEYS.reduce((sum, c) => sum + totalSel(c), 0);
 
-  /* Select-all for the active tab: every unselected doc becomes Mandatory (same
-   * default as the per-row checkbox); when all are already selected, clear them.
-   * Scoped to the VISIBLE (searched) rows so ticking the header never silently
-   * selects — or clears — documents the search has filtered out of view. */
   const allSel  = () => visibleDocs.length > 0 && visibleDocs.every(({ d }) => !!docSel[activeCat]?.[d.code]);
   const someSel = () => visibleDocs.some(({ d }) => !!docSel[activeCat]?.[d.code]);
   const toggleAllDocs = () => {
@@ -864,8 +713,6 @@ function SegmentRuleModal(props: {
   };
 
   const handleSave = async () => {
-    // Guard at the TOP, not just `disabled` on the button — the button attribute
-    // doesn't stop an Enter-key handler or a programmatic call.
     if (saving) return;
     if (!docType || !reg || segCodes.length === 0) {
       toast.error('Incomplete form', 'Select a document type, regulatory status and segment first.');
@@ -878,12 +725,6 @@ function SegmentRuleModal(props: {
     }
     setSaving(true);
     try {
-      /* Build one payload per picked segment. Each rule gets its own
-       * segment-specific authority list (auto-mapped from the prototype
-       * lookup) while sharing the Stage 2 doc selections — that's the
-       * "configure once, apply to many" semantics the multi-select is
-       * for. Pre-existing rules in the selection become PUTs; new ones
-       * POSTs. */
       const rows = segCodes.map(code => {
         const segAuths = authsForSegment(code, boot.authorities).map(a => a.code);
         const existingRow = existingRules.find(r => r.id !== existing?.id && r.segment_code === code && r.document_type === docType);
@@ -895,9 +736,6 @@ function SegmentRuleModal(props: {
       if (rows.length > 1 && onBulkSave) {
         await Promise.resolve(onBulkSave(rows));
       } else {
-        // Single-segment OR no bulk handler: fall through to per-row onSave.
-        // Multi without onBulkSave still works but the parent will reload N
-        // times — acceptable as a fallback, never hit in our current wiring.
         for (const r of rows) await Promise.resolve(onSave(r.form, r.ruleId));
       }
     } finally { setSaving(false); }
@@ -918,7 +756,6 @@ function SegmentRuleModal(props: {
           <button className="clm-modal-close" onClick={onClose} disabled={saving}>×</button>
         </div>
 
-        {/* Stage tabs */}
         <div className="dcp-stage-strip" style={{ background: '#fff', padding: '10px 18px', borderBottom: '1px solid rgba(6,182,212,.09)', display: 'flex', alignItems: 'center', gap: 0 }}>
           <div className={`dcp-stage-tile ${stage === 1 ? 'dcp-stage-tile-active' : stage > 1 ? 'dcp-stage-tile-done' : 'dcp-stage-tile-pending'}`} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 16px', borderRadius: 11, background: stage === 1 ? 'linear-gradient(135deg, #0891b2, #0e7490)' : stage > 1 ? 'rgba(240,253,250,.9)' : 'rgba(241,245,249,.7)', border: stage > 1 ? '1.5px solid rgba(34,197,94,.28)' : 'none', cursor: stage > 1 ? 'pointer' : 'default' }} onClick={() => stage > 1 && setStage(1)}>
             <div className={stage === 1 ? 'dcp-stage-tile-num-active' : stage > 1 ? 'dcp-stage-tile-num-done' : 'dcp-stage-tile-num-pending'} style={{ width: 26, height: 26, borderRadius: 7, background: stage === 1 ? 'rgba(255,255,255,.18)' : stage > 1 ? 'linear-gradient(135deg, #22c55e, #16a34a)' : '#e2e8f0', border: stage === 1 ? '1.5px solid rgba(255,255,255,.32)' : 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#fff' }}>
@@ -941,14 +778,9 @@ function SegmentRuleModal(props: {
           <div className="dcp-step-badge" style={{ fontSize: 9.5, fontWeight: 700, color: '#0891b2', background: 'rgba(8,145,178,.07)', border: '1px solid rgba(8,145,178,.16)', borderRadius: 20, padding: '3px 9px' }}>Step {stage} of 2</div>
         </div>
 
-        {/* Flex-fill + scroll (not a fixed 70vh) so the body always fits the
-            space left between the header/stepper and footer — content stays
-            fully reachable via scroll on short / zoomed / small screens. */}
         <div className="clm-modal-body dcp-modal-body" style={{ flex: '1 1 auto', minHeight: 0 }}>
           {stage === 1 ? (
             <>
-              {/* Card 0: Document Type (Domestic / International) — empty by
-                  default, mandatory. A segment can hold one rule per type. */}
               <div className="dcp-modal-card" style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
                 <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Document Type</span>
@@ -959,8 +791,6 @@ function SegmentRuleModal(props: {
                     {(['domestic','international'] as const).map(v => {
                       const on  = docType === v;
                       const dom = v === 'domestic';
-                      // Domestic = the modal header cyan; International = indigo
-                      // (matches the table badge). Type is locked in the edit form.
                       const accent  = dom ? '#0891b2' : '#6366f1';
                       const onBd    = dom ? 'rgba(8,145,178,.30)' : 'rgba(99,102,241,.30)';
                       const onBg    = dom ? 'rgba(8,145,178,.12)' : 'rgba(99,102,241,.12)';
@@ -971,9 +801,6 @@ function SegmentRuleModal(props: {
                           onClick={() => {
                             if (existing) return;
                             setDocType(v);
-                            // Changing the type re-scopes which segments are already
-                            // ruled / available — drop only picks that already have a
-                            // rule of the new type, so a prefilled segment survives.
                             const ruledForType = new Set(existingRules.filter(r => r.id !== existing?.id && r.document_type === v).map(r => r.segment_code));
                             setSegCodes(prev => prev.filter(c => !ruledForType.has(c)));
                           }}>
@@ -992,8 +819,6 @@ function SegmentRuleModal(props: {
                 </div>
               </div>
 
-              {/* Card 1: Regulatory Status + Segment Select — only surfaces once a
-                  Document Type is chosen (that scopes which rules already exist). */}
               {docType && (
               <div className="dcp-modal-card" style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
                 <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1038,15 +863,10 @@ function SegmentRuleModal(props: {
                           No less-regulated segments configured yet. Add them in <em>CLM → Segment Master</em> first.
                         </div>
                       ) : (
-                        // Multi-select dropdown (mirrors the Agreement form's
-                        // less-regulatory segment picker). Segments that already
-                        // have a saved rule are excluded from `segments` (CBC-453),
-                        // so only un-configured segments appear here.
                         <MasterMultiSelect
                           value={segCodes}
                           placeholder="— Select Segments —"
                           options={segments.map(s => {
-                            // Truncate long names to 40 chars; full name in the hover tooltip.
                             const nm = s.name.length > 40 ? `${s.name.slice(0, 40)}…` : s.name;
                             return { value: s.code, label: `${nm} (${s.code})`, fullLabel: `${segmentLabel(s.name, s.regulatory_status)} (${s.code})` };
                           })}
@@ -1061,8 +881,6 @@ function SegmentRuleModal(props: {
                         disabled={!!existing}
                         placeholder={`— Choose a ${reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —`}
                         options={segments.map(s => {
-                          // Truncate the (free-text, up-to-255-char) segment name to 40
-                          // chars in the list; the full name shows in the option tooltip.
                           const nm = s.name.length > 40 ? `${s.name.slice(0, 40)}…` : s.name;
                           return { value: s.code, label: `${nm} (${s.code})`, fullLabel: `${segmentLabel(s.name, s.regulatory_status)} (${s.code})`, badges: [{ text: '', reg: s.regulatory_status }] };
                         })}
@@ -1084,7 +902,6 @@ function SegmentRuleModal(props: {
               </div>
               )}
 
-              {/* Card 2: Segment Details */}
               {selSeg && (
                 <div className="dcp-modal-card" style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
                   <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)' }}>
@@ -1112,7 +929,6 @@ function SegmentRuleModal(props: {
               )}
             </>
           ) : (
-            // Stage 2: Document selection per category
             <div>
               <div className="dcp-cat-tabs" style={{ display: 'flex', gap: 2, padding: 4, background: 'rgba(240,253,255,.9)', border: '1.5px solid rgba(6,182,212,.15)', borderRadius: 13, overflowX: 'auto' }}>
                 {CAT_KEYS.map(c => {
@@ -1130,8 +946,6 @@ function SegmentRuleModal(props: {
               <div className="dcp-doc-card" style={{ marginTop: 8, border: '1.5px solid rgba(6,182,212,.15)', borderRadius: 14, overflow: 'hidden' }}>
                 <div className="dcp-doc-head" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'linear-gradient(110deg, #0891b2, #0e7490)', color: '#fff' }}>
                   <div className="dcp-doc-head-left" style={{ flexShrink: 0 }}>
-                    {/* Mandatory / Optional counts sit inline with the title so the
-                        right edge is left to the search + Add pair. */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.25px' }}>{CAT_LABELS[activeCat]} Documents</div>
                       {mandCount(activeCat) > 0 && <span className="clm-badge" style={{ background: 'rgba(6,182,212,.25)', color: '#fff', border: '1px solid rgba(255,255,255,.28)' }}>Mandatory · {mandCount(activeCat)}</span>}
@@ -1143,9 +957,6 @@ function SegmentRuleModal(props: {
                         : `${catData[activeCat].length} documents available to configure`}
                     </div>
                   </div>
-                  {/* Per-tab search — each category keeps its own query so the
-                      KYC filter doesn't follow you into Due Diligence. Pushed
-                      right by the auto margin so it sits beside the Add button. */}
                   <div className="dcp-doc-search" style={{ marginLeft: 'auto' }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0, opacity: .85 }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                     <input
@@ -1225,9 +1036,6 @@ function SegmentRuleModal(props: {
                             <td className="clm-td-num">{String(srNo).padStart(2, '0')}</td>
                             <td style={{ width: 100 }}><span className="clm-code-pill">{d.code}</span></td>
                             {(() => {
-                              // Truncate the document name at 25 chars; the full
-                              // name shows on hover so a long title never wraps
-                              // the row across multiple lines.
                               const full = String(d.title || d.name || '');
                               const shown = full.length > 25 ? `${full.slice(0, 25)}…` : full;
                               return (
@@ -1270,8 +1078,6 @@ function SegmentRuleModal(props: {
         </div>
       </div>
 
-      {/* One Suspense per form — each chunk arrives only when its category's
-          Add button is pressed, so opening the DCP costs none of them. */}
       {addOpen && activeCat === 'kyc' && (
         <Suspense fallback={null}>
         <KycModal existing={null} authorities={boot.authorities}
@@ -1304,11 +1110,7 @@ function SegmentRuleModal(props: {
   ), document.body);
 }
 
-/* ─── Per-page CSS for count/total buttons ─── */
 const DCP_PAGE_CSS = `
-/* Stage 2 per-tab document search. Sits on the card's cyan gradient header, so
-   it wears a translucent-white skin instead of the page-level .clm-search
-   (white on white would disappear against that strip). */
 .dcp-doc-search {
   display: flex; align-items: center; gap: 7px;
   flex: 0 1 300px; min-width: 150px;
@@ -1337,8 +1139,6 @@ const DCP_PAGE_CSS = `
   background: rgba(255,255,255,.26); color: #fff;
 }
 .dcp-doc-search-clear:hover { background: rgba(255,255,255,.42); }
-/* Chrome paints autofilled / previously-searched inputs with a pale fill that
-   would override the translucent bg — repaint it to match the header. */
 .dcp-doc-search input:-webkit-autofill,
 .dcp-doc-search input:-webkit-autofill:hover,
 .dcp-doc-search input:-webkit-autofill:focus {
@@ -1348,8 +1148,6 @@ const DCP_PAGE_CSS = `
   box-shadow: 0 0 0 1000px #0b7f9c inset !important;
   transition: background-color 9999s ease-in-out 0s;
 }
-/* Narrow modal / phone — the title block claims a full row so the search and
-   the Add button drop onto a shared second row instead of colliding. */
 @media (max-width: 720px) {
   .dcp-doc-head { flex-wrap: wrap; }
   .dcp-doc-head-left { flex: 1 1 100%; }
@@ -1398,9 +1196,6 @@ const DCP_PAGE_CSS = `
   box-shadow: 0 2px 6px rgba(8,145,178,.28);
 }
 
-/* DocListPopup — section header strip (Mandatory / Optional) and rows.
-   Defined as classes so dark mode can override the light gradient bg
-   that otherwise renders as a stark white strip on the dark theme. */
 .dcp-sec-head {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 22px;
@@ -1432,8 +1227,6 @@ const DCP_PAGE_CSS = `
 .dcp-foot-text { font-size: 11px; color: #0891b2; opacity: .75; }
 .dcp-foot-text b { color: #0c4a6e; font-weight: 700; opacity: 1; }
 
-/* Dark mode — recolour the strips and text so nothing is a stark white
-   slab against the navy modal body. */
 [data-bs-theme="dark"] .dcp-sec-head.mandatory {
   background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(8,145,178,.10));
   border-top-color: rgba(6,182,212,.22);
@@ -1453,16 +1246,6 @@ const DCP_PAGE_CSS = `
 [data-bs-theme="dark"] .dcp-foot-text { color: #67e8f9; }
 [data-bs-theme="dark"] .dcp-foot-text b { color: #e2e8f0; }
 
-/* ── Small-screen responsiveness for the Add/Edit Segment Rule modal ──
-   The 2-step stepper strip is a non-wrapping flex row whose tiles have fixed
-   content, so it overflowed / overlapped on narrow screens. Shrink the tiles,
-   drop the sub-captions + step badge, and let the Document-Type cards stack. */
-/* The modal body is a flex column. Its children (the cards) default to
-   flex-shrink:1, so on a short / zoomed-in viewport they SQUISH to fit instead
-   of overflowing — the Select-Segment card collapsed to a sliver and nothing
-   scrolled. Pin every direct child to its natural height so the body's
-   overflow-y:auto kicks in and the fields stay reachable via scroll. The
-   header/stepper/footer stay put (flex-shrink:0) so only the body scrolls. */
 .dcp-modal-body > * { flex-shrink: 0; }
 .dcp-stage-strip, .clm-modal .clm-modal-head, .clm-modal .clm-modal-foot { flex-shrink: 0; }
 
@@ -1472,7 +1255,6 @@ const DCP_PAGE_CSS = `
   .dcp-stage-tile-sub { display: none !important; }
   .dcp-stage-tile-title { font-size: 11px !important; }
   .dcp-step-badge { display: none !important; }
-  /* Domestic / International cards stack vertically so their text doesn't cramp. */
   .dcp-doctype-row { flex-direction: column !important; }
   .dcp-doctype-row > .dcp-radio-label { width: 100% !important; }
 }
@@ -1482,7 +1264,6 @@ const DCP_PAGE_CSS = `
 }
 `;
 
-/* ─── DocListPopup — opens when a count or total cell is clicked ─── */
 
 function DocListPopup(props: {
   rule: SegRule;
@@ -1491,7 +1272,7 @@ function DocListPopup(props: {
   onClose: () => void;
 }) {
   const { rule, cat, boot, onClose } = props;
-  useScrollLock(); // freeze background scroll while this doc-list popup is open
+  useScrollLock();
   const isAll = cat === 'all';
 
   const seg = boot.segments.find(s => s.code === rule.segment_code);
@@ -1500,8 +1281,6 @@ function DocListPopup(props: {
     kyc: boot.kyc, dd: boot.dd, tl: boot.tl, qc: boot.qc,
   };
 
-  /* Flatten selected docs across one (or all) categories. In all-mode each
-   * row is tagged with its source category so the popup can show a pill. */
   type Row = DocItem & { __cat: keyof DocSelections; __req: 'M' | 'O' };
   const mand: Row[] = [];
   const opt: Row[]  = [];
