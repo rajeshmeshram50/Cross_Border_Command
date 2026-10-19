@@ -27,6 +27,8 @@ export default function ClmTradeLicensesPage() {
   const [count, setCount]       = useState(0);
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [booted, setBooted]     = useState(false);
+  useEffect(() => { if (!loading) setBooted(true); }, [loading]);
   const [search, setSearch]     = useState('');
   const [page, setPage]         = useState(1);
   const [rpp, setRpp]           = useState(PER_PAGE);
@@ -109,7 +111,7 @@ export default function ClmTradeLicensesPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
-      {loading && <ShimmerClmMaster cols={5} />}
+      {loading && !booted && <ShimmerClmMaster cols={5} />}
 
       <ClmPageHeader
         icon={ICO.hTl}
