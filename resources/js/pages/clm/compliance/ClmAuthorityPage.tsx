@@ -34,6 +34,10 @@ export default function ClmAuthorityPage() {
   // Allocated server-side — the browser only holds one page and cannot derive it.
   const [nextCode, setNextCode] = useState("AUTH-001");
   const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
+  // Full-page shimmer on the first load only; a search or page change after
+  // that just shimmers the table rows.
+  const [booted, setBooted] = useState(false);
+  useEffect(() => { if (!loading) setBooted(true); }, [loading]);
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
   // Dynamic pagination: rows-per-page auto-fits the visible table height and
@@ -223,7 +227,7 @@ export default function ClmAuthorityPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
-      {loading && <ShimmerClmMaster cols={5} />}
+      {loading && !booted && <ShimmerClmMaster cols={5} />}
       <style>{`
         /* Figma-match: fixed-width search on the left (not flex-grow); the
            Total badge stays right via the toolbar's space-between. */
@@ -303,7 +307,7 @@ export default function ClmAuthorityPage() {
             and the header row scrolled away with it. Pinning with
             height + maxHeight and giving the rows their own scroll box keeps
             the head and the pager still while the rows move. */}
-        <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
+        <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
           {slice.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bShield}</div>
