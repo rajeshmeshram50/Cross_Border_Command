@@ -283,6 +283,21 @@ export type PutawayFloorZone = {
   eligible: boolean; reason: string | null; reason_label: string | null; held_by: number | null;
 };
 
+export type WarehouseDetail = {
+  id: number;
+  wh_code: string | null;
+  wh_name: string | null;
+  wh_type: string | null;
+  wh_type_label: string | null;
+  area_sqft: number;
+  address: string | null;
+  state: string | null;
+  city: string | null;
+  pincode: string | null;
+  location: string | null;
+  created_at: string | null;
+};
+
 export type PutawayLocations = {
   box: PutawayNeed;
   modes: { rack: number; norack: number };
@@ -328,6 +343,15 @@ export const spiApi = {
           name: w.wh_name ?? `Warehouse ${w.id}`,
           location: [w.wh_code, w.location].filter(Boolean).join(' · ') || '—',
         }))),
+
+  /** The whole warehouse row, for Stage 04's warehouse card: the options
+   *  endpoint carries the name and the town, this also carries the street
+   *  address, the pincode, the floor area and the date it was added. */
+  warehouseDetail: (id: number) =>
+    call('Warehouse', () => api.get(`/inventory/warehouses/${id}`), (b) => {
+      const d = (b as { data?: WarehouseDetail } | null)?.data ?? null;
+      return d ? { ...d, area_sqft: Number(d.area_sqft ?? 0) } : null;
+    }),
 
   putawayLocations: (spiId: number, boxId: number, mode: 'rack' | 'norack') =>
     call('Putaway locations', () => api.get(`/p2p/spi/${spiId}/putaway/locations`, { params: { box_id: boxId, mode } }),

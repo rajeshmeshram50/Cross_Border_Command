@@ -9,7 +9,7 @@ import type { InvoiceDraft } from '../invoice-draft';
 import StageSummary from './StageSummary';
 import PutawayStageBrief from './PutawayStageBrief';
 import PutawayBoxSticker from './PutawayBoxSticker';
-import PutawaySelectLocation from './PutawaySelectLocation';
+import PutawaySelectLocation, { type SelectLocationWarehouse } from './PutawaySelectLocation';
 import PutawayReviewBox from './PutawayReviewBox';
 import PutawayConfirmPlacement, { findSpot } from './PutawayConfirmPlacement';
 import PutawayScanTask from './PutawayScanTask';
@@ -641,13 +641,16 @@ const LIFECYCLE = [
     todo: 'The receipt for this carton: where it went, when, and who placed it.' },
 ];
 
-export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, readOnly = false }: {
+export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, readOnly = false }: {
   draft: InvoiceDraft;
   boxes: SpiBox[];
   lines?: ProductLine[];
   flagMaster?: ProductFlagOption[];
   spiId?: number | null;
   warehouse?: string | null;
+  /** The same site with its code and town, for Step 02's warehouse card. The
+   *  bare name still drives every other mention of it. */
+  warehouseInfo?: SelectLocationWarehouse | null;
   readOnly?: boolean;
 }) {
   const [tab, setTab] = useState<'all' | Disposition>('all');
@@ -655,18 +658,20 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [leftOpen, setLeftOpen] = useState(true);
   const [lcStep, setLcStep] = useState(0);
   const panelsRef = useRef<HTMLDivElement>(null);
+  /* Full View is a takeover of the page, not the browser's own fullscreen.
+     It used to call requestFullscreen() on the panels element — which put the
+     ONLY way out (this button, which sits on the rail above) outside the
+     fullscreened subtree, so nothing on screen said how to leave and Esc was
+     the only exit. The design keeps the rail and its Exit Full View in view
+     and simply gives the two panels the whole window. */
   const [fs, setFs] = useState(false);
+  const toggleFs = () => setFs(v => !v);
   useEffect(() => {
-    const sync = () => setFs(document.fullscreenElement === panelsRef.current);
-    document.addEventListener('fullscreenchange', sync);
-    return () => document.removeEventListener('fullscreenchange', sync);
-  }, []);
-  const toggleFs = () => {
-    const el = panelsRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-    else void el.requestFullscreen().catch(() => {});
-  };
+    if (!fs) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFs(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fs]);
   const [flag, setFlag] = useState<'' | 'haz' | 'nonhaz' | 'cold'>('');
 
   const [board, setBoard] = useState<PutawayBoard | null>(null);
@@ -841,11 +846,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   }, [lcStep, putMode, spiId, box?.id]);
 
   return (
-    <div className="s4-root">
-      <StageSummary draft={draft} upto={3} />
+    <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
+      {/* Full View is for the work, so the recap above it and the brief that
+          explains the stage both stand down — the design shows the tab row
+          and the two panels, nothing else. */}
+      {!fs && <StageSummary draft={draft} upto={3} />}
       {/* What this stage is for, and in which warehouse — the brief the
           design puts between the recap and the work. */}
-      <PutawayStageBrief warehouse={warehouse} />
+      {!fs && <PutawayStageBrief warehouse={warehouse} />}
 
       <div className="spi-segrow">
         <div className="spi-seg" role="tablist" aria-label="Box disposition">
@@ -997,7 +1005,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <div className={`s4bj-step is-${state}`}>
                     <div className="s4bj-ico">
                       {s.ico}
-                      <span className="s4bj-num">{state === 'done' ? <IcoTick /> : s.no}</span>
+                      {/* The badge is a bare 1/2/3, not the padded "02" — it
+                          is an 18px circle, and two digits crowd it. The
+                          zero-padded form belongs in the "Step 02" label. */}
+                      <span className="s4bj-num">{state === 'done' ? <IcoTick /> : i + 1}</span>
                     </div>
                     <div className="s4bj-tx">
                       <div className="s4bj-k2">Step {s.no}</div>
@@ -1065,6 +1076,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                           : 'Awaiting putaway',
                       }}
                       mode={putMode} state={loc} spot={spot} onSpot={setSpot}
+                      warehouse={warehouseInfo ?? (warehouse ? { name: warehouse } : null)}
                     />
                   ) : lcStep === 2 ? (
                     <PutawayConfirmPlacement
