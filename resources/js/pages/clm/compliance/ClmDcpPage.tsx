@@ -100,6 +100,8 @@ const SEG_AUTH_MAP: Record<string, string[]> = {
   'S-009': ['AUTH-002','AUTH-006'], 'S-010': ['AUTH-002','AUTH-012'],
 };
 
+const CHIP_LIMIT = 8;
+
 function authsForSegment(segCode: string, allAuths: Authority[]): Authority[] {
   const codes = SEG_AUTH_MAP[segCode] ?? ['AUTH-002', 'AUTH-012'];
   return allAuths.filter(a => codes.includes(a.code));
@@ -135,16 +137,25 @@ const DCP_TABS_CSS = `
 /* nowrap + a shrinkable search: with wrap on, the fixed 480px search claimed
    the whole line and pushed the Filter button onto a row of its own. The
    search now gives up width first and the toolbar stays a single strip. */
-.dcp-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+/* The toolbar takes the row's leftover width (right-aligned) so the search can
+   stretch back toward the AUTHORITIES column instead of collapsing to its
+   min-content beside the Filter button. */
+.dcp-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: nowrap; flex: 1 1 auto; min-width: 0; }
 .dcp-filter-ms { flex: 0 0 auto; }
 .dcp-toolbar .dcp-filter-btn { flex-shrink: 0; }
-.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 480px; min-width: 180px; max-width: 100%; }
+.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 680px; min-width: 180px; max-width: 100%; }
+@media (max-width: 1400px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 480px; } }
 @media (max-width: 1100px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 300px; } }
 @media (max-width: 760px) {
   .dcp-toolbar { width: 100%; flex-wrap: wrap; }
   .dcp-pre-table .dcp-toolbar .clm-search { width: 100%; }
   .dcp-filter-ms { flex: 1 1 auto; }
 }
+/* No rows: the fill area under the empty-state row stays the table's own
+   white down to the card's bottom, instead of the tinted "below the last
+   row" surface .clm-table-fill paints. */
+.clm-table-fill.dcp-fill-empty { background: #fff; }
+[data-bs-theme="dark"] .clm-table-fill.dcp-fill-empty { background: #0f172a; }
 [data-bs-theme="dark"] .dcp-pill { color: #67e8f9; }
 [data-bs-theme="dark"] .dcp-pill:hover { background: rgba(8,145,178,.22); color: #a5f3fc; }
 [data-bs-theme="dark"] .dcp-pill.active { background: linear-gradient(135deg, #0891b2, #155e75); color: #fff; }
@@ -190,6 +201,8 @@ export default function ClmDcpPage() {
   // "My Workplace"-style filter panel — Document Type, Regulatory Status,
   // Customer ≠ Consignee, Authorities and Segment Name facets.
   const [filterOpen, setFilterOpen] = useState(false);
+  // Applied-filter chips collapse to the first CHIP_LIMIT behind a "+N more" toggle.
+  const [chipsExpanded, setChipsExpanded] = useState(false);
   const [dcpFilters, setDcpFilters] = useState<DcpFilters>({});
 
   const [boot, setBoot]       = useState<Bootstrap | null>(null);
@@ -540,27 +553,30 @@ export default function ClmDcpPage() {
         {filterChips.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '0 18px 12px' }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Filters:</span>
-            {filterChips.map(c => (
-              <span key={`${c.field}-${c.value}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#0e7490', background: 'rgba(8,145,178,.09)', border: '1px solid rgba(8,145,178,.22)', borderRadius: 999, padding: '3px 6px 3px 11px' }}>
-                {c.label}
+            {(chipsExpanded ? filterChips : filterChips.slice(0, CHIP_LIMIT)).map(c => (
+              <span key={`${c.field}-${c.value}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: 260, fontSize: 11.5, fontWeight: 600, color: '#0e7490', background: 'rgba(8,145,178,.09)', border: '1px solid rgba(8,145,178,.22)', borderRadius: 999, padding: '3px 6px 3px 11px' }}>
+                <Tooltip label={c.label}>
+                  <span style={{ display: 'block', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label}</span>
+                </Tooltip>
                 <button type="button" onClick={() => removeChip(c.field, c.value)} aria-label={`Remove ${c.label}`}
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'rgba(8,145,178,.16)', color: '#0e7490', lineHeight: 1, fontSize: 12 }}>×</button>
               </span>
             ))}
+            {filterChips.length > CHIP_LIMIT && (
+              <button type="button" onClick={() => setChipsExpanded(x => !x)}
+                style={{ fontSize: 11, fontWeight: 700, color: '#0e7490', background: 'rgba(8,145,178,.09)', border: '1px dashed rgba(8,145,178,.35)', borderRadius: 999, cursor: 'pointer', padding: '3px 10px' }}>
+                {chipsExpanded ? 'Show less' : `+${filterChips.length - CHIP_LIMIT} more`}
+              </button>
+            )}
             <button type="button" onClick={() => { setDcpFilters({}); setPage(1); }}
               style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>Clear all</button>
           </div>
         )}
 
-        <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-          {slice.length === 0 && !loading ? (
-            <div className="clm-empty">
-              <div className="clm-empty-ico">{ICO.bDcp}</div>
-              <div className="clm-empty-title">No Segment Rules Yet</div>
-              <div className="clm-empty-sub">Click "+ Add Segment Rule" to create your first rule.</div>
-            </div>
-          ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+        {/* The table always renders, so an empty search / tab / filter keeps the
+            column headers and shows the empty state as a row inside the table. */}
+        <div className="clm-tab-body has-data">
+            <div className={`clm-table-wrap clm-table-fill ${!loading && slice.length === 0 ? 'dcp-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table" style={{ minWidth: 1100 }}>
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -569,7 +585,7 @@ export default function ClmDcpPage() {
                   <th style={{ width: 130, textAlign: 'center' }}>REGULATORY STATUS</th>
                   <th style={{ width: 120, textAlign: 'center' }}>DOCUMENT TYPE</th>
                   <th style={{ width: 140, textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
-                  <th style={{ width: 180, textAlign: 'center' }}>AUTHORITIES</th>
+                  <th style={{ width: 180, textAlign: 'left' }}>AUTHORITIES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>KYC</th>
                   <th style={{ width: 90, textAlign: 'center' }}>DUE DILIGENCE</th>
                   <th style={{ width: 95, textAlign: 'center' }}>TRADE LICENSES</th>
@@ -608,7 +624,7 @@ export default function ClmDcpPage() {
                             ? <span style={{ color: '#16a34a', fontWeight: 700, fontSize: 12 }}>✓ Yes</span>
                             : <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 12 }}>✗ No</span>}
                         </td>
-                        <td style={{ textAlign: 'center' }}>
+                        <td style={{ textAlign: 'left' }}>
                           <AuthorityBadges value={authsForRule(r)} />
                         </td>
                         {CAT_KEYS.map(c => {
@@ -637,11 +653,19 @@ export default function ClmDcpPage() {
                   })}
                 </tbody>
               </table>
+              {/* Empty state sits under the header (outside <tbody>) so it can
+                  flex-fill the remaining height and centre itself there. */}
+              {!loading && slice.length === 0 && (
+                <div className="clm-empty" style={{ flex: 1 }}>
+                  <div className="clm-empty-ico">{ICO.bDcp}</div>
+                  <div className="clm-empty-title">{rows.length === 0 ? 'No Segment Rules Yet' : 'No Matching Segment Rules'}</div>
+                  <div className="clm-empty-sub">{rows.length === 0 ? 'Click "+ Add Segment Rule" to create your first rule.' : 'No segment rules match the current tab / search / filters.'}</div>
+                </div>
+              )}
               {!loading && filtered.length > 0 && (
                 <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
-          )}
         </div>
       </div>
 

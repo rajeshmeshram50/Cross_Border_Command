@@ -92,9 +92,12 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<DcpFilters>(initial ?? EMPTY_FILTERS);
 
+  // Seed the draft only when the modal OPENS. Keying on `initial` too made
+  // Reset All (which applies {} while the modal stays open) re-run this and
+  // yank the user back to Document Type mid-session.
   useEffect(() => {
     if (open) { setFilters(initial ?? EMPTY_FILTERS); setActive('documentType'); setSearch(''); }
-  }, [open, initial]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Scroll lock — reserves the scrollbar width so the page doesn't shake on open.
   useScrollLock(open);
@@ -205,7 +208,10 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
                 <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
 
-            <div className="lfm-options">
+            {/* Keyed per facet: a fresh scroller each time, so a long list
+                (Authorities / Segment Name) always paints its scrollbar and
+                starts at the top instead of inheriting the last facet's box. */}
+            <div className="lfm-options" key={active}>
               {searched.length === 0 ? (
                 <div className="lfm-empty">No options available</div>
               ) : searched.map(opt => {
