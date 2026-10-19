@@ -1168,7 +1168,8 @@ class SalesPdfController extends Controller
             'edd' => optional($po->expected_delivery_date)->format('d/m/Y') ?: 'NA',
             'currency' => $po->currency_code ?: 'INR',
             'document_type' => $po->document_type ?: 'Domestic',
-            'bt_id' => (string) ($po->shipment_code ?: ($po->shipment_order_id ?: '0')),
+            // A PO with no shipment showed "0"; print NA like the other blanks (QA #162).
+            'bt_id' => (string) ($po->shipment_code ?: ($po->shipment_order_id ?: 'NA')),
             'bt_date' => 'NA',
             'opp_id' => $po->opportunity_code ?: 'NA',
             'opp_date' => 'NA',
