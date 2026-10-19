@@ -146,14 +146,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
      blanking it would make a page change look like the list emptied. */
   const firstLoad  = loading && (rows.length === 0 || replacing);
   const refreshing = loading && !firstLoad;
-  /* Drives BOTH the branch below and the `has-data` class on .clm-tab-body.
-     Bare .clm-tab-body is the empty-state box — 90px tall, flex-centred,
-     overflow hidden — and `has-data` is what turns it back into a normal
-     `display: block` container. That class was keyed on `rows.length > 0`,
-     which is false during a first load, so the skeleton table was rendered
-     into a 90px clipped box and only its first row survived. Keyed on what is
-     actually rendered, the two can no longer disagree. */
-  const showTable = loading || rows.length > 0;
+  const isEmpty   = !loading && rows.length === 0;
   const start     = (page - 1) * rpp;
   const safePage  = page;
   const autoFitRef = useRef(true);
@@ -207,20 +200,8 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
         </button>
       </div>
 
-      <div className={`clm-tab-body ${showTable ? 'has-data' : ''}`}>
-        {!showTable ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bCl}</div>
-            {/* Search now runs on the server, so an empty page is far more
-                often "nothing matched" than "nothing exists" — saying the
-                wrong one on a 200-row master reads as data loss. */}
-            <div className="clm-empty-title">{search ? 'No matching clause types' : 'No clause types yet'}</div>
-            <div className="clm-empty-sub">
-              {search ? 'Try a different name or type ID.' : 'Click + Add Clause Type to create the first record.'}
-            </div>
-          </div>
-        ) : (
-          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+      <div className="clm-tab-body has-data">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
             <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
@@ -277,11 +258,22 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 ))}
               </tbody>
             </table>
+            {isEmpty && (
+              <div className="clm-empty" style={{ flex: 1 }}>
+                <div className="clm-empty-ico">{ICO.bCl}</div>
+                {/* Search now runs on the server, so an empty page is far more
+                    often "nothing matched" than "nothing exists" — saying the
+                    wrong one on a 200-row master reads as data loss. */}
+                <div className="clm-empty-title">{search ? 'No matching clause types' : 'No clause types yet'}</div>
+                <div className="clm-empty-sub">
+                  {search ? 'No results match the current search.' : 'Click + Add Clause Type to create the first record.'}
+                </div>
+              </div>
+            )}
             {!loading && total > 0 && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
-        )}
       </div>
 
       {modalOpen && <ClauseTypeModal title={editing ? 'Edit Clause Type' : 'Add Clause Type'} code={editing?.code ?? nextSeqCode(topCodeRef.current, 'CLT')} isEdit={!!editing} initialName={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave({ name, description: '' }, editing?.id)} />}
@@ -303,8 +295,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   // See the note in TypesPane — one `loading` split by what is already on screen.
   const firstLoad  = loading && (rows.length === 0 || replacing);
   const refreshing = loading && !firstLoad;
-  // See the note in TypesPane — `has-data` has to follow the rendered branch.
-  const showTable  = loading || rows.length > 0;
+  const isEmpty    = !loading && rows.length === 0;
   const start      = (page - 1) * rpp;
   const safePage   = page;
   const autoFitRef = useRef(true);
@@ -361,17 +352,8 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
         </button>
       </div>
 
-      <div className={`clm-tab-body ${showTable ? 'has-data' : ''}`}>
-        {!showTable ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bCl}</div>
-            <div className="clm-empty-title">{search ? 'No matching clauses' : 'No clauses yet'}</div>
-            <div className="clm-empty-sub">
-              {search ? 'Try a different clause name, ID or type.' : 'Click + Add Clause to create the first record.'}
-            </div>
-          </div>
-        ) : (
-          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+      <div className="clm-tab-body has-data">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             {/* Dim the rows, not the pager — the pager is how you leave a page
                 you are already waiting on, so it stays solid and clickable. */}
             <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
@@ -411,11 +393,19 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
                 ))}
               </tbody>
             </table>
+            {isEmpty && (
+              <div className="clm-empty" style={{ flex: 1 }}>
+                <div className="clm-empty-ico">{ICO.bCl}</div>
+                <div className="clm-empty-title">{search ? 'No matching clauses' : 'No clauses yet'}</div>
+                <div className="clm-empty-sub">
+                  {search ? 'No results match the current search.' : 'Click + Add Clause to create the first record.'}
+                </div>
+              </div>
+            )}
             {!loading && total > 0 && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
-        )}
       </div>
 
       {modalOpen && <ClauseLibModal existing={editing} types={types} nextCode={nextSeqCode(topCodeRef.current, 'CL')} onTypeCreated={reload} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />}
