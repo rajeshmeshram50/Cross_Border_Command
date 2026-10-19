@@ -532,6 +532,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                       <div className="tnw-inline-add">
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <MasterMultiSelect
+                            menuClassName="clm-mms-menu"
                             values={Array.from(segmentsMulti)}
                             invalid={!!errors.segment}
                             placeholder="— Select Segments —"

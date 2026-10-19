@@ -101,6 +101,7 @@ export function DdModal(props: { existing: Dd | null; authorities: Authority[]; 
             <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <MasterMultiSelect
+                  menuClassName="clm-mms-menu"
                   values={authList}
                   invalid={!!errors.auth}
                   placeholder="— Select Authorities —"
