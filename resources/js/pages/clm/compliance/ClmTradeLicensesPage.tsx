@@ -76,6 +76,7 @@ export default function ClmTradeLicensesPage() {
   }, []);
 
   const start = (page - 1) * rpp;
+  const isEmpty = !loading && rows.length === 0;
 
   const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
@@ -153,15 +154,8 @@ export default function ClmTradeLicensesPage() {
           </div>
         </div>
 
-        <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
-          {rows.length === 0 && !loading ? (
-            <div className="clm-empty" ref={scrollRef} style={{ minHeight: fillH }}>
-              <div className="clm-empty-ico">{ICO.bDoc}</div>
-              <div className="clm-empty-title">No trade licences yet</div>
-              <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Trade Licence to create the first record.' : 'No results match.'}</div>
-            </div>
-          ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+        <div className="clm-tab-body has-data">
+            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -188,11 +182,17 @@ export default function ClmTradeLicensesPage() {
                   ))}
                 </tbody>
               </table>
+              {isEmpty && (
+                <div className="clm-empty" style={{ flex: 1 }}>
+                  <div className="clm-empty-ico">{ICO.bDoc}</div>
+                  <div className="clm-empty-title">{debouncedSearch ? 'No matching trade licences' : 'No trade licences yet'}</div>
+                  <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add Trade Licence to create the first record.'}</div>
+                </div>
+              )}
               {!loading && count > 0 && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
-          )}
         </div>
       </div>
 
