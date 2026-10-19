@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import { IcoBox, IcoCheck, IcoPencil } from '../../../icons';
+import { IcoBox, IcoPencil } from '../../../icons';
 import { truncateName, NAME_MAX, type ProductLine } from '../invoice-products';
 import BoxStickerModal from './BoxStickerModal';
 
@@ -167,7 +167,10 @@ export default function PackedProducts({
   return (
     <div className="vti-box invf-packed">
       <div className="vti-header">
-        <div className="vti-header-ico"><IcoCheck size={18} stroke={2.6} /></div>
+        {/* A box, like every other head on this step — the design does not
+            put a tick here, and the card is a list of what was packed
+            rather than a confirmation. */}
+        <div className="vti-header-ico"><IcoBox size={18} stroke={2.2} /></div>
         {/* "Packed Boxes", not "Packed Products": a row here is a carton with
             its contents listed inside it, so the table is a list of boxes.
             The old name survived from when the row was a product. */}
