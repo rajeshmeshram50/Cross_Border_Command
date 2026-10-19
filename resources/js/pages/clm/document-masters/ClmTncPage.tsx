@@ -148,6 +148,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+  const isEmpty = !loading && slice.length === 0;
 
   // Dynamic pagination: rows-per-page auto-fits the visible table height and
   // the card stretches to cover the page. Anchored via closest('.clm-root').
@@ -189,15 +190,8 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
             or changed from here. */}
       </div>
 
-      <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 && !loading ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bTnc}</div>
-            <div className="clm-empty-title">No categories yet</div>
-            <div className="clm-empty-sub">Document categories are set up for your Quotation &amp; Proforma Invoice documents.</div>
-          </div>
-        ) : (
-          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+      <div className="clm-tab-body has-data">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -219,11 +213,17 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
                 ))}
               </tbody>
             </table>
+            {isEmpty && (
+              <div className="clm-empty" style={{ flex: 1 }}>
+                <div className="clm-empty-ico">{ICO.bTnc}</div>
+                <div className="clm-empty-title">{search.trim() ? 'No matching categories' : 'No categories yet'}</div>
+                <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Document categories are set up for your Quotation & Proforma Invoice documents.'}</div>
+              </div>
+            )}
             {!loading && filtered.length > 0 && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
-        )}
       </div>
     </div>
   );
@@ -257,6 +257,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
     if (!q) return written;
     return written.filter((r) => `${r.category} ${r.code ?? ''} ${r.content ?? ''}`.toLowerCase().includes(q));
   }, [written, search]);
+  const isEmpty = !loading && filtered.length === 0;
 
   // A global entry exists per document category and no further: once all six are
   // written there is nothing to add, only the existing entry to change.
@@ -300,15 +301,8 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
         </Tooltip>
       </div>
 
-      <div className={`clm-tab-body ${filtered.length > 0 ? 'has-data' : ''}`}>
-        {filtered.length === 0 && !loading ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bTnc}</div>
-            <div className="clm-empty-title">No global T&amp;C yet</div>
-            <div className="clm-empty-sub">Add one per document category — it prints on every document of that category.</div>
-          </div>
-        ) : (
-        <div className="clm-table-wrap clm-table-fill">
+      <div className="clm-tab-body has-data">
+        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`}>
           <table className="clm-table">
             <thead><tr>
               <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -351,8 +345,14 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
               })}
             </tbody>
           </table>
+          {isEmpty && (
+            <div className="clm-empty" style={{ flex: 1 }}>
+              <div className="clm-empty-ico">{ICO.bTnc}</div>
+              <div className="clm-empty-title">{search.trim() ? 'No matching global T&C' : 'No global T&C yet'}</div>
+              <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Add one per document category — it prints on every document of that category.'}</div>
+            </div>
+          )}
         </div>
-        )}
       </div>
     </div>
   );
@@ -400,6 +400,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
+  const isEmpty = !loading && slice.length === 0;
 
   // Dynamic pagination: rows-per-page auto-fits the visible table height and
   // the card stretches to cover the page. Anchored via closest('.clm-root').
@@ -466,15 +467,8 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         </Tooltip>
       </div>
 
-      <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 && !loading ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bTnc}</div>
-            <div className="clm-empty-title">No T&amp;C blocks yet</div>
-            <div className="clm-empty-sub">Click + Add T&amp;C to create the first record.</div>
-          </div>
-        ) : (
-          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+      <div className="clm-tab-body has-data">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -557,11 +551,17 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                 ))}
               </tbody>
             </table>
+            {isEmpty && (
+              <div className="clm-empty" style={{ flex: 1 }}>
+                <div className="clm-empty-ico">{ICO.bTnc}</div>
+                <div className="clm-empty-title">{search.trim() || statusFilter !== 'all' ? 'No matching T&C blocks' : 'No T&C blocks yet'}</div>
+                <div className="clm-empty-sub">{search.trim() || statusFilter !== 'all' ? 'No results match the current search.' : 'Click + Add T&C to create the first record.'}</div>
+              </div>
+            )}
             {!loading && filtered.length > 0 && (
               <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
-        )}
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete T&C block?" sub={`${pendingDelete.category} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
