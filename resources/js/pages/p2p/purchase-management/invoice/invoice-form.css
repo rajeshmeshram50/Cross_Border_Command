@@ -7114,7 +7114,9 @@
   font-size: 12.5px; font-weight: 800; color: #0c2c3a; letter-spacing: -.15px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.s4-root .s4rx-tx em { font-style: normal; font-size: 10.5px; font-weight: 600; color: #6a869c; }
+/* 500, not 600: the prototype's typography block lightens this sub-line along
+   with the path and the legend, which dev already matched. */
+.s4-root .s4rx-tx em { font-style: normal; font-size: 10.5px; font-weight: 500; color: #6a869c; }
 .s4-root .s4rx-pill {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
   font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
