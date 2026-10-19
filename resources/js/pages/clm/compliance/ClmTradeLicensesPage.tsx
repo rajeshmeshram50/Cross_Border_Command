@@ -25,6 +25,7 @@ export default function ClmTradeLicensesPage() {
   const toast = useToast();
   const [rows, setRows]         = useState<Tl[]>([]);
   const [count, setCount]       = useState(0);
+  const [nextCode, setNextCode] = useState('');
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(true);
   const [booted, setBooted]     = useState(false);
@@ -54,13 +55,14 @@ export default function ClmTradeLicensesPage() {
   const reload = () => {
     setLoading(true);
     const token = ++reqRef.current;
-    api.get<{ status: boolean; data: Tl[]; count: number; total?: number }>('/clm/trade-licenses', {
+    api.get<{ status: boolean; data: Tl[]; count: number; total?: number; next_code?: string }>('/clm/trade-licenses', {
       params: { page, per_page: rpp, ...(debouncedSearch ? { search: debouncedSearch } : {}) },
     })
       .then(({ data }) => {
         if (token !== reqRef.current) return;
         setRows(data.data ?? []);
         setCount(Number(data.total ?? data.count ?? 0));
+        if (data.next_code) setNextCode(data.next_code);
       })
       .catch(() => toast.error('Load failed', 'Could not load trade licences'))
       .finally(() => setLoading(false));
@@ -231,7 +233,7 @@ export default function ClmTradeLicensesPage() {
 
       {modalOpen && (
         <Suspense fallback={null}>
-          <TlModal existing={editing} authorities={auths} nextCode={`TL-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
+          <TlModal existing={editing} authorities={auths} nextCode={nextCode} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
         </Suspense>
       )}
       <DeleteConfirmModal

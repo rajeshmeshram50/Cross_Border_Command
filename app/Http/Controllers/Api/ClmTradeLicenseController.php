@@ -72,6 +72,7 @@ class ClmTradeLicenseController extends Controller
           
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
+            'next_code' => ClmDocCode::preview('TL', ClmTradeLicense::class, (int) $user->client_id, $user->branch_id),
         ]);
     }
 
