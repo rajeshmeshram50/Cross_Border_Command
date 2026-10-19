@@ -111,6 +111,11 @@ export default function ClmSegmentPage() {
   // Counts follow search + filter, so 0 here can mean "no match" rather than "none created".
   const narrowed = !!search.trim() || bcFilter !== 'all';
 
+  // Full-page shimmer is for the very first load only; tab / search / page
+  // changes after that shimmer just the table rows (same as Trade Documents).
+  const [booted, setBooted] = useState(false);
+  useEffect(() => { if (!loading) setBooted(true); }, [loading]);
+
   const firstLoad  = loading && (rows.length === 0 || replacing);
   const refreshing = loading && !firstLoad;
   const start      = (page - 1) * rpp;
@@ -206,7 +211,7 @@ export default function ClmSegmentPage() {
   return (
     <div className="clm-root" ref={rootRef}>
       <style>{CLM_CSS}</style>
-      {loading && <ShimmerClmMaster cols={6} />}
+      {loading && !booted && <ShimmerClmMaster cols={6} />}
       <style>{`
         /* Right-aligned toolbar: two filter dropdowns + a compact search.
            The search is smaller now to make room for the filters. */
