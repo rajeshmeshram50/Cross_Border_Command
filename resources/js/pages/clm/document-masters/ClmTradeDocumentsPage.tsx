@@ -128,6 +128,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
   const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total]);
+  const isEmpty    = !loading && slice.length === 0;
 
   const onSave = async (name: string, id?: number) => {
     try {
@@ -157,24 +158,8 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
         </button>
       </div>
 
-      {/* `loading ||` is load-bearing. Bare .clm-tab-body is the EMPTY-STATE box:
-          90px tall, flex-centred, overflow hidden. `has-data` is what turns it
-          back into a normal display:block container for the table. Keyed on
-          slice.length alone it was false during a first load, so the skeleton
-          table was dropped into a centred flex box and shrank to its 880px
-          min-width with white space either side — the table looked detached
-          from the page. Key it on what is actually being RENDERED (skeleton or
-          rows), not on whether data has arrived. Same fix ClmClauseLibraryPage
-          already carries as `showTable`. */}
-      <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 && !loading ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bTrade}</div>
-            <div className="clm-empty-title">No trade document types yet</div>
-            <div className="clm-empty-sub">Click + Add Trade Document Type to create the first record.</div>
-          </div>
-        ) : (
-          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+      <div className="clm-tab-body has-data">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -226,11 +211,17 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 ))}
               </tbody>
             </table>
+            {isEmpty && (
+              <div className="clm-empty" style={{ flex: 1 }}>
+                <div className="clm-empty-ico">{ICO.bTrade}</div>
+                <div className="clm-empty-title">{search ? 'No matching trade document types' : 'No trade document types yet'}</div>
+                <div className="clm-empty-sub">{search ? 'No results match the current search.' : 'Click + Add Trade Document Type to create the first record.'}</div>
+              </div>
+            )}
             {!loading && total > 0 && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
-        )}
       </div>
 
       {modalOpen && <SimpleNameModal title={editing ? 'Edit Trade Document Type' : 'Add Trade Document Type'} placeholder="e.g. Bill of Lading, Commercial Invoice" code={editing?.code ?? `TDN-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initial={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave(name, editing?.id)} />}
@@ -346,6 +337,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
   const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total]);
+  const isEmpty    = !loading && slice.length === 0;
 
   const onDelete = async () => {
     if (!pendingDelete) return;
@@ -384,15 +376,8 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
         </button>
       </div>
 
-      <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
-        {slice.length === 0 && !loading ? (
-          <div className="clm-empty">
-            <div className="clm-empty-ico">{ICO.bTrade}</div>
-            <div className="clm-empty-title">No library entries yet</div>
-            <div className="clm-empty-sub">Click + Draft New Trade Document to create the first record.</div>
-          </div>
-        ) : (
-          <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
+      <div className="clm-tab-body has-data">
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -562,11 +547,17 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                 ))}
               </tbody>
             </table>
+            {isEmpty && (
+              <div className="clm-empty" style={{ flex: 1 }}>
+                <div className="clm-empty-ico">{ICO.bTrade}</div>
+                <div className="clm-empty-title">{search ? 'No matching library entries' : 'No library entries yet'}</div>
+                <div className="clm-empty-sub">{search ? 'No results match the current search.' : 'Click + Draft New Trade Document to create the first record.'}</div>
+              </div>
+            )}
             {!loading && total > 0 && (
               <WorklistPager total={total} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
-        )}
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
