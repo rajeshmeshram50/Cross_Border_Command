@@ -23,17 +23,11 @@ class ClmQcController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-432).
-        $q = ClmQcDocument::query()->orderByDesc('id');   // newest entry first
+        $q = ClmQcDocument::query()->orderByDesc('id');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
 
-        /* Search in SQL, alongside the paging. Filtering a single page in the
-           browser searches ten rows out of the whole master. */
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
-            /* Authority is stored by ID, but the list shows — and the old
-               client-side filter searched — the resolved NAME. Resolve the
-               term to ids so searching by authority still works. */
             $authIds = ClmAuthority::idsMatchingName((int) $user->client_id, $search);
             $q->where(function ($w) use ($like, $authIds) {
                 $w->where('name', 'ilike', $like)->orWhere('code', 'ilike', $like)->orWhere('purpose', 'ilike', $like);
@@ -41,9 +35,6 @@ class ClmQcController extends Controller
             });
         }
 
-        /* Counts describe the WHOLE scoped set, so they are aggregated in SQL
-           and not derived from the rows in hand — otherwise page 2 would report
-           its own ten rows as the totals. */
         $counts = (clone $q)->selectRaw(
             'COUNT(*) AS all_c,'
             . ' COUNT(*) FILTER (WHERE doc_type = ?) AS cert_c,'
@@ -51,7 +42,6 @@ class ClmQcController extends Controller
             [ClmQcDocument::TYPE_CERT, ClmQcDocument::TYPE_COMP]
         )->reorder()->first();
 
-        /* PAGINATION — opt-in via per_page, so existing callers are unchanged. */
         $perPage = $request->filled('per_page')
             ? min(200, max(1, (int) $request->input('per_page')))
             : null;
@@ -60,18 +50,9 @@ class ClmQcController extends Controller
 
         $rows = $perPage ? $q->forPage($page, $perPage)->get() : $q->get();
 
-        // `issued_by` stores authority ids; expose the resolved current names.
         $map = ClmAuthority::idNameMap($user->client_id, ClmAuthority::idsReferencedIn($rows->pluck('issued_by')));
         $rows->each(fn ($r) => $r->issued_by_names = ClmAuthority::displayNames($r->issued_by, $map));
 
-        /* Per-row "in use" flags, from sets built ONCE.
-           This used to call usageCheck() inside the loop — one row, three
-           existence queries, plus six Schema::hasTable/hasColumn calls that
-           each hit information_schema. Twenty rows meant 182 queries and
-           ~560 ms locally; it scales with the row count, which is what made
-           the page take 13 s on a real dataset.
-           The three referencing tables are small and bounded, so reading each
-           ONCE and matching in memory turns the whole loop into hash lookups. */
         $sets = $this->usageSets((int) $user->client_id);
         $rows->each(function ($r) use ($sets) {
             $labels = $this->qcUsageLabels($sets, $r);
@@ -88,30 +69,14 @@ class ClmQcController extends Controller
                 'cert' => (int) ($counts->cert_c ?? 0),
                 'comp' => (int) ($counts->comp_c ?? 0),
             ],
-            // Add-form code preview — the browser only holds one page, so it
-            // can't derive this itself. Same scope store() allocates in.
             'next_code' => ClmDocCode::preview('QC', ClmQcDocument::class, (int) $user->client_id, $user->branch_id),
         ]);
     }
 
-    /**
-     * Everything that references a QC document, read once per REQUEST rather
-     * than once per row. Returns three lookup maps, each grouped by the branch
-     * the reference belongs to (see ChecksClmDocUsage): codes used by segment
-     * rules, codes used by segment doc uploads, and lowercased names used by
-     * product QC records.
-     *
-     * Bounded by the size of those three tables, not by the number of QC
-     * documents on the page — which is the whole point.
-     */
     private function usageSets(int $clientId): array
     {
-        // Segment rules + doc uploads are shared with KYC / DD / Trade Licenses.
         $sets = $this->clmDocUsageSets($clientId);
 
-        // QC alone also appears in product QC records, matched by NAME.
-        // product_qc_records has no client_id or branch_id — both come from
-        // its product.
         $products = [];
         if (Schema::hasTable('product_qc_records') && Schema::hasColumn('product_qc_records', 'qc_name')) {
             foreach (DB::table('product_qc_records')
@@ -126,8 +91,6 @@ class ClmQcController extends Controller
         return $sets + ['products' => $products];
     }
 
-    /** Where this QC document is referenced, within its own branch's scope.
-     *  Shared by the list's in_use flag and the delete guard. */
     private function qcUsageLabels(array $sets, ClmQcDocument $row): array
     {
         $labels = $this->clmDocUsageLabels($sets, $row->code, $row->branch_id);
@@ -159,8 +122,6 @@ class ClmQcController extends Controller
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
         if ($dupe->exists()) {
             $msg = "A QC document named \"{$name}\" already exists. Pick a different name.";
-            // 422 + errors.name so the modal shows it inline under QC CERTIFICATE
-            // NAME (not a global toast) — same shape Laravel's `unique` rule returns.
             return response()->json([
                 'status'  => false,
                 'message' => $msg,
@@ -168,7 +129,6 @@ class ClmQcController extends Controller
             ], 422);
         }
 
-        // Store issuing authority by id (resolve names → ids).
         $data['issued_by'] = ClmAuthority::normalizeIds($data['issued_by'] ?? null, $user->client_id);
         if ($data['issued_by'] === '') {
             throw ValidationException::withMessages(['issued_by' => 'Select a valid authority.']);
@@ -177,7 +137,7 @@ class ClmQcController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmQcDocument::create([
                 'client_id'    => $user->client_id,
-                'branch_id'    => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'    => $user->branch_id,
                 'code'         => $this->nextCode($user->client_id, $user->branch_id),
                 'name'         => trim($data['name']),
                 'purpose'      => trim($data['purpose']),
@@ -254,7 +214,6 @@ class ClmQcController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Same branch-scoped sets the list's in_use flag reads, so the two agree.
         $usedIn = $this->qcUsageLabels($this->usageSets((int) $user->client_id), $row);
         if (!empty($usedIn)) {
             return response()->json([
@@ -269,14 +228,10 @@ class ClmQcController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-
     private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
 
-        /* The counter never reissues a number, even after the row that
-           held it is deleted — a recycled code would drag the old
-           document's segment rules and uploads onto the new row. */
         return ClmDocCode::next('QC', ClmQcDocument::class, $clientId, $branchId);
     }
 }
