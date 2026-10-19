@@ -75,6 +75,7 @@ export default function ClmKycPage() {
   }, []);
 
   const start = (page - 1) * rpp;
+  const isEmpty = !loading && rows.length === 0;
 
   const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [count]);
 
@@ -152,16 +153,9 @@ export default function ClmKycPage() {
           </div>
         </div>
 
-        <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
-          {rows.length === 0 && !loading ? (
-            <div className="clm-empty">
-              <div className="clm-empty-ico">{ICO.bKyc}</div>
-              <div className="clm-empty-title">{debouncedSearch ? 'No matching KYC documents' : 'No KYC documents yet'}</div>
-              <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add KYC Document to create the first record.'}</div>
-            </div>
-          ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
-              <div className="clm-rows-scroll">
+        <div className="clm-tab-body has-data">
+            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
+              <div className="clm-rows-scroll" style={isEmpty ? { flex: '0 0 auto' } : undefined}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -189,11 +183,17 @@ export default function ClmKycPage() {
                 </tbody>
               </table>
               </div>
+              {isEmpty && (
+                <div className="clm-empty" style={{ flex: 1 }}>
+                  <div className="clm-empty-ico">{ICO.bKyc}</div>
+                  <div className="clm-empty-title">{debouncedSearch ? 'No matching KYC documents' : 'No KYC documents yet'}</div>
+                  <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add KYC Document to create the first record.'}</div>
+                </div>
+              )}
               {!loading && count > 0 && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
-          )}
         </div>
       </div>
 

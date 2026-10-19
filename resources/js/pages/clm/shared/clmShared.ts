@@ -442,6 +442,8 @@ export const CLM_CSS = `
 .clm-rows-scroll .clm-table thead th { position: sticky; top: 0; z-index: 2; }
 .clm-table-fill { display: flex; flex-direction: column; background: linear-gradient(180deg, #fafeff, #f3fafc); }
 .clm-table-fill > .clm-table { background: #fff; }
+.clm-table-fill.clm-fill-empty { background: #fff; }
+[data-bs-theme="dark"] .clm-table-fill.clm-fill-empty { background: #0f172a; }
 .clm-table-fill > .clm-pag, .clm-table-fill > .wl-pager { margin-top: auto; }
 /* The pager lives inside the horizontally-scrolling table wrap. Without this it
  * stretches to the table's full scroll width (e.g. 1100px), so on zoom / narrow
