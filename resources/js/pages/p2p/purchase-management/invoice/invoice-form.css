@@ -1013,22 +1013,13 @@
    the green "Packed" pill, and a thin accent along the card's top edge — so
    the two tables are distinguishable at a glance without a second palette. */
 .invf-packed { margin-top: 10px; position: relative; }
-.invf-packed::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #34d399, #10b981 55%, #059669);
-  /* Sits above the header's own gradient but below its content. */
-  z-index: 1;
-  border-radius: 14px 14px 0 0;
-}
-/* A green tile on the teal strip: the one place the status is stated in
-   colour, where the tick already says it in shape. */
-.invf-packed .vti-header-ico {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 55%, #059669 100%);
-  box-shadow: 0 0 0 2px rgba(16,185,129,.18), 0 2px 8px rgba(5,150,105,.28);
-}
+/* No green here.
+   This card used to mark itself as the "done" one with a green rule across
+   its top and a green icon tile. The design gives it the same teal head as
+   every other card on the step — Packaging Scenarios, Box Generation — and it
+   is a list of what has been packed, not a status banner. Two accent colours
+   on one step made the greener card look like a different kind of thing.
+   The icon tile therefore inherits .vti-header-ico's teal unchanged. */
 
 /* Which scenario produced the boxes: the number as a chip, the shape beside it. */
 .invf-scn-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 600; color: #0c4a6e; white-space: nowrap; }
@@ -1299,8 +1290,17 @@
 .vti-stat-pill.units { background: rgba(255,251,235,.95); border: 1.5px solid rgba(245,158,11,.30); color: #b45309; }
 .vti-stat-pill.units .vti-stat-dot { background: #f59e0b; }
 
-[data-bs-theme="dark"] .invf-pb-scn { color: #c4b5fd; }
-[data-bs-theme="dark"] .invf-pb-sub { color: #6d6391; }
+/* The scenario badge had no dark rule, so it kept #f0fdff — a solid white
+   pill in a dark table, and the brightest thing in the row. */
+[data-bs-theme="dark"] .invf-scn-no {
+  background: rgba(34,211,238,.12);
+  border-color: rgba(34,211,238,.35);
+  color: #67e8f9;
+}
+/* These two were violet (#c4b5fd / #6d6391) — the palette of a different
+   module, copied in with the rule. This screen is teal throughout. */
+[data-bs-theme="dark"] .invf-pb-scn { color: #a5e9f5; }
+[data-bs-theme="dark"] .invf-pb-sub { color: #7f97a5; }
 [data-bs-theme="dark"] .invf-pb-num { color: #e2e8f0; }
 [data-bs-theme="dark"] .invf-pb-num em { color: #64748b; }
 [data-bs-theme="dark"] .invf-pb-hsn,
