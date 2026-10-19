@@ -756,7 +756,9 @@ export default function Vendors() {
         try { localStorage.setItem(PER_PAGE_KEY, String(fit)); } catch { /* private mode */ }
       }
 
-      const h = `${cardH}px`;
+      // cardH covers the whole card; the pager is now its sibling, so the
+      // scroller gets what is left after that band.
+      const h = `${cardH - PAGER}px`;
       if (el.style.minHeight !== h) el.style.minHeight = h;
     };
     recompute();
@@ -1145,8 +1147,10 @@ useEffect(() => {
                       })}
                     </tbody>
                   </table>
-                  <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[10, 25, 50]} />
                 </div>
+                {/* Outside the scroller: inside it the native horizontal
+                    scrollbar drew under the footer, outside the card. */}
+                <WorklistPager className={refetching ? 'is-refetching' : undefined} total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[10, 25, 50]} />
               </>
             )}
           </div>
