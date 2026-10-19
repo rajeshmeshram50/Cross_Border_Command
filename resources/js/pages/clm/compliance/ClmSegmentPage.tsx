@@ -17,27 +17,12 @@ import { bustProductMasterBundle } from '../../p2p/p2p-master-management/product
 import { bustVendorMasterBundle } from '../../p2p/p2p-master-management/supplier-management/vendorBundleCache';
 import SearchClear from '../../../components/ui/SearchClear';
 
-/* Segments feed the cached Supplier / Customer / Product form bundles
- * (sessionStorage, 5-min TTL). Without dropping them here, a segment renamed or
- * deleted on this page keeps showing — and staying selectable — in those
- * dropdowns until the TTL lapses. MasterPage does the same for the masters it
- * owns; segments live on this page instead, so they were missed.
- * (Client / Branch bundles carry no segments — nothing to drop there.) */
 function bustSegmentConsumerBundles(): void {
   bustCustomerMasterBundle();
   bustProductMasterBundle();
   bustVendorMasterBundle();
 }
 
-/* Central CLM → Segment Master.
- * Faithful 3-card port of the CLM-Master.html prototype:
- *   Card 1 — cyan gradient header strip with Add Segment
- *   Card 2 — expandable "What We Are Doing Here" steps
- *   Card 3 — tabs (All/Highly/Less) + search + table + pagination
- */
-
-/* Clip long segment names so toasts stay compact (mirrors the 35-char table
- * truncation). */
 const clipName = (s?: string | null, n = 40) => (s && s.length > n ? s.slice(0, n) + '…' : (s ?? ''));
 
 export type Reg = 'highly' | 'less';
@@ -47,8 +32,6 @@ export type SegStatus = 'active' | 'inactive';
 export type Segment = {
   id: number; code: string; name: string;
   regulatory_status: Reg; buyer_consignee: BC; status: SegStatus;
-  // Set by the API: true when the segment is referenced elsewhere (so delete
-  // is blocked); used_in lists the areas referencing it for the tooltip.
   in_use?: boolean; used_in?: string[];
 };
 type Counts = { all: number; highly: number; less: number };
@@ -62,18 +45,10 @@ export type SegmentForm = {
 
 export type SaveResult = { ok: true } | { ok: false; fieldErrors?: Record<string, string> };
 
-/**
- * Mirrors the backend allocator in ClmSegmentController::nextCode — walks
- * past max(existing S-### suffix) + 1, skipping any taken codes. Naive
- * `rows.length + 1` previews drift whenever the sequence has gaps (after
- * deletes or after the consolidate-segments migration merged legacy rows).
- */
 export function nextSegmentCode(rows: { code: string }[]): string {
   let maxN = 0;
   const taken = new Set<string>();
   for (const r of rows) {
-    // Match both new SG-NNN and any legacy S-NNN so the preview keeps counting
-    // past every existing code during/after the prefix migration.
     const m = /^SG?-(\d+)$/.exec(r.code ?? '');
     if (m) {
       const n = parseInt(m[1], 10);
@@ -100,7 +75,6 @@ export default function ClmSegmentPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const reload = () => setReloadKey(k => k + 1);
 
-  // Tab, filter, search and paging all run on the server.
   const params = {
     ...(tab !== 'all' ? { regulatory_status: tab } : {}),
     ...(bcFilter !== 'all' ? { buyer_consignee: bcFilter } : {}),
@@ -108,11 +82,8 @@ export default function ClmSegmentPage() {
   const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp, meta } =
     usePagedList<Segment, { counts: Counts }>('/clm/segments', reloadKey, params);
   const counts: Counts = meta.counts ?? { all: 0, highly: 0, less: 0 };
-  // Counts follow search + filter, so 0 here can mean "no match" rather than "none created".
   const narrowed = !!search.trim() || bcFilter !== 'all';
 
-  // Full-page shimmer is for the very first load only; tab / search / page
-  // changes after that shimmer just the table rows (same as Trade Documents).
   const [booted, setBooted] = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
 
@@ -121,23 +92,20 @@ export default function ClmSegmentPage() {
   const start      = (page - 1) * rpp;
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
-  const rootRef    = useRef<HTMLDivElement | null>(null);
   const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total, tab]);
 
-  // Code preview: unfiltered page 1 holds the highest codes (newest first); the server allocates the real one.
   const topCodesRef = useRef<{ code: string }[]>([]);
   useEffect(() => {
     if (page === 1 && tab === 'all' && bcFilter === 'all' && !search.trim() && rows.length) topCodesRef.current = rows;
   }, [page, tab, bcFilter, search, rows]);
 
-  // Deleting the last row of the last page: step back to the new last page.
   useEffect(() => {
     if (!loading && rows.length === 0 && total > 0 && page > 1) setPage(Math.ceil(total / rpp));
   }, [loading, rows.length, total, page, rpp, setPage]);
 
   const [editing, setEditing]     = useState<Segment | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  useScrollLock(modalOpen); // lock html+body while the custom Add/Edit modal is open
+  useScrollLock(modalOpen);
   const [pendingDelete, setPendingDelete] = useState<Segment | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -154,18 +122,11 @@ export default function ClmSegmentPage() {
       bustSegmentConsumerBundles();
       setModalOpen(false); setEditing(null); reload();
 
-      /* A brand-new segment has no document rule yet, and until it gets one it
-         contributes nothing to any Evidence Vault. Offer the next step here
-         rather than leaving the user to find the Document Control Panel on
-         their own. Only on CREATE — an edit is not a new rule. Declining just
-         saves the segment, which is the old behaviour untouched. */
       if (created) {
         const go = await confirm({
-          tone: 'teal',   // matches the CLM module, not the generic indigo prompt
+          tone: 'teal',
           icon: 'file-list-3-line',
           title: 'Add a document rule?',
-          /* Names the four categories exactly as the Document Control Panel
-             labels them, so the prompt and the screen it leads to agree. */
           message: (
             <>
               <b>{clipName(created.name)}</b> is saved. Set up its document rule now —
@@ -177,8 +138,6 @@ export default function ClmSegmentPage() {
           cancelLabel: 'Not now',
         });
         if (go) {
-          /* The Document Control Panel opens its Add Segment Rule popup with
-             this segment already chosen — see the state it reads on mount. */
           navigate('/clm/document-panel', { state: { openRuleForSegment: created } });
         }
       }
@@ -189,8 +148,6 @@ export default function ClmSegmentPage() {
       const first = err ? Object.values(err)[0]?.[0] : undefined;
       const message = first ?? e?.response?.data?.message ?? 'Could not save';
       toast.error('Save failed', message);
-      // Surface duplicate-name conflict back to the modal so it can highlight
-      // the Name field inline instead of relying on the transient toast.
       if (status === 409 && /already exists/i.test(message)) {
         return { ok: false, fieldErrors: { name: message } };
       }
@@ -209,26 +166,18 @@ export default function ClmSegmentPage() {
   };
 
   return (
-    <div className="clm-root" ref={rootRef}>
+    <div className="clm-root">
       <style>{CLM_CSS}</style>
       {loading && !booted && <ShimmerClmMaster cols={6} />}
       <style>{`
-        /* Right-aligned toolbar: two filter dropdowns + a compact search.
-           The search is smaller now to make room for the filters. */
         .clm-root .clm-tabs-bar .seg-toolbar {
           margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
         }
-        /* Fixed width — no focus-expand. The search used to grow to 340px on
-           focus-within, which shifted the toolbar every time it was focused /
-           blurred. Keep it a steady 300px so the bar stays put. */
         .clm-root .clm-tabs-bar .seg-search {
           flex: 0 0 auto; width: 300px; max-width: 100%;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
         .clm-root .seg-filter-ms { flex: 0 0 auto; }
-        /* Customer ≠ Consignee filter wears the .clm-search skin (height, cyan
-           border, radius, shadow, focus ring) instead of MasterSelect's
-           default indigo form-field look, so the toolbar reads as one set. */
         .clm-root .seg-filter-ms .master-select-toggle {
           height: 34px; padding: 0 10px 0 12px;
           border: 1.5px solid rgba(6,182,212,.22); border-radius: 8px;
@@ -279,7 +228,6 @@ export default function ClmSegmentPage() {
         ]}
       />
 
-      {/* ── Card 3: Tabs + Table ── */}
       <div className="clm-page-card">
         <div className="clm-tabs-wrap">
           <div className="clm-tabs-bar">
@@ -296,9 +244,6 @@ export default function ClmSegmentPage() {
               Less Regulated Segments <span className="clm-tab-count">{counts.less}</span>
             </button>
               <div className="seg-toolbar">
-                {/* Regulatory-status dropdown removed — it duplicated the
-                    All / Highly / Less Regulated tabs above (both drove the
-                    same `tab` state). CBC-431. */}
                 <div className="seg-filter-ms" style={{ width: 216 }}>
                   <MasterSelect
                     value={bcFilter}
@@ -323,7 +268,6 @@ export default function ClmSegmentPage() {
 
           <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
             {rows.length === 0 && !loading ? (
-              // Same fill height as the table so a no-match search keeps the card full-page.
               <div className="clm-empty" ref={scrollRef} style={{ minHeight: fillH }}>
                 <div className="clm-empty-ico">{ICO.bSeg}</div>
                 <div className="clm-empty-title">
@@ -352,7 +296,7 @@ export default function ClmSegmentPage() {
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                        <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell" style={{ maxWidth: 'none' }}><div className="clm-td-name-trunc">{r.name && r.name.length > 35 ? r.name.slice(0, 35) + '…' : r.name}</div></td></Tooltip>
+                        <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell" style={{ maxWidth: 'none' }}><div className="clm-td-name-trunc">{clipName(r.name, 35)}</div></td></Tooltip>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${r.regulatory_status === 'highly' ? 'clm-badge-red' : 'clm-badge-emerald'}`}>
                             <span className="clm-badge-dot" />
@@ -431,37 +375,17 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   const [name, setName]     = useState(existing?.name ?? '');
   const [reg, setReg]       = useState<Reg | ''>(existing?.regulatory_status ?? '');
   const [bc, setBc]         = useState<BC  | ''>(existing?.buyer_consignee   ?? '');
-  // Status is no longer user-editable in the modal — preserve the existing
-  // value on edit, default to 'active' on add. Backend still receives it.
   const status: SegStatus = existing?.status ?? 'active';
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
-  // Regulatory classification is fixed once a segment is created — it can be
-  // changed neither way on edit (no Highly→Less downgrade, no Less→Highly
-  // A segment's NAME and REGULATORY STATUS are frozen ONLY once it's referenced
-  // somewhere (Customers / Consignees / Suppliers / Products / Segment Rules /
-  // libraries) — renaming or re-classifying would break the compliance
-  // structures (DCP rules, required docs) built against it. A brand-new / unused
-  // segment stays fully editable; only Customer ≠ Consignee stays editable when
-  // in use. Mirrors the server-side guards in ClmSegmentController::update.
   const inUse = isEdit && !!existing?.in_use;
-  const regLocked = inUse;
-  const nameLocked = inUse;
 
   const handleSave = async () => {
-    // Guard at the TOP, not just `disabled` on the button — the button attribute
-    // doesn't stop an Enter-key handler or a programmatic call.
     if (saving) return;
     const trimmed = name.trim();
     const next: Record<string, string> = {};
     if (!trimmed) next.name = 'Name is required';
-    /* Security + charset validation on the Segment Name. Previously only
-       "required" + duplicate were checked, so SQL/XSS payloads and symbol
-       soup were saved verbatim (QA bug: "Add Product >> add Segment").
-       These rules mirror MasterPage.validateForm so a segment added here,
-       from the product quick-add, or from the segments master all reject
-       the same input. */
     else if (trimmed.length > 255) next.name = 'Segment Name must be 255 characters or fewer';
     else if (/[<>]/.test(trimmed)) next.name = 'Segment Name cannot contain HTML characters (< or >)';
     else if (/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i.test(trimmed)) {
@@ -473,13 +397,12 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
     }
     else {
       const lower = trimmed.toLowerCase();
-      // Unique on name + regulatory status; only checked once a status is picked.
       if (reg && existingSegments.some(s => s.name.trim().toLowerCase() === lower && s.regulatory_status === reg)) {
         next.name = `"${clipName(trimmed)}" already exists as ${reg === 'highly' ? 'Highly' : 'Less'} Regulated. Pick a different name or regulatory status.`;
       }
     }
     if (!reg) next.reg = 'Regulatory status is required';
-    else if (regLocked && reg !== existing?.regulatory_status) next.reg = "This segment is in use — its regulatory status can't be changed.";
+    else if (inUse && reg !== existing?.regulatory_status) next.reg = "This segment is in use — its regulatory status can't be changed.";
     if (!bc)  next.bc  = 'Customer / Consignee rule is required';
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -530,8 +453,8 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
 
           <div className="clm-field">
             <label className="clm-field-label">Segment Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. Tobacco, Rice, Food Grade Ethanol" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} readOnly={nameLocked} tabIndex={nameLocked ? -1 : undefined} style={nameLocked ? { background: 'var(--vz-secondary-bg)', color: 'var(--vz-secondary-color)', cursor: 'not-allowed' } : undefined} autoFocus={!nameLocked} />
-            {nameLocked
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. Tobacco, Rice, Food Grade Ethanol" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} readOnly={inUse} tabIndex={inUse ? -1 : undefined} style={inUse ? { background: 'var(--vz-secondary-bg)', color: 'var(--vz-secondary-color)', cursor: 'not-allowed' } : undefined} autoFocus={!inUse} />
+            {inUse
               ? <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 4 }}>Segment name is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — renaming would break those records.</div>
               : <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/255</div>}
             {errors.name && (
@@ -568,7 +491,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
             <MasterSelect
               value={reg}
               invalid={!!errors.reg}
-              disabled={regLocked}
+              disabled={inUse}
               placeholder="— Select —"
               options={[
                 { value: 'highly', label: 'Highly Regulated' },
@@ -576,7 +499,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
               ]}
               onChange={(v) => { setReg(v as Reg); setErrors(p => ({ ...p, reg: '' })); }}
             />
-            {regLocked && <div className="clm-field-hint">Regulatory status is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — re-classifying would break those records.</div>}
+            {inUse && <div className="clm-field-hint">Regulatory status is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — re-classifying would break those records.</div>}
             {errors.reg && <div className="clm-err">{errors.reg}</div>}
           </div>
 
