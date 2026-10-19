@@ -116,7 +116,16 @@ class HrDocumentTemplateController extends Controller
         if ($trig = $request->query('trigger_point_id')) $q->where('trigger_point_id', $trig);
         if ($status = $request->query('status'))         $q->where('status', $status);
 
-        return response()->json($q->orderByDesc('id')->get());
+        $rows = $q->orderByDesc('id')->get();
+
+        // Flag templates currently out for signature so the list can disable
+        // Edit / Deprecate on them (the action is refused server-side too). (#24)
+        $live = HrDocumentSignature::whereIn('template_id', $rows->pluck('id'))
+            ->whereIn('status', ['Pending', 'In Progress'])
+            ->pluck('template_id')->map(fn ($x) => (int) $x)->flip();
+        $rows->each(fn ($r) => $r->setAttribute('out_for_signature', isset($live[(int) $r->id])));
+
+        return response()->json($rows);
     }
 
     public function show(Request $request, $id)
@@ -406,6 +415,22 @@ class HrDocumentTemplateController extends Controller
         // After resolveRow, because the rule depends on the row: the author of
         // an unpublished draft may finish it with can_add alone (QA #36).
         $this->authorizeTemplateWrite($request, $row);
+
+        // Editing is fine mid-signature: a sent document signs on the FROZEN
+        // snapshot the run holds, and an edit only bumps the template version
+        // for FUTURE sends. Deprecating it, though, is what left onboarding
+        // stuck on a doc that could never be signed (#24) — so block only the
+        // transition to Deprecated while a run is live.
+        $becomingDeprecated = strcasecmp((string) $request->input('status'), 'Deprecated') === 0
+            && strcasecmp((string) $row->status, 'Deprecated') !== 0;
+        if ($becomingDeprecated
+            && HrDocumentSignature::where('template_id', $row->id)
+                ->whereIn('status', ['Pending', 'In Progress'])->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This document is out for signature, so it can’t be deprecated yet. Recall the pending signature request (or wait for it to complete) first.',
+            ], 422);
+        }
 
         $data = $this->validatePayload($request, $row->id);
 

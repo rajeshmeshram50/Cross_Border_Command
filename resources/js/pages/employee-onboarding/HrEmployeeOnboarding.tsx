@@ -1678,48 +1678,38 @@ function InitiateOnboardingModal({
   const [stage5Total, setStage5Total]   = useState(0);
   const [stage5Signed, setStage5Signed] = useState(0);
   const [stage5Sent, setStage5Sent]     = useState(0);
+  /* The finalised document set is now the requirement (#24): Stage 5 is done
+     only when the set is finalised AND every ticked document is signed. */
+  const [stage5Finalized, setStage5Finalized] = useState(false);
   const [coreReady, setCoreReady] = useState(false);
   const [stage5Loaded, setStage5Loaded] = useState(false);
   useEffect(() => {
-    if (!isOpen || !emp?.dbId) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Loaded(false); return; }
+    if (!isOpen || !emp?.dbId) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Finalized(false); setStage5Loaded(false); return; }
     if (!coreReady) return;
     let cancelled = false;
     (async () => {
       try {
-        const [tplRes, runRes] = await Promise.all([
-          api.get('/hr-document-templates/match', { params: { employee_id: emp.dbId, trigger_keyword: 'onboarding' } }),
-          api.get('/hr-document-signatures', { params: { employee_id: emp.dbId } }),
-        ]);
+        // The doc-set endpoint is the single source: ticked docs + finalise +
+        // per-document signed state. Total = ticked count, Signed = ticked &
+        // signed. A ticked doc retired before it was sent is dropped server-side.
+        const { data } = await api.get(`/employees/${emp.dbId}/onboarding-doc-set`);
         if (cancelled) return;
-        const tpls: any[] = (Array.isArray(tplRes.data?.templates) ? tplRes.data.templates : [])
-          .filter((t: any) => !/\b(leave|attendance)\b/i.test(t.name || ''));
-        const runs: any[] = Array.isArray(runRes.data) ? runRes.data : [];
-        const latest = new Map<number, any>();
-        runs.forEach(r => { const t = r.template_id; if (t == null) return; const p = latest.get(t); if (!p || r.id > p.id) latest.set(t, r); });
-        const dispatched = new Set(
-          runs.filter(r => r.status !== 'Cancelled')
-              .map(r => r.template_id)
-              .filter((id: any) => id != null),
-        );
-        setStage5Total(tpls.length);
-
-        const accountable = new Set<number>([
-          ...dispatched,
-          ...tpls.filter(t => dispatched.has(t.id)).map(t => t.id),
-        ]);
-        setStage5Sent(accountable.size);
-        setStage5Signed(
-          [...accountable].filter(id => latest.get(id)?.status === 'Completed').length,
-        );
+        const rows: any[] = Array.isArray(data?.templates) ? data.templates : [];
+        const sel = rows.filter(t => t.selected);
+        setStage5Total(sel.length);
+        setStage5Sent(sel.filter(t => t.active || t.signed).length);
+        setStage5Signed(sel.filter(t => t.signed).length);
+        setStage5Finalized(!!data?.finalized);
         setStage5Loaded(true);
-      } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Loaded(false); } }
+      } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Finalized(false); setStage5Loaded(false); } }
     })();
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId, coreReady]);
 
-  const handleStage5Progress = useCallback((p: { signed: number; sent: number; total: number }) => {
+  const handleStage5Progress = useCallback((p: { signed: number; sent: number; total: number; finalized?: boolean }) => {
     setStage5Signed(p.signed);
     setStage5Sent(p.sent);
+    setStage5Finalized(!!p.finalized);
     setStage5Total(p.total);
     setStage5Loaded(true);
   }, []);
@@ -3061,7 +3051,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   /* `signed >= sent` alone is 0 >= 0 when nothing was ever dispatched, so an
      employee with no policy documents at all used to clear this stage. Every
      applicable template must be out as well as signed. */
-  const stage5AllSigned = stage5Loaded && stage5Sent >= stage5Total && stage5Signed >= stage5Sent;
+  // Done only when the set is FINALISED and every ticked document is signed.
+  const stage5AllSigned = stage5Loaded && stage5Finalized && stage5Signed >= stage5Total;
   const stage5IsDone = macroCompleted >= 5 && stage5AllSigned;
   const allPriorStagesDone =
     stage1IsDone && stage2IsDone && stage3IsDone && stage4IsDone && stage5IsDone;
@@ -4213,9 +4204,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           const notSent = Math.max(0, stage5Total - stage5Sent);
           toast.error(
             'Policies & Agreements — incomplete',
-            !stage5Loaded      ? 'Still loading the document list — try again in a moment.'
-            : notSent > 0      ? `${notSent} of ${stage5Total} document${stage5Total === 1 ? '' : 's'} not generated yet. Fill its custom fields and send it for signature first.`
-                               : `${stage5Sent - stage5Signed} of ${stage5Sent} sent and awaiting signature.`,
+            !stage5Loaded        ? 'Still loading the document list — try again in a moment.'
+            : !stage5Finalized   ? 'Tick the documents this employee needs, then Finalize the set before continuing.'
+            : notSent > 0        ? `${notSent} of ${stage5Total} selected document${stage5Total === 1 ? '' : 's'} not sent yet. Send each for signature first.`
+                                 : `${stage5Total - stage5Signed} of ${stage5Total} selected document${stage5Total === 1 ? '' : 's'} still awaiting signature.`,
           );
           return;
         }
@@ -4255,9 +4247,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (!stage4IsDone) pending.push('Payroll & Finance');
     if (!stage5IsDone) {
       pending.push(
-        !stage5Loaded               ? 'Policies & Agreements (still loading)'
-        : stage5Signed < stage5Sent ? `Policies & Agreements (${stage5Sent - stage5Signed} of ${stage5Sent} sent awaiting signature)`
-                                    : 'Policies & Agreements',
+        !stage5Loaded                 ? 'Policies & Agreements (still loading)'
+        : !stage5Finalized            ? 'Policies & Agreements (finalize the document set)'
+        : stage5Signed < stage5Total  ? `Policies & Agreements (${stage5Total - stage5Signed} of ${stage5Total} awaiting signature)`
+                                      : 'Policies & Agreements',
       );
     }
     const blocked = pending.length > 0;
@@ -6055,7 +6048,7 @@ function Stage4Payroll({
 
 function Stage5Policies({ emp, onProgress }: {
   emp: OnboardRow;
-  onProgress?: (p: { signed: number; sent: number; total: number }) => void;
+  onProgress?: (p: { signed: number; sent: number; total: number; finalized?: boolean }) => void;
 }) {
   type Tpl = {
     id: number;
@@ -6063,6 +6056,7 @@ function Stage5Policies({ emp, onProgress }: {
     name: string;
     doc_type: string | null;
     status: 'Active' | 'Draft' | 'Deprecated';
+    version?: string | null;
     signers?: any;
   };
 
@@ -6158,7 +6152,7 @@ function Stage5Policies({ emp, onProgress }: {
     note?: string | null;
   };
   type SignatureRun = {
-    id: number; code: string | null;
+    id: number; code: string | null; template_version?: string | null;
     status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
     template_id: number; signers: RunSigner[]; current_index: number;
     created_at?: string | null;
@@ -6206,6 +6200,53 @@ function Stage5Policies({ emp, onProgress }: {
     }
   }, [emp?.dbId]);
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
+
+  /* Policies & Agreements document SET — the ticked documents and the finalise
+     lock (#24). HR ticks which documents this hire needs, finalises the set to
+     freeze the requirement, and can re-open it while nothing is signed. */
+  const [docFinalized, setDocFinalized] = useState(false);
+  const [docCanReopen, setDocCanReopen] = useState(false);
+  const [docSelected, setDocSelected] = useState<Set<number>>(new Set());
+  const [docSetLoaded, setDocSetLoaded] = useState(false);
+  const [docSetBusy, setDocSetBusy] = useState(false);
+  const applyDocSet = useCallback((d: any) => {
+    const rows: any[] = Array.isArray(d?.templates) ? d.templates : [];
+    setDocSelected(new Set(rows.filter(t => t.selected).map(t => Number(t.template_id))));
+    setDocFinalized(!!d?.finalized);
+    setDocCanReopen(!!d?.can_reopen);
+    setDocSetLoaded(true);
+  }, []);
+  const fetchDocSet = useCallback(async () => {
+    if (!emp?.dbId) { setDocSetLoaded(false); return; }
+    try { const { data } = await api.get(`/employees/${emp.dbId}/onboarding-doc-set`); applyDocSet(data); }
+    catch { setDocSetLoaded(false); }
+  }, [emp?.dbId, applyDocSet]);
+  useEffect(() => { fetchDocSet(); }, [fetchDocSet]);
+
+  const toggleSelect = async (tid: number) => {
+    if (docFinalized || docSetBusy || !emp?.dbId) return;
+    const next = new Set(docSelected);
+    next.has(tid) ? next.delete(tid) : next.add(tid);
+    setDocSelected(next);                    // optimistic
+    setDocSetBusy(true);
+    try { const { data } = await api.put(`/employees/${emp.dbId}/onboarding-doc-set`, { template_ids: [...next] }); applyDocSet(data); }
+    catch (e: any) { toast.error('Could not update selection', e?.response?.data?.message || 'Please try again.'); fetchDocSet(); }
+    finally { setDocSetBusy(false); }
+  };
+  const finalizeSet = async () => {
+    if (docSetBusy || !emp?.dbId) return;
+    setDocSetBusy(true);
+    try { const { data } = await api.post(`/employees/${emp.dbId}/onboarding-doc-set/finalize`); applyDocSet(data); toast.success('Document set finalized', 'These are now the required documents for this employee.'); }
+    catch (e: any) { toast.error('Could not finalize', e?.response?.data?.message || 'Please try again.'); }
+    finally { setDocSetBusy(false); }
+  };
+  const reopenSet = async () => {
+    if (docSetBusy || !emp?.dbId) return;
+    setDocSetBusy(true);
+    try { const { data } = await api.post(`/employees/${emp.dbId}/onboarding-doc-set/reopen`); applyDocSet(data); toast.success('Document set re-opened', 'You can change the selection again.'); }
+    catch (e: any) { toast.error('Could not re-open', e?.response?.data?.message || 'Please try again.'); }
+    finally { setDocSetBusy(false); }
+  };
 
   /* Signing happens away from this screen — in Zoho Sign, usually in another
    * tab — so nothing here ever learned that a document had come back signed,
@@ -6267,23 +6308,26 @@ function Stage5Policies({ emp, onProgress }: {
     return m;
   }, [runs]);
 
-  const accountableIds = useMemo(() => {
-    const ids = new Set<number>();
-    runs.forEach(r => { if (r.status !== 'Cancelled' && r.template_id != null) ids.add(r.template_id); });
-    templates.forEach(t => { if (ids.has(t.id)) ids.add(t.id); });
-    return ids;
-  }, [runs, templates]);
-
-  const sentCount = accountableIds.size;
-  const signedCount = useMemo(
-    () => [...accountableIds].filter(id => runByTemplateId.get(id)?.status === 'Completed').length,
-    [accountableIds, runByTemplateId],
+  /* The requirement is the TICKED set now, not every matched template. Total =
+     ticked, Signed = ticked & signed, Sent = ticked with a live/completed run. */
+  const requiredIds = useMemo(
+    () => templates.filter(t => docSelected.has(t.id)).map(t => t.id),
+    [templates, docSelected],
   );
+  const signedCount = useMemo(
+    () => requiredIds.filter(id => runByTemplateId.get(id)?.status === 'Completed').length,
+    [requiredIds, runByTemplateId],
+  );
+  const sentCount = useMemo(
+    () => requiredIds.filter(id => { const s = runByTemplateId.get(id)?.status; return s === 'Completed' || s === 'Pending' || s === 'In Progress'; }).length,
+    [requiredIds, runByTemplateId],
+  );
+  const totalCount = requiredIds.length;
 
   useEffect(() => {
-    if (loading) return;
-    onProgress?.({ signed: signedCount, sent: sentCount, total: templates.length });
-  }, [loading, signedCount, sentCount, templates.length, onProgress]);
+    if (loading || !docSetLoaded) return;
+    onProgress?.({ signed: signedCount, sent: sentCount, total: totalCount, finalized: docFinalized });
+  }, [loading, docSetLoaded, signedCount, sentCount, totalCount, docFinalized, onProgress]);
 
   const confirmSend = async () => {
     const tpl = sendForTpl;
@@ -6317,8 +6361,42 @@ function Stage5Policies({ emp, onProgress }: {
         <div className="onb-pol-section-head">
           <span className="onb-pol-section-icon"><i className="ri-shield-check-line" /></span>
           <h6 className="onb-pol-section-title">Organizational Documents &amp; Agreements</h6>
-          <span className="onb-pol-section-pill">{signedCount} / {templates.length} signed</span>
+          <span className="onb-pol-section-pill">{signedCount} / {totalCount} signed</span>
         </div>
+
+        {/* Pick the required document set, then finalize it (#24). Once
+            finalized the set is frozen and drives onboarding completion; it can
+            be re-opened while nothing in it has been signed. */}
+        {!loading && docSetLoaded && templates.length > 0 && (
+          <div className="onb-docset-bar" style={{
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+            padding: '10px 12px', margin: '2px 0 10px', borderRadius: 10,
+            background: docFinalized ? 'rgba(16,185,129,.08)' : 'rgba(124,92,252,.07)',
+            border: `1px solid ${docFinalized ? 'rgba(16,185,129,.3)' : 'rgba(124,92,252,.22)'}`,
+          }}>
+            <i className={docFinalized ? 'ri-lock-2-line' : 'ri-checkbox-multiple-line'}
+               style={{ fontSize: 18, color: docFinalized ? '#059669' : '#7c3aed' }} />
+            <div style={{ flex: 1, minWidth: 180, fontSize: 12.5, color: 'var(--vz-body-color)' }}>
+              {docFinalized
+                ? <><strong>Document set finalized.</strong> {docSelected.size} document{docSelected.size === 1 ? '' : 's'} required for this employee.</>
+                : <><strong>Select the documents this employee needs</strong>, then finalize the set. Only ticked documents will be required.</>}
+            </div>
+            {docFinalized ? (
+              <button type="button" className="onb-pol-gen-btn" disabled={docSetBusy || !docCanReopen}
+                title={docCanReopen ? 'Re-open to change the selection' : 'Some documents are already signed — the set can no longer be re-opened.'}
+                onClick={reopenSet}
+                style={{ background: 'transparent', border: '1px solid var(--vz-border-color)', color: 'var(--vz-body-color)', cursor: docCanReopen ? 'pointer' : 'not-allowed', opacity: docCanReopen ? 1 : .55 }}>
+                <i className="ri-lock-unlock-line" /> Re-open set
+              </button>
+            ) : (
+              <button type="button" className="onb-pol-gen-btn" disabled={docSetBusy || docSelected.size === 0}
+                onClick={finalizeSet}
+                style={{ background: 'linear-gradient(135deg,#7c5cfc,#6d28d9)', color: '#fff', border: 0, cursor: docSelected.size === 0 ? 'not-allowed' : 'pointer', opacity: docSelected.size === 0 ? .6 : 1 }}>
+                <i className="ri-check-double-line" /> Finalize document set
+              </button>
+            )}
+          </div>
+        )}
 
         {loading && (
           <div className="placeholder-glow" style={{ padding: 4 }}>
@@ -6416,11 +6494,42 @@ function Stage5Policies({ emp, onProgress }: {
               }}
             >
               <div className="onb-pol-doc-row">
+                {/* Tick = this document is required for this hire. Locked once
+                    the set is finalized, OR once the document has been sent /
+                    signed. For the in-flight case the box stays clickable so the
+                    click can explain why it can't be removed (a disabled input
+                    fires nothing); the finalized case is covered by the bar. */}
+                {(() => {
+                  const inFlight = !!run && ['Pending', 'In Progress', 'Completed'].includes(run.status);
+                  const cbLocked = docFinalized || docSetBusy || inFlight;
+                  return (
+                    <input type="checkbox" className="form-check-input mt-0" aria-label="Require this document"
+                      checked={docSelected.has(tpl.id)} disabled={docFinalized || docSetBusy}
+                      title={inFlight ? 'Already sent for signature — it can’t be removed from the set' : docFinalized ? 'Set is finalized — re-open to change' : 'Require this document for this employee'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (inFlight) {
+                          e.preventDefault();
+                          toast.warning('Already in signing', 'This document is already sent for signature or signed — you can’t remove it from the set.');
+                        }
+                      }}
+                      onChange={(e) => { e.stopPropagation(); if (inFlight) return; toggleSelect(tpl.id); }}
+                      style={{ flexShrink: 0, cursor: cbLocked ? 'not-allowed' : 'pointer', opacity: inFlight ? 0.6 : 1 }} />
+                  );
+                })()}
                 <span className="onb-pol-doc-icon"><i className="ri-file-text-line" /></span>
                 <div className="onb-pol-doc-meta">
                   <h6 className="onb-pol-doc-name">
                     {tpl.name || '(unnamed template)'}{' '}
                     <span className="vault-doc-code">{tpl.code}</span>
+                    {/* Version this doc is signing on (frozen at send); flags when
+                        the template has since moved to a newer version. */}
+                    {run?.template_version && (
+                      <span className="onb-doc-tag" style={{ marginLeft: 6, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}
+                        title={tpl.version && tpl.version !== run.template_version ? `Signing on ${run.template_version}; template is now ${tpl.version}` : `Signing on ${run.template_version}`}>
+                        {run.template_version}{tpl.version && tpl.version !== run.template_version ? ` · now ${tpl.version}` : ''}
+                      </span>
+                    )}
                     {tpl.status === 'Draft' && <span className="onb-doc-tag" style={{ marginLeft: 6 }}>Draft</span>}
                     {signers.length > 0 && (
                       <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
@@ -6438,7 +6547,10 @@ function Stage5Policies({ emp, onProgress }: {
                   if (run?.status === 'Completed') return null;
                   const fieldsReady = readyTpls.has(tpl.id);
                   const hasFields = !!tplHasFields[tpl.id];
-                  const sendBlocked = tpl.status !== 'Active' || !emp.dbId || isSending || runActive || !fieldsReady;
+                  // Sendable only once the set is finalized AND this document is in it.
+                  const notFinalized = !docSetLoaded || !docFinalized;
+                  const notInSet = docFinalized && !docSelected.has(tpl.id);
+                  const sendBlocked = tpl.status !== 'Active' || !emp.dbId || isSending || runActive || !fieldsReady || notFinalized || notInSet;
                   const sendLabel = isSending ? 'Sending…'
                     : runActive ? 'Awaiting Sign'
                     : run       ? 'Resend'
@@ -6453,6 +6565,17 @@ function Stage5Policies({ emp, onProgress }: {
                       aria-disabled={sendBlocked}
                       onClick={(e) => {
                         e.stopPropagation();
+                        // Nothing can be sent until the set is finalized.
+                        if (notFinalized) {
+                          toast.warning('Finalize the set first', 'Tick the documents this employee needs and finalize the set before sending any document for signature.');
+                          return;
+                        }
+                        // Finalized set: a document that isn't ticked is not part
+                        // of this employee's onboarding, so it can't be sent.
+                        if (!docSelected.has(tpl.id)) {
+                          toast.warning('Not in the onboarding set', 'This document is not part of this employee’s finalized onboarding set, so it can’t be sent. Re-open the set and tick it first.');
+                          return;
+                        }
                         if (tpl.status !== 'Active') { toast.warning('Not sendable', 'Only Active templates can be sent.'); return; }
                         if (!emp.dbId) { toast.warning('Save first', 'Save the employee before sending documents.'); return; }
                         if (isSending) return;
@@ -6461,7 +6584,9 @@ function Stage5Policies({ emp, onProgress }: {
                         setGenTpl(tpl);
                       }}
                       title={
-                        tpl.status !== 'Active' ? 'Only Active templates can be sent'
+                        notFinalized       ? 'Finalize the document set before sending for signature'
+                        : notInSet         ? 'Not in the finalized onboarding set — re-open the set and tick it to send'
+                        : tpl.status !== 'Active' ? 'Only Active templates can be sent'
                         : !emp.dbId        ? 'Save the employee first'
                         : runActive        ? 'Already sent — signing in progress'
                         : !fieldsReady     ? 'Loading template…'

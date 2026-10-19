@@ -1187,12 +1187,16 @@ export function ActionCell({
   tone = 'accent',
   onClick,
   disabled = false,
+  muted = false,
 }: {
   title: string;
   icon: string;
   tone?: 'accent' | 'success' | 'info' | 'warning' | 'danger';
   onClick: () => void;
   disabled?: boolean;
+  /** Looks disabled (dimmed, not-allowed) but still fires onClick — so the
+   *  handler can explain why the action isn't allowed. */
+  muted?: boolean;
 }) {
   const btn = (
     <button
@@ -1200,6 +1204,7 @@ export function ActionCell({
       aria-label={title}
       disabled={disabled}
       className={`dt-act dt-act-${tone}`}
+      style={muted ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
       onClick={e => { e.stopPropagation(); onClick(); }}
     >
       <ActionIcon icon={icon} />

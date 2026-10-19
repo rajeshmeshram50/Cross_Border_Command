@@ -7,6 +7,7 @@ import { downloadFile, assertApiBlob } from '../utils/downloadFile';
 import ProgressDial from './ui/ProgressDial';
 import Tooltip from './ui/Tooltip';
 import '../../css/recruitment.css';
+import './ui/DataTable.css';   // .dt-tabrail / .dt-tab — the shared tab rail
 
 type DocStatus = 'Verified' | 'Uploaded' | 'Signed' | 'Sent' | 'Pending' | 'Not Generated' | 'Optional' | 'Generated' | 'Completed';
 
@@ -15,7 +16,7 @@ type DocStatus = 'Verified' | 'Uploaded' | 'Signed' | 'Sent' | 'Pending' | 'Not 
  *  is still owed on those. */
 const DONE_STATUSES = new Set<DocStatus>(['Uploaded', 'Verified', 'Signed', 'Generated', 'Completed']);
 
-export type VaultTab = 'employee' | 'organizational' | 'exit';
+export type VaultTab = 'employee' | 'organizational';
 
 export type EvidenceVaultEmployee = {
   /** employees.id — every fetch below is keyed on it. */
@@ -58,29 +59,44 @@ type EmpDocApiRow = {
   url: string | null;
   uploaded_at: string | null;
 };
+type OrgRow =
+  | { kind: 'run'; run: VaultRun }
+  | { kind: 'promo'; tpl: VaultTemplate; run: VaultRun | null };
 type VaultTemplate = {
   id: number;
   code: string | null;
   name: string | null;
   doc_type: string | null;
   status: string | null;
+  version?: string | null;
   /** Original upload name. Null for templates composed in the web editor —
    *  those have no file behind them, so the row shows nothing rather than a
    *  blank slot. */
   docx_original_name?: string | null;
   trigger_point?: { module_name?: string | null } | null;
 };
+type VaultSigner = {
+  name?: string | null; role_name?: string | null; designation?: string | null;
+  status?: string; note?: string | null; action?: string | null;
+  user_id?: number | null; acted_at?: string | null; consent_at?: string | null;
+  /* Captured at signing time — the typed name and the drawn mark. */
+  signed_name?: string | null; signature_url?: string | null;
+};
+type VaultAudit = { at?: string | null; actor_name?: string | null; action?: string | null; message?: string | null };
 type VaultRun = {
   id: number;
   status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
   template_id: number;
+  template_version?: string | null;
   code?: string | null;
   trigger_keyword?: string | null;
   trigger_point_name?: string | null;
-  template?: { name?: string | null; doc_type?: string | null; code?: string | null } | null;
-  /* Only read for a refusal: the reason a signer gave is stored here and was
-     never surfaced anywhere, so a Rejected pill was the whole story (#140). */
-  signers?: { name?: string | null; role_name?: string | null; status?: string; note?: string | null }[];
+  current_index?: number | null;
+  created_at?: string | null;
+  template?: { name?: string | null; doc_type?: string | null; code?: string | null; version?: string | null } | null;
+  /* Full routing + history for the Organizational Document tracking view. */
+  signers?: VaultSigner[];
+  audit_log?: VaultAudit[];
 };
 
 export default function EvidenceVaultModal({ employee, onClose, extraChips = [], initialTab = 'employee' }: {
@@ -117,6 +133,16 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const [reloadKey, setReloadKey]           = useState(0);
   /** Onboarding finished (stage 6 of 6). Gates the promotion block. */
   const [onboardingDone, setOnboardingDone] = useState(false);
+  /* Organizational Document tracking (QA spec): the status sub-tab, and which
+     run's routing/history panel is expanded. */
+  const [orgSub, setOrgSub]       = useState<'pending' | 'complete'>('pending');
+  /* Which run's Audit Trail popup is open. */
+  const [sigView, setSigView] = useState<VaultRun | null>(null);
+  /* Group headings fold away; keyed by heading, open unless listed. */
+  const [shutGroups, setShutGroups] = useState<Record<string, boolean>>({});
+  const toggleGroup = (k: string) => setShutGroups(p => ({ ...p, [k]: !p[k] }));
+  /* Filters both tabs' lists by document name or code. */
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     if (!employee) {
@@ -269,10 +295,15 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const orgGroups  = buildTplGroup(orgTemplates,  orgOrphanRuns,  'Signed Company Documents', 'ri-file-shield-2-line', '#fef3c7', '#92400e');
   const exitGroups = buildTplGroup(exitTemplates, exitOrphanRuns, 'Exit Process Documents',   'ri-logout-box-r-line',  '#dcfce7', '#15803d');
 
-  const groups =
-    tab === 'employee'       ? empGroups
-    : tab === 'organizational' ? orgGroups
-    : exitGroups;
+  /* Exit paperwork is the employee's own record too — it sits as a group under
+     Employee Documents rather than behind a tab of its own. */
+  const groupsAll = tab === 'employee' ? [...empGroups, ...exitGroups] : orgGroups;
+  /* Search filters the rows and drops any group it empties. */
+  const q = search.trim().toLowerCase();
+  const matchDoc = (d: { name?: string | null; sub?: string | null }) =>
+    !q || `${d.name ?? ''} ${d.sub ?? ''}`.toLowerCase().includes(q);
+  const groups = !q ? groupsAll
+    : groupsAll.map(g => ({ ...g, docs: g.docs.filter(matchDoc) })).filter(g => g.docs.length);
 
   /* Promotion documents this employee's current grade calls for and which have
      NOT been dispatched. Deliberately outside `groups` and outside the KPI
@@ -280,16 +311,17 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
      requirement into them would drop a fully-signed vault off 100% for work
      that has not been asked of anyone yet. This block is an action, not a
      record, so it sits above the record and counts separately. */
-  /* Promotion paperwork that is not finished yet — whether or not it has been
-     sent. Sending used to make the row VANISH, which read as "it went
-     somewhere I can no longer see" rather than "it is now with the signers";
-     the row stays and its button goes quiet instead.
-     A completed run drops out because it has moved on: it appears below under
-     the signed documents, and keeping it here as well would list one document
-     twice. Rejected and cancelled runs stay, and stay re-sendable. */
+  /* All promotion paperwork not yet complete — feeds the KPI totals so a sent
+     promotion doc still counts as outstanding work. */
   const promoRows = !onboardingDone ? [] : promoTemplates
     .map(t => ({ tpl: t, run: runByTemplateId.get(t.id) ?? null }))
     .filter(r => r.run?.status !== 'Completed');
+  /* What the yellow block SHOWS: only docs that still need an action here —
+     never sent, or back from a signer (rejected / cancelled) and re-sendable.
+     A sent one has moved to the Pending/Complete table below; listing it here
+     too showed one document twice. The block is the action, the table the record. */
+  const promoToSend = promoRows.filter(r =>
+    !r.run || r.run.status === 'Rejected' || r.run.status === 'Cancelled');
 
   /** In flight with the signers — nothing to do but wait. */
   const promoLocked = (run: VaultRun | null) => run?.status === 'Pending' || run?.status === 'In Progress';
@@ -332,7 +364,11 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const completionPct = total > 0 ? Math.round(((total - pending) / total) * 100) : 0;
 
   const empCount  = empDocsView.length;
-  const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0) + promoRows.length;
+  // Distinct rows the org tab shows: sent documents in the table, plus the
+  // promotion docs still to send — a rejected/cancelled promo counts once, as
+  // the promo row that replaces its run.
+  const orgPromoRunCount = promoToSend.filter(p => p.run).length;
+  const orgCount  = signingRuns.length - orgPromoRunCount + promoToSend.length;
   const exitCount = exitGroups.reduce((a, g) => a + g.docs.length, 0);
 
   type VaultDoc = { url: string | null; key: string; id: number; name: string; runId?: number | null; docId?: number | null };
@@ -476,7 +512,352 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     } finally { setBusyKey(null); setBusyAction(null); }
   };
 
+  /* ───── Organizational Document tracking (QA #Evidence-Vault) ─────
+     Two status tabs (Pending for Signature / Complete Signature), each holding
+     the three categories, with a routing + history panel on a selected row.
+     All data is already on the signing run — no extra fetch. */
+  const CAT_ORDER = ['Employee Onboarding Document', 'Exit Document', 'Promotion Document', 'Other Document'];
+  const categoryOf = (r: VaultRun): string => {
+    const hay = `${r.trigger_keyword || ''} ${r.trigger_point_name || ''} ${r.template?.doc_type || ''}`.toLowerCase();
+    if (hay.includes('onboard')) return 'Employee Onboarding Document';
+    if (hay.includes('exit'))    return 'Exit Document';
+    if (hay.includes('promo'))   return 'Promotion Document';
+    return 'Other Document';
+  };
+  const catIcon = (c: string) => c.includes('Onboarding') ? 'ri-user-add-line' : c.includes('Exit') ? 'ri-logout-box-r-line' : c.includes('Promotion') ? 'ri-user-star-line' : 'ri-file-text-line';
+  const isComplete = (r: VaultRun) => r.status === 'Completed';
+  const orgPendingRuns  = signingRuns.filter(r => !isComplete(r));
+  const orgCompleteRuns = signingRuns.filter(r =>  isComplete(r));
+  /* Runs that an unsent-promo row already represents (rejected / cancelled
+     promotion runs) — so the pending table doesn't list them twice. */
+  const promoRunIds = new Set(promoToSend.map(p => p.run?.id).filter(Boolean) as number[]);
+  /* A table row is either a sent document (a run) or a promotion document still
+     to send (a template, with its last run if it was rejected/cancelled). */
+  const orgTrackGroups = (sub: 'pending' | 'complete'): { category: string; rows: OrgRow[] }[] => {
+    const q = search.trim().toLowerCase();
+    const hit = (name?: string | null, code?: string | null) =>
+      !q || `${name ?? ''} ${code ?? ''}`.toLowerCase().includes(q);
+    const by: Record<string, OrgRow[]> = {};
+    const push = (cat: string, row: OrgRow) => (by[cat] = by[cat] || []).push(row);
+
+    (sub === 'complete' ? orgCompleteRuns : orgPendingRuns)
+      .filter(r => !promoRunIds.has(r.id) && hit(r.template?.name, r.code))
+      .forEach(r => push(categoryOf(r), { kind: 'run', run: r }));
+
+    // Unsent / re-sendable promotion docs live in the pending view, as rows.
+    if (sub === 'pending')
+      promoToSend.filter(({ tpl }) => hit(tpl.name, tpl.code))
+        .forEach(({ tpl, run }) => push('Promotion Document', { kind: 'promo', tpl, run }));
+
+    return CAT_ORDER.filter(c => by[c]?.length).map(c => ({ category: c, rows: by[c] }));
+  };
+  /* Latest signature that actually landed — null while anyone is still out. */
+  const signedAtOf = (r: VaultRun) => (r.signers || [])
+    .filter(s => (s.status || '') === 'Done')
+    .map(s => s.acted_at || s.consent_at || '')
+    .filter(Boolean).sort().pop() || null;
+  const fmtDate = (x?: string | null) => { if (!x) return ''; const d = new Date(x); return isNaN(+d) ? '' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
+  const fmtStamp = (x?: string | null) => { if (!x) return ''; const d = new Date(x); return isNaN(+d) ? '' : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }); };
+
+  const downloadRun = async (r: VaultRun) => {
+    if (busyKey) return;
+    setBusyKey(`run-${r.id}`); setBusyAction('download');
+    try {
+      const resp = await api.get(`/hr-document-signatures/${r.id}/download-pdf`, { responseType: 'blob' });
+      saveBlobAs(new Blob([resp.data], { type: 'application/pdf' }), `${(r.template?.name || r.code || 'document').replace(/\s+/g, '-')}-signed.pdf`);
+      toast.success('Downloaded', 'Signed PDF saved.');
+    } catch (err: any) {
+      toast.error('Could not download', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally { setBusyKey(null); setBusyAction(null); }
+  };
+
+  const runPillCls = (s: VaultRun['status']) =>
+    s === 'Completed' ? 'completed' : s === 'In Progress' || s === 'Pending' ? 'sent' : 'pending';
+  /** Every step this document has been through, in one lifecycle: sent, each
+   *  signer, reminders, anything else the audit log recorded, completion. */
+  const trailSteps = (r: VaultRun) => {
+    const audit = (r.audit_log || []).slice().sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    const signers = r.signers || [];
+    const cur = typeof r.current_index === 'number' ? r.current_index : -1;
+    const done = r.status === 'Completed';
+    const act = (e: VaultAudit) => String(e.action || '').toLowerCase();
+    type State = 'Done' | 'In Progress' | 'Pending' | 'Rejected';
+    const steps: { icon: string; title: string; desc?: string; at?: string | null; state: State; sig?: string | null }[] = [];
+
+    const sent = audit.find(e => act(e) === 'sent');
+    steps.push({
+      icon: 'ri-send-plane-fill',
+      title: 'Sent for signature',
+      desc: sent?.message || 'Document sent via secure e-sign link',
+      at: sent?.at || r.created_at,
+      state: 'Done',
+    });
+
+    signers.forEach((s, i) => {
+      const st = s.status || 'Pending';
+      const who = s.signed_name || s.name || s.role_name || `Signer ${i + 1}`;
+      const role = s.role_name || s.designation;
+      if (st === 'Done') {
+        steps.push({
+          icon: 'ri-quill-pen-fill', title: `Signed by ${who}`,
+          desc: role ? `${role} — signature captured` : 'Signature captured',
+          at: s.acted_at || s.consent_at, state: 'Done', sig: s.signature_url,
+        });
+      } else if (st === 'Rejected') {
+        steps.push({
+          icon: 'ri-close-circle-fill', title: `Rejected by ${who}`,
+          desc: s.note || 'No reason given', at: s.acted_at, state: 'Rejected',
+        });
+      } else {
+        const isCur = !done && i === cur;
+        steps.push({
+          icon: 'ri-eye-fill',
+          title: isCur ? 'Awaiting signature' : `Next — ${who}`,
+          desc: isCur ? `In progress — with ${who}${role ? ` (${role})` : ''}` : (role || 'Waiting their turn'),
+          state: isCur ? 'In Progress' : 'Pending',
+        });
+      }
+    });
+
+    const rem = audit.filter(e => act(e).includes('remind'));
+    if (rem.length) steps.push({
+      icon: 'ri-notification-3-fill',
+      title: `${rem.length} reminder${rem.length === 1 ? '' : 's'} sent`,
+      desc: 'Signing reminders',
+      at: rem[rem.length - 1].at, state: 'Done',
+    });
+
+    /* Anything the log holds that the steps above don't already tell — recall,
+       cancel, a re-send — so nothing is hidden from the trail. */
+    audit.filter(e => !['sent', 'sign', 'signed'].includes(act(e)) && !act(e).includes('remind'))
+      .forEach(e => steps.push({
+        icon: 'ri-information-fill',
+        title: (e.action || 'Event').replace(/^./, c => c.toUpperCase()),
+        desc: `${e.message || ''}${e.actor_name ? ` · ${e.actor_name}` : ''}`.trim() || undefined,
+        at: e.at, state: 'Done',
+      }));
+
+    steps.push({
+      icon: 'ri-check-double-fill',
+      title: 'Signed & completed',
+      desc: done ? 'Every required signature is in' : 'Awaiting completion — the document is not yet fully signed',
+      at: done ? signedAtOf(r) : null,
+      state: done ? 'Done' : 'Pending',
+    });
+    return steps;
+  };
+
+  /* Two letters for a chain node — first + last initial, or the first two. */
+  const chainInitials = (label: string) => {
+    const parts = label.trim().split(/\s+/).filter(Boolean);
+    const two = parts.length >= 2 ? parts[0][0] + parts[parts.length - 1][0] : (parts[0] || '?').slice(0, 2);
+    return two.toUpperCase();
+  };
+  /* "Reporting Manager" → "RM", others left as-is (Employee, CEO, Client). */
+  const shortRole = (role: string) => {
+    const r = role.trim();
+    if (/reporting\s*manager/i.test(r)) return 'RM';
+    return r;
+  };
+  /* The signing chain inline: per signer a coloured initial circle with its ROLE
+     below (Employee / RM / CEO …), joined by arrows — green signed, amber the one
+     it's with now, red rejected, grey still to come. The column has the room, so
+     the role labels fill it rather than leaving bare dots. No signers → the pill. */
+  const renderChain = (r: VaultRun) => {
+    const signers = r.signers || [];
+    if (!signers.length)
+      return <span className={`ev-doc-status ev-doc-status--${runPillCls(r.status)}`}>{r.status === 'Completed' && <i className="ri-check-line" />}{r.status}</span>;
+    const cur = typeof r.current_index === 'number' ? r.current_index : -1;
+    const done = r.status === 'Completed';
+    return (
+      <div className="ev-chain">
+        {signers.map((s, i) => {
+          const stt = s.status || 'Pending';
+          const dh = stt === 'Done';
+          const isCur = !done && i === cur && !dh;
+          const bg = dh ? '#16a34a' : stt === 'Rejected' ? '#dc2626' : isCur ? '#f59e0b' : '#cbd5e1';
+          const name = s.signed_name || s.name || s.role_name || `Signer ${i + 1}`;
+          const role = s.role_name || s.designation || `Signer ${i + 1}`;
+          const state = dh ? 'Signed' : stt === 'Rejected' ? 'Rejected' : isCur ? 'Awaiting' : 'Pending';
+          return (
+            <span key={i} className="ev-chain-node">
+              {i > 0 && <i className="ri-arrow-right-line ev-chain-arrow" />}
+              <span className="ev-chain-cell">
+                <Tooltip label={`${name} · ${role} — ${state}`}>
+                  <span className="ev-chain-dot" style={{ background: bg }}>{chainInitials(name)}</span>
+                </Tooltip>
+                <span className="ev-chain-role" style={isCur ? { color: '#b45309', fontWeight: 700 } : dh ? { color: '#15803d' } : undefined}>{shortRole(role)}</span>
+              </span>
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderOrgTracking = () => {
+    const groupsSub = orgTrackGroups(orgSub);
+    // Pending now also carries the promotion docs still to send (minus the
+    // rejected/cancelled runs those rows replace).
+    const pendingCount = orgPendingRuns.length - promoRunIds.size + promoToSend.length;
+    const subs: [typeof orgSub, string, string, number][] = [
+      ['pending', 'Pending for Signature', 'ri-time-line', pendingCount],
+      ['complete', 'Complete Signature', 'ri-checkbox-circle-line', orgCompleteRuns.length],
+    ];
+    return (
+      <>
+        {/* Underline tabs for Pending / Complete (the vault's own .ev-tabs). */}
+        <div className="ev-tabs ev-subtabs" role="tablist">
+          {subs.map(([key, label, icon, count]) => (
+            <button key={key} type="button" role="tab" aria-selected={orgSub === key}
+              className={`ev-tab${orgSub === key ? ' is-active' : ''}`}
+              onClick={() => { setOrgSub(key); setSigView(null); }}>
+              <i className={icon} />{label}
+              <span className="ev-tab-badge">{count}</span>
+            </button>
+          ))}
+        </div>
+
+        {groupsSub.length === 0 ? (
+          <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, fontSize: 13 }}>
+            <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
+            {search.trim()
+              ? `No documents match “${search.trim()}”.`
+              : orgSub === 'pending'
+              ? 'No documents are waiting for signature. Generate one from Document Template and send it for signing.'
+              : 'No fully-signed documents yet. A document moves here once every required signer has signed it.'}
+          </div>
+        ) : groupsSub.map(g => (
+          <div key={g.category} className="ev-group">
+            <div className="ev-group-head">
+              <span className="ev-group-icon" style={{ background: '#eef2ff', color: '#4338ca' }}><i className={catIcon(g.category)} /></span>
+              <div className="ev-group-title">{g.category}</div>
+              <span className="ev-group-count">{g.rows.length} docs</span>
+              <button type="button" className="ev-group-toggle" aria-expanded={!shutGroups[g.category]}
+                aria-label={shutGroups[g.category] ? 'Expand group' : 'Collapse group'}
+                onClick={() => toggleGroup(g.category)}>
+                <i className={shutGroups[g.category] ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} />
+              </button>
+            </div>
+            {!shutGroups[g.category] && (
+            <div className="ev-table-wrap">
+            <table className="ev-table">
+              <thead>
+                <tr>
+                  <th style={{ width: 56, textAlign: 'center' }}>Sr No</th>
+                  <th style={{ width: 130, textAlign: 'center' }}>Document Code</th>
+                  <th style={{ width: 230 }}>Document Name</th>
+                  <th style={{ width: 80, textAlign: 'center' }}>Version</th>
+                  <th style={{ minWidth: 140, textAlign: 'center' }}>Signing Status</th>
+                  <th style={{ width: 110 }}>Generated On</th>
+                  <th style={{ width: 190, textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.rows.map((row, ri) => {
+                  const sr = ri + 1;
+                  /* A promotion doc still to send — no run yet (or a rejected /
+                     cancelled one), so its action is Send for Signature. */
+                  if (row.kind === 'promo') {
+                    const { tpl: t, run } = row;
+                    const st = run?.status === 'Rejected' ? { label: 'Rejected', cls: 'pending' }
+                             : run?.status === 'Cancelled' ? { label: 'Cancelled', cls: 'not-sent' }
+                             : { label: 'Not Sent', cls: 'not-sent' };
+                    const rejectedBy = run?.status === 'Rejected'
+                      ? (run.signers ?? []).find(s => s.status === 'Rejected') ?? null : null;
+                    return (
+                      <tr key={`promo-${t.id}`}>
+                        <td style={{ textAlign: 'center', color: 'var(--vz-secondary-color)' }}>{sr}</td>
+                        <td style={{ textAlign: 'center', fontWeight: 650, color: '#4338ca', whiteSpace: 'nowrap' }}>{t.code || '—'}</td>
+                        <td>
+                          <Tooltip label={t.name || ''}>
+                            <span className="ev-td-name ev-td-name--trunc">{t.name}</span>
+                          </Tooltip>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {t.version
+                            ? <span style={{ fontSize: 10.5, fontWeight: 700, color: '#4338ca', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 6, padding: '2px 7px' }} title={`Template version ${t.version}`}>{t.version}</span>
+                            : <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span className={`ev-doc-status ev-doc-status--${st.cls}`} title={rejectedBy?.note || undefined}>{st.label}</span>
+                        </td>
+                        <td style={{ color: 'var(--vz-secondary-color)', whiteSpace: 'nowrap' }}>—</td>
+                        <td className="ev-td-actions ev-td-actions--center">
+                          <button type="button" className="ev-doc-btn ev-doc-btn--download"
+                            disabled={sendingTplId != null} onClick={() => sendPromoDoc(t.id, t.name)}>
+                            {sendingTplId === t.id
+                              ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Sending…</>
+                              : <><i className="ri-quill-pen-line" />{run ? 'Re-send' : 'Send for Signature'}</>}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const r = row.run;
+                  const docName = r.template?.name || r.code || 'Document';
+                  return (
+                    <tr key={r.id}>
+                      <td style={{ textAlign: 'center', color: 'var(--vz-secondary-color)' }}>{sr}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 650, color: '#4338ca', whiteSpace: 'nowrap' }}>{r.code || '—'}</td>
+                      <td>
+                        <Tooltip label={docName}>
+                          <span className="ev-td-name ev-td-name--trunc">{docName}</span>
+                        </Tooltip>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {/* The version this document was SENT on (frozen at send),
+                            NOT the template's current version. '*' flags that the
+                            template has since moved to a newer version. */}
+                        {(() => {
+                          const sent = r.template_version;
+                          const cur = r.template?.version;
+                          if (!sent) return <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>;
+                          const moved = cur && cur !== sent;
+                          return (
+                            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#4338ca', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 6, padding: '2px 7px' }}
+                              title={moved ? `Sent on ${sent}; template is now ${cur}` : `Sent on ${sent}`}>
+                              {sent}{moved ? '*' : ''}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>{renderChain(r)}</td>
+                      <td style={{ color: 'var(--vz-secondary-color)', whiteSpace: 'nowrap' }}>{fmtDate(r.created_at) || '—'}</td>
+                      {/* One button (Track) centres; two (Audit Trail + Download) stay right. */}
+                      <td className={`ev-td-actions${r.status === 'Completed' ? '' : ' ev-td-actions--center'}`}>
+                        {/* Pending rows: the only thing to do is watch where it
+                            is, so Track stands alone. Completed: add the
+                            signed-PDF download. */}
+                        <button type="button" className="ev-doc-btn ev-doc-btn--view"
+                          onClick={() => setSigView(r)}
+                          title="Who signed, when, and every step in between">
+                          <i className="ri-file-history-line" />{r.status === 'Completed' ? 'Audit Trail' : 'Track'}
+                        </button>
+                        {r.status === 'Completed' && (
+                          <button type="button" className="ev-doc-btn ev-doc-btn--download"
+                            disabled={busyKey === `run-${r.id}`} onClick={() => downloadRun(r)}>
+                            {busyKey === `run-${r.id}`
+                              ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                              : <><i className="ri-download-line" />Download</>}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+            )}
+          </div>
+        ))}
+      </>
+    );
+  };
+
   return (
+    <>
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ev-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         <div className="ev-head">
@@ -533,99 +914,33 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
           ))}
         </div>
 
-        <div className="ev-tabs">
-          <button type="button" className={`ev-tab${tab === 'employee' ? ' is-active' : ''}`} onClick={() => setTab('employee')}>
-            <i className="ri-user-line" />Employee Documents<span className="ev-tab-badge">{loading ? <span className="ev-kpi-skeleton" style={{ width: 14, height: 9 }} aria-label="Loading" /> : empCount}</span>
-          </button>
-          <button type="button" className={`ev-tab${tab === 'organizational' ? ' is-active' : ''}`} onClick={() => setTab('organizational')}>
-            <i className="ri-briefcase-4-line" />Organizational Documents<span className="ev-tab-badge">{loading ? <span className="ev-kpi-skeleton" style={{ width: 14, height: 9 }} aria-label="Loading" /> : orgCount}</span>
-          </button>
-          <button type="button" className={`ev-tab${tab === 'exit' ? ' is-active' : ''}`} onClick={() => setTab('exit')}>
-            <i className="ri-logout-box-r-line" />Exit Documents<span className="ev-tab-badge">{loading ? <span className="ev-kpi-skeleton" style={{ width: 14, height: 9 }} aria-label="Loading" /> : exitCount}</span>
-          </button>
+        {/* Main tabs: the roster's pill rail (.dt-tabrail / .dt-tabs / .dt-tab).
+            Two tabs: the employee's own files, exit paperwork among them as a
+            group, and the documents that went out for signature. */}
+        <div className="ev-tabstrip">
+          <div className="dt-tabrail dt-tabs ev-softrail" role="tablist">
+            {([
+              ['employee', 'Employee Documents', 'ri-user-line', empCount + exitCount],
+              ['organizational', 'Organizational Documents', 'ri-briefcase-4-line', orgCount],
+            ] as const).map(([key, label, icon, count]) => (
+              <button key={key} type="button" role="tab" aria-selected={tab === key}
+                className={`dt-tab ${tab === key ? 'on' : 'off'}`} onClick={() => setTab(key)}>
+                <i className={icon} />{label}
+                <span className="dt-tab-count">{loading ? <span className="ev-kpi-skeleton" style={{ width: 12, height: 8 }} aria-label="Loading" /> : count}</span>
+              </button>
+            ))}
+          </div>
+          <div className="ev-search">
+            <i className="ri-search-line" />
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Search by document name or code…" aria-label="Search documents" />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} aria-label="Clear search"><i className="ri-close-line" /></button>
+            )}
+          </div>
         </div>
 
         <div className="ev-body" aria-busy={loading}>
-          {/* Promotion paperwork the new grade calls for. Shown before the
-              signed record because it is the only thing here anyone can act
-              on, and hidden entirely when there is nothing outstanding. */}
-          {!loading && tab === 'organizational' && promoRows.length > 0 && (
-            <div className="ev-promo-block">
-              <div className="ev-promo-head">
-                <span className="ev-promo-icon"><i className="ri-user-star-line" /></span>
-                <div className="min-w-0">
-                  <div className="ev-promo-title">Promotion documents</div>
-                  <div className="ev-promo-sub">
-                    Matched to this employee&rsquo;s current department and designation. Sending is manual — changing a designation never sends anything on its own.
-                  </div>
-                </div>
-                <span className="ev-promo-count">{promoRows.length}</span>
-              </div>
-              {/* Built from `ev-doc`, the same row the signed documents below
-                  use — icon tile, name, meta line, status pill, action on the
-                  right. These are the same kind of thing at a different point
-                  in their life, so they should not look like a different
-                  component; only the amber panel around them says they still
-                  need doing. */}
-              {promoRows.map(({ tpl: t, run }) => {
-                const locked = promoLocked(run);
-                const rejectedBy = run?.status === 'Rejected'
-                  ? (run.signers ?? []).find(sg => sg.status === 'Rejected') ?? null
-                  : null;
-                const status = run?.status === 'Rejected'  ? { label: 'Rejected',      cls: 'pending'  }
-                             : run?.status === 'Cancelled' ? { label: 'Cancelled',     cls: 'not-sent' }
-                             : locked                      ? { label: 'Awaiting Sign', cls: 'sent'     }
-                             :                               { label: 'Not Sent',      cls: 'not-sent' };
-                return (
-                <div key={t.id} className="ev-doc ev-doc--promo">
-                  <span className="ev-doc-icon ev-doc-icon--promo">
-                    <i className="ri-file-text-line" />
-                  </span>
-                  <div className="ev-doc-info">
-                    <div className="ev-doc-name">{t.name}</div>
-                    {/* Same shape as the signed rows' meta line. The run code
-                        joins it once sent, so the row can be matched against
-                        the signing workflow. The file name joins it only for
-                        upload-built templates — an editor template has no file,
-                        and an empty slot would read as a missing attachment
-                        rather than a different kind of template. */}
-                    <div className="ev-doc-sub">
-                      {['Document', t.code, run ? `Run #${run.id}` : null, t.docx_original_name].filter(Boolean).join(' • ')}
-                    </div>
-                    {/* The refusal and its reason, under the meta line — this
-                        row's whole purpose once a document comes back is to
-                        say what has to change before it is sent again. */}
-                    {rejectedBy && (
-                      <div className="ev-doc-reject" title={rejectedBy.note || undefined}>
-                        <i className="ri-close-circle-line" />
-                        Rejected by {rejectedBy.name || rejectedBy.role_name || 'a signer'}
-                        {rejectedBy.note ? ` — ${rejectedBy.note}` : ' (no reason given)'}
-                      </div>
-                    )}
-                  </div>
-                  <span className={`ev-doc-status ev-doc-status--${status.cls}`}>{status.label}</span>
-                  {/* Same filled button the Download action uses on the signed
-                      rows — this is the primary action of its row, so it should
-                      carry the same weight rather than read as a link.
-                      Once sent it stays in place and goes quiet: the row is
-                      still the record of that requirement, and removing it
-                      would look like the document had gone missing. */}
-                  <button
-                    type="button"
-                    className="ev-doc-btn ev-doc-btn--download"
-                    disabled={locked || sendingTplId != null}
-                    title={locked ? 'Already sent — waiting on the signers.' : undefined}
-                    onClick={() => sendPromoDoc(t.id, t.name)}
-                  >
-                    <i className={`${sendingTplId === t.id ? 'ri-loader-4-line ev-promo-spin' : locked ? 'ri-check-line' : 'ri-quill-pen-line'} me-1`} />
-                    {sendingTplId === t.id ? 'Sending…' : locked ? 'Sent' : 'Send for Signature'}
-                  </button>
-                </div>
-                );
-              })}
-            </div>
-          )}
-
           {loading ? (
             /* #43 — the loader was a STATIC ri-loader-4-line. A loader icon
                that does not turn is indistinguishable from an error glyph, and
@@ -657,14 +972,12 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                 </div>
               ))}
             </div>
+          ) : tab === 'organizational' ? (
+            renderOrgTracking()
           ) : groups.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, fontSize: 13 }}>
               <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
-              {tab === 'employee'
-                ? 'No documents uploaded yet by this employee.'
-                : tab === 'organizational'
-                  ? 'No signed onboarding documents yet. A document appears here once every signer in its workflow has signed it — send it from Onboarding, Stage 5.'
-                  : 'No signed exit documents yet. A document appears here once every signer in its workflow has signed it — send it from the Exit wizard’s Exit Documents stage.'}
+              {search.trim() ? `No documents match “${search.trim()}”.` : 'No documents uploaded yet by this employee.'}
             </div>
           ) : groups.map((g, gi) => (
             <div key={gi} className="ev-group">
@@ -674,65 +987,181 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                 </span>
                 <div className="ev-group-title">{g.title}</div>
                 <span className="ev-group-count">{g.docs.length} docs</span>
+                <button type="button" className="ev-group-toggle" aria-expanded={!shutGroups[g.title]}
+                  aria-label={shutGroups[g.title] ? 'Expand group' : 'Collapse group'}
+                  onClick={() => toggleGroup(g.title)}>
+                  <i className={shutGroups[g.title] ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} />
+                </button>
               </div>
-              <div className="ev-doc-list">
-                {g.docs.map(d => {
-                  const status = d.status as DocStatus;
-                  const disabled = status === 'Not Generated' || status === 'Optional';
-                  return (
-                    <div key={d.key} className="ev-doc">
-                      <span className="ev-doc-icon" style={{ background: d.iconBg, color: d.iconFg }}>
-                        <i className={d.icon} />
-                      </span>
-                      <div className="ev-doc-info">
-                        <div className="ev-doc-name">{d.name}</div>
-                        <div className="ev-doc-sub">{d.sub}</div>
-                      </div>
-                      {/* Category chip dropped — the row already sits under a
-                          group heading that names the category ("Identity",
-                          "Other"), so it repeated the line above it on every
-                          row and pushed the status pill out of alignment. */}
-                      <span className={`ev-doc-status ev-doc-status--${status.toLowerCase().replace(/\s+/g, '-')}`}>
-                        {/* Tick on the states that mean "this document is in" —
-                            the pill's colour says it, the mark confirms it at a
-                            glance without reading. */}
-                        {DONE_STATUSES.has(status) && <i className="ri-check-line" />}
-                        {status}
-                      </span>
-                      {/* Icon only, and labelled by the app's own Tooltip rather
-                          than the browser's `title` — same treatment as the
-                          ActionBtn icons in the employee table, so the two read
-                          as the same kind of control. aria-label stays for
-                          screen readers; a tooltip is not an accessible name. */}
-                      <Tooltip label={status === 'Generated' ? 'Preview' : 'View'}>
-                        <button type="button"
-                          className={`ev-doc-btn ev-doc-btn--icon ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
-                          disabled={disabled || busyKey === d.key}
-                          onClick={() => handleViewRow(d)}
-                          aria-label={status === 'Generated' ? 'Preview' : 'View'}
-                        >
-                          {busyKey === d.key && busyAction === 'view'
-                            ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
-                            : <i className="ri-eye-line" />}
-                        </button>
-                      </Tooltip>
-                      <button type="button"
-                        className="ev-doc-btn ev-doc-btn--download"
-                        disabled={disabled || busyKey === d.key}
-                        onClick={() => handleDownloadRow(d)}
-                      >
-                        {busyKey === d.key && busyAction === 'download'
-                          ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
-                          : <><i className="ri-download-line" />Download</>}
-                      </button>
-                    </div>
-                  );
-                })}
+              {!shutGroups[g.title] && (
+              <div className="ev-table-wrap">
+              <table className="ev-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: 56 }}>Sr No</th>
+                    <th>Document Name</th>
+                    <th style={{ width: 150 }}>Status</th>
+                    <th style={{ width: 190, textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {g.docs.map((d, di) => {
+                    const status = d.status as DocStatus;
+                    const disabled = status === 'Not Generated' || status === 'Optional';
+                    return (
+                      <tr key={d.key}>
+                        <td style={{ color: 'var(--vz-secondary-color)' }}>{di + 1}</td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span className="ev-doc-icon" style={{ background: d.iconBg, color: d.iconFg, flexShrink: 0 }}>
+                              <i className={d.icon} />
+                            </span>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="ev-td-name">{d.name}</div>
+                              <div className="ev-td-sub">{d.sub}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`ev-doc-status ev-doc-status--${status.toLowerCase().replace(/\s+/g, '-')}`}>
+                            {/* Tick on the states that mean "this document is in" —
+                                the pill's colour says it, the mark confirms it at a
+                                glance without reading. */}
+                            {DONE_STATUSES.has(status) && <i className="ri-check-line" />}
+                            {status}
+                          </span>
+                        </td>
+                        <td className="ev-td-actions">
+                          {/* Icon only, and labelled by the app's own Tooltip rather
+                              than the browser's `title` — same treatment as the
+                              ActionBtn icons in the employee table. */}
+                          <Tooltip label={status === 'Generated' ? 'Preview' : 'View'}>
+                            <button type="button"
+                              className={`ev-doc-btn ev-doc-btn--icon ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
+                              disabled={disabled || busyKey === d.key}
+                              onClick={() => handleViewRow(d)}
+                              aria-label={status === 'Generated' ? 'Preview' : 'View'}
+                            >
+                              {busyKey === d.key && busyAction === 'view'
+                                ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                                : <i className="ri-eye-line" />}
+                            </button>
+                          </Tooltip>
+                          <button type="button"
+                            className="ev-doc-btn ev-doc-btn--download"
+                            disabled={disabled || busyKey === d.key}
+                            onClick={() => handleDownloadRow(d)}
+                          >
+                            {busyKey === d.key && busyAction === 'download'
+                              ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
+                              : <><i className="ri-download-line" />Download</>}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
               </div>
+              )}
             </div>
           ))}
         </div>
       </ModalBody>
     </Modal>
+
+    {/* Audit Trail — the whole e-signature lifecycle in one timeline, stacked
+        above the vault (zIndex beats its 1050). */}
+    {sigView && (() => {
+      const r = sigView;
+      const steps = trailSteps(r);
+      const doneSteps = steps.filter(s => s.state === 'Done').length;
+      const pct = steps.length ? Math.round((doneSteps / steps.length) * 100) : 0;
+      const tone = (state: string) =>
+        state === 'Done' ? { bg: '#16a34a', pill: '#dcfce7', ink: '#15803d', label: '✓ Done' }
+        : state === 'In Progress' ? { bg: '#f59e0b', pill: '#fef3c7', ink: '#92400e', label: 'In Progress' }
+        : state === 'Rejected' ? { bg: '#dc2626', pill: '#fee2e2', ink: '#b91c1c', label: 'Rejected' }
+        : { bg: '#cbd5e1', pill: '#f1f5f9', ink: '#64748b', label: 'Pending' };
+      return (
+      <Modal isOpen centered toggle={() => setSigView(null)} zIndex={1060} contentClassName="border-0 ev-sig-content"
+        style={{ maxWidth: 580, width: '92vw' }}>
+        <ModalBody className="p-0" style={{ borderRadius: 18, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '18px 20px', color: '#fff', background: 'linear-gradient(135deg,#6d28d9 0%,#7c3aed 55%,#a855f7 100%)' }}>
+            <span style={{ width: 42, height: 42, borderRadius: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.18)', flexShrink: 0, fontSize: 20 }}>
+              <i className="ri-file-history-line" />
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.8)' }}>
+                {r.code ? `${r.code} · ` : ''}Signing Workflow
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 19, lineHeight: 1.2, marginTop: 2 }}>Audit Trail</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.85)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {r.template?.name || 'Document'} · e-Signature lifecycle
+                <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,.22)' }}>{r.status}</span>
+              </div>
+            </div>
+            <button type="button" onClick={() => setSigView(null)} aria-label="Close"
+              style={{ background: 'rgba(255,255,255,.18)', border: 0, color: '#fff', width: 32, height: 32, borderRadius: 9, cursor: 'pointer', flexShrink: 0 }}>
+              <i className="ri-close-line" />
+            </button>
+          </div>
+
+          <div style={{ padding: '14px 20px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)' }}>Overall progress</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--vz-body-color)' }}>{doneSteps} / {steps.length} steps complete</span>
+            </div>
+            <div style={{ height: 7, borderRadius: 99, background: 'var(--vz-secondary-bg)', overflow: 'hidden' }}>
+              <span style={{ display: 'block', height: '100%', width: `${pct}%`, borderRadius: 99, background: 'linear-gradient(90deg,#7c3aed,#16a34a)' }} />
+            </div>
+          </div>
+
+          <div style={{ padding: '16px 20px 6px', maxHeight: '58vh', overflowY: 'auto' }}>
+            {steps.map((s, i) => {
+              const t = tone(s.state);
+              return (
+                <div key={i} style={{ display: 'flex', gap: 14, position: 'relative', paddingBottom: i === steps.length - 1 ? 0 : 18 }}>
+                  {i < steps.length - 1 && (
+                    <span style={{ position: 'absolute', left: 17, top: 36, bottom: 4, width: 2, background: 'var(--vz-border-color)' }} aria-hidden />
+                  )}
+                  <span style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: t.bg, color: '#fff', fontSize: 16, zIndex: 1 }}>
+                    <i className={s.icon} />
+                  </span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 700, fontSize: 13.5, color: s.state === 'Pending' ? 'var(--vz-secondary-color)' : 'var(--vz-body-color)' }}>{s.title}</span>
+                      <span style={{ padding: '2px 9px', borderRadius: 999, fontSize: 10.5, fontWeight: 700, background: t.pill, color: t.ink }}>{t.label}</span>
+                    </div>
+                    {s.desc && <div style={{ fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 2 }}>{s.desc}</div>}
+                    {s.at && (
+                      <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <i className="ri-calendar-line" />{fmtStamp(s.at)}
+                      </div>
+                    )}
+                    {s.sig && (
+                      <img src={resolveFileUrl(s.sig)} alt="Signature"
+                        style={{ display: 'block', maxHeight: 38, maxWidth: 150, objectFit: 'contain', marginTop: 6 }} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {r.status === 'Completed' && (
+            <div style={{ padding: '12px 20px 18px' }}>
+              <button type="button" className="ev-doc-btn ev-doc-btn--download" style={{ width: '100%', height: 40 }}
+                disabled={busyKey === `run-${r.id}`} onClick={() => downloadRun(r)}>
+                {busyKey === `run-${r.id}`
+                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
+                  : <><i className="ri-download-line" />Download signed PDF</>}
+              </button>
+            </div>
+          )}
+        </ModalBody>
+      </Modal>
+      );
+    })()}
+    </>
   );
 }

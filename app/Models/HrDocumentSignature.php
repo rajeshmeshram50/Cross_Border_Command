@@ -11,7 +11,7 @@ class HrDocumentSignature extends Model
 
     protected $fillable = [
         'client_id', 'branch_id',
-        'template_id', 'employee_id', 'code',
+        'template_id', 'template_version', 'employee_id', 'code',
         'content_html', 'header_config', 'footer_config',
         'signers', 'current_index',
         'status', 'audit_log',

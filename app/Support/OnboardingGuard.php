@@ -84,7 +84,6 @@ class OnboardingGuard
     public static function onboardingSigningStatus(Employee $employee): array
     {
         $templates = HrTemplateMatch::onboardingTemplatesFor($employee);
-        if ($templates->isEmpty()) return ['matched' => 0, 'sent' => 0, 'awaiting' => []];
 
         $runs = DB::table('hr_document_signatures')
             ->where('employee_id', $employee->id)
@@ -93,6 +92,33 @@ class OnboardingGuard
 
         $sent   = array_flip($runs->where('status', '!=', 'Cancelled')->pluck('template_id')->filter()->unique()->all());
         $signed = array_flip($runs->where('status', '=', 'Completed')->pluck('template_id')->filter()->unique()->all());
+
+        /* A FINALISED set is the requirement: each ticked document must come
+           back signed. A ticked doc that was retired before it was ever sent
+           (deprecated, no run) drops out — that is exactly the trap #24 hit.
+           When the set is not finalised, the matched-template rule below
+           stands, so existing onboardings are unchanged. */
+        $lock = DB::table('hr_onboarding_docset_locks')
+            ->where('employee_id', $employee->id)->whereNotNull('finalized_at')->first();
+        if ($lock) {
+            $selected = DB::table('hr_onboarding_doc_selections')
+                ->where('employee_id', $employee->id)->pluck('template_id')
+                ->map(fn ($x) => (int) $x)->all();
+            $activeIds = $templates->pluck('id')->map(fn ($x) => (int) $x)->flip();
+            $nameById = $templates->keyBy('id');
+            $awaiting = [];
+            foreach ($selected as $tid) {
+                if (isset($signed[$tid])) continue;                         // done
+                if (!isset($activeIds[$tid]) && !isset($sent[$tid])) continue; // retired & never sent
+                $t = $nameById->get($tid);
+                $awaiting[] = $t
+                    ? (trim((string) $t->code) !== '' ? sprintf('%s (%s)', $t->name, $t->code) : (string) $t->name)
+                    : "Document #{$tid}";
+            }
+            return ['matched' => count($selected), 'sent' => count($selected), 'awaiting' => array_values($awaiting)];
+        }
+
+        if ($templates->isEmpty()) return ['matched' => 0, 'sent' => 0, 'awaiting' => []];
 
         /* Template names are not unique — two "code of conduct" rows exist for
            different role types — so the code goes in the message or HR cannot

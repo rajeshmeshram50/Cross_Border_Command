@@ -62,6 +62,8 @@ export interface TemplateRow {
   docx_original_name: string | null;
   status: DocStatus;
   created_at: string;
+  /** True while a signature run is Pending/In Progress — edit & deprecate are blocked. */
+  out_for_signature?: boolean;
 }
 
 // ── Static option sets ───────────────────────────────────────────────────────
