@@ -807,15 +807,10 @@ function Router() {
     );
   }
 
-  {/* Stage 04 handheld. Outside the logged-in shell on purpose: it is
-      authenticated by the device credential, not by a user session. */}
-  // '/ps/:key' is where our printed labels point — distinct from '/s/' above,
-  // which belongs to the Inventory Management simulation.
   if (location.pathname.startsWith('/putaway-scan') || location.pathname.startsWith('/ps/')) {
     return (
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          {/* 'enroll' before ':taskId', or it matches as a task id. */}
           <Route path="/putaway-scan/enroll" element={<PutawayScan />} />
           <Route path="/putaway-scan" element={<PutawayScan />} />
           <Route path="/putaway-scan/:taskId" element={<PutawayScan />} />

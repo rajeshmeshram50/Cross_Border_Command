@@ -22,8 +22,6 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  // Org picker — shown when this email is registered with more than one client
-  // and the backend asks which account to reset.
   const [orgChoices, setOrgChoices] = useState<{ client_id: number | null; name: string }[] | null>(null);
   const [orgMessage, setOrgMessage] = useState<string>('');
 
@@ -58,8 +56,6 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
     await submitReset();
   };
 
-  // clientId is supplied only when the user picks an organization (this email
-  // exists in more than one client).
   const submitReset = async (clientId?: number | null) => {
     setLoading(true);
     try {
@@ -144,7 +140,6 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
         subtitle="Your new password must be different from previous ones."
       >
         <form onSubmit={handleSubmit} className="space-y-4 mb-6">
-          {/* New Password */}
           <div className="flex flex-col gap-1">
             <label className="text-[14px] font-semibold text-primary-hover ml-1">
               New Password <span className="text-red-500">*</span>
@@ -166,7 +161,6 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
               </button>
             </div>
 
-            {/* Password Strength */}
             {newPassword && (
               <div className="mt-2 space-y-1.5 px-1">
                 <div className="flex items-center gap-2">
@@ -199,7 +193,6 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
             )}
           </div>
 
-          {/* Confirm Password */}
           <div className="flex flex-col gap-1">
             <label className="text-[14px] font-semibold text-primary-hover ml-1">
               Confirm Password <span className="text-red-500">*</span>
@@ -232,9 +225,6 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
           <div className="pt-2">
             <button
               disabled={loading}
-              /* rounded-[999px] — see ForgotPassword: Tailwind 4's
-                 rounded-full loses to the Velzon `button { border-radius: 0 }`
-                 reset, leaving a square button at the end of the flow. */
               className="w-full h-14 rounded-[999px] bg-primary text-white text-[15px] font-semibold shadow-lg shadow-primary/20 hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98] transition-all disabled:opacity-70 flex items-center justify-center gap-2"
               type="submit"
             >
