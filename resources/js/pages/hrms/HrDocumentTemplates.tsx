@@ -543,14 +543,25 @@ export default function HrDocumentTemplates() {
               onClick={() => setVersionsFor(r)}
               title={`Version history (current ${r.version || 'v1'})`}
             />
-            <ActionBtn icon="edit-svg" tone="info" onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
+            {/* Edit is always allowed — a sent document signs on its frozen
+                snapshot, and an edit only bumps the version for future sends.
+                Only Deprecate is blocked while out for signature (#24). */}
+            <ActionBtn icon="edit-svg" tone="info" title="Edit"
+              onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} />
             <ActionBtn
               icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'}
               tone={r.status === 'Active' ? 'danger' : 'success'}
-              onClick={() => handleToggleStatus(r)}
-              title={r.status === 'Active' ? 'Deprecate' : 'Activate'}
+              muted={r.status === 'Active' && !!r.out_for_signature}
+              title={r.status === 'Active'
+                ? (r.out_for_signature ? 'Out for signature — can’t deprecate until signing finishes' : 'Deprecate')
+                : 'Activate'}
+              onClick={() => {
+                if (r.status === 'Active' && r.out_for_signature) { toast.warning('Out for signature', 'This document is already out for signature, so it can’t be deprecated until the signing finishes.'); return; }
+                handleToggleStatus(r);
+              }}
             />
-            <ActionBtn icon="ri-delete-bin-line" tone="danger" onClick={() => handleDelete(r)} title="Delete" />
+            {/* Delete removed — Deprecate is the retire action; a template is
+                never hard-deleted from the list. */}
           </div>
         );
       },
@@ -1268,9 +1279,9 @@ function RefineTemplates(props: {
   );
 }
 
-function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primary' | 'info' | 'success' | 'danger' | 'dark'; onClick: () => void; title: string }) {
+function ActionBtn({ icon, tone, onClick, title, disabled, muted }: { icon: string; tone: 'primary' | 'info' | 'success' | 'danger' | 'dark'; onClick: () => void; title: string; disabled?: boolean; muted?: boolean }) {
   const mapped = tone === 'primary' || tone === 'dark' ? 'accent' : tone;
-  return <ActionCell title={title} icon={icon} tone={mapped} onClick={onClick} />;
+  return <ActionCell title={title} icon={icon} tone={mapped} onClick={onClick} disabled={disabled} muted={muted} />;
 }
 
 /* Dark-theme overrides for this page. Light styles stay inline; these rules

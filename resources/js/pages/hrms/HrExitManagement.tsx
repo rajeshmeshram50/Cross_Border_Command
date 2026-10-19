@@ -1841,6 +1841,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     name?: string | null;
     doc_type?: string | null;
     status?: string | null;
+    version?: string | null;
     signing_mode?: 'Sequential' | 'Parallel' | string | null;
     signers?: TplSigner[] | string | null;
     trigger_point?: { module_name?: string | null } | null;
@@ -1899,7 +1900,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     acted_at: string | null; signed_name: string | null; note: string | null;
   };
   type SignatureRun = {
-    id: number; code: string | null;
+    id: number; code: string | null; template_version?: string | null;
     status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
     template_id: number;
     employee_id: number;
@@ -1931,6 +1932,65 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
     return m;
   }, [runs]);
+
+  /* Exit document SET — the ticked documents and the finalise lock, same as
+     onboarding (kind=exit). Tick which exit documents this employee needs,
+     finalise to freeze the requirement, re-open until the exit is complete. */
+  const [docFinalized, setDocFinalized] = useState(false);
+  const [docCanReopen, setDocCanReopen] = useState(false);
+  const [docSelected, setDocSelected] = useState<Set<number>>(new Set());
+  const [docSetLoaded, setDocSetLoaded] = useState(false);
+  const [docSetBusy, setDocSetBusy] = useState(false);
+  const applyDocSet = (d: any) => {
+    const rows: any[] = Array.isArray(d?.templates) ? d.templates : [];
+    setDocSelected(new Set(rows.filter(t => t.selected).map(t => Number(t.template_id))));
+    setDocFinalized(!!d?.finalized);
+    setDocCanReopen(!!d?.can_reopen);
+    setDocSetLoaded(true);
+  };
+  const fetchDocSet = async () => {
+    if (!employee) { setDocSetLoaded(false); return; }
+    try { const { data } = await api.get(`/employees/${employee.id}/onboarding-doc-set`, { params: { kind: 'exit' } }); applyDocSet(data); }
+    catch { setDocSetLoaded(false); }
+  };
+  useEffect(() => {
+    if (!employee) { setDocSetLoaded(false); return; }
+    if (exitLoading) return;
+    fetchDocSet();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id, exitLoading]);
+
+  const toggleDocSelect = async (tid: number) => {
+    if (docFinalized || docSetBusy || !employee) return;
+    const next = new Set(docSelected);
+    next.has(tid) ? next.delete(tid) : next.add(tid);
+    setDocSelected(next);
+    setDocSetBusy(true);
+    try { const { data } = await api.put(`/employees/${employee.id}/onboarding-doc-set`, { template_ids: [...next] }, { params: { kind: 'exit' } }); applyDocSet(data); }
+    catch (e: any) { toast.error('Could not update selection', e?.response?.data?.message || 'Please try again.'); fetchDocSet(); }
+    finally { setDocSetBusy(false); }
+  };
+  const finalizeDocSet = async () => {
+    if (docSetBusy || !employee) return;
+    setDocSetBusy(true);
+    try { const { data } = await api.post(`/employees/${employee.id}/onboarding-doc-set/finalize`, {}, { params: { kind: 'exit' } }); applyDocSet(data); toast.success('Document set finalized', 'These are now the required exit documents for this employee.'); }
+    catch (e: any) { toast.error('Could not finalize', e?.response?.data?.message || 'Please try again.'); }
+    finally { setDocSetBusy(false); }
+  };
+  const reopenDocSet = async () => {
+    if (docSetBusy || !employee) return;
+    setDocSetBusy(true);
+    try { const { data } = await api.post(`/employees/${employee.id}/onboarding-doc-set/reopen`, {}, { params: { kind: 'exit' } }); applyDocSet(data); toast.success('Document set re-opened', 'You can change the selection again.'); }
+    catch (e: any) { toast.error('Could not re-open', e?.response?.data?.message || 'Please try again.'); }
+    finally { setDocSetBusy(false); }
+  };
+  /* The required exit set = ticked templates; completion is measured against it. */
+  const exitRequiredIds = useMemo(
+    () => exitTemplates.filter(t => docSelected.has(t.id)).map(t => t.id),
+    [exitTemplates, docSelected],
+  );
+  const exitDocsComplete = docSetLoaded && docFinalized
+    && exitRequiredIds.every(id => runByTemplateId.get(id)?.status === 'Completed');
 
   const [generatedTplIds, setGeneratedTplIds] = useState<Set<number>>(new Set());
   const fetchGenerated = async () => {
@@ -2354,9 +2414,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     // 4. Every matched exit document must be fully signed — unless documents
     //    are not released for this exit at all, in which case none were issued
     //    and none can ever come back signed.
-    const unsigned = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status !== 'Completed');
-    if (!noSettlementDue && exitTemplates.length > 0 && unsigned.length) {
-      items.push(`${unsigned.length} exit document${unsigned.length > 1 ? 's' : ''} not fully signed`);
+    // Required = the finalized ticked set (not every matched template).
+    if (!noSettlementDue && docSetLoaded && !docFinalized && exitTemplates.length > 0) {
+      items.push('Exit document set not finalized');
+    } else if (!noSettlementDue) {
+      const unsigned = exitRequiredIds.filter(id => runByTemplateId.get(id)?.status !== 'Completed');
+      if (unsigned.length) items.push(`${unsigned.length} exit document${unsigned.length > 1 ? 's' : ''} not fully signed`);
     }
 
     // 5. Every departmental clearance must be approved.
@@ -2376,7 +2439,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lwdReached, lwd, reportingManagerDisabled, directReportCount, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, noSettlementDue, blacklistApplies, blacklisted, blacklistReason]);
+  }, [lwdReached, lwd, reportingManagerDisabled, directReportCount, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, noSettlementDue, blacklistApplies, blacklisted, blacklistReason, docFinalized, docSetLoaded, exitRequiredIds]);
 
   /* Direct-report COUNT, refreshed whenever the wizard opens and after each
      reassignment. Loaded up-front rather than on the closure stage so the
@@ -2524,8 +2587,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
          close — and once completion gates on all stages being Completed (see
          completeExit), a permanent 0% here would deadlock the case instead. */
       if (total === 0) return 100;
-      const done = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
-      return Math.round((done / total) * 100);
+      // Measured against the FINALISED ticked set — signing + the finalise step.
+      // Before finalising, the stage is at most "in progress".
+      if (docSetLoaded && !docFinalized) {
+        const sent = exitRequiredIds.filter(id => runByTemplateId.has(id)).length;
+        const base = exitRequiredIds.length || exitTemplates.length;
+        return base === 0 ? 50 : Math.min(90, Math.round((sent / base) * 90));
+      }
+      const req = exitRequiredIds.length;
+      if (req === 0) return 100;
+      const done = exitRequiredIds.filter(id => runByTemplateId.get(id)?.status === 'Completed').length;
+      return Math.round((done / req) * 100);
     }
     if (n === 'closure') {
       // Final actions expose only HR Final Sign-off, which is the single
@@ -2576,17 +2648,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         return (n === currentKey || rawStagePct('clearance') > 0 || stageStatus.clearance === 'In Progress') ? 'In Progress' : 'Pending';
       }
     }
-    // Exit Documents is only complete once EVERY exit document is fully SIGNED.
-    // Merely sending one (run Pending/In Progress) must not flip it to 100%.
+    // Exit Documents is complete once the set is FINALISED and every TICKED
+    // document is signed (the finalised set is the requirement, not every
+    // matched template). Sending one (Pending/In Progress) doesn't flip to 100%.
     if (n === 'documents') {
-      const total = exitTemplates.length;
-      // `total === 0` counts as signed — nothing was matched, so there is
-      // nothing outstanding. Matches rawStagePct's zero-denominator branch;
-      // the old `total > 0 &&` pinned this stage to Pending forever (#81).
-      const allSigned = total === 0 || exitTemplates.every(t => runByTemplateId.get(t.id)?.status === 'Completed');
-      if (!allSigned) {
-        const anySent = exitTemplates.some(t => runByTemplateId.has(t.id));
-        return (n === currentKey || anySent || rawStagePct('documents') > 0 || stageStatus.documents === 'In Progress') ? 'In Progress' : 'Pending';
+      if (!exitDocsComplete) {
+        const anySent = exitRequiredIds.some(id => runByTemplateId.has(id));
+        return (n === currentKey || anySent || docFinalized || rawStagePct('documents') > 0 || stageStatus.documents === 'In Progress') ? 'In Progress' : 'Pending';
       }
     }
     // A settlement stage is only complete once the money is accounted for.
@@ -2812,15 +2880,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return;
     }
 
-    // HARD gate: every matched exit document must be fully SIGNED (run
-    // Completed) before the exit can be finalised. The "Exit documents signed"
-    // checklist box is a manual tick and was being used to bypass real signing
-    // status — this checks the actual signing runs instead. (QA bug fix.)
-    const unsignedDocs = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status !== 'Completed');
-    if (exitTemplates.length > 0 && unsignedDocs.length) {
+    // HARD gate: the document set must be FINALISED and every TICKED exit
+    // document fully SIGNED before the exit can be finalised.
+    if (docSetLoaded && !docFinalized) {
+      toast.error('Exit can’t be completed — document set not finalized',
+        'Tick the exit documents this employee needs and finalize the set in “Exit Documents Management” first.');
+      setStage(3);
+      return;
+    }
+    const unsignedDocs = exitRequiredIds.filter(id => runByTemplateId.get(id)?.status !== 'Completed');
+    if (unsignedDocs.length) {
       toast.error(
         `Exit can't be completed — ${unsignedDocs.length} document${unsignedDocs.length > 1 ? 's' : ''} not fully signed`,
-        'Every exit document must be sent and signed by all required signatories first. Finish them in “Exit Documents Management”.',
+        'Every selected exit document must be sent and signed by all required signatories first. Finish them in “Exit Documents Management”.',
       );
       setStage(3);
       return;
@@ -4502,6 +4574,38 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </div>
                   ) : (
                     <div className="ep-doc-list" style={{ marginBottom: 16 }}>
+                      {/* Pick the required exit documents, then finalize. Same as
+                          onboarding: the finalized set drives exit completion. */}
+                      {docSetLoaded && (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+                          padding: '10px 12px', margin: '0 0 12px', borderRadius: 10,
+                          background: docFinalized ? 'rgba(16,185,129,.08)' : 'rgba(124,92,252,.07)',
+                          border: `1px solid ${docFinalized ? 'rgba(16,185,129,.3)' : 'rgba(124,92,252,.22)'}`,
+                        }}>
+                          <i className={docFinalized ? 'ri-lock-2-line' : 'ri-checkbox-multiple-line'}
+                             style={{ fontSize: 18, color: docFinalized ? '#059669' : '#7c3aed' }} />
+                          <div style={{ flex: 1, minWidth: 180, fontSize: 12.5, color: 'var(--vz-body-color)' }}>
+                            {docFinalized
+                              ? <><strong>Document set finalized.</strong> {docSelected.size} exit document{docSelected.size === 1 ? '' : 's'} required.</>
+                              : <><strong>Select the exit documents this employee needs</strong>, then finalize the set. Only ticked documents will be required.</>}
+                          </div>
+                          {docFinalized ? (
+                            <button type="button" className="ep-doc-btn" disabled={docSetBusy || !docCanReopen}
+                              title={docCanReopen ? 'Re-open to change the selection' : 'Some documents are signed, or the exit is complete — can’t re-open.'}
+                              onClick={reopenDocSet}
+                              style={{ background: 'transparent', border: '1px solid var(--vz-border-color)', color: 'var(--vz-body-color)', cursor: docCanReopen ? 'pointer' : 'not-allowed', opacity: docCanReopen ? 1 : .55 }}>
+                              <i className="ri-lock-unlock-line" /> Re-open set
+                            </button>
+                          ) : (
+                            <button type="button" className="ep-doc-btn" disabled={docSetBusy || docSelected.size === 0}
+                              onClick={finalizeDocSet}
+                              style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, cursor: docSelected.size === 0 ? 'not-allowed' : 'pointer', opacity: docSelected.size === 0 ? .6 : 1 }}>
+                              <i className="ri-check-double-line" /> Finalize document set
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {exitTemplates.map(tpl => {
                         const signers = parseSigners(tpl.signers);
                         const run = runByTemplateId.get(tpl.id) || null;
@@ -4529,6 +4633,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         return (
                           <div key={`tpl-${tpl.id}`} className={`ep-doc-card${isExpanded ? ' is-open' : ''}`}>
                             <div className="ep-doc-row" style={{ cursor: 'default', flexWrap: 'wrap' }}>
+                              {/* Tick = required for this exit. Locked once the set
+                                  is finalized, or once the doc is sent/signed. */}
+                              {(() => {
+                                const cbLocked = docFinalized || docSetBusy || runInFlight || runCompleted;
+                                return (
+                                  <input type="checkbox" className="form-check-input mt-0" aria-label="Require this document"
+                                    checked={docSelected.has(tpl.id)} disabled={docFinalized || docSetBusy}
+                                    title={runInFlight || runCompleted ? 'Already sent for signature — can’t be removed from the set' : docFinalized ? 'Set is finalized — re-open to change' : 'Require this document for this exit'}
+                                    onClick={(e) => { e.stopPropagation(); if (runInFlight || runCompleted) { e.preventDefault(); toast.warning('Already in signing', 'This document is already sent for signature or signed — you can’t remove it from the set.'); } }}
+                                    onChange={(e) => { e.stopPropagation(); if (runInFlight || runCompleted) return; toggleDocSelect(tpl.id); }}
+                                    style={{ flexShrink: 0, marginRight: 8, cursor: cbLocked ? 'not-allowed' : 'pointer', opacity: (runInFlight || runCompleted) ? 0.6 : 1 }} />
+                                );
+                              })()}
                               <span className="ep-doc-icon"><i className="ri-file-text-line" /></span>
                               <div className="ep-doc-info">
                                 <div className="ep-doc-name">
@@ -4545,6 +4662,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   </span>
                                   {tpl.code && (
                                     <span className="ep-doc-code">{tpl.code}</span>
+                                  )}
+                                  {run?.template_version && (
+                                    <span className="ep-doc-code" style={{ marginLeft: 6, background: '#eef2ff', color: '#4338ca' }}
+                                      title={tpl.version && tpl.version !== run.template_version ? `Signing on ${run.template_version}; template is now ${tpl.version}` : `Signing on ${run.template_version}`}>
+                                      {run.template_version}{tpl.version && tpl.version !== run.template_version ? ` · now ${tpl.version}` : ''}
+                                    </span>
                                   )}
                                   {run && runTone && (
                                     <span className="ep-doc-status-badge" style={{ marginLeft: 8, padding: '2px 10px', borderRadius: 999, background: runTone.bg, color: runTone.fg, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4, ['--pill-fg' as string]: runTone.fg } as React.CSSProperties}>
@@ -4589,21 +4712,33 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                   </Tooltip>
                                 );
                               })()}
-                              {canSend && (
-                                <Tooltip label={docsReleased ? 'Preview the document (fills custom fields if any) then send for signing' : releaseHint} position="bottom" themed>
+                              {canSend && (() => {
+                                const notFinalized = !docSetLoaded || !docFinalized;
+                                const notInSet = docFinalized && !docSelected.has(tpl.id);
+                                const setBlocked = notFinalized || notInSet;
+                                return (
+                                <Tooltip label={
+                                  notFinalized ? 'Finalize the document set before sending for signature'
+                                  : notInSet   ? 'Not in the finalized set — re-open and tick it to send'
+                                  : docsReleased ? 'Preview the document (fills custom fields if any) then send for signing' : releaseHint} position="bottom" themed>
                                   <button
                                     type="button"
                                     className="ep-doc-btn"
                                     disabled={!docsReleased}
-                                    onClick={() => setGenTpl(tpl)}
-                                    style={docsReleased
+                                    onClick={() => {
+                                      if (notFinalized) { toast.warning('Finalize the set first', 'Tick the exit documents this employee needs and finalize the set before sending any document for signature.'); return; }
+                                      if (notInSet) { toast.warning('Not in the exit set', 'This document is not part of this employee’s finalized exit set, so it can’t be sent. Re-open the set and tick it first.'); return; }
+                                      setGenTpl(tpl);
+                                    }}
+                                    style={(docsReleased && !setBlocked)
                                       ? { background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0 }
                                       : { background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, ...OFF_STYLE }}
                                   >
                                     <i className="ri-send-plane-line" />Send for Signature
                                   </button>
                                 </Tooltip>
-                              )}
+                                );
+                              })()}
                               {runCompleted && run && (() => {
                                 const isDownloading = downloadingRunId === run.id;
                                 return (
