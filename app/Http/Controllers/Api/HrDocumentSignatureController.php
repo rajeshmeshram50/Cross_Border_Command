@@ -23,7 +23,7 @@ use Illuminate\Validation\Rule;
 class HrDocumentSignatureController extends Controller
 {
     private const WITH = [
-        'template:id,code,name,doc_type,signing_mode,trigger_point_id',
+        'template:id,code,name,doc_type,signing_mode,trigger_point_id,version',
         'template.triggerPoint:id,module_name',
         'employee:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,reporting_manager_user_id,user_id',
         'employee.department:id,name',
@@ -415,6 +415,7 @@ class HrDocumentSignatureController extends Controller
                 'client_id'      => $emp->client_id,
                 'branch_id'      => $emp->branch_id,
                 'template_id'    => $tpl->id,
+                'template_version' => $tpl->version,   // the version this doc signs on
                 'employee_id'    => $emp->id,
                 'code'           => $tpl->code,
                 'content_html'   => $frozenHtml,

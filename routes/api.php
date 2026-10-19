@@ -961,6 +961,12 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
 
     Route::get  ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'index']);
     Route::post ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'store']);
+
+    // Policies & Agreements document set — pick, finalise, re-open (#24).
+    Route::get  ('/employees/{employee}/onboarding-doc-set',          [\App\Http\Controllers\Api\HrOnboardingDocSetController::class, 'show']);
+    Route::put  ('/employees/{employee}/onboarding-doc-set',          [\App\Http\Controllers\Api\HrOnboardingDocSetController::class, 'save']);
+    Route::post ('/employees/{employee}/onboarding-doc-set/finalize', [\App\Http\Controllers\Api\HrOnboardingDocSetController::class, 'finalize']);
+    Route::post ('/employees/{employee}/onboarding-doc-set/reopen',   [\App\Http\Controllers\Api\HrOnboardingDocSetController::class, 'reopen']);
     Route::get  ('/documents/{document}/download',  [EmployeeDocumentController::class, 'download']);
     Route::patch('/documents/{document}/verify',    [EmployeeDocumentController::class, 'verify']);
     Route::patch('/documents/{document}/reject',    [EmployeeDocumentController::class, 'reject']);

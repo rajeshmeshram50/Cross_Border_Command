@@ -202,7 +202,19 @@ class HrTemplateMatch
      */
     public static function onboardingTemplatesFor(Employee $emp)
     {
-        $q = self::query($emp, 'onboarding');
+        return self::templatesForKeyword($emp, 'onboarding');
+    }
+
+    /** Exit documents matched to this employee — the exit counterpart. */
+    public static function exitTemplatesFor(Employee $emp)
+    {
+        return self::templatesForKeyword($emp, 'exit');
+    }
+
+    /** Active templates for a lifecycle keyword, scoped to the employee's tenant. */
+    private static function templatesForKeyword(Employee $emp, string $keyword)
+    {
+        $q = self::query($emp, $keyword);
         if (!$q) return collect();
 
         // Scope to what this employee's own tenant can see: global templates,
