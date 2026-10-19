@@ -199,16 +199,15 @@ export default function ClmTradeLicensesPage() {
           </div>
         </div>
 
-        <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
+        <div className={`clm-tab-body ${loading || slice.length > 0 ? 'has-data' : ''}`}>
           {slice.length === 0 && !loading ? (
-            <div className="clm-empty">
+            <div className="clm-empty" ref={scrollRef} style={{ minHeight: fillH }}>
               <div className="clm-empty-ico">{ICO.bDoc}</div>
               <div className="clm-empty-title">No trade licences yet</div>
               <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add Trade Licence to create the first record.' : 'No results match.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
-              <div className="clm-rows-scroll">
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -218,7 +217,7 @@ export default function ClmTradeLicensesPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ClmSkeletonRows cols={5} />}
+                  {loading && <ClmSkeletonRows rows={rpp} cols={5} />}
                   {!loading && slice.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
@@ -262,7 +261,6 @@ export default function ClmTradeLicensesPage() {
                   ))}
                 </tbody>
               </table>
-              </div>
               {!loading && count > 0 && (
                 <WorklistPager total={count} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}

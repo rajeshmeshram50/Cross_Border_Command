@@ -142,16 +142,15 @@ export default function ClmQcPage() {
           </div>
         </div>
 
-        <div className={`clm-tab-body ${rows.length > 0 ? 'has-data' : ''}`}>
+        <div className={`clm-tab-body ${loading || rows.length > 0 ? 'has-data' : ''}`}>
           {rows.length === 0 && !loading ? (
-            <div className="clm-empty">
+            <div className="clm-empty" ref={scrollRef} style={{ minHeight: fillH }}>
               <div className="clm-empty-ico">{ICO.bCheck}</div>
               <div className="clm-empty-title">{debouncedSearch ? 'No matching QC documents' : 'No QC documents yet'}</div>
               <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add QC Document to create the first record.'}</div>
             </div>
           ) : (
-            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
-              <div className="clm-rows-scroll">
+            <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -162,7 +161,7 @@ export default function ClmQcPage() {
                   <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
                 </tr></thead>
                 <tbody>
-                  {loading && <ClmSkeletonRows cols={6} />}
+                  {loading && <ClmSkeletonRows rows={rpp} cols={6} />}
                   {!loading && rows.map((r, i) => (
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
@@ -182,7 +181,6 @@ export default function ClmQcPage() {
                   ))}
                 </tbody>
               </table>
-              </div>
               {!loading && count > 0 && (
                 <WorklistPager total={count} page={page} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
