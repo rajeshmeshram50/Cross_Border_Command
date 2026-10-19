@@ -22,6 +22,7 @@ export default function ClmKycPage() {
   const toast = useToast();
   const [rows, setRows]         = useState<Kyc[]>([]);
   const [count, setCount]       = useState(0);
+  const [nextCode, setNextCode] = useState('');
   const [auths, setAuths]       = useState<Authority[]>([]);
   const [loading, setLoading]   = useState(true);
   const [booted, setBooted]     = useState(false);
@@ -48,13 +49,14 @@ export default function ClmKycPage() {
   const reload = () => {
     setLoading(true);
     const token = ++reqRef.current;
-    api.get<{ status: boolean; data: Kyc[]; count: number; total?: number }>('/clm/kyc-documents', {
+    api.get<{ status: boolean; data: Kyc[]; count: number; total?: number; next_code?: string }>('/clm/kyc-documents', {
       params: { page, per_page: rpp, ...(debouncedSearch ? { search: debouncedSearch } : {}) },
     })
       .then(({ data }) => {
         if (token !== reqRef.current) return;
         setRows(data.data ?? []);
         setCount(Number(data.total ?? data.count ?? 0));
+        if (data.next_code) setNextCode(data.next_code);
       })
       .catch(() => toast.error('Load failed', 'Could not load KYC documents'))
       .finally(() => setLoading(false));
@@ -154,8 +156,8 @@ export default function ClmKycPage() {
           {rows.length === 0 && !loading ? (
             <div className="clm-empty">
               <div className="clm-empty-ico">{ICO.bKyc}</div>
-              <div className="clm-empty-title">No KYC documents yet</div>
-              <div className="clm-empty-sub">{rows.length === 0 ? 'Click + Add KYC Document to create the first record.' : 'No results match the current search.'}</div>
+              <div className="clm-empty-title">{debouncedSearch ? 'No matching KYC documents' : 'No KYC documents yet'}</div>
+              <div className="clm-empty-sub">{debouncedSearch ? 'No results match the current search.' : 'Click + Add KYC Document to create the first record.'}</div>
             </div>
           ) : (
             <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
@@ -197,7 +199,7 @@ export default function ClmKycPage() {
 
       {modalOpen && (
         <Suspense fallback={null}>
-          <KycModal existing={editing} authorities={auths} nextCode={`KYC-${String(rows.length + 1).padStart(3, '0')}`} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
+          <KycModal existing={editing} authorities={auths} nextCode={nextCode} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(f) => onSave(f, editing?.id)} />
         </Suspense>
       )}
       <DeleteConfirmModal
