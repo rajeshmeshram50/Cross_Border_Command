@@ -136,11 +136,20 @@ const IcoCheck = () => (
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
-/** The manual option: a hand placing the box, against the scanner's device. */
-const IcoHand = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v7M10 10.5V6a2 2 0 0 0-4 0v9" />
-    <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2a8 8 0 0 1-8-8v-1a2 2 0 1 1 4 0" />
+/** Confirming by hand: a box ticked off. The design uses it for the dialog's
+ *  own head and for the manual option — the question and that answer are the
+ *  same act, so they carry the same mark. It replaced a hand placing a box,
+ *  which read as the moment of carrying rather than the moment of signing. */
+/** Cancelling: the task struck out. */
+const IcoBan = ({ size = 15 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" /><line x1="15.5" y1="8.5" x2="8.5" y2="15.5" />
+  </svg>
+);
+const IcoTickBox = ({ size = 15 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="4" />
+    <polyline points="8 12.5 11 15.5 16.5 9" />
   </svg>
 );
 const IcoCollapse = () => (
@@ -229,7 +238,9 @@ function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
           <IcoPrintSm /> Sticker
         </button>
         <span className={`s4pkc__st${placed ? ' is-done' : ''}`}>
-          <i />{placed ? 'Placed' : b.status === 'awaiting_scan' ? 'Awaiting scan' : b.status === 'draft' ? 'Allocated' : 'Pending'}
+          {/* "Putaway Completed", the words the pane uses when it finishes —
+              "Placed" was a third name for the same state. */}
+          <i />{placed ? 'Putaway Completed' : b.status === 'awaiting_scan' ? 'Awaiting scan' : b.status === 'draft' ? 'Allocated' : 'Pending'}
         </span>
       </div>
       <div className="s4pkc__bd">
@@ -443,6 +454,13 @@ function dispositionOf(items: SpiBoxItem[], againstPo: boolean): Disposition {
   if (remarks.includes('extra')) return 'inv';
   return againstPo ? 'ship' : 'inv';
 }
+
+/** The code a placement is read by on the floor: "RC-D02-SH-03" → "SH-03",
+ *  and a direct placement is the zone's own code. */
+const locCodeOf = (s: ReturnType<typeof findSpot>): string | null =>
+  !s ? null
+    : s.kind === 'zone' ? s.zone.code
+    : s.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1');
 
 function toPickBoxes(
   boxes: SpiBox[], flagMaster: ProductFlagOption[], lines: ProductLine[], board: PutawayBoard | null, againstPo: boolean,
@@ -837,6 +855,44 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     return () => { live = false; };
   }, [spiId, boxKey]);
 
+  /* Write a finished putaway back into the board.
+   *
+   * The box list reads EVERY card's state from the board — is-placed, the
+   * status pill, the group counts. Completing a putaway only set this step's
+   * own local state, so the card the operator had just finished went on
+   * reading Pending in teal until the next fetch, while the pane beside it
+   * said Putaway Completed. The green card has always been built; nothing
+   * ever turned it on. */
+  const markPlaced = (boxId: number, destination: string | null) => {
+    setBoard(prev => {
+      if (!prev) return prev;
+      const was = prev.boxes.find(r => r.box_id === boxId)?.status;
+      if (!was || was === 'placed') return prev;
+      const dec = (n: number) => Math.max(0, n - 1);
+      return {
+        counts: {
+          ...prev.counts,
+          placed: prev.counts.placed + 1,
+          remaining: dec(prev.counts.remaining),
+          /* Only the bucket it actually came from moves. */
+          ...(was === 'awaiting_scan' ? { awaiting_scan: dec(prev.counts.awaiting_scan) }
+            : was === 'draft' ? { draft: dec(prev.counts.draft) }
+            : { pending: dec(prev.counts.pending) }),
+        },
+        boxes: prev.boxes.map(r => r.box_id === boxId
+          ? {
+            ...r,
+            status: 'placed' as const,
+            destination: destination ?? r.destination,
+            assigned_at: new Date().toISOString(),
+            /* The task is spent — it must not keep showing as outstanding. */
+            task: null,
+          }
+          : r),
+      };
+    });
+  };
+
   const againstPo = !!draft.poNumber;
   const all = useMemo(
     () => toPickBoxes(boxes, flagMaster, lines, board, againstPo),
@@ -942,6 +998,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
      the floor to verify - so the box is not placed until the scan comes back.
      Confirming straight off the button conflated the two. */
   const [methodAsk, setMethodAsk] = useState(false);
+  /* Cancelling a raised Zebra task is not an undo — the task is already in the
+     warehouse queue, and the box stays allocated either way. So it asks, and
+     the asking offers the way forward rather than only the way out. */
+  const [cancelAsk, setCancelAsk] = useState(false);
   const [methodPick, setMethodPick] = useState<'zebra' | 'manual' | null>(null);
   /* The dialog asks WHICH method first and shows what that method commits to
      second. Both on one screen meant it opened already arguing a case for a
@@ -1443,14 +1503,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       placedVia={placedVia}
                       warehouseCode={warehouse || null}
                       onMethod={() => { setMethodPick(null); setMethodOk(false); setMethodStage('select'); setMethodAsk(true); }}
-                      onCancelTask={() => {
-                        addLog(box.code, 'cancel', 'Zebra scan task cancelled',
-                          [scanTask?.id, 'method cleared'].filter(Boolean).join(' · '));
-                        setScanTask(null);
-                        setScanSteps(0);
-                      }}
+                      onCancelTask={() => setCancelAsk(true)}
                       onOpenScanTask={() => setScanOpen(true)}
-                      onViewProducts={() => setShowProducts(true)}
                     />
                   ) : lcStep > 0 ? (
                     <div className="s4-step-todo">
@@ -1582,6 +1636,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         return (
           <PutawayScanTask
             taskId={scanTask.id}
+            /* The reference the allocation is locked under once both scans
+               pass — the same one the manual route issues, so a box reads the
+               same however it was confirmed. */
+            allocRef={methodRef.alloc}
+            /* The same confirm the awaiting card raises — one question about
+               dropping a task, asked the same way from either screen. */
+            onCancelTask={() => setCancelAsk(true)}
             spiCode={spiCode}
             createdAt={new Date(scanTask.at).toLocaleString('en-GB',
               { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
@@ -1621,6 +1682,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 via: 'Using Zebra Device',
                 allocation: `TPA-${scanTask.id.slice(3, 11)}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
               });
+              markPlaced(box.id, locCodeOf(sp));
               setScanTask(null);
               setScanOpen(false);
             }}
@@ -1746,7 +1808,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             <div className="s4qm__hd">
               <div className="s4qm__hico">
                 {methodStage === 'detail' && methodPick === 'zebra' ? <IcoScan />
-                  : methodStage === 'detail' ? <IcoHand /> : <IcoCheck />}
+                  : <IcoTickBox size={18} />}
               </div>
               <div className="s4qm__htx">
                 <div className="s4qm__t">
@@ -1811,7 +1873,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     aria-pressed={methodPick === k}
                     onClick={() => { setMethodPick(k); setMethodOk(false); }}
                   >
-                    <span className="s4wz-opt__ic">{k === 'zebra' ? <IcoScan /> : <IcoHand />}</span>
+                    <span className="s4wz-opt__ic">{k === 'zebra' ? <IcoScan /> : <IcoTickBox size={20} />}</span>
                     <span className="s4wz-opt__tx">
                       <span className="s4wz-opt__ttl">
                         <span className={`s4pm-num s4pm-num--${k}`}>{num}</span>
@@ -1880,7 +1942,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     ]
                   : [
                       ['Box already placed', `${box.code} is physically at ${shelfCode}`],
-                      ['Consent recorded', 'Your confirmation is logged on this invoice'],
+                      ['Consent recorded', 'Your confirmation is logged on this SPI'],
                       ['Allocation generated', `${methodRef.alloc} is issued`],
                       ['Putaway completed', `${spotNow.kind === 'zone' ? 'Zone' : 'Shelf'} ${shelfCode} is locked for this box`],
                     ];
@@ -1903,10 +1965,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         <div>
                           <span className="s4pm-route__k">{spotNow.kind === 'zone' ? 'Final zone' : 'Final shelf'}</span>
                           <b className="s4pm-route__v">{shelfCode}</b>
+                          {/* Name, level and rack — the three things that tell
+                              one SH-01 from another. The level was being
+                              dropped whenever the shelf had a name. */}
                           <span className="s4pm-route__s">
                             {spotNow.kind === 'zone'
                               ? `${spotNow.zone.name || 'Unnamed zone'} · direct placement`
-                              : `${spotNow.shelf.name || `Level ${spotNow.shelf.level_no}`} · ${spotNow.rack.code}`}
+                              : [spotNow.shelf.name, `Level ${spotNow.shelf.level_no}`, spotNow.rack.code]
+                                  .filter(Boolean).join(' · ')}
                           </span>
                         </div>
                       </div>
@@ -1965,7 +2031,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     {/* The sentence the operator is agreeing to, in the method's
                         own words. It is only ever shown once a method is
                         chosen, so there is no "pick one first" wording left. */}
-                    <label className={`s4pm-ok${methodOk ? ' is-on' : ''}`}>
+                    {/* Manual carries the green the whole way through — the
+                        consent box included, not only once it is ticked. */}
+                    <label className={`s4pm-ok s4pm-ok--${methodPick}${methodOk ? ' is-on' : ''}`}>
                       <input type="checkbox" checked={methodOk} onChange={e => setMethodOk(e.target.checked)} />
                       <span>
                         I confirm that <b>{box.code}</b> is{' '}
@@ -1987,7 +2055,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 className="s4-btn-back"
                 onClick={() => (methodStage === 'detail' ? setMethodStage('select') : setMethodAsk(false))}
               >
-                {methodStage === 'detail' ? 'Back' : 'Cancel'}
+                {methodStage === 'detail' ? <><IcoChevL />Back</> : 'Cancel'}
               </button>
               {methodStage === 'select' ? (
                 <button
@@ -2015,7 +2083,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   /* Manual confirmation IS the placement. A Zebra scan is a
                      task for the floor, so the box stays unplaced until the
                      scan comes back. */
-                  if (methodPick === 'manual') { setPlacedAt(new Date().toISOString()); setScanTask(null); }
+                  if (methodPick === 'manual') {
+                    setPlacedAt(new Date().toISOString());
+                    setScanTask(null);
+                    markPlaced(box.id, locCodeOf(spotNow));
+                  }
                   /* The same number the header has been showing — not a second
                      one minted at submit. */
                   else setScanTask({ id: methodRef.task, at: new Date().toISOString() });
@@ -2023,10 +2095,129 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 }}
               >
                 {methodPick === 'zebra' ? <><IcoScan />Submit for Zebra Verification</>
-                  : methodPick === 'manual' ? <><IcoCheck />Complete Putaway</>
+                  : methodPick === 'manual' ? <><IcoCheck />Confirm Putaway Allocation</>
                   : <>Select a method <IcoChevR /></>}
               </button>
               </>)}
+            </div>
+          </div>
+        </div>
+      );
+      })()}
+
+      {/* Cancel Zebra Scan Task.
+          Three outcomes, not two: keep it, drop it, or drop it and finish the
+          putaway by hand. The third is the one most people actually want —
+          the handheld is missing, the box is already on the shelf — so it is
+          offered as a card rather than hidden behind a second decision. */}
+      {cancelAsk && box && scanTask && (() => {
+      /* Resolved here, the way the method dialog does it — the allocation is
+         what the warning is about, and it has to survive the cancel. */
+      const spotNow = findSpot(loc.data, spot);
+      const locCode = !spotNow ? null
+        : spotNow.kind === 'zone' ? spotNow.zone.code
+        : spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1');
+      return (
+        <div className="s4qm s4wz-modal s4ct-modal is-open" role="dialog" aria-modal="true"
+          aria-label="Cancel Zebra scan task">
+          <div className="s4qm__dlg s4wz__dlg">
+            <div className="s4qm__hd">
+              <div className="s4qm__hico"><IcoBan size={18} /></div>
+              <div className="s4qm__htx">
+                <div className="s4qm__t">Cancel Zebra Scan Task?</div>
+                <div className="s4qm__s">{scanTask.id} &middot; {scanSteps} / 2 scans received</div>
+              </div>
+              <div className="s4wz-ctx">
+                <span className="s4wz-ctx__i"><IcoBoxSm size={13} /><span><em>Box ID</em><b>{box.code}</b></span></span>
+                {spotNow && (
+                  <span className="s4wz-ctx__i">
+                    <IcoFlag /><span>
+                      <em>{spotNow.kind === 'zone' ? 'Zone ID' : 'Shelf ID'}</em>
+                      <b>{locCode}</b>
+                    </span>
+                  </span>
+                )}
+              </div>
+              <button type="button" className="s4qm__x" onClick={() => setCancelAsk(false)} aria-label="Close">
+                &times;
+              </button>
+            </div>
+
+            <div className="s4qm__bd">
+              {/* What cancelling actually does — and, just as important, what
+                  it does NOT do. The allocation survives; only the method
+                  goes. Saying so is what stops this reading as "undo". */}
+              <div className="s4ct-warn">
+                <span className="s4ct-warn__i"><IcoScan /></span>
+                <div>
+                  <b>This will cancel task {scanTask.id}</b>
+                  <ul>
+                    <li>The task is removed from the warehouse Zebra queue.</li>
+                    <li>
+                      {box.code} stays allocated to{' '}
+                      <b>{[warehouseInfo?.code || warehouse, locCode].filter(Boolean).join(' › ')}</b>
+                      {' '}&mdash; only the confirmation method is reset.
+                    </li>
+                    <li>The putaway stays pending until it is confirmed by another method.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="s4ct-alt">
+                <span className="s4ct-alt__rec">Recommended</span>
+                <span className="s4ct-alt__i"><IcoTickBox size={20} /></span>
+                <div className="s4ct-alt__tx">
+                  <span className="s4pm-num s4pm-num--manual">Option 02</span>
+                  <b>Manual Confirmation</b>
+                  <p>
+                    If the Zebra handheld is unavailable, confirm that {box.code} is already
+                    physically placed at {locCode} and complete the putaway now.
+                  </p>
+                  <div className="s4ct-alt__chips">
+                    <span><IcoCheck /> Completes instantly</span>
+                    <span><IcoCheck /> No device needed</span>
+                    <span><IcoCheck /> Same location</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="s4qm__ft s4ct-ft">
+              <button type="button" className="s4-btn-back" onClick={() => setCancelAsk(false)}>
+                Keep Task
+              </button>
+              <button
+                type="button"
+                className="s4ct-only"
+                onClick={() => {
+                  addLog(box.code, 'cancel', 'Zebra scan task cancelled',
+                    [scanTask.id, 'method cleared'].filter(Boolean).join(' · '));
+                  setScanTask(null);
+                  setScanSteps(0);
+                  setCancelAsk(false);
+                }}
+              >
+                <IcoBan /> Cancel Task Only
+              </button>
+              <button
+                type="button"
+                className="s4ct-manual"
+                onClick={() => {
+                  addLog(box.code, 'cancel', 'Zebra scan task cancelled',
+                    [scanTask.id, 'switching to manual'].filter(Boolean).join(' · '));
+                  setScanTask(null);
+                  setScanSteps(0);
+                  setCancelAsk(false);
+                  /* Straight to the manual confirmation screen — the point of
+                     this route is not to choose again. */
+                  setMethodPick('manual');
+                  setMethodOk(false);
+                  setMethodStage('detail');
+                  setMethodAsk(true);
+                }}
+              >
+                Cancel &amp; Continue with Manual <IcoChevR />
+              </button>
             </div>
           </div>
         </div>

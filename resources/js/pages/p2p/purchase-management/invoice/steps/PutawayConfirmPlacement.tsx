@@ -94,9 +94,11 @@ const IcoRack = () => svg(<><rect x="3" y="3" width="18" height="18" rx="2" />
 const IcoLyr = () => svg(<><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /></>, 13);
 const IcoEdit = () => svg(<><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></>, 12);
 const IcoTick = ({ size = 14 }: { size?: number }) => svg(<polyline points="20 6 9 17 4 12" />, size, 3);
-const IcoList = () => svg(<><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
-  <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
-  <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>, 13);
+/* The Putaway Method button's icon. The design shows the tick only once a
+   method has been chosen; before that it carries this card, and since we
+   have no chosen-state the card is the one that applies. 15px at 2.2, as
+   the design draws it. */
+const IcoMethodCard = () => svg(<><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9h10M7 13h6" /></>, 15);
 const IcoScan = ({ size = 20 }: { size?: number }) => svg(<>
   <path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" />
   <path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" />
@@ -120,7 +122,7 @@ const kv = (k: string, v: ReactNode) => <div key={k}><span>{k}</span><b>{v}</b><
 
 export default function PutawayConfirmPlacement({
   box, spot, warehouse, warehouseCode = null, assigned, scan = null, placedVia = null,
-  qr, locQr, onChange, onMethod, onViewProducts, onSticker, onCancelTask, onOpenScanTask,
+  qr, locQr, onChange, onMethod, onSticker, onCancelTask, onOpenScanTask,
 }: {
   box: ConfirmBox;
   spot: ConfirmSpot | null;
@@ -141,7 +143,6 @@ export default function PutawayConfirmPlacement({
   locQr: ReactNode;
   onChange: () => void;
   onMethod: () => void;
-  onViewProducts: () => void;
   onSticker?: () => void;
   onCancelTask?: () => void;
   onOpenScanTask?: () => void;
@@ -227,15 +228,6 @@ export default function PutawayConfirmPlacement({
               </div>
             </div>
 
-            {/* Only when there is more than one. On a single-product box the
-                box IS the product — everything the list would show is already
-                on this card, and the design has no such row there. A mixed
-                carton is the case it exists for. */}
-            {box.products > 1 && (
-              <button type="button" className="s4c3-prodbtn" onClick={onViewProducts}>
-                <IcoList />View Products<span>{box.products}</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -351,7 +343,7 @@ export default function PutawayConfirmPlacement({
         ) : (
           <button type="button" className="s4c3-pm" disabled={!spot} onClick={onMethod}
             title={spot ? undefined : 'Choose a location in Step 02 first'}>
-            <IcoTick /> Putaway Method
+            <IcoMethodCard /> Putaway Method
           </button>
         )}
       </div>

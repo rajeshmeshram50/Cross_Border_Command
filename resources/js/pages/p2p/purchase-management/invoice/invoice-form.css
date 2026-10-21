@@ -4635,6 +4635,11 @@
 .s4-root .s4sl-codes { display:flex; align-items:center; gap:6px; margin-top:7px; flex-wrap:wrap; }
 .s4-root .s4sl-codes i { font-style:normal; color:#cbd5e1; font-size:11px; }
 .s4-root .s4sl-code { font-family:'Geist Mono',ui-monospace,monospace; font-size:10.5px; font-weight:800; padding:3px 9px; border-radius:7px; }
+/* The warehouse code had no variant of its own, so it fell back to bare mono
+   text while the zone, rack and shelf beside it were pills — the chain read
+   as three chips with a label in front. Neutral, because the warehouse is
+   the one link in it that carries no colour of its own. */
+.s4-root .s4sl-code--w { background:#f8fafc; color:#334155; border:1px solid #e2e8f0; }
 .s4-root .s4sl-code--z { background:#ede9fe; color:#6d28d9; border:1px solid #ddd6fe; }
 .s4-root .s4sl-code--r { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
 .s4-root .s4sl-code--s { background:#dcfce7; color:#047857; border:1px solid #bbf7d0; }
@@ -5038,6 +5043,7 @@
 /* Code pills: the light tints are unreadable on a dark card. */
 [data-bs-theme="dark"] .s4-root .s4vp-code { background: rgba(167,139,250,.16); color: #c4b5fd; border-color: rgba(167,139,250,.32); }
 [data-bs-theme="dark"] .s4-root .s4mx-pc__nm { color: var(--s4d-tx); }
+[data-bs-theme="dark"] .s4-root .s4sl-code--w { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.3); }
 [data-bs-theme="dark"] .s4-root .s4sl-code--z,
 [data-bs-theme="dark"] .s4-root .s4sl-chip--z { background: rgba(167,139,250,.16); color: #c4b5fd; border-color: rgba(167,139,250,.32); }
 [data-bs-theme="dark"] .s4-root .s4sl-code--r,
@@ -5467,6 +5473,11 @@
 .s4-root .s4pm-ok { display:flex; align-items:flex-start; gap:10px; padding:12px; border-radius:12px; border:1px solid #a5f3fc; background:#f0fdff; font-size:12px; font-weight:600; color:#334155; cursor:pointer; transition:border-color .15s, background .15s; }
 .s4-root .s4pm-ok:hover { border-color:#7dd3e8; }
 .s4-root .s4pm-ok.is-on { border-color:#86efac; background:#f0fdf4; }
+/* Manual starts green rather than turning green, so the tick reads as the
+   answer to a green question and not as a change of subject. */
+.s4-root .s4pm-ok--manual { border-color:#a7f3d0; background:#f0fdf6; }
+.s4-root .s4pm-ok--manual:hover { border-color:#6ee7b7; }
+.s4-root .s4pm-ok--manual b { color:#047857; }
 /* Waiting for a method: present, readable, plainly not yet actionable. */
 .s4-root .s4pm-ok.is-idle { border-color:#e5eef3; background:#fbfdfe; cursor:default; }
 .s4-root .s4pm-ok.is-idle:hover { border-color:#e5eef3; }
@@ -5483,7 +5494,7 @@
 .s4-root .s4pm-go { display:inline-flex; align-items:center; gap:7px; }
 .s4-root .s4pm-go--zebra:not(:disabled) { background:#0f172a; border-color:#0f172a; }
 .s4-root .s4pm-go--zebra:not(:disabled):hover { background:#1e293b; }
-.s4-root .s4pm-go--manual:not(:disabled) { background:linear-gradient(135deg,#10b981,#059669); border-color:transparent; }
+.s4-root .s4pm-go--manual:not(:disabled) { background:linear-gradient(135deg,#10b981,#047857); border-color:transparent; box-shadow:0 10px 18px -10px rgba(5,150,105,.85); }
 
 [data-bs-theme="dark"] .s4-root .s4pm-route__card { background:var(--s4d-bg); border-color:var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4pm-route__card--box { border-left-color:#22d3ee; }
@@ -5503,6 +5514,8 @@
 [data-bs-theme="dark"] .s4-root .s4pm-warn b { color:#fed7aa; }
 [data-bs-theme="dark"] .s4-root .s4pm-ok { background:rgba(34,211,238,.08); border-color:rgba(34,211,238,.28); }
 [data-bs-theme="dark"] .s4-root .s4pm-ok.is-on { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.38); }
+[data-bs-theme="dark"] .s4-root .s4pm-ok--manual { background:rgba(16,185,129,.09); border-color:rgba(16,185,129,.3); }
+[data-bs-theme="dark"] .s4-root .s4pm-ok--manual b { color:#6ee7b7; }
 [data-bs-theme="dark"] .s4-root .s4pm-ok.is-idle { background:rgba(255,255,255,.03); border-color:var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4pm-ok.is-idle > span,
 [data-bs-theme="dark"] .s4-root .s4pm-ok.is-idle b { color:var(--s4d-dim); }
@@ -5660,10 +5673,13 @@
 .s4-root .s4zt-proto i { width:30px; height:17px; border-radius:999px; background:#cbd5e1; position:relative; transition:background .18s; }
 .s4-root .s4zt-proto i::after { content:''; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:#fff; transition:transform .18s; }
 .s4-root .s4zt-proto b { font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; }
-.s4-root .s4zt-proto.is-on { border-color:#fbbf24; background:#fffbeb; color:#92400e; }
-.s4-root .s4zt-proto.is-on i { background:#f59e0b; }
+/* Teal when on, not amber. Prototype mode is a MODE, not a warning — the
+   results it produces are each marked Simulated, which is where the caution
+   belongs. Amber here made the strip read as a problem with the task. */
+.s4-root .s4zt-proto.is-on { border-color:#67e8f9; background:#f0fdff; color:#0c4a6e; }
+.s4-root .s4zt-proto.is-on i { background:linear-gradient(135deg,#22d3ee,#0891b2); }
 .s4-root .s4zt-proto.is-on i::after { transform:translateX(13px); }
-.s4-root .s4zt-proto.is-on b { color:#b45309; }
+.s4-root .s4zt-proto.is-on b { color:#0e7490; }
 
 .s4-root .s4zt-legs { display:grid; grid-template-columns:minmax(0,1fr) 30px minmax(0,1fr); align-items:stretch; }
 .s4-root .s4zt-legs__go { justify-self:center; align-self:center; width:26px; height:26px; border-radius:50%; display:grid; place-items:center; color:#64748b; background:#fff; border:1px solid #e2e8f0; }
@@ -5703,12 +5719,34 @@
 .s4-root .s4zt-leg__ok { margin-top:auto; display:flex; align-items:center; gap:7px; padding:9px 12px; border-radius:10px; background:#f0fdf4; border:1px solid #a7f3d0; font-size:11.5px; font-weight:700; color:#047857; }
 .s4-root .s4zt-leg__ok em { margin-left:auto; font-style:normal; font-size:8.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:6px; background:#fef3c7; color:#92400e; }
 .s4-root .s4zt-leg__bad { display:flex; align-items:center; gap:7px; padding:9px 12px; border-radius:10px; background:#fef2f2; border:1px solid #fecaca; font-size:11.5px; color:#b91c1c; }
-.s4-root .s4zt-leg__sim { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.s4-root .s4zt-sim { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:9px 10px; border-radius:10px; border:1.5px solid; background:#fff; font:inherit; font-size:11.5px; font-weight:800; cursor:pointer; }
-.s4-root .s4zt-sim--ok { border-color:#a7f3d0; color:#047857; background:#f6fffb; }
-.s4-root .s4zt-sim--ok:hover { background:#ecfdf5; }
-.s4-root .s4zt-sim--bad { border-color:#fecaca; color:#dc2626; background:#fffafa; }
-.s4-root .s4zt-sim--bad:hover { background:#fef2f2; }
+/* The stand-in for the handheld: one full-width control, dashed, because it
+   is scaffolding and should not be mistaken for part of the task. */
+.s4-root .s4zt-sim {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 10px 12px; border-radius: 11px;
+  border: 1.5px dashed #a5dce8; background: #f8fdff;
+  font: inherit; font-size: 11.5px; font-weight: 800; color: #0e7490; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.s4-root .s4zt-sim:hover { background: #ecfeff; border-color: #67e8f9; }
+
+/* The outcome, once both legs pass. Green and quiet — it is a receipt, not
+   an alert, so it states the address and the reference and stops. */
+.s4-root .s4zt-locked {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 11px 14px; border-radius: 14px;
+  background: linear-gradient(100deg, #f0fdf4, #fbfffc 65%); border: 1px solid #bbf7d0;
+}
+.s4-root .s4zt-locked__i {
+  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 8px;
+  display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, #34d399, #059669);
+}
+.s4-root .s4zt-locked b { display: block; font-size: 12.5px; font-weight: 800; color: #047857; }
+.s4-root .s4zt-locked span { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 500; color: #5b7585; overflow-wrap: anywhere; }
+[data-bs-theme="dark"] .s4-root .s4zt-locked { background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.32); }
+[data-bs-theme="dark"] .s4-root .s4zt-locked b { color: #6ee7b7; }
+[data-bs-theme="dark"] .s4-root .s4zt-locked span { color: #a8c2cc; }
 
 .s4-root .s4zt-dest { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 12px; border-radius:11px; border:1px solid #e3eef3; background:#fbfdfe; }
 .s4-root .s4zt-dest.is-done { border-color:#a7f3d0; background:#f0fdf4; }
@@ -5721,6 +5759,19 @@
 .s4-root .s4zt-dest.is-done .s4zt-dest__st { background:linear-gradient(135deg,#10b981,#059669); color:#fff; }
 
 .s4-root .s4zt-ft { justify-content:flex-start; gap:14px; }
+/* Close and the note sit together on the left; dropping the task is the one
+   destructive thing here, so it stands apart at the far edge. Outlined, not
+   filled — it is not the expected way out of this dialog. */
+.s4-root .s4zt-cancel {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
+  height: 38px; padding: 0 18px; border-radius: 11px;
+  border: 1.5px solid #fecaca; background: #fff; color: #b91c1c;
+  font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.s4-root .s4zt-cancel:hover { background: #fef2f2; border-color: #f87171; }
+[data-bs-theme="dark"] .s4-root .s4zt-cancel { background: transparent; border-color: rgba(248,113,113,.4); color: #fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4zt-cancel:hover { background: rgba(220,38,38,.14); }
 .s4-root .s4zt-foot { display:inline-flex; align-items:center; gap:8px; font-size:11.5px; font-weight:600; color:#94a3b8; }
 .s4-root .s4zt-foot i { width:8px; height:8px; border-radius:50%; background:#cbd5e1; }
 .s4-root .s4zt-foot.is-done { color:#047857; font-weight:800; }
@@ -5738,7 +5789,7 @@
 [data-bs-theme="dark"] .s4-root .s4zt-bar { background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.28); }
 [data-bs-theme="dark"] .s4-root .s4zt-bar__k { color:#7dd3e8; }
 [data-bs-theme="dark"] .s4-root .s4zt-proto { background:var(--s4d-bg2); border-color:var(--s4d-line); color:var(--s4d-dim); }
-[data-bs-theme="dark"] .s4-root .s4zt-proto.is-on { background:rgba(251,191,36,.14); border-color:rgba(251,191,36,.42); color:#fcd34d; }
+[data-bs-theme="dark"] .s4-root .s4zt-proto.is-on { background:rgba(34,211,238,.14); border-color:rgba(34,211,238,.42); color:#7dd3e8; }
 [data-bs-theme="dark"] .s4-root .s4zt-leg { background:var(--s4d-bg2); border-color:rgba(34,211,238,.4); }
 [data-bs-theme="dark"] .s4-root .s4zt-leg.is-locked { background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.02) 0 7px,rgba(255,255,255,.05) 7px 14px); border-color:var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4zt-leg.is-ok { border-color:rgba(16,185,129,.5); }
@@ -5750,8 +5801,8 @@
 [data-bs-theme="dark"] .s4-root .s4zt-leg__ok { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.3); color:#6ee7b7; }
 [data-bs-theme="dark"] .s4-root .s4zt-leg__bad,
 [data-bs-theme="dark"] .s4-root .s4zt-err { background:rgba(220,38,38,.12); border-color:rgba(220,38,38,.3); color:#fca5a5; }
-[data-bs-theme="dark"] .s4-root .s4zt-sim--ok { background:rgba(16,185,129,.1); border-color:rgba(16,185,129,.35); color:#6ee7b7; }
-[data-bs-theme="dark"] .s4-root .s4zt-sim--bad { background:rgba(220,38,38,.1); border-color:rgba(220,38,38,.35); color:#fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4zt-sim { background:rgba(34,211,238,.07); border-color:rgba(34,211,238,.32); color:#7dd3e8; }
+[data-bs-theme="dark"] .s4-root .s4zt-sim:hover { background:rgba(34,211,238,.14); border-color:rgba(34,211,238,.5); }
 [data-bs-theme="dark"] .s4-root .s4zt-dest { background:rgba(255,255,255,.03); border-color:var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4zt-dest.is-done { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.32); }
 [data-bs-theme="dark"] .s4-root .s4zt-dest__k { color:var(--s4d-dim); }
@@ -7302,10 +7353,18 @@
   box-shadow: 0 2px 8px rgba(8,145,178,.4);
   position: relative;
 }
+/* The tick is a DRAWN stroke with round caps, not two borders of an empty box
+   rotated 45°. That trick gives a thin mark with mitred corners and a sharp
+   point, which at 22px reads as a scratch on the disc; the design's has the
+   weight and the rounded ends of a pen stroke. A mask paints it, so the glyph
+   is one shape and the markup stays an empty span. */
 .s4-root .s4wz-opt.is-on .s4wz-opt__radio::after {
-  content: ''; position: absolute; left: 50%; top: 47%;
-  width: 5px; height: 9px; margin: -6px 0 0 -3px;
-  border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+  content: ''; position: absolute; inset: 0;
+  border: 0; margin: 0; transform: none;
+  background: #fff;
+  --s4-tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  -webkit-mask: var(--s4-tick) center / 56% 56% no-repeat;
+  mask: var(--s4-tick) center / 56% 56% no-repeat;
 }
 /* A zero count is information, not a barrier: the card stays usable and only
    its count chip goes quiet. */
@@ -8172,12 +8231,17 @@
 /* ── the one action under the two cards ── */
 .s4-root .s4c3-act { display: flex; justify-content: center; padding: 4px 0 2px; }
 .s4-root .s4c3-act.is-banner { display: block; }
+/* The design builds this from .s4bj-btn + .s4bj-btn--pri + .s4c3-pm: a 40px
+   pill on an 11px radius at 12.5px, lit from #22d3ee at 160deg so the top
+   edge is bright cyan and the fall is to #0e7490. Ours ran 135deg from
+   #0891b2 down to #155e75 under a deep 0 10px 20px shadow, so it read as a
+   darker, heavier slab than the design's. */
 .s4-root .s4c3-pm {
   display: flex; align-items: center; justify-content: center; gap: 8px;
-  height: 42px; padding: 0 22px; border: none; border-radius: 12px; cursor: pointer;
-  font-family: inherit; font-size: 13px; font-weight: 800; color: #fff;
-  background: linear-gradient(135deg, #0891b2, #0e7490 60%, #155e75);
-  box-shadow: 0 10px 20px -10px rgba(8,145,178,.75);
+  height: 40px; padding: 0 22px; border: none; border-radius: 11px; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(160deg, #22d3ee 0%, #0891b2 50%, #0e7490 100%);
+  box-shadow: 0 4px 12px -3px rgba(8,145,178,.5);
 }
 .s4-root .s4c3-pm:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
 /* View Products sits with the box's own details, not with the step's action. */
@@ -8197,6 +8261,102 @@
   background: linear-gradient(110deg, #ecfeff, #f8fdff 55%, #fff);
   box-shadow: 0 12px 26px -22px rgba(14,116,144,.7);
 }
+/* The accent bar down its left edge, which every other card of this family
+   carries (.spi-dt-sec::before draws the same one). Without it the awaiting
+   card was the only panel on the stage with no spine, so it read as a notice
+   dropped onto the pane rather than part of it. Green once the scan lands,
+   the way the card's icon already turns. */
+.s4-root .s4zb::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px;
+  background: linear-gradient(180deg, #22d3ee, #0891b2, #0e7490);
+  border-radius: 16px 0 0 16px;
+}
+.s4-root .s4zb--done::before { background: linear-gradient(180deg, #34d399, #10b981, #047857); }
+
+/* ── Cancel Zebra Scan Task ────────────────────────────────────────────────
+   Built on the method dialog's shell, so the header, the context chips and
+   the close all behave the same. Narrower than the chooser: this one asks a
+   question about a single task rather than laying two options side by side. */
+.s4-root .s4ct-modal .s4wz__dlg { width: min(860px, 94vw); }
+.s4-root .s4ct-modal .s4qm__bd { padding: 14px 16px 16px; gap: 12px; }
+
+/* What cancelling does. Red because it is destructive, bordered rather than
+   filled because the destruction is bounded — the task goes, the allocation
+   does not, and the list underneath is there to say exactly that. */
+.s4-root .s4ct-warn {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 13px 15px; border-radius: 14px;
+  background: linear-gradient(135deg, #fff5f5, #fffafa 60%); border: 1px solid #fecaca;
+}
+.s4-root .s4ct-warn__i {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 11px;
+  display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, #f87171, #dc2626);
+  box-shadow: 0 6px 14px -8px rgba(220,38,38,.8);
+}
+.s4-root .s4ct-warn b { display: block; font-size: 12.5px; font-weight: 800; color: #b91c1c; }
+.s4-root .s4ct-warn ul { margin: 6px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
+.s4-root .s4ct-warn li { font-size: 11.5px; font-weight: 500; color: #5b7585; line-height: 1.45; }
+.s4-root .s4ct-warn li b { display: inline; font-size: inherit; color: #0c2c3a; }
+
+/* The way out, offered rather than implied. Green because it COMPLETES the
+   putaway — it is the only control on this dialog that finishes anything. */
+.s4-root .s4ct-alt {
+  position: relative; display: flex; align-items: flex-start; gap: 12px;
+  padding: 13px 15px; border-radius: 14px;
+  background: linear-gradient(135deg, #f0fdf4, #fbfffc 60%); border: 1.5px solid #bbf7d0;
+}
+.s4-root .s4ct-alt__rec {
+  position: absolute; top: -1px; right: -1px;
+  padding: 3px 11px; border-radius: 0 13px 0 12px;
+  font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: #fff; background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+.s4-root .s4ct-alt__i {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 11px;
+  display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 6px 14px -8px rgba(245,158,11,.85);
+}
+.s4-root .s4ct-alt__tx { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-right: 86px; }
+.s4-root .s4ct-alt__tx > b { font-size: 13px; font-weight: 800; color: #0c2c3a; }
+.s4-root .s4ct-alt__tx p { margin: 0; font-size: 11.5px; font-weight: 500; color: #5b7585; line-height: 1.45; }
+.s4-root .s4ct-alt__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.s4-root .s4ct-alt__chips span {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 800; color: #15803d;
+  background: #dcfce7; border: 1px solid #bbf7d0;
+}
+.s4-root .s4ct-alt__chips svg { width: 10px; height: 10px; }
+
+/* Keep Task sits apart from the two that end the task. */
+.s4-root .s4ct-ft { gap: 10px; }
+.s4-root .s4ct-ft .s4-btn-back { margin-right: auto; }
+.s4-root .s4ct-only, .s4-root .s4ct-manual {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 18px; border-radius: 12px;
+  font: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
+  transition: filter .15s, transform .15s, background .15s;
+}
+.s4-root .s4ct-only { border: 1.5px solid #fecaca; background: #fff; color: #b91c1c; }
+.s4-root .s4ct-only:hover { background: #fef2f2; border-color: #f87171; }
+.s4-root .s4ct-manual {
+  border: 0; color: #fff; background: linear-gradient(135deg, #22c55e, #16a34a);
+  box-shadow: 0 10px 20px -10px rgba(22,163,74,.9);
+}
+.s4-root .s4ct-manual:hover { filter: brightness(1.06); transform: translateY(-1px); }
+
+[data-bs-theme="dark"] .s4-root .s4ct-warn { background: rgba(220,38,38,.10); border-color: rgba(248,113,113,.34); }
+[data-bs-theme="dark"] .s4-root .s4ct-warn b { color: #fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4ct-warn li { color: #a8c2cc; }
+[data-bs-theme="dark"] .s4-root .s4ct-warn li b { color: #e6f3f7; }
+[data-bs-theme="dark"] .s4-root .s4ct-alt { background: rgba(34,197,94,.10); border-color: rgba(74,222,128,.34); }
+[data-bs-theme="dark"] .s4-root .s4ct-alt__tx > b { color: #e6f3f7; }
+[data-bs-theme="dark"] .s4-root .s4ct-alt__tx p { color: #a8c2cc; }
+[data-bs-theme="dark"] .s4-root .s4ct-alt__chips span { color: #6ee7b7; background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.34); }
+[data-bs-theme="dark"] .s4-root .s4ct-only { background: transparent; border-color: rgba(248,113,113,.4); color: #fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4ct-only:hover { background: rgba(220,38,38,.14); }
 .s4-root .s4zb-i {
   width: 44px; height: 44px; flex-shrink: 0; border-radius: 13px;
   display: flex; align-items: center; justify-content: center; color: #fff;
@@ -8321,12 +8481,16 @@
 }
 .s4-root .s4pm-step { display: flex; align-items: flex-start; gap: 9px; }
 .s4-root .s4pm-step > span {
-  flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%;
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 800; color: #fff;
+  font-size: 10.5px; font-weight: 800; color: #fff;
   background: linear-gradient(135deg, #22d3ee, #0e7490);
 }
-.s4-root .s4pm-flow--m .s4pm-step > span { background: linear-gradient(135deg, #fbbf24, #d97706); }
+/* Manual is the green branch end to end: the panel, its numbers, the consent
+   box and the button all read as one colour. The numbers were amber, which
+   belongs to the warning, not to the method. */
+.s4-root .s4pm-flow--m { background: #f6fdf9; border-color: #d1f2e1; }
+.s4-root .s4pm-flow--m .s4pm-step > span { background: linear-gradient(135deg, #34d399, #059669); }
 .s4-root .s4pm-step > div { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .s4-root .s4pm-step b { font-size: 12px; font-weight: 700; color: #0c2c3a; }
 .s4-root .s4pm-step em { font-style: normal; font-size: 10.5px; font-weight: 500; color: #5b7585; line-height: 1.35; }
@@ -8336,6 +8500,7 @@
   .s4-root .s4pm-grid { grid-template-columns: minmax(0, 1fr); }
 }
 [data-bs-theme="dark"] .s4-root .s4pm-flow { background: rgba(255,255,255,.03); border-color: rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .s4-root .s4pm-flow--m { background: rgba(16,185,129,.07); border-color: rgba(16,185,129,.22); }
 [data-bs-theme="dark"] .s4-root .s4pm-step b { color: #e4f3f8; }
 [data-bs-theme="dark"] .s4-root .s4pm-step em { color: #8fa6b4; }
 
@@ -8533,7 +8698,12 @@
 .s4-root .s4zt-st { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; border-radius: 999px; padding: 4px 11px; border: 1px solid; }
 /* The scan bar reads as a labelled strip, not a single run-on line. */
 .s4-root .s4zt-bar__ic { width: 30px; height: 30px; flex-shrink: 0; border-radius: 9px; display: flex; align-items: center; justify-content: center; color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2); }
-.s4-root .s4zt-bar__k { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+/* align-items has to be reset with the direction. The rule this overrides is
+   a ROW with align-items:center, which centred the two lines vertically —
+   right there. Turned on its side it kept the centring and started applying
+   it ACROSS, so the title and its sub-line drifted into the middle of the
+   strip while the icon stayed at the edge. */
+.s4-root .s4zt-bar__k { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
 .s4-root .s4zt-bar__k b { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #0e7490; }
 .s4-root .s4zt-bar__k em { font-style: normal; font-size: 10.5px; font-weight: 500; color: #5b7585; }
 /* Locked: a dashed edge over a wider hatch than dev was drawing. */
@@ -8542,6 +8712,15 @@
 .s4-root .s4zt-dest { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 14px; border: 1px solid #d6eef5; background: #fff; }
 .s4-root .s4zt-dest__k { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #334e5c; }
 .s4-root .s4zt-dest__chain { display: flex; align-items: center; gap: 5px; flex: 1; flex-wrap: wrap; }
+/* The destination chips are set in the BODY face, not the mono one. Here the
+   four codes are read as a sentence — WH-002 › ZN-013 › RC-011 › SH-01, the
+   address — not as a column to compare character by character, which is what
+   the mono is for in the picker. 11px on #F4F8FA at 2px 9px, from the design.
+   Scoped to this row: the picker's own chips are not being restyled. */
+.s4-root .s4zt-dest__chain .s4sl-code {
+  font-family: var(--font-sans); font-size: 11px; padding: 2px 9px;
+}
+.s4-root .s4zt-dest__chain .s4sl-code--w { background: #f4f8fa; color: #334e5c; border-color: #e3edf1; }
 .s4-root .s4zt-dest__st { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; color: #5b7585; background: #f4f8fa; border: 1px solid #e3edf1; border-radius: 999px; padding: 4px 11px; }
 @media (max-width: 1000px) { .s4-root .s4zt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 [data-bs-theme="dark"] .s4-root .s4zt-f { background: rgba(255,255,255,.03); border-color: rgba(34,211,238,.16); }
@@ -8558,6 +8737,18 @@
    one that is ready, green once verified. Dev had none, which is most of why
    the ready card did not announce itself. */
 .s4-root .s4zt-leg { position: relative; overflow: hidden; border-width: 1px; border-color: #e2e8f0; }
+/* The two legs are a pair and stand at one height, so whichever has less to
+   say is left holding the difference — once Scan 01 verified, its card ran a
+   third of its height empty under the green panel while Scan 02 still carried
+   an Awaiting row and a Simulate button.
+   The state panel takes that space rather than leaving it: it is the line
+   that says where the leg has got to, and it should read as the body of the
+   card, not a label stranded at the top of one. (.s4zt-leg__ok's margin-top:
+   auto was meant to push it to the floor instead; it has never taken.) */
+.s4-root .s4zt-leg__ok,
+.s4-root .s4zt-leg__wait,
+.s4-root .s4zt-leg__lock,
+.s4-root .s4zt-leg__bad { flex: 1 0 auto; align-items: center; margin-top: 0; }
 .s4-root .s4zt-leg::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: #e2e8f0;
 }
@@ -8604,9 +8795,33 @@
 .s4-root .s4zt-top__id { font-family: inherit; font-size: 17px; color: #0c2c3a; }
 /* The scan bar is a tinted strip with its own gradient, not a flat fill. */
 .s4-root .s4zt-bar {
-  gap: 10px; border-radius: 14px; border-color: #c7ecf4;
+  /* 14px between the mark and the words. At 10 the label sat against the
+     icon tile and the two read as one object; the design leaves enough for
+     the icon to be a mark ABOUT the strip rather than the start of its
+     first line. */
+  gap: 14px; border-radius: 14px; border-color: #c7ecf4;
   background: linear-gradient(100deg, #ecfeff, #f8fdff);
 }
+
+/* Four cards, not one card with four stripes inside it.
+   The task, the scanning strip, the two scan legs and the destination are
+   separate statements — the first says what was raised, the second where the
+   scans arrive from, the third what is outstanding, the fourth what will have
+   been proved. Boxed together they read as one long form, and the dashed rule
+   under the task header was doing the work of a card edge. So .s4zt-card is
+   now only the column that spaces them, and the task block takes the chrome
+   it used to borrow. The strip, the legs and the destination already had
+   their own. */
+.s4-root .s4zt-card {
+  background: transparent; border: 0; padding: 0; box-shadow: none; gap: 10px;
+}
+.s4-root .s4zt-sec {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 12px 14px; border-radius: 16px;
+  background: #fff; border: 1px solid #d6eef5;
+  box-shadow: 0 10px 24px -22px rgba(14,116,144,.6);
+}
+[data-bs-theme="dark"] .s4-root .s4zt-sec { background: #13303c; border-color: rgba(34,211,238,.2); }
 [data-bs-theme="dark"] .s4-root .s4zt-top__id { color: #e4f3f8; }
 [data-bs-theme="dark"] .s4-root .s4zt-top__k { color: #8fa6b4; }
 [data-bs-theme="dark"] .s4-root .s4zt-bar { background: rgba(34,211,238,.07); border-color: rgba(34,211,238,.22); }
