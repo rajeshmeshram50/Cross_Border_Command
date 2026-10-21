@@ -16,7 +16,7 @@ import { draftFromPo, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
 import { legalFromVault } from '../order/create-po/supplier-checks';
 import { useToast } from '../../../../contexts/ToastContext';
-import { spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody } from './spi-api';
+import { spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
   DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor,
@@ -75,6 +75,12 @@ export default function InvoiceForm({
   const [flagMaster, setFlagMaster] = useState<ProductFlagOption[]>([]);
   const [boxesLoading, setBoxesLoading] = useState(false);
   const [savedWarehouse, setSavedWarehouse] = useState<string | null>(null);
+  /* Stage 04's warehouse card prints the street address, the pincode, the
+     floor area and the date the site was added. Neither the SPI's own
+     warehouse stub nor the options endpoint carries those, so the row is read
+     once by id — the same id both of them already name. */
+  const [savedWarehouseId, setSavedWarehouseId] = useState<number | null>(null);
+  const [warehouseRow, setWarehouseRow] = useState<WarehouseDetail | null>(null);
   /* The invoice's own branch. Branch-scoped masters (product flags) must be
      fetched for THIS branch, or their ids will not be ones the invoice's boxes
      are allowed to carry. */
@@ -106,6 +112,7 @@ export default function InvoiceForm({
           setSpiId(existing.id);
           setSpiCode(existing.code);
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
+          if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
           // Masters are per branch, and the one that matters is the INVOICE'S
           // branch, not whichever the switcher happens to be on.
@@ -167,6 +174,19 @@ export default function InvoiceForm({
     })();
     return () => { live = false; };
   }, [input.poId, input.spiId, set, toast]);
+
+  /* The warehouse row behind Stage 04's card. Read once per site; a failure
+     is not worth a toast, because the card falls back to the name the rest of
+     the form already shows. */
+  const warehouseId = savedWarehouseId ?? input.storage.warehouse?.apiId ?? null;
+  useEffect(() => {
+    if (!warehouseId) { setWarehouseRow(null); return; }
+    let live = true;
+    spiApi.warehouseDetail(warehouseId)
+      .then(w => { if (live) setWarehouseRow(w); })
+      .catch(() => { if (live) setWarehouseRow(null); });
+    return () => { live = false; };
+  }, [warehouseId]);
 
   const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -477,7 +497,23 @@ export default function InvoiceForm({
                 {stage === 3 && (
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
                     flagMaster={flagMaster} spiId={spiId}
-                    warehouse={savedWarehouse ?? warehouseLabel(input.storage)} readOnly={viewOnly} />
+                    warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
+                    warehouseInfo={{
+                      code: warehouseRow?.wh_code ?? input.storage.warehouse?.code ?? null,
+                      since: warehouseRow?.created_at ?? null,
+                      name: warehouseRow?.wh_name ?? savedWarehouse ?? warehouseLabel(input.storage),
+                      address: warehouseRow?.address ?? null,
+                      /* Town, state and pincode. The row's own `location` stops
+                         at the state, which is the dropdown's line, not this
+                         card's. */
+                      location: warehouseRow
+                        ? [warehouseRow.city, warehouseRow.state, warehouseRow.pincode].filter(Boolean).join(', ') || null
+                        : input.storage.warehouse?.location ?? null,
+                      typeLabel: warehouseRow?.wh_type_label ?? null,
+                      areaSqft: warehouseRow?.area_sqft ?? null,
+                      own: input.storage.type === 'own',
+                    }}
+                    readOnly={viewOnly} />
                 )}
               </div>
             </>

@@ -371,7 +371,7 @@ export default function ClmCaseToCasePage() {
             })}
           </div>
           <div className="ctc-hspacer" style={{ flex: 1 }} />
-          <div className="ctc-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
+          <div className="ctc-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, boxSizing: 'border-box', padding: '0 14px', borderRadius: 11, background: t.searchBg, border: `1.5px solid ${t.searchBorder}`, flexShrink: 0 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input autoComplete="off" value={search} disabled={lifecycleBusy !== null} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…"
               style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.searchText, background: 'transparent', width: 230 }} />
@@ -381,18 +381,10 @@ export default function ClmCaseToCasePage() {
 
         {/* TABLE */}
         <div style={{ background: t.tableBg, flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {!loading && slice.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '56px 20px', textAlign: 'center', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF' }}>
-              <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 12px rgba(109,40,217,.12)' }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
-              <div style={{ fontSize: 13, fontWeight: 800, color: t.textStrong, marginBottom: 6 }}>No Contracts Found</div>
-              <div style={{ fontSize: 11, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>Click <b>+ Create CTC Agreement</b> to add one.</div>
-            </div>
-          ) : (
-            <>
             {/* Only the table scrolls horizontally; the pager lives OUTSIDE this
                 container so it never inherits the table's 1380px min-width and
                 stays pinned to the visible card width when the table scrolls. */}
-            <div style={{ overflowX: 'auto', flex: 1 }}>
+            <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1380 }}>
                 <thead><tr>
                   {['SR NO', 'CTC ID', 'CTC DATE', 'AGREEMENT TITLE', 'OUR ORGANISATION', 'COUNTERPARTIES', 'CREATED BY', 'INTERNAL APPROVAL', 'EFF. DATE', 'EXPIRY DATE', 'CP SIGNED DATE', 'ACTION'].map((h, i) => (
@@ -402,9 +394,7 @@ export default function ClmCaseToCasePage() {
                 <tbody>
                   {loading ? Array.from({ length: Math.max(1, pageSize) }).map((_, r) => (
                     <tr key={`shim-${r}`}>{Array.from({ length: 12 }).map((__, c) => <td key={c} style={{ ...TD }}><Shimmer height={14} /></td>)}</tr>
-                  )) : slice.length === 0 ? (
-                    <tr><td colSpan={12} style={{ ...TD, textAlign: 'center', padding: '36px 16px', color: t.textMuted, fontSize: 12, fontWeight: 600 }}>No contracts found.</td></tr>
-                  ) : slice.map((c, i) => {
+                  )) : slice.map((c, i) => {
                     const n = start + i + 1;
                     const s = S_CFG[c.status];
                     const ap = AP_CFG[c.approval];
@@ -469,6 +459,13 @@ export default function ClmCaseToCasePage() {
                   })}
                 </tbody>
               </table>
+              {!loading && slice.length === 0 && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', textAlign: 'center', position: 'sticky', left: 0 }}>
+                  <div style={{ width: 52, height: 52, borderRadius: 14, background: 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 12px rgba(109,40,217,.12)' }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.textStrong, marginBottom: 6 }}>{search.trim() ? 'No Matching Contracts' : 'No Contracts Found'}</div>
+                  <div style={{ fontSize: 11, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>{search.trim() ? 'No results match the current search.' : <>Click <b>+ Create CTC Agreement</b> to add one.</>}</div>
+                </div>
+              )}
               </div>
               <div className="tc-wl-pag" style={{ margin: 0 }}>
                 <span className="tc-wl-info">
@@ -494,12 +491,10 @@ export default function ClmCaseToCasePage() {
                   </div>
                 </div>
               </div>
-            </>
-          )}
         </div>
       </div>
 
-      {verFor && <VersionHistoryModal t={t} code={verFor.code} workingId={verFor.dbId} versions={verFor.versions} onClose={() => setVerFor(null)} />}
+      {verFor &&<VersionHistoryModal t={t} code={verFor.code} workingId={verFor.dbId} versions={verFor.versions} onClose={() => setVerFor(null)} />}
       {tlFor && <AgreementTimelineModal t={t} code={tlFor.code} title={tlFor.title} stage={tlFor.stage} versions={tlFor.versions} signers={tlFor.signers} signatureRequestId={tlFor.signatureRequestId} onClose={() => setTlFor(null)} />}
 
       {/* All-counterparties popover (opened from the +N badge) */}
