@@ -348,9 +348,12 @@ export default function Step3BoxPackaging({
     }
     if (scenario === 's2') {
       const c = contents[0];
-      const left = c ? remainingOf(fullOf(c.line.code) ?? c.line) : 0;
+      const full = c ? (fullOf(c.line.code) ?? c.line) : null;
+      const left = c && full
+        ? Math.max(0, Math.round((full.spiQty - packedElsewhere(c.line.code, exclude)) * 1000) / 1000)
+        : 0;
       if (c && c.qty > left + 0.0005) {
-        return `This box can hold at most ${units(left)} of ${c.line.spiName} — the rest is already in other boxes.`;
+        return `${exclude ? exclude.box_code : 'This box'} can hold at most ${units(left)} of ${c.line.spiName} — the rest is already in other boxes.`;
       }
     }
     const today = todayIso();
