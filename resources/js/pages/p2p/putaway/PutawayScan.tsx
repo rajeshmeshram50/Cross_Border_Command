@@ -32,6 +32,12 @@ interface TaskState {
   box_scan_at: string | null; box_confirmed_at: string | null;
   shelf_scan_at: string | null; shelf_confirmed_at: string | null;
   ready_to_complete: boolean;
+  // The idle clock. The server owns the threshold; this page only counts down.
+  last_activity_at: string | null;
+  idle_after_minutes: number;
+  // Seconds left, or null when no clock is running. A duration, so the
+  // handheld's own clock never enters into it.
+  idle_seconds_left: number | null;
 }
 
 interface BoxProduct {
@@ -133,6 +139,18 @@ const RUN_KEY = 'cbc_putaway_run_v1';
  * operator holding a carton mid-aisle needs the verdict, and the label to
  * scan instead comes on the line below it.
  */
+/** The queue. Where a device that lost its session is sent back to. */
+const INDEX_PATH = '/putaway-scan';
+
+/**
+ * Why the last run ended, left for the queue to read once on arrival.
+ *
+ * sessionStorage, not state: the hand-over IS a page load, so there is no
+ * component left to carry it across. Cleared as it is read, or the operator
+ * would be told about a timeout from an hour ago every time they came back.
+ */
+const IDLE_KEY = 'pwscan_idle_notice';
+
 const SHORT: Record<string, string> = {
   wrong_location:   'Wrong location',
   wrong_label_type: 'Wrong label',
@@ -184,11 +202,15 @@ export default function PutawayScan() {
   const [toast, setToast]   = useState<{ kind: 'ok' | 'bad'; text: string; sub?: string } | null>(null);
   /* A carton that is already away is not a failure — it gets its own card
      with the proof, rather than a red line that reads like a mistake. */
-  const [placed, setPlaced] = useState<{ box_code: string; destination: string; at: string | null; method: string | null; by: string | null } | null>(null);
+  const [placed, setPlaced] = useState<{ box_code: string; spi_code?: string | null; destination: string; at: string | null; method: string | null; by: string | null } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy]     = useState(false);
   const [blocked, setBlocked] = useState<string | null>(null);
   const [value, setValue]   = useState('');
+  /* Seconds before a half-walked run is given up, and the reason the LAST one
+     was — the first counts down on this screen, the second greets the queue. */
+  const [idleLeft, setIdleLeft]     = useState<number | null>(null);
+  const [idleNotice, setIdleNotice] = useState<string | null>(null);
 
   // Held only while a location was scanned BEFORE any box. The server re-proves
   // it on the box scan; this is a convenience, never a credential.
@@ -274,6 +296,11 @@ export default function PutawayScan() {
 
     const data = await res.json().catch(() => ({}));
 
+    /* Answered — so the one-shot reconnect is spent and may be used again the
+       next time this device goes idle. Without this a tab recovers once and
+       then shows the error for the rest of the shift. */
+    try { sessionStorage.removeItem('pwscan_reconnect'); } catch { /* private mode */ }
+
     // Shaped like an axios error, so the handlers below read the same either way.
     if (!res.ok) throw { response: { status: res.status, data } };
 
@@ -331,7 +358,7 @@ export default function PutawayScan() {
         status?: number;
         data?: {
           message?: string; data?: State; reset?: boolean; code?: string; attempts_left?: number | null;
-          placed?: { box_code: string; destination: string; at: string | null; method: string | null; by: string | null };
+          placed?: { box_code: string; spi_code?: string | null; destination: string; at: string | null; method: string | null; by: string | null };
         };
       };
     }).response;
@@ -339,6 +366,28 @@ export default function PutawayScan() {
     if (res?.status === 401 || res?.status === 403) {
       setBlocked(res.data?.message || 'This device is not allowed to scan.');
       return;
+    }
+
+    /* The request never answered — the idle case. Sitting here with an error
+       helps nobody: the thing that fixes it is a NAVIGATION, because that is
+       the only moment Chrome will offer the certificate picker again.
+       So go back to the queue. The operator lands on the list, taps the task
+       and carries on from "Scan the box" — no reinstalling, no settings.
+       Once only. A second failure means the server is genuinely unreachable,
+       and a reload loop would hide that behind a flashing screen. */
+    if (res?.data?.code === 'no_answer') {
+      const KEY = 'pwscan_reconnect';
+      let tried = null;
+      try { tried = sessionStorage.getItem(KEY); } catch { /* private mode */ }
+      if (!tried) {
+        try { sessionStorage.setItem(KEY, '1'); } catch { /* ignore */ }
+        /* Already on the queue? Reload it rather than doing nothing. The point
+           is the navigation, not the destination — that is the only moment
+           Chrome will offer the certificate picker again. */
+        if (window.location.pathname === INDEX_PATH) window.location.reload();
+        else window.location.assign(INDEX_PATH);
+        return;
+      }
     }
 
     // Already away: a statement of fact, not a refusal to act on.
@@ -429,6 +478,11 @@ export default function PutawayScan() {
           ? await call('get', `/scan/putaway/${taskId}`)
           : await call('post', '/scan/putaway/session');
         setState(data.data);
+        /* Opened a task the server had already given up on. Say so here, or
+           the page shows "Scan the box" for a box that was scanned ten
+           minutes ago and the operator reads it as the app losing their work. */
+        const body = data as { notice?: string };
+        if (body.notice) setToast({ kind: 'bad', text: 'Put-away restarted', sub: body.notice });
       } catch (e) { fail(e); }
     })();
   }, [taskId, scanKey, token, call, fail]);
@@ -477,6 +531,78 @@ export default function PutawayScan() {
 
     return () => clearTimeout(t);
   }, [toast]);
+
+  /**
+   * A half-walked put-away nobody has touched for five minutes is over.
+   *
+   * The screen can sit on "Scan the shelf" indefinitely — the box and the zone
+   * are already in, nothing is in flight, and no timer anywhere was watching.
+   * So the handheld is left holding a run that the server will throw away the
+   * moment anything is scanned, and the operator finds that out by being
+   * refused. Worse, it is often not the same operator: a handheld put down on
+   * a trolley is picked up by whoever walks past next.
+   *
+   * So count down to the server's own threshold and hand the device back to
+   * the queue. The scans themselves are cleared server-side, by dropStaleScans
+   * on the next scan or refresh — this page only stops pretending to own them.
+   *
+   * Measured from the last SCAN. Reading the box's product list is not
+   * activity, which is the rule the floor asked for.
+   *
+   * The server sends what is LEFT, not when it ends, and null when no clock is
+   * running — nothing scanned yet, or the pair already in. Both of those have
+   * done nothing wrong and expiring either throws away something correct.
+   */
+  useEffect(() => {
+    const t = state?.task;
+    const secs = t?.idle_seconds_left;
+    if (!t || secs === null || secs === undefined) { setIdleLeft(null); return; }
+
+    /* Counted down locally from the server's figure, against elapsed wall time
+       rather than a tick count — an interval in a backgrounded tab is throttled
+       to once a minute, so counting ticks would stretch five minutes into an
+       hour on a handheld in someone's pocket. */
+    const from = Date.now();
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    const tick = () => {
+      const left = secs - Math.floor((Date.now() - from) / 1000);
+      if (left > 0) { setIdleLeft(left); return; }
+
+      if (timer) clearInterval(timer);
+      try {
+        sessionStorage.setItem(IDLE_KEY, String(t.idle_after_minutes || 5));
+      } catch { /* private mode */ }
+      // Drop the run first: the queue must not reopen the task we just left.
+      writeRun(null);
+      if (window.location.pathname === INDEX_PATH) window.location.reload();
+      else window.location.assign(INDEX_PATH);
+    };
+
+    tick();
+    timer = setInterval(tick, 1000);
+
+    /* Woken from the handheld's screen lock. A throttled interval can be up to
+       a minute behind, and a screen that sits on a dead run for that minute is
+       the thing this was built to stop. */
+    const onWake = () => { if (document.visibilityState === 'visible') tick(); };
+    document.addEventListener('visibilitychange', onWake);
+
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener('visibilitychange', onWake);
+    };
+  }, [state?.task]);
+
+  /* Why the last run ended, read once on the way in. */
+  useEffect(() => {
+    try {
+      const mins = sessionStorage.getItem(IDLE_KEY);
+      if (!mins) return;
+      sessionStorage.removeItem(IDLE_KEY);
+      setIdleNotice(`No scanning for ${mins} minutes, so that put-away was left. Tap it below to start it again.`);
+    } catch { /* private mode */ }
+  }, []);
 
   /* Land on the pile that has something in it — opening on an empty Pending
      tab reads as "nothing here" when the work is one tab over. */
@@ -584,6 +710,32 @@ export default function PutawayScan() {
     );
   }
 
+  /* Already away — and this MUST come before the no-state guard below.
+     A device whose first action is scanning a placed box is answered with
+     `data: null`, because there is no open task to describe. So there is no
+     state to fall through to, and the guard below would render
+     "Checking this device…" for ever on a page that had its answer all along.
+     Reads only from `placed`, for the same reason. */
+  if (placed) {
+    return (
+      <div className="pwscan pwscan--blocked">
+        <div className="pwscan-card">
+          <div className="pwscan-blockmark">&#10003;</div>
+          <h1>Put-away already completed</h1>
+          <p>
+            <b>{placed.box_code}</b>
+            {placed.spi_code ? <> of <b>{placed.spi_code}</b></> : null} is already put away
+            {placed.destination ? <> at <b>{placed.destination}</b>.</> : '.'}
+          </p>
+          <span className="pwscan-badge pwscan-badge--done">Put-away completed</span>
+          <button className="pwscan-btn pwscan-btn--wide" onClick={() => { writeRun(null); window.location.assign(INDEX_PATH); }}>
+            Next box
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!state) {
     /* A failure before the first state must still say something. This used to
        render "Checking this device…" unconditionally, so any error that was
@@ -622,6 +774,10 @@ export default function PutawayScan() {
         </header>
 
         <div className="pwscan-prompt">Pending put-aways</div>
+
+        {/* Why they are looking at the queue instead of the box they were
+            holding. Without it the screen reads as having lost their work. */}
+        {idleNotice && <div className="pwscan-alert pwscan-alert--warn">{idleNotice}</div>}
 
         {error && <div className="pwscan-alert pwscan-alert--bad">{error}</div>}
 
@@ -667,10 +823,11 @@ export default function PutawayScan() {
      to carry on scanning.
      Covers both routes to "finished" — a box scanned against a task that is
      now complete, and a box with no open task that was placed earlier. */
-  const finishedBox = placed?.box_code ?? state.box?.box_code ?? null;
-  const finishedAt  = placed?.destination ?? dest?.full ?? null;
+  // `placed` already returned above, so this is the task-complete route only.
+  const finishedBox = state.box?.box_code ?? null;
+  const finishedAt  = dest?.full ?? null;
 
-  if (placed || done) {
+  if (done) {
     return (
       <div className="pwscan pwscan--blocked">
         <div className="pwscan-card">
@@ -751,6 +908,15 @@ export default function PutawayScan() {
         </div>
         {task && <div className="pwscan-code">{task.task_code}</div>}
       </header>
+
+      {/* The last minute of the idle window, and only that. A counter running
+          for five minutes becomes part of the furniture; one that appears with
+          sixty seconds left is a prompt to scan now. */}
+      {idleLeft !== null && idleLeft <= 60 && (
+        <div className="pwscan-idle" role="status" aria-live="polite">
+          No scanning for a while — returning to the queue in <b>{idleLeft}s</b>
+        </div>
+      )}
 
       {/* The two slots, and which one is still owed. */}
       {task && (

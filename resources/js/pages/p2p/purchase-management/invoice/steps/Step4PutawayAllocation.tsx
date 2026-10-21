@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from '
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import {
-  spiApi, type ProductFlagOption, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
+  spiApi, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
 } from '../spi-api';
 import type { ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
@@ -843,6 +843,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   }, [fs]);
   const [flag, setFlag] = useState<'' | 'haz' | 'nonhaz' | 'cold'>('');
 
+  const [boardTick, setBoardTick] = useState(0);
   const [board, setBoard] = useState<PutawayBoard | null>(null);
   const [boardError, setBoardError] = useState<string | null>(null);
   const boxKey = boxes.map(b => `${b.id}:${(b.items ?? []).map(i => i.quantity).join(',')}`).join('|');
@@ -853,7 +854,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       .then(d => { if (live) { setBoard(d); setBoardError(null); } })
       .catch(e => { if (live) setBoardError(e instanceof Error ? e.message : 'Could not load the putaway status.'); });
     return () => { live = false; };
-  }, [spiId, boxKey]);
+  }, [spiId, boxKey, boardTick]);
 
   /* Write a finished putaway back into the board.
    *
@@ -1036,6 +1037,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [loc, setLoc] = useState<{ loading: boolean; data: PutawayLocations | null; error: string | null }>(
     { loading: false, data: null, error: null });
   const [spot, setSpot] = useState<number | null>(null);
+  const [assigned, setAssigned] = useState<{ boxId: number; spot: number; putawayId: number } | null>(null);
+  const [assigning, setAssigning] = useState(false);
+  const [locTick, setLocTick] = useState(0);
   /* How many of the task's two QR legs have come back verified, so the logs
      can say "1 / 2 scans" without reaching inside the scan dialog. */
   const [scanSteps, setScanSteps] = useState(0);
@@ -1074,7 +1078,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     setShowProducts(false); setProdPage(1); setLcStep(0); setDetailIdx(null);
     setModeAsk(null); setModePick(null); setPutMode(null); setQrOpen(false);
     setPlacedAt(null); setScanTask(null); setSpot(null); setScanOpen(false);
-    setScanSteps(0); setLogsOpen(false);
+    setScanSteps(0); setLogsOpen(false); setAssigned(null); setAssigning(false);
   }, [selected]);
   const pageOfProducts = products.slice((prodPage - 1) * PRODUCTS_PER_PAGE, prodPage * PRODUCTS_PER_PAGE);
 
@@ -1181,7 +1185,38 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         error: e instanceof PoApiError ? e.firstError
           : e instanceof Error ? e.message : 'Could not read the warehouse layout.' }); });
     return () => { live = false; };
-  }, [lcStep, putMode, spiId, box?.id]);
+  }, [lcStep, putMode, spiId, box?.id, locTick]);
+
+  const assignSpot = async () => {
+    if (!spiId || !box || !putMode || spot === null || assigning) return;
+    if (assigned && assigned.boxId === box.id && assigned.spot === spot) { setLcStep(2); return; }
+    const sp = findSpot(loc.data, spot);
+    if (!sp) { toast.warning('Choose a location', 'That location is no longer in the list. Pick it again.'); return; }
+    const body: PutawayAssignBody = sp.kind === 'shelf'
+      ? {
+          box_id: box.id, mode: 'rack', zone_id: sp.zone.id, rack_id: sp.rack.id, shelf_id: sp.shelf.id,
+          suggested_shelf_id: loc.data?.recommended?.id ?? null,
+        }
+      : { box_id: box.id, mode: 'norack', zone_id: sp.zone.id };
+    setAssigning(true);
+    try {
+      const row = await spiApi.putawayAssign(spiId, body);
+      setAssigned({ boxId: box.id, spot, putawayId: row.id });
+      toast.success(`${box.code} allocated`, row.destination ? `Reserved at ${row.destination}.` : 'The location is reserved for this box.');
+      setBoardTick(t => t + 1);
+      setLcStep(2);
+    } catch (e) {
+      const msg = e instanceof PoApiError ? e.firstError : 'Please try again.';
+      if (e instanceof PoApiError && e.status === 409) {
+        toast.warning('Location taken', msg);
+        setLocTick(t => t + 1);
+      } else {
+        toast.error('Could not allocate the box', msg);
+      }
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   return (
     <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
@@ -1580,7 +1615,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <button
                     type="button"
                     className="s4-btn-next"
-                    disabled={lcStep >= LIFECYCLE.length - 1 || (lcStep === 1 && spot === null)}
+                    disabled={lcStep >= LIFECYCLE.length - 1 || (lcStep === 1 && (spot === null || assigning))}
                     /* The hint has to name what you are actually picking: a
                        direct placement has no tree and no shelf in it. */
                     title={lcStep === 1 && spot === null
@@ -1589,6 +1624,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                           : 'Choose a spot first — use the recommended one, or pick a shelf from the tree')
                       : undefined}
                     onClick={() => {
+                      if (lcStep === 1) { void assignSpot(); return; }
                       if (lcStep !== 0) { setLcStep(n => Math.min(LIFECYCLE.length - 1, n + 1)); return; }
                       setModePick(null);
                       setModeAsk({ loading: true, rack: 0, norack: 0, error: null });

@@ -34,6 +34,25 @@ const TARGET = Number(process.env.TARGET_PORT || 8001);
    styling them. Local only, and never the default — prod is Apache anyway. */
 const ENFORCE = process.env.REQUIRE_DEVICE_CERT !== '0';
 
+/**
+ * DEV_SCAN_CERT_CN — stand in for a client certificate that was never offered.
+ *
+ * Letting a cert-less device PAST the front door was never enough on its own:
+ * Laravel still resolves the handheld from the cert CN, finds nothing, and
+ * answers 401. So the scanner was unusable without a certificate even with
+ * enforcement off, which is not what the flag claimed.
+ *
+ * Worse, asking for a certificate is itself the thing that hangs. Chrome
+ * cannot raise its picker for a background fetch, so a device whose cert is
+ * missing or in the wrong slot sits on "Checking this device" forever rather
+ * than failing. Not requesting one at all removes the stall outright.
+ *
+ * Only with enforcement already off, and only when explicitly named — unset,
+ * nothing changes. This is a LAN dev box bypass: anyone who can reach the port
+ * becomes that device. Never set it anywhere real.
+ */
+const DEV_CN = ENFORCE ? '' : (process.env.DEV_SCAN_CERT_CN || '').trim();
+
 /* Scanner surface that MUST present a device certificate: the scan API and the
    handheld pages. Everything else (the whole ERP) is left alone. Deliberately
    NOT /api/scan-devices — that is admin enrolment, done logged-in on a PC. */
@@ -55,7 +74,9 @@ const secure = https.createServer(
     cert: fs.readFileSync(path.join(HERE, 'cbc.pem')),
     key: fs.readFileSync(path.join(HERE, 'cbc-key.pem')),
     ca: [fs.readFileSync(path.join(HERE, 'device-ca.pem'))],
-    requestCert: true,
+    // Standing in for the cert? Then do not ask for one — the asking is what
+    // stalls, and a picker Chrome cannot show is worse than no question.
+    requestCert: !DEV_CN,
     rejectUnauthorized: false,
   },
   (req, res) => {
@@ -73,6 +94,7 @@ const secure = https.createServer(
     const headers = { ...req.headers };
     delete headers['x-scan-cert-cn'];
     if (hasDeviceCert) headers['x-scan-cert-cn'] = peer.subject.CN;
+    else if (DEV_CN) headers['x-scan-cert-cn'] = DEV_CN;
 
     const upstream = http.request(
       {
@@ -90,6 +112,18 @@ const secure = https.createServer(
         },
       },
       (up) => {
+        /* TLS_PROXY_LOG=1 prints one line per request. The handheld is the only
+           client whose failures nobody can see — no devtools, no console. */
+        if (process.env.TLS_PROXY_LOG === '1') {
+          console.log([
+            new Date().toISOString().slice(11, 19),
+            req.socket.remoteAddress,
+            req.method,
+            req.url.split('?')[0].slice(0, 70),
+            '->', up.statusCode,
+            (up.headers['content-type'] || '').split(';')[0],
+          ].join(' '));
+        }
         res.writeHead(up.statusCode, up.headers);
         up.pipe(res);
       },
@@ -150,4 +184,5 @@ net
   })
   .listen(LISTEN, '0.0.0.0', () => {
     console.log(`:${LISTEN}  tls + http-redirect  ->  127.0.0.1:${TARGET}`);
+    if (DEV_CN) console.log(`         NO CLIENT CERT REQUIRED - every request is "${DEV_CN}"`);
   });

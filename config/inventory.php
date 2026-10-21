@@ -27,14 +27,13 @@ return [
      * person picking the handheld up should start clean rather than inherit
      * someone else's half-walk.
      *
-     * Not short. Carrying a box from the pack bench to a rack — find the
-     * aisle, fetch a ladder, move something out of the way — takes minutes in
-     * a real warehouse, and an operator told to start over while doing exactly
-     * the right thing learns to distrust the screen.
+     * Five minutes. Long enough to carry a box from the pack bench to a rack
+     * and find the slot; short enough that a handheld left face-up on a
+     * trolley is not still holding a put-away when the next shift picks it up.
      *
      * This is a display concern, not a safety one: a stale box scan cannot
      * cause a wrong placement, because the pair still has to match the task.
      */
-    'scan_stale_minutes' => env('SCAN_STALE_MINUTES', 30),
+    'scan_stale_minutes' => env('SCAN_STALE_MINUTES', 5),
 
 ];
