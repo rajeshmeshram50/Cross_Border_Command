@@ -264,6 +264,14 @@ class LocationFinderService
                 'rack_mode'      => $z->rack_mode,
                 'cold_chain'     => (int) $z->cold_chain,
                 'hazardous'      => (int) $z->hazardous,
+                // What the zone IS, and how big its floor is. The rack branch
+                // has returned purpose since it was written; the floor branch
+                // never did, so Step 02's no-rack pane had nothing to name a
+                // zone by beyond its code.
+                'purpose'        => $z->purpose,
+                'area_sqft'      => $z->area_sqft === null ? null : (float) $z->area_sqft,
+                'temp_min_c'     => $z->temp_min_c === null ? null : (float) $z->temp_min_c,
+                'temp_max_c'     => $z->temp_max_c === null ? null : (float) $z->temp_max_c,
                 'capacity_m3'    => $capM3,
                 'free_m3'        => round($freeM3, 3),
                 'boxes'          => $load['boxes'],

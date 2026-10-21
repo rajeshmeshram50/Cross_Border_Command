@@ -21,7 +21,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 export interface ScanTaskSpot {
   warehouse: string | null;
   zone: string;
-  rack: string;
+  /** Null for a direct placement: a floor zone has no rack. */
+  rack: string | null;
   shelf: string;
   shelfName: string;
 }
@@ -163,7 +164,7 @@ export default function PutawayScanTask({
         {!isBox && (
           <div className="s4zt-leg__sub">
             {spot.shelfName} · {leg.state === 'ok' ? 'resolved ' : ''}
-            {[spot.rack, spot.zone, ...(leg.state === 'ok' && spot.warehouse ? [spot.warehouse] : [])].join(' › ')}
+            {[spot.rack, spot.zone, ...(leg.state === 'ok' && spot.warehouse ? [spot.warehouse] : [])].filter(Boolean).join(' › ')}
           </div>
         )}
 

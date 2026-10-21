@@ -278,6 +278,8 @@ export type PutawayBoard = {
 export type PutawayFloorZone = {
   id: number; name: string | null; code: string; rack_mode: string | null;
   cold_chain: number; hazardous: number;
+  purpose: string | null; area_sqft: number | null;
+  temp_min_c: number | null; temp_max_c: number | null;
   capacity_m3: number; free_m3: number; boxes: number;
   used_pct: number; used_pct_after: number;
   eligible: boolean; reason: string | null; reason_label: string | null; held_by: number | null;

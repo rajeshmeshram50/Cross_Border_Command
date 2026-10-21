@@ -759,6 +759,19 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
      Confirming straight off the button conflated the two. */
   const [methodAsk, setMethodAsk] = useState(false);
   const [methodPick, setMethodPick] = useState<'zebra' | 'manual' | null>(null);
+  /* The dialog asks WHICH method first and shows what that method commits to
+     second. Both on one screen meant it opened already arguing a case for a
+     choice the operator had not made yet. */
+  const [methodStage, setMethodStage] = useState<'select' | 'detail'>('select');
+  /* The reference the detail screen names before it is committed — the task
+     number for a Zebra scan, the allocation number for a manual one. Settled
+     when the dialog opens so the header can show it, rather than appearing
+     only after submit. */
+  const methodRef = useMemo(() => {
+    const n = new Date();
+    const ymd = `${n.getFullYear()}${String(n.getMonth() + 1).padStart(2, '0')}${String(n.getDate()).padStart(2, '0')}`;
+    return { task: `ZT-${ymd}-001`, alloc: `TPA-${ymd}-001` };
+  }, [methodAsk]);
   /* The tick is the consent, not the button. Picking a method only says HOW;
      this says the operator has read what it locks. It resets whenever the
      method changes, because it was given about that method. */
@@ -1083,17 +1096,29 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       box={{
                         code: box.code, scenario: box.scenario, skus: box.skus, qty: box.qty,
                         uom: box.uom, dims: box.dims, netKg: box.netKg, grossKg: box.grossKg,
-                        condition: box.condition, products: products.length,
+                        /* The same words Step 01's card uses, so a box reads
+                           the same on both steps. */
+                        scenarioNo: SCENARIO_NO[box.scenarioKey] ?? 'Scenario 01',
+                        modeLabel: modeLabelOf(box),
+                        sectionKey: box.type === 'damaged' ? 'dmg' : box.type === 'mismatch' ? 'mis' : box.type,
+                        sectionLabel: SECTION_LABEL[box.type],
+                        packedOn: packedOnOf(rawBox),
+                        remark: REMARK_OF[box.type] ?? null,
+                        condition: CONDITION_LABEL[box.condition] ?? null,
+                        flags: boxFlagNames,
+                        products: products.length,
                       }}
                       spot={findSpot(loc.data, spot)}
                       warehouse={warehouse}
                       assigned={placedAt !== null}
-                      qr={<BoxQr text={String(box.id)} size={128} />}
+                      qr={<BoxQr text={String(box.id)} size={92} />}
+                      locQr={<BoxQr text={`${warehouse ?? ''}/${spot ?? ''}`} size={80} />}
+                      onSticker={() => setQrOpen(true)}
                       onChange={() => setLcStep(1)}
                       scan={scanTask}
                       placedVia={placedVia}
                       warehouseCode={warehouse || null}
-                      onMethod={() => { setMethodPick(null); setMethodOk(false); setMethodAsk(true); }}
+                      onMethod={() => { setMethodPick(null); setMethodOk(false); setMethodStage('select'); setMethodAsk(true); }}
                       onCancelTask={() => setScanTask(null)}
                       onOpenScanTask={() => setScanOpen(true)}
                       onViewProducts={() => setShowProducts(true)}
@@ -1199,9 +1224,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       <FsLayer host={fs ? panelsRef.current : null}>
       {scanOpen && scanTask && box && findSpot(loc.data, spot) && (() => {
         const sp = findSpot(loc.data, spot)!;
-        /* What this box takes off the shelf, which is what the task holds
-           against it until the scans come back. */
-        const reserved = Math.max(0, Math.round((sp.shelf.used_pct_after - sp.shelf.used_pct) * 10) / 10);
+        /* What this box takes off the shelf — or off the zone floor, when the
+           placement is direct — which is what the task holds against it until
+           the scans come back. */
+        const held = sp.kind === 'zone' ? sp.zone : sp.shelf;
+        const reserved = Math.max(0, Math.round((held.used_pct_after - held.used_pct) * 10) / 10);
         return (
           <PutawayScanTask
             taskId={scanTask.id}
@@ -1211,9 +1238,16 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             box={{ code: box.code, name: box.name }}
             spot={{
               warehouse: warehouse || null,
-              zone: sp.zone.code, rack: sp.rack.code,
-              shelf: sp.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1'),
-              shelfName: sp.shelf.name || `Level ${sp.shelf.level_no}`,
+              zone: sp.zone.code,
+              /* A direct placement has no rack and no shelf to scan: the zone
+                 itself is the second QR. */
+              rack: sp.kind === 'zone' ? null : sp.rack.code,
+              shelf: sp.kind === 'zone'
+                ? sp.zone.code
+                : sp.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1'),
+              shelfName: sp.kind === 'zone'
+                ? (sp.zone.name || 'Direct placement')
+                : (sp.shelf.name || `Level ${sp.shelf.level_no}`),
             }}
             reservedPct={reserved}
             onClose={() => setScanOpen(false)}
@@ -1346,15 +1380,45 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         >
           <div className="s4qm__dlg s4wz__dlg">
             <div className="s4qm__hd">
-              <div className="s4qm__hico"><IcoCheck /></div>
+              <div className="s4qm__hico">
+                {methodStage === 'detail' && methodPick === 'zebra' ? <IcoScan />
+                  : methodStage === 'detail' ? <IcoHand /> : <IcoCheck />}
+              </div>
               <div className="s4qm__htx">
-                <div className="s4qm__t">Choose Putaway Confirmation Method</div>
-                <div className="s4qm__s">
-                  {/* The whole address of what is being confirmed, in the
-                      order it is read on the floor. */}
-                  {[box.code, warehouse, spotNow.zone.code, spotNow.rack.code,
-                    spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1')].filter(Boolean).join(' → ')}
+                <div className="s4qm__t">
+                  {methodStage === 'select' ? 'How do you want to confirm this putaway?'
+                    : methodPick === 'zebra' ? 'Create Zebra Putaway Task'
+                    : 'Confirm Manual Putaway'}
                 </div>
+                <div className="s4qm__s">
+                  {methodStage === 'select' ? 'Choose the putaway confirmation method for this box.'
+                    : methodPick === 'zebra'
+                      ? 'Option 01 · Using Zebra Device — submit the task for physical QR verification.'
+                      : 'Option 02 · Manual Confirmation — confirm the box is already placed at the selected location.'}
+                </div>
+              </div>
+              {/* The facts the choice is about, as chips — the same header the
+                  storage-zone chooser uses. The detail screen adds the
+                  reference it is about to issue. */}
+              <div className="s4wz-ctx">
+                {methodStage === 'detail' && (
+                  <span className="s4wz-ctx__i">
+                    {methodPick === 'zebra' ? <IcoScan /> : <IcoList />}
+                    <span>
+                      <em>{methodPick === 'zebra' ? 'Task No.' : 'Allocation No.'}</em>
+                      <b>{methodPick === 'zebra' ? methodRef.task : methodRef.alloc}</b>
+                    </span>
+                  </span>
+                )}
+                <span className="s4wz-ctx__i"><IcoBoxSm size={13} /><span><em>Box ID</em><b>{box.code}</b></span></span>
+                <span className="s4wz-ctx__i">
+                  <IcoFlag /><span>
+                    <em>{spotNow.kind === 'zone' ? 'Zone' : 'Shelf'}</em>
+                    <b>{spotNow.kind === 'zone'
+                      ? spotNow.zone.code
+                      : spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1')}</b>
+                  </span>
+                </span>
               </div>
               <button type="button" className="s4qm__x" onClick={() => setMethodAsk(false)} aria-label="Close">
                 &times;
@@ -1362,44 +1426,63 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </div>
 
             <div className="s4qm__bd">
+              <div className="s4wz-lead">Select one putaway method</div>
               <div className="s4wz-opts">
                 {([
-                  ['zebra', 'Option 01 · Using Zebra Device',
-                    'Send the assigned box to the warehouse for physical QR verification using a Zebra handheld device.',
-                    'Creates a scan task'],
-                  ['manual', 'Option 02 · Manual Confirmation',
-                    'Confirm that the box has been physically placed at the assigned location without using a Zebra device.',
-                    'Completes now'],
-                ] as const).map(([k, title, sub, badge]) => (
+                  ['zebra', 'rack', 'Option 01', 'Using Zebra Device',
+                    'Send the box to the warehouse floor for physical QR verification with a Zebra handheld scanner.',
+                    'Creates a scan task', 'Scan-verified · traceable'],
+                  ['manual', 'norack', 'Option 02', 'Manual Confirmation',
+                    'Confirm the box is already physically placed at the selected location, without a Zebra device.',
+                    'Completes instantly', 'No device needed'],
+                ] as const).map(([k, variant, num, title, sub, chipA, chipB]) => (
                   <button
                     type="button"
                     key={k}
-                    className={`s4wz-opt s4pm-opt s4pm-opt--${k}${methodPick === k ? ' is-on' : ''}`}
+                    className={`s4wz-opt s4wz-opt--${variant}${methodPick === k ? ' is-on' : ''}`}
                     aria-pressed={methodPick === k}
                     onClick={() => { setMethodPick(k); setMethodOk(false); }}
                   >
                     <span className="s4wz-opt__ic">{k === 'zebra' ? <IcoScan /> : <IcoHand />}</span>
+                    <span className="s4wz-opt__tx">
+                      <span className="s4wz-opt__ttl">
+                        <span className={`s4pm-num s4pm-num--${k}`}>{num}</span>
+                        <span className="s4wz-opt__t">{title}</span>
+                      </span>
+                      <span className="s4wz-opt__s">{sub}</span>
+                      <span className="s4wz-opt__chips">
+                        <span className="s4wz-opt__n">{chipA}</span>
+                        <span className="s4wz-opt__d">{chipB}</span>
+                      </span>
+                    </span>
                     <span className="s4wz-opt__radio" aria-hidden />
-                    <span className="s4wz-opt__t">{title}</span>
-                    <span className="s4wz-opt__s">{sub}</span>
-                    <span className={`s4pm-badge s4pm-badge--${k}`}>{badge}</span>
                   </button>
                 ))}
               </div>
 
-              {/* Shown from the start, not gated on the choice. What is being
-                  confirmed does not change with the method - only the promise
-                  does - and a dialog that opens almost empty, then jumps to
-                  full height on the first click, hides the thing the operator
-                  most needs to read before deciding. */}
-              {(() => {
-                const shelfCode = spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1');
-                const addr = [
-                  ['Warehouse', warehouse || '—', <IcoWh key="w" />],
-                  ['Zone', spotNow.zone.code, <IcoFlag key="z" />],
-                  ['Rack', spotNow.rack.code, <IcoList key="r" />],
-                  ['Shelf', shelfCode, <IcoShelfSm key="s" />],
-                ] as const;
+              {/* What the chosen method actually commits to — the address it
+                  locks and the fact that it cannot be undone. Held back until
+                  a method is picked, because the sentence it has to make is
+                  different for each one. */}
+              {methodStage === 'detail' && (() => {
+                /* A floor zone IS the destination — it has no rack and no
+                   shelf under it — so the address stops at the zone and says
+                   the placement is direct. */
+                const shelfCode = spotNow.kind === 'zone'
+                  ? spotNow.zone.code
+                  : spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1');
+                const addr: Array<[string, string, ReactNode]> = spotNow.kind === 'zone'
+                  ? [
+                      ['Warehouse', warehouse || '—', <IcoWh key="w" />],
+                      ['Zone', spotNow.zone.code, <IcoFlag key="z" />],
+                      ['Placement', 'Direct', <IcoShelfSm key="p" />],
+                    ]
+                  : [
+                      ['Warehouse', warehouse || '—', <IcoWh key="w" />],
+                      ['Zone', spotNow.zone.code, <IcoFlag key="z" />],
+                      ['Rack', spotNow.rack.code, <IcoList key="r" />],
+                      ['Shelf', shelfCode, <IcoShelfSm key="s" />],
+                    ];
                 const chain = <>
                   {addr.map(([, v], i) => (
                     <Fragment key={v + String(i)}>
@@ -1408,8 +1491,27 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     </Fragment>
                   ))}
                 </>;
+                /* What the submit actually sets in motion, in order. The
+                   dialog used to assert that the placement was final without
+                   ever saying what happens between pressing the button and
+                   the box being locked. */
+                const steps: Array<[string, string]> = methodPick === 'zebra'
+                  ? [
+                      ['Task created', 'Assigned to the warehouse Zebra queue'],
+                      ['Scan Box QR', `Operator scans the ${box.code} sticker`],
+                      [`Scan ${spotNow.kind === 'zone' ? 'Zone' : 'Shelf'} QR`, `Operator scans ${shelfCode} at the location`],
+                      ['Putaway locked', 'Location confirmed automatically'],
+                    ]
+                  : [
+                      ['Box already placed', `${box.code} is physically at ${shelfCode}`],
+                      ['Consent recorded', 'Your confirmation is logged on this invoice'],
+                      ['Allocation generated', `${methodRef.alloc} is issued`],
+                      ['Putaway completed', `${spotNow.kind === 'zone' ? 'Zone' : 'Shelf'} ${shelfCode} is locked for this box`],
+                    ];
                 return (
                   <>
+                  <div className="s4pm-grid">
+                  <div className="s4pm-left">
                     {/* From this box, to that shelf. */}
                     <div className="s4pm-route">
                       <div className="s4pm-route__card s4pm-route__card--box">
@@ -1423,9 +1525,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       <div className="s4pm-route__card s4pm-route__card--shelf">
                         <span className="s4pm-route__ic s4pm-route__ic--shelf"><IcoShelfSm size={17} /></span>
                         <div>
-                          <span className="s4pm-route__k">Final shelf</span>
+                          <span className="s4pm-route__k">{spotNow.kind === 'zone' ? 'Final zone' : 'Final shelf'}</span>
                           <b className="s4pm-route__v">{shelfCode}</b>
-                          <span className="s4pm-route__s">{spotNow.shelf.name || `Level ${spotNow.shelf.level_no}`} · {spotNow.rack.code}</span>
+                          <span className="s4pm-route__s">
+                            {spotNow.kind === 'zone'
+                              ? `${spotNow.zone.name || 'Unnamed zone'} · direct placement`
+                              : `${spotNow.shelf.name || `Level ${spotNow.shelf.level_no}`} · ${spotNow.rack.code}`}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1445,6 +1551,20 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         ))}
                       </div>
                     </div>
+                  </div>
+
+                  <div className={`s4pm-flow${methodPick === 'manual' ? ' s4pm-flow--m' : ''}`}>
+                    <div className="s4pm-addr__k">
+                      {methodPick === 'zebra' ? 'What happens next' : 'What happens on confirm'}
+                    </div>
+                    {steps.map(([t, d], i) => (
+                      <div className="s4pm-step" key={t}>
+                        <span>{i + 1}</span>
+                        <div><b>{t}</b><em>{d}</em></div>
+                      </div>
+                    ))}
+                  </div>
+                  </div>
 
                     {/* The one thing that cannot be taken back, said before the
                         tick rather than after it. */}
@@ -1486,7 +1606,29 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </div>
 
             <div className="s4qm__ft">
-              <button type="button" className="s4-btn-back" onClick={() => setMethodAsk(false)}>Cancel</button>
+              <button
+                type="button"
+                className="s4-btn-back"
+                onClick={() => (methodStage === 'detail' ? setMethodStage('select') : setMethodAsk(false))}
+              >
+                {methodStage === 'detail' ? 'Back' : 'Cancel'}
+              </button>
+              {methodStage === 'select' ? (
+                <button
+                  type="button"
+                  className={`s4-btn-next s4pm-go${methodPick ? ` s4pm-go--${methodPick}` : ''}`}
+                  disabled={!methodPick}
+                  onClick={() => setMethodStage('detail')}
+                >
+                  {methodPick === 'zebra' ? 'Continue · Create Zebra Task'
+                    : methodPick === 'manual' ? 'Continue · Manual Confirmation'
+                    : 'Continue'}
+                  <IcoChevR />
+                </button>
+              ) : (<>
+              {/* Back steps, Cancel abandons — the detail screen offers both,
+                  because by now there are two different ways out. */}
+              <button type="button" className="s4-btn-back s4pm-cancel" onClick={() => setMethodAsk(false)}>Cancel</button>
               <button
                 type="button"
                 className={`s4-btn-next s4pm-go${methodPick ? ` s4pm-go--${methodPick}` : ''}`}
@@ -1498,13 +1640,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                      task for the floor, so the box stays unplaced until the
                      scan comes back. */
                   if (methodPick === 'manual') { setPlacedAt(new Date().toISOString()); setScanTask(null); }
-                  else {
-                    const now = new Date();
-                    const ymd = now.getFullYear().toString()
-                      + String(now.getMonth() + 1).padStart(2, '0')
-                      + String(now.getDate()).padStart(2, '0');
-                    setScanTask({ id: `ZT-${ymd}-001`, at: now.toISOString() });
-                  }
+                  /* The same number the header has been showing — not a second
+                     one minted at submit. */
+                  else setScanTask({ id: methodRef.task, at: new Date().toISOString() });
                   setMethodAsk(false);
                 }}
               >
@@ -1512,6 +1650,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   : methodPick === 'manual' ? <><IcoCheck />Complete Putaway</>
                   : <>Select a method <IcoChevR /></>}
               </button>
+              </>)}
             </div>
           </div>
         </div>
