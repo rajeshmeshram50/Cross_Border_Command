@@ -75,15 +75,8 @@ export default function InvoiceForm({
   const [flagMaster, setFlagMaster] = useState<ProductFlagOption[]>([]);
   const [boxesLoading, setBoxesLoading] = useState(false);
   const [savedWarehouse, setSavedWarehouse] = useState<string | null>(null);
-  /* Stage 04's warehouse card prints the street address, the pincode, the
-     floor area and the date the site was added. Neither the SPI's own
-     warehouse stub nor the options endpoint carries those, so the row is read
-     once by id — the same id both of them already name. */
   const [savedWarehouseId, setSavedWarehouseId] = useState<number | null>(null);
   const [warehouseRow, setWarehouseRow] = useState<WarehouseDetail | null>(null);
-  /* The invoice's own branch. Branch-scoped masters (product flags) must be
-     fetched for THIS branch, or their ids will not be ones the invoice's boxes
-     are allowed to carry. */
   const [spiBranchId, setSpiBranchId] = useState<number | null>(null);
   const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
     status: input.status, label: input.statusLabel,
@@ -114,8 +107,6 @@ export default function InvoiceForm({
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
-          // Masters are per branch, and the one that matters is the INVOICE'S
-          // branch, not whichever the switcher happens to be on.
           setSpiBranchId(existing.branch_id ?? null);
           setReached(Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1));
         }
@@ -175,9 +166,6 @@ export default function InvoiceForm({
     return () => { live = false; };
   }, [input.poId, input.spiId, set, toast]);
 
-  /* The warehouse row behind Stage 04's card. Read once per site; a failure
-     is not worth a toast, because the card falls back to the name the rest of
-     the form already shows. */
   const warehouseId = savedWarehouseId ?? input.storage.warehouse?.apiId ?? null;
   useEffect(() => {
     if (!warehouseId) { setWarehouseRow(null); return; }
@@ -492,20 +480,20 @@ export default function InvoiceForm({
                     onCreateBox={spiId ? createBox : undefined}
                     onUpdateBox={spiId ? updateBox : undefined}
                     onDeleteBoxes={spiId ? deleteBoxes : undefined}
+                    spiId={spiId}
+                    spiCode={spiCode}
                   />
                 )}
                 {stage === 3 && (
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
                     flagMaster={flagMaster} spiId={spiId}
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
+                    spiCode={spiCode}
                     warehouseInfo={{
                       code: warehouseRow?.wh_code ?? input.storage.warehouse?.code ?? null,
                       since: warehouseRow?.created_at ?? null,
                       name: warehouseRow?.wh_name ?? savedWarehouse ?? warehouseLabel(input.storage),
                       address: warehouseRow?.address ?? null,
-                      /* Town, state and pincode. The row's own `location` stops
-                         at the state, which is the dropdown's line, not this
-                         card's. */
                       location: warehouseRow
                         ? [warehouseRow.city, warehouseRow.state, warehouseRow.pincode].filter(Boolean).join(', ') || null
                         : input.storage.warehouse?.location ?? null,
@@ -543,7 +531,9 @@ export default function InvoiceForm({
               disabled={nextBlocked}
             >
               {isLast && <IcoCheck />}
-              {viewOnly ? (isLast ? 'Close' : 'Next') : isLast ? 'Map Invoice' : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
+              {viewOnly ? (isLast ? 'Close' : 'Next')
+                : isLast ? (editing ? 'Update Invoice' : 'Map Invoice')
+                : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
               {!isLast && <IcoChevronR />}
             </button>
           </div>
@@ -607,6 +597,64 @@ function SkRecap() {
   );
 }
 
+function SkStage4() {
+  return (
+    <>
+      <SkRecap />
+      <SkRecap />
+      <div className="spi-dt-sk-s4steps">
+        {[0, 1, 2, 3].map(i => (
+          <div className="spi-dt-sk-s4step" key={i}>
+            <div className="spi-dt-sk" style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 46, height: 7 }} />
+              <div className="spi-dt-sk spi-dt-sk-line" style={{ width: '62%', height: 10, marginTop: 8 }} />
+              <div className="spi-dt-sk spi-dt-sk-line" style={{ width: '88%', height: 7, marginTop: 7 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="spi-dt-sk-s4rail">
+        {[108, 196, 232, 198, 158].map((w, i) => (
+          <div className="spi-dt-sk" key={i} style={{ width: w, height: 34, borderRadius: 999 }} />
+        ))}
+        <div className="spi-dt-sk spi-dt-sk-s4fv" />
+      </div>
+      <div className="spi-dt-sk-s4panels">
+        <div className="spi-dt-sk-s4panel spi-dt-sk-s4panel--l">
+          <div className="spi-dt-sk-s4head">
+            <div className="spi-dt-sk" style={{ width: 26, height: 26, borderRadius: 8 }} />
+            <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 90 }} />
+            <div className="spi-dt-sk" style={{ width: 58, height: 20, borderRadius: 999, marginLeft: 'auto' }} />
+          </div>
+          <div className="spi-dt-sk-s4body">
+            <div className="spi-dt-sk" style={{ height: 46, borderRadius: 10, flexShrink: 0 }} />
+            {[0, 1, 2, 3].map(i => (
+              <div className="spi-dt-sk" key={i} style={{ height: 118, borderRadius: 12, flexShrink: 0 }} />
+            ))}
+          </div>
+        </div>
+        <div className="spi-dt-sk-s4panel spi-dt-sk-s4panel--r">
+          <div className="spi-dt-sk-s4head">
+            <div className="spi-dt-sk" style={{ width: 26, height: 26, borderRadius: 8 }} />
+            <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 180 }} />
+            <div className="spi-dt-sk" style={{ width: 102, height: 30, borderRadius: 9, marginLeft: 'auto' }} />
+          </div>
+          <div className="spi-dt-sk-s4band">
+            {[0, 1, 2].map(i => <div className="spi-dt-sk spi-dt-sk-s4bandcard" key={i} />)}
+          </div>
+          <div className="spi-dt-sk-s4body">
+            <div className="spi-dt-sk" style={{ height: 96, borderRadius: 12, flexShrink: 0 }} />
+            <div className="spi-dt-sk" style={{ height: 150, borderRadius: 12, flexShrink: 0 }} />
+            <div className="spi-dt-sk" style={{ height: 110, borderRadius: 12, flexShrink: 0 }} />
+            <div className="spi-dt-sk" style={{ height: 132, borderRadius: 12, flexShrink: 0 }} />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function StageSkeleton({ stage }: { stage: number }) {
   if (stage === 1) {
     return (
@@ -630,14 +678,7 @@ function StageSkeleton({ stage }: { stage: number }) {
       </>
     );
   }
-  if (stage >= 3) {
-    return (
-      <>
-        <SkRecap />
-        <SkSection><SkRows count={4} /></SkSection>
-      </>
-    );
-  }
+  if (stage >= 3) return <SkStage4 />;
   return (
     <>
       <SkSection><SkFields count={8} /></SkSection>

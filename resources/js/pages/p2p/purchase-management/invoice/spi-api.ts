@@ -198,9 +198,6 @@ export type SpiBoxItem = {
 export type SpiBox = {
   id: number;
   box_code: string;
-  /** When the carton was packed — the date the Packed Boxes row shows under
-   *  the box id. Optional: rows saved before it was returned fall back to
-   *  today, which is right for anything packed in this session. */
   created_at?: string | null;
   scenario: SpiBoxScenario;
   condition: string;
@@ -278,6 +275,8 @@ export type PutawayBoard = {
 export type PutawayFloorZone = {
   id: number; name: string | null; code: string; rack_mode: string | null;
   cold_chain: number; hazardous: number;
+  purpose: string | null; area_sqft: number | null;
+  temp_min_c: number | null; temp_max_c: number | null;
   capacity_m3: number; free_m3: number; boxes: number;
   used_pct: number; used_pct_after: number;
   eligible: boolean; reason: string | null; reason_label: string | null; held_by: number | null;
@@ -328,6 +327,13 @@ export const spiApi = {
   deleteBox: (spiId: number, boxId: number) =>
     call('SPI box delete', () => api.delete(`/p2p/spi/${spiId}/boxes/${boxId}`), () => true),
 
+  printSticker: (spiId: number, boxId: number) =>
+    call('Box sticker', () => api.post(`/p2p/spi/${spiId}/boxes/${boxId}/sticker`), () => true),
+
+  stickerPdf: (spiId: number, boxId: number) =>
+    call('Box sticker', () => api.get(`/p2p/spi/${spiId}/boxes/${boxId}/sticker/download`, { responseType: 'blob' }),
+      (b) => new Blob([b as BlobPart], { type: 'application/pdf' })),
+
   packingTotals: (spiId: number) =>
     call('SPI packing summary', () => api.get(`/p2p/spi/${spiId}/packing-summary`),
       (b) => (b as { data?: { totals?: SpiPackingTotals } } | null)?.data?.totals ?? null),
@@ -344,9 +350,6 @@ export const spiApi = {
           location: [w.wh_code, w.location].filter(Boolean).join(' · ') || '—',
         }))),
 
-  /** The whole warehouse row, for Stage 04's warehouse card: the options
-   *  endpoint carries the name and the town, this also carries the street
-   *  address, the pincode, the floor area and the date it was added. */
   warehouseDetail: (id: number) =>
     call('Warehouse', () => api.get(`/inventory/warehouses/${id}`), (b) => {
       const d = (b as { data?: WarehouseDetail } | null)?.data ?? null;

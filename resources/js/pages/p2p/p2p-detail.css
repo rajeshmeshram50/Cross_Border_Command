@@ -226,6 +226,39 @@
 .spi-dt-sk-field { height:40px; border-radius:9px; }
 [data-bs-theme="dark"] .spi-dt-sk { background: rgba(34,211,238,.1); }
 [data-bs-theme="dark"] .spi-dt-sk::after { background:linear-gradient(90deg, transparent, rgba(34,211,238,.14), transparent); }
+
+/* ── Stage 04's skeleton ────────────────────────────────────────────────────
+   It traces the stage it stands in for: four step cards, the tab rail, then
+   two panels on the same 2 / 5.5 split and the same 700px band the real ones
+   use, so nothing shifts when the data lands. */
+.spi-dt-sk-s4steps { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:10px; }
+.spi-dt-sk-s4step { display:flex; gap:10px; padding:12px 14px; border-radius:12px; background:#fff; border:1px solid #e3f1f5; }
+.spi-dt-sk-s4rail { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.spi-dt-sk-s4fv { width:105px; height:40px; border-radius:11px; margin-left:auto; flex-shrink:0; }
+.spi-dt-sk-s4panels { display:flex; gap:10px; align-items:stretch; height:700px; }
+.spi-dt-sk-s4panel {
+  display:flex; flex-direction:column; gap:10px; min-width:0;
+  padding:12px; border-radius:14px; background:#fff;
+  border:1.5px solid rgba(6,182,212,.25); box-shadow:0 4px 20px rgba(6,182,212,.1);
+}
+/* The real left panel is flex:2, but its box cards set a content floor, so it
+   settles at 570px rather than the 2 / 5.5 share - which is why a plain
+   flex:2 here came out ~45px too narrow and the layout still shifted. Pinned
+   to that width, and capped so it cannot swallow a narrow window. */
+.spi-dt-sk-s4panel--l { flex:0 0 min(570px, 32%); }
+.spi-dt-sk-s4panel--r { flex:1 1 0; }
+.spi-dt-sk-s4head { display:flex; align-items:center; gap:9px; flex-shrink:0; }
+.spi-dt-sk-s4band { display:flex; gap:10px; padding:12px; border-radius:12px; flex-shrink:0;
+  background:linear-gradient(115deg,#0b5f73,#0e7490 38%,#0891b2 72%,#22d3ee); }
+/* Later than .spi-dt-sk on purpose - same weight, so order decides, and the
+   cards on the teal band have to be translucent rather than the pale grey. */
+.spi-dt-sk-s4bandcard { flex:1 1 0; height:52px; border-radius:14px; background:rgba(255,255,255,.18); }
+/* The two bodies clip rather than scroll: a skeleton that can be scrolled
+   invites you to scroll something that is not there yet. */
+.spi-dt-sk-s4body { display:flex; flex-direction:column; gap:10px; flex:1; min-height:0; overflow:hidden; }
+
+[data-bs-theme="dark"] .spi-dt-sk-s4step,
+[data-bs-theme="dark"] .spi-dt-sk-s4panel { background:#0e1b24; border-color:#1d4454; box-shadow:none; }
 .spi-dt-pill-lbl { font-size:7px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:#22D3EE; line-height:1; margin-bottom:2px; }
 .spi-dt-pill-val { font-size:12.5px; font-weight:800; letter-spacing:.05em; color:#0C4A6E; line-height:1; max-width:170px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .spi-dt-pill-val--mono { font-family:'Geist Mono',ui-monospace,monospace; }
@@ -279,7 +312,11 @@
 .spi-dt-sumstep-hd { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 16px; border-bottom:1px solid #eef6f9; }
 .spi-dt-sumstep-hd-l { display:flex; align-items:center; gap:10px; }
 .spi-dt-sumstep-num { width:26px; height:26px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:#083344; color:#fff; font-size:11px; font-weight:800; }
-.spi-dt-sumstep-title { font-size:13.5px; font-weight:700; color:#0f172a; }
+/* 12.5px in the design's own ink, not 13.5px in slate. The recap names a
+   stage that is already finished, so it should not out-weigh the title of the
+   stage being worked on — and #0f172a is a neutral grey that belongs to no
+   part of this palette. */
+.spi-dt-sumstep-title { font-size:12.5px; font-weight:700; color:#0c4a6e; }
 .spi-dt-sumstep-done { display:inline-flex; align-items:center; gap:5px; padding:4px 11px; border-radius:999px; background:#ecfdf5; color:#059669; font-size:10px; font-weight:800; letter-spacing:.04em; }
 .spi-dt-sumstep-body { padding:16px; display:flex; flex-direction:column; gap:18px; }
 .spi-dt-rogroup-hd { display:flex; align-items:center; gap:8px; font-size:9.5px; font-weight:800; letter-spacing:.06em; color:#0891b2; text-transform:uppercase; margin-bottom:10px; }
@@ -719,6 +756,14 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 .spi-dt-foot { position:fixed; left:0; right:0; bottom:0; z-index:1210; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
   padding:12px 20px; background:#fff; border-top:1.5px solid #e4e6f0; box-shadow: 0 -5px 20px rgba(15,23,42,.08); }
 [data-bs-theme="dark"] .spi-dt-foot { background:#0f2731; border-top-color:#173947; }
+/* Full View hides the wizard footer. The footer is fixed at z-index 1210 and
+   the full-view stage covers the screen at 60, so the bar floated over work
+   that has taken the whole window — and it offers Back and Map Invoice, which
+   are decisions about the invoice, not about the box being placed. The stage
+   carries its own Back / Next inside the panel.
+   :has() rather than lifting the flag into InvoiceForm: the state belongs to
+   the stage, and nothing else needs to know about it. */
+.spi-dt-overlay:has(.s4-root.is-fullview) .spi-dt-foot { display:none; }
 .spi-dt-foot-l { display:flex; align-items:center; gap:12px; min-width:0; }
 .spi-dt-foot-step { font-size:9px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; color:#0891b2; line-height:1; }
 .spi-dt-foot-name { font-size:13.5px; font-weight:800; color:#0F172A; letter-spacing:-.2px; margin-top:4px; line-height:1.1; }

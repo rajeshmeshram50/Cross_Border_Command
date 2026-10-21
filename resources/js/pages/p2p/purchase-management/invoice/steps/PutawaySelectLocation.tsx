@@ -66,6 +66,11 @@ const IcoLayers = () => svg(<><polygon points="12 2 2 7 12 12 22 7 12 2" /><poly
 const IcoPin = ({ size = 14 }: { size?: number }) =>
   svg(<><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></>, size);
 const IcoWh = () => svg(<><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></>, 16);
+/** A zone you park a box in, as opposed to a shelf you place it on. */
+const IcoHome = ({ size = 14 }: { size?: number }) =>
+  svg(<><path d="M3 21V9l9-6 9 6v12" /><path d="M9 21v-6h6v6" /></>, size);
+/** Floor area — the figure a rack warehouse states as a rack count. */
+const IcoArea = () => svg(<><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></>, 14);
 
 /** "RC-D02-SH-03" -> "SH-03". The rack is the heading directly above, so
  *  repeating its code on every tile underneath says nothing. */
@@ -317,7 +322,10 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                     IS the percentage the ring sweeps. */}
                 <div
                   className="s4ra-ring"
-                  style={{ background: `conic-gradient(#10b981 ${Math.max(0, Math.min(100, rec.score ?? 0)) * 3.6}deg,#e2f5ee 0)` }}
+                  /* Only the SWEEP is set here. The track behind it comes from
+                     the stylesheet, so dark mode can dim it — an inline
+                     background cannot be overridden by a theme rule. */
+                  style={{ ['--deg' as string]: `${Math.max(0, Math.min(100, rec.score ?? 0)) * 3.6}deg` }}
                 >
                   <div><b>{pct(rec.score ?? 0)}</b><span>Match</span></div>
                 </div>
@@ -514,8 +522,15 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * The same step for a box going into a zone WITHOUT racks: there is no tree to
- * walk, so Section B is a flat list of zones rather than a hierarchy.
+ * The same step for a box going into a zone WITHOUT racks.
+ *
+ * There is no tree to walk — a zone IS the destination — so Section B is a
+ * flat list, split the same way the rack flow splits its shelves: what can
+ * take the box, and what is frozen and why.
+ *
+ * Section A reads the same as the rack flow, with the rack and shelf lines
+ * struck through as Not applicable rather than quietly dropped: the operator
+ * should see that this placement has no rack, not wonder where it went.
  * ═══════════════════════════════════════════════════════════════════════════ */
 function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
   box: SelectLocationBox;
@@ -528,9 +543,93 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
   const zones: PutawayFloorZone[] = state.data?.floor ?? [];
   const rec = state.data?.floorPick ?? null;
   const avail = zones.filter(z => z.eligible);
+  const frozen = zones.filter(z => !z.eligible);
   const taken = rec !== null && spot === rec.id;
   const adds = rec ? Math.max(0, rec.used_pct_after - rec.used_pct) : 0;
   const m3 = (v: number) => `${Number.isInteger(v) ? v : Number(v.toFixed(3))} m³`;
+  const sqft = (v: number | null) => (v ? `${v.toLocaleString('en-IN')} sq ft` : null);
+  /** "Dispatch / Staging · Ambient · 3,315 sq ft" — what the zone is, in the
+   *  order the design reads it. A missing part is dropped, not left blank. */
+  const zoneMeta = (z: PutawayFloorZone) => [
+    (z.purpose ?? '').trim() || 'Floor zone',
+    z.cold_chain ? 'Cold' : 'Ambient',
+    sqft(z.area_sqft),
+    `${m3(z.free_m3)} free`,
+  ].filter(Boolean).join(' · ');
+
+  /** One zone, as a card: the engine's pick, a choice, or a frozen one. */
+  const zcard = (z: PutawayFloorZone) => {
+    const on = spot === z.id;
+    const after = Math.max(0, z.used_pct_after - z.used_pct);
+    if (z.eligible) {
+      return (
+        <div
+          key={z.id}
+          className={`s4cn is-av${on ? ' is-on' : ''}`}
+          role="radio" tabIndex={0} aria-checked={on}
+          title={`Put ${box.code} in ${z.code}`}
+          onClick={() => onSpot(on ? null : z.id)}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSpot(on ? null : z.id); } }}
+        >
+          <span className="s4cn-ico"><IcoHome /></span>
+          <div className="s4cn-tx">
+            <div className="s4cn-t">
+              <span className="s4cl-code s4cl-code--z">{z.code}</span>
+              <b>{z.name || 'Unnamed zone'}</b>
+              {rec?.id === z.id && <span className="s4cn-rec">&#9733; Recommended</span>}
+            </div>
+            <div className="s4cn-s">{zoneMeta(z)}</div>
+            <div className="s4cl-sh__bar g">
+              <i className="o" style={{ width: `${Math.min(100, z.used_pct)}%` }} />
+              <i className="n" style={{ width: `${Math.max(1.5, Math.min(100, after))}%` }} />
+            </div>
+            <div className="s4cn-ft">
+              <span>{pct(z.used_pct)} → <b>{pct(z.used_pct_after)}</b> after this box</span>
+            </div>
+          </div>
+          <div className="s4cn-r">
+            <span>Floor Free</span>
+            <b>{pct(Math.max(0, 100 - z.used_pct))}</b>
+            <em>{pct(z.used_pct)} occupied</em>
+          </div>
+          <span className="s4cl-sh__rad"><IcoCheck size={9} /></span>
+        </div>
+      );
+    }
+    /* Amber is a zone filling up, red is one at 90 %+ or refused on a
+       condition that is not occupancy at all — the legend's two bands. */
+    const full = z.used_pct >= 75;
+    const red = z.used_pct >= 90 || !full;
+    return (
+      <div key={z.id} className="s4cn is-fu" aria-disabled="true" title={z.reason_label || 'Not available'}>
+        <span className="s4cn-ico"><IcoHome /></span>
+        <div className="s4cn-tx">
+          <div className="s4cn-t">
+            <span className="s4cl-code s4cl-code--z">{z.code}</span>
+            <b>{z.name || 'Unnamed zone'}</b>
+            <span className="s4cn-frz"><IcoLock />Frozen</span>
+          </div>
+          <div className="s4cn-s">{zoneMeta(z)}</div>
+          <div className={`s4cl-sh__bar ${red ? 'r' : 'a'}`}>
+            <i className="f" style={{ width: `${Math.max(4, Math.min(100, z.used_pct))}%` }} />
+          </div>
+          <div className="s4cn-ft">
+            <span className={red ? 'r' : 'a'}>
+              {full ? `${pct(z.used_pct)} used · fully utilised` : (z.reason_label || 'Not available')}
+            </span>
+          </div>
+        </div>
+        <div className="s4cn-r is-fu">
+          <span>Floor Free</span>
+          <b>{pct(Math.max(0, 100 - z.used_pct))}</b>
+          <em>{pct(z.used_pct)} occupied</em>
+        </div>
+        <span className="s4cl-sh__lock"><IcoLock /></span>
+      </div>
+    );
+  };
+
+  const totalArea = zones.reduce((t, z) => t + (z.area_sqft ?? 0), 0);
 
   return (
     <div className="s4rl">
@@ -540,7 +639,7 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
         <Section
           kind="a" k="Section A"
           title="System Recommended Location"
-          sub="The eligible zone this box fits most tightly"
+          sub="Highest-ranked eligible spot for this box"
           pill={rec && (
             <span className={`s4rx-pill${taken ? ' is-use' : ''}`}>
               <IcoStar size={11} />{taken ? 'In Use' : 'Recommended'}
@@ -553,23 +652,30 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
             <div className="s4rl-empty">Ranking the zones for this box…</div>
           ) : !rec ? (
             <div className="s4rl-empty">
-              No zone without racks can take this box.
+              No eligible floor zone in this warehouse can take this box.
               {state.data ? ` ${avail.length} of ${zones.length} zones eligible.` : ''}
             </div>
           ) : (
             <>
               <div className="s4ra-top">
+                {/* The ring reads how much of the zone is left after this box,
+                    which for a floor zone is the whole of the decision. */}
                 <div
                   className="s4ra-ring"
-                  style={{ background: `conic-gradient(#10b981 ${Math.max(0, Math.min(100, 100 - rec.used_pct_after)) * 3.6}deg,#e2f5ee 0)` }}
+                  style={{ ['--deg' as string]: `${Math.max(0, Math.min(100, 100 - rec.used_pct_after)) * 3.6}deg` }}
                 >
                   <div><b>{pct(Math.max(0, 100 - rec.used_pct_after))}</b><span>Free After</span></div>
                 </div>
                 <div className="s4ra-id">
-                  <span className="s4ra-kind"><IcoMap />Zone Floor</span>
+                  <span className="s4ra-kind s4ra-kind--zone"><IcoHome />Direct Storage Zone</span>
                   <div className="s4ra-nm">{rec.name || 'Unnamed zone'}</div>
-                  <div className="s4ra-path">Straight into the zone · no rack or shelf</div>
-                  <div className="s4ra-codes"><span className="c-z">{rec.code}</span></div>
+                  <div className="s4ra-path">
+                    {(rec.purpose ?? '').trim() || 'Floor zone'} · box parks directly in the zone
+                  </div>
+                  <div className="s4ra-codes">
+                    <span className="c-z">{rec.code}</span>
+                    <span className="c-n">No rack · No shelf</span>
+                  </div>
                 </div>
               </div>
 
@@ -594,26 +700,36 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
                 </div>
               </div>
 
-              <div className="s4ra-grid s4ra-grid--3">
+              {/* Eight cells in four columns, as the design has them. Rack and
+                  Shelf stay in the grid, struck as Not applicable: this
+                  placement HAS no rack, which is worth stating. */}
+              <div className="s4ra-grid s4ra-grid--4">
                 {([
-                  ['Zone', rec.name || '—'],
+                  ['Zone Type', (rec.purpose ?? '').trim() || 'Floor zone'],
+                  ['Floor Area', sqft(rec.area_sqft) ?? 'Not measured'],
                   ['Free Space', m3(rec.free_m3)],
                   ['Capacity', rec.capacity_m3 ? m3(rec.capacity_m3) : 'Not measured'],
-                  ['Boxes Already Here', String(rec.boxes)],
                   ['Cold Chain', rec.cold_chain ? 'Yes' : 'No'],
                   ['Hazardous', rec.hazardous ? 'Yes' : 'No'],
+                  ['Rack', null],
+                  ['Shelf', null],
                 ] as const).map(([k, v]) => (
-                  <div key={k}><span>{k}</span><b>{v}</b></div>
+                  <div key={k}><span>{k}</span><b>{v ?? <i>Not applicable</i>}</b></div>
                 ))}
               </div>
 
+              {/* The four conditions the engine actually refuses a ZONE on.
+                  A shelf is also checked for weight and stack height; a zone
+                  is not, so those are not claimed here. */}
               <div className="s4ra-pl">Parameter Checks</div>
               <div className="s4ra-chks">
                 {([
                   ['Space available', `Box ${need?.volume_cm3 ? m3(need.volume_cm3 / 1_000_000) : '—'} ≤ Zone ${m3(rec.free_m3)} free`],
-                  ['Stack height', need?.is_stackable ? 'Yes · can be stacked' : 'Non-stackable · placed on top'],
-                  ['Cold chain', rec.cold_chain ? 'Zone is cold chain' : 'Ambient zone'],
-                  ['Hazardous', rec.hazardous ? 'Zone takes hazardous goods' : 'Non-hazardous zone'],
+                  ['Cold chain', rec.cold_chain ? 'Zone is cold chain' : `Cold chain: ${need?.cold_chain ? 'Yes' : 'No'}`],
+                  ['Hazardous', rec.hazardous ? 'Zone takes hazardous goods' : `Hazardous: ${need?.hazardous ? 'Yes' : 'No'}`],
+                  ['Temperature', rec.temp_min_c != null && rec.temp_max_c != null
+                    ? `Zone holds ${rec.temp_min_c}–${rec.temp_max_c} °C`
+                    : 'Ambient · no range required'],
                 ] as const).map(([k, v]) => (
                   <div className="s4ra-chk" key={k}>
                     <span className="s4ra-chk__i"><IcoCheck /></span>
@@ -640,68 +756,39 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
           ) : state.loading ? (
             <div className="s4rl-empty">Reading the zones…</div>
           ) : zones.length === 0 ? (
-            <div className="s4rl-empty">This warehouse has no storage zones without racks.</div>
+            <div className="s4rl-empty">No direct storage zones (without rack) in this warehouse.</div>
           ) : (
             <>
-              <div className="s4cl-kpis s4cl--nr">
-                <div><span className="s4cl-kpi__i z"><IcoMap /></span><b>{zones.length}</b><em>Zones</em></div>
+              {/* Four tiles, as the rack flow has — but a floor warehouse is
+                  measured in area, so Racks becomes Sq Ft. */}
+              <div className="s4cl-kpis">
+                <div><span className="s4cl-kpi__i z"><IcoHome /></span><b>{zones.length}</b><em>Zones</em></div>
+                <div>
+                  <span className="s4cl-kpi__i r"><IcoArea /></span>
+                  <b>{totalArea ? Math.round(totalArea).toLocaleString('en-IN') : '—'}</b><em>Sq Ft</em>
+                </div>
                 <div><span className="s4cl-kpi__i g"><IcoCheck /></span><b>{avail.length}</b><em>Available</em></div>
-                <div><span className="s4cl-kpi__i x"><IcoLock /></span><b>{zones.length - avail.length}</b><em>Fully Utilized</em></div>
+                <div><span className="s4cl-kpi__i x"><IcoLock /></span><b>{frozen.length}</b><em>Fully Utilized</em></div>
               </div>
 
               <div className="s4cl-leg">
                 <span className="s4cl-leg__t"><IcoLayers /> Legend</span>
                 <span><i className="g" />Available · selectable</span>
-                <span><i className="r" />Not fit · frozen</span>
+                <span><i className="a" />75–89% · frozen</span>
+                <span><i className="r" />90–100% / not fit · frozen</span>
               </div>
 
-              <div className="s4cn-list">
-                {zones.map(z => {
-                  const on = spot === z.id;
-                  return (
-                    <div
-                      key={z.id}
-                      className={`s4cn ${z.eligible ? 'is-av' : 'is-fu'}${on ? ' is-on' : ''}`}
-                      role={z.eligible ? 'radio' : undefined}
-                      tabIndex={z.eligible ? 0 : undefined}
-                      aria-checked={z.eligible ? on : undefined}
-                      aria-disabled={z.eligible ? undefined : true}
-                      title={z.eligible ? `Put ${box.code} in ${z.code}` : (z.reason_label ?? 'Not available')}
-                      onClick={() => z.eligible && onSpot(on ? null : z.id)}
-                      onKeyDown={e => {
-                        if (!z.eligible) return;
-                        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSpot(on ? null : z.id); }
-                      }}
-                    >
-                      <span className="s4cn-ico"><IcoMap size={16} /></span>
-                      <div className="s4cn-tx">
-                        <div className="s4cn-t">
-                          <span className="s4cl-code s4cl-code--z">{z.code}</span>
-                          <b>{z.name || 'Unnamed zone'}</b>
-                          {rec?.id === z.id && <span className="s4cn-rec">Recommended</span>}
-                          {!z.eligible && <span className="s4cn-frz"><IcoLock />Frozen</span>}
-                        </div>
-                        <span className="s4cn-s">
-                          {z.cold_chain ? 'Cold storage' : 'Storage'}{z.hazardous ? ' · Hazardous' : ''}
-                          {' · '}{m3(z.free_m3)} free{z.boxes ? ` · ${many(z.boxes, 'box', 'boxes')} here` : ''}
-                        </span>
-                        <span className="s4cn-ft">
-                          {z.eligible
-                            ? <>{pct(z.used_pct)} → <b>{pct(z.used_pct_after)}</b> after this box</>
-                            : <span className="r">{z.reason_label || 'Not available'}</span>}
-                        </span>
-                      </div>
-                      <div className={`s4cn-r${z.eligible ? '' : ' is-fu'}`}>
-                        <span>Used</span>
-                        <b>{round(z.used_pct)}%</b>
-                        <em>{pct(Math.max(0, 100 - z.used_pct))} free</em>
-                      </div>
-                      <span className={z.eligible ? 's4cl-sh__rad' : 's4cl-sh__lock'}>
-                        {z.eligible ? <IcoCheck size={9} /> : <IcoLock />}
-                      </span>
-                    </div>
-                  );
-                })}
+              <div className="s4cl-grp s4cl-grp--av">
+                <div className="s4cl-grp__hd"><i />Available Locations<span>{avail.length}</span></div>
+                {avail.length
+                  ? <div className="s4cn-list">{avail.map(zcard)}</div>
+                  : <div className="s4cl-none">No zone without rack can take this box right now.</div>}
+              </div>
+              <div className="s4cl-grp s4cl-grp--fu">
+                <div className="s4cl-grp__hd"><i><IcoLock /></i>Fully Utilized Locations<span>{frozen.length}</span></div>
+                {frozen.length
+                  ? <div className="s4cn-list">{frozen.map(zcard)}</div>
+                  : <div className="s4cl-none">No fully utilized zone in this warehouse.</div>}
               </div>
             </>
           )}

@@ -29,27 +29,13 @@ use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Shared\Html;
 
-
 class ClmAgreementController extends Controller
 {
     use HandlesDocxHtmlRoundtrip;
 
-    /* Draft-content Word upload cap: 1 MB. The agreement editor refuses an
-     * oversized file before it leaves the browser
-     * (ClmAgreementWizardModal's AGREEMENT_DOCX_MAX_BYTES) — this is the
-     * server-side half of that pair, so the limit still holds for anything that
-     * skips the UI. Keep the two values in step. */
     private const DOCX_MAX_KB = 1024;
 
-    /**
-     * Max editor-HTML size we'll render synchronously to PDF/Word. dompdf and
-     * PhpWord are near-quadratic on long content, so past this a single web
-     * request exhausts memory/time and crashes with a 500. Above it we return a
-     * clean "too large" message instead of letting the process die.
-     */
-    private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 characters of TEXT; formatting does not count (CS-18)
-
-    /* ── TYPES ── */
+    private const RENDER_MAX_CHARS = 1000000;
 
     public function typesIndex(Request $request)
     {
@@ -57,23 +43,11 @@ class ClmAgreementController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        // Branch-scoped read: branch users see globals + client-level rows +
-        // their own branch's rows; sibling branches stay hidden.
         $branchFilter = $request->integer('branch_id') ?: null;
-        /* Newest first. The list is append-only in practice — a new type is
-           added and then immediately looked for — and ascending order buried it
-           on the last page, which is also why adding one "did nothing" from the
-           user's side. Ordering by id, not created_at: id is never null and
-           cannot tie, so the sequence is stable. */
         $typeQuery = ClmAgreementType::query()->orderByDesc('id');
         MasterVisibility::applyReadScope($typeQuery, $user, $branchFilter);
         $rows = $typeQuery->get();
 
-        // Flag each type with how many Agreement Library rows reference it
-        // (matched by name, case-insensitive) so the UI can lock the edit action
-        // for types already in use — only fresh types stay editable (CBC-438).
-        // Scope the usage count the same way so a branch only counts library
-        // rows it can actually see.
         $usageQuery = ClmAgreementLibrary::query();
         MasterVisibility::applyReadScope($usageQuery, $user, $branchFilter);
         $usedCounts = $usageQuery
@@ -98,9 +72,6 @@ class ClmAgreementController extends Controller
             'description' => 'required|string|max:500',
         ]);
 
-        // Reject duplicate agreement-type names within the creator's own scope
-        // (case-insensitive). Scoped via MasterVisibility so the same name can
-        // exist in different branches — matches the branch-scoped master rule.
         $name = trim($data['name']);
         $dupQuery = ClmAgreementType::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupQuery, $user, $user->branch_id ?: null);
@@ -116,7 +87,7 @@ class ClmAgreementController extends Controller
             $code = $this->nextCode(ClmAgreementType::class, $user->client_id, $user->branch_id, 'AT-');
             return ClmAgreementType::create([
                 'client_id'   => $user->client_id,
-                'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'   => $user->branch_id,
                 'code'        => $code,
                 'name'        => $name,
                 'description' => trim($data['description']),
@@ -133,14 +104,10 @@ class ClmAgreementController extends Controller
         $lookup = ClmAgreementType::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        // A branch user can VIEW shared client-level types but not manage them.
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Lock editing once the type is referenced by an Agreement Library row —
-        // the library matches by name, so a rename would orphan those agreements.
-        // Only fresh (unused) types may be edited (CBC-438).
         $inUse = ClmAgreementLibrary::where('client_id', $user->client_id)
             ->whereRaw('LOWER(agreement_type) = ?', [mb_strtolower($row->name)])
             ->count();
@@ -158,7 +125,6 @@ class ClmAgreementController extends Controller
         if (isset($data['name']))        $data['name']        = trim($data['name']);
         if (isset($data['description'])) $data['description'] = trim($data['description']);
 
-        // Reject rename to a duplicate (case-insensitive, excluding self).
         if (isset($data['name'])) {
             $clash = ClmAgreementType::where('client_id', $user->client_id)
                 ->where('id', '!=', $row->id)
@@ -187,9 +153,6 @@ class ClmAgreementController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Block deletion while drafts in the Agreement Library still use this
-        // type — the library references the type by name. The user must delete
-        // those agreements first, then the type can be removed.
         $inUse = ClmAgreementLibrary::where('client_id', $user->client_id)
             ->whereRaw('LOWER(agreement_type) = ?', [mb_strtolower($row->name)])
             ->count();
@@ -204,25 +167,8 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /**
-     * Allocate the next per-tenant code (AT-NNN / A-NNN). Uses
-     * MAX(numeric suffix) + 1 rather than count()+1 so a deleted row in the
-     * middle of the sequence doesn't make the next allocation reuse a code
-     * that still exists — which was throwing a unique-constraint violation
-     * (clm_agreement_types_client_id_code_unique) on save. Skips any code
-     * that's already taken just to be doubly safe. Caller must already hold
-     * the client row lock; the composite UNIQUE (client_id, code) is the
-     * final guard.
-     *
-     * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
-     */
     private function nextCode(string $modelClass, int $clientId, ?int $branchId, string $prefix): string
     {
-        // Branch-scoped so each branch restarts its own sequence from
-        // 001 (AT-001 / A-001) rather than continuing another branch's
-        // tally — the agreement master is branch-isolated via
-        // MasterVisibility. A client-level creator ($branchId null)
-        // sequences the shared rows.
         $query = $modelClass::where('client_id', $clientId);
         $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
         $codes = $query->pluck('code')->all();
@@ -244,26 +190,17 @@ class ClmAgreementController extends Controller
         return $code;
     }
 
-    /* ── LIBRARY ── */
-
     public function libraryIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        // Branch-scoped read (globals + client-level + own branch; siblings hidden).
         $branchFilter = $request->integer('branch_id') ?: null;
-        $libQuery = ClmAgreementLibrary::query()->orderBy('id', 'desc');   // newest entry first
+        $libQuery = ClmAgreementLibrary::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($libQuery, $user, $branchFilter);
         $rows = $libQuery->get();
 
-        // Flag agreements the frontend must lock Edit / Delete on:
-        //  · is_signed → a COMPLETED signature exists (fully signed).
-        //  · in_use    → SENT for signature at least once (in-progress OR
-        //                completed) — editing/deleting would desync what was
-        //                already sent, so it's blocked with a toaster.
-        // Batch lookups avoid an N+1 of per-row existence checks.
         $signedIds = ClmSignatureRequest::signedDraftIds($user->client_id, ClmSignatureRequest::DOC_AGREEMENT);
         $usedIds   = ClmSignatureRequest::usedDraftIds($user->client_id, ClmSignatureRequest::DOC_AGREEMENT);
         $rows->each(function ($r) use ($signedIds, $usedIds) {
@@ -298,7 +235,7 @@ class ClmAgreementController extends Controller
             $code = $this->nextCode(ClmAgreementLibrary::class, $user->client_id, $user->branch_id, 'A-');
             return ClmAgreementLibrary::create([
                 'client_id'      => $user->client_id,
-                'branch_id'      => $user->branch_id,   // branch-owned; null for client-level users → shared
+                'branch_id'      => $user->branch_id,
                 'code'           => $code,
                 'agreement_type' => trim($data['agreement_type']),
                 'title'          => trim($data['title']),
@@ -324,15 +261,10 @@ class ClmAgreementController extends Controller
         $lookup = ClmAgreementLibrary::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        // Branch users may view shared client-level agreements but not edit them.
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Lock once the agreement is IN USE — i.e. it has been sent for
-        // signature at least once (still in-progress or already signed).
-        // Editing it would silently diverge the master from the copy that was
-        // already sent to / signed by the customer/consignee.
         if (ClmSignatureRequest::hasUsedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_AGREEMENT)) {
             return response()->json([
                 'status'  => false,
@@ -354,14 +286,9 @@ class ClmAgreementController extends Controller
             'footer_config'  => 'nullable|array',
         ]);
         $data['updated_by'] = $user->id;
-        // If the editor content was edited and saved, the previously-uploaded
-        // Word file no longer matches it. downloadDocx() prefers that stored
-        // file, so it would keep serving the OLD document. Drop the docx_path
-        // here (only when the content actually changed) so the download
-        // regenerates from the edited HTML the user sees in the editor.
         if (array_key_exists('content', $data) && $data['content'] !== null && $data['content'] !== $row->content) {
             if ($row->docx_path) {
-                try { Storage::disk('public')->delete($row->docx_path); } catch (\Throwable $e) { /* ignore */ }
+                try { Storage::disk('public')->delete($row->docx_path); } catch (\Throwable $e) { }
             }
             $data['docx_path'] = null;
             $data['docx_original_name'] = null;
@@ -370,13 +297,6 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
-    /**
-     * Stage 2 page-shell logo upload for the agreement wizard. Mirrors
-     * ClmTradeDocumentController::uploadHeaderLogo but stores under the
-     * agreement_library/<client> folder so per-doc-type cleanup stays
-     * straightforward. Returns { path, url } in the shape
-     * [[HeaderFooterPanel]] expects.
-     */
     public function uploadHeaderLogo(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -405,11 +325,6 @@ class ClmAgreementController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // An agreement that has been used in a lead / sent for signature must
-        // stay on record. Block the delete once ANY signature request references
-        // this draft — including one still 'draft' (created but Zoho not yet
-        // confirmed), not only in-progress/completed (which the old check missed,
-        // so a sent-but-not-yet-in-progress agreement could still be deleted).
         if (ClmSignatureRequest::hasReferencingDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_AGREEMENT)) {
             return response()->json([
                 'status'  => false,
@@ -421,57 +336,22 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    /* ── APPLICABLE AGREEMENTS FOR A LEAD ──
-     *
-     * GET /api/clm/leads/{leadId}/agreement-applicable
-     *
-     * Drives the Sales Matrix lead detail "Segment Details" card. Given a
-     * lead, walks its latest non-cancelled Proforma Invoice → line-item
-     * product IDs → product.segment_id → clm_segments. For each segment,
-     * pulls the matching agreement-library rows (filtered by segment name
-     * + regulatory tier), and returns everything grouped by regulatory
-     * tier so the frontend can render High / Less popups directly.
-     *
-     * Also surfaces the existing clm_signature_requests for this lead so
-     * each agreement row can show its current send status ('draft' if no
-     * request yet, otherwise 'inprogress' / 'completed' / etc.).
-     */
     public function applicableForLead(Request $request, $leadId)
     {
         $user = $request->user(); if (!$user) abort(401);
 
         $lead = Lead::where('client_id', $user->client_id)->findOrFail((int) $leadId);
 
-        /* ?light=1 — drop the document BODIES from the response.
-         *
-         * Each row carries its full `content`, and on a real lead that is
-         * nearly the whole payload: measured at 364 KB for one lead, of which
-         * 359 KB was content (two agreements at 170 KB each). The Sales Matrix
-         * CLM panel renders two progress bars from this and never reads a
-         * body, so it was downloading a third of a megabyte to draw "2 of 3
-         * uploaded" — on every lead it opens.
-         *
-         * The send modal still asks for the full payload: it seeds its editor
-         * from `content`. Opt-in, so every existing caller is unchanged. */
         $light = $request->boolean('light');
 
-        // Stage 5 = "Quotation vs PI". Stage 5 complete ⇒ lead has moved
-        // to stage 6+ (Victory). The button on the Sales Matrix detail
-        // card stays disabled until then.
         $stage5Complete = (int) ($lead->lead_stage_id ?? 1) >= 6;
 
-        // Latest Proforma Invoice tied to this lead. Cancelled rows don't
-        // count toward agreement-send eligibility — but draft/sent/etc do.
         $pi = ProformaInvoice::where('client_id', $user->client_id)
             ->where('opp_id', $lead->id)
             ->where('status', '!=', 'cancelled')
             ->orderByDesc('id')
             ->first();
 
-        // Latest non-cancelled Quotation — Segment Details should populate
-        // as soon as products are quoted, not only after PI conversion. The
-        // PI is preferred when both exist; otherwise the quotation drives
-        // the segment list.
         $quotation = Quotation::where('client_id', $user->client_id)
             ->where('opp_id', $lead->id)
             ->where('status', '!=', 'cancelled')
@@ -485,8 +365,6 @@ class ClmAgreementController extends Controller
             : collect();
         $productIds = $sourceItems->pluck('product_id')->filter()->unique()->values();
 
-        // Map products → segment_id. soft FK (no DB constraint per the
-        // products migration comment), so we tolerate missing references.
         $segmentIds = Product::where('client_id', $user->client_id)
             ->whereIn('id', $productIds)
             ->whereNotNull('segment_id')
@@ -500,10 +378,6 @@ class ClmAgreementController extends Controller
             ->orderBy('code')
             ->get();
 
-        // Existing signature requests for this lead so the rows show live
-        // status badges instead of always "Draft". Gated on `$pi` — when
-        // no PI is mapped there are no segments to render either, so the
-        // signature lookup would be wasted work.
         $sigRows = $source
             ? ClmSignatureRequest::where('client_id', $user->client_id)
                 ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
@@ -513,8 +387,6 @@ class ClmAgreementController extends Controller
                 ->get()
             : collect();
 
-        // Index sig requests by agreement-id so we can look up the most
-        // recent send per agreement in O(1). Map "agreement_id => row".
         $latestPerAgreement = [];
         foreach ($sigRows as $r) {
             $ids = is_array($r->trade_doc_ids) ? $r->trade_doc_ids : [];
@@ -525,10 +397,6 @@ class ClmAgreementController extends Controller
             }
         }
 
-        // Same lookup for TRADE-DOCUMENT sends, keyed by trade-doc-library id,
-        // so each trade-doc row can surface its live signature status (Sent /
-        // Signed), the Remind button + count, and the signed-PDF / certificate
-        // download links — exactly like the agreement rows.
         $tdSigRows = $source
             ? ClmSignatureRequest::where('client_id', $user->client_id)
                 ->where('document_type', ClmSignatureRequest::DOC_TRADE)
@@ -550,12 +418,6 @@ class ClmAgreementController extends Controller
             }
         }
 
-        // Customer + consignee mapped to this lead. Resolved up-front (it
-        // used to sit below the loop) because the per-segment trade-document
-        // block now needs both parties' upload state inside the loop.
-        // Eager-load the primary address so the Trade Documents popup header
-        // can surface each party's country (it lives on customer_addresses /
-        // consignee_addresses, not the party row itself).
         $customer  = $lead->customer_id  ? Customer::with('primaryAddress')->find($lead->customer_id)   : null;
         $consignee = $lead->consignee_id ? Consignee::with('primaryAddress')->find($lead->consignee_id) : null;
         $partyOwners = array_values(array_filter([
@@ -563,10 +425,8 @@ class ClmAgreementController extends Controller
             $consignee ? ['party' => 'consignee', 'model' => $consignee] : null,
         ]));
 
-        /* The deal's own answer per document, keyed "kind:id".
-         * Loaded once here rather than per row: the loop below runs per segment
-         * AND per party, so a lookup inside it would re-query the same handful
-         * of rows for every document on screen. */
+        $buyerEqualsConsignee = !$consignee || (bool) ($consignee->same_as_customer ?? false);
+
         $needs = [];
         if (Schema::hasTable('clm_lead_doc_needs')) {
             foreach (DB::table('clm_lead_doc_needs')->where('lead_id', $lead->id)->get() as $n) {
@@ -574,9 +434,6 @@ class ClmAgreementController extends Controller
             }
         }
 
-        /* Latest signature request raised against the PI itself (document_type
-           = PI), so the row can show Sent / Signed instead of always Pending.
-           Separate from $sigRows, which only covers agreements. */
         $piDocSig = $pi
             ? ClmSignatureRequest::where('client_id', $user->client_id)
                 ->where('lead_id', $lead->id)
@@ -586,17 +443,8 @@ class ClmAgreementController extends Controller
                 ->first()
             : null;
 
-        // Build the per-segment agreement list.
         $segmentsOut = [];
         foreach ($segments as $seg) {
-            // Less-reg agreements can be saved against multiple
-            // segments (stored as a comma-separated string in the
-            // `segment` column), so we LIKE-match the needle against
-            // the CSV instead of doing an exact equality check. The
-            // patterns wrap the needle in comma separators so
-            // "Tobacco" can't accidentally match a row tagged
-            // "Tobacco Stripping" while still hitting first/middle/
-            // last/sole positions in the list.
             $name = $seg->name;
             $code = $seg->code;
             $agreements = ClmAgreementLibrary::where('client_id', $user->client_id)
@@ -615,15 +463,9 @@ class ClmAgreementController extends Controller
                 ->where('agr_status', 'Active')
                 ->orderBy('id')
                 ->get()
-                // Exclude supplier/other-only agreements — the Sales Matrix only
-                // sends to the customer / consignee side.
-                ->filter(fn (ClmAgreementLibrary $a) => $this->partyForBuyerConsignee($a->party)[0])
+                ->filter(fn (ClmAgreementLibrary $a) => $this->partyIncluded($a->party, $buyerEqualsConsignee))
                 ->values();
 
-            /* $needs must be captured too — a closure sees only what it imports, and
-               without it every agreement reported null however it had been marked.
-               It failed quietly: `$needs[...] ?? null` swallows the undefined
-               variable, so the field was always present and always empty. */
             $agreementsOut = $agreements->map(function (ClmAgreementLibrary $a) use ($latestPerAgreement, $needs, $light) {
                 $req = $latestPerAgreement[$a->id] ?? null;
                 $sigOut = null;
@@ -637,8 +479,6 @@ class ClmAgreementController extends Controller
                         'completed_at'          => optional($req->completed_at)->toIso8601String(),
                         'signed_url'            => $first['file_url'] ?? $first['url'] ?? null,
                         'certificate_url'       => $req->certificate_path ? file_url($req->certificate_path) : null,
-                        // Reminder counter + last-sent timestamp drive
-                        // the "Sent N times" badge on the Remind button.
                         'reminder_count'        => (int) ($req->reminder_count ?? 0),
                         'last_reminder_sent_at' => optional($req->last_reminder_sent_at)->toIso8601String(),
                     ];
@@ -652,17 +492,9 @@ class ClmAgreementController extends Controller
                     'regulatory'     => $a->regulatory,
                     'segment'        => $a->segment,
                     'required'       => $a->regulatory === 'highly' ? 'REQ' : 'OPT',
-                    /* null = the deal has not answered yet. Kept distinct from
-                       false so the UI can show "not decided" rather than
-                       claiming the user marked it unnecessary. */
                     'needed'         => $needs['agreement:' . $a->id] ?? null,
                     'updated_at'     => optional($a->updated_at)->toDateString(),
                     'signature_request' => $sigOut,
-                    /* Send-for-Signature editor seed — body HTML + saved
-                     * page-shell config so the Edit Header/Footer/Body
-                     * popup in the workplace can hydrate without an
-                     * extra round-trip. Per-row send-time overrides
-                     * layer over these without mutating the saved row. */
                     'content'        => $light ? null : $a->content,
                     'header_config'  => is_array($a->header_config) ? $a->header_config : null,
                     'footer_config'  => is_array($a->footer_config) ? $a->footer_config : null,
@@ -675,30 +507,16 @@ class ClmAgreementController extends Controller
                 'name'       => $seg->name,
                 'regulatory' => $seg->regulatory_status,
                 'agreements' => $agreementsOut,
-                // Trade documents required for THIS segment, for both the
-                // customer and the consignee — moved here from the per-party
-                // Evidence Vault so they're surfaced segment-wise.
-                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners, $latestPerTradeDoc, $needs),
+                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners, $latestPerTradeDoc, $needs, $buyerEqualsConsignee),
             ];
         }
 
-        // Totals for the segment-details card. "Segments in this lead"
-        // (X) vs "Total segments configured in master" (Y) per tier.
         $masterCounts = ClmSegment::where('client_id', $user->client_id)
             ->where('status', 'active')
             ->selectRaw('regulatory_status, COUNT(*) as c')
             ->groupBy('regulatory_status')
             ->pluck('c', 'regulatory_status');
         $leadCounts = collect($segments)->groupBy('regulatory_status')->map->count();
-
-        // ($customer / $consignee resolved before the segment loop above —
-        // the frontend uses these to resolve signers based on the
-        // agreement's `party` CSV.)
-
-        // Buyer == Consignee when there's no distinct consignee, or the mapped
-        // consignee is flagged same-as-customer. Drives the Trade Documents
-        // popup: equal ⇒ one flat list; different ⇒ Buyer/Consignee/Both tabs.
-        $buyerEqualsConsignee = !$consignee || (bool) ($consignee->same_as_customer ?? false);
 
         return response()->json([
             'status' => true,
@@ -730,28 +548,11 @@ class ClmAgreementController extends Controller
                     'code'   => $pi->code ?? null,
                     'status' => $pi->status ?? null,
                 ] : null,
-                /* The PI as a signable DOCUMENT, not just a reference.
-                 * The Evidence Vault already lists it this way
-                 * (SegmentDocUploadController: 'Proforma Invoice (CODE)' with
-                 * pi_id marking the row), and it is sendable from there — so a
-                 * deal that skipped Stage 5 could still get it signed from the
-                 * vault but not from this popup, which lists the very documents
-                 * derived from that PI.
-                 * Kept OUTSIDE `segments`: the PI belongs to the deal, not to
-                 * one segment, and nesting it would repeat the row per segment.
-                 * Always Necessary — it is the deal's own invoice, not an
-                 * optional catalogue entry, which is why the vault marks it
-                 * mandatory rather than offering a choice. */
                 'pi_document' => $pi ? [
                     'pi_id'   => (int) $pi->id,
                     'pi_code' => (string) ($pi->code ?: ('PI-' . $pi->id)),
                     'name'    => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'status'  => $piDocSig?->status ?? 'Pending',
-                    /* Same shape the trade-doc / agreement rows get. The signed
-                       PDF and certificate URLs were missing here, so the PI row
-                       could be sent and signed but offered no way to download
-                       the result — the one row in the table whose signature led
-                       nowhere. */
                     'signature_request' => $piDocSig ? (function () use ($piDocSig) {
                         $signedPaths = is_array($piDocSig->signed_document_paths) ? $piDocSig->signed_document_paths : [];
                         $first = $signedPaths[0] ?? [];
@@ -787,19 +588,6 @@ class ClmAgreementController extends Controller
         ]);
     }
 
-    /**
-     * Resolve a library row's `party` CSV against the Sales Matrix context,
-     * which only ever deals with the buyer (customer) / consignee side.
-     *
-     * A row is applicable here when its party names Buyer or Consignee. Rows
-     * that name only Supplier/other parties (e.g. "Supplier-Material / Goods")
-     * are NOT applicable and must be excluded — previously they slipped through
-     * because "names neither" fell back to "both". A blank party stays
-     * universal (applicable to both), preserving the old permissive behaviour
-     * for unclassified rows.
-     *
-     * @return array{0:bool,1:bool,2:bool}  [applicable, forBuyer, forConsignee]
-     */
     private function partyForBuyerConsignee(?string $party): array
     {
         $tokens = array_filter(array_map(
@@ -809,32 +597,19 @@ class ClmAgreementController extends Controller
         $forBuyer     = in_array('buyer', $tokens, true);
         $forConsignee = in_array('consignee', $tokens, true);
 
-        // Unclassified (blank party) → applies to both, so it's never hidden.
         if (empty($tokens)) {
             return [true, true, true];
         }
-        // Named parties but neither Buyer nor Consignee → supplier/other-only,
-        // not applicable in the customer/consignee sales-matrix context.
         return [$forBuyer || $forConsignee, $forBuyer, $forConsignee];
     }
 
-    /**
-     * Trade documents required for a single segment, ONE row per document.
-     * Each row carries the document's applicable party (parsed from the trade
-     * doc master's `party` CSV → for_buyer / for_consignee) so the Sales Matrix
-     * popup can segregate into Buyer / Consignee / Both tabs. Upload status is
-     * unioned across the mapped parties (uploaded by either ⇒ Verified).
-     *
-     * @param  array<int,array{party:string,model:Model}>  $partyOwners
-     * @return array<int,array<string,mixed>>
-     */
-    /**
-     * Record whether a document is needed for THIS deal.
-     *
-     * Upsert rather than insert: the popup is a toggle, so the same row is
-     * flipped repeatedly and appending would leave the newest answer
-     * indistinguishable from the first.
-     */
+    private function partyIncluded(?string $party, bool $buyerEqualsConsignee): bool
+    {
+        [$applicable, $forBuyer, $forConsignee] = $this->partyForBuyerConsignee($party);
+        if (!$applicable) return false;
+        return $buyerEqualsConsignee ? ($forBuyer && !$forConsignee) : true;
+    }
+
     public function setLeadDocNeed(Request $request, int $leadId)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -846,7 +621,6 @@ class ClmAgreementController extends Controller
             'items.*.needed'    => ['required', 'boolean'],
         ]);
 
-        // Tenant guard — the lead must belong to the caller's client.
         $lead = Lead::where('client_id', $user->client_id)->findOrFail($leadId);
 
         foreach ($data['items'] as $it) {
@@ -865,14 +639,8 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'saved' => count($data['items'])]);
     }
 
-    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = [], array $needs = []): array
+    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = [], array $needs = [], bool $buyerEqualsConsignee = false): array
     {
-        // Trade documents now carry their own `regulatory` + `segment` (CSV)
-        // columns — exactly like the Agreement Library — instead of being
-        // selected on the DCP segment rule. So we resolve them the SAME way
-        // agreements are: match the library's regulatory tier + segment CSV
-        // against this segment's name/code. (Previously this read the segment
-        // rule's doc_selections['td'], which no longer exists.)
         $name = $seg->name;
         $code = $seg->code;
         $docs = ClmTradeDocLibrary::where('client_id', $cid)
@@ -893,7 +661,6 @@ class ClmAgreementController extends Controller
             ->get();
         if ($docs->isEmpty()) return [];
 
-        // Upload state keyed by doc_code, per mapped party owner.
         $uploadsByOwner = [];
         foreach ($partyOwners as $owner) {
             $model = $owner['model'];
@@ -908,21 +675,14 @@ class ClmAgreementController extends Controller
         foreach ($docs as $m) {
             $docCode = $m->code;
 
-            // Applicable party comes from the master's `party` CSV (e.g.
-            // "Buyer,Consignee,Supplier-Material"). Supplier/other-only docs are
-            // not applicable in the customer/consignee context and are skipped.
-            [$applicable, $forBuyer, $forConsignee] = $this->partyForBuyerConsignee($m->party);
-            if (!$applicable) { continue; }
+            [, $forBuyer, $forConsignee] = $this->partyForBuyerConsignee($m->party);
+            if (!$this->partyIncluded($m->party, $buyerEqualsConsignee)) { continue; }
 
-            // Verified if EITHER mapped party has uploaded this code.
             $uploaded = null;
             foreach ($uploadsByOwner as $ups) {
                 if ($hit = $ups->get($docCode)) { $uploaded = $hit; break; }
             }
 
-            // Live signature status for this trade doc (latest Zoho send on
-            // this lead) — drives the Sent/Signed badge, Remind button + count,
-            // and signed-PDF / certificate downloads, same as agreements.
             $req = $latestPerTradeDoc[(int) $m->id] ?? null;
             $sigOut = null;
             if ($req) {
@@ -942,17 +702,11 @@ class ClmAgreementController extends Controller
 
             $out[] = [
                 'db_id'            => $m->id,
-                // `name` is the catalog/type name (shared across docs); `title`
-                // is this document's own title. The popup shows the title as the
-                // primary label, falling back to name/code when blank.
                 'name'             => $m->name ?? ($m->title ?? $docCode),
                 'title'            => $m->title ?? ($m->name ?? $docCode),
                 'reference'        => $m->code ?? $docCode,
                 'doc_code'         => (string) $docCode,
-                // Highly-regulated trade docs read as required (REQ); less-reg
-                // as optional — same convention as agreements.
                 'requirement'      => $seg->regulatory_status === 'highly' ? 'M' : 'O',
-                // See the agreement row above — null means "not decided yet".
                 'needed'           => $needs['trade_doc:' . $m->id] ?? null,
                 'applicable_party' => (string) ($m->party ?? ''),
                 'for_buyer'        => $forBuyer,
@@ -966,14 +720,6 @@ class ClmAgreementController extends Controller
         return $out;
     }
 
-    /* ── DOCX round-trip ──
-     *   GET  /clm/agreement-library/{id}/download    → returns the user's
-     *        uploaded DOCX when present, otherwise generates a fresh one
-     *        from the row's `content` HTML.
-     *   POST /clm/agreement-library/{id}/upload-docx → stores the user's
-     *        revised Word doc and refreshes `content` from its HTML so the
-     *        web editor stays in sync.
-     */
     public function downloadDocx(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -981,83 +727,37 @@ class ClmAgreementController extends Controller
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
 
-        // DOCX generation (PhpWord HTML reader + Word2007 writer) is memory-
-        // and time-heavy for table-rich documents. The web SAPI's default
-        // limits can be lower than CLI, producing intermittent OOM 500s that
-        // surface to the user as a generic "Download failed". Raise both
-        // defensively for this request only. Mirrors the Trade Doc flow.
         @ini_set('memory_limit', '1024M');
         @set_time_limit(300);
 
-        // Prefer the user-uploaded DOCX (it's the source of truth after a
-        // Word round-trip — preserves header/footer/styling we can't fully
-        // reproduce from HTML alone). BUT when the user explicitly picks a page
-        // size (?size=a3 / ?orient=landscape) we must REGENERATE so the chosen
-        // page applies — the stored file keeps its original page size.
         $sizeRequested = $request->filled('size') || $request->filled('orient');
         if (!$sizeRequested && $row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
             $name = $row->docx_original_name ?: ($row->code ?: 'agreement') . '.docx';
             try {
-                // Stream via the Storage disk — works for both local and cloud
-                // disks (Azure Blob). response()->download() needs a real local
-                // path and 500s on a cloud disk; on any read failure we fall
-                // through and regenerate the DOCX from the row's content below.
                 return Storage::disk('public')->download($row->docx_path, $name);
             } catch (\Throwable $e) {
-                // fall through to regeneration
             }
         }
 
         $phpWord = new PhpWord();
-        // Match the PDF blade (font-family: Arial). Calibri renders smaller/
-        // lighter than Arial at the same point size, which made the DOCX look
-        // smaller than the "proper" PDF even though the point sizes matched.
         $phpWord->setDefaultFontName('Arial');
         $phpWord->setDefaultFontSize(11);
-        // Page size — A4 (default) or A3, portrait or landscape (?size/?orient).
         $section = $phpWord->addSection($this->docxPageStyle($request));
 
-        // Page-shell header + footer (logo, title, "Confidential", footer text,
-        // page number) from the saved config — so the DOCX matches the editor's
-        // preview / the PDF instead of a bare body. Reflects the latest saved
-        // header_config, including any logo/position changes.
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $client    = \App\Models\Client::find($row->client_id);
-        /* A local URL is /storage/<key>; an Azure blob URL is
-           https://<account>.blob.core.windows.net/<container>/<key>. Matching
-           only the first left blob URLs yielding nothing, so this candidate was
-           dead on Azure as well as the ones after it. */
         $urlPath = null;
         $rawLogoUrl = (string) ($headerCfg['logo_url'] ?? '');
         if ($rawLogoUrl !== '') {
             if (preg_match('#/storage/(.+)$#', $rawLogoUrl, $lm)) {
                 $urlPath = $lm[1];
             } elseif (preg_match('#^https?://[^/]+/[^/]+/(.+)$#', $rawLogoUrl, $lm)) {
-                $urlPath = $lm[1];   // strip scheme, host and container
+                $urlPath = $lm[1];
             }
         }
         $logoAbs   = null;
-        /* BRANCH logo before the client one.
-         * The chain ended at $client->logo, and branding in this product is
-         * held per BRANCH — clients.logo is empty across the board while every
-         * configured branch carries its own mark. So a draft saved before the
-         * header captured a logo (header_config empty) fell through every
-         * candidate and the Word file came out with no logo at all, even though
-         * the branch it belongs to has one. */
         $branch = $row->branch_id ? \App\Models\Branch::find($row->branch_id) : null;
-        /* Resolve on whichever disk the file actually lives on.
-         *
-         * This asked Storage::disk('public') for both exists() AND path(),
-         * while FILESYSTEM_DISK is 'azure' in production. Two failures that
-         * compounded: exists() was false for every candidate, and path() is
-         * local-adapter-only anyway, so even a hit would have handed PhpWord
-         * something it cannot open -- the catch swallowed that and moved on.
-         * The loop could not succeed on Azure whatever the logo was, which is
-         * why the Word file carried the company NAME but no mark.
-         *
-         * The candidate chain (header -> url -> branch -> client) is
-         * unchanged; only the disk access under it is fixed. */
         foreach (array_filter([$headerCfg['logo_path'] ?? null, $urlPath, $branch?->logo, $client?->logo]) as $path) {
             $logoAbs = self::docxLogoFile($path);
             if ($logoAbs) break;
@@ -1071,8 +771,6 @@ class ClmAgreementController extends Controller
         }
         $this->applyDocxHeaderFooter($section, $headerCfg, $footerCfg, $logoAbs);
 
-        // Guard oversized content: past this, PhpWord crashes the request (500).
-        // Return a clean message the UI can show instead.
         if (($len = $this->htmlTextLength($row->content)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
@@ -1082,38 +780,19 @@ class ClmAgreementController extends Controller
             ], 422);
         }
 
-        // Body = the draft content ONLY. The agreement title used to be printed
-        // as a top heading here, but it duplicated the title the draft body
-        // already carries — so the Word file now starts straight at the draft.
-        // (Logo / header / footer are managed in the editor and ride in the
-        // page-shell above, not in the body.)
         $html = trim((string) $row->content);
         if ($html === '') $html = '<p></p>';
 
         $html    = $this->normaliseEditorHtml($html);
-        // Repair the loose contentEditable HTML into well-formed XHTML first —
-        // without this, PhpWord's strict reader throws on unclosed tags and we
-        // fall into the strip_tags() branch, which flattens the whole agreement
-        // (headings, tables, line breaks) into one run-on paragraph.
-        // Give width-less tables equal full-width columns BEFORE well-forming,
-        // so the injected <col> tags get self-closed (PhpWord's strict XML
-        // reader drops the whole table otherwise). Matches the editor layout.
         $html    = $this->ensureTableColWidths($html);
         $html    = $this->toWellFormedHtml($html);
 
-        // Add resiliently: try the whole body, and on a PhpWord failure fall
-        // back to PER-BLOCK adds so one bad element can't wipe every table /
-        // format (which the old whole-document strip_tags fallback did).
         $this->addHtmlResilient($section, $html);
 
         $filename = ($row->code ?: 'agreement') . '.docx';
         $tmp      = tempnam(sys_get_temp_dir(), 'agrdocx_');
         IOFactory::createWriter($phpWord, 'Word2007')->save($tmp);
 
-        // Repair any schema-invalid OOXML PhpWord emitted (bare &, fractional
-        // font sizes, invalid border colours) so the .docx opens cleanly in
-        // Word AND Google Docs, and stretch tables to the page width so the
-        // user never has to hand-drag columns.
         $this->sanitizeDocxXml($tmp, $this->docxUsableWidthTwips($request));
 
         return response()->download($tmp, $filename, [
@@ -1121,14 +800,6 @@ class ClmAgreementController extends Controller
         ])->deleteFileAfterSend(true);
     }
 
-    /**
-     * GET /clm/agreement-library/{id}/download-pdf
-     *
-     * Render the sample agreement to a PDF — the row's HTML body wrapped in
-     * the saved page-shell header/footer (logo, name, footer text, page
-     * numbers). Reuses the shared signature-document blade + dompdf so the
-     * output matches the draft preview / what gets sent for signature.
-     */
     public function downloadPdf(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -1136,15 +807,9 @@ class ClmAgreementController extends Controller
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
 
-        // dompdf is memory- and time-heavy for long / table-rich agreements. The
-        // web SAPI's default limits are lower than CLI, so a big document crashes
-        // the PHP process mid-render → an empty 500 (no Laravel error body). Raise
-        // both generously so content up to the ~1 MB cap can render.
         @ini_set('memory_limit', '1024M');
         @set_time_limit(300);
 
-        // Guard oversized content: past this, dompdf crashes the request (500).
-        // Return a clean message the UI can show instead.
         if (($len = $this->htmlTextLength($row->content)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
@@ -1162,13 +827,12 @@ class ClmAgreementController extends Controller
         $footerConfig = is_array($row->footer_config) ? $row->footer_config : [];
         $client = \App\Models\Client::find($row->client_id);
 
-        // dompdf can't fetch /storage URLs — resolve the header logo to base64.
         $urlPath = (isset($headerConfig['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerConfig['logo_url'], $m)) ? $m[1] : null;
         $headerLogoBase64 = '';
         foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
             try {
                 if (Storage::disk('public')->exists($path)) { $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path)); break; }
-            } catch (\Throwable $e) { /* try next candidate */ }
+            } catch (\Throwable $e) { }
         }
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
@@ -1201,13 +865,6 @@ class ClmAgreementController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Do NOT use `mimes:doc,docx`: a .docx is a ZIP container, and
-        // php-fileinfo on many servers reports it as `application/zip` (or
-        // `application/octet-stream`), so `mimes:docx` rejects perfectly valid
-        // Word files with a 422 ("The docx field must be a file of type: doc,
-        // docx."). Validate file + size + the client extension instead; a
-        // genuinely broken file still fails safely later when PhpWord reads it.
-        // (Same fix as ClmTradeDocumentController::validateDocxUpload.)
         $request->validate(['docx' => ['required', 'file', 'max:' . self::DOCX_MAX_KB]]);
         $uploadExt = strtolower((string) $request->file('docx')->getClientOriginalExtension());
         if (!in_array($uploadExt, ['doc', 'docx'], true)) {
@@ -1216,10 +873,6 @@ class ClmAgreementController extends Controller
             ]);
         }
 
-        // Converting a Word file to editor HTML (docxToHtml) loads the whole
-        // document.xml into memory + DOMDocument — heavy for a big file. Without
-        // this the web SAPI runs out of memory/time and the conversion silently
-        // fails, leaving the editor blank. Raise both for this request only.
         @ini_set('memory_limit', '1024M');
         @set_time_limit(300);
 
@@ -1230,11 +883,6 @@ class ClmAgreementController extends Controller
         $filename   = Str::random(16) . '.' . $ext;
         $path       = $file->storeAs($folder, $filename, 'public');
 
-        // Best-effort DOCX → HTML so the web editor reflects the upload.
-        // Read the stored BYTES into a temp LOCAL file before converting: on a
-        // cloud disk (Azure Blob, used on the server) Storage::path() returns an
-        // unreadable path, so ZipArchive/PhpWord silently fail and the editor
-        // goes blank. ->get() works on both local and cloud disks.
         $html = null;
         $convFailed = false;
         $tmpDocx = tempnam(sys_get_temp_dir(), 'docxconv_') . '.docx';
@@ -1247,10 +895,6 @@ class ClmAgreementController extends Controller
             @unlink($tmpDocx);
         }
 
-        // If nothing readable came out, DON'T silently keep the old content —
-        // tell the user so they know the upload didn't take. The usual cause is
-        // an older .doc (binary) file, which the converter can't read; a .docx
-        // that yielded no text is rejected too.
         if ($convFailed || trim(strip_tags((string) $html)) === '') {
             Storage::disk('public')->delete($path);
             return response()->json([
@@ -1261,9 +905,6 @@ class ClmAgreementController extends Controller
             ], 422);
         }
 
-        // Reject a document whose text is over the render cap: it could never be
-        // downloaded as PDF/Word afterwards. Drop the stored file and tell the
-        // user, instead of leaving un-exportable content in the editor.
         if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             Storage::disk('public')->delete($path);
             return response()->json([
@@ -1284,18 +925,6 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
-    /**
-     * Live PDF preview for the Stage-2 draft editor.
-     *
-     * Renders the same blade the signature PDF does, so what is checked in the
-     * editor is what the counterparty will receive — a preview built from a
-     * different view would agree with the editor and disagree with the file.
-     *
-     * Everything is taken from the REQUEST, not the saved row: the editor posts
-     * its current content, margins, header and footer on each debounce, so the
-     * preview tracks unsaved edits. The row is read only for a title and code,
-     * and only within the caller's own tenant.
-     */
     public function previewLive(Request $request)
     {
         @ini_set('memory_limit', '1024M');
@@ -1322,8 +951,6 @@ class ClmAgreementController extends Controller
             $html = '<p><em>Nothing to preview yet — start typing in the editor.</em></p>';
         }
 
-        /* Same ceiling the download carries. dompdf does not fail gracefully
-           past it — it takes the request down with it. */
         if (($len = $this->htmlTextLength($html)) > $this->renderLimitWithMargin(self::RENDER_MAX_CHARS)) {
             return response()->json([
                 'status'  => false,
@@ -1332,9 +959,6 @@ class ClmAgreementController extends Controller
             ], 422);
         }
 
-        /* A draft still holds its placeholders. Blanked rather than shown raw,
-           so the preview reads as the finished page will. The signature stamp
-           is only injected once the agreement is approved. */
         $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $html);
 
         $client       = \App\Models\Client::find($user->client_id);
@@ -1342,8 +966,6 @@ class ClmAgreementController extends Controller
         $footerConfig = $data['footer_config'] ?? (is_array($row->footer_config ?? null) ? $row->footer_config : []);
         $pageConfig   = $data['page_config']   ?? [];
 
-        // dompdf cannot fetch /storage URLs at render time — same candidate
-        // chain the DOCX export walks.
         $urlPath = (isset($headerConfig['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerConfig['logo_url'], $lm)) ? $lm[1] : null;
         $headerLogoBase64 = '';
         foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
@@ -1352,20 +974,11 @@ class ClmAgreementController extends Controller
                     $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path));
                     break;
                 }
-            } catch (\Throwable $e) { /* try next candidate */ }
+            } catch (\Throwable $e) { }
         }
 
-        // Stand-in when the draft has never been saved, so the blade's
-        // $document->title still resolves.
         $document = $row ?: new ClmAgreementLibrary(['title' => 'Agreement (draft preview)']);
 
-        /* Same render cache as the Trade Document preview — see the note there.
-         * dompdf is ~99% of this request (8 ms of HTML, 1.5 s of PDF on a 183k
-         * draft) and its options do not make it faster, so the saving has to
-         * come from not rendering the same document twice. The key covers every
-         * input the blade reads, including the date its footer stamps, so any
-         * change misses and re-renders. base64 because the cache store is a
-         * database text column and PDF bytes are not valid UTF-8. */
         $cacheKey = 'clm:agrpreview:' . sha1(implode('|', [
             (int) $user->client_id,
             (string) ($row->code ?? 'DRAFT'),
@@ -1380,20 +993,11 @@ class ClmAgreementController extends Controller
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="agreement-preview.pdf"',
         ];
-        /* Best-effort, both ways.
-         *
-         * A preview must never fail because the CACHE failed. On a server
-         * where the cache table has not been migrated, or Redis is down, or
-         * the store is set to 'array', these calls throw or no-op — and
-         * without the guard that would turn a working preview into a 500.
-         * Swallowed, the worst case is exactly the behaviour before this
-         * cache existed: render it. */
         try {
             if ($hit = \Illuminate\Support\Facades\Cache::get($cacheKey)) {
                 return response(base64_decode($hit), 200, $headers);
             }
         } catch (\Throwable $e) {
-            // fall through and render
         }
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
@@ -1412,18 +1016,14 @@ class ClmAgreementController extends Controller
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
 
                 $bytes = $pdf->output();
-        /* Skip absurd blobs: the store here is a database text column, and a
-           multi-megabyte base64 row per preview is not worth the write. */
         if (strlen($bytes) <= 5 * 1024 * 1024) {
             try {
                 \Illuminate\Support\Facades\Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(10));
             } catch (\Throwable $e) {
-                // caching is an optimisation, never a requirement
             }
         }
 
         return response($bytes, 200, $headers);
     }
-
 
 }
