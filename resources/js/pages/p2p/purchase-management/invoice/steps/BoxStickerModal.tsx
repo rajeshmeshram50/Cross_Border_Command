@@ -1,32 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { IcoCheck, IcoDownload, IcoTag, IcoX } from '../../../icons';
 import type { BoxContent } from './SelectedProducts';
+import { spiApi } from '../spi-api';
+import { PoApiError } from '../../order/api/po-api';
+import { useToast } from '../../../../../contexts/ToastContext';
 
-/** How the sticker prints a date: "8 Oct 2026", never a locale's own order. */
+export type StickerApi = { spiId: number | null; spiCode: string | null; boxIdOf: (code: string) => number | null };
+export const StickerApiContext = createContext<StickerApi | null>(null);
+
 const STICKER_DATE = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric', month: 'short', year: 'numeric',
 });
 
-/**
- * The scanned payload.
- *
- * Pipe-separated rather than JSON: a warehouse scanner drops it into whatever
- * field has focus, and the shorter the string the smaller and more forgiving
- * the printed code. Prefixed so a scan can be told apart from a rack or shelf
- * label, which carry their own prefixes.
- */
 export const stickerPayload = (boxId: string, rows: BoxContent[], qty: number) =>
   ['BOX', boxId, rows.map(r => r.line.code).join('+'), String(qty)].join('|');
 
-/**
- * The QR, painted on a canvas.
- *
- * Canvas rather than an <img>: it prints crisply and never fires a network
- * request — the same reason InventoryStickers draws its codes this way.
- */
 function StickerQr({ payload, size }: { payload: string; size: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [err, setErr] = useState(false);
@@ -46,43 +37,69 @@ function StickerQr({ payload, size }: { payload: string; size: number }) {
   return <canvas ref={ref} width={size} height={size} className="invf-stk__qr" />;
 }
 
-/**
- * Temporary Putaway Sticker — what goes on the outside of a box.
- *
- * Temporary because the box has not been put away yet: it carries a putaway id
- * (PUT-B-001), not a storage location, and the label is reprinted once the box
- * reaches its rack. The TEMPORARY chip in the header says so, rather than
- * leaving someone to find out at the rack.
- *
- * Portalled to document.body: the drawer sits in a table cell, and
- * `.vti-table-wrap`'s `overflow-x: auto` clips any descendant.
- */
 export default function BoxStickerModal({
   boxId, rows, quantity, scenario, modeLabel, condition, spiNumber, onClose,
 }: {
   boxId: string;
-  /** What is in the box. A mixed carton lists several products. */
   rows: BoxContent[];
   quantity: number;
-  /** "1 Product → 1 Box", and so on. */
   scenario: string;
-  /** "Single Box", or "Box 3 of 20" in a split. */
   modeLabel: string;
-  /** The box's condition, already resolved to its label. */
   condition: string;
-  /** Absent until the invoice has a number of its own. */
   spiNumber?: string;
   onClose: () => void;
 }) {
   useScrollLock(true);
+
+  const toast = useToast();
+  const ctx = useContext(StickerApiContext);
+  const apiSpiId = ctx?.spiId ?? null;
+  const apiBoxId = ctx ? ctx.boxIdOf(boxId) : null;
+  const spiNo = spiNumber || ctx?.spiCode || '';
+  const [busy, setBusy] = useState<'pdf' | 'print' | null>(null);
+
+  const notSaved = () => toast.warning('Save the box first', `${boxId} needs to be saved before its sticker can be produced.`);
+  const failed = (e: unknown) => toast.error('Could not get the sticker',
+    e instanceof PoApiError ? e.firstError : 'Please try again.');
+
+  const downloadPdf = async () => {
+    if (busy) return;
+    if (!apiSpiId || !apiBoxId) { notSaved(); return; }
+    setBusy('pdf');
+    try {
+      const blob = await spiApi.stickerPdf(apiSpiId, apiBoxId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(spiNo || 'SPI').replace(/\//g, '-')}-${boxId}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      failed(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const printLabel = async () => {
+    if (busy) return;
+    if (!apiSpiId || !apiBoxId) { notSaved(); return; }
+    setBusy('print');
+    try {
+      await spiApi.printSticker(apiSpiId, apiBoxId);
+      window.print();
+    } catch (e) {
+      failed(e);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const printed = STICKER_DATE.format(new Date());
   const payload = stickerPayload(boxId, rows, quantity);
   const first = rows[0]?.line;
   const mixed = rows.length > 1;
 
-  /* A mixed carton has no single SKU to print, so the label names the count and
-     the products are listed under it — a scanner reads them all from the QR. */
   const title = mixed ? `${rows.length} products` : first?.spiName ?? '—';
   const sku = mixed ? `${rows.length} SKUs` : `HSN ${first?.hsn ?? '—'}`;
 
@@ -106,13 +123,11 @@ export default function BoxStickerModal({
         </div>
 
         <div className="spi-mdl-body">
-          {/* The label itself. Everything inside this card is what gets printed;
-              the dialog's own chrome is not. */}
           <div className="invf-stk__card">
             <div className="invf-stk__strip">
               <div>
                 <div className="invf-stk__strip-lbl">SPI Number</div>
-                <div className="invf-stk__strip-val">{spiNumber || '—'}</div>
+                <div className="invf-stk__strip-val">{spiNo || '—'}</div>
               </div>
               <div className="invf-stk__strip-right">
                 <div className="invf-stk__strip-lbl">Box No.</div>
@@ -144,8 +159,6 @@ export default function BoxStickerModal({
               </div>
             </div>
 
-            {/* Repeated along the bottom edge so the count is still readable
-                when the box is stacked and only its lower strip shows. */}
             <div className="invf-stk__foot">
               <span className="invf-stk__foot-qty">
                 <span className="invf-stk__dot" />Qty: {quantity} u
@@ -170,13 +183,10 @@ export default function BoxStickerModal({
         <div className="spi-mdl-foot">
           <span className="spi-mdl-audit">Reprinted once the box reaches its rack</span>
           <div className="spi-mdl-foot-btns">
-            {/* Both are stubs until the label service exists. They are left
-                visible rather than hidden so the sticker reads as the finished
-                thing it is, but neither pretends to have produced a file. */}
-            <button type="button" className="spi-mdl-cancel" onClick={() => window.print()}>
+            <button type="button" className="spi-mdl-cancel" disabled={busy !== null} onClick={() => void downloadPdf()}>
               <IcoDownload size={13} /> PDF
             </button>
-            <button type="button" className="spi-mdl-confirm" onClick={() => window.print()}>
+            <button type="button" className="spi-mdl-confirm" disabled={busy !== null} onClick={() => void printLabel()}>
               <IcoTag size={14} /> Print Label
             </button>
           </div>

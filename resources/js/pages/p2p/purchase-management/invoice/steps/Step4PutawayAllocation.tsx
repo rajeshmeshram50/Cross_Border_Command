@@ -16,6 +16,7 @@ import PutawayScanTask from './PutawayScanTask';
 import InspectionProductView from '../../order/physical-inspection/InspectionProductView';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
 import { PoApiError } from '../../order/api/po-api';
+import { useToast } from '../../../../../contexts/ToastContext';
 
 type Disposition = 'ship' | 'inv' | 'damaged' | 'mismatch';
 
@@ -900,6 +901,41 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [prodPage, setProdPage] = useState(1);
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const toast = useToast();
+  const stickerBusy = useRef(false);
+  const stickerFailed = (e: unknown) => toast.error('Could not get the sticker',
+    e instanceof PoApiError ? e.firstError : 'Please try again.');
+  const stickerPdf = async (boxId: number, code: string) => {
+    if (stickerBusy.current) return;
+    if (!spiId) { toast.warning('Save the invoice first', 'The sticker needs a saved SPI.'); return; }
+    stickerBusy.current = true;
+    try {
+      const blob = await spiApi.stickerPdf(spiId, boxId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(spiCode || 'SPI').replace(/\//g, '-')}-${code}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      stickerFailed(e);
+    } finally {
+      stickerBusy.current = false;
+    }
+  };
+  const stickerPrint = async (boxId: number) => {
+    if (stickerBusy.current) return;
+    if (!spiId) { toast.warning('Save the invoice first', 'The sticker needs a saved SPI.'); return; }
+    stickerBusy.current = true;
+    try {
+      await spiApi.printSticker(spiId, boxId);
+      window.print();
+    } catch (e) {
+      stickerFailed(e);
+    } finally {
+      stickerBusy.current = false;
+    }
+  };
   const [placedAt, setPlacedAt] = useState<string | null>(null);
   /* How the placement gets confirmed. The two answers are not the same event:
      a manual confirmation IS the placement, a Zebra scan only queues one for
@@ -1688,6 +1724,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           date={packedOnOf(rawBox) ?? '—'}
           qr={<BoxQr text={String(box.id)} size={96} />}
           onClose={() => setQrOpen(false)}
+          onPdf={() => { void stickerPdf(box.id, box.code); }}
+          onPrint={() => { void stickerPrint(box.id); }}
         />
       )}
 

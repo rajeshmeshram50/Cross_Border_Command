@@ -144,6 +144,10 @@ const SHORT: Record<string, string> = {
   already_scanned:  'Already scanned',
   unreadable:       'Not a Cross Border label',
   bad_signature:    'Label failed its check',
+  /* Both reach the operator as a scan problem otherwise, when neither is:
+     one is a missing certificate, the other a server that never answered. */
+  rejected_unauthorized_device: 'Device not authorised',
+  no_answer:        'No answer from the server',
 };
 
 /** The packer's verdict on the carton, in the words the packing screen used. */
@@ -230,15 +234,43 @@ export default function PutawayScan() {
    * machinery.
    */
   const call = useCallback(async (method: 'get' | 'post', url: string, body?: unknown) => {
-    const res = await fetch(`/api${url}`, {
-      method: method.toUpperCase(),
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'X-Scan-Device': token,
-      },
-      body: method === 'post' ? JSON.stringify(body ?? {}) : undefined,
-    });
+    /* A request that never answers is the worst failure this screen has: the
+       handheld sits on "Checking this device…" with nothing to act on.
+       It happens for a reason nothing here can see — after an idle spell the
+       TLS connection is gone, the next request needs the client certificate
+       again, and Chrome cannot raise its certificate picker for a background
+       fetch. The request simply hangs.
+       Fifteen seconds, then say so. */
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 15000);
+
+    let res: Response;
+    try {
+      res = await fetch(`/api${url}`, {
+        method: method.toUpperCase(),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Scan-Device': token,
+        },
+        body: method === 'post' ? JSON.stringify(body ?? {}) : undefined,
+        signal: ac.signal,
+      });
+    } catch (e) {
+      throw {
+        response: {
+          status: 0,
+          data: {
+            code: 'no_answer',
+            message: (e as Error)?.name === 'AbortError'
+              ? 'The server did not answer. If this keeps happening, close the tab and scan again so the device certificate can be chosen.'
+              : 'Could not reach the server.',
+          },
+        },
+      };
+    } finally {
+      clearTimeout(timer);
+    }
 
     const data = await res.json().catch(() => ({}));
 
@@ -328,7 +360,10 @@ export default function PutawayScan() {
       : live?.task?.next_level === 'rack' ? live?.destination?.rack
       : live?.destination?.shelf;
 
-    const short = SHORT[code] ?? 'Scan not accepted';
+    /* The server usually says something better than "Scan not accepted" — it
+       named the box, the shelf or the certificate. Use its words when the code
+       is one this page does not know. */
+    const short = SHORT[code] ?? res?.data?.message ?? 'Scan not accepted';
     const sub = ['wrong_location', 'wrong_label_type'].includes(code) && owed
       // Name the level too: with the rack already proved, "scan RC-001-SH-112"
       // is only obvious to someone who reads codes for a living.
@@ -626,6 +661,34 @@ export default function PutawayScan() {
   const done = task?.status === 'scanned';
   const dest = state.destination;
 
+  /* A finished box gets the whole screen, not a banner above the slots, the
+     box details and a scan field. The operator is holding a carton and needs
+     one fact: it is done, and where. Everything else reads as an instruction
+     to carry on scanning.
+     Covers both routes to "finished" — a box scanned against a task that is
+     now complete, and a box with no open task that was placed earlier. */
+  const finishedBox = placed?.box_code ?? state.box?.box_code ?? null;
+  const finishedAt  = placed?.destination ?? dest?.full ?? null;
+
+  if (placed || done) {
+    return (
+      <div className="pwscan pwscan--blocked">
+        <div className="pwscan-card">
+          <div className="pwscan-blockmark">&#10003;</div>
+          <h1>Put-away already completed</h1>
+          <p>
+            {finishedBox ? <><b>{finishedBox}</b> is already put away</> : 'This box is already put away'}
+            {finishedAt ? <> at <b>{finishedAt}</b>.</> : '.'}
+          </p>
+          {/* A badge, not a button. The next box is scanned with the trigger,
+              which navigates on its own — a button here would be a second way
+              to do nothing. */}
+          <span className="pwscan-badge pwscan-badge--done">Put-away completed</span>
+        </div>
+      </div>
+    );
+  }
+
   /* One input, rendered in one of two places — the ref must stay on a single
      instance or focus-capture lands on whichever React mounted last. The
      label sits with it: that is where the operator is looking. */
@@ -634,11 +697,6 @@ export default function PutawayScan() {
     {/* The refusal belongs here, beside the field it is about — at the top of
         the page it sits off-screen behind the box details. */}
     {error && <div className="pwscan-alert pwscan-alert--bad">{error}</div>}
-    {task && task.fail_count > 0 && (
-      <div className="pwscan-attempts">
-        {task.attempts_left} attempt{task.attempts_left === 1 ? '' : 's'} left before this box starts again
-      </div>
-    )}
 
     <div className="pwscan-prompt pwscan-prompt--field">
       {step === 'scan_box' ? 'Scan the box' : 'Scan the zone / rack / shelf'}
@@ -727,29 +785,6 @@ export default function PutawayScan() {
         </div>
       )}
 
-
-      {/* Already away. Green, because nothing is wrong — the carton is where
-          it should be and the operator needs the proof, not a telling-off. */}
-      {placed && (
-        <section className="pwscan-placed">
-          <div className="pwscan-placed-h">
-            <span className="pwscan-placed-m">✓</span>
-            <b>{placed.box_code} is already put away</b>
-          </div>
-          <dl>
-            <div><dt>Location</dt><dd>{placed.destination}</dd></div>
-            {placed.at && (
-              <div><dt>When</dt><dd>{new Date(placed.at).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</dd></div>
-            )}
-            <div><dt>How</dt><dd>{placed.method === 'scan' ? 'Scanned' : 'Confirmed by hand'}</dd></div>
-            {placed.by && <div><dt>By</dt><dd>{placed.by}</dd></div>}
-          </dl>
-          <div className="pwscan-placed-f">
-            <span>Nothing to do — scan the next box.</span>
-            <button className="pwscan-btn" onClick={() => setPlaced(null)}>Dismiss</button>
-          </div>
-        </section>
-      )}
 
       {/* Both of these now travel with the scan field — see scanForm. Kept
           here only for the states that render no field at all. */}

@@ -75,15 +75,8 @@ export default function InvoiceForm({
   const [flagMaster, setFlagMaster] = useState<ProductFlagOption[]>([]);
   const [boxesLoading, setBoxesLoading] = useState(false);
   const [savedWarehouse, setSavedWarehouse] = useState<string | null>(null);
-  /* Stage 04's warehouse card prints the street address, the pincode, the
-     floor area and the date the site was added. Neither the SPI's own
-     warehouse stub nor the options endpoint carries those, so the row is read
-     once by id — the same id both of them already name. */
   const [savedWarehouseId, setSavedWarehouseId] = useState<number | null>(null);
   const [warehouseRow, setWarehouseRow] = useState<WarehouseDetail | null>(null);
-  /* The invoice's own branch. Branch-scoped masters (product flags) must be
-     fetched for THIS branch, or their ids will not be ones the invoice's boxes
-     are allowed to carry. */
   const [spiBranchId, setSpiBranchId] = useState<number | null>(null);
   const [spiStatus, setSpiStatus] = useState<{ status?: string; label?: string }>({
     status: input.status, label: input.statusLabel,
@@ -114,8 +107,6 @@ export default function InvoiceForm({
           if (existing.warehouse?.wh_name) setSavedWarehouse(existing.warehouse.wh_name);
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
-          // Masters are per branch, and the one that matters is the INVOICE'S
-          // branch, not whichever the switcher happens to be on.
           setSpiBranchId(existing.branch_id ?? null);
           setReached(Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1));
         }
@@ -175,9 +166,6 @@ export default function InvoiceForm({
     return () => { live = false; };
   }, [input.poId, input.spiId, set, toast]);
 
-  /* The warehouse row behind Stage 04's card. Read once per site; a failure
-     is not worth a toast, because the card falls back to the name the rest of
-     the form already shows. */
   const warehouseId = savedWarehouseId ?? input.storage.warehouse?.apiId ?? null;
   useEffect(() => {
     if (!warehouseId) { setWarehouseRow(null); return; }
@@ -492,6 +480,8 @@ export default function InvoiceForm({
                     onCreateBox={spiId ? createBox : undefined}
                     onUpdateBox={spiId ? updateBox : undefined}
                     onDeleteBoxes={spiId ? deleteBoxes : undefined}
+                    spiId={spiId}
+                    spiCode={spiCode}
                   />
                 )}
                 {stage === 3 && (
@@ -504,9 +494,6 @@ export default function InvoiceForm({
                       since: warehouseRow?.created_at ?? null,
                       name: warehouseRow?.wh_name ?? savedWarehouse ?? warehouseLabel(input.storage),
                       address: warehouseRow?.address ?? null,
-                      /* Town, state and pincode. The row's own `location` stops
-                         at the state, which is the dropdown's line, not this
-                         card's. */
                       location: warehouseRow
                         ? [warehouseRow.city, warehouseRow.state, warehouseRow.pincode].filter(Boolean).join(', ') || null
                         : input.storage.warehouse?.location ?? null,
@@ -544,10 +531,6 @@ export default function InvoiceForm({
               disabled={nextBlocked}
             >
               {isLast && <IcoCheck />}
-              {/* The last step said "Map Invoice" whichever way you arrived at
-                  it. Every other step already distinguishes the two — "Update
-                  & Next" against "Save & Next" — and on an invoice being
-                  edited there is nothing left to map. */}
               {viewOnly ? (isLast ? 'Close' : 'Next')
                 : isLast ? (editing ? 'Update Invoice' : 'Map Invoice')
                 : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
@@ -614,11 +597,6 @@ function SkRecap() {
   );
 }
 
-/* Stage 04 is a shape, not a stack: the recap bar, the stage brief, the four
-   step cards, the tab rail, then the two panels side by side. The generic
-   skeleton put five full-width rows there, so the page did not settle when it
-   loaded - it jumped into a completely different layout. This traces the real
-   one, down to the 2 / 5.5 split the panels use. */
 function SkStage4() {
   return (
     <>
@@ -662,8 +640,6 @@ function SkStage4() {
             <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 180 }} />
             <div className="spi-dt-sk" style={{ width: 102, height: 30, borderRadius: 9, marginLeft: 'auto' }} />
           </div>
-          {/* The journey band keeps its teal, because it is the one part of
-              this stage that is painted before any data arrives. */}
           <div className="spi-dt-sk-s4band">
             {[0, 1, 2].map(i => <div className="spi-dt-sk spi-dt-sk-s4bandcard" key={i} />)}
           </div>
@@ -702,9 +678,6 @@ function StageSkeleton({ stage }: { stage: number }) {
       </>
     );
   }
-  /* STAGES is 0-indexed, so Temporary Putaway Allocation is 3 - and 4 is the
-     same stage one step on, which is what `saving` renders. Both are Putaway,
-     so both get Putaway's shape. */
   if (stage >= 3) return <SkStage4 />;
   return (
     <>
