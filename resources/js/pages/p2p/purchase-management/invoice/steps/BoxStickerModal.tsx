@@ -1,9 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { IcoCheck, IcoDownload, IcoTag, IcoX } from '../../../icons';
 import type { BoxContent } from './SelectedProducts';
+import { spiApi } from '../spi-api';
+import { PoApiError } from '../../order/api/po-api';
+import { useToast } from '../../../../../contexts/ToastContext';
+
+export type StickerApi = { spiId: number | null; spiCode: string | null; boxIdOf: (code: string) => number | null };
+export const StickerApiContext = createContext<StickerApi | null>(null);
 
 /** How the sticker prints a date: "8 Oct 2026", never a locale's own order. */
 const STICKER_DATE = new Intl.DateTimeFormat('en-GB', {
@@ -76,6 +82,50 @@ export default function BoxStickerModal({
 }) {
   useScrollLock(true);
 
+  const toast = useToast();
+  const ctx = useContext(StickerApiContext);
+  const apiSpiId = ctx?.spiId ?? null;
+  const apiBoxId = ctx ? ctx.boxIdOf(boxId) : null;
+  const spiNo = spiNumber || ctx?.spiCode || '';
+  const [busy, setBusy] = useState<'pdf' | 'print' | null>(null);
+
+  const notSaved = () => toast.warning('Save the box first', `${boxId} needs to be saved before its sticker can be produced.`);
+  const failed = (e: unknown) => toast.error('Could not get the sticker',
+    e instanceof PoApiError ? e.firstError : 'Please try again.');
+
+  const downloadPdf = async () => {
+    if (busy) return;
+    if (!apiSpiId || !apiBoxId) { notSaved(); return; }
+    setBusy('pdf');
+    try {
+      const blob = await spiApi.stickerPdf(apiSpiId, apiBoxId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(spiNo || 'SPI').replace(/\//g, '-')}-${boxId}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      failed(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const printLabel = async () => {
+    if (busy) return;
+    if (!apiSpiId || !apiBoxId) { notSaved(); return; }
+    setBusy('print');
+    try {
+      await spiApi.printSticker(apiSpiId, apiBoxId);
+      window.print();
+    } catch (e) {
+      failed(e);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const printed = STICKER_DATE.format(new Date());
   const payload = stickerPayload(boxId, rows, quantity);
   const first = rows[0]?.line;
@@ -112,7 +162,7 @@ export default function BoxStickerModal({
             <div className="invf-stk__strip">
               <div>
                 <div className="invf-stk__strip-lbl">SPI Number</div>
-                <div className="invf-stk__strip-val">{spiNumber || '—'}</div>
+                <div className="invf-stk__strip-val">{spiNo || '—'}</div>
               </div>
               <div className="invf-stk__strip-right">
                 <div className="invf-stk__strip-lbl">Box No.</div>
@@ -170,13 +220,10 @@ export default function BoxStickerModal({
         <div className="spi-mdl-foot">
           <span className="spi-mdl-audit">Reprinted once the box reaches its rack</span>
           <div className="spi-mdl-foot-btns">
-            {/* Both are stubs until the label service exists. They are left
-                visible rather than hidden so the sticker reads as the finished
-                thing it is, but neither pretends to have produced a file. */}
-            <button type="button" className="spi-mdl-cancel" onClick={() => window.print()}>
+            <button type="button" className="spi-mdl-cancel" disabled={busy !== null} onClick={() => void downloadPdf()}>
               <IcoDownload size={13} /> PDF
             </button>
-            <button type="button" className="spi-mdl-confirm" onClick={() => window.print()}>
+            <button type="button" className="spi-mdl-confirm" disabled={busy !== null} onClick={() => void printLabel()}>
               <IcoTag size={14} /> Print Label
             </button>
           </div>

@@ -492,6 +492,8 @@ export default function InvoiceForm({
                     onCreateBox={spiId ? createBox : undefined}
                     onUpdateBox={spiId ? updateBox : undefined}
                     onDeleteBoxes={spiId ? deleteBoxes : undefined}
+                    spiId={spiId}
+                    spiCode={spiCode}
                   />
                 )}
                 {stage === 3 && (

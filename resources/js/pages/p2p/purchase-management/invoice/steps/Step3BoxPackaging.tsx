@@ -4,6 +4,7 @@ import StageSummary from './StageSummary';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import BoxDrawer, { type BoxInitial, type BoxSaveData } from './BoxDrawer';
 import PackedProducts, { type PackedBox } from './PackedProducts';
+import { StickerApiContext } from './BoxStickerModal';
 import type { CustomFlag } from './ProductFlagsModal';
 import MultiBoxPanel, { splitQuantity, type SplitBox } from './MultiBoxPanel';
 import { lineTotals, truncateDesc, truncateName, DESC_MAX, NAME_MAX, type ProductLine } from '../invoice-products';
@@ -59,8 +60,11 @@ const todayIso = () => {
 
 export default function Step3BoxPackaging({
   draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
+  spiId, spiCode,
 }: {
   draft: InvoiceDraft;
+  spiId?: number | null;
+  spiCode?: string | null;
   lines: ProductLine[];
   boxes?: SpiBox[];
   nextBoxCodes?: string[];
@@ -733,8 +737,14 @@ export default function Step3BoxPackaging({
     if (await onDeleteBoxes(ordered.map(b => b.id))) clearLocal(affected);
   };
 
+  const stickerApi = useMemo(() => ({
+    spiId: spiId ?? null,
+    spiCode: spiCode ?? null,
+    boxIdOf: (code: string) => boxes.find(b => b.box_code === code)?.id ?? null,
+  }), [spiId, spiCode, boxes]);
+
   return (
-    <>
+    <StickerApiContext.Provider value={stickerApi}>
       <StageSummary draft={draft} upto={2} />
 
       <div className={`pkg-box ${pkgOpen ? '' : 'is-collapsed'}`}>
@@ -1127,7 +1137,7 @@ export default function Step3BoxPackaging({
         onEditBox={readOnly ? undefined : openEdit}
         editingBoxId={editingBox?.box_code ?? null}
       />
-    </>
+    </StickerApiContext.Provider>
   );
 }
 

@@ -330,6 +330,13 @@ export const spiApi = {
   deleteBox: (spiId: number, boxId: number) =>
     call('SPI box delete', () => api.delete(`/p2p/spi/${spiId}/boxes/${boxId}`), () => true),
 
+  printSticker: (spiId: number, boxId: number) =>
+    call('Box sticker', () => api.post(`/p2p/spi/${spiId}/boxes/${boxId}/sticker`), () => true),
+
+  stickerPdf: (spiId: number, boxId: number) =>
+    call('Box sticker', () => api.get(`/p2p/spi/${spiId}/boxes/${boxId}/sticker/download`, { responseType: 'blob' }),
+      (b) => new Blob([b as BlobPart], { type: 'application/pdf' })),
+
   packingTotals: (spiId: number) =>
     call('SPI packing summary', () => api.get(`/p2p/spi/${spiId}/packing-summary`),
       (b) => (b as { data?: { totals?: SpiPackingTotals } } | null)?.data?.totals ?? null),
