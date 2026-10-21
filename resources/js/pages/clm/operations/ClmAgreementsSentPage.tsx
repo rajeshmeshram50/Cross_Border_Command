@@ -50,6 +50,11 @@ const rowSearchText = (c: SentRow): string => {
   out.push(AP_CFG[c.approval as keyof typeof AP_CFG]?.label ?? '');
   return out.join(' ').toLowerCase();
 };
+/* One predicate per tab, shared by the tab's count and its list, so the
+   number on the tab always equals the rows it shows. */
+const isRejectedRow = (c: SentRow): boolean => c.status === 'rejected' || c.approval === 'rejected';
+const isClarifyRow  = (c: SentRow): boolean => c.status === 'clarify' || (c.clarifications?.length ?? 0) > 0;
+
 const matchesSearch = (c: SentRow, q: string): boolean => {
   const hay = rowSearchText(c);
   return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
@@ -144,8 +149,8 @@ export default function ClmAgreementsSentPage() {
     all:      sent.length,
     approved: sent.filter(c => c.status === 'approved').length,
     pending:  sent.filter(c => c.status === 'pending').length,
-    rejected: sent.filter(c => c.status === 'rejected').length,
-    clarify:  sent.filter(c => c.status === 'clarify').length,
+    rejected: sent.filter(isRejectedRow).length,
+    clarify:  sent.filter(isClarifyRow).length,
   }), [sent]);
 
   const filtered = useMemo(() => {
@@ -154,7 +159,7 @@ export default function ClmAgreementsSentPage() {
     if (q) list = list.filter(c => matchesSearch(c, q));
     if (tab === 'approved') return list.filter(c => c.status === 'approved');
     if (tab === 'pending')  return list.filter(c => c.status === 'pending');
-    if (tab === 'rejected') return list.filter(c => c.status === 'rejected' || c.approval === 'rejected');
+    if (tab === 'rejected') return list.filter(isRejectedRow);
     return list;
   }, [search, tab, sent]);
 
@@ -171,7 +176,7 @@ export default function ClmAgreementsSentPage() {
      the belt to that braces, and it also fixes rows saved before that.) */
   const clarifyList = useMemo(() => {
     const q = search.trim();
-    const list = sent.filter(c => c.status === 'clarify' || (c.clarifications?.length ?? 0) > 0);
+    const list = sent.filter(isClarifyRow);
     return q ? list.filter(c => matchesSearch(c, q)) : list;
   }, [sent, search]);
 
