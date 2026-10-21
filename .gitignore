@@ -46,3 +46,8 @@ Thumbs.db
 /storage/certs/*.pem
 /public/cbc-ca.crt
 /storage/certs/*.p12
+
+# Device bundles and dev CAs never belong in git or the web root.
+public/*.p12
+public/*.crt
+storage/certs/*.srl

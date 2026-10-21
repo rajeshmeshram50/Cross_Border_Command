@@ -1,316 +1,549 @@
-# Scanner Device Certificate — Setup & Operations
+# Scanner Device Certificates — What, Why, and How
 
-> **Written for:** whoever sets up and runs the server (you / devops).
-> This locks the put-away scanner to approved handheld devices using a client
-> certificate (mutual TLS). A phone that does not hold a certificate cannot open
-> the scanner or call the scan API — the sticker URL alone is useless.
+> **Written for:** whoever sets up and runs the servers (you / devops).
+> This locks the put-away scanner to approved handhelds using a client certificate
+> (mutual TLS). A phone without a certificate cannot open the scanner or call the
+> scan API — the printed sticker URL alone is useless.
+>
+> Status: **live on production** (`scan.kryptone.ai`) since 20 Oct 2026.
 
 ---
 
-## 1. How it works (one paragraph)
+## 1. What this is, in one paragraph
 
-Every allowed handheld carries a **client certificate** that was signed by our own
-**Device CA**. The server (the Node proxy locally, Apache in production) is told to
-**require and verify** that certificate on the scanner paths only. When a device
-presents a valid certificate, the front door reads the device **serial** out of the
-certificate name (`CN = zebra-<serial>`) and passes it to Laravel as the trusted
-header `X-Scan-Cert-CN`. Laravel looks the device up by that serial and acts as it.
-No token, no enrollment link. A request without a valid certificate on a scanner
-path is refused with **403**.
+Every approved handheld carries a **client certificate** signed by our own **Device
+CA**. The web server is told to **require and verify** that certificate on the
+scanner host. When a device presents a valid one, the front door reads the device
+**serial** out of the certificate name (`CN = zebra-<serial>`) and passes it to
+Laravel as the trusted header `X-Scan-Cert-CN`. Laravel looks the device up by that
+serial in `scan_devices` and acts as it. No token, no login, no enrolment link. A
+request without a valid certificate is refused during the TLS handshake — Laravel
+never runs.
 
 ```
-Zebra (holds cert)  --TLS + client cert-->  Front door (proxy/Apache)
-                                              │  verifies cert against Device CA
+Zebra (holds cert)  --TLS + client cert-->  Apache (scan.kryptone.ai)
+                                              │  verifies cert against the Device CA
                                               │  reads CN  →  X-Scan-Cert-CN: zebra-<serial>
                                               ▼
                                             Laravel  →  ScanDevice where serial = <serial>
+                                                     →  Auth::setUser(actor) + TenantContext
 ```
 
-This is standard **computer networking**: TLS / **mutual TLS (mTLS)** over a **PKI**
-(a CA signing certificates) — the same mechanism behind every `https://` padlock and
-client-certificate VPN. We just use the *client-certificate* half of TLS, which most
-sites skip.
+This is standard **mutual TLS (mTLS)** over a **PKI** — the same mechanism behind
+every `https://` padlock, except we also use the *client-certificate* half, which
+most sites skip.
 
 ---
 
-## 1b. How the check works, layer by layer (the network detail)
+## 2. Two certificates, opposite jobs
 
-**Two certificates, opposite jobs** — do not confuse them:
+Do not confuse them. They are issued by different authorities and live in
+different places.
 
-| Certificate | Proves | Direction |
-|---|---|---|
-| **Server cert** (Let's Encrypt / `cbc.pem`) | "I am really scan.kryptone.ai" | server → device (normal HTTPS) |
-| **Device cert** (`zebra.p12`) | "I am really an approved device" | device → server (**the mTLS part**) |
+| Certificate | Proves | Issued by | Direction | Lives on |
+|---|---|---|---|---|
+| **Server cert** (`/etc/letsencrypt/live/scan.kryptone.ai/`) | "I am really scan.kryptone.ai" | Let's Encrypt | server → device (normal HTTPS) | the server |
+| **Device cert** (`zebra-<serial>.p12`) | "I am really an approved handheld" | **our own Device CA** | device → server (**the mTLS part**) | the handheld's Android keystore |
 
-**The certificate check is NOT Laravel middleware.** It happens at the web-server
-(Apache / `mod_ssl`) TLS layer, *before* Laravel runs. Laravel only reads the result.
-A scan request passes through four layers:
+Let's Encrypt **cannot** issue device certificates — it only signs public server
+names. That is why the Device CA exists.
 
-**Layer 1 — Apache `mod_ssl` (the gatekeeper, at TLS handshake time).**
-`SSLVerifyClient require` + `SSLCACertificateFile device-ca.pem` make Apache demand a
-client cert and **cryptographically verify** it against the CA (signed by us? not
-expired? within `SSLVerifyDepth`?). Pure math — unforgeable without the CA's private
-key. Results land in env vars: `SSL_CLIENT_VERIFY` (`SUCCESS`/`NONE`/`FAILED`),
-`SSL_CLIENT_S_DN_CN` (= `zebra-<serial>`), `SSL_CLIENT_I_DN_CN` (= `CBC Device CA`).
-No valid cert + `require` → **Apache refuses the connection; Laravel never runs.**
+---
+
+## 3. How the check works, layer by layer
+
+**The certificate check is NOT Laravel middleware.** It happens at the Apache
+`mod_ssl` TLS layer, *before* PHP runs. Laravel only reads the result.
+
+**Layer 1 — Apache `mod_ssl` (the gatekeeper, at handshake time).**
+`SSLVerifyClient require` + `SSLCACertificateFile device-ca-prod.pem` make Apache
+demand a client certificate and **cryptographically verify** it against the CA
+(signed by us? not expired? within `SSLVerifyDepth`?). Results land in env vars:
+`SSL_CLIENT_VERIFY` (`SUCCESS`/`NONE`/`FAILED`), `SSL_CLIENT_S_DN_CN`
+(= `zebra-<serial>`). No valid certificate → Apache refuses the connection with a
+TLS alert; **Laravel never runs**.
 
 **Layer 2 — Apache `mod_headers` (pass the name inward, safely).**
 ```apache
 RequestHeader unset X-Scan-Cert-CN
 RequestHeader set   X-Scan-Cert-CN "%{SSL_CLIENT_S_DN_CN}s" "expr=%{SSL_CLIENT_VERIFY} == 'SUCCESS'"
 ```
-`unset` first deletes any client-injected copy (anti-spoof); `set … expr=SUCCESS`
-writes the CN **only** when the cert actually verified. So the header is either a
-verified device name or absent — it cannot be faked from outside.
+`unset` deletes any client-injected copy (anti-spoof); `set … expr=SUCCESS` writes
+the CN **only** when the certificate actually verified. The header is therefore
+either a verified device name or absent — it cannot be faked from outside.
 
-**Layer 3 — Laravel routing + middleware (what actually runs here).**
-The scan routes (`routes/api.php`) use **only `throttle`** middleware
-(`throttle:120,1` for scans, `throttle:60,1` for `device-check`). There is **no
-`auth:sanctum`** (these are public — the *device* is the credential) and **no custom
-cert middleware**. The device is identified inside the controller, not by middleware.
+**Layer 3 — Laravel routing (`routes/api.php`).**
+The scan routes use **only `throttle`** (`throttle:120,1` for scans,
+`throttle:60,1` for `device-check`). There is **no `auth:sanctum`** — these are
+public, because the *device* is the credential — and no custom certificate
+middleware.
 
-**Layer 4 — `SpiPutawayScanController::device()` (CN → device + identity).**
-Each endpoint calls `$this->device($request)` first:
+**Layer 4 — `SpiPutawayScanController::device()` (CN → device → tenant).**
 1. `deviceFromCert()` reads `X-Scan-Cert-CN`, strips `zebra-` → serial → `ScanDevice::where('serial', …)`.
 2. Not found → 401; suspended/retired → 403.
-3. Resolve actor = `enrolled_by ?: created_by` → a real `User`.
-4. `Auth::setUser($actor)` (this request only; no session) so `auth()->user()` works downstream.
-5. `TenantContext::fromUser($actor)` sets `client_id` → every query is scoped to that device's tenant.
+3. Resolve actor = `enrolled_by ?: created_by` → a real `User` **inside the device's client**. No valid actor → 403 `device_unclaimed`.
+4. `Auth::setUser($actor)` (this request only; no session, no token).
+5. `TenantContext::fromUser($actor)` sets `client_id` — and `branch_id` unless the actor is a `client_admin`/`client_user`, who see the whole client.
 
 **The whole chain:**
 ```
 mod_ssl verifies cert → mod_headers sets trusted X-Scan-Cert-CN →
 throttle → controller device() → CN→serial→ScanDevice → Auth::setUser + TenantContext → scan runs
 ```
-The expensive, security-critical check is done once by the web server at connection
-time; Laravel never trusts the network, only a header Apache guarantees.
+
+The expensive, security-critical check is done once by Apache at connection time;
+Laravel never trusts the network, only a header Apache guarantees.
 
 ---
 
-## 2. The files in this folder — what each one is
+## 4. Environments
+
+Each environment has its **own scanner hostname and its own Device CA**, so a test
+handheld cannot scan production.
+
+| | Dev | Production |
+|---|---|---|
+| ERP host | `dev.kryptone.ai` | `kryptone.ai` |
+| **Scanner host** | `scan-dev.kryptone.ai` | **`scan.kryptone.ai`** ✅ live |
+| Device CA it trusts | `CBC Device CA` | **`CBC Device CA Prod`** |
+| App path | — | `/var/www/html/Cross_Border_Command` |
+| `STICKER_URL` | `https://scan-dev.kryptone.ai` | `https://scan.kryptone.ai` |
+
+Local development uses `tls-proxy.cjs` (a small Node front door) instead of Apache;
+see §10.
+
+### Why a separate hostname and not a path
+
+`SSLVerifyClient require` is decided **during the TLS handshake**, before Apache
+knows the URL path. Requiring it on only `/ps/`, `/putaway-scan`, `/api/scan/*` of
+the main host needs the handshake re-done mid-connection — **TLS renegotiation,
+removed in TLS 1.3**, which is what Chrome on Android speaks. So the requirement
+must apply to a whole listening endpoint. Options considered:
+
+| option | verdict |
+|---|---|
+| path-scoped `require` on the existing host | **rejected** — breaks under TLS 1.3 |
+| existing host, `SSLVerifyClient optional` + per-path check | works, but every visitor's handshake asks for a certificate, staff included |
+| existing host on port 8443 | works, but non-443 ports get blocked by guest Wi-Fi / carrier proxies, and the port is baked into every printed label |
+| **separate hostname on 443** | **chosen** — no impact on staff, always reachable, shortest stable label URL |
+
+---
+
+## 5. The files in this folder
 
 | File | What it is | Secret? | Goes where |
 |---|---|---|---|
-| `device-ca.pem` | **Device CA certificate** (public). The authority that signs device certs. The server trusts any device cert signed by this. CN `CBC Device CA`, valid ~10 years. | No (public) | Server (front door verifies against it) |
-| `device-ca-key.pem` | **Device CA private key.** The secret that *signs* new device certs. Whoever holds this can mint a valid device. | **YES — keep safe, never ship to a device** | Server only, offline ideally |
-| `device-ca.srl` | Serial-number counter openssl writes while signing. Just bookkeeping. | No | Stays next to the CA |
-| `zebra-cert.pem` | **A device's certificate** (public). CN `zebra-26013524701106` — the serial is in the name. Signed by the Device CA, valid ~5 years. | No (public) | Bundled into the `.p12` for the device |
-| `zebra-key.pem` | That device's **private key.** | **YES** | Bundled into the `.p12`, then delete the loose copy |
-| `zebra.p12` | **The install bundle** = `zebra-cert.pem` + `zebra-key.pem` + password, in the PKCS#12 format Android needs. **This is the file you install on the handheld.** | **YES (has the key + password)** | Copied to the device, installed, then deleted |
-| `cbc.pem` / `cbc-key.pem` | The **server's own TLS certificate** (the `https://` identity). Locally this is an `mkcert` dev cert for `192.168.1.84`/localhost. **In production you do NOT use these — you use your real TLS cert (Let's Encrypt for `dev.kryptone.ai`).** | key is secret | Server (TLS termination) |
-| `tls-proxy.cjs` | The **local dev front door.** A tiny Node server that terminates TLS, enforces the client cert on scanner paths, and forwards to `php artisan serve`. Local only — in production **Apache** does this job instead. | No | Local dev machine |
-| `README.md` | This file. | No | — |
+| `device-ca.pem` | **Dev Device CA certificate** (public). CN `CBC Device CA`, ~10 years. | No | dev server / local proxy |
+| `device-ca-key.pem` | Dev CA **private key** — signs dev device certs. | **YES** | never on a server you can avoid |
+| `device-ca-prod.pem` | **Production Device CA certificate** (public). CN `CBC Device CA Prod`, valid to 2036. | No | production server (`SSLCACertificateFile`) |
+| `device-ca-prod-key.pem` | Production CA **private key**. Whoever holds this can mint a valid device. | **YES — `chmod 600`** | ideally offline; see §9 |
+| `*-cert.pem` | A device's certificate (public). CN `zebra-<serial>`, ~5 years. | No | bundled into its `.p12` |
+| `*-key.pem` | That device's **private key**. | **YES** | bundled into the `.p12`, then delete the loose copy |
+| `zebra-<serial>.p12` | **The install bundle** = cert + key + password, in the PKCS#12 format Android needs. | **YES** | copied to the device, installed, then deleted everywhere |
+| `*.srl` | Serial counter openssl writes while signing. Bookkeeping. | No | stays next to the CA |
+| `tls-proxy.cjs` | **Local dev** front door (Node, TLS + mTLS → `php artisan serve`). Never runs on a server. | No | local only |
+| `cbc.pem` / `cbc-key.pem` | Local **mkcert** dev server cert for `192.168.1.84`/localhost. **Not used in production.** | key is secret | local only |
 
-> **The one file to install on the device is `zebra.p12`.** Everything else stays on the server.
-
----
-
-## 3. Install the certificate on the handheld (Zebra / Android)
-
-1. Copy **`zebra.p12`** to the device (Slack, USB, or a download link).
-2. On the device: **Settings → Security → Encryption & credentials → Install a
-   certificate → VPN & app user certificate**.
-   - Not "CA certificate" — it is a **user/app identity**, so pick **VPN & app user certificate**.
-3. Choose `zebra.p12` from **Downloads**.
-4. Enter the **.p12 password** (the one set when it was exported).
-5. Name it (e.g. **Kryptone Zebra**) and save.
-6. **Delete the `zebra.p12` file from the device afterwards** — it is no longer needed and holds the key.
-
-The certificate now lives in Android's credential store (survives cache clears;
-removed only by uninstalling it or factory reset).
-
-> **Remove the manual "pick a certificate" prompt** (recommended for the floor):
-> push Chrome's `AutoSelectCertificateForUrls` policy via StageNow / MDM so Chrome
-> uses the cert silently. Value (one entry per host):
-> ```json
-> ["{\"pattern\":\"https://dev.kryptone.ai\",\"filter\":{\"ISSUER\":{\"CN\":\"CBC Device CA\"}}}"]
-> ```
+> **`.gitignore` excludes `/storage/certs/*.pem` and `*.p12`.** A `git pull` can
+> never carry a key onto a server — which is why a fresh deploy shows only
+> `README.md` and `tls-proxy.cjs` there. Everything else is copied by hand.
 
 ---
 
-## 4. Server setup
+## 6. Production setup — what was actually done
 
-### 4a. Local dev (the Node proxy) — already wired
+In order. Paths are production's (`/var/www/html/Cross_Border_Command`).
 
-Run Laravel on an internal port and the proxy on the public port:
+### 6.1 DNS
 
-```bash
-php artisan serve --host=127.0.0.1 --port=8001      # backend (internal only)
-node storage/certs/tls-proxy.cjs                     # front door on :8000 (TLS + mTLS)
+```
+scan.kryptone.ai.    A    20.55.246.20      # same server as kryptone.ai
 ```
 
-The proxy already: requires the client cert on scanner paths, verifies it against
-`device-ca.pem`, strips any client-sent `X-Scan-Cert-CN`, and sets it from the
-verified certificate. Scanner paths: `/ps/`, `/putaway-scan`, `/api/scan/putaway`,
-`/api/scan/device-check`. Everything else is reachable without a cert.
+No new server, no second deployment — just another vhost over the same
+`DocumentRoot`.
 
-### 4b. Production (Apache on Ubuntu) — step by step
-
-Apache does what the proxy does locally. **Recommended: a dedicated scanner host**
-(e.g. `scan.kryptone.ai`) so client-cert is required at the vhost level — this
-avoids TLS-renegotiation issues of requiring a cert on only some paths. Point the
-printed stickers at that host. Run these in order on the server:
+### 6.2 TLS certificate for the scanner name
 
 ```bash
-# 1. DEPLOY CODE (so the cert-reading controllers + built frontend exist on the box)
-cd /var/www/Cross_Border_Command
-git pull
-composer install --no-dev --optimize-autoloader
-npm ci && npm run build
-php artisan config:cache && php artisan route:cache
-
-# 2. PLACE THE DEVICE CA — copy ONLY the public cert (not the -key) to:
-#    /var/www/Cross_Border_Command/storage/certs/device-ca.pem
-#    (must be the SAME CA that signed the devices, or they are rejected)
-
-# 3. ENABLE APACHE MODULES
-sudo a2enmod ssl headers
-
-# 4. TLS SERVER CERT for the scanner host (Let's Encrypt)
-sudo certbot --apache -d scan.kryptone.ai
+sudo a2enmod ssl headers rewrite
+sudo certbot certonly --apache --cert-name scan.kryptone.ai -d scan.kryptone.ai
 ```
 
-**5. CREATE the vhost** `/etc/apache2/sites-available/scan.kryptone.ai.conf`:
+### 6.3 Production Device CA + the first device certificate
+
+Generated **on the server** (see §9 for the trade-off):
+
+```bash
+cd /var/www/html/Cross_Border_Command/storage/certs
+
+openssl genrsa -out device-ca-prod-key.pem 2048
+chmod 600 device-ca-prod-key.pem
+openssl req -x509 -new -nodes -key device-ca-prod-key.pem -sha256 -days 3650 \
+  -out device-ca-prod.pem -subj "/CN=CBC Device CA Prod/O=CrossBorderCommand/C=IN"
+```
+
+### 6.4 The scanner vhost
+
+`/etc/apache2/sites-available/scan.kryptone.ai.conf`:
 
 ```apache
 <VirtualHost *:443>
     ServerName scan.kryptone.ai
-    DocumentRoot /var/www/Cross_Border_Command/public
+    DocumentRoot /var/www/html/Cross_Border_Command/public
 
     SSLEngine on
-    # Your REAL server cert (Let's Encrypt), not cbc.pem:
-    SSLCertificateFile      /etc/letsencrypt/live/scan.kryptone.ai/fullchain.pem
-    SSLCertificateKeyFile   /etc/letsencrypt/live/scan.kryptone.ai/privkey.pem
+    SSLCertificateFile    /etc/letsencrypt/live/scan.kryptone.ai/fullchain.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/scan.kryptone.ai/privkey.pem
 
-    # ---- Mutual TLS: require a device cert signed by our Device CA ----
-    SSLCACertificateFile    /var/www/Cross_Border_Command/storage/certs/device-ca.pem
-    SSLVerifyClient         require
-    SSLVerifyDepth          1
+    # ---- Mutual TLS: require a device cert signed by our production Device CA ----
+    SSLCACertificateFile  /var/www/html/Cross_Border_Command/storage/certs/device-ca-prod.pem
+    SSLVerifyClient       require
+    SSLVerifyDepth        1
 
     # Never trust a client-supplied copy; set it ONLY from the verified cert.
     RequestHeader unset X-Scan-Cert-CN
     RequestHeader set   X-Scan-Cert-CN "%{SSL_CLIENT_S_DN_CN}s" "expr=%{SSL_CLIENT_VERIFY} == 'SUCCESS'"
 
-    <Directory /var/www/Cross_Border_Command/public>
+    # This host exists for the handheld only — anything else goes to the scan page
+    # rather than exposing the ERP login on a scanner host.
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} !^/(putaway-scan|ps/|api/scan/|api/scan-devices/enroll|login|api/login|build/|images/|fonts/|storage/|manifest\.json|sw\.js|favicon)
+    RewriteRule ^ /putaway-scan [R=302,L]
+
+    <Directory /var/www/html/Cross_Border_Command/public>
         AllowOverride All
         Require all granted
     </Directory>
-    # ... your normal PHP-FPM handler / rewrite config ...
+
+    ErrorLog  ${APACHE_LOG_DIR}/scan-error.log
+    CustomLog ${APACHE_LOG_DIR}/scan-access.log combined
 </VirtualHost>
 ```
 
 ```bash
-# 6. ENABLE + TEST + RELOAD
-sudo a2ensite scan.kryptone.ai
-sudo apache2ctl configtest
-sudo systemctl reload apache2
+sudo a2ensite scan.kryptone.ai && sudo apache2ctl configtest && sudo systemctl reload apache2
+```
 
-# 7. LOCK PHP behind Apache — PHP-FPM on 127.0.0.1 only, firewall its port.
+### 6.5 Close the side door on the ERP host
 
-# 8. POINT STICKERS at this host (.env), then re-cache config
-#    INVENTORY_STICKER_URL=https://scan.kryptone.ai
+Without this, the same routes answer on `kryptone.ai` with **no certificate at
+all**, and the whole mTLS setup is bypassable. In `kryptone-le-ssl.conf` (and the
+`:80` vhost), inside `<VirtualHost>`:
+
+```apache
+    # Scanner surface lives on scan.kryptone.ai, which requires a device certificate
+    <LocationMatch "^/(ps/|putaway-scan|api/scan/)">
+        Require all denied
+    </LocationMatch>
+```
+
+Note the trailing slash in `api/scan/` — it deliberately does **not** match
+`/api/scan-devices`, so admin device management stays reachable on the ERP.
+
+### 6.6 PHP behind Apache only
+
+PHP-FPM must listen on `127.0.0.1` (or a unix socket), with its port firewalled.
+If the app can be reached *around* Apache, anyone can send `X-Scan-Cert-CN` by hand
+and skip the certificate entirely. **Apache verifying the certificate is worthless
+if the app is reachable around Apache.**
+
+```bash
+sudo ss -lntp | grep -Ei "php|fpm"      # expect 127.0.0.1 or a socket
+```
+
+### 6.7 Point the printed labels at the scanner host
+
+```env
+STICKER_URL=https://scan.kryptone.ai
+```
+
+```bash
 php artisan config:cache
+php artisan tinker --execute="echo config('inventory.sticker_url').PHP_EOL;"
 ```
 
-**9. TEST:**
-```bash
-curl --cert zebra-cert.pem --key zebra-key.pem https://scan.kryptone.ai/putaway-scan -o /dev/null -w "with cert: %{http_code}\n"
-curl https://scan.kryptone.ai/putaway-scan -o /dev/null -w "no cert: %{http_code}\n"   # refused / 403
-```
+**Do NOT set `STICKER_SECRET`.** The frontend signs labels with a hardcoded
+default (`putAwayStore.ts`); any other value makes every genuine label fail its
+signature check.
 
-If instead you keep **one host** for both the ERP and the scanner, set
-`SSLVerifyClient optional` at the vhost and `SSLVerifyClient require` inside a
-`<LocationMatch "^/(ps/|putaway-scan|api/scan/putaway|api/scan/device-check)">`
-block (needs TLS 1.2 client renegotiation; the dedicated-host option above is
-simpler and TLS-1.3-friendly).
-
-> **Critical (step 7):** PHP must only ever be reachable *through* Apache, never
-> directly on its internal port, or the `X-Scan-Cert-CN` header could be spoofed —
-> someone could send it by hand and skip the certificate entirely. Apache verifying
-> the cert is worthless if the app can be reached around Apache. Bind PHP-FPM to
-> localhost and firewall the internal port.
+Labels already printed with a different host keep pointing there forever — reprint
+after changing this.
 
 ---
 
-## 5. Create the Device CA (once, ever)
+## 7. Issuing a certificate for a handheld
 
-Only done one time, on the server. On Windows Git Bash use `//CN=...\...` (the
-leading `//` stops the path being mangled); on Linux use `/CN=.../O=.../C=IN`.
+### When you need one
 
-```bash
-# CA private key (KEEP SECRET)
-openssl genrsa -out device-ca-key.pem 2048
+- a new handheld joins the floor
+- a device's certificate is nearing expiry (~5 years)
+- a device was lost/stolen **and** you want the replacement to be a different identity
+- the environment's CA changed (e.g. dev CA → prod CA)
 
-# CA certificate, self-signed, 10 years
-openssl req -x509 -new -nodes -key device-ca-key.pem -sha256 -days 3650 \
-  -out device-ca.pem -subj "//CN=CBC Device CA\O=CrossBorderCommand\C=IN"
-```
+### The rule that matters
 
----
+**The serial inside the CN must equal the `serial` on the device's `scan_devices`
+row.** That is the only link between the certificate and the database. `CN =
+zebra-26013524701106` ⟷ `scan_devices.serial = '26013524701106'`.
 
-## 6. Issue a certificate for a new device (per handheld)
-
-Replace `26013524701106` with the real device serial. **The serial in the CN must
-match the `serial` on the `scan_devices` row you register in the app** — that is
-how Laravel links the cert to the device.
+### Commands (run where the CA private key is)
 
 ```bash
+cd /var/www/html/Cross_Border_Command/storage/certs
 SERIAL=26013524701106
 
-# device key + signing request
-openssl genrsa -out zebra-key.pem 2048
-openssl req -new -key zebra-key.pem -out zebra.csr \
-  -subj "//CN=zebra-$SERIAL\O=CrossBorderCommand\C=IN"
+openssl genrsa -out z-$SERIAL-key.pem 2048
+openssl req -new -key z-$SERIAL-key.pem -out z-$SERIAL.csr \
+  -subj "/CN=zebra-$SERIAL/O=CrossBorderCommand/C=IN"
+openssl x509 -req -in z-$SERIAL.csr -CA device-ca-prod.pem -CAkey device-ca-prod-key.pem \
+  -CAcreateserial -out z-$SERIAL-cert.pem -days 1825 -sha256
+openssl pkcs12 -export -in z-$SERIAL-cert.pem -inkey z-$SERIAL-key.pem \
+  -out z-$SERIAL.p12 -name "Kryptone Zebra" -passout pass:<THE PASSWORD>
+rm -f z-$SERIAL.csr
 
-# CA signs it — 5 years
-openssl x509 -req -in zebra.csr -CA device-ca.pem -CAkey device-ca-key.pem \
-  -CAcreateserial -out zebra-cert.pem -days 1825 -sha256
-
-# bundle for Android (set a password you will type on the device)
-openssl pkcs12 -export -in zebra-cert.pem -inkey zebra-key.pem \
-  -out zebra.p12 -name "Kryptone Zebra" -passout pass:CHANGEME
-
-# clean up the loose request
-rm -f zebra.csr
+openssl x509 -in z-$SERIAL-cert.pem -noout -subject -issuer -dates   # verify
 ```
 
-Then in the app: **Inventory → Scan Devices → Add device**, with **Serial =** the
-same serial. That is all — no token needed, the certificate is the credential.
+On Windows Git Bash use `//CN=...\O=...` (the leading `//` stops path mangling);
+on Linux use `/CN=.../O=.../C=IN` as above.
+
+### The `.p12` password — what it is and how to choose it
+
+- It encrypts the **private key inside the `.p12` file**, nothing else. It is typed
+  **once**, on the handheld, at install time. It is never used again — not by the
+  app, not by Apache, not at scan time.
+- Its only job is to protect the file **in transit**: Slack, email, a download link,
+  a USB stick. Once Android has imported the key into its credential store, the
+  file and its password are dead weight.
+- Choose something you can type on a handheld keyboard and share over a *different*
+  channel than the file itself. Avoid characters that are awkward on Android.
+  A per-batch password is fine; a per-device password is better if devices are
+  handed out by different people.
+- Current pilot device uses `Kryptone@2026`.
+- **Delete the `.p12` from the device and from any chat/email after install.** If
+  the file leaks *with* its password, it can be installed on another device.
+
+### What is inside the `.p12`
+
+```
+zebra-<serial>-cert.pem   the device certificate (public)   CN=zebra-<serial>
+zebra-<serial>-key.pem    its private key (secret)
+```
+plus the password, in the PKCS#12 container format Android requires. A `.pem` pair
+cannot be installed as an Android user credential — that is the only reason the
+`.p12` exists.
 
 ---
 
-## 7. How the app identifies the device (no code change needed per device)
+## 8. Installing on the handheld (Zebra / Android)
 
-- Front door verifies the cert → sets `X-Scan-Cert-CN: zebra-<serial>`.
-- `SpiPutawayScanController::deviceFromCert()` strips `zebra-` → finds `ScanDevice`
-  by `serial`.
-- `ScanDeviceController::check()` does the same for the on-load device check.
-- The scan author falls back to `created_by` (the admin who registered the device).
+### Getting the file onto the device
+
+The `.p12` must reach the handheld somehow. Any of these work:
+
+- **USB** — connect, set USB mode to *File Transfer*, drop it in `Download`.
+- **Via the server** (what we used) — publish it briefly under a random name on the
+  **ERP** host (the scanner host can't serve it: it demands the very certificate you
+  are installing), then delete it immediately:
+  ```bash
+  NAME=d-$(openssl rand -hex 10).p12
+  cp z-26013524701106.p12 /var/www/html/Cross_Border_Command/public/$NAME
+  chmod 644 /var/www/html/Cross_Border_Command/public/$NAME
+  echo "https://kryptone.ai/$NAME"
+  # ... after the device installs it ...
+  rm -f /var/www/html/Cross_Border_Command/public/$NAME
+  ```
+  The random name and the instant delete matter: for those minutes a private key is
+  publicly downloadable.
+- **Email / Slack** to an account openable on the device, then delete the message.
+
+### Installing it
+
+1. **Settings → Security → Encryption & credentials → Install a certificate**
+2. **VPN & app user certificate** — **not** "CA certificate". It is a device
+   *identity*; choosing CA puts it in the wrong store and Chrome will never offer it.
+3. Pick the `.p12` from **Downloads**, enter the password.
+4. Name it **Kryptone Zebra**.
+5. **Delete the `.p12` from Downloads.**
+6. Remove any older entry under **User credentials** that was signed by a retired CA,
+   or the picker shows two identical-looking choices.
+
+### The certificate prompt on Android
+
+Chrome asks which certificate to present **once per origin per browser session** —
+roughly one tap per shift, not per scan. It reappears after a reboot, after Chrome
+is force-stopped (including swiping it from Recents), after clearing Chrome data, and
+separately for each hostname (dev vs prod).
+
+**It cannot be auto-selected on Android.** Chrome's `AutoSelectCertificateForUrls`
+policy only works with certificates Chrome itself provisioned; it cannot read the
+Android OS keystore where a `.p12` lives. To remove the prompt entirely there are
+only two routes:
+
+- a thin **WebView wrapper app** that answers `onReceivedClientCertRequest()` from
+  `KeyChain` — no prompt ever, and it can be locked as the device's home app; or
+- drop browser mTLS in favour of the **device token** the scan page still supports
+  (`X-Scan-Device`), trading a non-exportable key for a copyable string.
+
+To make the prompt rarer: turn **off battery optimisation for Chrome**, and tell
+operators not to swipe Chrome out of Recents.
 
 ---
 
-## 8. Turn a device off / replace a cert
+## 9. Where the CA private key should live
 
-- **Lost or stolen device:** in **Scan Devices**, set it to **Suspended** or
-  **Retired** → it stops scanning immediately (the app refuses a suspended device
-  even with a valid cert).
-- **Replace the cert** (e.g. expiring): re-issue with section 6 using the same
-  serial, install the new `.p12`, done. The old one keeps working until it expires
-  unless you also run a CRL (not set up — suspend the device row instead).
-- **Certificate validity:** Device CA ~10 years, device certs ~5 years. Re-issue
-  before expiry.
+The production CA key was generated on the server for convenience. That is a
+trade-off: anyone who obtains `device-ca-prod-key.pem` can mint a certificate that
+production will accept.
+
+Mitigations, in order of preference:
+
+1. **Move it off the box once devices are issued.** Verification needs only
+   `device-ca-prod.pem`; the key is needed solely to sign a *new* device. Copy it to
+   secure storage (encrypted), then `shred -u device-ca-prod-key.pem` on the server.
+2. If it stays, keep `chmod 600`, root-only, and never back it up to anywhere
+   world-readable.
+3. Never commit it (`.gitignore` already prevents this).
 
 ---
 
-## 9. Security notes / git
+## 10. Local development
 
-- **Never commit** the private keys or the `.p12`: `*-key.pem`, `*.p12`, `*.srl`.
-  Keep them local / on the server only. Only `device-ca.pem` (public) and this
-  README are safe to share.
-- The front door **must strip** any incoming `X-Scan-Cert-CN` and set it only from
-  a verified cert (the proxy and the Apache config above both do this).
-- PHP must be reachable only behind the front door, never on its raw port.
-- The `.p12` is a file — if it leaks *with its password*, it could be installed on
-  another device. It still kills the "copy the URL / any phone" problem (the secret
-  is not in any link). For hardware-bound, non-copyable keys, the alternative is
-  WebAuthn (not implemented here).
+Apache's job is done by `tls-proxy.cjs`, a small Node front door:
+
+```bash
+php artisan serve --host=127.0.0.1 --port=8001      # backend, internal only
+node storage/certs/tls-proxy.cjs                     # front door on :8000 (TLS + mTLS)
+```
+
+It requires the client certificate on the scanner paths (`/ps/`, `/putaway-scan`,
+`/api/scan/putaway`, `/api/scan/device-check`), verifies it against `device-ca.pem`,
+strips any client-sent `X-Scan-Cert-CN`, and sets it from the verified certificate.
+Everything else is reachable without a certificate.
+
+The local server certificate is an **mkcert** dev cert (`cbc.pem`) covering
+`192.168.1.84` and `localhost`. A handheld testing locally must trust the mkcert
+root CA, or Chrome will warn on every load. Production needs none of this — Let's
+Encrypt is already trusted by Android.
+
+`public/hot` must not exist when testing: it is written while `npm run dev` runs and
+makes every page load assets from the Vite dev server. Blank pages are usually this.
+
+---
+
+## 11. The `scan_devices` row — the half that is not cryptography
+
+The certificate proves *which device*. The database row decides *what that device
+can see and who it acts as*. Both must be right or scans fail with confusing
+messages.
+
+| Column | Must be | Why |
+|---|---|---|
+| `serial` | exactly the CN minus `zebra-` | the only link from certificate to row |
+| `client_id` | the client that owns the boxes | box lookup is `SpiBox::where('client_id', $device->client_id)` |
+| `enrolled_by` *or* `created_by` | a **user inside that client** | the device acts as this person: put-away author **and** branch scope |
+| `status` | `active` | `suspended`/`retired` are refused even with a valid certificate |
+
+**Branch scope** comes from that user via `TenantContext::fromUser()`:
+`client_admin`/`client_user` → the whole client; anyone else → their own branch
+(plus rows with `branch_id` null). So a device bound to a branch-4 user cannot see
+a task in branch 6.
+
+Setting it without the enrolment flow is a single statement — the certificate
+remains the only credential:
+
+```bash
+php artisan tinker --execute="DB::update('update scan_devices set client_id=2, created_by=10, enrolled_by=10, enrolled_at=now() where id=1');"
+```
+
+Never create a second row with the same serial: the lookup is
+`where('serial', …)->first()`, so which device answers becomes arbitrary.
+
+---
+
+## 12. Verifying a setup
+
+From any machine with an OpenSSL-backed curl (Windows curl is Schannel and rejects
+PEM client certs):
+
+```bash
+# Which server cert is served, and which client CA is demanded
+echo | openssl s_client -connect scan.kryptone.ai:443 -servername scan.kryptone.ai 2>&1 \
+  | grep -iE "subject=|Acceptable client certificate CA names" -A2
+
+# Without a certificate → refused at the handshake
+curl https://scan.kryptone.ai/putaway-scan -o /dev/null -w "no cert: %{http_code}\n"
+
+# With one → 200
+curl --cert z-26013524701106-cert.pem --key z-26013524701106-key.pem \
+     https://scan.kryptone.ai/putaway-scan -o /dev/null -w "with cert: %{http_code}\n"
+
+# The ERP must be unaffected, and must refuse the scanner paths
+curl https://kryptone.ai/ -o /dev/null -w "erp: %{http_code}\n"                    # 200
+curl https://kryptone.ai/putaway-scan -o /dev/null -w "erp scan path: %{http_code}\n"  # 403
+```
+
+Expected on production: acceptable CA `CN=CBC Device CA Prod`; no-cert →
+`TLSV13_ALERT_CERTIFICATE_REQUIRED`; a certificate from a *different* CA →
+`TLSV1_ALERT_UNKNOWN_CA`.
+
+---
+
+## 13. Troubleshooting — message → cause
+
+| What the handheld shows | Cause |
+|---|---|
+| Connection error / "certificate required" | no certificate installed, or installed as *CA certificate* instead of *VPN & app user certificate* |
+| `TLSV1_ALERT_UNKNOWN_CA` | the certificate is signed by a CA this environment does not trust (dev cert against production, or the CA was rotated) |
+| *"This device is not authorised to scan."* (401) | no `scan_devices` row whose `serial` matches the CN |
+| *"This device has been suspended."* (403) | row exists, `status` is `suspended`/`retired` |
+| *"This device has no enrolled user."* (403) | `enrolled_by`/`created_by` points at no user, or at a user outside the device's `client_id` |
+| *"That is not a Cross Border label."* | the scanned string is not one of our payloads |
+| *"That label did not pass its signature check."* | `STICKER_SECRET` is set on the server; it must be absent |
+| **"No box on this account matches that label."** | the label is valid, but that box belongs to a **different `client_id`** than the device row |
+| *"No put-away initiated for B-00x."* | right client, but no put-away row — or the task is in a **branch the device's actor cannot see** |
+| *"That is a rack label. Scan the shelf label — …"* | the deepest assigned level is a shelf; a rack label does not prove the operator stood at it |
+| Nothing happens when the trigger is pressed | DataWedge: profile disabled, Barcode input off, Hardware trigger off, or QR decoder unticked |
+| The string types in but nothing submits | DataWedge → Keystroke output → **Action key character** must be **Carriage return** |
+
+---
+
+## 14. Turning a device off, replacing a certificate, expiry
+
+- **Lost or stolen device:** in **Inventory → Scan Devices**, set it to **Suspended**
+  or **Retired** → it stops scanning immediately, even with a valid certificate.
+  This is the revocation mechanism; there is no CRL.
+- **Replacing a certificate** (expiry, or a CA rotation): re-issue with §7 using the
+  **same serial**, install the new `.p12`, remove the old entry from the device's
+  User credentials. The old certificate keeps working until it expires unless the
+  device row is suspended — so suspend if the old one leaked.
+- **Rotating the CA:** generate the new CA, re-issue every device certificate from
+  it, point `SSLCACertificateFile` at the new CA, reload Apache, then install the new
+  `.p12` on each handheld **in the same sitting** — the moment Apache reloads, every
+  old certificate is rejected.
+- **Validity:** Device CA ~10 years, device certificates ~5 years. Let's Encrypt
+  server certificates renew automatically every 90 days via certbot.
+
+---
+
+## 15. Known gaps
+
+- **The label signature is not an HMAC.** `StickerKey::sign()` reproduces an FNV-1a
+  fold from `putAwayStore.ts` so PHP-printed labels validate in the frontend
+  simulation. Anyone who reads that function can mint a label that passes. The
+  certificate is what actually protects the endpoint; the signature only catches
+  damaged or foreign labels. Replace both sides together when the real signing lands.
+- **No CRL / OCSP.** Revocation is the `status` column on `scan_devices`, which is
+  checked after the TLS handshake. A stolen `.p12` is refused by the app, not by Apache.
+- **The `.p12` is a file.** If it leaks with its password it can be installed on
+  another device. It still removes the "any phone can use the printed URL" problem,
+  because no secret is in the label. For hardware-bound, non-copyable keys the
+  alternative is WebAuthn (not implemented).
+- **Labels are environment-bound.** The hostname is inside every QR, so a carton
+  labelled on dev will never scan on production. Print from the environment you will
+  scan in.
+- **Stage 04 does not raise tasks from the UI.** The "Submit for Zebra Verification"
+  button builds a `ZT-…` code in React and never calls the server; put-away
+  allocation, manual confirmation and scan tasks must be created through the API
+  (`/putaway/assign` → `/putaway/{row}/scan-task`) until that is wired.
