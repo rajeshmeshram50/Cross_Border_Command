@@ -1346,7 +1346,7 @@ export default function ClmBuyerProfilePage() {
 
           {bpaTab === 'buyer' && (
             <div>
-              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: buyerCardFill, maxHeight: buyerCardFill }}>
+              <div ref={buyerCardRef} className="seg-page-card" style={{ marginTop: 8, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: buyerCardFill, maxHeight: buyerCardFill }}>
                 <div className="bpx-59">
                   <div className="bpx-26">
                     <div className="bpx-60">
@@ -1442,7 +1442,7 @@ export default function ClmBuyerProfilePage() {
 
           {bpaTab === 'consignee' && (
             <div>
-              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: consCardFill, maxHeight: consCardFill }}>
+              <div ref={consCardRef} className="seg-page-card" style={{ marginTop: 8, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: consCardFill, maxHeight: consCardFill }}>
                 <div className="bpx-59">
                   <div className="bpx-26">
                     <div className="bpx-60">
