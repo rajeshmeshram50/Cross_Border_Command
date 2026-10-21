@@ -11,28 +11,13 @@ import { useToast } from '../../../../../contexts/ToastContext';
 export type StickerApi = { spiId: number | null; spiCode: string | null; boxIdOf: (code: string) => number | null };
 export const StickerApiContext = createContext<StickerApi | null>(null);
 
-/** How the sticker prints a date: "8 Oct 2026", never a locale's own order. */
 const STICKER_DATE = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric', month: 'short', year: 'numeric',
 });
 
-/**
- * The scanned payload.
- *
- * Pipe-separated rather than JSON: a warehouse scanner drops it into whatever
- * field has focus, and the shorter the string the smaller and more forgiving
- * the printed code. Prefixed so a scan can be told apart from a rack or shelf
- * label, which carry their own prefixes.
- */
 export const stickerPayload = (boxId: string, rows: BoxContent[], qty: number) =>
   ['BOX', boxId, rows.map(r => r.line.code).join('+'), String(qty)].join('|');
 
-/**
- * The QR, painted on a canvas.
- *
- * Canvas rather than an <img>: it prints crisply and never fires a network
- * request — the same reason InventoryStickers draws its codes this way.
- */
 function StickerQr({ payload, size }: { payload: string; size: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [err, setErr] = useState(false);
@@ -52,31 +37,15 @@ function StickerQr({ payload, size }: { payload: string; size: number }) {
   return <canvas ref={ref} width={size} height={size} className="invf-stk__qr" />;
 }
 
-/**
- * Temporary Putaway Sticker — what goes on the outside of a box.
- *
- * Temporary because the box has not been put away yet: it carries a putaway id
- * (PUT-B-001), not a storage location, and the label is reprinted once the box
- * reaches its rack. The TEMPORARY chip in the header says so, rather than
- * leaving someone to find out at the rack.
- *
- * Portalled to document.body: the drawer sits in a table cell, and
- * `.vti-table-wrap`'s `overflow-x: auto` clips any descendant.
- */
 export default function BoxStickerModal({
   boxId, rows, quantity, scenario, modeLabel, condition, spiNumber, onClose,
 }: {
   boxId: string;
-  /** What is in the box. A mixed carton lists several products. */
   rows: BoxContent[];
   quantity: number;
-  /** "1 Product → 1 Box", and so on. */
   scenario: string;
-  /** "Single Box", or "Box 3 of 20" in a split. */
   modeLabel: string;
-  /** The box's condition, already resolved to its label. */
   condition: string;
-  /** Absent until the invoice has a number of its own. */
   spiNumber?: string;
   onClose: () => void;
 }) {
@@ -131,8 +100,6 @@ export default function BoxStickerModal({
   const first = rows[0]?.line;
   const mixed = rows.length > 1;
 
-  /* A mixed carton has no single SKU to print, so the label names the count and
-     the products are listed under it — a scanner reads them all from the QR. */
   const title = mixed ? `${rows.length} products` : first?.spiName ?? '—';
   const sku = mixed ? `${rows.length} SKUs` : `HSN ${first?.hsn ?? '—'}`;
 
@@ -156,8 +123,6 @@ export default function BoxStickerModal({
         </div>
 
         <div className="spi-mdl-body">
-          {/* The label itself. Everything inside this card is what gets printed;
-              the dialog's own chrome is not. */}
           <div className="invf-stk__card">
             <div className="invf-stk__strip">
               <div>
@@ -194,8 +159,6 @@ export default function BoxStickerModal({
               </div>
             </div>
 
-            {/* Repeated along the bottom edge so the count is still readable
-                when the box is stacked and only its lower strip shows. */}
             <div className="invf-stk__foot">
               <span className="invf-stk__foot-qty">
                 <span className="invf-stk__dot" />Qty: {quantity} u

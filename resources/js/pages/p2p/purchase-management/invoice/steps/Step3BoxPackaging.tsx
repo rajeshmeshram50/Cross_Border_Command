@@ -159,8 +159,6 @@ export default function Step3BoxPackaging({
     s2: ['Scenario 02', '1 Product → Multiple Boxes'],
     s3: ['Scenario 03', 'Multiple Products → 1 Box'],
   };
-  /* Labels, not stored codes: the table prints these verbatim and tones them
-     by text, so the mapping lives here next to the data it describes. */
   const REMARK_LABEL: Record<string, string> = {
     correct: 'Correct Product', damaged: 'Damaged / Rejected',
     mismatched: 'Mismatched', extra: 'Extra Quantity',
@@ -172,23 +170,12 @@ export default function Step3BoxPackaging({
     const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
     return Number.isFinite(n) ? n : null;
   };
-  /* Flag ids come back per item; the names live in the Product Flag master.
-     Unresolvable ids are dropped rather than printed raw — a number in a
-     chip tells the floor nothing. */
   const flagNamesOf = (b: typeof boxes[number]) => [...new Set(
     b.items.flatMap(i => (i.flags ?? [])
       .map(id => (flagMaster ?? []).find(f => f.id === id)?.flag_name))
       .filter((n): n is string => !!n),
   )];
 
-  /* The line under the box id.
-   *
-   * A split box says which of its set it is ("Box 1 of 5"); anything else says
-   * when it was packed. The set has to be read off the SAVED boxes, not off
-   * `packing`/`splitCodes` — clearLocal() drops both the moment a set
-   * completes, which is exactly when the label still needs to be right.
-   * `splitCodes` is preferred while it lasts because it holds the true box
-   * number; once it is gone, position within the group is the honest answer. */
   const splitGroups = new Map<string, string[]>();
   for (const b of boxes) {
     if (b.scenario !== 's2') continue;
@@ -226,9 +213,6 @@ export default function Step3BoxPackaging({
       dims: { l: num(b.length_cm), w: num(b.width_cm), h: num(b.height_cm) },
       netWt: num(b.net_weight_kg),
       grossWt: num(b.gross_weight_kg),
-      /* The box carries one condition; the remark is per item, and every
-         item in a box shares it in practice — so the first one speaks for
-         the carton rather than repeating down the cell. */
       remark: REMARK_LABEL[b.items[0]?.remark ?? ''] ?? undefined,
       condition: COND_LABEL[String(b.condition ?? '')] ?? undefined,
       flags: flagNamesOf(b),
@@ -249,10 +233,6 @@ export default function Step3BoxPackaging({
     s3: s3Rows + selected.length,
   };
 
-  /* Boxes already SAVED under each scenario. scenarioUse above counts lines
-   * staged in the form, which is a different thing and reads zero once
-   * everything is packed - so on a finished invoice it would have claimed no
-   * scenario was used while the Packed Boxes table listed all three. */
   const scenarioBoxes: Record<Scenario, number> = {
     s1: boxes.filter(b => b.scenario === 's1').length,
     s2: boxes.filter(b => b.scenario === 's2').length,
@@ -386,14 +366,7 @@ export default function Step3BoxPackaging({
       scenario,
       ...data.dims,
       condition: data.condition,
-      /* Stackable is a fact about the CARTON — whether another may go on top
-         — so it rides on the box. It is still mirrored onto each item below
-         for the existing column, which nothing else reads. */
       is_stackable: data.stackable ? 1 : 0,
-      /* The cold-chain range as NUMBERS. It used to travel inside remark_note
-         as "Cold chain 2…8 °C" and be parsed back by splitting on an ellipsis,
-         so the one fact that exists to be compared could not be compared
-         against a zone's own min and max. */
       temp_min_c: data.tempMin,
       temp_max_c: data.tempMax,
       items: contents.map(c => {
@@ -460,14 +433,6 @@ export default function Step3BoxPackaging({
     setMixedQty(m => ({ ...m, [code]: capTo(line, qty, 'The carton') }));
   };
 
-  /* Scenario 01 boxes that have saved but not yet been dismissed.
-   *
-   * A saved box used to disappear on the spot: clearLocal() ran, the row
-   * collapsed, and the only trace was a toast that was already fading. The
-   * design holds the box open instead, states where it went and how much it
-   * holds, and waits for "Done" — so the box id on screen is the one you can
-   * still print a sticker for. Keyed by line code; the saved box_code is kept
-   * because the drawer's own id is a preview until the server allocates one. */
   const [justSaved, setJustSaved] = useState<Record<string, { code: string; qty: number }>>({});
 
   const dismissSingle = (code: string) => {
@@ -558,9 +523,6 @@ export default function Step3BoxPackaging({
 
   const readBox = (box: SpiBox): BoxInitial => {
     const first = box.items[0];
-    /* The range comes off the box's own columns. The note is still read as a
-       fallback for boxes saved before those columns existed, where the only
-       copy of the range is the sentence inside remark_note. */
     const parts = (first?.remark_note ?? '').split(' · ').map(s => s.trim()).filter(Boolean);
     const cold = parts.find(p => p.startsWith('Cold chain'));
     const range = cold?.replace('Cold chain', '').replace('°C', '').trim().split('…') ?? [];
@@ -595,9 +557,6 @@ export default function Step3BoxPackaging({
       condition: (box.condition === 'major' ? 'severe' : box.condition) as BoxInitial['condition'],
       remark: first?.remark ?? 'correct',
       flagIds,
-      /* The box's own answer. Falls back to the first item's only for a box
-         saved before the column existed; a new box defaults to NOT stackable,
-         which is the safe assumption for a crate nobody has vouched for. */
       stackable: box.is_stackable != null ? box.is_stackable === 1 : (first?.is_stackable ?? false),
       boxIdentity: identity(first),
       identities: Object.fromEntries(
@@ -605,7 +564,6 @@ export default function Step3BoxPackaging({
           .map(i => [codeOfItem.get(i.supplier_invoice_item_id), identity(i)] as const)
           .filter((e): e is [string, ProductIdentity] => !!e[0]),
       ),
-      /* Columns first, the parsed sentence only for boxes that predate them. */
       ...(box.temp_min_c != null && box.temp_max_c != null
         ? { temp: { min: String(box.temp_min_c), max: String(box.temp_max_c) } }
         : range.length === 2 ? { temp: { min: range[0], max: range[1] } } : {}),
@@ -618,10 +576,6 @@ export default function Step3BoxPackaging({
     if (editingId != null) editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [editingId]);
   const [dropped, setDropped] = useState<string[]>([]);
-  /* A box's quantity is editable while it is open (the design puts the same
-     stepper in the edit dialog as in a new box). Null means untouched, so the
-     stored figure still speaks until someone actually changes it. Mixed
-     cartons are excluded: there the per-product rows own the quantities. */
   const [editQty, setEditQty] = useState<number | null>(null);
   const editingBox = boxes.find(b => b.id === editingId) ?? null;
 
@@ -633,11 +587,6 @@ export default function Step3BoxPackaging({
       toast.info('Save the invoice first', 'A box can be edited once Stage 02 is saved.');
       return;
     }
-    /* The drawer only renders when the box's items resolve to lines on this
-       invoice (`editingBox && editContents.length > 0`). Setting the id
-       regardless left the row marked as open — lit pencil, highlighted row —
-       with no dialog anywhere, and nothing to close it again. Refuse the open
-       instead and say why. */
     const resolvable = box.items.some(i => codeOfItem.has(i.supplier_invoice_item_id));
     if (!resolvable) {
       toast.warning('Cannot open this box', `${box.box_code} holds products that are no longer on this invoice.`);
@@ -659,13 +608,9 @@ export default function Step3BoxPackaging({
         : null;
     })
     .filter((c): c is { line: ProductLine; qty: number } => !!c)
-    /* The edited quantity, where one has been set. Applied here rather than
-       at the drawer so saveEdit writes the same figure the dialog showed. */
     .map((c, i) => (i === 0 && editQty != null && editingBox?.scenario !== 's3'
       ? { ...c, qty: editQty } : c));
 
-  /* How far the stepper may go: what this box already holds plus whatever of
-     the same line is still unboxed elsewhere. */
   const editMax = (() => {
     if (!editingBox) return undefined;
     const orig = Number(editingBox.items[0]?.quantity) || 0;
@@ -761,24 +706,11 @@ export default function Step3BoxPackaging({
         </div>
         <div className="pkg-box__body">
           {SCENARIOS.map(s => (
-            /* A card in use is marked, because which shapes THIS invoice
-               actually packs in is the one thing the strip can say that the
-               three definitions cannot. */
             <div className="pkg-card" key={s.id}>
               <div className="pkg-card__top">
                 <div className="pkg-card__scenario">
                   <div className="pkg-card__scenario-line" />
                   {s.no}
-                  {/* A count beside the scenario number, and nothing more.
-                      This strip is a reference — three definitions you read to
-                      decide which shape your goods arrive in — so a scenario
-                      the invoice happens to use is noted, not highlighted. It
-                      used to tint the whole column and cap it with a teal
-                      rule, which made a read-only panel look like a chooser
-                      with something selected.
-
-                      Saved boxes first: that is what the invoice has actually
-                      done, where staged lines are only the work in hand. */}
                   {(() => {
                     const packed = scenarioBoxes[s.id];
                     const staged = scenarioUse[s.id];
@@ -858,9 +790,6 @@ export default function Step3BoxPackaging({
                 <th>Product (SPI)</th>
                 <th>Code</th>
                 <th className="vti-desc-h">Description</th>
-                {/* Invoiced, and how many of them still have to go in a box.
-                    The header carries the "still to pack" part, so the column
-                    name stays short. */}
                 <th>Qty (SPI)</th>
                 <th>
                   <Tooltip label="Units of this product still to be packed. It drops as you pack, and the product leaves this table when it reaches zero.">
@@ -1008,11 +937,6 @@ export default function Step3BoxPackaging({
                       <td colSpan={BOX_TABLE_COLUMNS} className="vti-drawer-td">
                         {(() => {
                           const done = justSaved[line.code];
-                          /* What is left of this product once this box is
-                             counted. A single box normally takes the whole
-                             line, but the quantity is editable, so the note
-                             has to say what is actually true rather than
-                             always claiming everything is packed. */
                           const left = done ? Math.max(0, line.spiQty - done.qty) : 0;
                           return (
                             <BoxDrawer
@@ -1089,11 +1013,6 @@ export default function Step3BoxPackaging({
           />
       )}
 
-      {/* Editing a saved box opens OVER the page (variant="modal").
-          Inline it sat above the Packed Boxes table and pushed every row
-          below it down, so pressing the pencil on a row moved that row out
-          from under the cursor. No editRef scroll either — there is nothing
-          to scroll to once the form is centred on screen. */}
       {editingBox && editContents.length > 0 && (
         <div ref={editRef}>
         <BoxDrawer
@@ -1103,16 +1022,11 @@ export default function Step3BoxPackaging({
           quantity={editContents[0].qty}
           scenario={SCN_LABEL[editingBox.scenario][1]}
           modeKey={editingBox.scenario === 's3' ? 'Products' : 'Mode'}
-          /* A split box says WHICH of its set it is ("Box 1 of 5"), the same
-             line the Packed Boxes row shows — "Split Carton" only repeated
-             the scenario already printed beside it. */
           modeLabel={editingBox.scenario === 's3'
             ? `${editContents.length} SKU${editContents.length === 1 ? '' : 's'}`
             : editingBox.scenario === 's2'
               ? subLabelOf(editingBox)
               : EDIT_MODE[editingBox.scenario]}
-          /* The quantity is settable here too, as in a new box. Not for a
-             mixed carton: its per-product rows own the figures. */
           onQuantityChange={readOnly || editingBox.scenario === 's3' ? undefined : setEditQty}
           quantityMax={editMax}
           variant="modal"
