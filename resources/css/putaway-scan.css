@@ -852,3 +852,20 @@
 .pwscan-toast small { font-size: 12px; font-weight: 600; opacity: .9; }
 .pwscan-toast--ok  { background: var(--pw-ok); color: #06240f; }
 .pwscan-toast--bad { background: var(--pw-bad); color: #fff; }
+
+/* Put-away completed. A badge rather than a button: the next box is scanned
+   with the trigger, which navigates on its own. */
+.pwscan-badge {
+  display: inline-block;
+  margin-top: 18px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+.pwscan-badge--done {
+  color: #0b3d2c;
+  background: #bbf7d0;
+  border: 1px solid #4ade80;
+}
