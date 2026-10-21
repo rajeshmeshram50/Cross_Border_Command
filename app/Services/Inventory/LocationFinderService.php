@@ -147,6 +147,12 @@ class LocationFinderService
                         // No code column: a shelf is its rack's code plus the level.
                         'code'          => $r->code . '-SH-' . str_pad((string) $s->level_no, 2, '0', STR_PAD_LEFT),
                         'level_no'      => (int) $s->level_no,
+                        /* What KIND of shelf it is — Standard, Cold, Heavy
+                           Duty and so on. Step 03 states it beside the zone
+                           and the rack; without it that cell had to repeat the
+                           shelf's name, which the title and the breadcrumb
+                           above it already carry twice over. */
+                        'shelf_type'    => $s->shelf_type,
                         'max_weight_kg' => $cap,
                         'free_weight_kg' => $free,
                         'boxes'         => $load['boxes'],

@@ -16,6 +16,7 @@ import PutawayScanTask from './PutawayScanTask';
 import InspectionProductView from '../../order/physical-inspection/InspectionProductView';
 import WorklistPager from '../../../../../components/ui/WorklistPager';
 import { PoApiError } from '../../order/api/po-api';
+import { useToast } from '../../../../../contexts/ToastContext';
 
 type Disposition = 'ship' | 'inv' | 'damaged' | 'mismatch';
 
@@ -801,6 +802,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [tab, setTab] = useState<'all' | Disposition>('all');
   const [selected, setSelected] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(true);
+  /* Either pane can be folded away, as the design has it. Collapsing the box
+     list gives the allocation the whole stage; collapsing the allocation gives
+     the list the whole stage, which is what you want when you are scanning
+     down thirteen cartons looking for the one in your hands. */
+  const [rightOpen, setRightOpen] = useState(true);
   const [lcStep, setLcStep] = useState(0);
   const panelsRef = useRef<HTMLDivElement>(null);
   /* Full View is a takeover of the page, not the browser's own fullscreen.
@@ -895,6 +901,41 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [prodPage, setProdPage] = useState(1);
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const toast = useToast();
+  const stickerBusy = useRef(false);
+  const stickerFailed = (e: unknown) => toast.error('Could not get the sticker',
+    e instanceof PoApiError ? e.firstError : 'Please try again.');
+  const stickerPdf = async (boxId: number, code: string) => {
+    if (stickerBusy.current) return;
+    if (!spiId) { toast.warning('Save the invoice first', 'The sticker needs a saved SPI.'); return; }
+    stickerBusy.current = true;
+    try {
+      const blob = await spiApi.stickerPdf(spiId, boxId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(spiCode || 'SPI').replace(/\//g, '-')}-${code}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      stickerFailed(e);
+    } finally {
+      stickerBusy.current = false;
+    }
+  };
+  const stickerPrint = async (boxId: number) => {
+    if (stickerBusy.current) return;
+    if (!spiId) { toast.warning('Save the invoice first', 'The sticker needs a saved SPI.'); return; }
+    stickerBusy.current = true;
+    try {
+      await spiApi.printSticker(spiId, boxId);
+      window.print();
+    } catch (e) {
+      stickerFailed(e);
+    } finally {
+      stickerBusy.current = false;
+    }
+  };
   const [placedAt, setPlacedAt] = useState<string | null>(null);
   /* How the placement gets confirmed. The two answers are not the same event:
      a manual confirmation IS the placement, a Zebra scan only queues one for
@@ -1134,7 +1175,19 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           Zebra tasks moves up to the rail rather than going with them. */}
 
       <div className={`s4-panels${fs ? ' is-fs' : ''}`} ref={panelsRef}>
-        <div className="s4-panel s4-panel--left" style={leftOpen ? undefined : { flex: '0 0 52px' }}>
+        {/* Collapsing is a CLASS, not an inline flex-basis. The inline style
+            could not win: .s4-panel--left:not(.is-collapsed) sets a 300px
+            min-width, and since the class was never added that selector
+            always matched — so the "collapsed" panel stopped at 300px with
+            its header and the whole box list still in it, squashed. The
+            class also switches on the rail treatment the stylesheet already
+            carries: 38px wide, head turned on its side, body hidden, the
+            vertical "Pick a Box" label shown. The id picks up the finished
+            version of those rules. */}
+        <div
+          id="s4PanelLeft"
+          className={`s4-panel s4-panel--left${leftOpen ? '' : ' is-collapsed'}`}
+        >
           <div className="s4-panel__head" onClick={() => setLeftOpen(o => !o)}>
             <div className="s4-panel__head-ico"><IcoBoxSm /></div>
             <div className="s4-panel__head-text">
@@ -1150,7 +1203,15 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               type="button"
               className="s4-panel__toggle"
               title={leftOpen ? 'Collapse' : 'Expand'}
-              onClick={e => { e.stopPropagation(); setLeftOpen(o => !o); }}
+              /* Folding one pane opens the other. Both closed leaves the stage
+                 as two rails against an empty field, with no way back except
+                 guessing which rail to click — and nothing on the screen to do
+                 the work this step exists for. */
+              onClick={e => {
+                e.stopPropagation();
+                if (leftOpen) setRightOpen(true);
+                setLeftOpen(o => !o);
+              }}
             >
               <IcoChevL />
             </button>
@@ -1199,8 +1260,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           </div>
         </div>
 
-        <div className="s4-panel s4-panel--right">
-          <div className="s4-panel__head">
+        <div
+          id="s4PanelRight"
+          className={`s4-panel s4-panel--right${rightOpen ? '' : ' is-collapsed'}`}
+        >
+          {/* The head opens the pane only while it is CLOSED. Expanded, it
+              holds the Scan Logs button, and a click there must reach that
+              button rather than folding the pane under it. */}
+          <div className="s4-panel__head" onClick={rightOpen ? undefined : () => setRightOpen(true)}>
             <div className="s4-panel__head-ico"><IcoGrid /></div>
             <div className="s4-panel__head-text">
               {/* "Temporary Putaway Allocation" — the stage's own name, as the
@@ -1238,6 +1305,22 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 onClose={() => setLogsOpen(false)}
               />
             )}
+            <button
+              type="button"
+              className="s4-panel__toggle"
+              title={rightOpen ? 'Collapse' : 'Expand'}
+              /* Same rule from this side — see the box list's toggle. */
+              onClick={e => {
+                e.stopPropagation();
+                if (rightOpen) setLeftOpen(true);
+                setRightOpen(o => !o);
+              }}
+            >
+              <IcoChevR />
+            </button>
+            {/* Read down the rail once the pane is folded, the way the box
+                list's does. */}
+            <div className="s4-panel__collapsed-label">Putaway Allocation</div>
           </div>
 
           {/* The journey, as three cards on a teal band.
@@ -1641,6 +1724,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           date={packedOnOf(rawBox) ?? '—'}
           qr={<BoxQr text={String(box.id)} size={96} />}
           onClose={() => setQrOpen(false)}
+          onPdf={() => { void stickerPdf(box.id, box.code); }}
+          onPrint={() => { void stickerPrint(box.id); }}
         />
       )}
 
