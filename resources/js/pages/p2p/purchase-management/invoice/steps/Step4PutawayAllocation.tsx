@@ -2015,16 +2015,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                           what it is, what it means, is it chosen. */}
                       <span className="s4wz-opt__ic">{k === 'rack' ? <IcoList /> : <IcoHome />}</span>
                       <span className="s4wz-opt__tx">
-                        {/* Title and the Recommended pill share a line, as the
-                            design has them. The pill shows only on racked
-                            storage and only when it HAS shelves — recommending
-                            a kind of storage with no room in it would be
-                            advice that cannot be taken. */}
+                        {/* No "Recommended" pill. Neither kind of storage is
+                            the right answer in general — it depends on the
+                            box, and the two cards already say what each one
+                            is for. The counts underneath are the fact that
+                            decides it. */}
                         <span className="s4wz-opt__ttl">
                           <span className="s4wz-opt__t">{title}</span>
-                          {k === 'rack' && !modeAsk.loading && modeAsk.rack > 0 && (
-                            <span className="s4wz-opt__rec">&#9733; Recommended</span>
-                          )}
                         </span>
                         <span className="s4wz-opt__s">{sub}</span>
                         <span className="s4wz-opt__chips">

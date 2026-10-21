@@ -614,6 +614,71 @@ function SkRecap() {
   );
 }
 
+/* Stage 04 is a shape, not a stack: the recap bar, the stage brief, the four
+   step cards, the tab rail, then the two panels side by side. The generic
+   skeleton put five full-width rows there, so the page did not settle when it
+   loaded - it jumped into a completely different layout. This traces the real
+   one, down to the 2 / 5.5 split the panels use. */
+function SkStage4() {
+  return (
+    <>
+      <SkRecap />
+      <SkRecap />
+      <div className="spi-dt-sk-s4steps">
+        {[0, 1, 2, 3].map(i => (
+          <div className="spi-dt-sk-s4step" key={i}>
+            <div className="spi-dt-sk" style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 46, height: 7 }} />
+              <div className="spi-dt-sk spi-dt-sk-line" style={{ width: '62%', height: 10, marginTop: 8 }} />
+              <div className="spi-dt-sk spi-dt-sk-line" style={{ width: '88%', height: 7, marginTop: 7 }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="spi-dt-sk-s4rail">
+        {[108, 196, 232, 198, 158].map((w, i) => (
+          <div className="spi-dt-sk" key={i} style={{ width: w, height: 34, borderRadius: 999 }} />
+        ))}
+        <div className="spi-dt-sk spi-dt-sk-s4fv" />
+      </div>
+      <div className="spi-dt-sk-s4panels">
+        <div className="spi-dt-sk-s4panel spi-dt-sk-s4panel--l">
+          <div className="spi-dt-sk-s4head">
+            <div className="spi-dt-sk" style={{ width: 26, height: 26, borderRadius: 8 }} />
+            <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 90 }} />
+            <div className="spi-dt-sk" style={{ width: 58, height: 20, borderRadius: 999, marginLeft: 'auto' }} />
+          </div>
+          <div className="spi-dt-sk-s4body">
+            <div className="spi-dt-sk" style={{ height: 46, borderRadius: 10, flexShrink: 0 }} />
+            {[0, 1, 2, 3].map(i => (
+              <div className="spi-dt-sk" key={i} style={{ height: 118, borderRadius: 12, flexShrink: 0 }} />
+            ))}
+          </div>
+        </div>
+        <div className="spi-dt-sk-s4panel spi-dt-sk-s4panel--r">
+          <div className="spi-dt-sk-s4head">
+            <div className="spi-dt-sk" style={{ width: 26, height: 26, borderRadius: 8 }} />
+            <div className="spi-dt-sk spi-dt-sk-line" style={{ width: 180 }} />
+            <div className="spi-dt-sk" style={{ width: 102, height: 30, borderRadius: 9, marginLeft: 'auto' }} />
+          </div>
+          {/* The journey band keeps its teal, because it is the one part of
+              this stage that is painted before any data arrives. */}
+          <div className="spi-dt-sk-s4band">
+            {[0, 1, 2].map(i => <div className="spi-dt-sk spi-dt-sk-s4bandcard" key={i} />)}
+          </div>
+          <div className="spi-dt-sk-s4body">
+            <div className="spi-dt-sk" style={{ height: 96, borderRadius: 12, flexShrink: 0 }} />
+            <div className="spi-dt-sk" style={{ height: 150, borderRadius: 12, flexShrink: 0 }} />
+            <div className="spi-dt-sk" style={{ height: 110, borderRadius: 12, flexShrink: 0 }} />
+            <div className="spi-dt-sk" style={{ height: 132, borderRadius: 12, flexShrink: 0 }} />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function StageSkeleton({ stage }: { stage: number }) {
   if (stage === 1) {
     return (
@@ -637,14 +702,10 @@ function StageSkeleton({ stage }: { stage: number }) {
       </>
     );
   }
-  if (stage >= 3) {
-    return (
-      <>
-        <SkRecap />
-        <SkSection><SkRows count={4} /></SkSection>
-      </>
-    );
-  }
+  /* STAGES is 0-indexed, so Temporary Putaway Allocation is 3 - and 4 is the
+     same stage one step on, which is what `saving` renders. Both are Putaway,
+     so both get Putaway's shape. */
+  if (stage >= 3) return <SkStage4 />;
   return (
     <>
       <SkSection><SkFields count={8} /></SkSection>

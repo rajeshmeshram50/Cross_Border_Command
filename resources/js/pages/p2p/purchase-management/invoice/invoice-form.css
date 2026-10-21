@@ -8330,6 +8330,17 @@
    design goes teal into cyan and lays a sheen over the top half — and its
    disabled state is the design's .45 opacity, which is what keeps it a pale
    teal rather than going grey. */
+/* Dialog height, measured against the design. The cards were already right;
+   the 61px the dev dialog ran tall were all around them — 20px of body padding
+   over the lead where the design has 10, the lead's own 10px margin ADDED to
+   the body's 14px gap so the cards sat 24px below their label instead of 10,
+   22px under the cards instead of 13, and a footer with 12px above and below
+   its buttons instead of 7.
+   :not(.s4pm-modal) because the putaway-method dialog shares this shell and
+   has its own, taller content — it sets its own padding a few rules down. */
+.s4-root .s4wz-modal:not(.s4pm-modal) .s4qm__bd { padding: 10px 22px 13px; gap: 0; }
+.s4-root .s4wz-modal:not(.s4pm-modal) .s4qm__ft { padding: 7px 18px; }
+
 .s4-root .s4wz-modal .s4qm__ft .s4-btn-next,
 .s4-root .s4wz-modal .s4qm__ft .s4-btn-back {
   gap: 7px; padding: 12px 22px; border-radius: 13px;
