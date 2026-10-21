@@ -18,26 +18,11 @@ import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
 
-/* Sent rows from GET /clm/ctc-contracts/sent — the AwsContract list shape
- * enriched with the clarification thread + approver so the Clarifications
- * tab and the Respond modal work off the same fetched data. */
 type SentRow = AwsContract & { dbId: number; approver: string; clarifications: Clarification[]; rejReason?: string; expDate: string };
 
-/* ─────────────────────────────────────────────────────────────────────────
- * CLM Operations · Without Shipment ID → Agreements We Sent.
- *
- * Faithful port of the cyan-themed `rAws()` view from the CLM_CaseToCase
- * prototype: header strip, four summary cards, capsule filter tabs
- * (All / Approved / Pending / Rejected / Clarifications), search and a
- * status-aware contracts table. Clarification + rejection detail is
- * derived from the shared ATA dataset, mirroring the prototype.
- * ───────────────────────────────────────────────────────────────────────── */
 
 type AwsTab = 'all' | 'approved' | 'pending' | 'rejected' | 'clarify';
 
-/* Search haystack: every value on the row (nested arrays/objects included —
-   counterparties, approvers, clarification text), dates also in the dashed
-   form the table shows, plus the approval label. */
 const rowSearchText = (c: SentRow): string => {
   const out: string[] = [];
   const walk = (v: unknown) => {
@@ -50,8 +35,6 @@ const rowSearchText = (c: SentRow): string => {
   out.push(AP_CFG[c.approval as keyof typeof AP_CFG]?.label ?? '');
   return out.join(' ').toLowerCase();
 };
-/* One predicate per tab, shared by the tab's count and its list, so the
-   number on the tab always equals the rows it shows. */
 const isRejectedRow = (c: SentRow): boolean => c.status === 'rejected' || c.approval === 'rejected';
 const isClarifyRow  = (c: SentRow): boolean => c.status === 'clarify' || (c.clarifications?.length ?? 0) > 0;
 
@@ -72,8 +55,6 @@ const AP_CFG = {
   rejected: { label: 'Rejected', bg: '#FEF2F2', border: '#FECACA', color: '#DC2626', dot: '#EF4444' },
 } as const;
 
-// Display dates as DD-Mon-YYYY (e.g. 17-Jul-2026). The API returns "17 Jul
-// 2026"; swap the spaces for hyphens (QA #9). "—" / empty pass through.
 const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
 
 export default function ClmAgreementsSentPage() {
@@ -85,27 +66,15 @@ export default function ClmAgreementsSentPage() {
   const [page, setPage]   = useState(1);
   const [search, setSearch] = useState('');
   const [dlOpen, setDlOpen] = useState<string | null>(null);
-  // Row currently downloading a PDF/DOCX — drives the per-row loader (QA #7).
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  // Version-history / Agreement-Timeline fetch in flight — freezes the other
-  // row actions until it resolves (QA #8).
   const [lifecycleBusy, setLifecycleBusy] = useState<{ id: string; kind: 'version' | 'timeline' } | null>(null);
-  // Dynamic rows-per-page — auto-fits the table to the viewport like the CTC
-  // ("My Workplace") page so a tall screen shows more rows and a short one
-  // fewer, instead of a fixed PER_PAGE.
   const [pageSize, setPageSize] = useState(PER_PAGE);
-  // Auto-fit stays on until the user picks a rows-per-page from the pager; then
-  // their choice sticks (matches the CTC / Clause Library dynamic tables).
   const autoFitRef = useRef(true);
   const onPageSize = (n: number) => { autoFitRef.current = false; setPageSize(n); setPage(1); };
   const cardRef = useRef<HTMLDivElement | null>(null);
-  // Card stretches to fill the viewport so the pager pins to the screen bottom.
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const [respondId, setRespondId] = useState<string | null>(null);
-  const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
-  // Auto-close the +N counterparty popover on page scroll/resize so it can't
-  // drift away from its badge — but ignore scrolls INSIDE the popover's own
-  // list (its overflowY:auto), otherwise scrolling the list would dismiss it.
+  const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);
   useEffect(() => {
     if (!cpOpen) return;
     const close = (e: Event) => {
@@ -128,7 +97,6 @@ export default function ClmAgreementsSentPage() {
   };
   useEffect(() => { load(); }, []);
 
-  // Real-time refetch on any approval event for this tenant + focus fallback.
   useEffect(() => {
     const echo = getEcho();
     const cid = user?.client_id;
@@ -163,17 +131,6 @@ export default function ClmAgreementsSentPage() {
     return list;
   }, [search, tab, sent]);
 
-  /* Every agreement with a clarification thread — those awaiting our reply AND
-     those we've already answered (awaiting the approver's next decision) — so
-     the full conversation stays checkable here until the round closes.
-
-     Driven by the THREAD, not by `status === 'clarify'`. With several approvers
-     that single status describes whoever acted last: A raises a query, B then
-     approves, and the contract stopped reporting 'clarify' — so it dropped off
-     this panel while A's question sat unanswered and A was still blocking the
-     agreement. The thread is per-query and cannot be overwritten by someone
-     else's decision. (The server derives its status the same way now; this is
-     the belt to that braces, and it also fixes rows saved before that.) */
   const clarifyList = useMemo(() => {
     const q = search.trim();
     const list = sent.filter(isClarifyRow);
@@ -193,14 +150,12 @@ export default function ClmAgreementsSentPage() {
     } catch { toast.error('Could not submit', 'Please try again.'); }
   };
 
-  // Version-history / timeline modals reuse the same Case-to-Case records, so
-  // the agreement's full version + signing history shows identically here.
   type CtcDetail = { code: string; title: string; dbId: number | null; stage: number; versions: CtcVersion[]; signers: CtcSigner[]; signatureRequestId: number | null };
   const [verFor, setVerFor] = useState<CtcDetail | null>(null);
   const [tlFor, setTlFor] = useState<CtcDetail | null>(null);
   const openLifecycle = async (c: SentRow, kind: 'version' | 'timeline') => {
     if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
-    if (lifecycleBusy) return;   // a history/timeline load is already in flight
+    if (lifecycleBusy) return;
     setLifecycleBusy({ id: c.id, kind });
     try {
       const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
@@ -216,11 +171,9 @@ export default function ClmAgreementsSentPage() {
     finally { setLifecycleBusy(null); }
   };
 
-  // Download the agreement. PDF prefers the signed Zoho copy when available;
-  // DOCX always renders the latest drafted version to an editable Word file.
   const downloadContract = async (c: SentRow, fmt: string) => {
     if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
-    if (downloadingId) return;   // a download is already in flight
+    if (downloadingId) return;
     setDownloadingId(c.id);
     const docx = fmt === 'DOCX';
     const grab = async (url: string, name: string) => {
@@ -232,7 +185,6 @@ export default function ClmAgreementsSentPage() {
     try {
       const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
       const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
-      // Signed PDF copy is only available as PDF — DOCX skips straight to the draft render.
       if (!docx) {
         const signedUrl = String(r.signed_document_url ?? '');
         const srId = Number(r.signature_request_id) || null;
@@ -249,16 +201,11 @@ export default function ClmAgreementsSentPage() {
     finally { setDownloadingId(null); }
   };
 
-  // Auto-fit rows-per-page to the space below the card so the table fills the
-  // viewport (dynamic pagination, matching the CTC page). Recomputes on data
-  // load, tab switch, and resize.
   useEffect(() => {
     const recompute = () => {
       const el = cardRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      // Stretch the card to the viewport (leave room for the layout footer + the
-      // scroll container's padding, else the pager lands at the fold / cut off).
       const fh = Math.max(240, window.innerHeight - top - 56);
       setFillH(prev => (prev === fh ? prev : fh));
 
@@ -267,7 +214,7 @@ export default function ClmAgreementsSentPage() {
       const rowH     = (el.querySelector('table tbody tr') as HTMLElement | null)?.offsetHeight || 48;
       const pagerH   = (el.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight || 54;
       const rowsFit  = Math.floor((fh - toolbarH - theadH - pagerH - 20) / rowH);
-      if (!autoFitRef.current) return;   // user set an explicit rows-per-page
+      if (!autoFitRef.current) return;
       setPageSize(prev => { const next = Math.max(4, rowsFit); return prev === next ? prev : next; });
     };
     recompute();
@@ -281,9 +228,6 @@ export default function ClmAgreementsSentPage() {
     <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'var(--font-sans)' }}>
       <style>{AWS_CSS}</style>
 
-      {/* Whole-page lock while a contract is downloading or its history is
-          loading — block every other action (edit, other rows, tabs, download)
-          until it finishes and can't be cut off. */}
       {(downloadingId !== null || lifecycleBusy !== null) && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(8,47,73,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
           <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
@@ -291,7 +235,6 @@ export default function ClmAgreementsSentPage() {
           <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Please wait — don't leave this page.</div>
         </div>, document.body)}
 
-      {/* HEADER STRIP */}
       <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 14, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
         <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)', borderRadius: '14px 0 0 14px' }} />
         {!t.dark && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.52),transparent)', pointerEvents: 'none', borderRadius: '14px 14px 0 0' }} />}
@@ -315,7 +258,6 @@ export default function ClmAgreementsSentPage() {
         </div>
       </div>
 
-      {/* SUMMARY CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
         <SummaryCard t={t} accent="#06b6d4,#0891b2" border="#B2EBF2" hoverBorder="#A5F3FC" titleColor="#0e7490" tag="Total" tagBg="#CFFAFE" tagColor="#0891b2" value={counts.all} label="Total Agreements" sub="Created and shared with counterparties"
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>} />
@@ -327,12 +269,8 @@ export default function ClmAgreementsSentPage() {
           icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
       </div>
 
-      {/* FILTER TABS + TABLE */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
-          {/* Tab rail — same pill design as the CTC page (translucent rail with a
-              hairline + separated pills), recoloured teal to match this page. On
-              small screens it wraps full width, 2 tabs per row (QA #10). */}
           <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(6,182,212,.10)' : 'rgba(255,255,255,.6)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.22)' : 'rgba(6,182,212,.28)'}`, borderRadius: 11, padding: 4 }}>
             {([
               ['all', 'All Contracts', null],
@@ -376,7 +314,7 @@ export default function ClmAgreementsSentPage() {
             : tab === 'clarify'
             ? <ClarifyTable searching={!!search.trim()} rows={clarifyList} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onRespond={setRespondId} t={t} />
             : tab === 'rejected'
-              ? <RejectedTable searching={!!search.trim()} rows={filtered} ata={sent} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} onDownload={downloadContract} toast={toast} t={t} />
+              ? <RejectedTable searching={!!search.trim()} rows={filtered} ata={sent} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} onDownload={downloadContract} t={t} />
               : <StandardTable searching={!!search.trim()} rows={filtered} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} lifecycleBusy={lifecycleBusy} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
         </div>
       </div>
@@ -388,7 +326,6 @@ export default function ClmAgreementsSentPage() {
       {verFor && <VersionHistoryModal t={t} code={verFor.code} workingId={verFor.dbId} versions={verFor.versions} onClose={() => setVerFor(null)} />}
       {tlFor && <AgreementTimelineModal t={t} code={tlFor.code} title={tlFor.title} stage={tlFor.stage} versions={tlFor.versions} signers={tlFor.signers} signatureRequestId={tlFor.signatureRequestId} onClose={() => setTlFor(null)} />}
 
-      {/* All-counterparties popover (opened from the +N badge) */}
       {cpOpen && (
         <>
           <div onClick={() => setCpOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
@@ -407,7 +344,6 @@ export default function ClmAgreementsSentPage() {
   );
 }
 
-/* ── Summary card ── */
 function SummaryCard({ t, accent, border, hoverBorder, titleColor, tag, tagBg, tagColor, value, label, sub, icon }: {
   t: OpsTokens; accent: string; border: string; hoverBorder: string; titleColor: string; tag: string; tagBg: string; tagColor: string;
   value: number; label: string; sub: string; icon: React.ReactNode;
@@ -433,7 +369,6 @@ function SummaryCard({ t, accent, border, hoverBorder, titleColor, tag, tagBg, t
   );
 }
 
-/* ── Shared cells ── */
 function Avatar({ name, grad, size = 28, fs = 9 }: { name: string; grad: string; size?: number; fs?: number }) {
   return (
     <div style={{ width: size, height: size, borderRadius: 8, background: `linear-gradient(135deg,${grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(0,0,0,.15)' }}>
@@ -445,7 +380,6 @@ function Avatar({ name, grad, size = 28, fs = 9 }: { name: string; grad: string;
 function ApprovalBadge({ ap }: { ap: 'approved' | 'pending' | 'rejected' }) {
   const t = useOpsTheme('cyan');
   const c = AP_CFG[ap];
-  // Light pastel pills glare on the dark table — use translucent dark fills + lighter text.
   const dk = ap === 'approved' ? { bg: 'rgba(8,145,178,.18)', border: 'rgba(6,182,212,.42)', text: '#67e8f9' }
     : ap === 'pending' ? { bg: 'rgba(245,158,11,.16)', border: 'rgba(245,158,11,.42)', text: '#fcd34d' }
     : { bg: 'rgba(239,68,68,.16)', border: 'rgba(239,68,68,.42)', text: '#fca5a5' };
@@ -462,39 +396,15 @@ const TH  = { padding: '10px 14px', fontSize: 8, fontWeight: 800, letterSpacing:
 const THL = { ...TH, textAlign: 'left' } as React.CSSProperties;
 const THEAD_BG = 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)';
 
-function Pager({ total, page, setPage, t, perPage = PER_PAGE }: { total: number; page: number; setPage: (n: number) => void; t: OpsTokens; perPage?: number }) {
-  const totalPages = Math.max(1, Math.ceil(total / perPage));
-  const safe = Math.min(page, totalPages);
-  const start = (safe - 1) * perPage;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}` }}>
-      <span style={{ fontSize: 11.5, color: t.dark ? '#67e8f9' : '#0e7490', fontWeight: 500 }}>Showing <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{total === 0 ? 0 : start + 1}–{Math.min(start + perPage, total)}</b> of <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{total}</b></span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
-          const a = p === safe;
-          return <button key={p} onClick={() => setPage(p)} disabled={a} style={{ minWidth: 30, height: 30, padding: '0 7px', borderRadius: 7, border: `1.5px solid ${a ? '#0891b2' : 'rgba(8,145,178,.2)'}`, background: a ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : t.pagerBtn, color: a ? '#fff' : (t.dark ? '#67e8f9' : '#0891b2'), fontFamily: 'inherit', fontSize: 12, fontWeight: a ? 800 : 600, cursor: a ? 'default' : 'pointer' }}>{p}</button>;
-        })}
-      </div>
-    </div>
-  );
-}
-
 const ICO_DL  = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>;
 const ICO_EDIT = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>;
 const ICO_VER  = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg>;
 const ICO_TL   = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
-const ICO_VIEW = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
 
 function ActionBtn({ title, color, bg, border, t, onClick, children, busy, disabled, softOff }: { title: string; color: string; bg: string; border: string; t: OpsTokens; onClick: () => void; children: React.ReactNode; busy?: boolean; disabled?: boolean; softOff?: boolean }) {
-  // In dark mode the light pastel pills read as bright stickers. Keep each
-  // button's hue but as a translucent tint + brightened icon so they sit on
-  // the dark surface. Light mode keeps the original pastel look.
   const fbg     = t.dark ? `color-mix(in srgb, ${color} 20%, transparent)` : bg;
   const fborder = t.dark ? `color-mix(in srgb, ${color} 45%, transparent)` : border;
   const fcolor  = t.dark ? `color-mix(in srgb, ${color} 55%, #ffffff)` : color;
-  // busy → this button's own async op (spinner); disabled → frozen by another
-  // action in flight (dimmed, no click). softOff → dimmed like disabled BUT the
-  // click still fires so the handler can toast why it isn't available yet.
   const off = busy || disabled;
   const dim = off || softOff;
   return (
@@ -516,7 +426,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const off = busy || disabled;
   const toggle = () => {
-    if (off) return;   // a download is running / actions are frozen
+    if (off) return;
     if (open) { setDlOpen(null); return; }
     const r = btnRef.current?.getBoundingClientRect();
     if (r) setPos({ left: Math.max(8, Math.min(r.right - 168, window.innerWidth - 176)), top: r.bottom + 6 });
@@ -544,16 +454,12 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id
   );
 }
 
-/* ── Standard contracts table (all / approved / pending) ── */
 function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, tab, dlOpen, setDlOpen, downloadingId, lifecycleBusy, cpOpen, setCpOpen, onVersion, onTimeline, onDownload, onEdit, toast, t }: { searching: boolean; rows: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; lifecycleBusy: { id: string; kind: 'version' | 'timeline' } | null; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; onVersion: (c: SentRow) => void; onTimeline: (c: SentRow) => void; onDownload: (c: SentRow, fmt: string) => void; onEdit: (c: SentRow) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * pageSize;
   const slice = rows.slice(start, start + pageSize);
   const empty = `No ${tab === 'all' ? 'contracts yet' : tab + ' contracts'}.`;
-  // Download the Zoho completion certificate. This list tracks the APPROVAL
-  // workflow (no row-level "signed" flag), so we fetch the record on click and
-  // toast if the agreement isn't signed yet.
   const [certId, setCertId] = useState<string | null>(null);
   const downloadCertificate = async (c: SentRow) => {
     if (!c.dbId || certId) return;
@@ -608,9 +514,6 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
                       <td style={TD_L}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <Avatar name={c.cp[0]} grad="#0891b2,#0e7490" />
-                          {/* Tooltip carries the role-labelled name(s) ("TEST (Supplier)")
-                              so a single-counterparty row still reveals whether it's a
-                              Customer / Consignee / Supplier on hover. */}
                           <Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
                           {extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}
                         </div>
@@ -621,9 +524,6 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
                       <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
                       <td style={TD_C}>
                         {(() => {
-                          // Freeze the row's actions while a version/timeline load
-                          // is in flight (QA #8); the download shows its own loader
-                          // (QA #7). The clicked history/timeline keeps its spinner.
                           const verBusy = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'version';
                           const tlBusy  = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'timeline';
                           const frozen  = lifecycleBusy !== null;
@@ -633,8 +533,6 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
                           <ActionBtn title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" t={t} disabled={frozen} onClick={() => onEdit(c)}>{ICO_EDIT}</ActionBtn>
                           <ActionBtn title="Version History" color="#7C3AED" bg="#EDE9FE" border="#C4B5FD" t={t} busy={verBusy} disabled={frozen && !verBusy} onClick={() => onVersion(c)}>{ICO_VER}</ActionBtn>
                           <ActionBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" t={t} busy={tlBusy} disabled={frozen && !tlBusy} onClick={() => onTimeline(c)}>{ICO_TL}</ActionBtn>
-                          {/* Completion certificate — dimmed until approved (a doc can't be
-                              signed before approval); an unsigned click toasts why. */}
                           <ActionBtn title={c.approval === 'approved' ? 'Download completion certificate' : 'Available once approved & signed'} color="#0F766E" bg="#CCFBF1" border="#5EEAD4" t={t} busy={certId === c.id} disabled={frozen && certId !== c.id} softOff={c.approval !== 'approved'} onClick={() => downloadCertificate(c)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg></ActionBtn>
                         </div>
                           );
@@ -652,8 +550,7 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
   );
 }
 
-/* ── Rejected contracts table ── */
-function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSize, dlOpen, setDlOpen, downloadingId, onDownload, toast, t }: { searching: boolean; rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; onDownload: (c: SentRow, fmt: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSize, dlOpen, setDlOpen, downloadingId, onDownload, t }: { searching: boolean; rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; onDownload: (c: SentRow, fmt: string) => void; t: OpsTokens }) {
   const getRej = (id: string) => { const a = ata.find(x => x.id === id); return { by: a?.approver ?? '—', reason: a?.rejReason ?? '—' }; };
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
@@ -707,7 +604,6 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
   );
 }
 
-/* ── Clarifications table (sender responds) ── */
 function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, onRespond, t }: { rows: SentRow[]; searching: boolean; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onRespond: (id: string) => void; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
@@ -782,44 +678,17 @@ function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, on
   );
 }
 
-/* ── Respond to clarification modal ──
- *
- * Two panes: the conversation on the left (read-only history), the composer on
- * the right. The single-column version put the textarea BELOW a thread that
- * could run to 300px of scroll, so on a laptop the sender scrolled the history,
- * lost sight of the question, then scrolled back down to answer it. Side by
- * side, the query stays on screen while it is being answered.
- *
- * Palette unchanged — the violet header, violet approver bubbles and cyan
- * sender bubbles are the same tokens the rest of this page uses.
- */
 function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; onClose: () => void; onSubmit: (id: string, text: string) => void; t: OpsTokens }) {
   const [text, setText] = useState('');
   const [err, setErr] = useState(false);
-  /* Only the approver side of THIS conversation can raise the indicator. The
-     whisper channel is per-tenant, so without this any colleague with an
-     agreements page open could surface in here as "…is typing". `approver` is
-     the contract's primary; `cl.by` covers the rest when several approvers have
-     each asked something. */
   const { typingName, notifyTyping, stopTyping } = useTyping(contract.id, {
     expect: [contract.approver, ...contract.clarifications.map(cl => cl.by)],
   });
   const pending = contract.clarifications.filter(cl => !cl.response);
   const hasPending = pending.length > 0;
-  /* Matches the API's own ceiling (`response` is validated max:2000). A counter
-     that stopped short of what the endpoint accepts would invent a limit. */
   const MAX = 2000;
-  // Most recent answer the sender gave — offered as a one-click refill when a
-  // similar query comes round again, which is common on a repeat round.
   const prevResponse = [...contract.clarifications].reverse().find(cl => cl.response)?.response ?? '';
 
-  /* Open on the NEWEST message, the way every chat does.
-     The thread is oldest-first, so a conversation long enough to scroll opened
-     showing the first query — usually one already answered — and the query
-     actually being asked sat below the fold. Jumping to the bottom puts the
-     live question next to the box that answers it.
-     Layout effect, not effect: `scrollTop` has to be set before the browser
-     paints, or the thread is visibly at the top for a frame and then lurches. */
   const threadRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const el = threadRef.current;
@@ -841,7 +710,6 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(12,5,38,.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'var(--font-sans)' }}>
       <div className="aws-clarify-modal" style={{ width: '100%', maxWidth: 880, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(12,5,38,.35)', animation: 'awsSlideUp .22s cubic-bezier(.22,1,.36,1) both' }}>
 
-        {/* Header — unchanged palette */}
         <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '18px 22px', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.16),transparent)', pointerEvents: 'none' }} />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -857,10 +725,8 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
           </div>
         </div>
 
-        {/* Body — two panes */}
         <div className="aws-clarify-body" style={{ background: t.dark ? '#150f2b' : '#F7F5FF', padding: 18, display: 'grid', gridTemplateColumns: hasPending ? '1.05fr .95fr' : '1fr', gap: 16, alignItems: 'start' }}>
 
-          {/* LEFT — conversation history */}
           <div style={card}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 13 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -878,7 +744,6 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
             <div ref={threadRef} className="aws-thread" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 330, overflowY: 'auto' }}>
               {contract.clarifications.map((cl, i) => (
                 <div key={i}>
-                  {/* Approver query */}
                   <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
                     <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 900, color: '#fff' }}>{inits(cl.by || contract.approver)}</span></div>
                     <div style={{ minWidth: 0, flex: 1 }}>
@@ -886,7 +751,6 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
                       <div style={{ background: t.dark ? 'rgba(124,58,237,.12)' : '#F4F1FC', border: `1px solid ${t.dark ? 'rgba(124,58,237,.28)' : '#E7E1FA'}`, borderRadius: '4px 12px 12px 12px', padding: '10px 13px', fontSize: 12, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
                     </div>
                   </div>
-                  {/* Sender response, or the awaiting note */}
                   {cl.response
                     ? <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end', alignItems: 'flex-start', marginTop: 8 }}>
                         <div style={{ maxWidth: '82%', minWidth: 0 }}>
@@ -902,8 +766,6 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
             <TypingIndicator name={typingName} color={t.dark ? '#c4b5fd' : '#7C3AED'} />
           </div>
 
-          {/* RIGHT — composer. Only rendered when something is actually open;
-              otherwise the history takes the full width. */}
           {hasPending ? (
             <div style={card}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
@@ -949,7 +811,6 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
                 </>
               )}
 
-              {/* Submit first, Cancel second — 2:1. */}
               <div style={{ display: 'flex', gap: 9, marginTop: 14 }}>
                 <button
                   onClick={() => { if (!text.trim()) { setErr(true); return; } stopTyping(); onSubmit(contract.id, text.trim()); }}
@@ -964,7 +825,6 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
           ) : null}
         </div>
 
-        {/* Foot */}
         <div style={{ padding: '12px 22px', background: t.surface, borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontSize: 10.5, fontWeight: 600, color: t.textMuted, display: 'flex', alignItems: 'center', gap: 7, lineHeight: 1.4 }}>
             {hasPending ? (
@@ -1008,28 +868,17 @@ const AWS_CSS = `
 @keyframes awsSlideUp { from { opacity:0; transform:translateY(24px) scale(.96); } to { opacity:1; transform:none; } }
 @keyframes awsSpin { to { transform: rotate(360deg); } }
 
-/* Slim scrollbar for the clarification thread. The platform default is ~15px
-   wide — in a 250px column that is 6% of the bubble width given over to chrome,
-   and it sat hard against the message text. 5px, transparent track, thumb only
-   on the violet the thread already uses. */
 .aws-thread { scrollbar-width: thin; scrollbar-color: rgba(124,58,237,.34) transparent; }
 .aws-thread::-webkit-scrollbar { width: 5px; }
 .aws-thread::-webkit-scrollbar-track { background: transparent; }
 .aws-thread::-webkit-scrollbar-thumb { background: rgba(124,58,237,.28); border-radius: 999px; }
 .aws-thread::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.5); }
 
-/* ── Responsive clarification modal ──
-   Two panes side by side on a laptop; below this width they stack (history
-   first, composer under it) and the card itself scrolls, since the stacked
-   height overruns a phone viewport. */
 @media (max-width: 820px) {
   .aws-clarify-body { grid-template-columns: 1fr !important; }
   .aws-clarify-modal { max-height: 92vh; overflow-y: auto !important; }
 }
 
-/* ── Responsive tabs (QA #10) ──
-   On narrow screens the tab rail goes full width with 2 tabs per row and the
-   search takes the next row at full width. Tables already scroll horizontally. */
 @media (max-width: 900px) {
   .aws-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
   .aws-tabrail > button { flex: 1 1 calc(50% - 4px); justify-content: center; }
