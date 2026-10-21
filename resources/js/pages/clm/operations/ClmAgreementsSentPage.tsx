@@ -149,10 +149,11 @@ export default function ClmAgreementsSentPage() {
      agreement. The thread is per-query and cannot be overwritten by someone
      else's decision. (The server derives its status the same way now; this is
      the belt to that braces, and it also fixes rows saved before that.) */
-  const clarifyList = useMemo(
-    () => sent.filter(c => c.status === 'clarify' || (c.clarifications?.length ?? 0) > 0),
-    [sent],
-  );
+  const clarifyList = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = sent.filter(c => c.status === 'clarify' || (c.clarifications?.length ?? 0) > 0);
+    return q ? list.filter(c => (c.title + c.cp.join(' ') + c.id).toLowerCase().includes(q)) : list;
+  }, [sent, search]);
 
   const respondContract = sent.find(c => c.id === respondId) || null;
 
@@ -348,10 +349,10 @@ export default function ClmAgreementsSentPage() {
           {loading
             ? <ShimmerTable rows={6} cols={11} />
             : tab === 'clarify'
-            ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
+            ? <ClarifyTable searching={!!search.trim()} rows={clarifyList} onRespond={setRespondId} t={t} />
             : tab === 'rejected'
-              ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} onDownload={downloadContract} toast={toast} t={t} />
-              : <StandardTable rows={filtered} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} lifecycleBusy={lifecycleBusy} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
+              ? <RejectedTable searching={!!search.trim()} rows={filtered} ata={sent} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} onDownload={downloadContract} toast={toast} t={t} />
+              : <StandardTable searching={!!search.trim()} rows={filtered} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} lifecycleBusy={lifecycleBusy} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
         </div>
       </div>
 
@@ -519,7 +520,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id
 }
 
 /* ── Standard contracts table (all / approved / pending) ── */
-function StandardTable({ rows, page, setPage, pageSize, onPageSize, tab, dlOpen, setDlOpen, downloadingId, lifecycleBusy, cpOpen, setCpOpen, onVersion, onTimeline, onDownload, onEdit, toast, t }: { rows: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; lifecycleBusy: { id: string; kind: 'version' | 'timeline' } | null; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; onVersion: (c: SentRow) => void; onTimeline: (c: SentRow) => void; onDownload: (c: SentRow, fmt: string) => void; onEdit: (c: SentRow) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, tab, dlOpen, setDlOpen, downloadingId, lifecycleBusy, cpOpen, setCpOpen, onVersion, onTimeline, onDownload, onEdit, toast, t }: { searching: boolean; rows: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; lifecycleBusy: { id: string; kind: 'version' | 'timeline' } | null; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; onVersion: (c: SentRow) => void; onTimeline: (c: SentRow) => void; onDownload: (c: SentRow, fmt: string) => void; onEdit: (c: SentRow) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * pageSize;
@@ -549,9 +550,7 @@ function StandardTable({ rows, page, setPage, pageSize, onPageSize, tab, dlOpen,
 
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      {slice.length === 0 ? <EmptyState msg={empty} t={t} /> : (
-        <>
-          <div style={{ overflowX: 'auto', flex: 1 }}>
+          <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
               <thead><tr style={{ background: THEAD_BG }}>
                 <th style={{ ...TH, width: 50 }}>SR NO</th>
@@ -621,16 +620,15 @@ function StandardTable({ rows, page, setPage, pageSize, onPageSize, tab, dlOpen,
                 })}
               </tbody>
             </table>
+            {slice.length === 0 && <EmptyState msg={empty} searching={searching} t={t} />}
           </div>
           <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
-        </>
-      )}
     </div>
   );
 }
 
 /* ── Rejected contracts table ── */
-function RejectedTable({ rows, ata, page, setPage, pageSize, onPageSize, dlOpen, setDlOpen, downloadingId, onDownload, toast, t }: { rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; onDownload: (c: SentRow, fmt: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSize, dlOpen, setDlOpen, downloadingId, onDownload, toast, t }: { searching: boolean; rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; onDownload: (c: SentRow, fmt: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const getRej = (id: string) => { const a = ata.find(x => x.id === id); return { by: a?.approver ?? '—', reason: a?.rejReason ?? '—' }; };
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
@@ -639,9 +637,7 @@ function RejectedTable({ rows, ata, page, setPage, pageSize, onPageSize, dlOpen,
 
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      {slice.length === 0 ? <EmptyState msg="No rejected contracts." t={t} /> : (
-        <>
-          <div style={{ overflowX: 'auto', flex: 1 }}>
+          <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
               <thead><tr style={{ background: THEAD_BG }}>
                 <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -679,31 +675,19 @@ function RejectedTable({ rows, ata, page, setPage, pageSize, onPageSize, dlOpen,
                 })}
               </tbody>
             </table>
+            {slice.length === 0 && <EmptyState msg="No rejected contracts." searching={searching} t={t} />}
           </div>
           <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
-        </>
-      )}
     </div>
   );
 }
 
 /* ── Clarifications table (sender responds) ── */
-function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id: string) => void; t: OpsTokens }) {
+function ClarifyTable({ rows, searching, onRespond, t }: { rows: SentRow[]; searching: boolean; onRespond: (id: string) => void; t: OpsTokens }) {
   const awaiting = rows.filter(c => c.clarifications.some(cl => !cl.response)).length;
-  if (!rows.length) {
-    return (
-      <div style={{ background: t.dark ? t.tableBg : '#F0FDFF', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 20px' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 56, height: 56, borderRadius: 16, background: 'linear-gradient(135deg,#CFFAFE,#A5F3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', boxShadow: '0 4px 12px rgba(6,182,212,.15)' }}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg></div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#cffafe' : '#164e63', marginBottom: 6 }}>All Clarifications Resolved</div>
-          <div style={{ fontSize: 10.5, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>No pending clarification queries. When an approver raises a query, it will appear here.</div>
-        </div>
-      </div>
-    );
-  }
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: THEAD_BG }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -759,6 +743,10 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
             })}
           </tbody>
         </table>
+        {!rows.length && (
+          <EmptyState t={t} searching={searching} title="All Clarifications Resolved" msg="No pending clarification queries. When an approver raises a query, it will appear here."
+            icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>} />
+        )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}` }}>
         <span style={{ fontSize: 11.5, color: t.dark ? '#67e8f9' : '#0e7490', fontWeight: 500 }}><b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{awaiting}</b> awaiting your response · <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{rows.length}</b> in clarification</span>
@@ -973,13 +961,13 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
   );
 }
 
-function EmptyState({ msg, t }: { msg: string; t: OpsTokens }) {
+function EmptyState({ msg, t, searching = false, title = 'No Contracts Found', icon }: { msg: string; t: OpsTokens; searching?: boolean; title?: string; icon?: React.ReactNode }) {
   return (
-    <div style={{ background: t.dark ? t.tableBg : '#F0FDFF', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}>
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', position: 'sticky', left: 0 }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 13, background: 'linear-gradient(135deg,#E0F7FA,#A7F3D0)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 3px 10px rgba(6,182,212,.15)' }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></div>
-        <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490', marginBottom: 5 }}>No Contracts Found</div>
-        <div style={{ fontSize: 10.5, color: t.textMuted, maxWidth: 280, lineHeight: 1.6 }}>{msg}</div>
+        <div style={{ width: 48, height: 48, borderRadius: 13, background: 'linear-gradient(135deg,#E0F7FA,#A7F3D0)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', boxShadow: '0 3px 10px rgba(6,182,212,.15)' }}>{icon ?? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490', marginBottom: 5 }}>{searching ? 'No Matching Contracts' : title}</div>
+        <div style={{ fontSize: 10.5, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>{searching ? 'No results match the current search.' : msg}</div>
       </div>
     </div>
   );
