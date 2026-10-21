@@ -401,3 +401,454 @@
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     word-break: break-all;
 }
+
+/* ── location read-out ─────────────────────────────────────────────────── */
+
+/* Same palette as every other panel — this is a layout, not a theme. */
+.pwscan-loche {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 13px 15px;
+    border: 1px solid var(--pw-line);
+    border-radius: 12px;
+    background: var(--pw-card);
+}
+
+.pwscan-loche-i {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    font-size: 20px;
+    color: var(--pw-go);
+    border-radius: 11px;
+    background: rgba(59, 130, 246, .14);
+}
+
+.pwscan-loche-t { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+.pwscan-loche-t b { font-size: 17px; font-family: 'JetBrains Mono', ui-monospace, monospace; word-break: break-all; }
+.pwscan-loche-t small { font-size: 12px; color: var(--pw-mute); text-transform: capitalize; }
+
+.pwscan-tag {
+    flex: 0 0 auto;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.pwscan-tag--ok  { color: var(--pw-ok); background: rgba(34, 197, 94, .14); }
+.pwscan-tag--due { color: #fbbf24; background: rgba(251, 191, 36, .14); }
+
+.pwscan-boxes { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.pwscan-boxes li + li { border-top: 1px solid var(--pw-line); }
+
+.pwscan-boxes button,
+.pwscan-boxes-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+}
+
+.pwscan-boxes button { cursor: pointer; }
+.pwscan-boxes button:disabled { opacity: .45; cursor: default; }
+.pwscan-boxes button:active b { color: var(--pw-go); }
+
+.pwscan-boxes-i {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    color: var(--pw-mute);
+    border-radius: 9px;
+    background: rgba(141, 156, 184, .12);
+}
+
+.pwscan-boxes-t { flex: 1 1 auto; min-width: 0; display: grid; gap: 1px; }
+.pwscan-boxes-t b { font-size: 14px; }
+.pwscan-boxes-t small { font-size: 11px; color: var(--pw-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pwscan-note {
+    margin-bottom: 12px;
+    padding: 11px 13px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #bfd4f5;
+    border: 1px solid rgba(59, 130, 246, .3);
+    border-radius: 11px;
+    background: rgba(59, 130, 246, .1);
+}
+
+.pwscan-tabs {
+    display: flex;
+    gap: 6px;
+    margin: 0 0 10px;
+    overflow-x: auto;
+}
+
+.pwscan-tab {
+    flex: 0 0 auto;
+    padding: 7px 11px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--pw-mute);
+    background: transparent;
+    border: 1px solid var(--pw-line);
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.pwscan-tab { display: inline-flex; align-items: center; gap: 7px; }
+.pwscan-tab.is-on { color: var(--pw-text); border-color: var(--pw-go); background: rgba(59, 130, 246, .14); }
+
+/* The count as a badge, so a full pile reads before the word does. */
+.pwscan-tab-n {
+    min-width: 20px;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 17px;
+    text-align: center;
+    color: var(--pw-text);
+    background: rgba(141, 156, 184, .18);
+    border-radius: 999px;
+}
+
+.pwscan-tab-n.is-zero { color: var(--pw-mute); background: rgba(141, 156, 184, .1); }
+.pwscan-tab.is-on .pwscan-tab-n { color: #06240f; background: var(--pw-go); }
+.pwscan-tab.is-on .pwscan-tab-n.is-zero { color: var(--pw-mute); background: rgba(141, 156, 184, .14); }
+
+/* The closing instruction, with nothing after it. */
+.pwscan-note--end { margin: 4px 0 0; }
+
+/* Five rows deep (row ≈ 48px), then scroll inside the panel. */
+.pwscan-boxes--scroll {
+    max-height: 244px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--pw-line) transparent;
+}
+
+.pwscan-boxes--scroll::-webkit-scrollbar { width: 6px; }
+.pwscan-boxes--scroll::-webkit-scrollbar-thumb { background: var(--pw-line); border-radius: 3px; }
+
+/* ── transient notice ──────────────────────────────────────────────────── */
+
+.pwscan-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    z-index: 60;
+    transform: translateX(-50%);
+    width: calc(100% - 32px);
+    max-width: 420px;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #06240f;
+    text-align: center;
+    background: var(--pw-ok);
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+    cursor: pointer;
+    animation: pwscan-toast-in .18s ease-out;
+}
+
+@keyframes pwscan-toast-in {
+    from { opacity: 0; transform: translate(-50%, 10px); }
+    to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) { .pwscan-toast { animation: none; } }
+
+/* ── section header above the location card ───────────────────────────── */
+
+.pwscan-sechead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 4px 0 12px;
+    padding: 11px 15px;
+    border: 1px solid var(--pw-line);
+    border-top: 3px solid var(--pw-go);
+    border-radius: 12px;
+    background: var(--pw-card);
+}
+
+.pwscan-sechead-t { font-size: 15px; font-weight: 700; }
+
+.pwscan-sechead-d { display: grid; gap: 1px; text-align: right; min-width: 0; }
+.pwscan-sechead-d small { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--pw-mute); }
+.pwscan-sechead-d b {
+    font-size: 12px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── children of a scanned rack / zone ────────────────────────────────── */
+
+.pwscan-kids { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+
+/* One row per shelf: name + code, weight, then the two counts. */
+.pwscan-kid {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0;
+}
+
+.pwscan-kid + .pwscan-kid { border-top: 1px solid var(--pw-line); }
+.pwscan-kid.is-off { opacity: .55; }
+
+.pwscan-kid-t { flex: 1 1 auto; min-width: 0; display: grid; gap: 1px; }
+.pwscan-kid-t b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwscan-kid-t small { font-size: 11px; color: var(--pw-mute); font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+.pwscan-kid-w { flex: 0 0 auto; font-size: 12px; color: var(--pw-mute); }
+.pwscan-kid-tags { flex: 0 0 auto; display: flex; gap: 6px; }
+
+.pwscan-tag--mute { color: var(--pw-mute); background: rgba(141, 156, 184, .12); }
+
+.pwscan-kid-key {
+    margin-top: 8px;
+    font-size: 10px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--pw-mute);
+    text-align: right;
+}
+
+/* ── already put away ──────────────────────────────────────────────────── */
+
+.pwscan-placed {
+    margin-bottom: 12px;
+    padding: 13px 15px;
+    border: 1px solid rgba(34, 197, 94, .4);
+    border-radius: 12px;
+    background: rgba(34, 197, 94, .09);
+}
+
+.pwscan-placed-h { display: flex; align-items: center; gap: 9px; margin-bottom: 10px; }
+.pwscan-placed-h b { font-size: 15px; }
+
+.pwscan-placed-m {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #06240f;
+    background: var(--pw-ok);
+    border-radius: 50%;
+}
+
+.pwscan-placed dl { margin: 0; display: grid; gap: 6px; }
+.pwscan-placed dl > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.pwscan-placed dt { color: var(--pw-mute); }
+.pwscan-placed dd { margin: 0; font-weight: 600; text-align: right; word-break: break-word; }
+
+.pwscan-placed-f { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 11px; }
+.pwscan-placed-f span { font-size: 12px; color: var(--pw-mute); }
+.pwscan-placed-f .pwscan-btn { padding: 8px 14px; font-size: 13px; }
+
+/* ── products in a box ─────────────────────────────────────────────────── */
+
+.pwscan-prods { margin: 0; padding: 0; list-style: none; }
+.pwscan-prods li + li { border-top: 1px solid var(--pw-line); }
+
+/* Five rows, then scroll — the shelf scan below must stay reachable. */
+.pwscan-prods.is-scroll {
+    max-height: 300px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--pw-line) transparent;
+}
+
+.pwscan-prods.is-scroll::-webkit-scrollbar { width: 6px; }
+.pwscan-prods.is-scroll::-webkit-scrollbar-thumb { background: var(--pw-line); border-radius: 3px; }
+
+.pwscan-prods button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    cursor: pointer;
+}
+
+.pwscan-prods button:active { background: rgba(59, 130, 246, .08); }
+
+.pwscan-prods-sr {
+    flex: 0 0 auto;
+    width: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--pw-mute);
+    text-align: center;
+}
+
+.pwscan-prods-img {
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--pw-line);
+    border-radius: 9px;
+    background: rgba(141, 156, 184, .1);
+}
+
+.pwscan-prods-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pwscan-prods-img--lg { width: 64px; height: 64px; border-radius: 12px; }
+.pwscan-prods-ph { font-size: 16px; color: var(--pw-mute); }
+
+.pwscan-prods-t { flex: 1 1 auto; min-width: 0; display: grid; gap: 1px; }
+.pwscan-prods-t b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwscan-prods-t small { font-size: 11px; color: var(--pw-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pwscan-prods-go { flex: 0 0 auto; font-size: 20px; line-height: 1; color: var(--pw-mute); }
+
+/* ── suggested location ────────────────────────────────────────────────── */
+
+.pwscan-loc3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pwscan-loc3 > div { display: grid; gap: 2px; min-width: 0; padding: 9px 10px; border-radius: 10px; background: rgba(59, 130, 246, .1); }
+.pwscan-loc3 span { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--pw-mute); }
+.pwscan-loc3 b { font-size: 13px; font-family: 'JetBrains Mono', ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pwscan-loc3-full { margin-top: 9px; font-size: 11px; color: var(--pw-mute); word-break: break-word; }
+
+/* ── product sheet ─────────────────────────────────────────────────────── */
+
+.pwscan-sheet { position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-end; justify-content: center; background: rgba(2, 8, 20, .62); }
+
+.pwscan-sheet-card {
+    width: 100%;
+    max-width: 480px;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 16px 16px 20px;
+    display: grid;
+    gap: 12px;
+    background: var(--pw-card);
+    border: 1px solid var(--pw-line);
+    border-radius: 16px 16px 0 0;
+}
+
+.pwscan-sheet-h { display: flex; align-items: center; justify-content: space-between; }
+.pwscan-sheet-h b { font-size: 15px; }
+.pwscan-sheet-h button { padding: 4px 8px; font-size: 16px; color: var(--pw-mute); background: none; border: 0; cursor: pointer; }
+
+.pwscan-sheet-top { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; background: rgba(141, 156, 184, .08); }
+.pwscan-sheet-id { display: grid; gap: 2px; min-width: 0; }
+.pwscan-sheet-id b { font-size: 15px; }
+.pwscan-sheet-id small { font-size: 12px; color: var(--pw-mute); }
+
+.pwscan-sheet-dl { margin: 0; display: grid; gap: 7px; }
+.pwscan-sheet-dl > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.pwscan-sheet-dl dt { color: var(--pw-mute); }
+.pwscan-sheet-dl dd { margin: 0; font-weight: 600; text-align: right; word-break: break-word; }
+
+.pwscan-sheet-desc { margin: 0; font-size: 12px; line-height: 1.5; color: var(--pw-mute); word-break: break-word; }
+
+.pwscan-sheet-total { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 12px; background: rgba(59, 130, 246, .12); }
+.pwscan-sheet-total span { font-size: 12px; color: var(--pw-mute); }
+.pwscan-sheet-total b { font-size: 16px; }
+
+/* ── box details ───────────────────────────────────────────────────────── */
+
+.pwscan-boxid {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 11px;
+    margin-bottom: 11px;
+    border-bottom: 1px solid var(--pw-line);
+}
+
+.pwscan-boxid-l, .pwscan-boxid-r { display: grid; gap: 2px; min-width: 0; }
+.pwscan-boxid-r { text-align: right; }
+.pwscan-boxid small { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--pw-mute); }
+.pwscan-boxid b { font-size: 17px; font-family: 'JetBrains Mono', ui-monospace, monospace; word-break: break-all; }
+.pwscan-boxid-m { margin: -4px 0 11px; font-size: 12px; color: var(--pw-mute); }
+
+.pwscan-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pwscan-grid > div { display: grid; gap: 2px; min-width: 0; padding: 8px 9px; border-radius: 9px; background: rgba(141, 156, 184, .08); }
+.pwscan-grid span { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--pw-mute); }
+.pwscan-grid b { font-size: 14px; }
+.pwscan-grid i { font-style: normal; font-size: 10px; font-weight: 500; color: var(--pw-mute); }
+
+.pwscan-mt { margin-top: 12px !important; }
+
+.pwscan-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+
+.pwscan-flag {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--pw-line);
+    border-radius: 999px;
+    color: var(--pw-mute);
+}
+
+.pwscan-flag--hazardous { color: #fbbf24; border-color: rgba(251, 191, 36, .45); background: rgba(251, 191, 36, .12); }
+.pwscan-flag--cold_chain { color: #60a5fa; border-color: rgba(96, 165, 250, .45); background: rgba(96, 165, 250, .12); }
+.pwscan-flag--fragile { color: #f87171; border-color: rgba(248, 113, 113, .45); background: rgba(248, 113, 113, .12); }
+
+/* The ids sitting above the address, inside the box panel. */
+.pwscan-boxid--mid { margin: 14px 0 9px; padding-top: 12px; padding-bottom: 0; border-top: 1px solid var(--pw-line); border-bottom: 0; }
+
+/* The address, set off from the details above it. */
+.pwscan-loc3--mid { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--pw-line); }
+
+/* The step label, sitting on its input rather than at the top of the page. */
+.pwscan-prompt--field { margin-bottom: 8px; }
+
+/* The invoice, beside the box id it belongs to. */
+.pwscan-slot-s {
+    display: block;
+    margin-top: 3px;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    color: var(--pw-mute);
+    word-break: break-all;
+}
+
+/* A level proved by a scan, and the one still owed. */
+.pwscan-loc3 > div.is-done { background: rgba(34, 197, 94, .14); }
+.pwscan-loc3 > div.is-done span { color: var(--pw-ok); }
+.pwscan-loc3 > div.is-next { box-shadow: inset 0 0 0 1px var(--pw-go); }
+
+/* Two kinds now: a success that passes, and a refusal that must be read. */
+.pwscan-toast { display: grid; gap: 3px; }
+.pwscan-toast b { font-size: 14px; font-weight: 700; }
+.pwscan-toast small { font-size: 12px; font-weight: 600; opacity: .9; }
+.pwscan-toast--ok  { background: var(--pw-ok); color: #06240f; }
+.pwscan-toast--bad { background: var(--pw-bad); color: #fff; }

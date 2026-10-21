@@ -30,6 +30,10 @@ const HERE = __dirname;
 const LISTEN = Number(process.env.TLS_PORT || 8000);
 const TARGET = Number(process.env.TARGET_PORT || 8001);
 
+/* REQUIRE_DEVICE_CERT=0 lets a cert-less handheld onto the scanner pages while
+   styling them. Local only, and never the default — prod is Apache anyway. */
+const ENFORCE = process.env.REQUIRE_DEVICE_CERT !== '0';
+
 /* Scanner surface that MUST present a device certificate: the scan API and the
    handheld pages. Everything else (the whole ERP) is left alone. Deliberately
    NOT /api/scan-devices — that is admin enrolment, done logged-in on a PC. */
@@ -58,7 +62,7 @@ const secure = https.createServer(
     const peer = req.socket.getPeerCertificate();
     const hasDeviceCert = req.socket.authorized && peer && peer.subject && peer.subject.CN;
 
-    if (needsDeviceCert(req.url) && !hasDeviceCert) {
+    if (ENFORCE && needsDeviceCert(req.url) && !hasDeviceCert) {
       res.writeHead(403, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
       res.end('This device is not authorised to scan — install the device certificate.\n');
       return;

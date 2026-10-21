@@ -358,8 +358,20 @@ class SpiPutawayScanController extends Controller
             $here = $at ? " It does not belong at {$at}." : '';
 
             if ($row?->isPlaced()) {
+                /* Not a mistake — the carton is where it should be. Say so,
+                   with the proof, and leave the open task's attempts alone. */
                 return $this->refuse($task, $device, 'already_placed',
-                    "{$box->box_code} is already put away at {$row->destination}. Nothing to do.", $data);
+                    "{$box->box_code} is already put away.", $data, [
+                        'placed' => [
+                            'box_code'    => $box->box_code,
+                            'destination' => $row->destination,
+                            'at'          => optional($row->confirmed_at)->toIso8601String(),
+                            'method'      => $row->verify_method,
+                            'by'          => $row->confirmed_by
+                                ? DB::table('users')->where('id', $row->confirmed_by)->value('name')
+                                : null,
+                        ],
+                    ], false);
             }
 
             return $this->refuse($task, $device, 'no_task',
@@ -459,8 +471,14 @@ class SpiPutawayScanController extends Controller
             // scan counted tasks whose shelf happened to share the rack's id.
             $col = ['zone' => 'zone_id', 'rack' => 'rack_id', 'shelf' => 'shelf_id'][$hit['kind']] ?? 'shelf_id';
 
-            $due = SpiPutawayTask::where('client_id', $device->client_id)
-                ->open()->where($col, $hit['id'])->count();
+            $dueTasks = SpiPutawayTask::where('client_id', $device->client_id)
+                ->open()->where($col, $hit['id'])
+                ->with(['box:id,box_code', 'invoice:id,code'])
+                ->orderBy('issued_at')
+                ->limit(25)
+                ->get();
+
+            $due = $dueTasks->count();
 
             /* Nothing due — so answer the other question instead.
                A refusal here wastes the scan. The operator is standing at the
@@ -477,7 +495,7 @@ class SpiPutawayScanController extends Controller
                     'due_here'   => 0,
                     'step'       => 'lookup',
                     'step_label' => $name,
-                    'location'   => $this->locationContents($hit['kind'], (int) $hit['id'], $name),
+                    'location'   => $this->locationContents($hit['kind'], (int) $hit['id'], $name, (int) $device->client_id),
                 ]], 200);
             }
 
@@ -486,12 +504,29 @@ class SpiPutawayScanController extends Controller
                 'staged_kind'     => $hit['kind'],
                 'staged_name'     => $name,
                 'due_here'        => $due,
+                /* WHICH boxes, not just how many. "3 boxes due here" sends the
+                   operator hunting; the codes let them pick one off the trolley. */
+                'due_boxes'       => $dueTasks->map(fn (SpiPutawayTask $t) => [
+                    'id'          => (int) $t->id,
+                    'task_code'   => $t->task_code,
+                    // Tapping a row scans that box, so the id has to travel.
+                    'box_id'      => (int) $t->box_id,
+                    'box_code'    => $t->box?->box_code,
+                    'spi_code'    => $t->invoice?->code,
+                    'step'        => $t->currentStep(),
+                    'step_label'  => $t->stepLabel(),
+                    'destination' => $this->describe($t),
+                    // Untouched or half-walked — the floor sorts them apart.
+                    'started'     => (bool) ($t->box_scan_at || $t->zone_scan_at || $t->rack_scan_at || $t->shelf_scan_at),
+                ])->values(),
                 'step'            => 'scan_box',
                 'step_label'      => $due === 1
                     ? 'Scan the box for ' . $name
                     : "{$due} boxes due at {$name} — scan one",
                 'device'          => $this->deviceBody($device),
                 'task'            => null,
+                // The same picture as a lookup: standing here, what is here.
+                'location'        => $this->locationContents($hit['kind'], (int) $hit['id'], $name, (int) $device->client_id),
             ]], 200);
         }
 
@@ -555,11 +590,23 @@ class SpiPutawayScanController extends Controller
      * thing a refusal leaves behind, and a rollback would destroy the one
      * record it exists to make.
      */
-    private function refuse(?SpiPutawayTask $task, ScanDevice $device, string $code, string $message, array $data)
+    /**
+     * @param array $extra Anything the screen needs to explain this refusal.
+     * @param bool  $blame Whether it counts against the task's attempts. A
+     *                     scan that proves nothing about THIS put-away — a
+     *                     carton already away, say — must not burn one.
+     */
+    private function refuse(?SpiPutawayTask $task, ScanDevice $device, string $code, string $message, array $data, array $extra = [], bool $blame = true)
     {
         $reset = false;
 
-        if ($task) {
+        if ($task && !$blame) {
+            $this->log($task, $device, PutawayActivityLog::SCAN_FAILED, [
+                'meta' => ['act' => 'scan', 'reason' => $code, 'value' => $data['scanned_value'] ?? null, 'reset' => false],
+            ]);
+        }
+
+        if ($task && $blame) {
             $task->forceFill([
                 'fail_count'    => (int) $task->fail_count + 1,
                 'failed_reason' => $code,
@@ -586,7 +633,7 @@ class SpiPutawayScanController extends Controller
             'reset'         => $reset,
             'attempts_left' => $task ? max(0, SpiPutawayTask::MAX_FAILS - (int) $task->fail_count) : null,
             'data'          => $task ? $this->state($task->refresh(), $device) : null,
-        ], 422);
+        ] + $extra, 422);
     }
 
     /** A plain refusal with no scan behind it — nothing to count. */
@@ -803,7 +850,248 @@ class SpiPutawayScanController extends Controller
      * is occupying the space even though nobody has put it down yet, and an
      * operator looking at a half-empty shelf needs to know it is spoken for.
      */
-    private function locationContents(string $slot, int $id, string $name): array
+    /** The handling flags the packer ticked, named, deduped across lines. */
+    private function boxFlags(?SpiBox $box): array
+    {
+        $ids = collect($box?->items ?? [])
+            ->flatMap(fn ($i) => is_array($i->flags) ? $i->flags : (json_decode((string) $i->flags, true) ?: []))
+            ->map(fn ($v) => (int) $v)->filter()->unique()->values();
+
+        if ($ids->isEmpty()) return [];
+
+        return DB::table('inventory_product_flags')->whereIn('id', $ids)
+            ->orderBy('id')->get(['id', 'flag_name', 'behaviour'])
+            ->map(fn ($f) => ['id' => (int) $f->id, 'name' => $f->flag_name, 'behaviour' => $f->behaviour])
+            ->all();
+    }
+
+    /**
+     * What is inside a carton, as the floor reads it: a picture, a name, a
+     * segment and a quantity per line.
+     *
+     * The product master carries the picture and the segment; the invoice line
+     * carries what was actually billed, and the box item what was packed. One
+     * query for the products rather than one per line.
+     */
+    private function boxProducts(?SpiBox $box): array
+    {
+        $items = $box?->items ?? collect();
+        if ($items->isEmpty()) return [];
+
+        $ids = $items->map(fn ($i) => $i->invoiceItem?->product_id)->filter()->unique()->values();
+
+        $products = $ids->isEmpty() ? collect() : DB::table('products as p')
+            ->leftJoin('clm_segments as s', 's.id', '=', 'p.segment_id')
+            ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
+            ->whereIn('p.id', $ids)
+            ->get(['p.id', 'p.product_code', 'p.name', 'p.brand', 'p.generic_name', 'p.primary_image',
+                   's.name as segment', 'u.short_code as uom'])
+            ->keyBy('id');
+
+        $n = 0;
+
+        return $items->map(function ($i) use ($products, &$n) {
+            $line = $i->invoiceItem;
+            $p    = $line?->product_id ? ($products[$line->product_id] ?? null) : null;
+
+            return [
+                'sr'          => ++$n,
+                'product_id'  => $p?->id,
+                'code'        => $p?->product_code,
+                'name'        => $p?->name ?: ($line?->description ?: '—'),
+                'segment'     => $p?->segment,
+                'brand'       => $p?->brand,
+                'generic'     => $p?->generic_name,
+                'image'       => $p?->primary_image ? file_url($p->primary_image) : null,
+                'description' => $line?->description,
+                'hsn'         => $line?->hsn_code,
+                'quantity'    => (float) $i->quantity,
+                'uom'         => $line?->uom ?: $p?->uom,
+                // Stamped on the carton's own line, not on the product.
+                'batch_no'    => $i->batch_no,
+                'lot_no'      => $i->lot_no,
+                'serial_no'   => $i->serial_no,
+                'cat_no'      => $i->cat_no,
+                'expiry_date' => $i->expiry_date ? (string) $i->expiry_date : null,
+                'remark'      => $i->remark,
+            ];
+        })->values()->all();
+    }
+
+    /** Zone / rack / shelf codes for a location, read upwards from what was scanned. */
+    private function addressOf(string $slot, int $id): array
+    {
+        $zoneId = null;
+        $rack   = null;
+        $shelf  = null;
+
+        if ($slot === 'shelf') {
+            $row   = DB::table('inventory_shelves')->where('id', $id)->first(['shelf_name', 'rack_id']);
+            $shelf = $row?->shelf_name;
+            $rk    = $row ? DB::table('inventory_racks')->where('id', $row->rack_id)->first(['code', 'zone_id']) : null;
+            $rack  = $rk?->code;
+            $zoneId = $rk?->zone_id;
+        } elseif ($slot === 'rack') {
+            $rk     = DB::table('inventory_racks')->where('id', $id)->first(['code', 'zone_id']);
+            $rack   = $rk?->code;
+            $zoneId = $rk?->zone_id;
+        } else {
+            $zoneId = $id;
+        }
+
+        return [
+            'zone'  => $zoneId ? DB::table('inventory_zones')->where('id', $zoneId)->value('code') : null,
+            'rack'  => $rack,
+            'shelf' => $shelf,
+        ];
+    }
+
+    /**
+     * The master's own description of a location, as label/value rows.
+     *
+     * Flat pairs rather than a shaped object: what is worth showing differs
+     * per kind (a zone has a temperature band, a shelf a weight limit), and
+     * the screen should not have to know which.
+     */
+    private function locationDetails(string $slot, int $id): array
+    {
+        $flag = fn ($v) => $v ? 'Allowed' : 'Not allowed';
+        $dims = function ($row) {
+            if (!$row || !$row->length || !$row->width || !$row->height) return null;
+            $u = $row->dim_unit ?: 'cm';
+
+            return sprintf('%s × %s × %s %s', (float) $row->length, (float) $row->width, (float) $row->height, $u);
+        };
+
+        $rows = [];
+
+        if ($slot === 'rack') {
+            $r = DB::table('inventory_racks')->where('id', $id)->first();
+            if (!$r) return [];
+            $z = DB::table('inventory_zones')->where('id', $r->zone_id)->first(['code', 'zone_name', 'rack_mode']);
+            $w = DB::table('inventory_warehouses')->where('id', $r->warehouse_id)->first(['code', 'wh_name', 'wh_type']);
+
+            $rows[] = ['label' => 'Warehouse', 'value' => trim(($w->code ?? '') . ' · ' . ($w->wh_name ?? ''), ' ·')];
+            $rows[] = ['label' => 'Zone',      'value' => trim(($z->code ?? '') . ' · ' . ($z->zone_name ?? ''), ' ·')];
+            $rows[] = ['label' => 'Rack',      'value' => trim(($r->code ?? '') . ' · ' . ($r->rack_name ?? ''), ' ·')];
+            if ($d = $dims($r))   $rows[] = ['label' => 'Dimensions', 'value' => $d];
+            if ($r->area_sqft)    $rows[] = ['label' => 'Area', 'value' => (float) $r->area_sqft . ' sq.ft'];
+            $rows[] = ['label' => 'Cold chain', 'value' => $flag($r->cold_chain)];
+            $rows[] = ['label' => 'Hazardous',  'value' => $flag($r->hazardous)];
+
+            return $rows;
+        }
+
+        if ($slot === 'shelf') {
+            $s = DB::table('inventory_shelves')->where('id', $id)->first();
+            if (!$s) return [];
+            $r = DB::table('inventory_racks')->where('id', $s->rack_id)->first(['code', 'rack_name', 'zone_id', 'warehouse_id']);
+            $z = $r ? DB::table('inventory_zones')->where('id', $r->zone_id)->first(['code', 'zone_name']) : null;
+            $w = $r ? DB::table('inventory_warehouses')->where('id', $r->warehouse_id)->first(['code', 'wh_name']) : null;
+
+            $rows[] = ['label' => 'Warehouse', 'value' => trim(($w->code ?? '') . ' · ' . ($w->wh_name ?? ''), ' ·')];
+            $rows[] = ['label' => 'Zone',      'value' => trim(($z->code ?? '') . ' · ' . ($z->zone_name ?? ''), ' ·')];
+            $rows[] = ['label' => 'Rack',      'value' => trim(($r->code ?? '') . ' · ' . ($r->rack_name ?? ''), ' ·')];
+            $rows[] = ['label' => 'Shelf',     'value' => $s->shelf_name ?: ('Level ' . $s->level_no)];
+            if ($s->shelf_type)   $rows[] = ['label' => 'Type', 'value' => $s->shelf_type];
+            if ($d = $dims($s))   $rows[] = ['label' => 'Dimensions', 'value' => $d];
+            if ($s->height_cm)    $rows[] = ['label' => 'Clearance', 'value' => (float) $s->height_cm . ' cm'];
+            $rows[] = ['label' => 'Cold chain', 'value' => $flag($s->cold_chain)];
+            $rows[] = ['label' => 'Hazardous',  'value' => $flag($s->hazardous)];
+
+            return $rows;
+        }
+
+        $z = DB::table('inventory_zones')->where('id', $id)->first();
+        if (!$z) return [];
+        $w = DB::table('inventory_warehouses')->where('id', $z->warehouse_id)->first(['code', 'wh_name']);
+
+        $rows[] = ['label' => 'Warehouse', 'value' => trim(($w->code ?? '') . ' · ' . ($w->wh_name ?? ''), ' ·')];
+        $rows[] = ['label' => 'Zone',      'value' => trim(($z->code ?? '') . ' · ' . ($z->zone_name ?? ''), ' ·')];
+        $rows[] = ['label' => 'Storage',   'value' => $z->rack_mode === 'rack' ? 'Racked' : 'Floor (no racks)'];
+        if ($z->temp_min_c !== null || $z->temp_max_c !== null) {
+            $rows[] = ['label' => 'Temperature', 'value' => sprintf('%s … %s °C', (float) $z->temp_min_c, (float) $z->temp_max_c)];
+        }
+        $rows[] = ['label' => 'Cold chain', 'value' => $flag($z->cold_chain)];
+        $rows[] = ['label' => 'Hazardous',  'value' => $flag($z->hazardous)];
+
+        return $rows;
+    }
+
+    /**
+     * What sits one level down, with the work owed to each.
+     *
+     * A rack label is scanned by someone standing in front of several
+     * shelves; telling them the rack has three boxes due without saying WHICH
+     * shelf leaves them opening every one.
+     */
+    private function locationChildren(string $slot, int $id, ?int $clientId): array
+    {
+        if ($slot === 'rack') {
+            $kids = DB::table('inventory_shelves')->where('rack_id', $id)
+                ->orderBy('level_no')->get(['id', 'shelf_name', 'level_no', 'max_weight_kg', 'status']);
+            $col = 'shelf_id';
+        } elseif ($slot === 'zone') {
+            /* A floor zone stores cartons on the floor, so there is no level
+               below it — the boxes themselves are the answer, not racks. */
+            if (DB::table('inventory_zones')->where('id', $id)->value('rack_mode') !== 'rack') return [];
+
+            $kids = DB::table('inventory_racks')->where('zone_id', $id)
+                ->orderBy('code')->get(['id', 'code', 'rack_name', 'status']);
+            $col = 'rack_id';
+        } else {
+            return [];
+        }
+
+        if ($kids->isEmpty()) return [];
+
+        $ids = $kids->pluck('id')->all();
+
+        // Two grouped reads rather than one per child.
+        $due = $clientId
+            ? SpiPutawayTask::where('client_id', $clientId)->open()->whereIn($col, $ids)
+                ->with(['box:id,box_code', 'invoice:id,code'])->get()->groupBy($col)
+            : collect();
+
+        $held = DB::table('inventory_location_occupancy')
+            ->whereIn($col, $ids)
+            ->whereIn('status', [LocationOccupancy::RESERVED, LocationOccupancy::OCCUPIED])
+            ->get(['occupant_id', 'box_code', 'weight_kg', 'status', $col])
+            ->groupBy($col);
+
+        /* A rack is read by how many shelves it offers, not by how many
+           cartons happen to be on it — that is the shelf's question. */
+        $shelves = $slot === 'zone'
+            ? DB::table('inventory_shelves')->whereIn('rack_id', $ids)
+                ->selectRaw('rack_id, count(*) as n')->groupBy('rack_id')->pluck('n', 'rack_id')
+            : collect();
+
+        return $kids->map(function ($k) use ($slot, $due, $held, $shelves) {
+            $mine  = collect($due[$k->id] ?? []);
+            $boxes = collect($held[$k->id] ?? []);
+
+            return [
+                'id'      => (int) $k->id,
+                'kind'    => $slot === 'rack' ? 'shelf' : 'rack',
+                'code'    => $slot === 'rack' ? $this->nameLocation('shelf', (int) $k->id) : $k->code,
+                'name'    => $slot === 'rack' ? ($k->shelf_name ?: ('Level ' . $k->level_no)) : $k->rack_name,
+                'active'  => (int) ($k->status ?? 1) === 1,
+                'max_weight_kg' => $slot === 'rack' && $k->max_weight_kg ? (float) $k->max_weight_kg : null,
+                'used_weight_kg' => round((float) $boxes->sum('weight_kg'), 3),
+                'stored'  => $boxes->where('status', LocationOccupancy::OCCUPIED)->count(),
+                // Racks are counted in shelves; null on a shelf, which has none.
+                'shelves' => $slot === 'zone' ? (int) ($shelves[$k->id] ?? 0) : null,
+                'pending' => $mine->map(fn (SpiPutawayTask $t) => [
+                    'box_code'   => $t->box?->box_code,
+                    'spi_code'   => $t->invoice?->code,
+                    'task_code'  => $t->task_code,
+                    'step_label' => $t->stepLabel(),
+                ])->values(),
+            ];
+        })->values()->all();
+    }
+
+    private function locationContents(string $slot, int $id, string $name, ?int $clientId = null): array
     {
         // Each kind has its own column; a rack is not a shelf with the
         // same number, however often their ids happen to agree.
@@ -827,6 +1115,11 @@ class SpiPutawayScanController extends Controller
             'kind'     => $slot,
             'id'       => $id,
             'name'     => $name,
+            // The address as its parts, so the screen can show where this is
+            // rather than make the operator read it out of one long string.
+            'address'  => $this->addressOf($slot, $id) + ['code' => $name],
+            'details'  => $this->locationDetails($slot, $id),
+            'children' => $this->locationChildren($slot, $id, $clientId),
             'boxes'    => $rows->map(fn ($r) => [
                 'box_id'    => (int) $r->occupant_id,
                 'box_code'  => $r->box_code,
@@ -966,15 +1259,33 @@ class SpiPutawayScanController extends Controller
                 'box_code'        => $box->box_code,
                 'putaway_code'    => 'PUT-' . $box->box_code,
                 'spi_code'        => $task->invoice?->code,
+                'scenario'        => $box->scenario,
+                'scenario_label'  => match ($box->scenario) {
+                    's1' => '1 product → 1 box',
+                    's2' => '1 product → multiple boxes',
+                    's3' => 'Multiple products → 1 box',
+                    default => $box->scenario,
+                },
+                'condition'       => $box->condition,
+                'is_stackable'    => $box->is_stackable === null ? null : (bool) $box->is_stackable,
+                'length_cm'       => $box->length_cm !== null ? (float) $box->length_cm : null,
+                'width_cm'        => $box->width_cm !== null ? (float) $box->width_cm : null,
+                'height_cm'       => $box->height_cm !== null ? (float) $box->height_cm : null,
+                'weight_kg'       => $box->weight_kg !== null ? (float) $box->weight_kg : null,
+                'net_weight_kg'   => $box->net_weight_kg !== null ? (float) $box->net_weight_kg : null,
                 'gross_weight_kg' => $box->gross_weight_kg !== null ? (float) $box->gross_weight_kg : null,
+                /* Volumetric weight, the same divisor the packing screen uses.
+                   Shown because a light, bulky carton is charged on this. */
+                'vol_weight_kg'   => $box->length_cm && $box->width_cm && $box->height_cm
+                    ? round(((float) $box->length_cm * (float) $box->width_cm * (float) $box->height_cm) / 5000, 2)
+                    : null,
+                'temp_min_c'      => $box->temp_min_c !== null ? (float) $box->temp_min_c : null,
+                'temp_max_c'      => $box->temp_max_c !== null ? (float) $box->temp_max_c : null,
+                'flags'           => $this->boxFlags($box),
                 'dimensions_cm'   => $box->length_cm && $box->width_cm && $box->height_cm
                     ? sprintf('%s x %s x %s', (float) $box->length_cm, (float) $box->width_cm, (float) $box->height_cm)
                     : null,
-                'products' => $box->items->map(fn ($i) => [
-                    'description' => $i->invoiceItem?->description,
-                    'quantity'    => (float) $i->quantity,
-                    'uom'         => $i->invoiceItem?->uom,
-                ])->values(),
+                'products' => $this->boxProducts($box),
             ] : null,
             'destination' => [
                 'full'       => $this->describe($task),
