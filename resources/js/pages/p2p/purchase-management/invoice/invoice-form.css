@@ -6304,7 +6304,16 @@
    pushed its right edge up against Full View with a 12px gap between them, so
    the two read as one control strip; the design leaves clear space there and
    sends Full View to the far edge on its own. */
-.s4-root .spi-segrow .spi-seg { flex: 0 1 auto; min-width: 0; }
+.s4-root .spi-segrow .spi-seg {
+  flex: 0 1 auto; min-width: 0;
+  /* One row, always. The shared band wraps its tabs, and five long labels on
+     a narrow window wrapped to two rows — which doubled the rail's height and
+     pushed Full View out of the top of a stage that is position:fixed and
+     cannot scroll to reach it. Scrolling the tabs costs a gesture; wrapping
+     them cost the control. */
+  flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin; scrollbar-color: rgba(6,182,212,.25) transparent;
+}
 /* Each tab's icon is a filled chip here, as the design has it — five bare
    glyphs on a pale band read as decoration beside their labels, and the one
    filter that is actually on had nothing to be distinct FROM. Scoped to
@@ -7093,7 +7102,13 @@
    VOL. WEIGHT into VOL. WEIG…. Below 900px seven is genuinely unreadable, so
    that one keeps the floor. */
 .s4-root .s4rv-flds { grid-template-columns: repeat(7, minmax(0, 1fr)); }
-.s4-root .s4rv-fld__lbl { flex-wrap: wrap; }
+/* The label does NOT wrap. Letting it was the wrong trade: on a narrow pane
+   "GROSS WEIGHT KG" and "VOL. WEIGHT KG AUTO" each took two lines, which
+   pushed those two values down while the other five stayed put — a row of
+   figures that no longer lines up reads as broken, where a shortened word
+   does not. The rule further up already handles this properly: the word
+   ellipsises and the unit chips never shrink, so the fact the chips carry
+   survives whatever the width is. */
 @media (max-width: 900px) { .s4-root .s4rv-flds { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); } }
 
 /* ── Stage 04 dark mode: the white chips on the teal heads ────────────────
