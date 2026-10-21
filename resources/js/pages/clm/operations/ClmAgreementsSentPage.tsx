@@ -35,6 +35,26 @@ type SentRow = AwsContract & { dbId: number; approver: string; clarifications: C
 
 type AwsTab = 'all' | 'approved' | 'pending' | 'rejected' | 'clarify';
 
+/* Search haystack: every value on the row (nested arrays/objects included —
+   counterparties, approvers, clarification text), dates also in the dashed
+   form the table shows, plus the approval label. */
+const rowSearchText = (c: SentRow): string => {
+  const out: string[] = [];
+  const walk = (v: unknown) => {
+    if (v == null) return;
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (typeof v === 'object') Object.values(v as Record<string, unknown>).forEach(walk);
+    else { const s = String(v); out.push(s, s.replace(/\s+/g, '-')); }
+  };
+  walk(c);
+  out.push(AP_CFG[c.approval as keyof typeof AP_CFG]?.label ?? '');
+  return out.join(' ').toLowerCase();
+};
+const matchesSearch = (c: SentRow, q: string): boolean => {
+  const hay = rowSearchText(c);
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+};
+
 const ORG_GRAD: Record<string, string> = {
   'IGC-Aurentic':   '#7C3AED,#5B21B6',
   'IGC-Healthcare': '#0891b2,#0e7490',
@@ -129,9 +149,9 @@ export default function ClmAgreementsSentPage() {
   }), [sent]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     let list = sent;
-    if (q) list = list.filter(c => (c.title + c.cp.join(' ') + c.id).toLowerCase().includes(q));
+    if (q) list = list.filter(c => matchesSearch(c, q));
     if (tab === 'approved') return list.filter(c => c.status === 'approved');
     if (tab === 'pending')  return list.filter(c => c.status === 'pending');
     if (tab === 'rejected') return list.filter(c => c.status === 'rejected' || c.approval === 'rejected');
@@ -150,9 +170,9 @@ export default function ClmAgreementsSentPage() {
      else's decision. (The server derives its status the same way now; this is
      the belt to that braces, and it also fixes rows saved before that.) */
   const clarifyList = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     const list = sent.filter(c => c.status === 'clarify' || (c.clarifications?.length ?? 0) > 0);
-    return q ? list.filter(c => (c.title + c.cp.join(' ') + c.id).toLowerCase().includes(q)) : list;
+    return q ? list.filter(c => matchesSearch(c, q)) : list;
   }, [sent, search]);
 
   const respondContract = sent.find(c => c.id === respondId) || null;
@@ -349,7 +369,7 @@ export default function ClmAgreementsSentPage() {
           {loading
             ? <ShimmerTable rows={6} cols={11} />
             : tab === 'clarify'
-            ? <ClarifyTable searching={!!search.trim()} rows={clarifyList} onRespond={setRespondId} t={t} />
+            ? <ClarifyTable searching={!!search.trim()} rows={clarifyList} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onRespond={setRespondId} t={t} />
             : tab === 'rejected'
               ? <RejectedTable searching={!!search.trim()} rows={filtered} ata={sent} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} onDownload={downloadContract} toast={toast} t={t} />
               : <StandardTable searching={!!search.trim()} rows={filtered} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} lifecycleBusy={lifecycleBusy} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
@@ -683,8 +703,11 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
 }
 
 /* ── Clarifications table (sender responds) ── */
-function ClarifyTable({ rows, searching, onRespond, t }: { rows: SentRow[]; searching: boolean; onRespond: (id: string) => void; t: OpsTokens }) {
-  const awaiting = rows.filter(c => c.clarifications.some(cl => !cl.response)).length;
+function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, onRespond, t }: { rows: SentRow[]; searching: boolean; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onRespond: (id: string) => void; t: OpsTokens }) {
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safe = Math.min(page, totalPages);
+  const start = (safe - 1) * pageSize;
+  const slice = rows.slice(start, start + pageSize);
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -701,17 +724,18 @@ function ClarifyTable({ rows, searching, onRespond, t }: { rows: SentRow[]; sear
             <th style={{ ...TH, width: 120 }}>ACTION</th>
           </tr></thead>
           <tbody>
-            {rows.map((c, i) => {
+            {slice.map((c, i) => {
+              const n = start + i + 1;
               const pending = c.clarifications.filter(cl => !cl.response);
               const hasPending = pending.length > 0;
               const latest = hasPending ? pending[pending.length - 1] : c.clarifications[c.clarifications.length - 1];
               const round = c.clarifications.length;
-              const bg = (i + 1) % 2 === 0 ? t.rowAlt : t.tableBg;
+              const bg = n % 2 === 0 ? t.rowAlt : t.tableBg;
               return (
                 <tr key={c.id} style={{ background: bg, transition: 'all .12s' }}
                   onMouseEnter={e => { e.currentTarget.style.background = t.rowHover; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #0891b2'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
-                  <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(i + 1)}</span></div></td>
+                  <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                   <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 185 }}>{c.title}</div></Tooltip></td>
@@ -743,14 +767,12 @@ function ClarifyTable({ rows, searching, onRespond, t }: { rows: SentRow[]; sear
             })}
           </tbody>
         </table>
-        {!rows.length && (
+        {!slice.length && (
           <EmptyState t={t} searching={searching} title="All Clarifications Resolved" msg="No pending clarification queries. When an approver raises a query, it will appear here."
             icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>} />
         )}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}` }}>
-        <span style={{ fontSize: 11.5, color: t.dark ? '#67e8f9' : '#0e7490', fontWeight: 500 }}><b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{awaiting}</b> awaiting your response · <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{rows.length}</b> in clarification</span>
-      </div>
+      <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
     </div>
   );
 }
