@@ -498,6 +498,7 @@ export default function InvoiceForm({
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
                     flagMaster={flagMaster} spiId={spiId}
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
+                    spiCode={spiCode}
                     warehouseInfo={{
                       code: warehouseRow?.wh_code ?? input.storage.warehouse?.code ?? null,
                       since: warehouseRow?.created_at ?? null,
@@ -543,7 +544,13 @@ export default function InvoiceForm({
               disabled={nextBlocked}
             >
               {isLast && <IcoCheck />}
-              {viewOnly ? (isLast ? 'Close' : 'Next') : isLast ? 'Map Invoice' : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
+              {/* The last step said "Map Invoice" whichever way you arrived at
+                  it. Every other step already distinguishes the two — "Update
+                  & Next" against "Save & Next" — and on an invoice being
+                  edited there is nothing left to map. */}
+              {viewOnly ? (isLast ? 'Close' : 'Next')
+                : isLast ? (editing ? 'Update Invoice' : 'Map Invoice')
+                : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
               {!isLast && <IcoChevronR />}
             </button>
           </div>

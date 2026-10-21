@@ -64,6 +64,12 @@ export function findSpot(data: PutawayLocations | null, id: number | null): Conf
 
 /** "RC-D02-SH-03" -> "SH-03". */
 const shortCode = (c: string) => { const m = String(c).match(/SH-\d+$/); return m ? m[0] : c; };
+/** "2026-10-21T07:49:36.173Z" -> "13:21", in the reader's own clock. */
+const hhmm = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso
+    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+};
 const m3 = (v: number) => `${Number.isInteger(v) ? v : Number(v.toFixed(3))} m³`;
 
 /* ── icons ───────────────────────────────────────────────────────────────── */
@@ -196,8 +202,10 @@ export default function PutawayConfirmPlacement({
             <div className="s4c3-stats">
               {stat('Box Qty', box.qty, box.uom || 'units')}
               {stat('Dimensions', box.dims || '—')}
-              {stat('Net Wt.', box.netKg || '—')}
-              {stat('Gross Wt.', box.grossKg || '—')}
+              {/* The unit rides beside the number, the way Box Qty's does —
+                  kg() hands over the figure alone. */}
+              {stat('Net Wt.', box.netKg || '—', box.netKg ? 'kg' : undefined)}
+              {stat('Gross Wt.', box.grossKg || '—', box.grossKg ? 'kg' : undefined)}
             </div>
 
             <div className="s4c3-attrs">
@@ -309,16 +317,19 @@ export default function PutawayConfirmPlacement({
             <span className="s4zb-i"><IcoScan size={22} /></span>
             <div className="s4zb-tx">
               <b>Awaiting Zebra scanning &amp; confirmation <i className="s4zb-pulse" /></b>
+              {/* The route names the warehouse too — "B-001 → ZN-133" leaves
+                  out where in the building, which is half the address. */}
               <p>
-                Task <code>{scan.id}</code> created for <code>{box.code} → {code}</code>. The box is
-                placed only after the operator scans the <b>Box QR</b> and the{' '}
+                Task <code>{scan.id}</code> created for{' '}
+                <code>{[box.code, warehouseCode, code].filter(Boolean).join(' → ')}</code>. The box is
+                placed only after the warehouse operator scans the <b>Box QR</b> and the{' '}
                 <b>{isZone ? 'Zone' : 'Shelf'} QR</b> with a Zebra handheld.
               </p>
               <div className="s4zb-chips">
                 <span>Box QR</span>
                 <span>{isZone ? 'Zone' : 'Shelf'} QR</span>
                 <span className="s4zb-cnt">0 / 2 scans</span>
-                <span className="s4zb-time">Submitted {scan.at}</span>
+                <span className="s4zb-time">Submitted {hhmm(scan.at)}</span>
               </div>
             </div>
             <div className="s4zb-btns">

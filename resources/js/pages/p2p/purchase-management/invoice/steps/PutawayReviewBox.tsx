@@ -50,6 +50,44 @@ const IcoArrowR = () => (
   </svg>
 );
 
+const IcoWarnSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
+const IcoColdSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="2" x2="12" y2="22" /><line x1="3" y1="7" x2="21" y2="17" />
+    <line x1="21" y1="7" x2="3" y2="17" />
+  </svg>
+);
+const IcoFragileSm = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M7 3h10l-1 7a4 4 0 0 1-8 0z" /><line x1="12" y1="14" x2="12" y2="21" />
+    <line x1="8" y1="21" x2="16" y2="21" />
+  </svg>
+);
+
+/* Flags are a handling instruction, not a word list. Hazardous, cold chain and
+ * fragile are the three a warehouse acts on BEFORE it commits a slot, so each
+ * carries its own colour and mark; everything else stays the neutral pill.
+ * The tests mirror flagNames()'s own in the stage, which lower-cases every
+ * name before it reaches this component — hence the title-casing on the way
+ * back out, so "cold chain" is not shouted at the operator in lower case. */
+function flagTone(name: string): { cls: string; ico: ReactNode } {
+  const n = name.toLowerCase();
+  if (n.includes('haz')) return { cls: ' is-haz', ico: <IcoWarnSm /> };
+  if (n.includes('cold') || n.includes('chill') || n.includes('frozen')) return { cls: ' is-cold', ico: <IcoColdSm /> };
+  if (n.includes('fragile') || n.includes('brittle')) return { cls: ' is-fragile', ico: <IcoFragileSm /> };
+  return { cls: '', ico: null };
+}
+
+const titleCase = (s: string) => s.replace(/\b[a-z]/g, c => c.toUpperCase());
+
 /** A value, or the muted dash the whole pane uses for "nothing recorded". */
 const val = (v: string | null | undefined): ReactNode =>
   v && String(v).trim() && String(v).trim() !== '—'
@@ -214,7 +252,10 @@ export default function PutawayReviewBox({
             <span className="s4rv-mark__lbl">Product Flags</span>
             <span className="s4rv-flagwrap">
               {flags.length
-                ? flags.map(f => <span className="s4rv-flag" key={f}>{f}</span>)
+                ? flags.map(f => {
+                  const tone = flagTone(f);
+                  return <span className={`s4rv-flag${tone.cls}`} key={f}>{tone.ico}{titleCase(f)}</span>;
+                })
                 : <span className="s4rv-napill">NA</span>}
               {/* The switch reads as one control with its label inside, the
                   way the packing step shows it — not a loose toggle next to
