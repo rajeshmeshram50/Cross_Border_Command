@@ -299,6 +299,27 @@ export type WarehouseDetail = {
   created_at: string | null;
 };
 
+export type PutawayAssignBody = {
+  box_id: number;
+  mode: 'rack' | 'norack';
+  zone_id: number;
+  rack_id?: number | null;
+  shelf_id?: number | null;
+  suggested_shelf_id?: number | null;
+};
+
+export type PutawayAssigned = {
+  id: number;
+  box_id: number;
+  box_code: string | null;
+  status: PutawayStatus;
+  destination: string | null;
+  zone_id: number;
+  rack_id: number | null;
+  shelf_id: number | null;
+  lock: { id: number; expires_at: string | null } | null;
+};
+
 export type PutawayLocations = {
   box: PutawayNeed;
   modes: { rack: number; norack: number };
@@ -371,6 +392,10 @@ export const spiApi = {
           floorPick: (d.recommended ?? null) as PutawayFloorZone | null,
         } as PutawayLocations;
       }),
+
+  putawayAssign: (spiId: number, body: PutawayAssignBody) =>
+    call('Putaway assign', () => api.post(`/p2p/spi/${spiId}/putaway/assign`, body),
+      (b) => (b as { data?: PutawayAssigned } | null)?.data as PutawayAssigned),
 
   putawayBoard: (spiId: number) =>
     call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),
