@@ -227,9 +227,15 @@ export default function PutawayConfirmPlacement({
               </div>
             </div>
 
-            <button type="button" className="s4c3-prodbtn" onClick={onViewProducts}>
-              <IcoList />View Products<span>{box.products}</span>
-            </button>
+            {/* Only when there is more than one. On a single-product box the
+                box IS the product — everything the list would show is already
+                on this card, and the design has no such row there. A mixed
+                carton is the case it exists for. */}
+            {box.products > 1 && (
+              <button type="button" className="s4c3-prodbtn" onClick={onViewProducts}>
+                <IcoList />View Products<span>{box.products}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -286,7 +292,12 @@ export default function PutawayConfirmPlacement({
                   </> : <>
                     {kv('Zone', spot.zone.name || '—')}
                     {kv('Rack', spot.rack.name || '—')}
-                    {kv('Shelf', `${spot.shelf.name || 'Shelf'} · L${spot.shelf.level_no}`)}
+                    {/* The KIND of shelf, not its name. The name is already in
+                        the title above this grid and again in the breadcrumb
+                        chips — printing it a third time said nothing new,
+                        while the type is the one fact about the shelf that
+                        this panel does not otherwise state. */}
+                    {kv('Shelf Type', (spot.shelf.shelf_type ?? '').trim() || '—')}
                     {kv('Available Capacity', `${spot.shelf.free_weight_kg.toLocaleString('en-IN')} kg`)}
                     {kv('Cold Chain', spot.zone.cold_chain ? 'Yes' : 'No')}
                     {kv('Hazardous', spot.zone.hazardous ? 'Yes' : 'No')}

@@ -22,6 +22,9 @@ function shelf(id: number, code: string, name: string, level: number,
   const pctOf = (kg: number) => Math.round(kg / cap * 1000) / 10;
   return {
     id, code, name, level_no: level,
+    /* The demo warehouse is all ordinary racking — a cold or heavy-duty shelf
+       would change which boxes are eligible, which this fixture is not for. */
+    shelf_type: 'Standard Shelf',
     max_weight_kg: cap, free_weight_kg: cap - used, boxes: used > 0 ? 1 : 0,
     used_pct: pctOf(used), used_pct_after: pctOf(used + BOX_KG),
     eligible: !why, reason: why ? 'demo' : null, reason_label: why ?? null,

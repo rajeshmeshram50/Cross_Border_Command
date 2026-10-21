@@ -232,6 +232,8 @@ export type PutawayNeed = {
 
 export type PutawayShelf = {
   id: number; name: string | null; code: string; level_no: number;
+  /** "Standard Shelf", "Cold Shelf", "Heavy Duty Shelf"… — the kind, not the name. */
+  shelf_type: string | null;
   max_weight_kg: number; free_weight_kg: number; boxes: number;
   used_pct: number; used_pct_after: number;
   eligible: boolean;

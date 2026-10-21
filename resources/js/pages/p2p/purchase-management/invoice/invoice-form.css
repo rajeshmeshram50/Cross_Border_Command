@@ -2946,7 +2946,10 @@
 .s4-root .s4-panel--left { flex: 2; border: 1.5px solid rgba(6,182,212,.25); box-shadow: 0 4px 20px rgba(6,182,212,.1), 0 1px 4px rgba(0,0,0,.05), inset 0 1px 0 rgba(255,255,255,.9); }
 .s4-root .s4-panel--mid { flex: 5.5; border: 1.5px solid rgba(8,145,178,.3); box-shadow: 0 6px 28px rgba(6,182,212,.14), 0 2px 6px rgba(0,0,0,.06), inset 0 1px 0 rgba(255,255,255,.9); }
 .s4-root .s4-panel--right { flex: 5.5; border: 1.5px solid rgba(6,182,212,.25); box-shadow: 0 4px 20px rgba(6,182,212,.1), 0 1px 4px rgba(0,0,0,.05), inset 0 1px 0 rgba(255,255,255,.9); }
-.s4-root .s4-panel--left.is-collapsed, .s4-root .s4-panel--right.is-collapsed { flex: 0 0 38px; min-width: 38px; cursor: pointer; }
+/* 46px, not 38. The rail's icon is 30px and its toggle 26px; at 38 the icon
+   had a pixel of air on each side and sat in the rounded top corner, so it
+   read as spilling out of the strip rather than sitting in it. */
+.s4-root .s4-panel--left.is-collapsed, .s4-root .s4-panel--right.is-collapsed { flex: 0 0 46px; min-width: 46px; cursor: pointer; }
 .s4-root .s4-panel--left.is-collapsed  .s4-panel__body, .s4-root .s4-panel--right.is-collapsed .s4-panel__body { display: none; }
 .s4-root .s4-panel--left.is-collapsed  .s4-panel__head-title, .s4-root .s4-panel--left.is-collapsed  .s4-panel__head-sub, .s4-root .s4-panel--right.is-collapsed .s4-panel__head-title, .s4-root .s4-panel--right.is-collapsed .s4-panel__head-sub, .s4-root .s4-panel--left.is-collapsed  .s4-panel__head-count, .s4-root .s4-panel--right.is-collapsed .s4-panel__head-count, .s4-root .s4-panel--left.is-collapsed  .s4-panel__toggle, .s4-root .s4-panel--right.is-collapsed .s4-panel__toggle { display: none; }
 .s4-root .s4-panel__head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 13px; border-bottom: 1px solid rgba(0,0,0,.06); flex-shrink: 0; position: relative; overflow: hidden; }
@@ -3408,13 +3411,18 @@
 .s4-root #s4ScnTabs .s4scn-tab:hover .s4-tab__ico { color:#0891b2 !important; }
 .s4-root #s4ScnTabs .s4scn-tab.is-active .s4-tab__ico { color:#0891b2 !important; }
 .s4-root #s4ScnTabs .s4scn-tab.is-active .s4-tab__count { color:#0891b2 !important; background:#cffafe !important; border-color:#a5f3fc !important; }
-.s4-root #s4PanelLeft.is-collapsed > .s4-panel__head { display:flex !important; flex-direction:column !important; align-items:center !important; justify-content:space-between !important; height:100% !important; padding:12px 0 14px !important; gap:12px !important; background:transparent !important; border:0 !important; box-shadow:none !important; cursor:pointer; }
-.s4-root #s4PanelLeft.is-collapsed .s4-panel__head-ico { order:0; width:36px !important; height:36px !important; border-radius:11px !important; background:linear-gradient(135deg,#22d3ee,#0891b2) !important; color:#fff !important; box-shadow:0 8px 16px -8px rgba(8,145,178,.7) !important; display:grid !important; place-items:center; flex:none; margin:0 !important; }
-.s4-root #s4PanelLeft.is-collapsed .s4-panel__head-text, .s4-root #s4PanelLeft.is-collapsed .s4-panel__head-count { display:none !important; }
-.s4-root #s4PanelLeft.is-collapsed .s4-panel__collapsed-label { order:1; flex:1 1 auto; display:flex !important; align-items:center; justify-content:center; writing-mode:vertical-rl !important; text-orientation:sideways; transform:none !important; font-size:13px !important; font-weight:800 !important; letter-spacing:.01em !important; text-transform:none !important; color:#0c4a6e !important; white-space:nowrap; margin:0 !important; padding:0 !important; position:static !important; }
-.s4-root #s4PanelLeft.is-collapsed .s4-panel__toggle { order:2; position:static !important; width:26px !important; height:26px !important; min-height:0 !important; padding:0 !important; margin:0 !important; border:0 !important; border-radius:8px !important; background:transparent !important; box-shadow:none !important; color:#0e7490 !important; display:grid !important; place-items:center; transform:rotate(180deg); transition:background .15s; }
-.s4-root #s4PanelLeft.is-collapsed .s4-panel__toggle:hover { background:rgba(8,145,178,.12) !important; }
-.s4-root #s4PanelLeft.is-collapsed .s4-panel__body { display:none !important; }
+.s4-root :is(#s4PanelLeft, #s4PanelRight).is-collapsed > .s4-panel__head { display:flex !important; flex-direction:column !important; align-items:center !important; justify-content:space-between !important; height:100% !important; padding:12px 0 14px !important; gap:12px !important; background:transparent !important; border:0 !important; box-shadow:none !important; cursor:pointer; }
+.s4-root :is(#s4PanelLeft, #s4PanelRight).is-collapsed .s4-panel__head-ico { order:0; width:30px !important; height:30px !important; border-radius:9px !important; background:linear-gradient(135deg,#22d3ee,#0891b2) !important; color:#fff !important; box-shadow:0 8px 16px -8px rgba(8,145,178,.7) !important; display:grid !important; place-items:center; flex:none; margin:0 !important; }
+.s4-root :is(#s4PanelLeft, #s4PanelRight).is-collapsed .s4-panel__head-text, .s4-root :is(#s4PanelLeft, #s4PanelRight).is-collapsed .s4-panel__head-count { display:none !important; }
+.s4-root :is(#s4PanelLeft, #s4PanelRight).is-collapsed .s4-panel__collapsed-label { order:1; flex:1 1 auto; display:flex !important; align-items:center; justify-content:center; writing-mode:vertical-rl !important; text-orientation:sideways; transform:none !important; font-size:13px !important; font-weight:800 !important; letter-spacing:.01em !important; text-transform:none !important; color:#0c4a6e !important; white-space:nowrap; margin:0 !important; padding:0 !important; position:static !important; }
+.s4-root :is(#s4PanelLeft, #s4PanelRight).is-collapsed .s4-panel__toggle { order:2; position:static !important; width:26px !important; height:26px !important; min-height:0 !important; padding:0 !important; margin:0 !important; border:0 !important; border-radius:8px !important; background:transparent !important; box-shadow:none !important; color:#0e7490 !important; display:grid !important; place-items:center; transform:rotate(180deg); transition:background .15s; }
+.s4-root :is(#s4PanelLeft, #s4PanelRight).is-collapsed .s4-panel__toggle:hover { background:rgba(8,145,178,.12) !important; }
+.s4-root :is(#s4PanelLeft, #s4PanelRight).is-collapsed .s4-panel__body { display:none !important; }
+/* The allocation pane's head also carries Scan Logs. In a 38px rail it wrapped
+   to "Sca / Lo" beside the icon — the rail holds an icon, a label read
+   downwards and the toggle, and nothing else fits. The logs are the box's
+   history; they are reached from the pane, so they come back with it. */
+.s4-root #s4PanelRight.is-collapsed .s4-scanlogs { display:none !important; }
 /* Pick-a-Box panel — progress ring, search, flag chips, cards. The
    prototype's rendered card carries .s4-box-card .spi4bc .s4pk-card at once,
    so these overlap the frame rules above on purpose. */
@@ -5309,10 +5317,16 @@
  * one-to-one, though the frame pace never drops (median 16.7ms throughout).
  *
  * Containment keeps a gesture on the surface it began on. The outer body
- * still scrolls on its own when the wheel is over the outer chrome, so
- * nothing becomes unreachable. */
-.s4-root .s4-panel--left .s4-panel__body,
-.s4-root .s4-panel--right .s4-panel__body { overscroll-behavior-y: contain; }
+ * still scrolls on its own when the wheel is over the outer chrome — which
+ * held only while BOTH panes were open.
+ *
+ * The box LIST is the one that needed it — 2224px of travel against the
+ * body's 342px, so a gesture there was what ran away. The right pane has
+ * 247px and was contained for symmetry, and that is what broke: fold the box
+ * list and the pane fills the stage, leaving no outer chrome to put the wheel
+ * over, so once the pane reached its end the page stopped moving and whatever
+ * sat under the fixed footer could not be brought up. It chains again. */
+.s4-root .s4-panel--left .s4-panel__body { overscroll-behavior-y: contain; }
 
 /* ── Step 01 · the sticker opens its code ───────────────────────────────── */
 .s4-root .s4s-stk__qrwrap { position:relative; display:inline-block; }
@@ -6263,7 +6277,12 @@
   color: rgba(255,255,255,.85); background: rgba(255,255,255,.14);
   border: 1px solid rgba(255,255,255,.3);
 }
-.s4-root .s4bj-line.is-done .s4bj-chev { color: #fff; background: #22c55e; border-color: #86efac; }
+/* #86efac, the design's own ring - the green's lighter tint, so it reads as a
+   soft edge of the disc rather than an outline drawn around it. This was
+   white for a while on the argument that white separates the disc from both
+   the green and the teal behind it; it does, but it also makes the ring the
+   first thing you see on a 20px disc, which is not how the design reads. */
+.s4-root .s4bj-line.is-done .s4bj-chev { color: #fff; background: #22c55e; border: 1px solid #86efac; }
 
 /* The pill is the first thing to go: it restates the card's own styling. The
    sub-line and the "Step 01" label follow, and the icon shrinks last. */
@@ -6344,6 +6363,22 @@
 .s4-root .s4-panel--right .s4-panel__head {
   background: linear-gradient(100deg, #e4f7fb 0%, #f1fbfd 55%, #fbfeff 100%);
 }
+
+/* The box-group headers are sticky INSIDE the scrolling list, and they were
+   carrying backdrop-filter: blur(6px). A sticky element that blurs what is
+   behind it has to re-composite and re-blur a strip of the list on every
+   scroll frame — four of them, in the panel being scrolled. That is the
+   stutter.
+   They only needed the blur because their own fills are translucent, so the
+   rows passing underneath showed through sharply. An opaque base in the
+   panel's own colour does the same job for nothing: it sits UNDER each
+   variant's gradient (those set background-image via the shorthand, so a
+   later background-color slots beneath rather than replacing it). */
+.s4-root .s4-grp-hdr {
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+  background-color: #f7f9fc;
+}
+[data-bs-theme="dark"] .s4-root .s4-grp-hdr { background-color: #0c212a; }
 /* Scan Logs replaces Full screen in the pane head; disabled until a scan task
    exists, since there is nothing to show before a location is chosen. */
 .s4-root .s4-scanlogs { margin-left: auto; }
@@ -6845,40 +6880,55 @@
   animation: vsm-fade .14s ease-out;
 }
 @keyframes vsm-fade { from { opacity: 0; } to { opacity: 1; } }
+/* The design draws this at 400px. Widened to 480 on request: the real data
+   is longer than the mock's — a 16-digit SPI number and product names that
+   run to "+2 more" — and at 400 the strip and the detail rows were tight.
+   Everything else here is the design's: the 24px radius and the teal-cast
+   shadow, where ours was a neutral 16px box under a flat dark one.
+   max-height/overflow stay, since the design has no guard for a short
+   window and this needs one. */
 .vsm-box {
-  width: min(440px, 100%); max-height: calc(100vh - 40px); overflow: auto;
-  border-radius: 16px; background: #fff; outline: none;
-  box-shadow: 0 24px 70px rgba(8,47,73,.45);
+  width: min(480px, 95vw); max-height: calc(100vh - 40px); overflow: auto;
+  border-radius: 24px; background: #fff; outline: none;
+  box-shadow: 0 40px 100px rgba(6,182,212,.25), 0 8px 30px rgba(0,0,0,.18);
   animation: vsm-rise .16s ease-out;
 }
 @keyframes vsm-rise { from { opacity: 0; transform: translateY(8px) scale(.994); } to { opacity: 1; transform: none; } }
 .vsm-head {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 13px 14px; border-radius: 16px 16px 0 0;
-  background: linear-gradient(110deg, #0a5f75 0%, #0891b2 60%, #22d3ee 100%);
+  padding: 15px 16px; border-radius: 24px 24px 0 0;
+  /* Four stops at 108deg, not three at 110: the design holds #0891b2 to 45%
+     and lands on #14c4e2, so the band stays teal instead of running pale. */
+  background: linear-gradient(108deg, #0a5f75 0%, #0891b2 45%, #06b6d4 75%, #14c4e2 100%);
 }
 .vsm-hl { display: flex; align-items: center; gap: 11px; min-width: 0; position: relative; z-index: 1; }
 .vsm-ico {
-  width: 38px; height: 38px; flex-shrink: 0; border-radius: 11px;
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 12px;
   display: flex; align-items: center; justify-content: center; color: #fff;
-  background: rgba(255,255,255,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
+  background: rgba(255,255,255,.16); border: 1.5px solid rgba(255,255,255,.32);
 }
-.vsm-ht { font-size: 14px; font-weight: 800; color: #fff; letter-spacing: -.2px; }
-.vsm-hs { margin-top: 3px; display: flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 600; color: rgba(255,255,255,.75); flex-wrap: wrap; }
+.vsm-ht { font-size: 14.5px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1; }
+.vsm-hs { margin-top: 4px; display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.72); flex-wrap: wrap; }
 .vsm-hsd { width: 3px; height: 3px; border-radius: 50%; background: rgba(255,255,255,.45); flex-shrink: 0; }
+/* A translucent chip on the band, not a solid white pill: the design keeps
+   it part of the header rather than stamping a second, brighter object on
+   top of it. */
 .vsm-hb {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 2px 8px; border-radius: 999px;
-  background: rgba(255,255,255,.9); color: #0e7490;
-  font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 20px;
+  background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28);
+  color: rgba(255,255,255,.9);
+  font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
 }
 .vsm-cl {
   position: relative; z-index: 1; flex-shrink: 0;
   width: 28px; height: 28px; border-radius: 7px; cursor: pointer;
   border: 1.5px solid rgba(255,255,255,.28); background: rgba(255,255,255,.14);
   display: flex; align-items: center; justify-content: center;
-  color: rgba(255,255,255,.9); font-size: 15px; line-height: 1; transition: background .14s;
+  /* 13px, and no line-height: the glyph is centred by the flex box, so
+     pinning it to 1 only made the cross sit a shade high. */
+  color: rgba(255,255,255,.9); font-size: 13px; transition: background .14s;
 }
 .vsm-cl:hover { background: rgba(255,255,255,.26); }
 /* The label sits on a grey bed, the way a printed sticker sits on a sheet. */
@@ -6929,7 +6979,7 @@
 .vsm-qty { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: #0c4a6e; }
 .vsm-dot { width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, #06b6d4, #0891b2); box-shadow: 0 0 5px rgba(6,182,212,.5); }
 .vsm-dt { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; font-weight: 500; color: #64748b; }
-.vsm-mft { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid rgba(6,182,212,.1); background: #fff; border-radius: 0 0 16px 16px; }
+.vsm-mft { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-top: 1px solid rgba(6,182,212,.1); background: #fff; border-radius: 0 0 24px 24px; }
 .vsm-hint { font-size: 9.5px; font-weight: 500; color: #94a3b8; font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; }
 .vsm-acts { display: flex; gap: 8px; }
 .vsm-bpdf {
