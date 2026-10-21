@@ -2383,9 +2383,7 @@ class AdvanceRequestController extends Controller
         );
     }  
 
-    /** Build the Zoho Books web-app deep link for an expense (region derived from
-     *  the configured API host, e.g. zohoapis.in → books.zoho.in). Mirrors
-     *  ExpenseClaimController::zohoExpenseUrl. */
+   
     private function zohoExpenseUrl(string $expenseId): string
     {
         $cfg    = config('services.zoho_books');

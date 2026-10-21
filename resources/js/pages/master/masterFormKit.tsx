@@ -546,6 +546,18 @@ export const MASTER_MODAL_CSS = `
   [data-layout-mode="dark"] .master-modal .master-field .form-select {
     background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg)) !important;
   }
+  /* Dropdown triggers wear the same tinted fill + border as the text inputs,
+     so every field in the modal reads as one set. */
+  .master-modal .master-select-toggle:not(:disabled) {
+    background: color-mix(in srgb, #6691e7 5%, var(--vz-card-bg)) !important;
+  }
+  .master-modal .master-select-wrap:not(.show):not(.invalid) .master-select-toggle:not(:disabled) {
+    border-color: color-mix(in srgb, #6691e7 20%, var(--vz-border-color)) !important;
+  }
+  [data-bs-theme="dark"] .master-modal .master-select-toggle:not(:disabled),
+  [data-layout-mode="dark"] .master-modal .master-select-toggle:not(:disabled) {
+    background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg)) !important;
+  }
 
   /* Prefix-icon input groups */
   .master-field { position: relative; }
