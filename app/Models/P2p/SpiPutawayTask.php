@@ -199,6 +199,24 @@ class SpiPutawayTask extends Model
         return $last->lt(now()->subMinutes($minutes ?? (int) config('inventory.scan_stale_minutes', 30)));
     }
 
+    /**
+     * Seconds before a half-walked run is given up, or null when no clock is
+     * running — nothing scanned yet, or the pair is already in.
+     *
+     * A DURATION, never a deadline. The handheld's clock is not ours to trust,
+     * and a device ten minutes fast would read every fresh scan as already
+     * expired and bounce the operator back to the queue on every box.
+     */
+    public function idleSecondsLeft(?int $minutes = null): ?int
+    {
+        $last = $this->lastScanAt();
+        if (!$last || $this->readyToComplete() || !$this->isOpen()) return null;
+
+        $window = ($minutes ?? (int) config('inventory.scan_stale_minutes', 5)) * 60;
+
+        return (int) max(0, $window - (int) abs($last->diffInSeconds(now())));
+    }
+
     /** The deepest level still unscanned — what the operator owes. */
     public function nextLocationLevel(): ?string
     {

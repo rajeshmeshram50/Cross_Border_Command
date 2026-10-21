@@ -9,6 +9,7 @@ use App\Models\Inventory\PutawayActivityLog;
 use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiPutaway;
 use App\Models\P2p\SpiPutawayTask;
+use App\Models\P2p\SupplierInvoice;
 use App\Models\ScanDevice;
 use App\Models\User;
 use App\Services\Inventory\LocationLockService;
@@ -98,7 +99,18 @@ class SpiPutawayScanController extends Controller
         // WRITE require it to still be open.
         $task   = $this->findTask($device, $taskId, false);
 
-        return response()->json(['status' => true, 'data' => $this->state($task, $device)], 200);
+        /* Reopened after sitting idle: hand back a clean task rather than a
+           half-walked one the next scan would throw away anyway. Doing it
+           here means a refresh and a fresh scan agree about what is owed. */
+        $stale = $task->isOpen() ? $this->dropStaleScans($task, $device) : false;
+
+        $body = ['status' => true, 'data' => $this->state($task, $device)];
+        if ($stale) {
+            $body['stale_reset'] = true;
+            $body['notice']      = 'That put-away was left too long — scan the box again to restart it.';
+        }
+
+        return response()->json($body, 200);
     }
 
     /**
@@ -337,7 +349,26 @@ class SpiPutawayScanController extends Controller
                 'No box on this account matches that label.', $data);
         }
 
+        /* THE INVOICE THIS CARTON WAS PACKED UNDER — resolved before anything
+           else is looked up, and every lookup below is scoped to it.
+           box_code is only unique WITHIN an invoice: each one starts again at
+           B-001, so four different cartons on this floor answer to that name.
+           A row joined on box_code alone, or a message that says "B-001", is
+           talking about a carton nobody can identify. */
+        $spi = $box->supplier_invoice_id
+            ? SupplierInvoice::where('client_id', $device->client_id)->find($box->supplier_invoice_id)
+            : null;
+
+        /* Not packed under any invoice. The label exists and its signature is
+           good, but nothing says which consignment the carton belongs to —
+           there is no put-away to do and no way to name what they are holding. */
+        if (!$spi) {
+            return $this->refuse($task, $device, 'box_not_packed',
+                "{$box->box_code} is not packed against any supplier invoice. It cannot be put away.", $data);
+        }
+
         $open = SpiPutawayTask::where('box_id', $box->id)
+            ->where('supplier_invoice_id', $spi->id)
             ->where('client_id', $device->client_id)
             ->open()->first();
 
@@ -346,7 +377,14 @@ class SpiPutawayScanController extends Controller
                different answers. "Allocate it first" told the operator to go
                and allocate a box that was already sitting on a shelf — true
                that no task is open, and the worst possible next instruction. */
-            $row = SpiPutaway::where('box_id', $box->id)->first();
+            /* Scoped to the box's OWN invoice, and newest first. Unscoped,
+               a box re-allocated under a later invoice could be judged by a
+               row belonging to a different consignment — and `first()` with
+               no order picks whichever the planner happens to return. */
+            $row = SpiPutaway::where('box_id', $box->id)
+                ->where('supplier_invoice_id', $spi->id)
+                ->where('client_id', $device->client_id)
+                ->latest('id')->first();
 
             /* Name where they are standing, when a location was scanned
                first. "No put-away initiated for B-001" is true but reads as a
@@ -361,9 +399,10 @@ class SpiPutawayScanController extends Controller
                 /* Not a mistake — the carton is where it should be. Say so,
                    with the proof, and leave the open task's attempts alone. */
                 return $this->refuse($task, $device, 'already_placed',
-                    "{$box->box_code} is already put away.", $data, [
+                    "{$box->box_code} of {$spi->code} is already put away.", $data, [
                         'placed' => [
                             'box_code'    => $box->box_code,
+                            'spi_code'    => $spi->code,
                             'destination' => $row->destination,
                             'at'          => optional($row->confirmed_at)->toIso8601String(),
                             'method'      => $row->verify_method,
@@ -374,12 +413,14 @@ class SpiPutawayScanController extends Controller
                     ], false);
             }
 
+            $named = "{$box->box_code} of {$spi->code}";
+
             return $this->refuse($task, $device, 'no_task',
                 $row?->zone_id
-                    ? "No scan task for {$box->box_code}. It is allocated to {$row->destination} — raise a task, or confirm it by hand."
+                    ? "No scan task for {$named}. It is allocated to {$row->destination} — raise a task, or confirm it by hand."
                     // No instruction: allocating is a back-office action, and
                     // the person holding the box cannot do it from here.
-                    : "No put-away initiated for {$box->box_code}.{$here}",
+                    : "No put-away initiated for {$named}.{$here}",
                 $data);
         }
 
@@ -392,7 +433,7 @@ class SpiPutawayScanController extends Controller
             $wants = $this->boxCode($task);
 
             return $this->refuse($task, $device, 'wrong_box',
-                "Wrong box — this task wants {$wants}. {$box->box_code} belongs to {$open->task_code}.", $data);
+                "Wrong box — this task wants {$wants}. {$box->box_code} of {$spi->code} belongs to {$open->task_code}.", $data);
         }
 
         $task = $open;
@@ -408,7 +449,7 @@ class SpiPutawayScanController extends Controller
 
             if (!$kindOk || (int) $data['staged_location'] !== $expected) {
                 return $this->refuse($task, $device, 'wrong_location',
-                    "{$box->box_code} is assigned to " . $this->describe($task)
+                    "{$box->box_code} of {$spi->code} is assigned to " . $this->describe($task)
                     . '. You are at ' . ($this->nameLocation($data['staged_kind'] ?? $slot, (int) $data['staged_location']) ?: 'a different location') . '.', $data);
             }
 
@@ -1183,9 +1224,19 @@ class SpiPutawayScanController extends Controller
         return implode(' / ', array_filter([$wh, $zone, $rack, $shelf]));
     }
 
+    /**
+     * How a carton is named to an operator.
+     *
+     * Always WITH its invoice. box_code restarts at B-001 for every supplier
+     * invoice, so "this task wants B-001" is four different cartons on a busy
+     * floor and tells the person holding one of them nothing.
+     */
     private function boxCode(SpiPutawayTask $task): string
     {
-        return $task->box?->box_code ?: ('Box ' . $task->box_id);
+        $code = $task->box?->box_code ?: ('Box ' . $task->box_id);
+        $spi  = $task->invoice?->code;
+
+        return $spi ? "{$code} of {$spi}" : $code;
     }
 
     private function log(SpiPutawayTask $task, ScanDevice $device, string $event, array $attrs): void
@@ -1251,6 +1302,11 @@ class SpiPutawayScanController extends Controller
                 'shelf_scan_at'      => optional($task->shelf_scan_at)->toIso8601String(),
                 'shelf_confirmed_at' => optional($task->shelf_confirmed_at)->toIso8601String(),
                 'ready_to_complete'  => $task->readyToComplete(),
+                /* The idle clock, so the handheld can give up a half-walked
+                   run on its own. The page owns no threshold of its own. */
+                'last_activity_at'   => optional($task->lastScanAt())->toIso8601String(),
+                'idle_after_minutes' => (int) config('inventory.scan_stale_minutes', 5),
+                'idle_seconds_left'  => $task->idleSecondsLeft(),
                 'issued_at'          => optional($task->issued_at)->toIso8601String(),
                 'expires_at'         => optional($task->expires_at)->toIso8601String(),
             ],
