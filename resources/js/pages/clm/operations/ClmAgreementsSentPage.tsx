@@ -335,12 +335,11 @@ export default function ClmAgreementsSentPage() {
               );
             })}
           </div>
-          {/* Search sits directly after the tabs (no flex spacer) so it starts
-              where the tab rail ends. */}
-          <div className="aws-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 15px', borderRadius: 22, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <div className="aws-hspacer" style={{ flex: 1 }} />
+          <div className="aws-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 14px', borderRadius: 11, background: t.searchBg, border: `1.5px solid ${t.searchBorder}`, flex: '0 1 520px', minWidth: 220, boxSizing: 'border-box' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search agreements…"
-              style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 500, color: t.searchText, background: 'transparent', width: 190 }} />
+              style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.searchText, background: 'transparent', flex: 1, minWidth: 0 }} />
               <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
@@ -1020,7 +1019,7 @@ const AWS_CSS = `
   .aws-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
   .aws-tabrail > button { flex: 1 1 calc(50% - 4px); justify-content: center; }
   .aws-hspacer { display: none; }
-  .aws-searchbox { width: 100%; }
+  .aws-searchbox { width: 100% !important; flex: 1 1 100% !important; }
   .aws-searchbox input { width: 100% !important; }
 }
 .aws-card {
