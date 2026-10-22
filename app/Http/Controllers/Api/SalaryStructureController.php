@@ -653,7 +653,14 @@ class SalaryStructureController extends Controller
         // Propagate the new salary to any non-locked payroll already generated
         // for this employee, so the payroll table reflects it everywhere
         // without a manual re-run (approved/paid runs stay frozen).
-        $recomputed = app(\App\Services\PayrollService::class)->recomputeEmployeePayslips($employee->id);
+        //
+        // Scoped to the periods this revision can reach. A structure effective
+        // 02 Sep cannot change August's payslip — activeStructure() would pick
+        // the same older version for that period and write back the identical
+        // figures, while the user waits for it. (Salary save took 11-12s on
+        // production; most of those payslips could not have changed.)
+        $recomputed = app(\App\Services\PayrollService::class)
+            ->recomputeEmployeePayslips($employee->id, $structure->effective_from);
 
         /* Say so when a payslip could NOT follow the revision.
          *
