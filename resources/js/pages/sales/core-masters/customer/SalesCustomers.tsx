@@ -807,6 +807,7 @@ export default function SalesCustomers() {
         title="Filter Customers"
         typeLabel="Customer Type"
         theme="purple"
+        className="smc-filter-modal"
       />
 
       {addOpen && (
