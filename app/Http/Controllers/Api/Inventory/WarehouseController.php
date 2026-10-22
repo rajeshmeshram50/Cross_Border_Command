@@ -555,7 +555,10 @@ class WarehouseController extends BaseInventoryController
             'contact_mobile' => $w->contact_mobile,
             'contact_email'  => $w->contact_email,
             'card_name'      => $w->card_name,
-            'card_url'       => $w->card_path ? Storage::disk('public')->url($w->card_path) : null,
+            // file_url(), not Storage::disk('public')->url(): on the Azure disk the
+            // latter throws, which 500'd the whole Warehouse list once a single
+            // warehouse had a card attached.
+            'card_url'       => file_url($w->card_path),
             'zones_count'    => $w->zones_count ?? null,
             'racks_count'    => $w->racks_count ?? null,
             'status'         => (int) $w->status,
