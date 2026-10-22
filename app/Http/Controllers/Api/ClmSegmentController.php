@@ -65,12 +65,18 @@ class ClmSegmentController extends Controller
         $rows    = $perPage ? $q->forPage(max(1, (int) $request->input('page', 1)), $perPage)->get() : $q->get();
 
         // Usage scan runs on the current page only — it is the expensive part.
-        $usage = $this->usageLabels($rows);
-        $rows->each(function ($r) use ($usage) {
-            $labels = $usage[$r->id] ?? [];
-            $r->in_use  = !empty($labels);
-            $r->used_in = array_values($labels);
-        });
+        // ?lite=1 skips it for callers that only read name + regulatory_status
+        // (the Reg-High/Less badge loads EVERY segment, and the scan is 3
+        // whole-table JSON queries per segment — 24 s on live, QA #1). Rows
+        // then carry no in_use / used_in; every other caller is unchanged.
+        if (!$request->boolean('lite')) {
+            $usage = $this->usageLabels($rows);
+            $rows->each(function ($r) use ($usage) {
+                $labels = $usage[$r->id] ?? [];
+                $r->in_use  = !empty($labels);
+                $r->used_in = array_values($labels);
+            });
+        }
 
         return response()->json([
             'status' => true,
