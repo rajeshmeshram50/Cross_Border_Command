@@ -6989,6 +6989,7 @@ const SCOPED_CSS = `
   }
   .acm-header { padding: 12px 18px; }
   .acm-stepper { padding: 12px 16px 10px; }
+  .acm-history { margin: 10px 16px 0; }
   .acm-body { padding: 14px 18px 16px; }
   .acm-footer { padding: 10px 18px; }
   .acm-section-body, .acm-sec-pad { padding: 14px; }
@@ -7025,6 +7026,7 @@ const SCOPED_CSS = `
      allow steps to flex-wrap onto two rows so they don't shrink
      into unreadable pills. */
   .acm-stepper { padding: 10px 12px 8px; flex-wrap: wrap; gap: 8px; }
+  .acm-history { margin: 10px 12px 0; }
   .acm-step-connector { display: none; }
   .acm-step { flex: 1 1 calc(50% - 6px); min-width: 0; }
   /* Tabs: tighter padding */
@@ -7051,6 +7053,7 @@ const SCOPED_CSS = `
   .acm-close { position: absolute; top: 12px; right: 12px; }
   /* Stepper: full vertical stack on phone */
   .acm-stepper { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
+  .acm-history { margin: 10px 12px 0; }
   .acm-step-connector { display: none; }
   .acm-step { width: 100%; flex: 0 0 auto; }
   /* Tabs */
