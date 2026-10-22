@@ -2639,28 +2639,37 @@ function CpReadCard({ t, idx, cp, comp, onOpenVault }: { t: OpsTokens; idx: numb
   return (
     <div style={{ flexShrink: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
       <div style={{ position: 'relative', backgroundImage: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, backgroundSize: '14px 14px, auto', padding: '11px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8, paddingRight: comp ? 122 : 0 }}>
-          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>Counter Party {idx}</span>
-          {cp.badge && <span style={{ fontSize: 8, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.35)', color: '#fff', textTransform: 'uppercase' }}>{cp.badge === 'BUYER' ? 'CUSTOMER' : cp.badge}</span>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingRight: comp ? 122 : 0 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{cp.initials}</span></div>
-          <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</div><div style={{ fontSize: 10, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>{cp.country}</div></div>
-        </div>
-        {/* Mandatory-document completion pill — vertically centred at the header's
-            right. 100% (green ✓) = every required doc on file; below that the Next
-            step is blocked and (when incomplete) the pill opens the Evidence Vault. */}
-        {comp && (
-          <div style={{ position: 'absolute', top: '50%', right: 14, transform: 'translateY(-50%)', display: 'flex', alignItems: 'center' }}>
-            {ringClickable ? (
-              <button type="button" onClick={onOpenVault}
-                title={comp.complete ? 'Open Evidence Vault — review the documents on file' : 'Open Evidence Vault — upload the missing mandatory documents'}
-                style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-                <CompRing comp={comp} />
-              </button>
-            ) : <CompRing comp={comp} />}
+        {/* A flex row, not a fixed reservation. The pill used to be absolutely
+            placed at right:14 with the text reserving a flat 122px for it —
+            but the pill is as wide as its label, and "12/33 docs" needs more
+            than 122, so it grew straight out of the card (QA #106). As a flex
+            sibling it cannot overlap or overflow at any count: it keeps its
+            width and the name column gives way. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+              <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>Counter Party {idx}</span>
+              {cp.badge && <span style={{ fontSize: 8, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.35)', color: '#fff', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{cp.badge === 'BUYER' ? 'CUSTOMER' : cp.badge}</span>}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{cp.initials}</span></div>
+              <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</div><div style={{ fontSize: 10, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>{cp.country}</div></div>
+            </div>
           </div>
-        )}
+          {/* 100% (green ✓) = every required doc on file; below that the Next
+              step is blocked and the pill opens the Evidence Vault. */}
+          {comp && (
+            <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              {ringClickable ? (
+                <button type="button" onClick={onOpenVault}
+                  title={comp.complete ? 'Open Evidence Vault — review the documents on file' : 'Open Evidence Vault — upload the missing mandatory documents'}
+                  style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                  <CompRing comp={comp} />
+                </button>
+              ) : <CompRing comp={comp} />}
+            </div>
+          )}
+        </div>
       </div>
       <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ background: t.dark ? 'rgba(124,58,237,.1)' : 'linear-gradient(135deg,#F5F0FF,#EDE9FE)', borderRadius: 8, padding: '9px 11px', border: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}` }}>

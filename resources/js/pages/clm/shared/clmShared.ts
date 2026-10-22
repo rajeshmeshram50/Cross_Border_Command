@@ -1,6 +1,44 @@
 import { useEffect, useRef, useState } from 'react';
-import api from '../../../api';
+import api, { isCanceled } from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+
+/**
+ * What to say when a CLM list fails to load.
+ *
+ * Every one of these screens caught its load with `.catch(() => toast.error(
+ * 'Load failed', 'Could not load X'))`, which threw the error away. So an
+ * intermittent failure reported as "sometimes it shows load failed" carried
+ * nothing anyone could act on — not the status, not the server's message, not
+ * even whether a request had reached the server at all.
+ *
+ * Two of them are not failures and say nothing:
+ *
+ *  • a cancelled request — the reader navigated away, or pressed Stop. There
+ *    is no error to report, and three red toasts for leaving a page is how a
+ *    quick click through the menu ends up looking broken.
+ *  • a 401 — the session went while the tab sat idle. The api client is
+ *    already sending the reader to /login; a stack of red toasts on the way
+ *    out tells them nothing they can use.
+ *
+ * Anything else keeps the server's own words where there are any, so the next
+ * report names the cause instead of the symptom.
+ */
+export function loadFailed(
+  toast: { error: (title: string, message?: string) => void },
+  what: string,
+  err: unknown,
+): void {
+  if (isCanceled(err)) return;
+  const res = (err as { response?: { status?: number; data?: { message?: string } } })?.response;
+  if (res?.status === 401) return;
+
+  const said = res?.data?.message;
+  if (said) { toast.error('Load failed', said); return; }
+  if (res?.status) { toast.error('Load failed', `Could not load ${what} — the server returned ${res.status}.`); return; }
+  /* No response at all: the request never completed — offline, a dropped
+     connection, or the server not answering. */
+  toast.error('Load failed', `Could not load ${what} — the server could not be reached.`);
+}
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Master Management — shared visual tokens + base CSS.
  *
@@ -1764,7 +1802,7 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
         setMeta(r.data);
         setApplied({ search: debounced, page, rpp, params: paramsKey });
       })
-      .catch(() => { if (token === reqRef.current) { toast.error('Load failed', 'Could not load the list'); setRows([]); setTotal(0); } })
+      .catch((e) => { if (token === reqRef.current) { loadFailed(toast, 'the list', e); setRows([]); setTotal(0); } })
       .finally(() => { if (token === reqRef.current) setLoading(false); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endpoint, page, rpp, debounced, paramsKey, reloadKey]);

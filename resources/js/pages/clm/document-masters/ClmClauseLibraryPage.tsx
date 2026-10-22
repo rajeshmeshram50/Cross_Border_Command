@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
+import { CLM_CSS, loadFailed, usePagedList, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { DeleteConf } from '../shared/clmCommon';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
@@ -74,7 +74,7 @@ export default function ClmClauseLibraryPage() {
     setLoading(true);
     api.get<{ status: boolean; data: ClType[] }>('/clm/clause-types')
       .then(t => setTypes(t.data.data ?? []))
-      .catch(() => toast.error('Load failed', 'Could not load clause types'))
+      .catch((e) => loadFailed(toast, 'clause types', e))
       .finally(() => setLoading(false));
   }, [reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -788,7 +788,11 @@ function ClauseTypeModal(props: {
             <label className="clm-field-label">Clause Type Name <span className="clm-req">*</span></label>
             <input
               className={`clm-input ${err ? 'clm-input-err' : ''}`}
-              autoFocus
+              /* Adding, yes — the field is empty and typing is the only thing
+                 to do. Editing, no: the field already holds a name, and a
+                 caret dropped into it makes an existing record look like it is
+                 mid-edit before the reader has even read it (QA #19). */
+              autoFocus={!isEdit}
               maxLength={100}
               value={name}
               onChange={e => { setName(capitalizeFirst(e.target.value)); setErr(''); }}

@@ -212,7 +212,7 @@ export function MasterMultiSelect({
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled}
         aria-expanded={open}
-        onClick={() => { if (!disabled) setOpen(o => !o); }}
+        onClick={() => { if (disabled) return; setPop(null); setOpen(o => !o); }}
         className={`mms-toggle ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${invalid ? 'is-invalid' : ''} ${collapse ? 'mms-collapsed' : ''}`}
       >
         {values.length === 0 && <span className="mms-placeholder">{placeholder}</span>}
@@ -244,6 +244,10 @@ export function MasterMultiSelect({
               e.stopPropagation();
               if (disabled) return;
               if (pop) { setPop(null); return; }
+              /* One at a time. The dropdown and this popover are two views of
+                 the same field, and both being up at once left the list
+                 sitting across its own menu. */
+              setOpen(false);
               placePop();
             }}
           >
@@ -490,7 +494,22 @@ const MMS_CSS = `
   background: #ecfeff; border: 1px solid #cffafe; border-radius: 7px;
   padding: 3px 8px; white-space: normal; word-break: break-word;
 }
+/* The popover carries its own colours rather than borrowing the chip's.
+   .mms-chip-x is violet by default and pages restyle it by scope — the CLM
+   dialogs do it with a scoped .clm-modal-body rule — but this popover is
+   portalled to <body>, so it sits outside every one of those scopes and can
+   never be reached by them. It kept coming out violet against a teal list.
+   Teal here, to the same values .clm-modal-body uses. */
 .mms-pop-x { flex-shrink: 0; }
+/* Two classes, because .mms-chip-x is declared further down and would
+   otherwise win on order and repaint these violet again. */
+.mms-chip-x.mms-pop-x { background: rgba(8,145,178,.12); color: #0e7490; }
+.mms-chip-x.mms-pop-x:hover { background: #0891b2; color: #fff; }
+
+[data-bs-theme="dark"] .mms-chip-x.mms-pop-x,
+[data-layout-mode="dark"] .mms-chip-x.mms-pop-x { background: rgba(165,243,252,.16); color: #a5f3fc; }
+[data-bs-theme="dark"] .mms-chip-x.mms-pop-x:hover,
+[data-layout-mode="dark"] .mms-chip-x.mms-pop-x:hover { background: #0891b2; color: #fff; }
 
 [data-bs-theme="dark"] .mms-pop,
 [data-layout-mode="dark"] .mms-pop { background: #1f2428; border-color: rgba(255,255,255,.1); }

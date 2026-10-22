@@ -429,9 +429,11 @@
  * ───────────────────────────────────────────────────────────────────────────*/
 .smod-wh-pick { position: relative; }
 .smod-wh-trig {
-  width: 100%; min-height: 48px; box-sizing: border-box;
+  /* 16 + the 36px tile + 16 = 68, measured off the design. Ours sat at 48,
+     which squeezed the tile and the two lines beside it. */
+  width: 100%; min-height: 68px; box-sizing: border-box;
   display: flex; align-items: center; gap: 11px;
-  padding: 7px 8px 7px 12px;
+  padding: 16px 12px;
   border: 1.5px solid #D1E8F0; border-radius: 13px; background: #fff;
   font-family: inherit; text-align: left; cursor: pointer;
   transition: border-color .16s, box-shadow .16s;
@@ -451,13 +453,15 @@
 }
 .smod-wh-pick.is-open .smod-wh-chev { transform: rotate(-90deg); }
 /* The trigger's own copy of the tile, a size down. */
-.smod-wh-ico.is-sm { width: 30px; height: 30px; border-radius: 9px; box-shadow: 0 4px 10px -6px rgba(8,145,178,.6); }
 .smod-wh-ico.is-sm svg { width: 15px; height: 15px; }
 
+/* Fixed, laid over the dialog rather than inside it: an inline panel grew
+   the dialog as it opened and moved the footer under the cursor. */
 .smod-wh-panel {
-  margin-top: 8px; padding: 8px;
+  position: fixed; z-index: 4001;
+  padding: 8px;
   display: flex; flex-direction: column; gap: 6px;
-  max-height: 290px; overflow-y: auto;
+  overflow-y: auto; overscroll-behavior: contain;
   border: 1px solid #cfeaf1; border-radius: 14px; background: #fff;
   box-shadow: 0 10px 26px -14px rgba(8,60,80,.4);
   scrollbar-width: thin; scrollbar-color: #bfe3ec transparent;

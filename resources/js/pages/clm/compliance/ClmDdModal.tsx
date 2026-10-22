@@ -104,6 +104,12 @@ export function DdModal(props: { existing: Dd | null; authorities: Authority[]; 
                   menuClassName="clm-mms-menu"
                   values={authList}
                   invalid={!!errors.auth}
+                  /* QA #17: without this the field grew a row of chips per
+                     few authorities - 25 of them made nine rows and pushed the
+                     form out of the dialog. One chip plus a +N pill, the same
+                     as the Trade Licence form. */
+                  overflowAfter={1}
+                  overflowTitle="Issuing Authorities"
                   placeholder="— Select Authorities —"
                   options={[
                     ...authorities.map(a => ({ value: String(a.id), label: a.name })),

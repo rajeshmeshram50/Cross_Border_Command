@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, loadFailed, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf } from '../shared/clmCommon';
 import ClmTncWizardModal from './ClmTncWizardModal';
@@ -71,7 +71,7 @@ export default function ClmTncPage() {
     ]).then(([c, l, s, g]) => {
       setCats(c.data.data ?? []); setLib(l.data.data ?? []); setSegs(s.data.data ?? []); setGlob(g.data.data ?? []);
     })
-      .catch(() => toast.error('Load failed', 'Could not load T&C data'))
+      .catch((e) => loadFailed(toast, 'the T&C data', e))
       .finally(() => setLoading(false));
   };
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps

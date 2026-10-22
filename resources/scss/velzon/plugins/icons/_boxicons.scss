@@ -10,6 +10,13 @@
     url('../../../fonts/boxicons.woff') format('woff'),
     url('../../../fonts/boxicons.ttf') format('truetype'),
     url('../../../fonts/boxicons.svg?#boxicons') format('svg');
+  /* Without this the default is `auto`, which Chrome reads as a ~3s block
+     period: text in this family is INVISIBLE until the file arrives. It
+     shows up as a pane whose words are missing for a few seconds the
+     first time a weight is used (QA #18). `swap` paints the fallback
+     straight away and changes it when the font lands. _remixicon.scss
+     already does this. */
+  font-display: swap;
 }
 .bx
 {

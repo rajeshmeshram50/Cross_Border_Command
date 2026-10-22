@@ -6,7 +6,11 @@
  * and on a filtered table that reads as "no results" long enough to look like a
  * bug. One button, one stylesheet rule, dropped into each search wrapper.
  *
- * Renders nothing while the box is empty, so it never sits there greyed out.
+ * Always in the layout, invisible while the box is empty. It used to return
+ * null until you typed, which added a child to the search row mid-keystroke
+ * and widened the whole box (QA #107) — on every search bar in the app, since
+ * they all share this. Hidden rather than removed keeps the row one width,
+ * and `visibility` still means it cannot be clicked, focused or read out.
  *
  * Every search bar in the app is a flex row (icon, input, and now this), so it
  * needs no positioning of its own — it lands after the input as the last child.
@@ -24,13 +28,17 @@ export default function SearchClear({
   onClear: () => void;
   label?: string;
 }) {
-  if (!show) return null;
+  const on = !!show;
   return (
     <button
       type="button"
       className="ui-search-clear"
-      title={label}
+      title={on ? label : undefined}
       aria-label={label}
+      aria-hidden={!on}
+      tabIndex={on ? undefined : -1}
+      disabled={!on}
+      style={on ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
       /* Keeps focus in the input: the user clears and carries on typing rather
          than having to click back into the box. */
       onMouseDown={(e) => e.preventDefault()}
