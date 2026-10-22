@@ -130,12 +130,12 @@ export default function ClmTradeLicensesPage() {
 
       <div className="clm-page-card">
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div className="clm-search clm-search-fixed">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input autoComplete="off" type="text" placeholder="Search trade licences…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
-          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div className="clm-total">
+            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="12" y2="13"/></svg></div>
+            <div className="clm-total-lbl">Total Trade Licences</div>
+            <div className="clm-total-num">{count}</div>
+          </div>
           <ClmDocImportExport
             endpoint="/clm/trade-licenses"
             fileStem="Trade_Licences"
@@ -146,11 +146,11 @@ export default function ClmTradeLicensesPage() {
             search={debouncedSearch}
             onImported={reload}
           />
-          <div className="clm-total">
-            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="12" y2="13"/></svg></div>
-            <div className="clm-total-lbl">Total Trade Licences</div>
-            <div className="clm-total-num">{count}</div>
           </div>
+          <div className="clm-search clm-search-fixed">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input autoComplete="off" type="text" placeholder="Search trade licences…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
 
@@ -170,7 +170,13 @@ export default function ClmTradeLicensesPage() {
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
+                      {/* Cut at 40 characters, as the QC list does. The column
+                          is free-width and absorbs the table's slack, so left
+                          to the CSS ellipsis alone how much of a long name you
+                          read depended on the window. The cell keeps its CSS
+                          truncation as the narrow-window fallback, and the
+                          Tooltip still carries the full name. */}
+                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name.length > 41 ? `${r.name.slice(0, 40).trimEnd()}…` : r.name}</div></td></Tooltip>
                       <td className="clm-td-desc"><AuthorityBadges value={r.authority_names} /></td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">

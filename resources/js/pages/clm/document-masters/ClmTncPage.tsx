@@ -180,6 +180,11 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+        <div className="clm-total">
+          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></div>
+          <div className="clm-total-lbl">Total Categories</div>
+          <div className="clm-total-num">{rows.length}</div>
+        </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search categories…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -284,6 +289,11 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
       />
 
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+        <div className="clm-total">
+          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+          <div className="clm-total-lbl">Total Global T&C</div>
+          <div className="clm-total-num">{rows.length}</div>
+        </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search global T&C…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -442,6 +452,11 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+        <div className="clm-total">
+          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+          <div className="clm-total-lbl">Total T&C Entries</div>
+          <div className="clm-total-num">{rows.length}</div>
+        </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search T&C library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />

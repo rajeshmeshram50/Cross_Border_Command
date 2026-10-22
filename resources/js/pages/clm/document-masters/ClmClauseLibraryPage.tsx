@@ -189,6 +189,11 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+        <div className="clm-total">
+          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></div>
+          <div className="clm-total-lbl">Total Clause Types</div>
+          <div className="clm-total-num">{total}</div>
+        </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search clause types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -206,18 +211,36 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                 you are already waiting on, so it stays solid and clickable. */}
             <table className="clm-table" style={{ opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
               <thead><tr>
-                <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-                <th style={{ width: 120, textAlign: 'center' }}>TYPE ID</th>
-                <th>CLAUSE TYPE NAME</th>
-                <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
+                {/* Shares, not pixels — the Segment Master pattern. With three
+                    pixel-width columns and one free one, the name column
+                    absorbed every spare pixel on the page: on a wide screen it
+                    ran past 1500px, which left the row as two clumps with a
+                    void between them and ACTIONS pinned in the far corner.
+                    Shares spread the slack across all five instead. */}
+                <th style={{ width: '6%', textAlign: 'center' }}>SR. NO</th>
+                <th style={{ width: '13%', textAlign: 'center' }}>TYPE ID</th>
+                <th style={{ width: '46%' }}>CLAUSE TYPE NAME</th>
+                {/* in_use is computed server-side and already decides whether
+                    the row can be edited or deleted. It was reachable only by
+                    hovering a disabled button, so the one real fact this table
+                    had left was invisible — and the row had nothing to fill its
+                    middle with. (description is not an option: the form drops
+                    it, so it is empty on every row.) */}
+                <th style={{ width: '15%', textAlign: 'center' }}>CLAUSES</th>
+                <th style={{ width: '20%', textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {firstLoad && <ShimmerTableRows rows={rpp} cols={4} cellClassName="clm-skel-cell" keyPrefix="clm-type-shim" />}
+                {firstLoad && <ShimmerTableRows rows={rpp} cols={5} cellClassName="clm-skel-cell" keyPrefix="clm-type-shim" />}
                 {!firstLoad && rows.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                     <td className="clm-td-name">{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30) + '…'}</span></Tooltip> : r.name}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      <Tooltip label={(r.in_use ?? 0) > 0 ? `Used by ${r.in_use} clause${r.in_use === 1 ? '' : 's'} in the Clause Library` : 'Not used by any clause yet'}>
+                        <span className={`clm-use-count${(r.in_use ?? 0) > 0 ? ' is-used' : ''}`}>{r.in_use ?? 0}</span>
+                      </Tooltip>
+                    </td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         {(() => {
@@ -341,6 +364,11 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
+        <div className="clm-total">
+          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+          <div className="clm-total-lbl">Total Clauses</div>
+          <div className="clm-total-num">{total}</div>
+        </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search clause library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />

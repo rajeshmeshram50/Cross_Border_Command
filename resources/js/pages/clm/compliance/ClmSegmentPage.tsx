@@ -236,6 +236,7 @@ export default function ClmSegmentPage() {
       <div className="clm-page-card">
         <div className="clm-tabs-wrap">
           <div className="clm-tabs-bar">
+            <div className="clm-tabrail">
             <button className={`clm-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
               All Segments <span className="clm-tab-count">{counts.all}</span>
@@ -248,6 +249,7 @@ export default function ClmSegmentPage() {
               <span className="clm-tab-dot" style={{ background: '#0d9488', boxShadow: '0 0 5px rgba(13,148,136,.5)' }} />
               Less Regulated Segments <span className="clm-tab-count">{counts.less}</span>
             </button>
+            </div>
               <div className="seg-toolbar">
                 <div className="seg-filter-ms" style={{ width: 216 }}>
                   <MasterSelect
