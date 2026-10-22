@@ -74,6 +74,7 @@ export function MasterMultiSelect({
   const wrapRef   = useRef<HTMLDivElement | null>(null);
   const menuRef   = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const plusRef   = useRef<HTMLButtonElement | null>(null);
 
   /* The dropdown is portalled to body so it escapes the form section's
    * `overflow: hidden`. We track the toggle's viewport rect to position
@@ -173,6 +174,35 @@ export function MasterMultiSelect({
   const shownValues = values.slice(0, cut);
   const hiddenValues = overflowAfter != null ? values.slice(cut) : [];
 
+  /* Measured from the live button every time, never snapshotted. The position
+     used to be captured once on click, so zooming or resizing the window left
+     the popover stranded where the chip had been — in the screenshots it sat
+     a few hundred pixels to the left of the field it belongs to. */
+  const placePop = () => {
+    const b = plusRef.current?.getBoundingClientRect();
+    if (!b) return;
+    /* Flip above when the field sits low in a dialog — the list is
+       taller than the room under it more often than not. */
+    const estH = Math.min(280, 34 + hiddenValues.length * 34);
+    const below = window.innerHeight - b.bottom;
+    const up = below < estH + 12 && b.top > below;
+    setPop({ x: b.left, y: up ? b.top - 4 : b.bottom + 4, up });
+  };
+
+  /* Keep it glued to the chip while it is open. Scroll is capture-phase so a
+     scroll inside any ancestor counts, not just the window's. */
+  useEffect(() => {
+    if (!pop) return;
+    const onMove = () => placePop();
+    window.addEventListener('resize', onMove);
+    window.addEventListener('scroll', onMove, true);
+    return () => {
+      window.removeEventListener('resize', onMove);
+      window.removeEventListener('scroll', onMove, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pop !== null, hiddenValues.length]);
+
   return (
     <div ref={wrapRef} className={`mms-root ${invalid ? 'mms-invalid' : ''}`}>
       <style>{MMS_CSS}</style>
@@ -208,17 +238,13 @@ export function MasterMultiSelect({
           <button
             type="button"
             className="mms-plus"
+            ref={plusRef}
             aria-label={`Show ${hiddenValues.length} more`}
             onClick={(e) => {
               e.stopPropagation();
               if (disabled) return;
               if (pop) { setPop(null); return; }
-              const b = e.currentTarget.getBoundingClientRect();
-              /* Flip above when the field sits low in a dialog — the list is
-                 taller than the room under it more often than not. */
-              const estH = Math.min(280, 34 + hiddenValues.length * 34);
-              const below = window.innerHeight - b.bottom;
-              setPop({ x: b.left, y: below < estH + 12 && b.top > below ? b.top - 4 : b.bottom + 4, up: below < estH + 12 && b.top > below });
+              placePop();
             }}
           >
             +{hiddenValues.length}
@@ -257,7 +283,12 @@ export function MasterMultiSelect({
           dialog's overflow cannot clip it. */}
       {pop && createPortal(
         <>
-          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 100000 }} />
+          {/* 260000, the same layer this component's own dropdown uses. At
+              100001 it sat UNDER the CLM dialogs — their backdrop is 200000
+              and their portalled menus 250000 — so clicking +N on the Add
+              Trade Licence form opened the list behind the form. The two
+              popovers belong to one field and should share a layer. */}
+          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 259999 }} />
           <div
             className="mms-pop"
             style={{
@@ -265,7 +296,7 @@ export function MasterMultiSelect({
               left: Math.max(8, Math.min(pop.x, window.innerWidth - 328)),
               top: pop.up ? undefined : pop.y,
               bottom: pop.up ? window.innerHeight - pop.y : undefined,
-              zIndex: 100001,
+              zIndex: 260000,
             }}
           >
             <div className="mms-pop-title">
