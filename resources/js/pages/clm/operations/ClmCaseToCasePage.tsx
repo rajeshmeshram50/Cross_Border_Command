@@ -50,6 +50,11 @@ const STAGE_CARDS = [
 
 // Display dates as DD-Mon-YYYY (e.g. 17-Jul-2026). The API returns "17 Jul
 // 2026"; swap the spaces for hyphens (QA #41). "—" / empty pass through.
+/* Agreement titles and organisation names are free text and some run long.
+   Thirty characters, with the whole thing still on the cell's tooltip: the
+   two columns are the same width now, so letting either grow to fit its
+   longest row would put the pair out of step again. */
+const cut30 = (t: string): string => (t.length <= 31 ? t : `${t.slice(0, 30).trimEnd()}…`);
 const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
 
 /**
@@ -60,23 +65,39 @@ const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-
  * and a 22px circle in pale lilac with a border — three shapes, two sizes and
  * three colour treatments stacked down one row.
  *
- * Tinted rather than saturated, and with no drop shadow: ten of these down a
- * page is a lot of ink for something that only has to separate one name from
- * the next.
+ * Solid, not tinted. It was briefly a pale lilac chip with a #E2D6FB hairline,
+ * on the theory that ten marks down a page is a lot of ink — but at that weight
+ * the border all but disappears against the row and the mark read as a smudge
+ * behind the name, while the SR badge and the +N pill in the same row stayed
+ * solid violet. It is the only thing in its cell, so it may as well be legible.
+ *
+ * Built like the SR badge beside it: the same 135° violet gradient, white
+ * initials, a top sheen and a short shadow of its own colour. 24px with 8.5px
+ * initials leaves the two letters about 6px of bearing on each side.
  */
 function Mark({ text, dark }: { text: string; dark: boolean }) {
   return (
     <span
       aria-hidden
       style={{
-        width: 22, height: 22, borderRadius: 7, flexShrink: 0,
+        position: 'relative', overflow: 'hidden',
+        width: 24, height: 24, borderRadius: 8, flexShrink: 0,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 9, fontWeight: 700, letterSpacing: '.01em',
-        color: dark ? '#c4b5fd' : '#6D28D9',
-        background: dark ? 'rgba(124,58,237,.18)' : '#F1EBFE',
-        border: `1px solid ${dark ? 'rgba(167,139,250,.28)' : '#E2D6FB'}`,
+        fontSize: 8.5, fontWeight: 800, letterSpacing: '.01em', lineHeight: 1,
+        color: '#fff',
+        background: dark
+          ? 'linear-gradient(135deg,#8B5CF6,#6D28D9)'
+          : 'linear-gradient(135deg,#7C3AED,#5B21B6)',
+        boxShadow: dark
+          ? 'inset 0 1px 0 rgba(255,255,255,.16)'
+          : '0 2px 5px rgba(109,40,217,.28), inset 0 1px 0 rgba(255,255,255,.18)',
       }}
-    >{inits(text)}</span>
+    >
+      {/* The same top-half sheen the active tab and the +N pill carry, so the
+          three read as one family rather than three flat swatches. */}
+      <span style={{ position: 'absolute', inset: '0 0 50% 0', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', pointerEvents: 'none' }} />
+      <span style={{ position: 'relative' }}>{inits(text)}</span>
+    </span>
   );
 }
 
@@ -388,12 +409,26 @@ export default function ClmCaseToCasePage() {
 
       {/* CARD 3 — CONTRACTS LIST */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
-        <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
-          {/* Tab rail — mirrors the Customer page's .smc-pill-group: a
-              translucent rail with a violet hairline and gap-separated pills.
-              On small screens it wraps to full width so the tabs never overflow
-              (QA #42). */}
-          <div className="ctc-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(124,58,237,.10)' : 'rgba(255,255,255,.55)', border: `1px solid ${t.dark ? 'rgba(167,139,250,.20)' : 'rgba(139,92,246,.22)'}`, borderRadius: 11, padding: 4 }}>
+        <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '10px 12px', padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
+          {/* Tab rail — the employee list's .dt-tabs / .dt-tab, to the pixel, on
+              the violet ramp. Values are copied rather than imported because
+              this toolbar is inline-styled and has no .dt-root above it to
+              inherit the accent variables from.
+
+              Specifically the `hr-dt` skin (DataTable.css ~1152), NOT the base
+              .dt-tabs rule: the employee list carries .hr-dt, so what is on
+              screen there is a PALE recessed track with every tab lettered in
+              the accent and only the active one filled. The base rule — tinted
+              trough, white resting tabs — belongs to Customers and is a
+              different object.
+
+              3px of padding: 34 (tab) + 3 x 2 + 1 x 2 (border) = 42, which is
+              .ops-search beside it. At 4 the rail stood 2px proud.
+              On small screens it wraps to full width (QA #42). */}
+          <div className="ctc-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3,
+            ...(t.dark
+              ? { background: 'rgba(124,58,237,.08)', border: '1px solid rgba(124,58,237,.22)' }
+              : { background: 'linear-gradient(180deg, color-mix(in srgb, #faf5ff 60%, #fff), #faf5ff)', border: '1px solid color-mix(in srgb, #ddd6fe 60%, #fff)' }) }}>
             {([
               ['all', 'All Contracts', null, true],
               ['signed', 'Signed Contracts', '#10B981', false],
@@ -403,19 +438,38 @@ export default function ClmCaseToCasePage() {
               const active = tab === key;
               return (
                 <button key={key} disabled={lifecycleBusy !== null} onClick={() => { setTab(key); setPage(1); }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 34, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null && !active ? .6 : 1, letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 34,
+                    /* Transparent on the active tab rather than absent, so
+                       switching tabs does not move the rail by a pixel. */
+                    border: 0, borderRadius: 8,
+                    /* The app's face, not `inherit`: Velzon puts Rubik on the
+                       body, and Rubik carries more ink than DM Sans at the same
+                       size — which is why this rail always read bolder than the
+                       employee list's.
+                       650, not 700: HRMS's one deliberate weight exception. A
+                       tab lettered in the accent on a pale track carries more
+                       ink than the same weight on a tinted one. DM Sans is a
+                       variable face (300..800), so this is a real weight. */
+                    fontFamily: 'var(--font-sans)', fontSize: 12.5, fontWeight: 650, letterSpacing: 0,
+                    cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null && !active ? .6 : 1, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s',
                     ...(active
-                      ? { border: 0, background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset', textShadow: '0 1px 2px rgba(76,29,149,.4)' }
-                      : { background: t.dark ? 'linear-gradient(135deg, rgba(124,58,237,.16), rgba(124,58,237,.10))' : 'linear-gradient(135deg, #f5f1fe, #ede9fe)', border: `1px solid ${t.dark ? 'rgba(167,139,250,.25)' : 'rgba(139,92,246,.2)'}`, color: t.dark ? '#c4b5fd' : '#6d28d9' }) }}>
-                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '8px 8px 0 0', pointerEvents: 'none' }} />}
+                      ? { background: 'linear-gradient(135deg, #a78bfa, #7c3aed 55%, #6d28d9)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(124,58,237,.55), inset 0 1px 0 rgba(255,255,255,.25)' }
+                      : { background: 'transparent', color: t.dark ? '#c4b5fd' : '#6d28d9' }) }}>
                   {hasIcon
-                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#c4b5fd' : '#6d28d9')} strokeWidth="2.5" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#c4b5fd' : '#6d28d9')} strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                     : <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#10B981'), flexShrink: 0 }} />}
-                  <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 800, lineHeight: 1,
+                  <span>{label}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, lineHeight: 1, border: '1px solid',
                     ...(active
-                      ? { color: '#fff', background: 'rgba(255,255,255,.24)', border: '1px solid rgba(255,255,255,.4)' }
-                      : (t.dark ? { color: '#c4b5fd', background: 'rgba(124,58,237,.18)', border: '1px solid rgba(167,139,250,.30)' } : { color: '#7c3aed', background: '#fff', border: '1px solid #ddd0f7' })) }}>{counts[key]}</span>
+                      ? (t.dark
+                        /* Recessed, not 90% white: on a dark page a near-white
+                           disc is the brightest thing on screen and the eye
+                           goes to the counter instead of the data. */
+                        ? { background: 'rgba(0,0,0,.28)', borderColor: 'rgba(255,255,255,.22)', color: '#fff' }
+                        : { background: 'rgba(255,255,255,.9)', borderColor: 'rgba(255,255,255,.75)', color: '#5b21b6' })
+                      : (t.dark
+                        ? { background: 'rgba(124,58,237,.14)', borderColor: 'rgba(124,58,237,.30)', color: '#c4b5fd' }
+                        : { background: '#f3e8ff', borderColor: '#ddd6fe', color: '#6d28d9' })) }}>{counts[key]}</span>
                 </button>
               );
             })}
@@ -441,17 +495,22 @@ export default function ClmCaseToCasePage() {
               {/* 1560, not 1380. The eleven fixed columns come to 1378 on their own, so
     the old floor left Agreement Title two pixels and let the row spill past
     the card instead of scrolling. 1560 keeps the title usable at ~180. */}
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1560 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1660 }}>
                 <thead><tr>
                   {['SR NO', 'CTC ID', 'CTC DATE', 'AGREEMENT TITLE', 'OUR ORGANISATION', 'COUNTERPARTIES', 'CREATED BY', 'INTERNAL APPROVAL', 'EFF. DATE', 'EXPIRY DATE', 'CP SIGNED DATE', 'ACTION'].map((h, i) => (
-                    <th key={h} style={{ ...TH, /* Only the title ranges left — it is the row's subject, as Employee
-                       is on the employee list. Everything else centres, so each
-                       column's content sits on one axis and the gaps between them
-                       stop depending on how long a name happens to be. */
-                    textAlign: i === 3 ? 'left' : 'center', /* ACTION is 192: six 26px buttons with 3px between them is 171, and
+                    <th key={h} style={{ ...TH, /* The four name columns range left; everything else centres.
+                       Centring worked for the dates and the badges, which are all
+                       the same width, but not for Our Organisation, Counterparties
+                       and Created By: each of those leads with a 24px mark, and
+                       centring the [mark + name (+ pill)] group as a whole put
+                       every row's mark at a different x — the longer the name, or
+                       the presence of a +N pill, the further left it started. The
+                       column had no left edge at all. Ranged left, the marks stack
+                       in one line and the names start together. */
+                    textAlign: i >= 3 && i <= 6 ? 'left' : 'center', /* ACTION is 192: six 26px buttons with 3px between them is 171, and
                        the cell's own 10px either side makes 191. At 150 the sixth
                        button had nowhere to sit and hung off the right edge. */
-                    width: [52, 124, 110, undefined, 155, 185, 136, 122, 100, 100, 122, 192][i] }}>{h}</th>
+                    width: [52, 124, 110, 200, 200, 185, 136, 122, 100, 100, 122, 192][i] }}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
@@ -477,10 +536,10 @@ export default function ClmCaseToCasePage() {
                         <td style={{ ...TD, width: 52 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#6D28D9,#5B21B6)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(109,40,217,.3)' }}><span style={{ fontSize: 9, fontWeight: 900, color: '#fff' }}>{String(n).padStart(2, '0')}</span></div></td>
                         <td style={{ ...TD, width: 124 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 600, color: t.dark ? '#c4b5fd' : '#5B21B6', background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,rgba(109,40,217,.1),rgba(124,58,237,.06))', padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(124,58,237,.28)', whiteSpace: 'nowrap', letterSpacing: '.02em' }}>{c.id}</span></td>
                         <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
-                        <td style={TDL}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
-                        <td style={{ ...TD, width: 155 }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Mark text={c.org} dark={t.dark} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 108 }}>{c.org}</span></Tooltip></div></td>
-                        <td style={{ ...TD, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Mark text={c.cp[0]} dark={t.dark} /><Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 108 }}>{c.cp[0]}</span></Tooltip>{extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}</div></td>
-                        <td style={{ ...TD, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Mark text={c.createdBy} dark={t.dark} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                        <td style={{ ...TDL, width: 200 }}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{cut30(c.title)}</div></Tooltip></td>
+                        <td style={{ ...TDL, width: 200 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Mark text={c.org} dark={t.dark} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{cut30(c.org)}</span></Tooltip></div></td>
+                        <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Mark text={c.cp[0]} dark={t.dark} /><Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 108 }}>{c.cp[0]}</span></Tooltip>{extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}</div></td>
+                        <td style={{ ...TDL, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Mark text={c.createdBy} dark={t.dark} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                         <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, background: apb.bg, border: `1px solid ${apb.border}`, whiteSpace: 'nowrap' }}><span style={{ fontSize: 9.5, fontWeight: 700, color: apb.text }}>{ap.label}</span></span></td>
                         <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
                         <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.endDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>

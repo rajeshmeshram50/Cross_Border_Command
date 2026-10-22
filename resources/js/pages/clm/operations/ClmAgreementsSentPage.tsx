@@ -43,12 +43,6 @@ const matchesSearch = (c: SentRow, q: string): boolean => {
   return q.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
 };
 
-const ORG_GRAD: Record<string, string> = {
-  'IGC-Aurentic':   '#7C3AED,#5B21B6',
-  'IGC-Healthcare': '#0891b2,#0e7490',
-  'IGC-Agrotech':   '#059669,#047857',
-};
-
 const AP_CFG = {
   approved: { label: 'Approved', bg: '#E0F7FA', border: '#A7F3D0', color: '#0891b2', dot: '#06b6d4' },
   pending:  { label: 'Pending',  bg: '#FFFBEB', border: '#FDE68A', color: '#D97706', dot: '#F59E0B' },
@@ -225,7 +219,7 @@ export default function ClmAgreementsSentPage() {
   }, [loading, tab, sent.length]);
 
   return (
-    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'var(--font-sans)' }}>
+    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-sans)' }}>
       <style>{AWS_CSS + OPS_SEARCH_CSS}</style>
 
       {(downloadingId !== null || lifecycleBusy !== null) && createPortal(
@@ -245,7 +239,10 @@ export default function ClmAgreementsSentPage() {
             </div>
             <span style={{ position: 'absolute', bottom: -1, right: -1, width: 9, height: 9, borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #cef8ff', boxShadow: '0 0 6px rgba(34,197,94,.4)' }} />
           </div>
-          <div>
+          {/* min-width:0 is what lets the subtitle below ellipsise: without it a
+              flex item refuses to shrink past its content and the text wraps
+              instead of being cut. */}
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
               <div style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.15 }}>Agreements We Sent</div>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
@@ -253,25 +250,37 @@ export default function ClmAgreementsSentPage() {
                 <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
               </span>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, maxWidth: 580 }}>Track agreements created by us and sent to counterparties for approval, clarification, negotiation, and signing.</div>
+            {/* One line, as .clm-head-strip-sub does it on every other CLM page.
+                This carried maxWidth: 580 instead, which wrapped "and signing."
+                onto a second line and made the strip a row taller than the rest
+                of the module — with the whole right-hand half of the band empty.
+                nowrap + ellipsis instead, so a narrow viewport cuts the sentence
+                rather than growing the band. */}
+            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Track agreements created by us and sent to counterparties for approval, clarification, negotiation, and signing.</div>
           </div>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8 }}>
-        <SummaryCard t={t} accent="#06b6d4,#0891b2" border="#B2EBF2" hoverBorder="#A5F3FC" titleColor="#0e7490" tag="Total" tagBg="#CFFAFE" tagColor="#0891b2" value={counts.all} label="Total Agreements" sub="Created and shared with counterparties"
-          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>} />
-        <SummaryCard t={t} accent="#f59e0b,#d97706" border="#FEF3C7" hoverBorder="#FCD34D" titleColor="#92400E" tag="Pending" tagBg="#FEF3C7" tagColor="#D97706" value={counts.pending} label="Pending Agreements" sub="Awaiting counterparty response"
-          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>} />
-        <SummaryCard t={t} accent="#10b981,#0891b2" border="#B2EBF2" hoverBorder="#A5F3FC" titleColor="#0e7490" tag="Approved" tagBg="#B2EBF2" tagColor="#0891b2" value={counts.approved} label="Approved Agreements" sub="Approved and ready for execution"
-          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>} />
-        <SummaryCard t={t} accent="#ef4444,#dc2626" border="#FEE2E2" hoverBorder="#FCA5A5" titleColor="#7F1D1D" tag="Rejected" tagBg="#FEE2E2" tagColor="#DC2626" value={counts.rejected} label="Rejected Agreements" sub="Sent back for changes or revision"
-          icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
+        <SummaryCard t={t} accent="#06b6d4,#0891b2" value={counts.all} label="Total Agreements"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>} />
+        <SummaryCard t={t} accent="#f59e0b,#d97706" value={counts.pending} label="Pending Agreements"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>} />
+        <SummaryCard t={t} accent="#10b981,#059669" value={counts.approved} label="Approved Agreements"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>} />
+        <SummaryCard t={t} accent="#ef4444,#dc2626" value={counts.rejected} label="Rejected Agreements"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
       </div>
 
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
-        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
-          <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(6,182,212,.10)' : 'rgba(255,255,255,.6)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.22)' : 'rgba(6,182,212,.28)'}`, borderRadius: 11, padding: 4 }}>
+        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '10px 12px', padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
+          {/* The employee list's rail — its `hr-dt` skin, not the base .dt-tabs
+              rule — on the teal ramp. See the longer note on Case to Case.
+              3px of padding puts the rail at 42, which is .ops-search. */}
+          <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3,
+            ...(t.dark
+              ? { background: 'rgba(8,145,178,.08)', border: '1px solid rgba(8,145,178,.22)' }
+              : { background: 'linear-gradient(180deg, color-mix(in srgb, #f0fdfa 60%, #fff), #f0fdfa)', border: '1px solid color-mix(in srgb, #a5e8f5 60%, #fff)' }) }}>
             {([
               ['all', 'All Contracts', null],
               ['approved', 'Approved Contracts', '#10B981'],
@@ -282,19 +291,25 @@ export default function ClmAgreementsSentPage() {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 34, borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 34,
+                    border: 0, borderRadius: 8,
+                    fontFamily: 'var(--font-sans)', fontSize: 12.5, fontWeight: 650, letterSpacing: 0,
+                    cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s',
                     ...(active
-                      ? { border: 0, background: 'linear-gradient(135deg, #22d3ee 0%, #06b6d4 35%, #0891b2 68%, #0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(14,116,144,.3) inset', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
-                      : { background: t.dark ? 'linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10))' : 'linear-gradient(135deg, #ecfeff, #cffafe)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.3)' : 'rgba(6,182,212,.25)'}`, color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
-                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', borderRadius: '8px 8px 0 0', pointerEvents: 'none' }} />}
+                      ? { background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.25)' }
+                      : { background: 'transparent', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
                   {key === 'all'
-                    ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#67e8f9' : '#0e7490')} strokeWidth="2.4" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                    : <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#94A3B8'), flexShrink: 0, boxShadow: active ? 'none' : `0 0 0 2px ${dot}40` }} />}
-                  <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 6px', borderRadius: 999, fontSize: 9, fontWeight: 800, lineHeight: 1,
+                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#67e8f9' : '#0e7490')} strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    : <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#94A3B8'), flexShrink: 0 }} />}
+                  <span>{label}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, lineHeight: 1, border: '1px solid',
                     ...(active
-                      ? { color: '#fff', background: 'rgba(255,255,255,.24)', border: '1px solid rgba(255,255,255,.4)' }
-                      : (t.dark ? { color: '#67e8f9', background: 'rgba(6,182,212,.18)', border: '1px solid rgba(6,182,212,.35)' } : { color: '#0891b2', background: '#fff', border: '1px solid #a5f3fc' })) }}>{counts[key]}</span>
+                      ? (t.dark
+                        ? { background: 'rgba(0,0,0,.28)', borderColor: 'rgba(255,255,255,.22)', color: '#fff' }
+                        : { background: 'rgba(255,255,255,.9)', borderColor: 'rgba(255,255,255,.75)', color: '#155e75' })
+                      : (t.dark
+                        ? { background: 'rgba(8,145,178,.14)', borderColor: 'rgba(8,145,178,.30)', color: '#67e8f9' }
+                        : { background: '#ccfbf1', borderColor: '#a5e8f5', color: '#0e7490' })) }}>{counts[key]}</span>
                 </button>
               );
             })}
@@ -343,35 +358,70 @@ export default function ClmAgreementsSentPage() {
   );
 }
 
-function SummaryCard({ t, accent, border, hoverBorder, titleColor, tag, tagBg, tagColor, value, label, sub, icon }: {
-  t: OpsTokens; accent: string; border: string; hoverBorder: string; titleColor: string; tag: string; tagBg: string; tagColor: string;
-  value: number; label: string; sub: string; icon: React.ReactNode;
+/**
+ * The KPI tile, built as the employee list builds its own (HrEmployees.tsx,
+ * KPI_CARDS): a 3px accent rule across the top of a neutral-bordered card, the
+ * label in small muted caps, the figure under it at 24px/700 in the body
+ * colour, and the icon in a 38px tile at the top RIGHT.
+ *
+ * What this used to be: the icon on the LEFT, the label in the metric's colour
+ * with a chip beside it repeating that same word ("Pending Agreements" +
+ * PENDING), a 26px/900 figure in the metric's colour at -1.5px tracking, and a
+ * caption underneath restating the label again ("Awaiting counterparty
+ * response"). Three lines of type and two colour treatments per tile, where the
+ * employee card has one of each.
+ *
+ * The chip and the caption are gone rather than restyled — both said what the
+ * label already said. The figure is no longer zero-padded, so a count of 1 reads
+ * "1" as it does on the employee cards, not "01".
+ *
+ * The accent is still per-metric: it is what distinguishes the four tiles, and
+ * the employee row colours its five the same way. It just lives in the top rule
+ * and the icon tile now instead of in the type.
+ */
+function SummaryCard({ t, accent, value, label, icon }: {
+  t: OpsTokens; accent: string; value: number; label: string; icon: React.ReactNode;
 }) {
   const [c1, c2] = accent.split(',');
-  const bd = t.dark ? t.border : border;
-  const titleC = t.dark ? t.textStrong : titleColor;
+  const bd = t.dark ? t.border : 'var(--vz-border-color)';
   return (
-    <div className="aws-card" style={{ '--bd': bd, '--hbd': t.dark ? 'rgba(148,163,184,.32)' : hoverBorder, background: t.surface } as React.CSSProperties}
-      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(6,182,212,.18)'; e.currentTarget.style.borderColor = t.dark ? 'rgba(148,163,184,.32)' : hoverBorder; }}
-      onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 1px 4px rgba(6,182,212,.08)'; e.currentTarget.style.borderColor = bd; }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, borderRadius: '12px 12px 0 0', background: `linear-gradient(90deg,${c1},${c2})` }} />
-      <div style={{ width: 38, height: 38, borderRadius: 11, background: `linear-gradient(135deg,${c1},${c2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 3px 10px ${c1}59,inset 0 1px 0 rgba(255,255,255,.2)` }}>{icon}</div>
-      <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 1 }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: t.dark ? t.textSub : titleColor, letterSpacing: '-.1px' }}>{label}</span>
-          <span style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '2px 6px', borderRadius: 20, background: t.dark ? 'rgba(255,255,255,.06)' : tagBg, color: tagColor }}>{tag}</span>
-        </div>
-        <div style={{ fontSize: 26, fontWeight: 900, letterSpacing: '-1.5px', color: titleC, lineHeight: 1.1, marginBottom: 1 }}>{pad2(value)}</div>
-        <div style={{ fontSize: 8.5, fontWeight: 500, color: t.textMuted, lineHeight: 1.3 }}>{sub}</div>
+    <div className="aws-card" style={{ '--bd': bd, background: t.surface } as React.CSSProperties}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(6,182,212,.18)'; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 1px 4px rgba(6,182,212,.08)'; }}>
+      {/* Flush to the card's top edge — the card drops its own top border so the
+          rule IS the edge, which is what keeps it a clean 3px band. */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${c1},${c2})` }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 10.5, fontWeight: 700, color: t.dark ? t.textMuted : 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px' }}>{label}</p>
+        <div style={{ fontSize: 24, fontWeight: 700, color: t.dark ? t.textStrong : 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{value}</div>
       </div>
+      <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${c1},${c2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,.10)' }}>{icon}</div>
     </div>
   );
 }
 
-function Avatar({ name, grad, size = 28, fs = 9 }: { name: string; grad: string; size?: number; fs?: number }) {
+/**
+ * The initials beside a name, in the page's own accent.
+ *
+ * It used to take a gradient per organisation, looked up in ORG_GRAD, falling
+ * back to deep violet. ORG_GRAD held three prototype names, so real data never
+ * matched it and every org on this teal page drew a violet mark — the one thing
+ * in the table that belonged to no palette on it. (Its shadow was neutral black
+ * at 15% too, where everything else here casts its own colour.)
+ *
+ * One accent for the page, as Case to Case does it, and built the same way:
+ * 24px on radius 8, white initials, the top-half sheen as the first background
+ * layer, and a short shadow in the accent.
+ */
+function Avatar({ name }: { name: string }) {
   return (
-    <div style={{ width: size, height: size, borderRadius: 8, background: `linear-gradient(135deg,${grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(0,0,0,.15)' }}>
-      <span style={{ fontSize: fs, fontWeight: 900, color: '#fff', letterSpacing: '-.2px' }}>{inits(name)}</span>
+    <div style={{
+      width: 24, height: 24, borderRadius: 8, flexShrink: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent 50%), linear-gradient(135deg,#0891b2,#0e7490)',
+      boxShadow: '0 2px 5px rgba(8,145,178,.28), inset 0 1px 0 rgba(255,255,255,.18)',
+    }}>
+      <span style={{ fontSize: 8.5, fontWeight: 800, color: '#fff', letterSpacing: '.01em', lineHeight: 1 }}>{inits(name)}</span>
     </div>
   );
 }
@@ -384,16 +434,24 @@ function ApprovalBadge({ ap }: { ap: 'approved' | 'pending' | 'rejected' }) {
     : { bg: 'rgba(239,68,68,.16)', border: 'rgba(239,68,68,.42)', text: '#fca5a5' };
   const b = t.dark ? dk : { bg: c.bg, border: c.border, text: c.color };
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: b.bg, border: `1.5px solid ${b.border}`, whiteSpace: 'nowrap' }}>
-      <span style={{ width: 5, height: 5, borderRadius: '50%', background: c.dot, flexShrink: 0, boxShadow: `0 0 5px ${c.dot}60` }} />
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: 20, background: b.bg, border: `1.5px solid ${b.border}`, whiteSpace: 'nowrap' }}>
       <span style={{ fontSize: 10.5, fontWeight: 700, color: b.text }}>{c.label}</span>
     </span>
   );
 }
 
-const TH  = { padding: '10px 14px', fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', textAlign: 'center', background: 'transparent', borderBottom: 'none' } as React.CSSProperties;
+/* The header band, the same one the other eleven CLM lists use — .clm-table
+   thead th in clmShared.ts: a light accent tint carrying 9.5px/800 uppercase in
+   the accent colour, over a 1.5px accent rule.
+   It was a solid dark teal strip (#0e7490 → #22d3ee) with 8px white caps: a
+   heavy bar over light rows, and a size and a half below every other header in
+   the product. Three tables on this page share these two constants, so they all
+   change together. The dark-mode values can't live here — these are module
+   constants with no access to the theme — so they are in AWS_CSS, keyed off
+   .aws-table. */
+const TH  = { padding: '9px 14px', fontSize: 9.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: '#0e7490', whiteSpace: 'nowrap', textAlign: 'center', lineHeight: 1.3, verticalAlign: 'middle', background: 'transparent', borderBottom: '1.5px solid rgba(6,182,212,.20)' } as React.CSSProperties;
 const THL = { ...TH, textAlign: 'left' } as React.CSSProperties;
-const THEAD_BG = 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)';
+const THEAD_BG = 'linear-gradient(110deg,#f0fdff,#e8fbfd)';
 
 const ICO_DL  = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>;
 const ICO_EDIT = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>;
@@ -481,12 +539,12 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
           <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
+            <table className="aws-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
               <thead><tr style={{ background: THEAD_BG }}>
                 <th style={{ ...TH, width: 50 }}>SR NO</th>
                 <th style={{ ...TH, width: 110 }}>CTC ID</th>
                 <th style={{ ...TH, width: 110 }}>CTC DATE</th>
-                <th style={THL}>AGREEMENT TITLE</th>
+                <th style={{ ...THL, width: 200 }}>AGREEMENT TITLE</th>
                 <th style={{ ...THL, width: 150 }}>OUR ORGANISATION</th>
                 <th style={{ ...THL, width: 170 }}>COUNTERPARTIES</th>
                 <th style={{ ...THL, width: 130 }}>CREATED BY</th>
@@ -507,20 +565,20 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
                       onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                       <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                       <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
-                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
-                      <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0e7490', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
-                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Avatar name={c.org} grad={ORG_GRAD[c.org] || '#4C1D95,#7C3AED'} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.org}</span></Tooltip></div></td>
+                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
+                      <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0e7490', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
+                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Avatar name={c.org} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.org}</span></Tooltip></div></td>
                       <td style={TD_L}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <Avatar name={c.cp[0]} grad="#0891b2,#0e7490" />
-                          <Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
+                          <Avatar name={c.cp[0]} />
+                          <Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
                           {extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}
                         </div>
                       </td>
-                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A7F3D0,#7DD3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #B2EBF2' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0891b2' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A7F3D0,#7DD3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #B2EBF2' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0891b2' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_C}><ApprovalBadge ap={ap} /></td>
-                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
-                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
+                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
+                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
                       <td style={TD_C}>
                         {(() => {
                           const verBusy = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'version';
@@ -559,12 +617,12 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
           <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
+            <table className="aws-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
               <thead><tr style={{ background: THEAD_BG }}>
                 <th style={{ ...TH, width: 52 }}>SR. NO</th>
                 <th style={{ ...TH, width: 110 }}>CTC ID</th>
                 <th style={{ ...TH, width: 105 }}>CTC DATE</th>
-                <th style={THL}>AGREEMENT TITLE</th>
+                <th style={{ ...THL, width: 200 }}>AGREEMENT TITLE</th>
                 <th style={{ ...THL, width: 130 }}>CREATED BY</th>
                 <th style={{ ...THL, width: 130 }}>REJECTED BY</th>
                 <th style={THL}>REASON</th>
@@ -586,7 +644,15 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
                       <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FCA5A5,#EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(rej.by)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.dark ? '#fca5a5' : '#7F1D1D', whiteSpace: 'nowrap' }}>{rej.by}</span></div></td>
-                      <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><div style={{ width: 16, height: 16, borderRadius: '50%', background: '#FEE2E2', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></div><Tooltip label={rej.reason}><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{rej.reason}</div></Tooltip></div></td>
+                      {/* The marker is the bare glyph, not a chip. It used to be
+                          a 9px cross inside a 16px filled disc: at that size the
+                          cross has barely three pixels of stroke left and the
+                          fill swallows them, so the cell led with a red smudge.
+                          Stroked at 13px on no background it reads at a glance,
+                          and it no longer competes with the two real avatars
+                          beside it — a chip in this column looked like a third
+                          one that had lost its letter. */}
+                      <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#fca5a5' : '#DC2626'} strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12.5" /><line x1="12" y1="16" x2="12" y2="16" /></svg><Tooltip label={rej.reason}><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{rej.reason}</div></Tooltip></div></td>
                       <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
                       <td style={TD_C}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                         <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} busy={downloadingId === c.id} onPick={(fmt) => onDownload(c, fmt)} t={t} />
@@ -611,12 +677,12 @@ function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, on
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
+        <table className="aws-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: THEAD_BG }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
             <th style={{ ...TH, width: 110 }}>CTC ID</th>
             <th style={{ ...TH, width: 100 }}>CTC DATE</th>
-            <th style={THL}>AGREEMENT TITLE</th>
+            <th style={{ ...THL, width: 200 }}>AGREEMENT TITLE</th>
             <th style={{ ...THL, width: 115 }}>CREATED BY</th>
             <th style={{ ...THL, width: 115 }}>APPROVER</th>
             <th style={THL}>CLARIFICATION QUERY</th>
@@ -859,7 +925,12 @@ function EmptyState({ msg, t, searching = false, title = 'No Contracts Found', i
   );
 }
 
-const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center' } as React.CSSProperties;
+/* 11.5px/500 is the body size every CLM and HRMS list uses; the cells below set
+   their own 11px/600 and 12px/700, which is why this table read a notch smaller
+   and heavier than the rest. Declared here so a cell that says nothing inherits
+   it, and the per-cell sizes that remain are the deliberate ones (the SR disc,
+   the initials, the small captions under a clarification). */
+const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center', fontSize: 11.5, fontWeight: 500 } as React.CSSProperties;
 const TD_L = { ...TD_C, textAlign: 'left' } as React.CSSProperties;
 const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'linear-gradient(135deg,rgba(6,182,212,.12),rgba(8,145,178,.06))', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.25'})`, whiteSpace: 'nowrap', letterSpacing: '.02em' });
 
@@ -873,6 +944,20 @@ const AWS_CSS = `
 .aws-thread::-webkit-scrollbar-thumb { background: rgba(124,58,237,.28); border-radius: 999px; }
 .aws-thread::-webkit-scrollbar-thumb:hover { background: rgba(124,58,237,.5); }
 
+/* Dark mode for the three table heads. The TH constant above is a module
+   constant with no access to the theme, and an inline style beats a plain CSS
+   rule, so these carry !important — the one case where it is the mechanism
+   rather than a patch. Values are .clm-table's dark head, which the rest of CLM
+   already uses. */
+[data-bs-theme="dark"] .aws-table thead tr,
+[data-layout-mode="dark"] .aws-table thead tr { background: #12303d !important; }
+[data-bs-theme="dark"] .aws-table thead th,
+[data-layout-mode="dark"] .aws-table thead th {
+  color: #a5f3fc !important;
+  border-bottom: 2px solid rgba(34,211,238,.55) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
 @media (max-width: 820px) {
   .aws-clarify-body { grid-template-columns: 1fr !important; }
   .aws-clarify-modal { max-height: 92vh; overflow-y: auto !important; }
@@ -885,10 +970,14 @@ const AWS_CSS = `
   .aws-searchbox { width: 100% !important; max-width: none !important; flex: 1 1 100% !important; }
   .aws-searchbox input { width: 100% !important; }
 }
+/* The employee card's box: radius 14 on 11px 15px, a 1px neutral border with
+   NO top border so the accent rule sits flush as the card's top edge, and the
+   two columns top-aligned rather than centred — the figure stacks under the
+   label on the left, the icon tile stays at the top right. */
 .aws-card {
-  position:relative; overflow:hidden; border-radius:12px; padding:12px 14px;
-  background:#fff; border:1.5px solid var(--bd);
+  position:relative; overflow:hidden; border-radius:14px; padding:11px 15px;
+  background:#fff; border:1px solid var(--bd); border-top-width:0;
   box-shadow:0 1px 4px rgba(6,182,212,.08); transition:all .18s;
-  display:flex; align-items:center; gap:11px;
+  display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
 }
 `;

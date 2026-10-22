@@ -295,6 +295,18 @@ export const CLM_CSS = `
   gap: 6px; position: relative;
   flex-wrap: wrap;
 }
+/* The capsule the tabs sit in. Case to Case, Agreements We Sent and Agreements
+   To Approve each draw this inline; on the master pages the tabs sat bare on
+   the toolbar, so the same rail read as two different controls across the
+   module. These are those pages' numbers. */
+.clm-tabrail {
+  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 4px; border-radius: 11px;
+  background: rgba(255,255,255,.6);
+  border: 1px solid rgba(6,182,212,.28);
+}
+[data-bs-theme="dark"] .clm-tabrail { background: rgba(6,182,212,.10); border-color: rgba(6,182,212,.22); }
+
 .clm-tab {
   display: inline-flex; align-items: center; gap: 7px;
   /* The shared rail's geometry and type (components/ui/DataTable.css
@@ -304,8 +316,16 @@ export const CLM_CSS = `
      differently from every other module's. */
   padding: 0 14px; height: 34px; border-radius: 8px; box-sizing: border-box;
   font-family: var(--font-sans);
-  font-size: 12.5px; font-weight: 700; color: #475569;
-  cursor: pointer; border: 1px solid #d5e7ef; background: #fff;
+  /* Painted like the Case to Case rail, in teal. The geometry was already the
+     same; what differed was the paint — a flat white tab with slate text and a
+     grey count pill, next to CTC's tinted tab with an accent label and an
+     accent count. Inactive is now an accent-50 → accent-150 wash (#f0fdff →
+     #cffafe) carrying the accent label, which is CTC's #f5f1fe → #ede9fe with
+     #6d28d9 read off the teal ramp. */
+  font-size: 12.5px; font-weight: 700; color: #0e7490;
+  cursor: pointer; border: 1px solid rgba(6,182,212,.22);
+  background: linear-gradient(135deg, #f0fdff, #cffafe);
+  overflow: hidden;
   /* Neither colour nor background eases — same reason as .clm-pill. The
      active tab's background is a gradient, which snaps the instant the class
      lands, so animating the colour left slate-grey text sitting on an
@@ -314,27 +334,40 @@ export const CLM_CSS = `
   transition: box-shadow .22s ease, border-color .15s ease;
   white-space: nowrap; letter-spacing: 0; position: relative; z-index: 1;
 }
-.clm-tab:hover { background: rgba(6,182,212,.08); color: #0891b2; border-color: rgba(6,182,212,.45); }
+.clm-tab:hover { background: linear-gradient(135deg, #e4fbff, #b7f3fb); border-color: rgba(6,182,212,.45); }
+/* Four stops, not three, plus a lit top edge and a sunk bottom one — the same
+   build as CTC's active tab. The old 3-stop gradient under a single 18% inset
+   read flat beside it. */
+/* The sheen is the FIRST background layer, not an overlay. CTC draws it as a
+   child <span> and has to lift the label above it with z-index; as a layer it
+   paints behind the text for free, and no page's markup has to change. An
+   absolutely-positioned ::before would have sat on top of the label and washed
+   the upper half of every glyph. */
 .clm-tab.active {
-  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 45%, #0e7490 100%);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.18), transparent 50%),
+    linear-gradient(135deg, #22d3ee 0%, #06b6d4 35%, #0891b2 68%, #0e7490 100%);
   color: #fff; font-weight: 700; border-color: transparent;
-  box-shadow: 0 3px 10px rgba(8,145,178,.32), inset 0 1px 0 rgba(255,255,255,.18);
+  box-shadow: 0 5px 14px rgba(8,145,178,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3);
+  text-shadow: 0 1px 2px rgba(14,116,144,.4);
 }
 .clm-tab.active:hover { opacity: .95; }
 .clm-tab-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.clm-tab.active .clm-tab-dot { background: rgba(255,255,255,.65) !important; box-shadow: none !important; }
+.clm-tab.active .clm-tab-dot { background: rgba(255,255,255,.9) !important; box-shadow: none !important; }
 .clm-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 18px; border-radius: 999px; padding: 0 7px;
   font-size: 10px; font-weight: 800; line-height: 1;
 }
 .clm-tab.active .clm-tab-count {
-  background: rgba(255,255,255,.18); color: #fff;
-  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.24); color: #fff;
+  border: 1px solid rgba(255,255,255,.4);
 }
+/* White disc, accent hairline, accent numeral — CTC's count. The grey-on-grey
+   chip it replaces disappeared into the tab it sat on. */
 .clm-tab:not(.active) .clm-tab-count {
-  background: #F1F5F9; color: #64748B;
-  border: 1px solid #E2E8F0;
+  background: #fff; color: #0891b2;
+  border: 1px solid rgba(6,182,212,.30);
 }
 
 /* Premium pill switcher for 2-tab header strips (TD/TNC/AGR/CL) */
@@ -455,6 +488,15 @@ export const CLM_CSS = `
   flex: 0 0 auto; width: 500px; max-width: 100%;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
+/* The search ends its toolbar on every CLM page. On the four document-master
+   pages (T&C, Clause Library, Trade Documents, Agreements) it is the row's
+   ONLY item, so there is nothing for space-between to push it against — the
+   auto margin carries it right. HRMS handles that same case the same way; see
+   .dt-toolbar:not(:has(.dt-toolbar-actions)) .dt-search in DataTable.css.
+   Scoped to a DIRECT child so a search nested inside a page's own toolbar
+   group (Authority's actions group, Segment's .seg-toolbar) keeps its place
+   within that group. */
+.clm-tabs-bar > .clm-search { margin-left: auto; }
 @media (max-width: 1280px) {
   .clm-tabs-bar .clm-search-fixed,
   .clm-tabs-bar .clm-search-grow { width: 360px; }
@@ -597,6 +639,25 @@ export const CLM_CSS = `
   padding: 4px 9px; border-radius: 7px;
   border: 1px solid rgba(6,182,212,.25);
   white-space: nowrap;
+}
+
+/* How many records reference this master row. Muted at zero rather than
+   coloured: a lookup nothing points at yet is the ordinary case on a fresh
+   tenant, not something to flag. It earns the accent once it is in use, which
+   is also when the row's edit and delete are locked. */
+.clm-use-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 20px; padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 700; line-height: 1;
+  color: #94a3b8;
+  background: rgba(148,163,184,.12);
+  border: 1px solid rgba(148,163,184,.22);
+}
+.clm-use-count.is-used {
+  color: #0891b2;
+  background: rgba(6,182,212,.10);
+  border-color: rgba(6,182,212,.25);
 }
 
 /* Overflow popover (opened from a +N count badge in a table cell). Positioned
@@ -1429,10 +1490,13 @@ body > .dropdown-menu.master-select-menu,
  * this rule was clobbering .clm-tab.active's white text (same specificity,
  * later in the cascade wins), leaving the active tab readable as a muddy
  * grey-blue against the teal gradient. */
-[data-bs-theme="dark"] .clm-tab:not(.active) { color: #94a3b8; background: #0f172a; border-color: rgba(6,182,212,.28); }
+/* Dark: the light rule's accent wash, inverted — a translucent accent fill and
+   an accent label, as CTC does it, rather than the flat slate panel this used
+   to be. */
+[data-bs-theme="dark"] .clm-tab:not(.active) { color: #67e8f9; background: linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10)); border-color: rgba(6,182,212,.28); }
 [data-bs-theme="dark"] .clm-tab.active { color: #fff; border-color: transparent; }
-[data-bs-theme="dark"] .clm-tab:not(.active):hover { color: #67e8f9; border-color: rgba(6,182,212,.5); }
-[data-bs-theme="dark"] .clm-tab:not(.active) .clm-tab-count { background: #1e293b; color: #94a3b8; border-color: rgba(148,163,184,.18); }
+[data-bs-theme="dark"] .clm-tab:not(.active):hover { color: #a5f3fc; background: linear-gradient(135deg, rgba(6,182,212,.24), rgba(6,182,212,.16)); border-color: rgba(6,182,212,.5); }
+[data-bs-theme="dark"] .clm-tab:not(.active) .clm-tab-count { background: rgba(6,182,212,.18); color: #67e8f9; border-color: rgba(34,211,238,.30); }
 /* Dark: the same idea inverted, and the same values HRMS uses — a translucent
    wash of the accent rather than a flat panel colour, so the field reads as a
    tint of the surface it sits on instead of a lighter box on top of it. */
@@ -1566,6 +1630,8 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-pill-ico { background: rgba(8,145,178,.18); border-color: rgba(8,145,178,.32); color: #67e8f9; }
 [data-bs-theme="dark"] .clm-pill.active .clm-pill-ico { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.25); color: #fff; }
 [data-bs-theme="dark"] .clm-code-pill { color: #67e8f9; background: linear-gradient(135deg, rgba(8,145,178,.20), rgba(6,182,212,.10)); border-color: rgba(6,182,212,.35); }
+[data-bs-theme="dark"] .clm-use-count { color: #64748b; background: rgba(148,163,184,.10); border-color: rgba(148,163,184,.18); }
+[data-bs-theme="dark"] .clm-use-count.is-used { color: #67e8f9; background: rgba(6,182,212,.18); border-color: rgba(6,182,212,.35); }
 [data-bs-theme="dark"] .clm-empty-ico { background: linear-gradient(135deg, rgba(8,145,178,.20), rgba(8,145,178,.10)); color: #67e8f9; }
 [data-bs-theme="dark"] .clm-empty-title { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-empty-sub   { color: #64748b; }
@@ -1722,9 +1788,10 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .dcp-req-group.dcp-req-group-mand { border-color: rgba(6,182,212,.45) !important; }
 [data-bs-theme="dark"] .dcp-req-group.dcp-req-group-opt  { border-color: rgba(245,158,11,.45) !important; }
 
-/* Brighten the inactive segment-rule tab text in dark mode — previously
- * #94a3b8 was too dim to read against the near-black panel. */
-[data-bs-theme="dark"] .clm-tab:not(.active) { color: #cbd5e1; }
+/* (The dark inactive-tab colour lives with the rest of the .clm-tab dark rules
+   above. A second declaration down here, added to brighten the old dim #94a3b8,
+   carried the same specificity and so won the cascade — it was overwriting the
+   accent label with slate again.) */
 
 /* ── Responsive breakpoints ── */
 

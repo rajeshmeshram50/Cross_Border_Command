@@ -56,9 +56,19 @@ const dateTimeParts = (s: string): { date: string; time: string } => {
 
 type AtaTab = 'all' | 'pending' | 'clarification' | 'approved' | 'rejected';
 
-const TH  = { padding: '10px 14px', fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', textAlign: 'center', background: 'transparent', borderBottom: 'none' } as React.CSSProperties;
+/* The header band, the same one the other CLM lists use - .clm-table thead th
+   in clmShared.ts: a light accent tint carrying 9.5px/800 uppercase in the
+   accent colour over a 1.5px accent rule. It was a solid dark teal strip
+   (#0e7490 -> #22d3ee) with 8px white caps: a heavy bar over light rows, and a
+   size and a half below every other header in the product. Dark-mode values
+   can't live here - these are module constants with no access to the theme -
+   so they are in ATA_CSS, keyed off .ata-table. */
+const THEAD_BG = 'linear-gradient(110deg,#f0fdff,#e8fbfd)';
+const TH  = { padding: '9px 14px', fontSize: 9.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: '#0e7490', whiteSpace: 'nowrap', textAlign: 'center', lineHeight: 1.3, verticalAlign: 'middle', background: 'transparent', borderBottom: '1.5px solid rgba(6,182,212,.20)' } as React.CSSProperties;
 const THL = { ...TH, textAlign: 'left' } as React.CSSProperties;
-const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center' } as React.CSSProperties;
+/* 11.5px/500 is the body size every CLM and HRMS list uses. Declared here so a
+   cell that sets nothing inherits it. */
+const TD_C = { padding: '11px 14px', verticalAlign: 'middle', borderBottom: '1px solid rgba(6,182,212,.06)', textAlign: 'center', fontSize: 11.5, fontWeight: 500 } as React.CSSProperties;
 const TD_L = { ...TD_C, textAlign: 'left' } as React.CSSProperties;
 const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: dark ? '#67e8f9' : '#0e7490', background: dark ? 'rgba(6,182,212,.2)' : 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: `1px solid rgba(6,182,212,${dark ? '.42' : '.28'})` });
 
@@ -241,7 +251,7 @@ export default function ClmAgreementsToApprovePage() {
   }, [loading, tab, ata.length]);
 
   return (
-    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'var(--font-sans)' }}>
+    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-sans)' }}>
       <style>{ATA_CSS + OPS_SEARCH_CSS}</style>
 
       {/* HEADER STRIP */}
@@ -255,7 +265,9 @@ export default function ClmAgreementsToApprovePage() {
             </div>
             <span style={{ position: 'absolute', bottom: -1, right: -1, width: 9, height: 9, borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #cef8ff', boxShadow: '0 0 6px rgba(34,197,94,.4)' }} />
           </div>
-          <div>
+          {/* min-width:0 is what lets the subtitle ellipsise at the band's own
+              edge rather than at a made-up width. */}
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
               <div style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.15 }}>Agreements To Approve</div>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
@@ -263,23 +275,23 @@ export default function ClmAgreementsToApprovePage() {
                 <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
               </span>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, maxWidth: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval — accept, reject, or request clarification before sending to counterparties.</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval — accept, reject, or request clarification before sending to counterparties.</div>
           </div>
         </div>
       </div>
 
       {/* SUMMARY CARDS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 8 }}>
-        <StatCard t={t} accent="#06b6d4,#0891b2" border="#A5F3FC" titleColor="#164e63" tag="Total" tagBg="#CFFAFE" tagColor="#0891b2" value={counts.all} label="Total Received" sub="All agreements received"
-          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>} />
-        <StatCard t={t} accent="#f59e0b,#d97706" border="#FEF3C7" titleColor="#92400E" tag="Pending" tagBg="#FEF3C7" tagColor="#D97706" value={counts.pending} label="Pending Approval" sub="Awaiting your decision"
-          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>} />
-        <StatCard t={t} accent="#8B5CF6,#7C3AED" border="#DDD6FE" titleColor="#4C1D95" tag="Query" tagBg="#EDE9FE" tagColor="#7C3AED" value={counts.clarification} label="Clarifications" sub="Queries raised, awaiting reply"
-          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>} />
-        <StatCard t={t} accent="#10b981,#059669" border="#D1FAE5" titleColor="#065F46" tag="Approved" tagBg="#D1FAE5" tagColor="#059669" value={counts.approved} label="Approved" sub="Approved by you"
-          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>} />
-        <StatCard t={t} accent="#ef4444,#dc2626" border="#FEE2E2" titleColor="#7F1D1D" tag="Rejected" tagBg="#FEE2E2" tagColor="#DC2626" value={counts.rejected} label="Rejected" sub="Sent back or declined"
-          icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
+        <StatCard t={t} accent="#06b6d4,#0891b2" value={counts.all} label="Total Received"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>} />
+        <StatCard t={t} accent="#f59e0b,#d97706" value={counts.pending} label="Pending Approval"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>} />
+        <StatCard t={t} accent="#8B5CF6,#7C3AED" value={counts.clarification} label="Clarifications"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>} />
+        <StatCard t={t} accent="#10b981,#059669" value={counts.approved} label="Approved"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>} />
+        <StatCard t={t} accent="#ef4444,#dc2626" value={counts.rejected} label="Rejected"
+          icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>} />
       </div>
 
       {/* Whole-page lock while an agreement PDF is being built. The server
@@ -296,7 +308,12 @@ export default function ClmAgreementsToApprovePage() {
       {/* FILTER TABS + TABLE */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}`, boxShadow: '0 1px 4px rgba(6,182,212,.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', background: t.tabCapsule, borderRadius: 30, padding: 4, boxShadow: t.dark ? 'none' : 'inset 0 1px 4px rgba(6,182,212,.15)' }}>
+          {/* The CLM rail: a hairline capsule holding 34px tabs on radius 8,
+              as Agreements We Sent and Case to Case have it and as .clm-tab
+              renders on the master pages. This was a radius-30 capsule of
+              radius-25 lozenges with no border and an inset shadow — a
+              different control in the same module. */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(6,182,212,.10)' : 'rgba(255,255,255,.6)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.22)' : 'rgba(6,182,212,.28)'}`, borderRadius: 11, padding: 4 }}>
             {([
               ['all', 'All Agreements', null],
               ['pending', 'Pending Approval', null],
@@ -307,13 +324,19 @@ export default function ClmAgreementsToApprovePage() {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 25, border: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 800 : 700, cursor: 'pointer', transition: 'all .18s', position: 'relative', overflow: 'hidden',
-                    background: active ? 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)' : 'transparent', color: active ? '#fff' : t.tabInactive,
-                    boxShadow: active ? '0 3px 12px rgba(6,182,212,.5),inset 0 1px 0 rgba(255,255,255,.22)' : 'none' }}>
-                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', borderRadius: '25px 25px 0 0', pointerEvents: 'none' }} />}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 34, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                    ...(active
+                      ? { border: 0, background: 'linear-gradient(135deg, #22d3ee 0%, #06b6d4 35%, #0891b2 68%, #0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(14,116,144,.3) inset', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
+                      : { background: t.dark ? 'linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10))' : 'linear-gradient(135deg, #ecfeff, #cffafe)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.3)' : 'rgba(6,182,212,.25)'}`, color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
+                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', borderRadius: '8px 8px 0 0', pointerEvents: 'none' }} />}
                   {dot && <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : dot, flexShrink: 0, boxShadow: active ? 'none' : `0 0 0 2px ${dot}40` }} />}
                   <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: active ? 'rgba(255,255,255,.28)' : 'rgba(14,116,144,.2)', fontSize: 9, fontWeight: 900, color: active ? '#fff' : t.tabInactive }}>{pad2(counts[key])}</span>
+                  {/* Raw count, not pad2 — "1" as on every other CLM rail and
+                      on the KPI tiles above, rather than "01". */}
+                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 800, lineHeight: 1,
+                    ...(active
+                      ? { color: '#fff', background: 'rgba(255,255,255,.24)', border: '1px solid rgba(255,255,255,.4)' }
+                      : (t.dark ? { color: '#67e8f9', background: 'rgba(6,182,212,.18)', border: '1px solid rgba(6,182,212,.35)' } : { color: '#0891b2', background: '#fff', border: '1px solid #a5f3fc' })) }}>{counts[key]}</span>
                 </button>
               );
             })}
@@ -353,24 +376,34 @@ export default function ClmAgreementsToApprovePage() {
   );
 }
 
-function StatCard({ t, accent, border, titleColor, tag, tagBg, tagColor, value, label, sub, icon }: {
-  t: OpsTokens; accent: string; border: string; titleColor: string; tag: string; tagBg: string; tagColor: string; value: number; label: string; sub: string; icon: React.ReactNode;
+/**
+ * The KPI tile, as the employee list builds it (HrEmployees.tsx, KPI_CARDS) and
+ * as Agreements We Sent now does: a 3px accent rule flush across the top of a
+ * neutral-bordered card, the label in small muted caps, the figure under it at
+ * 24px/700 in the body colour, and the icon in a 38px tile at the top right.
+ *
+ * It was the icon on the left, the label in the metric's colour with a chip
+ * beside it repeating that word, a 24px/900 figure in the metric's colour at
+ * -1.5px tracking, and a caption restating the label. The chip and the caption
+ * are dropped rather than restyled — both said what the label already said —
+ * and the figure is no longer zero-padded, so a count of 1 reads "1".
+ */
+function StatCard({ t, accent, value, label, icon }: {
+  t: OpsTokens; accent: string; value: number; label: string; icon: React.ReactNode;
 }) {
   const [c1, c2] = accent.split(',');
   return (
-    <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 12, padding: '12px 14px', background: t.surface, border: `1.5px solid ${t.dark ? t.border : border}`, boxShadow: '0 1px 4px rgba(6,182,212,.1)', transition: 'all .18s', display: 'flex', alignItems: 'center', gap: 11 }}
+    <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 14, padding: '11px 15px', background: t.surface, border: `1px solid ${t.dark ? t.border : 'var(--vz-border-color)'}`, borderTopWidth: 0, boxShadow: '0 1px 4px rgba(6,182,212,.1)', transition: 'all .18s', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}
       onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(6,182,212,.2)'; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 1px 4px rgba(6,182,212,.1)'; }}>
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, borderRadius: '12px 12px 0 0', background: `linear-gradient(90deg,${c1},${c2})` }} />
-      <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg,${c1},${c2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 3px 10px ${c1}59,inset 0 1px 0 rgba(255,255,255,.2)` }}>{icon}</div>
-      <div style={{ flex: 1, minWidth: 0, position: 'relative', zIndex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 1 }}>
-          <span style={{ fontSize: 9.5, fontWeight: 700, color: t.dark ? t.textSub : titleColor }}>{label}</span>
-          <span style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', padding: '2px 6px', borderRadius: 20, background: t.dark ? 'rgba(255,255,255,.06)' : tagBg, color: tagColor }}>{tag}</span>
-        </div>
-        <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: '-1.5px', color: t.dark ? t.textStrong : titleColor, lineHeight: 1.1, marginBottom: 1 }}>{pad2(value)}</div>
-        <div style={{ fontSize: 8, fontWeight: 500, color: t.textMuted }}>{sub}</div>
+      {/* Flush to the top edge — the card drops its own top border so the rule
+          IS the edge, which keeps it a clean 3px band. */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${c1},${c2})` }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 10.5, fontWeight: 700, color: t.dark ? t.textMuted : 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px' }}>{label}</p>
+        <div style={{ fontSize: 24, fontWeight: 700, color: t.dark ? t.textStrong : 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{value}</div>
       </div>
+      <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${c1},${c2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,.10)' }}>{icon}</div>
     </div>
   );
 }
@@ -462,12 +495,12 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
-          <thead><tr style={{ background: 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)' }}>
+        <table className="ata-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
+          <thead><tr style={{ background: THEAD_BG }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
             <th style={{ ...TH, width: 110 }}>CTC ID</th>
             <th style={{ ...TH, width: 110 }}>CTC DATE</th>
-            <th style={THL}>AGREEMENT TITLE</th>
+            <th style={{ ...THL, width: 200 }}>AGREEMENT TITLE</th>
             <th style={{ ...THL, width: 120 }}>CREATED BY</th>
             <th style={{ ...THL, width: 120 }}>APPROVER</th>
             <th style={{ ...TH, width: 120 }}>STATUS</th>
@@ -488,13 +521,13 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                   <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
-                  <td style={TD_C}>{(() => { const dt = dateTimeParts(c.date); return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dt.date}</span>{dt.time && <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0891b2', whiteSpace: 'nowrap' }}>{dt.time}</span>}</span>); })()}</td>
-                  <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                  <td style={TD_C}>{(() => { const dt = dateTimeParts(c.date); return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dt.date}</span>{dt.time && <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0891b2', whiteSpace: 'nowrap' }}>{dt.time}</span>}</span>); })()}</td>
+                  <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><ApproverList c={c} t={t} /></td>
                   <td style={TD_C}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: sb.bg, border: `1.5px solid ${sb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: s.dot, flexShrink: 0 }} /><span style={{ fontSize: 10.5, fontWeight: 700, color: sb.text }}>{s.label}</span></span></td>
                   {isRej && <td style={{ ...TD_L, maxWidth: 180 }}><Tooltip label={c.rejReason ?? ''}><div style={{ fontSize: 10.5, color: '#DC2626', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>{c.rejReason}</div></Tooltip></td>}
-                  <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.expDate)}</span></td>
+                  <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.expDate)}</span></td>
                   <td style={TD_C}>
                     {actionable ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
@@ -548,12 +581,12 @@ function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSi
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
-          <thead><tr style={{ background: 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)' }}>
+        <table className="ata-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
+          <thead><tr style={{ background: THEAD_BG }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
             <th style={{ ...TH, width: 110 }}>CTC ID</th>
             <th style={{ ...TH, width: 110 }}>CTC DATE</th>
-            <th style={THL}>AGREEMENT TITLE</th>
+            <th style={{ ...THL, width: 200 }}>AGREEMENT TITLE</th>
             <th style={{ ...THL, width: 120 }}>CREATED BY</th>
             <th style={{ ...THL, width: 120 }}>APPROVER</th>
             <th style={{ ...THL, width: 120 }}>QUERY</th>
@@ -1113,6 +1146,19 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
 
 const ATA_CSS = `
 @keyframes ataSlideUp { from { opacity:0; transform:translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
+
+/* Dark mode for the two table heads. TH is a module constant with no access to
+   the theme, and an inline style beats a plain CSS rule, so these carry
+   !important - the mechanism here, not a patch. Values are .clm-table's dark
+   head, which the rest of CLM already uses. */
+[data-bs-theme="dark"] .ata-table thead tr,
+[data-layout-mode="dark"] .ata-table thead tr { background: #12303d !important; }
+[data-bs-theme="dark"] .ata-table thead th,
+[data-layout-mode="dark"] .ata-table thead th {
+  color: #a5f3fc !important;
+  border-bottom: 2px solid rgba(34,211,238,.55) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
 
 /* ── Responsive Take Action modal ──
    Clarify runs two panes side by side on a laptop: the thread on the left, the

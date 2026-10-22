@@ -272,13 +272,16 @@ export default function ClmAuthorityPage() {
 
       {/* ── Card 3: Toolbar + Table ── */}
       <div className="clm-page-card">
+        {/* One group on the left — the count, then Sample Sheet / Import /
+            Export — and the search alone on the right. The count opens the
+            group where Sample Sheet used to start; it was written last. */}
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div className="clm-search auth-search">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input autoComplete="off" type="text" placeholder="Search by authority name, ID or description…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
-          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div className="clm-total">
+            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
+            <div className="clm-total-lbl">Total Authorities</div>
+            <div className="clm-total-num">{count}</div>
+          </div>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) void onImportFile(f); }} />
           <button type="button" className="auth-xl-btn" onClick={downloadSample}>
@@ -293,11 +296,11 @@ export default function ClmAuthorityPage() {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             {exporting ? 'Exporting…' : 'Export'}
           </button>
-          <div className="clm-total">
-            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
-            <div className="clm-total-lbl">Total Authorities</div>
-            <div className="clm-total-num">{count}</div>
           </div>
+          <div className="clm-search auth-search">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input autoComplete="off" type="text" placeholder="Search by authority name, ID or description…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
 

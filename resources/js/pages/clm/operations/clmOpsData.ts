@@ -124,8 +124,23 @@ export const ATA_CONTRACTS: AtaContract[] = [
 ];
 
 /* ── Helpers ── */
+/**
+ * Up to two initials for an avatar mark.
+ *
+ * A counterparty is labelled "asdfghj (Customer)" in the popover, and the
+ * bracket counted as the second word — so the mark read "A(" instead of "A".
+ * The role in brackets is not part of the name, and nothing that is not a
+ * letter or a digit can stand as an initial.
+ */
 export const inits = (n: string): string =>
-  (n || '').split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
+  (n || '')
+    .replace(/\([^)]*\)/g, ' ')
+    .split(/\s+/)
+    .map(w => w.match(/[A-Za-z0-9]/)?.[0] ?? '')
+    .filter(Boolean)
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
 
 export const pad2 = (n: number): string => String(n).padStart(2, '0');
 

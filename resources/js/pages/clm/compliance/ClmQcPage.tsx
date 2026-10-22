@@ -133,15 +133,15 @@ export default function ClmQcPage() {
 
       <div className="clm-page-card">
         <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div className="clm-search clm-search-fixed">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input autoComplete="off" type="text" placeholder="Search QC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
-          </div>
           <div className="clm-total">
             <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
             <div className="clm-total-lbl">Total QC Documents</div>
             <div className="clm-total-num">{count}</div>
+          </div>
+          <div className="clm-search clm-search-fixed">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input autoComplete="off" type="text" placeholder="Search QC documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
 
@@ -162,7 +162,13 @@ export default function ClmQcPage() {
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
+                      {/* Cut at 40 characters, not left to the CSS ellipsis.
+                          The column is free-width, so on a wide screen it let a
+                          400-character name run most of the way across the row
+                          before the ellipsis ever bit. The cell keeps its CSS
+                          truncation as the narrow-window fallback, and the
+                          Tooltip around it still carries the full name. */}
+                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name.length > 41 ? `${r.name.slice(0, 40).trimEnd()}…` : r.name}</div></td></Tooltip>
                       <Tooltip label={r.purpose}><td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.purpose}</div></td></Tooltip>
                       <td style={{ textAlign: 'left' }}>
                         <AuthorityBadges value={r.issued_by_names} />

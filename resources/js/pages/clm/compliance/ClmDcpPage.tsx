@@ -86,34 +86,18 @@ function authsForSegment(segCode: string, allAuths: Authority[]): Authority[] {
 
 const DCP_TABS_CSS = `
 .dcp-pre-table { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 16px 18px 0; margin-bottom: 14px; }
-.dcp-pills {
-  display: flex; align-items: center; gap: 4px;
-  background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
-  padding: 5px; border-radius: 14px;
-  border: 1.5px solid #22d3ee;
-  box-shadow: 0 2px 10px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
-  flex-shrink: 0; flex-wrap: wrap;
-}
-.dcp-pill {
-  padding: 9px 20px; border-radius: 10px;
-  font-size: 12.5px; font-weight: 600; cursor: pointer;
-  background: transparent; color: #0e7490;
-  border: none; transition: all .18s; white-space: nowrap;
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.dcp-pill:hover { color: #0891b2; background: rgba(255,255,255,.6); }
-.dcp-pill.active {
-  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
-  color: #fff;
-  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
-}
-[data-bs-theme="dark"] .dcp-pills { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(8,145,178,.10)); border-color: rgba(34,211,238,.30); box-shadow: 0 2px 10px rgba(0,0,0,.25) inset; }
+/* .dcp-pills / .dcp-pill lived here and are gone: the rail is .clm-tabrail
+   from clmShared now, so this page has no tab paint of its own to drift. */
+.dcp-pre-table > .clm-tabrail { flex-shrink: 0; }
 .dcp-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: nowrap; flex: 1 1 auto; min-width: 0; }
 .dcp-filter-ms { flex: 0 0 auto; }
 .dcp-toolbar .dcp-filter-btn { flex-shrink: 0; }
 /* 500px and the 1280px step, as every other CLM list search. This one was
-   680px, the widest search in the module. */
-.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 500px; min-width: 180px; max-width: 100%; }
+   680px, the widest search in the module.
+   order: 2 puts it after the Filter button, so it ends the row as it does on
+   every other CLM page — it was written first in the markup, which left the
+   Filter button as the rightmost thing on the toolbar. */
+.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 500px; min-width: 180px; max-width: 100%; order: 2; }
 @media (max-width: 1280px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 360px; } }
 @media (max-width: 760px) {
   .dcp-toolbar { width: 100%; flex-wrap: wrap; }
@@ -122,9 +106,6 @@ const DCP_TABS_CSS = `
 }
 .clm-table-fill.dcp-fill-empty { background: #fff; }
 [data-bs-theme="dark"] .clm-table-fill.dcp-fill-empty { background: #0f172a; }
-[data-bs-theme="dark"] .dcp-pill { color: #67e8f9; }
-[data-bs-theme="dark"] .dcp-pill:hover { background: rgba(8,145,178,.22); color: #a5f3fc; }
-[data-bs-theme="dark"] .dcp-pill.active { background: linear-gradient(135deg, #0891b2, #155e75); color: #fff; }
 .dcp-filter-btn {
   display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
   height: 38px; padding: 0 20px; border-radius: 14px;
@@ -402,16 +383,26 @@ export default function ClmDcpPage() {
       <div className="clm-page-card">
         <style>{DCP_TABS_CSS}</style>
         <div className="dcp-pre-table">
-          <div className="dcp-pills">
-            <div className={`dcp-pill ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
-              All Segments ({tierCounts.all})
-            </div>
-            <div className={`dcp-pill ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
-              Highly Regulated ({tierCounts.highly})
-            </div>
-            <div className={`dcp-pill ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
-              Less Regulated ({tierCounts.less})
-            </div>
+          {/* The module's rail (.clm-tabrail / .clm-tab), with Segment Master's
+              marks and counts — this page splits the same three tiers, so the
+              two rails should be the same control. It used to be .dcp-pills:
+              clickable <div>s on a 14px capsule with a 1.5px #22d3ee edge, the
+              count spelled into the label as "(16)", no dot and no count pill.
+              A count in brackets reads as part of the name; the pill is what
+              every other list uses to say how many. */}
+          <div className="clm-tabrail">
+            <button type="button" className={`clm-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              All Segments <span className="clm-tab-count">{tierCounts.all}</span>
+            </button>
+            <button type="button" className={`clm-tab ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
+              <span className="clm-tab-dot" style={{ background: '#ef4444', boxShadow: '0 0 5px rgba(239,68,68,.5)' }} />
+              Highly Regulated <span className="clm-tab-count">{tierCounts.highly}</span>
+            </button>
+            <button type="button" className={`clm-tab ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
+              <span className="clm-tab-dot" style={{ background: '#0d9488', boxShadow: '0 0 5px rgba(13,148,136,.5)' }} />
+              Less Regulated <span className="clm-tab-count">{tierCounts.less}</span>
+            </button>
           </div>
           <div className="dcp-toolbar">
             <div className="clm-search">
@@ -919,7 +910,10 @@ function SegmentRuleModal(props: {
             </>
           ) : (
             <div>
-              <div className="dcp-cat-tabs" style={{ display: 'flex', gap: 2, padding: 4, background: 'rgba(240,253,255,.9)', border: '1.5px solid rgba(6,182,212,.15)', borderRadius: 13, overflowX: 'auto' }}>
+              {/* The shared rail's numbers — gap 8 on a 4px pad, radius 11, a
+                  1px .28 hairline — rather than this modal's own gap 2 / 13 /
+                  1.5px .15, which held the same .clm-tab buttons. */}
+              <div className="dcp-cat-tabs" style={{ display: 'flex', gap: 8, padding: 4, background: 'rgba(255,255,255,.6)', border: '1px solid rgba(6,182,212,.28)', borderRadius: 11, overflowX: 'auto' }}>
                 {CAT_KEYS.map(c => {
                   const on = activeCat === c;
                   const cnt = totalSel(c);
