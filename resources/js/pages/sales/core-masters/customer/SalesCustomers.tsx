@@ -225,6 +225,8 @@ export default function SalesCustomers() {
          narrow column, which is exactly when a fixed value would be wrong. */
       const headH = (el.querySelector('.smc-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
       if (headH) el.style.setProperty('--smc-thead-h', `${headH}px`);
+      const footH = (el.querySelector('.smc-table-wrap .tc-wl-pag') as HTMLElement | null)?.offsetHeight || 0;
+      if (footH) el.style.setProperty('--smc-foot-h', `${footH}px`);
 
       /* Measured INSIDE the scroller, not against the viewport.
        *
