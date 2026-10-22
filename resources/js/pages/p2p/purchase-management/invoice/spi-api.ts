@@ -363,14 +363,25 @@ export const spiApi = {
 
   warehouses: () =>
     call('Warehouses', () => api.get('/inventory/warehouses/options'), (b) =>
-      ((b as { data?: Array<{ id: number; wh_code: string | null; wh_name: string | null; wh_type: string; location: string | null }> } | null)?.data ?? [])
+      ((b as { data?: Array<{
+        id: number; wh_code: string | null; wh_name: string | null; wh_type: string;
+        location: string | null; address?: string | null; pincode?: string | null;
+        area_sqft?: number | null; created_at?: string | null;
+      }> } | null)?.data ?? [])
         .filter(w => w.wh_type === 'own')
         .map((w): StorageWarehouse => ({
           id: String(w.id),
           apiId: w.id,
           code: w.wh_code ?? undefined,
           name: w.wh_name ?? `Warehouse ${w.id}`,
-          location: [w.wh_code, w.location].filter(Boolean).join(' · ') || '—',
+          /* City and state. The code used to be folded in here because the
+             row had nowhere else to put it; it has its own chip now. */
+          location: w.location || '—',
+          address: w.address ?? undefined,
+          pincode: w.pincode ?? undefined,
+          areaSqft: w.area_sqft != null ? Number(w.area_sqft) : undefined,
+          kind: w.wh_type,
+          addedOn: w.created_at ?? undefined,
         }))),
 
   warehouseDetail: (id: number) =>

@@ -1295,8 +1295,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                                     try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
                                   }}
                                 >
+                                  {/* Same label either way: the spinner replaces the
+                                      download glyph in place, so the button cannot
+                                      change width and the Action column cannot grow. */}
                                   {dling
-                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
+                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Download</>
                                     : <><i className="ri-download-2-line" aria-hidden /> Download</>}
                                 </button>
                               ) : canUpload ? (
@@ -1713,7 +1716,9 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
           </div>
           <button type="button" className="cev-reup-x" onClick={onClose} aria-label="Close" disabled={busy}><i className="ri-close-line" /></button>
         </div>
-        <div className="cev-reup-bd">
+        {/* Frozen while the upload runs (QA #82) — see the customer vault's
+            copy of this popup. */}
+        <div className="cev-reup-bd" inert={busy}>
           {isStd && (
             <div className="cev-reup-grid">
               <div className="cev-reup-fld">

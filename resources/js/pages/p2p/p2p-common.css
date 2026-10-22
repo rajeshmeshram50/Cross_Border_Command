@@ -888,8 +888,12 @@
    every existing dialog is untouched. Same approach .ord-cpo takes for the
    Create PO popup, one level up.
    ──────────────────────────────────────────────────────────────────────────── */
+/* 760. The design's base dialog says 740, but this one is widened past it by
+   a rule of its own — and the 20px matter: at 740 the card is 341 wide and
+   "Direct SPI · WITHOUT PURCHASE ORDER" no longer fits on one line, which is
+   where the badge was dropping below the title. */
 .spi-mdl--wide {
-  width: min(780px, 100%);
+  width: min(760px, calc(100vw - 32px));
   /* The design's rim: a 1px cyan edge plus a matching ring, over a deeper
      drop. The base dialog ships a plain white hairline, which disappears
      against the page behind it. Measured off the prototype. */
@@ -961,9 +965,9 @@
   color: #8aa0af;
 }
 
-/* The validation hint. Confirm stays ENABLED with nothing chosen — as the
-   design has it — and says why on click instead of sitting dead with no
-   explanation. */
+/* The validation hint. Confirm is dead until a type is chosen — the design
+   disables it exactly there and nowhere else — and live from then on, so a
+   missing PO is explained here rather than left to a grey button. */
 .spi-mdl--wide .spi-mdl-err {
   display: flex;
   align-items: center;
@@ -997,7 +1001,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 18px;
+  padding: 14px 18px;
   border-radius: 20px 20px 0 0;
   color: #fff;
   background: linear-gradient(110deg, #0e7490, #0891b2 50%, #06b6d4 80%, #22d3ee);
@@ -1055,16 +1059,25 @@
   background: rgba(255, 255, 255, .32);
 }
 
+/* 9px at the top. 18 pushed the cards down for nothing — the header above is
+   a solid colour band and already separates itself — but 4 went too far the
+   other way and left the label sitting on the band. Measured off the design:
+   10px of clear space between the band and the label's first row, which 9
+   plus the label's own half-leading gives. */
 .spi-mdl-body {
-  padding: 18px 18px 8px;
+  padding: 9px 18px 10px;
 }
 
+/* The label is one short line that names what follows, so it sits close to
+   it: no space above at all, 8 below. 6/12 put nearly its own height again
+   around it. */
 .spi-mdl-seclabel {
   font-size: 9.5px;
   font-weight: 800;
   letter-spacing: .1em;
+  line-height: 1.2;
   color: #9BB0BF;
-  margin: 6px 0 12px;
+  margin: 0 0 8px;
 }
 
 .spi-mdl-card {
@@ -1497,12 +1510,15 @@
   color: #d97706;
 }
 
+/* 8px above and below the buttons, measured off the design. 14 put half a
+   button's height of air around a 43px control and was most of why the
+   dialog sat ~27px taller than it should. */
 .spi-mdl-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px;
+  padding: 8px 18px;
   border-top: 1px solid #eef2f6;
   flex-wrap: wrap;
 }
@@ -1697,14 +1713,24 @@
 }
 .arf-att__opt + .arf-att__opt { border-top: 1px solid #f1f5f9; border-radius: 0 0 9px 9px; }
 .arf-att__opt:hover { background: #f1f9fc; }
-.arf-att__opt b { display: block; font-size: 12.5px; font-weight: 700; color: #0f2b38; }
-.arf-att__opt i { display: block; font-size: 10.5px; font-style: normal; color: #7d97a6; }
+/* The design's .p2pcap-opt__t / __s. Only the sizes matched: the title sat a
+   shade darker than #0c4a6e, the sub-line ran a point large at 10.5px with
+   whatever weight it inherited, and neither had its leading set, so the two
+   lines sat further apart than the design has them. */
+.arf-att__opt b { display: block; font-size: 12.5px; font-weight: 700; color: #0c4a6e; line-height: 1.25; }
+.arf-att__opt i { display: block; font-size: 9.5px; font-weight: 600; font-style: normal; color: #8aa5b2; line-height: 1.3; }
+/* The design stacks the two lines with a 3px gap (.p2pcap-opt__txt); ours
+   relied on the blocks sitting flush, which with the leading set above left
+   them tighter than the design has them. */
+.arf-att__opt > span:not(.arf-att__ico) { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .arf-att__ico {
   display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0;
   border-radius: 9px; background: linear-gradient(135deg, #22b8d6, #0e7490); color: #fff;
 }
 .arf-att__ico svg { width: 16px; height: 16px; }
-.arf-att__ico--cam { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+/* Stays violet on purpose — the design uses it to tell "Take photo" apart
+   from "Upload file" at a glance — but on the design's stops, not ours. */
+.arf-att__ico--cam { background: linear-gradient(135deg, #7c3aed, #a855f7); }
 [data-bs-theme="dark"] .arf-att { background: #0f1827; border-color: #1f2d42; }
 [data-bs-theme="dark"] .arf-att__opt:hover { background: rgba(34, 211, 238, .1); }
 [data-bs-theme="dark"] .arf-att__opt b { color: #e2e8f0; }
@@ -1756,3 +1782,185 @@
   background: rgba(255, 255, 255, .06);
   border-color: rgba(255, 255, 255, .1);
 }
+
+/* ── SPI type chooser — the two types, side by side ──────────────────────────
+ * A choice between peers: both get the same three columns (mark, body, tick),
+ * both say what they are and then what they get you. Stacked full-width, the
+ * second type read as a footnote to the first rather than its equal.
+ * Values are the prototype's.
+ * ───────────────────────────────────────────────────────────────────────────*/
+/* 14px between the cards, 8px if they ever stack. Measured off the design:
+   the pair sits 14 apart, not the 12 the base grid used. */
+.spich-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-bottom: 12px; align-items: stretch; }
+/* The 12 below belongs between the cards and the panel that opens under
+   them. With nothing open it stacked on the body's own bottom padding and
+   doubled the gap to the footer rule. */
+.spich-grid:last-child { margin-bottom: 0; }
+
+.spich-card {
+  position: relative; display: block; width: 100%;
+  text-align: left; padding: 16px; border-radius: 14px;
+  border: 1.5px solid #e2eef3; background: #fff;
+  cursor: pointer; font-family: inherit;
+  transition: border-color .18s, box-shadow .18s, transform .18s, background .18s;
+}
+.spich-card:hover:not(:disabled) { border-color: #a5e9f3; box-shadow: 0 8px 20px -12px rgba(8,145,178,.45); transform: translateY(-1px); }
+.spich-card.is-on { border-color: #22d3ee; background: linear-gradient(180deg,#f0fdff,#fff 70%); box-shadow: 0 0 0 3px rgba(34,211,238,.16), 0 10px 22px -12px rgba(8,145,178,.5); }
+.spich-card--without.is-on { border-color: #f59e0b; background: linear-gradient(180deg,#fffbeb,#fff 70%); box-shadow: 0 0 0 3px rgba(245,158,11,.16), 0 10px 22px -12px rgba(217,119,6,.45); }
+/* Not yet available, rather than broken: the card keeps its shape and loses
+   its lift, so it reads as something that will work later. */
+.spich-card.is-off { cursor: not-allowed; opacity: .72; }
+
+/* 44px mark · body · 22px tick. Fixed outer columns so both cards put their
+   tick in the same place however long the text runs. */
+.spich-c2 { display: grid; grid-template-columns: 44px minmax(0,1fr) 22px; column-gap: 14px; align-items: start; width: 100%; }
+.spich-c2__ico { width: 44px; height: 44px; border-radius: 13px; display: flex; align-items: center; justify-content: center; color: #fff; }
+.spich-card--with .spich-c2__ico { background: linear-gradient(135deg,#67e8f9,#0891b2 60%,#0e7490); box-shadow: 0 6px 14px -6px rgba(8,145,178,.6); }
+.spich-card--without .spich-c2__ico { background: linear-gradient(135deg,#fcd34d,#d97706 65%,#b45309); box-shadow: 0 6px 14px -6px rgba(217,119,6,.55); }
+
+.spich-c2__main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.spich-c2__row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-height: 22px; }
+.spich-c2__t { font-size: 14.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.2px; line-height: 1.2; }
+.spich-c2__d { font-size: 11.5px; font-weight: 500; color: #64748b; line-height: 1.45; }
+
+.spich-card__badge { font-size: 8.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+.spich-card__badge--ok { color: #0e7490; background: #cffafe; }
+.spich-card__badge--warn { color: #92400e; background: #fef3c7; }
+
+/* What the type gets you, under a dashed rule — a different kind of statement
+   from the sentence above it, so it is set apart rather than run on. */
+.spich-c2__pts { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed #e2eef3; }
+.spich-c2__pt { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; color: #334155; line-height: 1.3; }
+.spich-c2__ck { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #0891b2; background: #ecfeff; border: 1px solid #a5f3fc; }
+.spich-card--without .spich-c2__ck { color: #d97706; background: #fffbeb; border-color: #fde68a; }
+
+.spich-card__rad { width: 22px; height: 22px; margin-top: 11px; border-radius: 50%; border: 1.5px solid #cbd8de; display: flex; align-items: center; justify-content: center; color: transparent; background: #fff; }
+.spich-card.is-on .spich-card__rad { border-color: transparent; color: #fff; background: linear-gradient(135deg,#22d3ee,#0891b2); }
+.spich-card--without.is-on .spich-card__rad { background: linear-gradient(135deg,#fbbf24,#d97706); }
+
+/* The chosen type's remaining question, in a panel under both cards. */
+.spich-sub { border: 1px solid #e2eef3; border-radius: 14px; background: #f8fcfd; padding: 12px 14px; margin-bottom: 4px; }
+.spich-sub .spi-mdl-field { margin: 0; }
+
+@media (max-width: 620px) {
+  .spich-grid { grid-template-columns: 1fr; }
+}
+
+/* ── The Purchase Order picker in the SPI chooser ────────────────────────────
+ * An order is picked on five facts at once — which order, whose, when, what
+ * it is tied to, for how much — so the row carries all five rather than a
+ * line of text. Values are the design's.
+ * ───────────────────────────────────────────────────────────────────────────*/
+.spidd { position: relative; }
+.spidd-trig {
+  width: 100%; height: 40px; box-sizing: border-box;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 8px 0 12px;
+  border: 1.5px solid #d3e7ee; border-radius: 10px; background: #fff;
+  font-family: inherit; cursor: pointer; text-align: left;
+  transition: border-color .15s, box-shadow .15s;
+}
+.spidd-trig:hover { border-color: #9bd9e6; }
+.spidd.is-open .spidd-trig { border-color: #06b6d4; box-shadow: 0 0 0 3px rgba(6,182,212,.15); }
+.spidd-ph { flex: 1; font-size: 12.5px; font-weight: 600; color: #94a3b8; }
+/* Turns to point at the panel it opened. */
+.spidd-chev {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: #0e7490; background: #ecfeff; border: 1px solid #cffafe; transition: transform .2s;
+}
+.spidd.is-open .spidd-chev { transform: rotate(180deg); }
+
+/* The picked order, summarised in the trigger. */
+.spisel { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; }
+.spisel-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.spisel-n { font-size: 12px; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spisel-s { font-size: 9.5px; font-weight: 600; color: #93a7b3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.spidd-panel {
+  position: fixed; z-index: 2147483600;
+  display: flex; flex-direction: column;
+  background: #fff; border: 1px solid #cfeaf1; border-radius: 14px;
+  box-shadow: 0 18px 40px -12px rgba(8,60,80,.38), 0 2px 8px rgba(8,60,80,.08);
+  overflow: hidden;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  animation: spiddIn .14s ease-out;
+}
+@keyframes spiddIn { from { opacity: 0; transform: translateY(-4px); } }
+.spidd-search {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  padding: 8px 12px; border-bottom: 1px solid #e6f3f7;
+  background: linear-gradient(180deg, #f4fbfd, #fff); color: #0891b2;
+}
+.spidd-search input {
+  flex: 1; height: 24px; border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 12px; font-weight: 600; color: #0c4a6e;
+}
+.spidd-search input::placeholder { color: #94a3b8; font-weight: 500; }
+.spidd-list { overflow-y: auto; padding: 8px; scrollbar-width: thin; scrollbar-color: #bfe3ec transparent; }
+.spidd-empty { padding: 18px; text-align: center; font-size: 11.5px; font-weight: 600; color: #94a3b8; }
+
+/* One order. The code is a fixed-width column so the codes line up down the
+   list and the eye can run the column instead of reading each row. */
+/* Real columns, not a flex row with minimum widths: code, what it is, how
+   much, where its procurement came from, and the tick. A grid means an order
+   with no procurement leaves an empty CELL rather than letting the amount
+   slide across into the space, which is what pulled the right edge apart. */
+.spim {
+  display: grid;
+  /* 86 for the procurement pill, not the design's 74: 74 is its MINIMUM and
+     the pill grows past it, which a fixed grid track cannot do — "Auto-
+     created" needs 86 and was being squeezed, eating its own padding.
+     Fixed at the widest label so every row's amount still lines up. */
+  grid-template-columns: 112px minmax(0, 1fr) auto 86px 14px;
+  align-items: center; column-gap: 10px;
+  padding: 8px 10px; border-radius: 9px; cursor: pointer;
+  border: 1px solid transparent; transition: background .12s, border-color .12s;
+}
+.spim + .spim { margin-top: 1px; }
+.spim:hover { background: #f0fbfe; }
+.spim.sel { background: linear-gradient(135deg, #ecfeff, #e0fafe); border-color: #a5f3fc; }
+.spim-code {
+  text-align: center;
+  font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px; font-weight: 700; color: #0c4a6e;
+  background: #fff; border: 1px solid #cffafe; border-radius: 5px; padding: 4px 7px;
+}
+.spim-main { min-width: 0; }
+.spim-name { font-size: 12px; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spim-sub { font-size: 9.5px; font-weight: 600; color: #93a7b3; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Right-aligned in its own track, so every amount in the list ends on the
+   same pixel however many digits it has. */
+.spim-amt {
+  text-align: right;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px; font-weight: 800; color: #0c4a6e; white-space: nowrap;
+}
+/* Present on every row so the amounts keep one right edge; only the chosen
+   row's is inked. */
+.spim-tick { display: flex; align-items: center; justify-content: center; color: #0891b2; opacity: 0; transition: opacity .12s; }
+.spim.sel .spim-tick { opacity: 1; }
+
+[data-bs-theme="dark"] .spidd-trig { background: #0f2731; border-color: rgba(34,211,238,.26); }
+[data-bs-theme="dark"] .spidd-panel { background: #0f2731; border-color: rgba(34,211,238,.26); }
+[data-bs-theme="dark"] .spidd-search { background: rgba(34,211,238,.07); border-bottom-color: rgba(34,211,238,.2); }
+[data-bs-theme="dark"] .spidd-search input { color: #d7eef5; }
+[data-bs-theme="dark"] .spim:hover { background: rgba(34,211,238,.09); }
+[data-bs-theme="dark"] .spim.sel { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.38); }
+[data-bs-theme="dark"] .spim-code { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.28); color: #7dd3e8; }
+[data-bs-theme="dark"] .spim-name,
+[data-bs-theme="dark"] .spisel-n { color: #e4f3f8; }
+[data-bs-theme="dark"] .spim-amt { color: #7dd3e8; }
+
+/* Where the order's procurement case came from. Fixed width so the pills form
+   a column of their own instead of ragging against the amounts. */
+.spim-st {
+  text-align: center;
+  font-size: 8px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px; white-space: nowrap;
+}
+.spim-st--live { color: #0e7490; background: #e0f7fb; border: 1px solid #bbe9f1; }
+.spim-st--warn { color: #b45309; background: #fef3c7; border: 1px solid #fde68a; }
+
+[data-bs-theme="dark"] .spim-st--live { color: #7dd3e8; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); }
+[data-bs-theme="dark"] .spim-st--warn { color: #fcd34d; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.32); }

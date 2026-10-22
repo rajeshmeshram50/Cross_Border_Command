@@ -1053,8 +1053,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                                     } finally { setOvDownloadingKey(null); }
                                   }}
                                 >
+                                  {/* Same label either way: the spinner replaces the
+                                      download glyph in place, so the button cannot
+                                      change width and the Action column cannot grow. */}
                                   {dling
-                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
+                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Download</>
                                     : <><i className="ri-download-2-line" aria-hidden /> Download</>}
                                 </button>
                                 {canReupload && (
@@ -1238,7 +1241,12 @@ export function VaultUploadPopup({ doc, category, busy, onClose, onSubmit, overl
           <button type="button" className="cev-reup-x" onClick={onClose} aria-label="Close" disabled={busy}><i className="ri-close-line" /></button>
         </div>
 
-        <div className="cev-reup-bd">
+        {/* Frozen while the upload runs (QA #82). Cancel and the close button
+            were already disabled, but every field, the Yes/No expiry toggle,
+            both date pickers and the file row stayed live — so the form could
+            be edited underneath a save that had already been sent. `inert`
+            takes the whole body out at once, including focus. */}
+        <div className="cev-reup-bd" inert={busy}>
           <div className="cev-reup-grid">
             <div className="cev-reup-fld">
               <label>Auto Code</label>

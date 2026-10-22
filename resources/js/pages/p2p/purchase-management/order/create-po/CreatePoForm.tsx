@@ -643,7 +643,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
                 <div className="spi-dt-step-top">
                   <span className="spi-dt-step-lbl">STEP {String(i + 1).padStart(2, '0')}</span>
                   {i === stage && <span className="spi-dt-step-badge">ACTIVE</span>}
-                  {i < stage && <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck /> DONE</span>}
+                  {i < stage && <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck size={9} stroke={3.2} /> DONE</span>}
                 </div>
                 <div className="spi-dt-step-big">{String(i + 1).padStart(2, '0')}</div>
                 <div className="spi-dt-step-title">{s.title}</div>

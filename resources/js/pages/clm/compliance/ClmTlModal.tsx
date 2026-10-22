@@ -109,6 +109,13 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
                   menuClassName="clm-mms-menu"
                   values={authList}
                   invalid={!!errors.auth}
+                  /* A licence can carry twenty-odd authorities, and a chip per
+                     one grew the control past the dialog. One chip and a count
+                     keeps it to a row; the count opens the rest, where each is
+                     still readable in full and still removable — the same "+N"
+                     the licence list itself uses. */
+                  overflowAfter={1}
+                  overflowTitle="Issuing Authorities"
                   placeholder="— Select Authorities —"
                   options={[
                     ...authorities.map(a => ({ value: String(a.id), label: a.name })),

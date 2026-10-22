@@ -73,6 +73,8 @@ export type PoListRow = PoLinkRefs & {
   vendor_id: number | null; supplier_code: string | null; supplier_name: string | null;
   supplier_risk: string | null; supplier_category: string | null;
   link_type: LinkType | null; shipment_order_id: number | null;
+  /** 'yes' = raised against a procurement case that already existed. */
+  link_procurement: YesNo | null;
   procurement_request_id: number | null; procurement_request_code: string | null;
   expected_delivery_date: string | null; grand_total: number;
   /** The PO's own currency; every money figure on its screens follows it. */

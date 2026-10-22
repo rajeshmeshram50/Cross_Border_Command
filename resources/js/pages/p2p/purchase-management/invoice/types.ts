@@ -75,9 +75,19 @@ export type InvoiceShipmentScope = 'with-shipment' | 'without-shipment';
 export interface StorageWarehouse {
   id: string;
   name: string;
+  /** City and state — what the collapsed picker shows. */
   location: string;
   apiId?: number;
   code?: string;
+  /** The street line, which is what tells two sites in one city apart. */
+  address?: string;
+  pincode?: string;
+  /** Floor area in square feet. */
+  areaSqft?: number;
+  /** 'own' or 'tpl'. */
+  kind?: string;
+  /** When the site was added — shown under its code in the picker. */
+  addedOn?: string;
 }
 
 export const SPI_EDITABLE_STATUSES = ['draft', 'mapped'];

@@ -201,7 +201,10 @@ class PurchaseOrderController extends Controller
     // Only what a list row shows (plus the ids its references are read through).
     private const LIST_COLUMNS = [
         'id', 'code', 'po_date', 'status', 'current_step', 'po_type', 'document_type', 'vendor_id', 'link_type',
-        'shipment_order_id', 'proforma_invoice_id', 'procurement_request_id', 'procurement_request_code',
+        // link_procurement says where the order's procurement case came from -
+        // 'yes' means one that already existed, 'no' means it was not linked to
+        // one. The SPI picker reads it; only the detail carried it before.
+        'shipment_order_id', 'proforma_invoice_id', 'link_procurement', 'procurement_request_id', 'procurement_request_code',
         'expected_delivery_date', 'grand_total', 'physical_inspection', 'inspection_status', 'cancel_reason', 'created_at',
         'taxable_total', 'total_cgst', 'total_sgst', 'total_igst', 'shipping_charges', 'packaging_charges', 'other_charges',
         'tds_amount', 'paid_amount', 'balance_amount', 'currency_code',
@@ -1530,6 +1533,10 @@ class PurchaseOrderController extends Controller
             'supplier_name'       => $po->vendor ? ($po->vendor->legal_name ?: $po->vendor->company_name) : null,
             'link_type'           => $po->link_type,
             'shipment_order_id'   => $po->shipment_order_id,
+            // Where the order's procurement case came from: 'yes' one that
+            // already existed, 'no' one it was not linked to, null on a
+            // standalone order, which cannot carry the field at all.
+            'link_procurement'    => $po->link_procurement,
             'procurement_request_id'   => $po->procurement_request_id,
             'procurement_request_code' => $po->procurement_request_code,
             'supplier_risk'       => $po->vendor?->riskLevel?->name,

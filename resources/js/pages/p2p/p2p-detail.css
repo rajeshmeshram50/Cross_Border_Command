@@ -304,7 +304,12 @@
 .spi-dt-step.is-done .spi-dt-step-title { color:#0c4a6e; }
 .spi-dt-step.is-done .spi-dt-step-desc { color:#4f97a7; }
 .spi-dt-step.is-done .spi-dt-step-ghost { color: rgba(8,145,178,.09); }
-.spi-dt-step-badge-done { display:inline-flex; align-items:center; gap:4px; background: rgba(255,255,255,.85); border:1px solid #a5e9f3; color:#0891b2;
+/* Two classes, not one. The plain .spi-dt-step-badge below carries the ACTIVE
+   pill's translucent-white fill and WHITE text, and it is declared later in
+   this file at equal specificity — so it was winning here and the DONE pill
+   rendered as white text on a pale card, all but unreadable. The design's
+   DONE pill is a near-opaque white chip with a #a5e9f3 edge and teal text. */
+.spi-dt-step-badge.spi-dt-step-badge-done { display:inline-flex; align-items:center; gap:4px; background: rgba(255,255,255,.85); border:1px solid #a5e9f3; color:#0891b2;
   box-shadow: 0 1px 3px rgba(6,182,212,.15); }
 
 /* Step 2 — read-only Summary recap of completed stages */
@@ -530,7 +535,8 @@
 .spi-dt-step-top { display:flex; align-items:center; justify-content:space-between; }
 .spi-dt-step-lbl { font-size:8px; font-weight:800; letter-spacing:.9px; line-height:1; text-transform:uppercase; margin-bottom:4px; color:#aab3c1; }
 .spi-dt-step.is-active .spi-dt-step-lbl { color: rgba(255,255,255,.6); }
-.spi-dt-step-badge { font-size:8px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; padding:3px 10px; border-radius:20px;
+/* 9px, not 10: the design's .p2sc-pill / .p2sc-done-pill padding. */
+.spi-dt-step-badge { font-size:8px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; padding:3px 9px; border-radius:20px;
   background: rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.35); color:#fff; }
 .spi-dt-step-big { font-size:28px; font-weight:900; line-height:1; letter-spacing:-2px; color:#cfd6e0; margin-bottom:4px; }
 .spi-dt-step.is-active .spi-dt-step-big { color:#fff; }

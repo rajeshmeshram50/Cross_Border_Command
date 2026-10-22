@@ -523,6 +523,12 @@ class WarehouseController extends BaseInventoryController
             'wh_type'   => $w->wh_type,
             'area_sqft' => (float) $w->area_sqft,
             'location'  => trim(implode(', ', array_filter([$w->city, $w->stateLabel()]))),
+            // The street line and the postcode, so a picker can show where the
+            // site actually is rather than only which city it is in — two
+            // warehouses in one city read the same otherwise.
+            'address'   => $w->address,
+            'pincode'   => $w->pincode,
+            'created_at' => $w->created_at?->toDateString(),
         ];
     }
 

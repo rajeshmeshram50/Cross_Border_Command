@@ -448,7 +448,7 @@ export default function InvoiceForm({
                 <div className="spi-dt-step-top">
                   <span className="spi-dt-step-lbl">STEP {pad2(i + 1)}</span>
                   {i === stage && <span className="spi-dt-step-badge">ACTIVE</span>}
-                  {i < stage && <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck /> DONE</span>}
+                  {i < stage && <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck size={9} stroke={3.2} /> DONE</span>}
                 </div>
                 <div className="spi-dt-step-big">{pad2(i + 1)}</div>
                 <div className="spi-dt-step-title">{s.title}</div>

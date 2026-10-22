@@ -734,6 +734,7 @@
 .cev-ov-dl {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   padding: 5px 12px;
   border-radius: 7px;
@@ -745,6 +746,11 @@
   font-weight: 700;
   cursor: pointer;
   transition: all .15s ease;
+  /* No min-width here. Reserving room for "Downloading…" widened the Action
+     column until the table overflowed its modal. The busy state keeps the
+     same label instead and only swaps the icon for a spinner, so the button
+     never changes size and needs no reserved space. */
+  white-space: nowrap;
 }
 
 .cev-ov-dl:hover:not(:disabled) {
@@ -1688,6 +1694,11 @@
   font-weight: 700;
   border: 1px solid rgba(8, 145, 178, .30);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
+  /* An id is one token. Without this the cell wrapped it at the hyphen when
+     the column got tight — "SHP-" on one line, "004" on the next — which
+     read as two broken chips rather than one id. The column widens to the
+     id instead. */
+  white-space: nowrap;
 }
 
 .cev-chip-pill-warm {
@@ -3465,12 +3476,18 @@
   background: rgba(255, 255, 255, .28);
 }
 
+/* One size whatever the list holds. The body grew with its rows, so a vault
+   with a single document opened as a sliver and one with sixteen filled the
+   screen — the same dialog, two different shapes. Fixed at the header plus
+   five rows (31 + 5 x 47); row six onwards scrolls under the sticky header.
+   It may still shrink, so the card's own 84% cap wins on a short window. */
 .sev-ov .cev-ov-body {
   padding: 0;
   border-top: 0;
+  height: 266px;
   min-height: 0;
-  max-height: none;
-  flex: 1 1 auto;
+  max-height: 266px;
+  flex: 0 1 auto;
   overflow-y: auto;
   overflow-x: auto;
 }
@@ -3513,6 +3530,33 @@
 .sev-ov .cev-ov-table thead th:nth-child(4) {
   text-align: center;
 }
+
+/* The table sizes itself instead of being cut into fixed columns.
+ *
+ * Fixed widths were the wrong tool twice over: six equal 155px columns left
+ * the Action cell 4px short of its two buttons, and hand-picking 180px for it
+ * forgot the cell's own 32px of padding, so the buttons were squeezed and
+ * Re-upload clipped. Either way a few pixels of overflow drew a horizontal
+ * scrollbar across the dialog.
+ *
+ * With auto layout every column takes exactly what it holds, and the document
+ * name takes the slack — `width:100%` with `max-width:0` is what makes a cell
+ * absorb the remainder and ellipsize instead of pushing the table wider. So
+ * the dialog fits at any card width, and a long document name shortens rather
+ * than breaking the layout. */
+.sev-ov .cev-ov-table { table-layout: auto; }
+.sev-ov .cev-ov-table th:nth-child(2),
+.sev-ov .cev-ov-table td:nth-child(2) {
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sev-ov .cev-ov-table th:not(:nth-child(2)),
+.sev-ov .cev-ov-table td:not(:nth-child(2)) { white-space: nowrap; }
+/* Nothing should ever need to scroll sideways now. */
+.sev-ov .cev-ov-body { overflow-x: hidden; }
 
 .sev-ov .cev-ov-table tbody tr {
   background: #fff;
@@ -3564,6 +3608,7 @@
 .sev-ov .cev-ov-dl {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 5px 11px;
   border-radius: 7px;
@@ -4306,7 +4351,10 @@
 .cev-reup-sub { font-size:12px; opacity:.85; margin-top:2px; }
 .cev-reup-x { background:rgba(255,255,255,.18); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
 .cev-reup-x:hover:not(:disabled) { background:rgba(255,255,255,.3); }
-.cev-reup-bd { padding:18px; display:flex; flex-direction:column; gap:16px; }
+.cev-reup-bd { padding:18px; display:flex; flex-direction:column; gap:16px; transition: opacity .15s ease; }
+/* `inert` stops the clicks but changes nothing on screen, and a form that
+   ignores you while looking live reads as broken rather than busy. */
+.cev-reup-bd[inert] { opacity: .55; cursor: progress; }
 .cev-reup-fld label { display:block; font-size:11px; font-weight:700; letter-spacing:0; text-transform:none; color:#3b0764; margin-bottom:6px; }
 .cev-reup-req { color:#dc2626; }
 .cev-reup-cur { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:8px 12px; border-radius:9px; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; font-size:12.5px; font-weight:600; text-decoration:none; }

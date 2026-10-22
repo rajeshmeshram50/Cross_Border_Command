@@ -8,7 +8,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { bustAllMasterBundles } from '../../../utils/bustMasterBundles';
-import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
+import { CLM_CSS, PER_PAGE, paginate, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import BaseTooltip from '../../../components/ui/Tooltip';
 const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
@@ -330,27 +330,15 @@ export default function ClmDcpPage() {
 
   const [rpp, setRpp]     = useState(PER_PAGE);
   const autoFitRef        = useRef(true);
-  const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
 
-  useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 40, ROW = 46, FOOTER = 96;
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      const fh = Math.max(0, window.innerHeight - top - 64);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+  /* The shared hook, not a local copy of it. This page kept its own version
+     with the footer hardcoded at 64 (and 96 in the row-fit maths), which is
+     not what the footer measures — so the card stopped short of it and left
+     the band of dead page below the pager. The shared one measures the
+     footer instead, which is the fix the other CLM lists already carry. */
+  const fillH = useAutoFitRows(scrollRef, autoFitRef, setRpp, [filtered.length]);
 
   const onSave = async (form: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }, id?: number) => {
     try {

@@ -5,6 +5,7 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import {
   IcoCase, IcoCheck, IcoChevronL, IcoChevronR, IcoPin, IcoTag, IcoWarehouse, IcoX,
 } from '../../icons';
+import { formatDmy } from '../../../../utils/formatDmy';
 import type { StorageWarehouse } from './types';
 import '../../storage-modal.css';
 
@@ -206,24 +207,16 @@ export default function StorageSelectionModal({
             Choose the warehouse where this invoice&rsquo;s goods will be temporarily staged.
           </div>
 
-          <div className="smod-wh-list" role="radiogroup" aria-label="Warehouse">
-            {warehousesState === 'loading' || warehousesState === 'idle' ? (
-              <div className="smod-desc">Loading warehouses…</div>
-            ) : warehousesState === 'failed' ? (
-              <div className="smod-desc">Could not load warehouses. Close this window and try again.</div>
-            ) : warehouses.length === 0 ? (
-              <div className="smod-desc">
-                No active own warehouses yet. Add one in Inventory Management → Warehouse Master.
-              </div>
-            ) : warehouses.map(w => (
-              <WarehouseRow
-                key={w.id}
-                warehouse={w}
-                selected={w.id === warehouseId}
-                onSelect={() => setWarehouseId(w.id)}
-              />
-            ))}
-          </div>
+          {/* A chooser, not a list. Every site was laid out in full whether or
+              not it was the one wanted, so the step grew with the number of
+              warehouses and the choice already made scrolled off the screen.
+              Closed it shows the one that was picked; open, all of them. */}
+          <WarehousePicker
+            warehouses={warehouses}
+            state={warehousesState}
+            value={warehouseId}
+            onChange={setWarehouseId}
+          />
         </div>
         )}
 
@@ -332,33 +325,117 @@ function ConfirmRow({
  * row that cannot be chosen would need a disabled state the design does not
  * show. When occupancy arrives this is the one place that changes.
  */
+/** City, state and postcode as one line. */
+const whWhere = (w: StorageWarehouse) =>
+  [w.location, w.pincode].filter(Boolean).join(', ');
+
+const sqft = (n?: number) =>
+  n == null ? null : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
+
+/** One site, laid out in full — what the open list shows. */
 function WarehouseRow({
-  warehouse, selected, onSelect,
+  warehouse: w, selected, onSelect,
 }: {
   warehouse: StorageWarehouse;
   selected: boolean;
   onSelect: () => void;
 }) {
+  const area = sqft(w.areaSqft);
   return (
     <div
       className={`smod-wh-row${selected ? ' is-selected' : ''}`}
       onClick={onSelect}
-      role="radio"
-      aria-checked={selected}
+      role="option"
+      aria-selected={selected}
       tabIndex={0}
       onKeyDown={e => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
       }}
     >
+      <span className="smod-wh-id">
+        <span className="smod-wh-code">{w.code ?? '—'}</span>
+        {w.addedOn && <span className="smod-wh-since">{formatDmy(w.addedOn)}</span>}
+      </span>
       {/* No size prop: `.smod-wh-ico svg` sizes the glyph at 18px. */}
       <div className="smod-wh-ico"><IcoWarehouse stroke={2.2} /></div>
       <div className="smod-wh-text">
-        <div className="smod-wh-name">{warehouse.name}</div>
-        <div className="smod-wh-loc">{warehouse.location}</div>
+        <div className="smod-wh-name">{w.name}</div>
+        {/* Street first, then the place. Two sites in one city are told apart
+            by the street and nothing else. */}
+        {w.address && <div className="smod-wh-addr">{w.address}</div>}
+        <div className="smod-wh-loc"><IcoPin size={12} /> {whWhere(w)}</div>
       </div>
-      {/* The live dot is `.smod-wh-badge::before`, so this stays one element. */}
-      <span className="smod-wh-badge">Available</span>
-      <div className={`smod-wh-radio${selected ? ' is-on' : ''}`} />
+      <span className="smod-wh-badge">
+        <IcoWarehouse size={12} stroke={2.2} />
+        {w.kind === 'tpl' ? 'Third Party' : 'Own Warehouse'}
+      </span>
+      <span className="smod-wh-area">
+        {area ? <><b>{area}</b> Sq. Ft</> : <span className="smod-wh-dash">—</span>}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Step 2's warehouse chooser: closed it names the chosen site, open it lists
+ * them all. The panel is inline rather than portalled — this modal does not
+ * clip its own body, and a panel in the flow pushes the footer down instead
+ * of floating over it.
+ */
+function WarehousePicker({
+  warehouses, state, value, onChange,
+}: {
+  warehouses: StorageWarehouse[];
+  state: 'idle' | 'loading' | 'ready' | 'failed';
+  /** Null until a site is picked; Back clears it. */
+  value: string | null;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const picked = warehouses.find(w => w.id === value) ?? null;
+  const area = sqft(picked?.areaSqft);
+
+  const message = state === 'loading' || state === 'idle' ? 'Loading warehouses…'
+    : state === 'failed' ? 'Could not load warehouses. Close this window and try again.'
+    : warehouses.length === 0 ? 'No active own warehouses yet. Add one in Inventory Management → Warehouse Master.'
+    : null;
+
+  return (
+    <div className={`smod-wh-pick${open ? ' is-open' : ''}`}>
+      <button
+        type="button" className="smod-wh-trig"
+        aria-haspopup="listbox" aria-expanded={open}
+        disabled={!!message}
+        onClick={() => setOpen(o => !o)}
+      >
+        {picked ? (
+          <>
+            <span className="smod-wh-code">{picked.code ?? '—'}</span>
+            <span className="smod-wh-ico is-sm"><IcoWarehouse stroke={2.2} /></span>
+            <span className="smod-wh-text">
+              <span className="smod-wh-name">{picked.name}</span>
+              <span className="smod-wh-loc"><IcoPin size={12} /> {whWhere(picked)}</span>
+            </span>
+            {area && <span className="smod-wh-area"><b>{area}</b> Sq. Ft</span>}
+          </>
+        ) : (
+          <span className="smod-wh-ph">{message ?? 'Select a warehouse…'}</span>
+        )}
+        <span className="smod-wh-chev"><IcoChevronR size={13} /></span>
+      </button>
+
+      {open && !message && (
+        <div className="smod-wh-panel" role="listbox">
+          {warehouses.map(w => (
+            <WarehouseRow
+              key={w.id}
+              warehouse={w}
+              selected={w.id === value}
+              onSelect={() => { onChange(w.id); setOpen(false); }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -28,6 +28,8 @@ export function MasterMultiSelect({
   invalid,
   collapse,
   collapseNoun,
+  overflowAfter,
+  overflowTitle,
   loading,
   showDone,
   menuClassName,
@@ -49,6 +51,12 @@ export function MasterMultiSelect({
   collapse?: boolean;
   /** Noun for the collapsed "View all N <noun>" pill, e.g. "segments". */
   collapseNoun?: string;
+  /** Show this many chips, then a `+N` pill holding the rest in a popover.
+   *  Unlike `collapse`, the hidden ones are still readable and removable
+   *  without opening the option list. Opt-in; unset keeps every chip inline. */
+  overflowAfter?: number;
+  /** Heading on that popover, e.g. "Issuing Authorities". */
+  overflowTitle?: string;
   /** Show shimmer rows in the dropdown instead of "No options" while the
    *  option master is still loading. */
   loading?: boolean;
@@ -60,6 +68,8 @@ export function MasterMultiSelect({
 }) {
   void _addMorePlaceholder;
   const [open, setOpen]   = useState(false);
+  /** The `+N` popover's position, or null when it is shut. */
+  const [pop, setPop] = useState<{ x: number; y: number; up: boolean } | null>(null);
   const [query, setQuery] = useState('');
   const wrapRef   = useRef<HTMLDivElement | null>(null);
   const menuRef   = useRef<HTMLDivElement | null>(null);
@@ -155,6 +165,14 @@ export function MasterMultiSelect({
     ? options.filter(o => o.label.toLowerCase().includes(query.trim().toLowerCase()))
     : options;
 
+  /* Which chips sit in the field and which go behind the count. `collapse`
+     keeps its own one-chip rule; `overflowAfter` is the newer, softer one. */
+  const cut = overflowAfter != null && values.length > overflowAfter ? overflowAfter
+    : collapse && values.length > 1 ? 1
+    : values.length;
+  const shownValues = values.slice(0, cut);
+  const hiddenValues = overflowAfter != null ? values.slice(cut) : [];
+
   return (
     <div ref={wrapRef} className={`mms-root ${invalid ? 'mms-invalid' : ''}`}>
       <style>{MMS_CSS}</style>
@@ -168,7 +186,7 @@ export function MasterMultiSelect({
         className={`mms-toggle ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${invalid ? 'is-invalid' : ''} ${collapse ? 'mms-collapsed' : ''}`}
       >
         {values.length === 0 && <span className="mms-placeholder">{placeholder}</span>}
-        {(collapse && values.length > 1 ? values.slice(0, 1) : values).map(v => (
+        {shownValues.map(v => (
           <span key={v} className="mms-chip" title={labelFor(v)}>
             <span className="mms-chip-label">{labelFor(v)}</span>
             {!disabled && (
@@ -183,6 +201,29 @@ export function MasterMultiSelect({
             )}
           </span>
         ))}
+        {/* The ones that did not fit, behind a count. The popover lists them
+            in full and each stays removable, so hiding them costs nothing but
+            the click. */}
+        {hiddenValues.length > 0 && (
+          <button
+            type="button"
+            className="mms-plus"
+            aria-label={`Show ${hiddenValues.length} more`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (disabled) return;
+              if (pop) { setPop(null); return; }
+              const b = e.currentTarget.getBoundingClientRect();
+              /* Flip above when the field sits low in a dialog — the list is
+                 taller than the room under it more often than not. */
+              const estH = Math.min(280, 34 + hiddenValues.length * 34);
+              const below = window.innerHeight - b.bottom;
+              setPop({ x: b.left, y: below < estH + 12 && b.top > below ? b.top - 4 : b.bottom + 4, up: below < estH + 12 && b.top > below });
+            }}
+          >
+            +{hiddenValues.length}
+          </button>
+        )}
         {collapse && values.length > 1 && (
           <span
             role="button"
@@ -192,21 +233,68 @@ export function MasterMultiSelect({
             {open ? 'Hide' : `View all ${values.length}${collapseNoun ? ` ${collapseNoun}` : ''}`}
           </span>
         )}
-        <svg
-          className="mms-chev"
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
       </div>
+
+      {/* Outside the toggle, not inside it. The toggle scrolls once it is full
+          of chips, and an absolutely-placed arrow within a scrolling box
+          scrolls away with the chips. */}
+      <svg
+        className={`mms-chev ${open ? 'is-open' : ''}`}
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+
+      {/* What the `+N` pill holds. Portalled so the field's own scroll and the
+          dialog's overflow cannot clip it. */}
+      {pop && createPortal(
+        <>
+          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 100000 }} />
+          <div
+            className="mms-pop"
+            style={{
+              position: 'fixed',
+              left: Math.max(8, Math.min(pop.x, window.innerWidth - 328)),
+              top: pop.up ? undefined : pop.y,
+              bottom: pop.up ? window.innerHeight - pop.y : undefined,
+              zIndex: 100001,
+            }}
+          >
+            <div className="mms-pop-title">
+              {overflowTitle ?? collapseNoun ?? 'Selected'} ({values.length})
+            </div>
+            {hiddenValues.map((v, i) => (
+              <div key={v} className={`mms-pop-row ${i % 2 ? 'is-alt' : ''}`}>
+                <span className="mms-pop-pill">{labelFor(v)}</span>
+                {!disabled && (
+                  <button
+                    type="button"
+                    className="mms-chip-x mms-pop-x"
+                    aria-label={`Remove ${labelFor(v)}`}
+                    onClick={() => {
+                      /* Last one out closes the popover — an empty card hanging
+                         under the field has nothing left to say. */
+                      if (hiddenValues.length === 1) setPop(null);
+                      remove(v);
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
 
       {open && !disabled && menuRect && createPortal(
         <div
@@ -281,8 +369,16 @@ const MMS_CSS = `
 .mms-root { position: relative; width: 100%; }
 
 /* Integrated container — chips + chevron live inside the same border. */
+/* The control stops growing at about three rows of chips and scrolls after
+   that. Without a ceiling it grew a line for every pick — twenty authorities
+   made it taller than the dialog and pushed the Save button off the screen. */
 .mms-toggle {
-  width: 100%; min-height: 38px;
+  width: 100%; min-height: 38px; max-height: 108px;
+  /* overflow-x is pinned: setting only overflow-y makes the other axis
+     compute to auto, which put a horizontal bar under a collapsed row. */
+  overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
   padding: 5px 36px 5px 10px;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
@@ -290,7 +386,7 @@ const MMS_CSS = `
   font-size: 13px;
   color: #1f2937;
   cursor: pointer;
-  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  display: flex; align-items: center; align-content: flex-start; flex-wrap: wrap; gap: 4px;
   position: relative;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
@@ -328,14 +424,56 @@ const MMS_CSS = `
   padding: 3px 0;
 }
 
+/* Pinned to the root, so it keeps its place while the chips scroll past. */
+/* The count that stands for the chips that did not fit. Filled, because it is
+   a control rather than one more value. */
+.mms-plus {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 7px;
+  border: none; border-radius: 20px;
+  background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490);
+  color: #fff; font-family: inherit; font-size: 10px; font-weight: 800;
+  cursor: pointer; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(8,145,178,.4);
+}
+.mms-plus:hover { filter: brightness(1.07); }
+
+.mms-pop {
+  width: 320px; max-height: 280px; overflow-y: auto; overscroll-behavior: contain;
+  padding: 8px; border-radius: 12px;
+  background: #fff; border: 1px solid #cfeaf1;
+  box-shadow: 0 18px 40px -12px rgba(8,60,80,.38), 0 2px 8px rgba(8,60,80,.08);
+  font-family: inherit;
+}
+.mms-pop-title {
+  font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: #0e7490; padding: 4px 8px 7px;
+}
+.mms-pop-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: 8px; }
+.mms-pop-row.is-alt { background: rgba(6,182,212,.06); }
+/* Wraps: an authority's name can be a sentence, and cutting it here would
+   defeat the point of opening the list. */
+.mms-pop-pill {
+  flex: 1; min-width: 0;
+  font-size: 11px; font-weight: 700; color: #0e7490;
+  background: #ecfeff; border: 1px solid #cffafe; border-radius: 7px;
+  padding: 3px 8px; white-space: normal; word-break: break-word;
+}
+.mms-pop-x { flex-shrink: 0; }
+
+[data-bs-theme="dark"] .mms-pop,
+[data-layout-mode="dark"] .mms-pop { background: #1f2428; border-color: rgba(255,255,255,.1); }
+[data-bs-theme="dark"] .mms-pop-pill,
+[data-layout-mode="dark"] .mms-pop-pill { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.26); color: #7dd3e8; }
+
 .mms-chev {
-  position: absolute; right: 10px; top: 50%;
+  position: absolute; right: 10px; top: 19px;
   transform: translateY(-50%);
   color: #9ca3af;
   pointer-events: none;
   transition: transform .2s ease, color .15s ease;
 }
-.mms-toggle.is-open .mms-chev { transform: translateY(-50%) rotate(180deg); color: #6366f1; }
+.mms-chev.is-open { transform: translateY(-50%) rotate(180deg); color: #6366f1; }
 
 /* Chips — soft violet pills, ellipsised when long. */
 .mms-chip {

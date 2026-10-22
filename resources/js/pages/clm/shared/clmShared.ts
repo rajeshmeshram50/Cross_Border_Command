@@ -257,7 +257,12 @@ export const CLM_CSS = `
   padding: 8px 16px; border-radius: 8px; box-sizing: border-box;
   font-size: 13px; font-weight: 600; color: #475569;
   cursor: pointer; border: 1.5px solid #d5e7ef; background: #fff;
-  font-family: inherit; transition: background .15s ease, color .15s ease, box-shadow .22s ease, border-color .15s ease;
+  /* Neither colour nor background eases — same reason as .clm-pill. The
+     active tab's background is a gradient, which snaps the instant the class
+     lands, so animating the colour left slate-grey text sitting on an
+     already-dark tab for 150ms. Only the shadow and the border, which have
+     nothing behind them to clash with, still ease. */
+  font-family: inherit; transition: box-shadow .22s ease, border-color .15s ease;
   white-space: nowrap; position: relative; z-index: 1;
 }
 .clm-tab:hover { background: rgba(6,182,212,.08); color: #0891b2; border-color: rgba(6,182,212,.45); }
@@ -299,7 +304,14 @@ export const CLM_CSS = `
   font-family: inherit; font-size: 12.5px; font-weight: 600;
   cursor: pointer; border: none; background: transparent;
   color: #0891b2; box-shadow: none;
-  transition: all .2s; letter-spacing: .01em;
+  /* Not "all". The active pill's background is a gradient, and a gradient
+     cannot interpolate — it snaps the moment the class lands. The colour,
+     though, was animating from teal to white over 200ms, so for those 200ms
+     half-faded teal text sat on an already-dark pill and could not be read.
+     Leaving the tab did the reverse: near-white text on a light background.
+     Paint changes instantly, so the text and its background always agree;
+     only the shadow, which has nothing behind it to clash with, eases. */
+  transition: box-shadow .2s; letter-spacing: .01em;
 }
 .clm-pill.active {
   background: linear-gradient(135deg, #0891b2, #0e7490);

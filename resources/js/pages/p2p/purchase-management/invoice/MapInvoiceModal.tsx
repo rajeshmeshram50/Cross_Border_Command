@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
-import { IcoCheck, IcoChevronR, IcoDoc, IcoLink, IcoShield, IcoWarn, IcoX } from '../../icons';
+import { IcoCheck, IcoChevronR, IcoLink, IcoWarn, IcoX } from '../../icons';
 import { INVOICE_ROWS } from './data';
 import { useToast } from '../../../../contexts/ToastContext';
 import { PoApiError, poApi, type PoListRow } from '../order/api/po-api';
+import PoPicker from './PoPicker';
 
 const PO_PAGE_SIZE = 20;
 
@@ -16,6 +17,60 @@ export interface InvoiceMapChoice {
   poId?: number;
   poNo?: string;
   supplier?: string;
+}
+
+/**
+ * One of the two SPI types.
+ *
+ * Three columns rather than a stack: the badge sits with the title because it
+ * qualifies it, the points sit under a dashed rule because they are what the
+ * type gets you, and the tick keeps the top-right corner so both cards agree
+ * on where "chosen" is said regardless of how tall they end up.
+ */
+function TypeCard({
+  kind, on, disabled = false, onPick, icon, title, badge, desc, points,
+}: {
+  kind: 'with' | 'without';
+  on: boolean;
+  disabled?: boolean;
+  onPick: () => void;
+  icon: ReactNode;
+  title: string;
+  badge: string;
+  desc: string;
+  points: string[];
+}) {
+  return (
+    <button
+      type="button"
+      className={`spich-card spich-card--${kind}${on ? ' is-on' : ''}${disabled ? ' is-off' : ''}`}
+      onClick={onPick}
+      disabled={disabled}
+      aria-pressed={on}
+      title={disabled ? 'Standalone invoices are not available yet' : undefined}
+    >
+      <span className="spich-c2">
+        <span className="spich-c2__ico">{icon}</span>
+        <span className="spich-c2__main">
+          <span className="spich-c2__row">
+            <span className="spich-c2__t">{title}</span>
+            <span className={`spich-card__badge spich-card__badge--${kind === 'with' ? 'ok' : 'warn'}`}>
+              {badge}
+            </span>
+          </span>
+          <span className="spich-c2__d">{desc}</span>
+          <span className="spich-c2__pts">
+            {points.map(p => (
+              <span className="spich-c2__pt" key={p}>
+                <span className="spich-c2__ck"><IcoCheck size={9} /></span>{p}
+              </span>
+            ))}
+          </span>
+        </span>
+        <span className="spich-card__rad">{on && <IcoCheck size={11} />}</span>
+      </span>
+    </button>
+  );
 }
 
 export default function MapInvoiceModal({
@@ -71,11 +126,6 @@ export default function MapInvoiceModal({
     loadPos(poPage + 1, poSearch.trim());
   }, [poLoading, poLoadingMore, poPage, poLastPage, poSearch, loadPos]);
 
-  const poLabel = (r: PoListRow) => `${r.code} · ${r.supplier_name ?? '—'}`;
-  const poOptions = useMemo(
-    () => poRows.map(r => ({ value: String(r.id), label: poLabel(r) })),
-    [poRows],
-  );
 
   const supplierOptions = useMemo(() => {
     const seen = new Set(INVOICE_ROWS.map(r => r.supplierName));
@@ -104,10 +154,19 @@ export default function MapInvoiceModal({
       <div className="spi-mdl spi-mdl--wide" role="dialog" aria-modal="true" aria-labelledby="inv-map-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
-            <div className="spi-mdl-head-ico"><IcoDoc size={22} stroke={2.1} /></div>
+            {/* A receipt, which is what a supplier invoice is — the clipboard
+                here was the generic document icon. */}
+            <div className="spi-mdl-head-ico">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z" />
+                <line x1="8" y1="9" x2="16" y2="9" />
+                <line x1="8" y1="13" x2="16" y2="13" />
+              </svg>
+            </div>
             <div>
-              <div className="spi-mdl-title" id="inv-map-title">Map Supplier Purchase Invoice</div>
-              <div className="spi-mdl-sub">Choose how to map this supplier invoice.</div>
+              <div className="spi-mdl-title" id="inv-map-title">Create Supplier Purchase Invoice</div>
+              <div className="spi-mdl-sub">Choose the SPI type — with a Purchase Order or a Direct SPI.</div>
             </div>
           </div>
           <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close">
@@ -116,88 +175,84 @@ export default function MapInvoiceModal({
         </div>
 
         <div className="spi-mdl-body">
-          <div className="spi-mdl-seclabel">MAP INVOICE TO PROCUREMENT</div>
+          <div className="spi-mdl-seclabel">SELECT SPI TYPE</div>
 
-          <button
-            type="button"
-            className={`spi-mdl-card ${mode === 'with-po' ? 'is-sel is-teal' : ''}`}
-            onClick={() => choose('with-po')}
-            aria-pressed={mode === 'with-po'}
-          >
-            <div className="spi-mdl-card-ico spi-mdl-ico-teal"><IcoLink size={20} /></div>
-            <div className="spi-mdl-card-mid">
-              <div className="spi-mdl-card-title">
-                With Purchase Order <span className="spi-mdl-badge spi-mdl-badge-teal">RECOMMENDED</span>
-              </div>
-              <div className="spi-mdl-card-desc">Link this invoice to an existing PO for a 3-way match.</div>
+          {/* The two types are a choice between peers, so they sit side by
+              side and are described the same way — what the type is, then
+              what it does for you. Stacked full-width, the second one read
+              as an afterthought below the first. */}
+          <div className="spich-grid">
+            <TypeCard
+              kind="with"
+              on={mode === 'with-po'}
+              onPick={() => choose('with-po')}
+              icon={<IcoLink size={19} />}
+              title="With Purchase Order SPI"
+              badge="Recommended"
+              desc="Invoice raised against an existing Purchase Order."
+              points={['3-way match: PO · GRN · Invoice', 'Products & prices pulled from the PO']}
+            />
+            {/* Standalone invoices have no server behind them yet, so this
+                keeps the design and stays unpickable — dimmed, with the
+                reason on its tooltip rather than a pill the design has no
+                room for: a chip under the points made both cards taller. */}
+            <TypeCard
+              kind="without"
+              on={mode === 'without-po'}
+              disabled
+              onPick={() => choose('without-po')}
+              icon={<IcoWarn size={19} />}
+              title="Direct SPI"
+              badge="Without Purchase Order"
+              desc="Standalone supplier invoice, not tied to any PO."
+              points={['Pick the supplier directly', 'Enter products & prices manually']}
+            />
+          </div>
+
+          {/* What the chosen type still needs, in a panel of its own under
+              both cards — it belongs to whichever is selected, and hanging it
+              off one card pushed the other out of line. */}
+          {mode && (
+            <div className="spich-sub">
+              {mode === 'with-po' ? (
+                <div className="spi-mdl-field">
+                  <label className="spi-mdl-fieldlabel">
+                    <IcoLink size={20} /> SELECT PURCHASE ORDER <span className="spi-mdl-req">*</span>
+                  </label>
+                  <PoPicker
+                    rows={poRows}
+                    value={poId}
+                    search={poSearch}
+                    onSearch={setPoSearch}
+                    onScrollEnd={loadMorePos}
+                    loading={poLoading}
+                    loadingMore={poLoadingMore}
+                    onChange={(r) => { setPoId(String(r.id)); setPoPicked(r); setShowError(false); }}
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="spi-mdl-warn">
+                    <IcoWarn size={14} />
+                    <span>
+                      <b>Standalone invoice</b> — not linked to any purchase order. Select the
+                      supplier this invoice is for.
+                    </span>
+                  </div>
+                  <div className="spi-mdl-field">
+                    <label className="spi-mdl-fieldlabel">
+                      <IcoLink size={20} /> SELECT SUPPLIER <span className="spi-mdl-req">*</span>
+                    </label>
+                    <MasterSelect
+                      value={supplier}
+                      placeholder="— Select Supplier —"
+                      options={supplierOptions}
+                      onChange={(v) => { setSupplier(v); setShowError(false); }}
+                    />
+                  </div>
+                </>
+              )}
             </div>
-            <span className={`spi-mdl-radio ${mode === 'with-po' ? 'is-on-teal' : ''}`}>
-              {mode === 'with-po' && <IcoCheck size={13} />}
-            </span>
-          </button>
-
-          {mode === 'with-po' && (
-            <div className="spi-mdl-field">
-              <label className="spi-mdl-fieldlabel">
-                <IcoLink size={20} /> SELECT PURCHASE ORDER <span className="spi-mdl-req">*</span>
-              </label>
-              <MasterSelect
-                value={poId}
-                placeholder="— Select a Purchase Order —"
-                options={poOptions}
-                currentValueLabel={poPicked ? poLabel(poPicked) : undefined}
-                onSearchChange={setPoSearch}
-                onScrollEnd={loadMorePos}
-                loadingMore={poLoadingMore}
-                emptyText={poLoading ? 'Loading purchase orders…' : 'No submitted purchase orders yet.'}
-                onChange={(v) => {
-                  setPoId(v);
-                  setPoPicked(poRows.find(r => String(r.id) === v) ?? null);
-                  setShowError(false);
-                }}
-              />
-            </div>
-          )}
-
-          <button
-            type="button"
-            disabled
-            className={`spi-mdl-card is-disabled ${mode === 'without-po' ? 'is-sel is-amber' : ''}`}
-            onClick={() => choose('without-po')}
-            aria-pressed={mode === 'without-po'}
-            title="Standalone invoices are not available yet"
-          >
-            <div className="spi-mdl-card-ico spi-mdl-ico-amber"><IcoWarn size={20} /></div>
-            <div className="spi-mdl-card-mid">
-              <div className="spi-mdl-card-title">
-                Without Purchase Order <span className="spi-mdl-badge spi-mdl-badge-amber">STANDALONE</span>
-              </div>
-              <div className="spi-mdl-card-desc">Capture a supplier invoice not tied to any PO.</div>
-            </div>
-            <span className="spi-mdl-soon">Coming soon</span>
-          </button>
-
-          {mode === 'without-po' && (
-            <>
-              <div className="spi-mdl-warn">
-                <IcoWarn size={14} />
-                <span>
-                  <b>Standalone invoice</b> — not linked to any purchase order. Select the
-                  supplier this invoice is for.
-                </span>
-              </div>
-              <div className="spi-mdl-field">
-                <label className="spi-mdl-fieldlabel">
-                  <IcoLink size={20} /> SELECT SUPPLIER <span className="spi-mdl-req">*</span>
-                </label>
-                <MasterSelect
-                  value={supplier}
-                  placeholder="— Select Supplier —"
-                  options={supplierOptions}
-                  onChange={(v) => { setSupplier(v); setShowError(false); }}
-                />
-              </div>
-            </>
           )}
 
           {showError && (
@@ -207,11 +262,16 @@ export default function MapInvoiceModal({
           )}
         </div>
 
+        {/* Nothing on the left: the audit note sat opposite the only two
+            things in the footer and read as a third control. */}
         <div className="spi-mdl-foot">
-          <span className="spi-mdl-audit"><IcoShield size={13} /> All invoices are audit-tracked</span>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm" onClick={confirm}>
+            {/* Dead until a type is chosen, because until then there is no
+                question to answer. Once one is, it stays live even with the
+                PO still unpicked — a disabled button cannot say what is
+                missing, and the message below can. */}
+            <button type="button" className="spi-mdl-confirm" onClick={confirm} disabled={!mode}>
               Confirm &amp; Continue <IcoChevronR size={14} />
             </button>
           </div>
