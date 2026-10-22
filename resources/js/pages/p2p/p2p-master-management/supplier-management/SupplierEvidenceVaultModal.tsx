@@ -1,5 +1,5 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import SegmentBadge from '../../../../components/ui/SegmentBadge';
+import { SegmentItemBadge, type SegmentItem } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 
 import type JSZipType from 'jszip';
@@ -87,6 +87,10 @@ export interface VaultShipmentRow {
 }
 
 export interface VaultData {
+  /** The supplier's segments by id (code / name / regulatory status). */
+  segment_rows?:          SegmentItem[];
+  /** The supplier's signing contact (primary address, then primary_email). */
+  party_contact?:         { name?: string | null; email?: string | null } | null;
   total_documents:        number;
   verified_signed:        number;
   pending:                number;
@@ -268,7 +272,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
 
-  const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
+  const [segPop, setSegPop] = useState<{ items: SegmentItem[]; x: number; y: number } | null>(null);
   // "Sugar · Reg-High" label → its badge status, so chips show name + SegmentBadge.
   const regOf = (label: string) => supplier?.segmentItems?.find(it => label === it.name || label.startsWith(`${it.name} · `))?.reg;
   const nameOf = (label: string) => supplier?.segmentItems?.find(it => label === it.name || label.startsWith(`${it.name} · `))?.name ?? label;
@@ -557,6 +561,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   if (!open || !supplier || !vault) return null;
 
+  /* Recipient for Send for Signature. Most screens that open this vault pass
+     no email, so the preview read "—" and the send stopped at "Signer
+     required" (QA #139). The vault API returns the supplier's signing
+     contact, resolved as the PO send resolves it server-side. */
+  const signEmail   = (supplier.email || vaultLive?.party_contact?.email || '').trim() || undefined;
+  const signContact = supplier.contact || vaultLive?.party_contact?.name || undefined;
+
   const handleExportAll = async () => {
     if (!vault || !supplier || exporting) return;
 
@@ -758,8 +769,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                     ? supplier.segments
                     : (supplier.segment ? [supplier.segment] : [])
                   ).map(s => String(s).trim()).filter(Boolean);
-                  const chipSegs = segs.slice(0, 1);
-                  const segRest  = segs.length - chipSegs.length;
+                  /* Segment rows from the vault API (id-exact, with codes) — the
+                     name list off the row is the fallback, as in the Customer vault. */
+                  const segItems: SegmentItem[] = vaultLive?.segment_rows?.length
+                    ? vaultLive.segment_rows
+                    : segs.map(s => ({ name: nameOf(s), regulatory_status: regOf(s) ?? null }));
                   const type = (supplier.type ?? '').trim();
 
                   const showType = !!type && !/^(pending|-|—|n\/a)$/i.test(type);
@@ -768,18 +782,26 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                     <div className="cev-header-chips">
 
                       {supplier.customerId && <span className="cev-chip cev-chip-link">↳ {supplier.customerId}</span>}
-                      {chipSegs.map((s, i) => (
-                        <Tooltip key={`${s}-${i}`} label={s}>
-                          <span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{nameOf(s).length > 22 ? nameOf(s).slice(0, 22) + '…' : nameOf(s)}<SegmentBadge status={regOf(s)} /></span>
-                        </Tooltip>
-                      ))}
-                      {segRest > 0 && (
-                        <button
-                          type="button"
-                          className="cev-chip cev-chip-seg sev-chip-more"
-                          onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
-                        >+{segRest} more</button>
-                      )}
+                      {/* One badge rather than a chip plus a separate "+N more"
+                          button, as the Customer vault has it: the named segment
+                          carries the count inline and opens the full list. */}
+                      {segItems.length > 0 && (() => {
+                        const first = segItems[0].name;
+                        const extra = segItems.length - 1;
+                        const short = first.length > 20 ? first.slice(0, 20) + '…' : first;
+                        if (extra === 0) {
+                          return <Tooltip label={first}><span className="cev-chip cev-chip-seg" style={{ display: 'inline-flex', alignItems: 'center' }}>{short}<SegmentItemBadge item={segItems[0]} /></span></Tooltip>;
+                        }
+                        return (
+                          <Tooltip label={`${segItems.length} segments — click to see all`}>
+                            <button
+                              type="button"
+                              className="cev-chip cev-chip-seg sev-chip-more"
+                              onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { items: segItems, x: b.left, y: b.bottom + 6 }); }}
+                            >{short}<SegmentItemBadge item={segItems[0]} /><span className="cev-chip-seg-count">+{extra}</span></button>
+                          </Tooltip>
+                        );
+                      })()}
                       {showType && <span className="cev-chip cev-chip-type">{type}</span>}
                       {supplier.contact && <span className="cev-chip cev-chip-contact">{supplier.contact}</span>}
                       {supplier.contactCity && <span className="cev-chip cev-chip-city">{supplier.contactCity}</span>}
@@ -979,8 +1001,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           id:      supplier.id,
           db_id:   supplier.db_id,
           company: supplier.company,
-          contact: supplier.contact,
-          email:   supplier.email,
+          contact: signContact,
+          email:   signEmail,
         } : null}
         modelName="Vendor"
         multiBox
@@ -1024,8 +1046,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             id:      supplier.id,
             db_id:   supplier.db_id,
             company: supplier.company,
-            contact: supplier.contact,
-            email:   supplier.email,
+            contact: signContact,
+            email:   signEmail,
           }}
           rawPdfContext={{
             docId:      sendRawPo.docs[0].po_doc_id as number,
@@ -1262,7 +1284,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   {/* Issued Date / Expired At, as the Customer and Consignee
                       overviews list them — the same facts as the tab tables. */}
                   <table className="cev-ov-table sev-ov-std">
-                    <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 116 }}>Issued Date</th><th style={{ width: 116 }}>Expired At</th><th style={{ width: 130 }}>Status</th><th style={{ width: 150 }}>Action</th></tr></thead>
+                    {/* Action holds two buttons (Download + Upload / Re-upload),
+                        so it takes the room the date columns give back. */}
+                    <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 104 }}>Issued Date</th><th style={{ width: 104 }}>Expired At</th><th style={{ width: 120 }}>Status</th><th style={{ width: 210 }}>Action</th></tr></thead>
                     <tbody>
                       {docs.length === 0 ? (
                         <tr><td colSpan={6} className="cev-ov-empty">No documents available.</td></tr>
@@ -1285,33 +1309,42 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                             <td><VaultDateBadge value={d.expiry} kind="expiry" /></td>
                             <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
                             <td>
-                              {url ? (
-                                <button
-                                  type="button"
-                                  className="cev-ov-dl"
-                                  disabled={dling}
-                                  onClick={async () => {
-                                    setOvDownloadingKey(dlKey);
-                                    try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
-                                  }}
-                                >
-                                  {dling
-                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
-                                    : <><i className="ri-download-2-line" aria-hidden /> Download</>}
-                                </button>
-                              ) : canUpload ? (
-                                <button
-                                  type="button"
-                                  className="cev-ov-up"
-                                  onClick={() => setOvUpload({ doc: d, category: row.cat as 'dd' | 'kyc' | 'tl' })}
-                                >
-                                  <i className="ri-upload-2-line" aria-hidden /> Upload
-                                </button>
-                              ) : (
-                                <button type="button" className="cev-ov-dl" disabled>
-                                  <i className="ri-download-2-line" aria-hidden /> Download
-                                </button>
-                              )}
+                              {/* Download and Upload / Re-upload side by side, as
+                                  the Customer and Consignee overviews have them.
+                                  Upload used to replace Download only while no
+                                  file existed, so a document already on file
+                                  could not be replaced from here (QA #138). */}
+                              <span className="cev-ov-acts">
+                                <Tooltip label={!url ? 'No file uploaded yet' : (dling ? 'Downloading…' : `Download ${d.name}`)}>
+                                  <button
+                                    type="button"
+                                    className="cev-ov-dl"
+                                    disabled={!url || dling}
+                                    onClick={async () => {
+                                      if (!url) return;
+                                      setOvDownloadingKey(dlKey);
+                                      try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
+                                    }}
+                                  >
+                                    {dling
+                                      ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
+                                      : <><i className="ri-download-2-line" aria-hidden /> Download</>}
+                                  </button>
+                                </Tooltip>
+                                {canUpload && (
+                                  <Tooltip label={url ? `Replace the file on ${d.name}` : `Upload ${d.name}`}>
+                                    <button
+                                      type="button"
+                                      className={url ? 'cev-ov-up cev-ov-reup' : 'cev-ov-up'}
+                                      onClick={() => setOvUpload({ doc: d, category: row.cat as 'dd' | 'kyc' | 'tl' })}
+                                    >
+                                      {url
+                                        ? <><i className="ri-refresh-line" aria-hidden /> Re-upload</>
+                                        : <><i className="ri-upload-2-line" aria-hidden /> Upload</>}
+                                    </button>
+                                  </Tooltip>
+                                )}
+                              </span>
                             </td>
                           </tr>
                         );
@@ -1356,6 +1389,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         <SegmentRefUploadPopup
           title={ovUpload.category === 'dd' ? 'DD Document Name' : ovUpload.category === 'kyc' ? 'Owner KYC Document Name' : 'Trade License Document Name'}
           row={{ code: ovUpload.doc.reference || ovUpload.doc.doc_code || '', name: ovUpload.doc.name, authority: ovUpload.doc.authority, requirement: (ovUpload.doc.requirement as 'M' | 'O') || 'M' }}
+          /* On a re-upload the popup opens on what is stored, as the tab row's does. */
+          existing={ovUpload.doc.attachment ? { file: null, url: ovUpload.doc.attachment_url || '', name: ovUpload.doc.attachment, expiry: evExpiryIso(ovUpload.doc.expiry) || undefined, issue: evExpiryIso(ovUpload.doc.issue_date) || undefined } : undefined}
           onClose={() => setOvUpload(null)}
           onSubmit={async (f, expiryDate, issueDate) => { await submitOvUpload(f, expiryDate, issueDate); }}
         />
@@ -1365,14 +1400,13 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         <>
           <div onClick={() => setSegPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
           <div className="cev-seg-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 298), top: segPop.y, zIndex: 13001, width: 280, maxHeight: 320, overflowY: 'auto' }}>
-            <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
-            {segPop.names.map((name, i) => (
+            <div className="cev-seg-pop-title">Segments ({segPop.items.length})</div>
+            {segPop.items.map(({ name, ...rest }, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                {/* Two separate chips: the segment pill on the left, its own Reg badge on the right. */}
-                <Tooltip label={name}>
-                  <span className="cev-seg-pop-pill" style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(name)}</span>
+                <Tooltip label={rest.code ? `${rest.code}: ${name}` : name}>
+                  <span className="cev-seg-pop-pill" style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rest.code ? `${rest.code}: ${name}` : name}</span>
                 </Tooltip>
-                <SegmentBadge status={regOf(name)} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                <SegmentItemBadge item={{ name, ...rest }} style={{ marginLeft: 'auto', flexShrink: 0 }} />
               </div>
             ))}
           </div>
