@@ -63,6 +63,11 @@ const ZERO_STATS: Stats = { total: 0, active: 0, scheduled: 0, draft: 0, expired
 
 const PER_PAGE_KEY = 'cbc.hr.broadcast.perPage.v1';
 
+/* The SAME ceiling as AnnouncementController::MAX_PER_PAGE. autoFitRows has a
+   floor but no upper bound, so a zoomed-out viewport can ask for more rows
+   than the server will ever return — see setPerPage below. */
+const MAX_PER_PAGE = 200;
+
 const TYPE_TONES: Record<AnnType, { bg: string; fg: string }> = {
   General: { bg: '#e0e7ff', fg: '#4338ca' },
   Policy:  { bg: '#ede9fe', fg: '#6d28d9' },
@@ -103,14 +108,21 @@ export default function HrBroadcastCentre() {
   const [typeFilter, setTypeFilter] = useState<string>('All');
 
   const [page, setPage] = useState(0);
-  const [perPage, setPerPage] = useState<number>(() => {
+  const [perPage, setPerPageRaw] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(PER_PAGE_KEY));
-      return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 10;
+      return Number.isFinite(saved) && saved > 0 && saved <= MAX_PER_PAGE ? saved : 10;
     } catch {
       return 10;
     }
   });
+
+  /* Every write to the page size passes the server's ceiling. Without it the
+     table pages as though it had a size the server clamped away, and page 2
+     asks for rows that are not where it thinks they are. */
+  const setPerPage = useCallback((n: number) => {
+    setPerPageRaw(Math.max(1, Math.min(MAX_PER_PAGE, Math.floor(n) || 10)));
+  }, []);
   useEffect(() => {
     try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch {}
   }, [perPage]);
@@ -140,6 +152,12 @@ export default function HrBroadcastCentre() {
       const body = res.data ?? {};
       setRows(Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []));
       setTotal(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
+
+      /* Follow the size the paginator actually used. Every later page offset
+         is computed from it, so believing our own request after the server
+         clamped is how rows go missing. */
+      const served = Number(body.per_page);
+      if (Number.isFinite(served) && served > 0 && served !== perPage) setPerPage(served);
     } catch (err: any) {
       if (token !== reqRef.current) return;
       toast.error('Could not load announcements', err?.response?.data?.message || 'Please try again.');
@@ -200,7 +218,7 @@ export default function HrBroadcastCentre() {
                   target="_blank"
                   rel="noreferrer"
                   className="d-inline-flex align-items-center gap-1 mt-1"
-                  style={{ fontSize: 11.5, color: '#0c63b0', maxWidth: '100%' }}
+                  style={{ fontSize: 11.5, color: '#4c2d9c', maxWidth: '100%' }}
                 >
                   <i className="ri-attachment-line flex-shrink-0" />
 
@@ -385,7 +403,7 @@ export default function HrBroadcastCentre() {
                 <div className="min-w-0">
                   <div className="d-flex align-items-center gap-2 flex-wrap">
                     <span className="frm-cstrip-title">Broadcast Centre</span>
-                    <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7', fontSize: 11 }}>Communication</span>
+                    <span className="rec-pill" style={{ background: 'rgba(124,58,237,0.16)', color: '#0284c7', fontSize: 11 }}>Communication</span>
                   </div>
                   <div className="frm-cstrip-sub">
                     Create, schedule and manage company-wide announcements with audience targeting and acknowledgement tracking
@@ -775,7 +793,7 @@ function CreateAnnouncementModal({
     >
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
 
-        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 60%, #7dd3fc 100%)' }}>
+        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #4c2d9c 0%, #6d28d9 60%, #7c3aed 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
 
@@ -809,7 +827,7 @@ function CreateAnnouncementModal({
                   className="d-inline-flex align-items-center"
                   style={{
                     gap: 8, padding: '4px 8px', border: 0, background: 'transparent',
-                    color: active ? '#0ea5e9' : (done ? '#0ea5e9' : '#9ca3af'),
+                    color: active ? '#6d28d9' : (done ? '#15803d' : '#9ca3af'),
                     cursor: saving ? 'not-allowed' : ((done || active) ? 'pointer' : 'default'),
                     opacity: saving ? 0.6 : 1,
 
@@ -819,10 +837,23 @@ function CreateAnnouncementModal({
                   <span
                     style={{
                       width: 26, height: 26, borderRadius: '50%',
-                      background: active ? '#0c63b0' : (done ? '#0ea5e9' : 'var(--vz-border-color, #e5e7eb)'),
-                      color: (active || done) ? '#fff' : '#6b7280',
+                      /* Three states, three colours — not three violets.
+                         Green for a step that is DONE, violet for the one you
+                         are ON, grey for one you have not reached. Done and
+                         active are different facts, and shading the same hue
+                         made the reader compare brightness to tell them apart.
+                         The tick already says "finished"; the colour should
+                         agree with it. */
+                      background: done
+                        ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                        : (active ? 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)'
+                                  : 'var(--vz-border-color, #e9eaf2)'),
+                      boxShadow: active ? '0 4px 10px -3px rgba(124, 58, 237, 0.55)'
+                               : (done ? '0 3px 8px -3px rgba(22, 163, 74, 0.45)' : 'none'),
+                      color: (active || done) ? '#fff' : '#9ca3af',
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 12, fontWeight: 700,
+                      transition: 'background .2s ease, box-shadow .2s ease',
 
                       flexShrink: 0,
                     }}
@@ -841,7 +872,11 @@ function CreateAnnouncementModal({
                     style={{
                       flex: 1, height: 2, minWidth: 16, margin: '0 4px',
                       alignSelf: 'flex-start', marginTop: 17,
-                      background: done ? '#0ea5e9' : 'var(--vz-border-color, #e5e7eb)',
+                      /* The line BEHIND a finished step is the ground you have
+                          covered, so it matches the step it leads out of. */
+                      background: done
+                        ? 'linear-gradient(90deg, #22c55e, #4ade80)'
+                        : 'var(--vz-border-color, #e9eaf2)',
                       transition: 'background .2s ease',
                     }}
                   />
@@ -903,52 +938,59 @@ function CreateAnnouncementModal({
           <div style={{ flex: '0 0 320px', minHeight: 0, borderLeft: '1px solid var(--vz-border-color, #e5e7eb)', padding: 18, background: 'var(--vz-secondary-bg, #fafafa)', overflowY: 'auto' }}>
             <div className="text-uppercase fw-semibold mb-2" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color, #6b7280)' }}>Live Preview</div>
 
-            <div style={{ background: 'rgba(56,189,248,0.14)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 12, padding: 14, marginBottom: 12 }}>
-              <div className="d-flex align-items-center justify-content-between mb-2">
-                <i className="ri-send-plane-line" style={{ fontSize: 22, color: '#0ea5e9' }} />
+            <div style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.26)', borderRadius: 12, padding: 14, marginBottom: 12 }}>
+              {/* Icon and heading on one row (QA #62). The icon sat alone
+                  above the title, so the card opened with a line containing
+                  nothing but a glyph and the heading started under it rather
+                  than beside it. flex-start, not center: a title that wraps to
+                  three lines should keep its first line level with the icon. */}
+              {/* The icon FLOATS, it is not a flex sibling.
+                  Flex gave the title its own column, so a wrapped line started
+                  under the first line of text — indented past the icon, with a
+                  ragged notch down the left of the card. Floated, the first
+                  line sits beside the icon and every line after it runs back
+                  under the icon, which is the alignment asked for. */}
+              <div style={{ marginBottom: 10, overflow: 'hidden' }}>
+                <i className="ri-send-plane-line"
+                  style={{ float: 'left', fontSize: 20, color: '#6d28d9', lineHeight: 1.35, marginRight: 9 }} />
+                <Tooltip label={title} disabled={!title} maxWidth={420} position="left">
+                  <span
+                    className="fw-bold"
+                    style={{
+                      fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))',
+                      wordBreak: 'break-word', overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {title || 'Announcement Title'}
+                  </span>
+                </Tooltip>
               </div>
 
-              <Tooltip label={title} disabled={!title} maxWidth={420} position="left">
-                <div
-                  className="fw-bold"
-                  style={{
-                    fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))',
-                    wordBreak: 'break-word', overflowWrap: 'anywhere',
-                    display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                  }}
-                >
-                  {title || 'Announcement Title'}
-                </div>
-              </Tooltip>
-
-              <Tooltip
-                label={description.length > 400 ? `${description.slice(0, 400).trimEnd()}…` : description}
-                disabled={!description}
-                maxWidth={420}
-                position="left"
+              {/* No tooltip. The description already scrolls inside the card,
+                  so the full text is readable in place — a hover panel
+                  repeating it just covered the preview it was describing. */}
+              {/* Scrolls inside the card instead of being cut off. (#5)
+                  The six-line clamp ended a long description in an ellipsis
+                  with no way to read the rest — the preview is there to show
+                  what the announcement will look like, and a third of it was
+                  unreachable. A max height keeps the card its shape and the
+                  overflow becomes a scrollbar of its own. */}
+              <div
+                style={{
+                  fontSize: 12, color: 'var(--vz-secondary-color, #475569)', minHeight: 18,
+                  wordBreak: 'break-word', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap',
+                  maxHeight: 128, overflowY: 'auto', overscrollBehavior: 'contain',
+                }}
               >
-                {/* Scrolls inside the card instead of being cut off. (#5)
-                    The six-line clamp ended a long description in an ellipsis
-                    with no way to read the rest — the preview is there to show
-                    what the announcement will look like, and a third of it was
-                    unreachable. A max height keeps the card its shape and the
-                    overflow becomes a scrollbar of its own. */}
-                <div
-                  style={{
-                    fontSize: 12, color: 'var(--vz-secondary-color, #475569)', minHeight: 18,
-                    wordBreak: 'break-word', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap',
-                    maxHeight: 128, overflowY: 'auto', overscrollBehavior: 'contain',
-                  }}
-                >
-                  {description || 'Description appears here…'}
-                </div>
-              </Tooltip>
+                {description || 'Description appears here…'}
+              </div>
+
               <div className="d-flex align-items-center justify-content-between mt-2">
-                <span style={{ fontSize: 11, color: 'var(--vz-body-color, #0c63b0)' }}>{audienceLabel}</span>
+                <span style={{ fontSize: 11, color: 'var(--vz-body-color, #4c2d9c)' }}>{audienceLabel}</span>
                 <span className="rec-pill" style={{ background: TYPE_TONES[type].bg, color: TYPE_TONES[type].fg, ['--pill-fg' as any]: TYPE_TONES[type].fg, fontSize: 10.5 }}>{type}</span>
               </div>
             </div>
-            <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 10, padding: 12, fontSize: 12.5, color: 'var(--vz-body-color, #0c4a6e)' }}>
+            <div style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.26)', borderRadius: 10, padding: 12, fontSize: 12.5, color: 'var(--vz-body-color, #4c2d9c)' }}>
               <div><strong>Status:</strong> {reachedReview ? (editing?.status || 'Active') : '—'}</div>
               <div><strong>Priority:</strong> {touched.priority ? priority : '—'}</div>
               <div><strong>Audience:</strong> {touched.audience ? `${audienceLabel.replace(/^(Roles|Desig): /, '')} (${audienceCount})` : '—'}</div>
@@ -1045,8 +1087,8 @@ function Step1Basic({
 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-      <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
-        <i className="ri-checkbox-blank-line" /> Basic Details
+      <div className="rec-sec-head">
+        <i className="ri-file-text-line" />Basic Details
       </div>
 
       <div>
@@ -1179,7 +1221,7 @@ function Step1Basic({
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="View attachment"
-                  style={{ ...attachBtn, color: '#0c63b0', pointerEvents: 'auto', textDecoration: 'none' }}
+                  style={{ ...attachBtn, color: '#4c2d9c', pointerEvents: 'auto', textDecoration: 'none' }}
                 >
                   <i className="ri-eye-line" />
                 </a>
@@ -1187,7 +1229,7 @@ function Step1Basic({
                 <span
                   aria-label="View attachment"
                   aria-disabled
-                  style={{ ...attachBtn, color: '#0c63b0', opacity: 0.45, cursor: 'not-allowed' }}
+                  style={{ ...attachBtn, color: '#4c2d9c', opacity: 0.45, cursor: 'not-allowed' }}
                 >
                   <i className="ri-eye-line" />
                 </span>
@@ -1282,8 +1324,8 @@ function Step2Audience({
 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-      <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
-        <i className="ri-user-line" /> Audience Selection
+      <div className="rec-sec-head">
+        <i className="ri-user-line" />Audience Selection
       </div>
       <div>
         <label className="rec-form-label">Target Audience<span className="req">*</span></label>
@@ -1296,9 +1338,9 @@ function Step2Audience({
             const active = audienceType === o.key;
             return (
               <button key={o.key} type="button" onClick={() => setAudienceType(o.key)} className="rec-priority-pill" style={{
-                background: active ? 'rgba(56,189,248,0.16)' : 'var(--vz-secondary-bg, #fff)',
-                color: active ? '#0ea5e9' : 'var(--vz-body-color, #475569)',
-                border: active ? '1px solid #0ea5e9' : '1px solid var(--vz-border-color, #e5e7eb)',
+                background: active ? 'rgba(124,58,237,0.16)' : 'var(--vz-secondary-bg, #fff)',
+                color: active ? '#6d28d9' : 'var(--vz-body-color, #475569)',
+                border: active ? '1px solid #6d28d9' : '1px solid var(--vz-border-color, #e5e7eb)',
               }}>{o.label}</button>
             );
           })}
@@ -1385,8 +1427,8 @@ function CheckboxBox({ options, selected, onChange, empty }: {
               className="d-inline-flex align-items-center"
               style={{
                 gap: 6, padding: '6px 12px', borderRadius: 8,
-                background: active ? 'rgba(56,189,248,0.16)' : 'var(--vz-secondary-bg, #fff)',
-                border: active ? '1px solid #0c63b0' : '1px solid var(--vz-border-color, #e5e7eb)',
+                background: active ? 'rgba(124,58,237,0.16)' : 'var(--vz-secondary-bg, #fff)',
+                border: active ? '1px solid #4c2d9c' : '1px solid var(--vz-border-color, #e5e7eb)',
                 cursor: 'pointer', fontSize: 13, userSelect: 'none',
               }}
             >
@@ -1405,6 +1447,39 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Close on a click outside, and on Escape (QA #9).
+   *
+   * The panel had no dismissal at all beyond a Done button that sat below
+   * `maxHeight: 240, overflow: auto` — with 45 employees in the list it was
+   * scrolled out of sight, so the dropdown read as having no way to close and
+   * covered the fields beneath it.
+   *
+   * mousedown, not click: a click fires after mouseup, so a press that starts
+   * outside and releases inside the panel would close it mid-interaction.
+   * Bound only while open, so a page of pickers is not all listening at once.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    const onDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) { setOpen(false); setSearch(''); }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setOpen(false); setSearch(''); }
+    };
+
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   const filtered = useMemo(() => {
     const n = search.trim().toLowerCase();
     return options.filter(o => !n || o.label.toLowerCase().includes(n));
@@ -1414,24 +1489,42 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
     else onChange([...selected, id]);
   };
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative' }} ref={boxRef}>
       <div
         onClick={() => setOpen(o => !o)}
         className="rec-input"
-        style={{ minHeight: 38, cursor: 'pointer', display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', padding: '6px 10px' }}
+        role="button" tabIndex={0} aria-expanded={open}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); } }}
+        /* height:auto overrides .rec-input's fixed 34px (QA #61, #64).
+           The chips wrap, but the box could not grow, so from the second row
+           down they spilled out of the field and over whatever sat beneath it.
+           Grows to four rows, then scrolls — unbounded growth would push the
+           Save buttons off the modal instead. */
+        style={{ height: 'auto', minHeight: 38, maxHeight: 112, overflowY: 'auto',
+          cursor: 'pointer', display: 'flex', flexWrap: 'wrap', gap: 4,
+          alignItems: 'flex-start', alignContent: 'flex-start',
+          padding: '6px 10px', paddingRight: 30 }}
       >
         {selected.length === 0 && <span style={{ color: '#9ca3af', fontSize: 13 }}>{placeholder || 'Select…'}</span>}
-        {selected.slice(0, 4).map(id => {
+        {/* All of them. The old slice(0,4) + "+1 more" existed because the
+            box could not grow; now that it can, hiding four-fifths of the
+            exclusions on a field whose whole job is to list them was the
+            worse half of the bug. */}
+        {selected.map(id => {
           const o = options.find(x => x.id === id);
           if (!o) return null;
           return (
-            <span key={id} className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: 'var(--vz-body-color, #0c63b0)', fontSize: 11.5 }}>
+            <span key={id} className="rec-pill" style={{ background: 'rgba(124,58,237,0.16)', color: 'var(--vz-body-color, #4c2d9c)', fontSize: 11.5 }}>
               {o.label}
               <i className="ri-close-line ms-1" onClick={(e) => { e.stopPropagation(); toggle(id); }} style={{ cursor: 'pointer' }} />
             </span>
           );
         })}
-        {selected.length > 4 && <span className="text-muted" style={{ fontSize: 11.5 }}>+{selected.length - 4} more</span>}
+
+        {/* Says it opens, and which way. Without it the control looked like a
+            text field that happened to sprout a list. */}
+        <i className={open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'}
+          style={{ position: 'absolute', right: 10, top: 10, color: 'var(--vz-secondary-color)', pointerEvents: 'none' }} />
       </div>
       {open && (
         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--vz-secondary-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.10)', zIndex: 10, maxHeight: 240, overflowY: 'auto' }}>
@@ -1449,8 +1542,13 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
               <span>{o.label}</span>
             </div>
           ))}
-          <div style={{ padding: 8, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', textAlign: 'right' }}>
-            <button type="button" className="rec-btn-ghost" onClick={() => setOpen(false)}>Done</button>
+          {/* Sticky: it used to sit after the list inside the scrollport, so
+              with more than a handful of options it was never on screen. */}
+          <div style={{ position: 'sticky', bottom: 0, padding: 8, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fff)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+            <span className="text-muted" style={{ fontSize: 11.5 }}>
+              {selected.length} selected
+            </span>
+            <button type="button" className="rec-btn-ghost" onClick={() => { setOpen(false); setSearch(''); }}>Done</button>
           </div>
         </div>
       )}
@@ -1462,9 +1560,8 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
   return (
 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div className="d-flex align-items-center gap-2" style={{ color: '#0ea5e9', lineHeight: 1 }}>
-        <i className="ri-notification-3-line" />
-        <span className="fw-semibold" style={{ fontSize: 14 }}>Notification Channels</span>
+      <div className="rec-sec-head">
+        <i className="ri-notification-3-line" />Notification Channels
       </div>
 
       <hr className="my-0" style={{ borderColor: '#e5e7eb' }} />
@@ -1472,9 +1569,9 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
       <label
         className="d-flex align-items-center gap-3 p-3"
         style={{
-          border: notifyEmail ? '1.5px solid #0ea5e9' : '1px solid var(--vz-border-color, #e5e7eb)',
+          border: notifyEmail ? '1.5px solid #6d28d9' : '1px solid var(--vz-border-color, #e5e7eb)',
           borderRadius: 10, cursor: 'pointer',
-          background: notifyEmail ? 'rgba(56,189,248,0.12)' : 'var(--vz-secondary-bg, #fff)',
+          background: notifyEmail ? 'rgba(124,58,237,0.12)' : 'var(--vz-secondary-bg, #fff)',
           boxShadow: notifyEmail ? '0 0 0 3px rgba(14,165,233,0.10)' : 'none',
           transition: 'border-color .15s ease, background .15s ease, box-shadow .15s ease',
         }}
@@ -1483,9 +1580,9 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
           type="checkbox"
           checked={notifyEmail}
           onChange={e => setNotifyEmail(e.target.checked)}
-          style={{ width: 18, height: 18, accentColor: '#0ea5e9', cursor: 'pointer' }}
+          style={{ width: 18, height: 18, accentColor: '#6d28d9', cursor: 'pointer' }}
         />
-        <i className="ri-mail-line" style={{ fontSize: 18, color: notifyEmail ? '#0ea5e9' : '#6b7280' }} />
+        <i className="ri-mail-line" style={{ fontSize: 18, color: notifyEmail ? '#6d28d9' : '#6b7280' }} />
         <div className="d-flex flex-column">
           <span className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>Email Notification</span>
           <span style={{ fontSize: 12, color: 'var(--vz-secondary-color, #6b7280)' }}>Send directly to each recipient's inbox when you publish</span>
@@ -1526,8 +1623,8 @@ function Step4Review({
 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-      <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
-        <i className="ri-file-text-line" /> Review & Publish
+      <div className="rec-sec-head">
+        <i className="ri-file-text-line" />Review &amp; Publish
       </div>
       <div style={{ border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 12, padding: 16, maxWidth: '100%', overflow: 'hidden' }}>
         <Tooltip label={fullTitle} disabled={!longTitle} maxWidth={420} position="bottom">
@@ -1555,7 +1652,7 @@ function Step4Review({
               if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowFullText(v => !v); }
             }}
             className="p-0 mt-1 d-inline-block"
-            style={{ background: 'none', border: 0, color: '#0ea5e9', fontSize: 12, fontWeight: 600, cursor: 'pointer', pointerEvents: 'auto' }}
+            style={{ background: 'none', border: 0, color: '#6d28d9', fontSize: 12, fontWeight: 600, cursor: 'pointer', pointerEvents: 'auto' }}
           >
             {showFullText
               ? 'Show less'
@@ -1579,7 +1676,7 @@ function Step4Review({
           {editing.creator?.name ? <> by {editing.creator.name}</> : null}
         </div>
       )}
-      <div style={{ background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 10, padding: 12, color: 'var(--vz-body-color, #0c4a6e)', fontSize: 13 }}>
+      <div style={{ background: 'rgba(124,58,237,0.10)', border: '1px solid rgba(124,58,237,0.26)', borderRadius: 10, padding: 12, color: 'var(--vz-body-color, #4c2d9c)', fontSize: 13 }}>
         <i className="ri-information-line" /> Clicking <strong>Publish</strong> will make this announcement live immediately
         {notifyEmail ? ' and email every selected recipient.' : '.'}
       </div>

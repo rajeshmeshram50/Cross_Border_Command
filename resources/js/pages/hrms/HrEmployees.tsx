@@ -303,6 +303,13 @@ type ExpiryDays = 3 | 7 | 15;
    rows-per-page choice, once. */
 const PER_PAGE_KEY = 'cbc.hr.employees.perPage.v2';
 
+/* The SAME ceiling as EmployeeController::MAX_PER_PAGE.
+   Duplicated rather than fetched because it has to be known before the first
+   request is built — but it is one number, and the fetch below reconciles
+   against whatever the server actually served, so a drift between the two
+   corrects itself rather than silently breaking the pager. */
+const MAX_PER_PAGE = 200;
+
 /* How long the step skeleton stands in while a panel is swapped.
    Long enough to read as a transition, short enough not to read as a stall —
    past roughly 800ms a skeleton stops meaning "changing" and starts meaning
@@ -377,14 +384,31 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
 
      Lazy initialiser: localStorage is read once on mount, not on every render.
      Guarded because a private-mode browser can throw on access. */
-  const [perPage, setPerPage] = useState<number>(() => {
+  const [perPage, setPerPageRaw] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(PER_PAGE_KEY));
-      return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 10;
+      return Number.isFinite(saved) && saved > 0 && saved <= MAX_PER_PAGE ? saved : 10;
     } catch {
       return 10;
     }
   });
+
+  /**
+   * Every write to the page size goes through the same ceiling the server has.
+   *
+   * autoFitRows derives the size from the viewport — `Math.floor(avail/rowH)`
+   * with a floor of minAutoRows and NO upper bound. Zoom a browser out far
+   * enough and window.innerHeight in CSS pixels multiplies, so the fit can ask
+   * for more rows than EmployeeController::MAX_PER_PAGE will ever return. The
+   * server then quietly clamps, the table keeps paging as though it had the
+   * larger size, and page 2 asks for rows that are not where it thinks: rows
+   * go missing and the page count is wrong.
+   *
+   * Clamping here means the two sides cannot disagree in the first place.
+   */
+  const setPerPage = useCallback((n: number) => {
+    setPerPageRaw(Math.max(1, Math.min(MAX_PER_PAGE, Math.floor(n) || 10)));
+  }, []);
 
   /* Persist whatever the table settles on — the fit's answer, or a size the
      user picked explicitly from Rows per page. Both are worth remembering: the
@@ -569,6 +593,13 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       const body = r.data ?? {};
       setApiEmployees(Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []));
       setTotalEmployees(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
+
+      /* The paginator reports the size it actually used. If it differs from
+         what we asked — a clamp, or a stale value from another tab — follow
+         the server, because every later page offset is computed from it. The
+         guard stops a loop: only correct when it genuinely differs. */
+      const served = Number(body.per_page);
+      if (Number.isFinite(served) && served > 0 && served !== perPage) setPerPage(served);
     } catch {
       if (token !== employeesReqRef.current) return;
       setApiEmployees([]);
