@@ -2,6 +2,8 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { segmentLabel } from '../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import '../../../components/ui/DataTable.css';
+import '../../p2p/p2p-master-management/supplier-management/supplier-management.css';
 import api from '../../../api';
 import { formatDmy } from '../../../utils/formatDmy';
 import { formatProductCode } from '../../../utils/formatProductCode';
@@ -112,8 +114,8 @@ function renderCreatorCell(
 
   return (
     <div className="qpi-creator-cell">
-      <span className={`qpi-creator-pill qpi-creator-${tone.kind}`}
-            style={{ background: tone.bg, color: tone.fg }}>
+      <span className={`rounded-pill fw-semibold d-inline-flex align-items-center gap-1 qpi-creator-pill qpi-creator-${tone.kind}`}
+            style={{ background: tone.bg, color: tone.fg, fontSize: 11.5, padding: '4px 10px', border: 'none' }}>
         {primary}
       </span>
       {subLabel && <span className="qpi-creator-sub">{subLabel}</span>}
@@ -455,10 +457,10 @@ const IconDownloadSm = () => (
 );
 
 const STEPS = [
-  { n:1, title:'Create Quotation',          desc:'Prepare quotation using opportunity, customer, product, pricing, currency, and bank details.', tag:'FOUNDATION STEP' },
-  { n:2, title:'Share & Track Response',    desc:'Send quotation to customer and track response status.',                                          tag:'SALES TRACKING' },
-  { n:3, title:'Convert to Proforma Invoice', desc:'Convert accepted quotation into PI with shipment, payment, and document details.',        tag:'CONVERSION STEP' },
-  { n:4, title:'Sales Readiness',           desc:'Prepare quotation and PI records for CLM, order confirmation, and export execution.',        tag:'FINAL EXECUTION' },
+  { n:1, title:'Create Quotation',          desc:'Prepare quotation using opportunity, customer, product, pricing, currency, and bank details.', tag:'FOUNDATION STEP', icon:'ri-file-add-line' },
+  { n:2, title:'Share & Track Response',    desc:'Send quotation to customer and track response status.',                                          tag:'SALES TRACKING',  icon:'ri-mail-send-line' },
+  { n:3, title:'Convert to Proforma Invoice', desc:'Convert accepted quotation into PI with shipment, payment, and document details.',        tag:'CONVERSION STEP', icon:'ri-exchange-line' },
+  { n:4, title:'Sales Readiness',           desc:'Prepare quotation and PI records for CLM, order confirmation, and export execution.',        tag:'FINAL EXECUTION', icon:'ri-checkbox-circle-line' },
 ];
 
 export default function SalesQPI() {
@@ -646,7 +648,7 @@ export default function SalesQPI() {
     const t = window.setTimeout(fit, 130);
     window.addEventListener('resize', fit);
     let ro: ResizeObserver | undefined;
-    const banner = document.querySelector('.qpi-wdh');
+    const banner = document.querySelector('.qpi-bref');
     if (banner && typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => fit());
       ro.observe(banner);
@@ -1053,11 +1055,11 @@ export default function SalesQPI() {
   const quotationColumns = useMemo<any[]>(() => [
     {
       header: 'Sr No', id: '__sr', meta: { align: 'center' },
-      cell: (info: any) => <span className="qpi-srno">{info.row.index + 1}</span>,
+      cell: (info: any) => <span className="dt-serial">{info.row.index + 1}</span>,
     },
     {
       header: 'Quotation No', accessorKey: 'qtNo',
-      cell: (info: any) => <span className="qpi-link">{info.getValue()}</span>,
+      cell: (info: any) => <span className="dt-id-chip">{info.getValue()}</span>,
     },
     {
       header: 'Quotation Date', accessorKey: 'qtDate',
@@ -1065,7 +1067,7 @@ export default function SalesQPI() {
     },
     {
       header: 'Opp ID', accessorKey: 'oppId',
-      cell: (info: any) => info.getValue() ? <span className="qpi-link">{info.getValue()}</span> : <span className="qpi-em">—</span>,
+      cell: (info: any) => info.getValue() ? <span className="dt-id-chip">{info.getValue()}</span> : <span className="qpi-em">—</span>,
     },
     {
       header: 'Opp Date', accessorKey: 'oppDate',
@@ -1248,9 +1250,9 @@ export default function SalesQPI() {
   const piColumnsBase = (withShipment: boolean): any[] => [
     {
       header: 'Sr No', id: '__sr', meta: { align: 'center' },
-      cell: (info: any) => <span className="qpi-srno">{info.row.index + 1}</span>,
+      cell: (info: any) => <span className="dt-serial">{info.row.index + 1}</span>,
     },
-    { header: 'PI No', accessorKey: 'piNo',  cell: (info: any) => <span className="qpi-link">{info.getValue()}</span> },
+    { header: 'PI No', accessorKey: 'piNo',  cell: (info: any) => <span className="dt-id-chip">{info.getValue()}</span> },
     { header: 'PI Date', accessorKey: 'piDate', cell: (info: any) => <span className="qpi-date">{info.getValue() || '—'}</span> },
     ...(withShipment ? [
       { header: 'SHP ID', accessorKey: 'btId',   cell: (info: any) => info.getValue() ? <span className="qpi-bt-badge">{info.getValue()}</span> : <span className="qpi-em">—</span> },
@@ -1259,7 +1261,7 @@ export default function SalesQPI() {
     { header: 'Convert From (Quotation No)', accessorKey: 'convertFrom',
       cell: (info: any) => info.getValue() ? <span className="qpi-qt-badge">{info.getValue()}</span> : <span className="qpi-em">—</span> },
     { header: 'Opp ID', accessorKey: 'oppId',
-      cell: (info: any) => info.getValue() ? <span className="qpi-link">{info.getValue()}</span> : <span className="qpi-em">—</span> },
+      cell: (info: any) => info.getValue() ? <span className="dt-id-chip">{info.getValue()}</span> : <span className="qpi-em">—</span> },
     { header: 'Opp Date', accessorKey: 'oppDate', cell: (info: any) => <span className="qpi-date">{info.getValue() || '—'}</span> },
     { header: 'Customer',  accessorKey: 'customer',  cell: (info: any) => <span className="qpi-strong">{info.getValue() || '—'}</span> },
     { header: 'Consignee', accessorKey: 'consignee', cell: (info: any) => info.getValue()
@@ -1407,81 +1409,84 @@ export default function SalesQPI() {
     <div className="qpi-root">
       <style>{SCOPED_CSS}</style>
 
-      <div className="qpi-header">
-        <span className="qpi-accent" />
-        <span className="qpi-glow" />
-        <div className="qpi-header-left">
-          <div className="qpi-avatar-wrap">
-            <div className="qpi-header-icon"><IconUsers /></div>
-            <span className="qpi-online-dot" />
-          </div>
-          <div>
-            <div className="qpi-header-title">Quotations V/S Proforma Invoice</div>
-            <div className="qpi-header-sub">Manage quotation creation, customer approval and PI conversion</div>
+      <div className="frm-cstrip hr-cstrip">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-file-list-3-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Quotations V/S Proforma Invoice</div>
+            <div className="frm-cstrip-sub">Manage quotation creation, customer approval and PI conversion</div>
           </div>
         </div>
-        <div className="qpi-tab-switch">
-          <button className={`qpi-tab ${tab === 'quotation' ? 'active' : ''}`} onClick={() => switchTab('quotation')}>
-            <IconFile /> Quotation <span className="qpi-tab-count">{quotations.length}</span>
-          </button>
-          <button className={`qpi-tab ${tab === 'pi' ? 'active' : ''}`} onClick={() => switchTab('pi')}>
-            <IconMonitor /> Proforma Invoice <span className="qpi-tab-count">{pis.length}</span>
-          </button>
+        <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+          <div className="dt-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={tab === 'quotation'} className={`dt-tab ${tab === 'quotation' ? 'on' : 'off'}`} onClick={() => switchTab('quotation')}>
+              <i className="ri-file-text-line" /> Quotation <span className="dt-tab-count">{quotations.length}</span>
+            </button>
+            <button type="button" role="tab" aria-selected={tab === 'pi'} className={`dt-tab ${tab === 'pi' ? 'on' : 'off'}`} onClick={() => switchTab('pi')}>
+              <i className="ri-computer-line" /> Proforma Invoice <span className="dt-tab-count">{pis.length}</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="qpi-wdh">
-        <div className="qpi-wdh-header" onClick={() => setWdhOpen(o => !o)} role="button">
-          <div className="qpi-wdh-title">
-            <div className="qpi-wdh-icon"><IconUsers /></div>
-            <span>Quotations V/S Proforma Invoice — What We Are Doing Here:</span>
+      <div className="sup-fig">
+        <div className={`bref-box qpi-bref ${wdhOpen ? '' : 'is-collapsed'}`}>
+          <div className="bref-box__header" onClick={() => setWdhOpen(o => !o)} role="button">
+            <div className="bref-box__header-ico"><i className="ri-file-list-3-line" style={{ fontSize: 15 }} /></div>
+            <div className="bref-box__header-mid">
+              <div className="bref-box__header-row">
+                <div className="bref-box__header-label">Quotations V/S Proforma Invoice</div>
+                <div className="bref-box__header-sep" />
+                <div className="bref-box__header-title">What We Are Doing Here</div>
+              </div>
+              <div className="bref-box__header-sub">Creating quotations, tracking customer response, and converting them into proforma invoices.</div>
+            </div>
+            <div className="bref-box__header-right">
+              <div className="bref-box__toggle">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              </div>
+            </div>
           </div>
-          <button className="qpi-wdh-toggle" onClick={(e) => { e.stopPropagation(); setWdhOpen(o => !o); }}>
-            {wdhOpen ? <IconChevronUpThin /> : <IconChevronDownThin />}
-          </button>
-        </div>
-        {wdhOpen && (
-          <div className="qpi-wdh-body">
-            {STEPS.map((s, i) => (
-              <Fragment key={s.n}>
-                <div className="qpi-wdh-step">
-                  <div className="qpi-wdh-step-head">
-                    <div className="qpi-wdh-step-num">{s.n}</div>
-                    <span className="qpi-wdh-step-title">{s.title}</span>
-                  </div>
-                  <p className="qpi-wdh-step-desc">{s.desc}</p>
-                  <span className="qpi-wdh-step-tag"><span className="qpi-wdh-step-dot" />{s.tag}</span>
+          <div className="bref-box__body">
+            {STEPS.map(s => (
+              <div className="bref-item" key={s.n}>
+                <div className="bref-item__top">
+                  <div className="bref-item__ico"><i className={s.icon} style={{ fontSize: 12 }} /></div>
+                  <span className="bref-item__num">Step {String(s.n).padStart(2, '0')}</span>
                 </div>
-                {i < STEPS.length - 1 && (
-                  <div className="qpi-wdh-arrow"><div className="qpi-wdh-arrow-dot"><IconChevronRight /></div></div>
-                )}
-              </Fragment>
+                <div className="bref-item__title">{s.title}</div>
+                <div className="bref-item__desc">{s.desc}</div>
+              </div>
             ))}
           </div>
-        )}
+        </div>
       </div>
 
-      <div className="qpi-card" ref={cardRef} style={fillH ? { minHeight: fillH } : undefined}>
+      <div className="qpi-card dt-root hr-dt" data-accent="violet" ref={cardRef} style={fillH ? { minHeight: fillH } : undefined}>
         <div className="qpi-tablebar">
-          {tab === 'pi' ? (
-            <div className="qpi-pill-group">
-              <button className={`qpi-pi-subtab ${piSub === 'with' ? 'on' : 'off'}`} onClick={() => switchPiSub('with')}>
-                <IconShip /> With Shipment
-                <span className="qpi-pi-subtab-count">{piWithShipment.length}</span>
-              </button>
-              <button className={`qpi-pi-subtab ${piSub === 'without' ? 'on' : 'off'}`} onClick={() => switchPiSub('without')}>
-                <IconFileSm /> Without Shipment
-                <span className="qpi-pi-subtab-count">{piWithoutShipment.length}</span>
-              </button>
+          <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+            <div className="dt-tabs" role="tablist">
+              {tab === 'pi' ? (
+                <>
+                  <button type="button" role="tab" aria-selected={piSub === 'with'} className={`dt-tab ${piSub === 'with' ? 'on' : 'off'}`} onClick={() => switchPiSub('with')}>
+                    <i className="ri-ship-line" /> With Shipment
+                    <span className="dt-tab-count">{piWithShipment.length}</span>
+                  </button>
+                  <button type="button" role="tab" aria-selected={piSub === 'without'} className={`dt-tab ${piSub === 'without' ? 'on' : 'off'}`} onClick={() => switchPiSub('without')}>
+                    <i className="ri-file-line" /> Without Shipment
+                    <span className="dt-tab-count">{piWithoutShipment.length}</span>
+                  </button>
+                </>
+              ) : (
+                <button type="button" role="tab" aria-selected className="dt-tab on">
+                  <i className="ri-file-text-line" /> Quotation List
+                </button>
+              )}
             </div>
-          ) : (
-            <div className="qpi-listpill">
-              <span className="qpi-listpill-ico"><IconFile /></span>
-              Quotation List
-            </div>
-          )}
-          <div className="qpi-search ui-search-abs">
-            <IconSearch />
+          </div>
+          <div className="dt-search">
+            <i className="ri-search-line dt-search-icon" />
             <input
               type="text"
               autoComplete="off"
@@ -1489,7 +1494,11 @@ export default function SalesQPI() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
-            <SearchClear show={q} onClear={() => { setQ(''); }} />
+            {q && (
+              <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => setQ('')}>
+                <i className="ri-close-line" />
+              </button>
+            )}
           </div>
 
           <div className={`qpi-doctype-filter ${docTypeFilter !== 'all' ? 'active' : ''}`}>
@@ -1502,18 +1511,24 @@ export default function SalesQPI() {
                 { value: 'Domestic', label: 'Domestic' },
               ]}
               onChange={(v) => setDocTypeFilter((v || 'all') as 'all' | 'International' | 'Domestic')}
+              menuClassName="qpi-doctype-menu"
             />
           </div>
 
-          {tab === 'quotation' ? (
-            <button className="qpi-create-btn" onClick={() => { setPiSourceQuotation(null); setCreateQtOpen(true); }}>
-              <IconPlus /> Create Quotation
+          <span className="sup-fig" style={{ display: 'contents' }}>
+            <button
+              type="button"
+              className="cstrip__action-btn flex-shrink-0"
+              onClick={() => {
+                setPiSourceQuotation(null);
+                if (tab === 'quotation') setCreateQtOpen(true); else setCreatePiOpen(true);
+              }}
+            >
+              <span className="cstrip__action-btn-sheen" />
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              {tab === 'quotation' ? 'Create Quotation' : 'Create PI'}
             </button>
-          ) : (
-            <button className="qpi-create-btn" onClick={() => { setPiSourceQuotation(null); setCreatePiOpen(true); }}>
-              <IconPlus /> Create PI
-            </button>
-          )}
+          </span>
         </div>
 
         <div
@@ -1528,7 +1543,7 @@ export default function SalesQPI() {
               data={pageRows as Quotation[]}
               isGlobalFilter={false}
               customPageSize={rpp}
-              tableClass="table align-middle table-nowrap mb-0"
+              tableClass="table align-middle table-nowrap mb-0 dt-table"
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search quotations..."
@@ -1545,7 +1560,7 @@ export default function SalesQPI() {
               data={pageRows as PI[]}
               isGlobalFilter={false}
               customPageSize={rpp}
-              tableClass="table align-middle table-nowrap mb-0"
+              tableClass="table align-middle table-nowrap mb-0 dt-table"
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
@@ -1562,7 +1577,7 @@ export default function SalesQPI() {
               data={pageRows as PI[]}
               isGlobalFilter={false}
               customPageSize={rpp}
-              tableClass="table align-middle table-nowrap mb-0"
+              tableClass="table align-middle table-nowrap mb-0 dt-table"
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
@@ -4214,9 +4229,62 @@ const SCOPED_CSS = `
   padding: 0;
   margin: 0;
   color: var(--vz-body-color);
-  display: flex; flex-direction: column; gap: 8px;
+  /* No gap: the HRMS header (.frm-cstrip.hr-cstrip) makes app.css give every
+   * child of this root an 8px margin-bottom, which is the spacing. A gap on
+   * top of it doubled every distance to 16px. */
+  display: flex; flex-direction: column;
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
+.qpi-root .frm-cstrip .frm-cstrip-title { font-size: 17px; font-weight: 700; }
+.qpi-root .dt-tabrail .dt-tab { height: 38px; }
+/* Banner icon tile starts on the same line as the first tab below it:
+ * tab = 1 card border + 14 toolbar pad + 1 rail border + 3 rail pad = 19px,
+ * tile = 1 box border + this padding. */
+.qpi-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
+/* Right edges line up too — header tab rail, banner toggle and the Create
+ * button all end 1 border + 14px padding = 15px in, the toolbar's own inset. */
+.qpi-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
+/* Doc Type menu: as wide as its 186px trigger, not as wide as its longest
+ * option (MasterSelect sizes menus max-content inline, hence !important). */
+.master-select-menu.qpi-doctype-menu { width: 186px !important; min-width: 186px !important; max-width: 186px !important; }
+/* Title icon on the same line too: 1 border + 18 strip padding = 19px, so the
+ * extra 10px app.css puts inside .frm-cstrip-left is dropped here. */
+.qpi-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
+/* Toolbar controls stand as tall as the tab rail: 38px tab + 3px padding x2 +
+ * 1px border x2 = 46px. */
+.qpi-root .qpi-tablebar .dt-search,
+.qpi-root .qpi-tablebar .qpi-doctype-filter,
+.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle { height: 46px; }
+.qpi-root .qpi-tablebar .cstrip__action-btn { height: 46px; padding-top: 0; padding-bottom: 0; }
+/* Employee search look, but QPI's own width: it fills the row between the tabs
+ * and the filters, as it did before. */
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
+  flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
+}
+/* One type size and weight for every data cell (HRMS body text: 11.5 / 500).
+ * The Action column's buttons and any icon glyphs keep their own sizing. */
+.qpi-table-host .table tbody td:not(:last-child),
+.qpi-table-host .table tbody td:not(:last-child) *:not(i):not(svg):not(svg *) {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+}
+/* QT / OPP / PI code chips read like the Employee table's code chip
+ * (.dt-id-chip): JetBrains Mono 11px / 600, .02em tracking. */
+/* Created By pill = the Employee list's Onboarding pill, which DataTable
+ * renders at 600 (.fw-semibold restated over Velzon's 500). */
+.qpi-root .qpi-table-host .table tbody td:not(:last-child) .qpi-creator-pill.fw-semibold {
+  font-weight: 600 !important;
+}
+.qpi-root .qpi-table-host .table tbody td:not(:last-child) .dt-serial.dt-serial {
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+.qpi-root .qpi-table-host .table tbody td:not(:last-child) .dt-id-chip.dt-id-chip {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: .02em;
+}
 
 .qpi-header {
   position: relative; overflow: hidden;
@@ -4257,8 +4325,8 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(255,255,255,0.50);
 }
 .qpi-online-dot { position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg,#4ade80,#22c55e); border: 2px solid #f3e8ff; }
-.qpi-header-title { font-size: 18px; font-weight: 800; color: #2e1065; letter-spacing: -.3px; line-height: 1.2; }
-.qpi-header-sub   { font-size: 12px; color: #6b7280; margin-top: 4px; font-weight: 400; line-height: 1.5; opacity: .85; }
+.qpi-header-title { font-size: 17px; font-weight: 800; color: #2e1065; letter-spacing: -.3px; line-height: 1.2; }
+.qpi-header-sub   { font-size: 12px; color: #6b7280; margin-top: 4px; font-weight: 500; line-height: 1.5; opacity: .85; }
 
 .qpi-tab-switch {
   display: flex; gap: 4px; padding: 4px;
@@ -4271,7 +4339,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 14px; border-radius: 7px; border: none;
   background: transparent; color: #7c3aed;
-  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer;
   white-space: nowrap;
   transition: all .15s;
 }
@@ -4382,8 +4450,8 @@ const SCOPED_CSS = `
   flex-direction: column;
 }
 .qpi-tablebar {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 14px 18px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px;
   background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
   border-bottom: 1px solid rgba(124,58,237,0.15);
   position: relative; z-index: 1;
@@ -4430,7 +4498,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; gap: 7px;
   padding: 0 14px; height: 34px;
   border-radius: 8px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  font-family: inherit; font-size: 12.5px; font-weight: 650;
   cursor: pointer;
   letter-spacing: 0; white-space: nowrap;
   transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
@@ -4560,18 +4628,11 @@ const SCOPED_CSS = `
   color: var(--vz-body-color, #212529);
   margin-bottom: 0 !important;
 }
-.qpi-table-host .table thead.table-light tr {
-  background: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
-}
+/* Header colours, type and hairlines come from the shared Employee table
+ * header (.dt-root.hr-dt .dt-table thead th); only spacing is set here. */
 .qpi-table-host .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
-  background: transparent !important;
-  color: #fff !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: .03em !important;
-  text-transform: uppercase;
   padding: 11px 14px !important;
   border-bottom: 0 !important;
   white-space: nowrap;
@@ -4619,14 +4680,8 @@ const SCOPED_CSS = `
 .qpi-table-host .table tbody td:last-child {
   position: sticky; right: 0;
 }
-.qpi-table-host .table thead.table-light th:last-child {
-  background-color: transparent !important;
-  background-image: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
-  background-size: var(--qpi-band-w, 480%) 100% !important;
-  background-position: right center !important;
-  background-repeat: no-repeat !important;
-  z-index: 4;
-}
+.qpi-table-host .table thead.table-light th:last-child { z-index: 4; }
+.qpi-table-host .table.dt-table tbody td { overflow: visible; text-overflow: clip; }
 .qpi-table-host .table tbody td:last-child {
   background: #fff !important;
   z-index: 2;
@@ -4783,21 +4838,21 @@ const SCOPED_CSS = `
   text-align: center !important;
   padding: 56px 12px !important;
   color: #9ca3af;
-  font-size: 13px; font-style: normal;
+  font-size: 12.5px; font-weight: 600; font-style: normal;
 }
 .qpi-table-host--empty > .qpi-empty {
   flex: 1 1 auto;
   display: flex; align-items: center; justify-content: center;
 }
 
-.qpi-srno { color: var(--vz-body-color, #495057); font-weight: 600; font-size: 13px; }
+.qpi-srno { color: var(--vz-body-color, #495057); font-weight: 600; font-size: 11.5px; }
 
 .qpi-link {
   display: inline-flex; align-items: center;
   padding: 4px 10px; border-radius: 999px;
   background: #ece6ff; color: #5a3fd1;
-  font-family: var(--vz-font-monospace, 'JetBrains Mono', ui-monospace, monospace);
-  font-weight: 700; font-size: 11.5px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 600; font-size: 11px;
   letter-spacing: .02em;
   text-decoration: none; cursor: pointer;
   transition: background .12s, color .12s;
@@ -4807,7 +4862,7 @@ const SCOPED_CSS = `
   text-decoration: none;
 }
 
-.qpi-strong { color: #0f1729; font-weight: 600; font-size: 13px; text-transform: capitalize; }
+.qpi-strong { color: #0f1729; font-weight: 600; font-size: 11.5px; text-transform: capitalize; }
 .qpi-cap { text-transform: capitalize; }
 
 .qpi-branch-cell {
@@ -4817,7 +4872,7 @@ const SCOPED_CSS = `
   white-space: nowrap;
 }
 .qpi-branch-name {
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 600;
   color: #1e293b;
   text-transform: capitalize;
@@ -4849,7 +4904,7 @@ const SCOPED_CSS = `
   letter-spacing: .01em;
   color: var(--vz-secondary-color, #878a99);
   font-weight: 500;
-  font-size: 13px;
+  font-size: 11.5px;
 }
 
 .qpi-currency {
@@ -4858,11 +4913,11 @@ const SCOPED_CSS = `
   background: #ece6ff; color: #5a3fd1;
   font-size: 11px; font-weight: 600;
   letter-spacing: .02em;
-  font-family: var(--vz-font-monospace, 'JetBrains Mono', ui-monospace, monospace);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   white-space: nowrap;
 }
 
-.qpi-sm { color: var(--vz-body-color, #495057); font-weight: 500; font-size: 13px; }
+.qpi-sm { color: var(--vz-body-color, #495057); font-weight: 500; font-size: 11.5px; }
 .qpi-em { color: #cbd5e1; font-weight: 400; }
 .qpi-em-center { text-align: center; color: #cbd5e1; font-weight: 400; }
 
@@ -4873,11 +4928,6 @@ const SCOPED_CSS = `
   gap: 3px;
 }
 .qpi-creator-pill {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
   line-height: 1.3;
   white-space: nowrap;
 }
@@ -5059,7 +5109,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; gap: 10px;
   padding: 9px 12px; border-radius: 7px;
   background: transparent; border: none; cursor: pointer;
-  font-family: inherit; font-size: 13px; font-weight: 600;
+  font-family: var(--font-sans); font-size: 12.5px; font-weight: 500;
   color: #1e293b;
   text-align: left;
   transition: background .12s, color .12s;
@@ -5675,16 +5725,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-table-host .table-responsive::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); }
 [data-bs-theme="dark"] .qpi-table-host .table-responsive::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.20); }
 [data-bs-theme="dark"] .qpi-table-host .table { color: var(--vz-body-color); }
-[data-bs-theme="dark"] .qpi-table-host .table thead.table-light tr {
-  background: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
-}
-[data-bs-theme="dark"] .qpi-table-host .table thead.table-light th {
-  color: #fff !important;
-  border-bottom: 0 !important;
-}
-[data-bs-theme="dark"] .qpi-table-host .table thead.table-light th:last-child {
-  background-image: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
-}
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:hover td {
   background: rgba(134,92,226,.08) !important;
 }
@@ -5975,7 +6015,6 @@ const SCOPED_CSS = `
 }
 
 @media (max-width: 520px) {
-  .qpi-root { gap: 10px; }
   .qpi-header { padding: 10px 12px; gap: 10px; }
   .qpi-header-icon { width: 36px; height: 36px; }
   .qpi-header-title { font-size: 13px; }

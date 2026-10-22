@@ -1149,11 +1149,11 @@
 /* HRMS keeps its own COLOURS — a pale recessed track instead of the default
    tinted one — but no longer its own sizes. Geometry lives once, on the base
    rules above, so a rail is the same object in every module. */
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabs {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tabs {
   border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
   background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
 }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab {
   border: 0;
   /* 650, a half-step below the 700 of Customers' .smc-pill and the base rule.
      This has been tried both ways: at 700 the HRMS rail reads heavier than
@@ -1166,14 +1166,14 @@
   font-weight: 650;
 }
 .hr-cstrip .dt-tabrail .dt-tab { font-weight: 650; }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off { background: transparent; color: var(--dt-a-700); }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .06); color: var(--dt-a-600); }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off { background: transparent; color: var(--dt-a-700); }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .06); color: var(--dt-a-600); }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.on {
   color: #fff;
   background: linear-gradient(135deg, var(--dt-a-400), var(--dt-a-600) 55%, var(--dt-a-700));
   box-shadow: 0 6px 16px -5px rgba(var(--dt-a-rgb), .55), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab-count {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab-count {
   /* Size comes from the base rule; the hairline and the weight are this
      variant's. 700, not the base 800: beside a 650 label an 800 number read as
      the loudest thing in the rail. It stays a step above the label so the count
@@ -1181,8 +1181,8 @@
   border: 1px solid var(--dt-a-200);
   font-weight: 700;
 }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off .dt-tab-count { background: var(--dt-a-100); color: var(--dt-a-700); }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on .dt-tab-count {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off .dt-tab-count { background: var(--dt-a-100); color: var(--dt-a-700); }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.on .dt-tab-count {
   border-color: rgba(255, 255, 255, .75);
   background: rgba(255, 255, 255, .9);
   color: var(--dt-a-800);
@@ -1256,19 +1256,19 @@
 [data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar {
   background: linear-gradient(180deg, rgba(var(--dt-a-rgb), .10), rgba(var(--dt-a-rgb), .02));
 }
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabs,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabs,
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tabs,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tabs,
 [data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search,
 [data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search {
   background: rgba(var(--dt-a-rgb), .08);
   border-color: rgba(var(--dt-a-rgb), .22);
 }
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off { background: transparent; color: var(--dt-a-300); }
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off:hover,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .10); color: var(--dt-a-200); }
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off .dt-tab-count,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.off .dt-tab-count {
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off { background: transparent; color: var(--dt-a-300); }
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off:hover,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .10); color: var(--dt-a-200); }
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off .dt-tab-count,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off .dt-tab-count {
   background: rgba(var(--dt-a-rgb), .14);
   border-color: rgba(var(--dt-a-rgb), .30);
   color: var(--dt-a-300);
@@ -1281,8 +1281,8 @@
    the white dot was on every one of them.)
    Recessed instead of raised: a dark chip sunk into the accent pill, which also
    buys the numeral white-on-dark contrast rather than dark-on-near-white. */
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on .dt-tab-count,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab.on .dt-tab-count {
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.on .dt-tab-count,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.on .dt-tab-count {
   background: rgba(0, 0, 0, .28);
   border-color: rgba(255, 255, 255, .22);
   color: #fff;
