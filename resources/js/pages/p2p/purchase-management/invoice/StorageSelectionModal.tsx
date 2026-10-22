@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
@@ -392,37 +392,16 @@ function WarehousePicker({
   onChange: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const trigRef = useRef<HTMLButtonElement>(null);
-  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
   const picked = warehouses.find(w => w.id === value) ?? null;
 
-  /* Below the trigger, or above it when the dialog sits low on a short
-     screen and there is more room up there. */
-  const place = useCallback(() => {
-    const t = trigRef.current;
-    if (!t) return;
-    const r = t.getBoundingClientRect();
-    const below = window.innerHeight - r.bottom - 12;
-    const above = r.top - 12;
-    const cap = Math.min(340, window.innerHeight - 24);
-    setPos(below >= 240 || below >= above
-      ? { left: r.left, width: r.width, top: r.bottom + 8, maxHeight: Math.max(180, Math.min(cap, below)) }
-      : { left: r.left, width: r.width, bottom: window.innerHeight - r.top + 8, maxHeight: Math.max(180, Math.min(cap, above)) });
-  }, []);
-
-  useLayoutEffect(() => { if (open) place(); }, [open, place]);
+  /* Escape shuts the list before it reaches the dialog, which would otherwise
+     close the whole wizard on the first press. */
   useEffect(() => {
     if (!open) return;
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
     document.addEventListener('keydown', esc, true);
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => {
-      document.removeEventListener('keydown', esc, true);
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
-    };
-  }, [open, place]);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [open]);
   const area = sqft(picked?.areaSqft);
 
   const message = state === 'loading' || state === 'idle' ? 'Loading warehouses…'
@@ -433,7 +412,7 @@ function WarehousePicker({
   return (
     <div className={`smod-wh-pick${open ? ' is-open' : ''}`}>
       <button
-        type="button" ref={trigRef} className="smod-wh-trig"
+        type="button" className="smod-wh-trig"
         aria-haspopup="listbox" aria-expanded={open}
         disabled={!!message}
         onClick={() => setOpen(o => !o)}
@@ -454,28 +433,22 @@ function WarehousePicker({
         <span className="smod-wh-chev"><IcoChevronR size={13} /></span>
       </button>
 
-      {/* Portalled and measured against the trigger. The dialog clips its own
-          overflow for its rounded corners, and an inline panel grew the dialog
-          and pushed the footer down as it opened — the design keeps the dialog
-          exactly the size it was and lays the list over it. */}
-      {open && !message && pos && createPortal(
-        <>
-          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 4000 }} />
-          <div
-            className="smod-wh-panel" role="listbox"
-            style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom, maxHeight: pos.maxHeight }}
-          >
-            {warehouses.map(w => (
-              <WarehouseRow
-                key={w.id}
-                warehouse={w}
-                selected={w.id === value}
-                onSelect={() => { onChange(w.id); setOpen(false); }}
-              />
-            ))}
-          </div>
-        </>,
-        document.body,
+      {/* In the flow, under the trigger. It was portalled and positioned
+          against the trigger so the dialog would keep its exact size as the
+          design does — but portalling took it out of the dialog's stacking
+          context and it ended up behind the dialog's own dimmer. A list you
+          cannot see is worse than a dialog that grows. */}
+      {open && !message && (
+        <div className="smod-wh-panel" role="listbox">
+          {warehouses.map(w => (
+            <WarehouseRow
+              key={w.id}
+              warehouse={w}
+              selected={w.id === value}
+              onSelect={() => { onChange(w.id); setOpen(false); }}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

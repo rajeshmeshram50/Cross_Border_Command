@@ -11,7 +11,7 @@ import {
   type AwsContract, type Clarification,
   inits, pad2, PER_PAGE,
 } from './clmOpsData';
-import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { useOpsTheme, OPS_SEARCH_CSS, type OpsTokens } from './useOpsTheme';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
@@ -226,7 +226,7 @@ export default function ClmAgreementsSentPage() {
 
   return (
     <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'var(--font-sans)' }}>
-      <style>{AWS_CSS}</style>
+      <style>{AWS_CSS + OPS_SEARCH_CSS}</style>
 
       {(downloadingId !== null || lifecycleBusy !== null) && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(8,47,73,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
@@ -247,13 +247,13 @@ export default function ClmAgreementsSentPage() {
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <div style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.15 }}>Agreements We Sent</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.15 }}>Agreements We Sent</div>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
                 <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
               </span>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, maxWidth: 580 }}>Track agreements created by us and sent to counterparties for approval, clarification, negotiation, and signing.</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, maxWidth: 580 }}>Track agreements created by us and sent to counterparties for approval, clarification, negotiation, and signing.</div>
           </div>
         </div>
       </div>
@@ -300,10 +300,9 @@ export default function ClmAgreementsSentPage() {
             })}
           </div>
           <div className="aws-hspacer" style={{ flex: 1 }} />
-          <div className="aws-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 14px', borderRadius: 11, background: t.searchBg, border: `1.5px solid ${t.searchBorder}`, flex: '0 1 520px', minWidth: 220, boxSizing: 'border-box' }}>
+          <div className="ops-search ops-search--cyan aws-searchbox">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search agreements…"
-              style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.searchText, background: 'transparent', flex: 1, minWidth: 0 }} />
+            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search agreements…" />
               <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
@@ -883,7 +882,7 @@ const AWS_CSS = `
   .aws-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
   .aws-tabrail > button { flex: 1 1 calc(50% - 4px); justify-content: center; }
   .aws-hspacer { display: none; }
-  .aws-searchbox { width: 100% !important; flex: 1 1 100% !important; }
+  .aws-searchbox { width: 100% !important; max-width: none !important; flex: 1 1 100% !important; }
   .aws-searchbox input { width: 100% !important; }
 }
 .aws-card {

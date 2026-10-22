@@ -153,13 +153,18 @@ export const CLM_CSS = `
   box-shadow: 0 0 5px rgba(34,197,94,.45);
 }
 .clm-head-strip-text { min-width: 0; }
+/* The app's page-header type, as app.css sets it for every other module's
+   cstrip: 18px/800 at -.3px over 12px/500. CLM was alone on 16px/500 and
+   11px, which is why its headers read lighter and smaller than HRMS's next
+   to them. Colour stays CLM's own teal — this aligns the type, not the
+   module's identity. */
 .clm-head-strip-title {
-  font-size: 16px; font-weight: 500; color: #0c4a6e;
-  letter-spacing: -.4px; line-height: 1.15;
+  font-size: 18px; font-weight: 800; color: #0c4a6e;
+  letter-spacing: -.3px; line-height: 1.15;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .clm-head-strip-sub {
-  font-size: 11px; font-weight: 500; color: #0e7490;
+  font-size: 12px; font-weight: 500; color: #0e7490;
   opacity: .9; margin-top: 3px; line-height: 1.4;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
@@ -292,21 +297,27 @@ export const CLM_CSS = `
 }
 .clm-tab {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 16px; border-radius: 8px; box-sizing: border-box;
-  font-size: 13px; font-weight: 600; color: #475569;
-  cursor: pointer; border: 1.5px solid #d5e7ef; background: #fff;
+  /* The shared rail's geometry and type (components/ui/DataTable.css
+     .dt-tab), which HRMS and Customers already use: a 34px tab on 0 14px,
+     12.5px/700 with no inherited tracking, on a 1px border. CLM ran 13px/600
+     on 8px 16px with a 1.5px border, so its rail stood ~3px taller and read
+     differently from every other module's. */
+  padding: 0 14px; height: 34px; border-radius: 8px; box-sizing: border-box;
+  font-family: var(--font-sans);
+  font-size: 12.5px; font-weight: 700; color: #475569;
+  cursor: pointer; border: 1px solid #d5e7ef; background: #fff;
   /* Neither colour nor background eases — same reason as .clm-pill. The
      active tab's background is a gradient, which snaps the instant the class
      lands, so animating the colour left slate-grey text sitting on an
      already-dark tab for 150ms. Only the shadow and the border, which have
      nothing behind them to clash with, still ease. */
-  font-family: inherit; transition: box-shadow .22s ease, border-color .15s ease;
-  white-space: nowrap; position: relative; z-index: 1;
+  transition: box-shadow .22s ease, border-color .15s ease;
+  white-space: nowrap; letter-spacing: 0; position: relative; z-index: 1;
 }
 .clm-tab:hover { background: rgba(6,182,212,.08); color: #0891b2; border-color: rgba(6,182,212,.45); }
 .clm-tab.active {
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 45%, #0e7490 100%);
-  color: #fff; font-weight: 600; border-color: transparent;
+  color: #fff; font-weight: 700; border-color: transparent;
   box-shadow: 0 3px 10px rgba(8,145,178,.32), inset 0 1px 0 rgba(255,255,255,.18);
 }
 .clm-tab.active:hover { opacity: .95; }
@@ -314,8 +325,8 @@ export const CLM_CSS = `
 .clm-tab.active .clm-tab-dot { background: rgba(255,255,255,.65) !important; box-shadow: none !important; }
 .clm-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 20px; border-radius: 20px; padding: 0 6px;
-  font-size: 10px; font-weight: 500;
+  min-width: 20px; height: 18px; border-radius: 999px; padding: 0 7px;
+  font-size: 10px; font-weight: 800; line-height: 1;
 }
 .clm-tab.active .clm-tab-count {
   background: rgba(255,255,255,.18); color: #fff;
@@ -377,20 +388,39 @@ export const CLM_CSS = `
 
 /* Search input */
 .clm-search {
-  display: flex; align-items: center; gap: 7px;
-  padding: 0 12px; height: 34px;
-  border: 1.5px solid rgba(6,182,212,.22); border-radius: 8px;
-  background: #fff;
+  display: flex; align-items: center; gap: 8px;
+  /* The employee list's field, in CLM's teal. HRMS paints .dt-search as a
+     TINTED box — a top-lit wash of its own accent-50, a soft accent-200
+     hairline at 55% white, an accent-400 icon and a placeholder mixed 60%
+     accent-400 / 40% slate — on an 11px radius. CLM's was flat white with a
+     grey placeholder on an 8px radius, which is why the two read as different
+     controls side by side. These are the same mixes resolved against the teal
+     ramp (#f0fdff / #a5f3fc / #22d3ee) that CLM already uses.
+     42px, the toolbar height the shared .dt-search uses — CLM's 34px box
+     sat visibly shallower than the same bar on HRMS. */
+  padding: 0 14px; height: 42px;
+  border: 1.5px solid #cef8fd; border-radius: 11px;
+  background: linear-gradient(180deg, #f6feff, #f0fdff);
   flex: 1 1 240px; min-width: 200px;
   /* Only the focus chrome (border + glow) transitions. Width is deliberately
      NOT animated — as a flex item this bar's width changes when the page gains
      a scrollbar on data load, and animating that reflow made the search bar
      (and the controls beside it) flicker/settle on every load. */
   transition: border-color .15s ease, box-shadow .15s ease;
-  box-shadow: 0 1px 4px rgba(6,182,212,.07);
+  /* No drop shadow — the tint is what separates the field from the toolbar now,
+     as on HRMS. The old 4px teal shadow under a flat white box read as a raised
+     card rather than an input. */
+  box-shadow: none;
 }
-.clm-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.12); }
-.clm-search input { flex: 1; border: none; outline: none; font-size: 12px; background: transparent; color: #0c4a6e; font-family: inherit; }
+.clm-search:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(6,182,212,.14); }
+.clm-search input { flex: 1; min-width: 0; border: none; outline: none; font-size: 13px; font-weight: 500; background: transparent; color: #0c4a6e; font-family: inherit; }
+/* The magnifier. Every CLM page writes its own inline <svg> at width="13" with
+   a hard-coded stroke — some slate, some teal — so size and colour are set
+   here instead: CSS beats an SVG presentation attribute, which means one rule
+   fixes all fourteen without touching their markup. 16px glyph + 8px gap on a
+   14px inset puts the query text 38px from the edge, where HRMS's sits. */
+.clm-search > svg { width: 16px; height: 16px; flex-shrink: 0; stroke: #22d3ee; }
+.clm-search input::placeholder { color: #50c0d8; font-weight: 500; }
 /* Neutralise the browser autofill highlight on the search field. Chrome
    paints autofilled / previously-searched inputs with a pale fill (yellow/
    cyan in light mode, near-white in dark) that overrides our transparent
@@ -403,27 +433,39 @@ export const CLM_CSS = `
 .clm-search input:-webkit-autofill:active {
   -webkit-text-fill-color: #0c4a6e;
   caret-color: #0c4a6e;
-  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
-  box-shadow: 0 0 0 1000px #fff inset !important;
+  -webkit-box-shadow: 0 0 0 1000px #f6feff inset !important;
+  box-shadow: 0 0 0 1000px #f6feff inset !important;
   transition: background-color 9999s ease-in-out 0s;
 }
 /* Width stays constant on focus — only the border/glow reacts. Growing the bar
    on focus made it jump wider when clicked and snap back on blur (reported: the
    search bar changes size on focus). */
 
-/* Figma-match: fixed-width search box (not flex-grow). Pairs with the toolbar's
-   space-between so a Total badge sits at the far right. */
-.clm-tabs-bar .clm-search-fixed {
+/* Fixed-width search box (not flex-grow). Pairs with the toolbar's
+   space-between so a Total badge or an Add button sits at the far right.
+   500px is the width every CLM list search now shares. The -grow modifier is
+   the same rule: it used to leave the box on the base flex 1 1 240px, so on the four
+   document-master pages — Trade Documents, Agreements, T&C, Clause Library —
+   where the search is the only thing in its toolbar row, it stretched the full
+   width of the card (measured 1629px to 1874px at 1920) while the same search
+   on KYC or Authority was 500px. Two names are kept because the markup uses
+   both; there is no longer any difference between them. */
+.clm-tabs-bar .clm-search-fixed,
+.clm-tabs-bar .clm-search-grow {
   flex: 0 0 auto; width: 500px; max-width: 100%;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-@media (max-width: 1280px) { .clm-tabs-bar .clm-search-fixed { width: 360px; } }
+@media (max-width: 1280px) {
+  .clm-tabs-bar .clm-search-fixed,
+  .clm-tabs-bar .clm-search-grow { width: 360px; }
+}
 /* Once the search goes full-width, stack the toolbar so the search input and
    the Total badge each take their own row instead of colliding / mis-aligning
    (reported: search bar not responsive on mobile). Matches the search's
    full-width breakpoint so there's no awkward in-between band. */
 @media (max-width: 760px) {
-  .clm-tabs-bar .clm-search-fixed { width: 100%; }
+  .clm-tabs-bar .clm-search-fixed,
+  .clm-tabs-bar .clm-search-grow { width: 100%; }
   .clm-tabs-bar { flex-direction: column; align-items: stretch; }
   .clm-tabs-bar .clm-total { align-self: stretch; }
   /* In a column flex the search's flex-basis (240px) becomes its HEIGHT — reset
@@ -503,12 +545,20 @@ export const CLM_CSS = `
  * and make it sticky so it stays in view while the table scrolls horizontally. */
 .clm-table-wrap > .wl-pager { position: sticky; left: 0; width: 100%; box-sizing: border-box; }
 .clm-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+/* Measured off the HRMS employee table rather than taken from DataTable's
+   default: that head is NOT a dark strip. It is a very light accent tint
+   (#fdfaff -> #f2f0ff there) carrying 9.5px/800 uppercase in the accent
+   colour, on 9px, pinned while the body scrolls. CLM's fill and colour were
+   already right in spirit — only the type was off at 11px/500 on 8px 16px.
+   So the tint stays CLM's teal and only the lettering changes. */
 .clm-table thead th {
-  padding: 8px 16px;
+  position: sticky; top: 0; z-index: 3;
+  padding: 9px;
   background: linear-gradient(110deg, #f0fdff, #e8fbfd);
   border-bottom: 1.5px solid rgba(6,182,212,.20);
-  font-size: 11px; font-weight: 500; letter-spacing: .08em;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .07em;
   color: #0e7490; text-transform: uppercase;
+  line-height: 1.3; vertical-align: middle;
   white-space: nowrap; text-align: left;
 }
 .clm-table tbody tr {
@@ -517,7 +567,7 @@ export const CLM_CSS = `
 }
 .clm-table tbody tr:nth-child(even) { background: rgba(240,253,255,.5); }
 .clm-table tbody tr:hover { background: rgba(6,182,212,.06); box-shadow: inset 3px 0 0 #0891b2; }
-.clm-table tbody td { padding: 7px 16px; font-size: 13px; color: #0c4a6e; vertical-align: middle; }
+.clm-table tbody td { padding: 7px 9px; font-size: 11.5px; font-weight: 500; line-height: 1.45; color: #0c4a6e; vertical-align: middle; }
 .clm-td-num  { text-align: center; color: #94a3b8; font-weight: 700; width: 48px; }
 /* Wrap long, space-less names/descriptions instead of letting the cell grow
    and stretch the whole table past its container. */
@@ -1383,8 +1433,13 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-tab.active { color: #fff; border-color: transparent; }
 [data-bs-theme="dark"] .clm-tab:not(.active):hover { color: #67e8f9; border-color: rgba(6,182,212,.5); }
 [data-bs-theme="dark"] .clm-tab:not(.active) .clm-tab-count { background: #1e293b; color: #94a3b8; border-color: rgba(148,163,184,.18); }
-[data-bs-theme="dark"] .clm-search { background: #1e293b; border-color: rgba(6,182,212,.25); }
+/* Dark: the same idea inverted, and the same values HRMS uses — a translucent
+   wash of the accent rather than a flat panel colour, so the field reads as a
+   tint of the surface it sits on instead of a lighter box on top of it. */
+[data-bs-theme="dark"] .clm-search { background: rgba(6,182,212,.08); border-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .clm-search input { color: #e2e8f0; }
+[data-bs-theme="dark"] .clm-search > svg { stroke: #67e8f9; }
+[data-bs-theme="dark"] .clm-search input::placeholder { color: #5b8ca3; }
 /* Chrome/WebKit paints autofilled (and "previously-searched") inputs with a
    forced near-white background that overrides our transparent input bg — in
    dark mode that makes the whole search bar flash white (the autofill fade-in
@@ -1688,7 +1743,6 @@ body > .dropdown-menu.master-select-menu,
   .clm-pill { flex: 1; justify-content: center; }
   .clm-add-btn { flex: 1 1 auto; justify-content: center; }
   .clm-tabs-bar { gap: 8px; }
-  .clm-search-grow:focus-within { width: auto; }
 }
 
 /* Phone ≤ 640px — single column layout, head-strip stacks fully */

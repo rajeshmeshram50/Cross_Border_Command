@@ -32,6 +32,100 @@ export type OpsTokens = {
   pagerBtn: string;      // inactive pager button background
 };
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * THE SEARCH BOX — one definition for the three inline-styled Operations
+ * pages.
+ *
+ * Each of them used to write its own box, and no two agreed: Agreements We
+ * Sent was 44px tall at radius 11 with a 12px input, Agreements To Approve was
+ * 42px at radius 30 (a full pill) with a 12px input, Case to Case was 42px at
+ * radius 11 in violet with a 13px input — and none of the three had a focus
+ * ring at all, while the eleven other CLM pages do.
+ *
+ * The canonical box is `.clm-search` in clmShared.ts, which those eleven pages
+ * share: 42px tall, radius 8, a 1.5px accent hairline, a 13px/500 input and a
+ * 3px focus glow, sized to 500px. These are the same numbers. The only thing
+ * parameterised is the accent, as a modifier class, so a violet page stays
+ * violet without needing a second copy of the rule.
+ *
+ * Append it to the page's own <style> block: <style>{AWS_CSS + OPS_SEARCH_CSS}</style>
+ * ───────────────────────────────────────────────────────────────────────── */
+export const OPS_SEARCH_CSS = `
+.ops-search {
+  display: flex; align-items: center; gap: 8px;
+  box-sizing: border-box;
+  height: 42px; padding: 0 14px;
+  border: 1.5px solid var(--ops-edge);
+  border-radius: 11px;
+  background: var(--ops-fill);
+  flex: 0 1 500px; max-width: 500px; min-width: 220px;
+  box-shadow: none;
+  /* Only the focus chrome eases — never the width. As a flex item this bar
+     resizes when the page gains a scrollbar on data load, and animating that
+     made the bar settle visibly on every load. Same reasoning as .clm-search. */
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.ops-search:focus-within { border-color: var(--ops-ico); box-shadow: 0 0 0 3px rgba(var(--ops-a), .14); }
+.ops-search > svg { width: 16px; height: 16px; flex-shrink: 0; stroke: var(--ops-ico); }
+.ops-search input {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  color: var(--ops-search-text);
+}
+.ops-search input::placeholder { color: var(--ops-ph); font-weight: 500; }
+/* The violet set is HRMS's own palette — --dt-a-50 #faf5ff, -200 #ddd6fe,
+   -400 #a78bfa — put through the same mixes .dt-search uses, so Case to Case's
+   field is pixel-for-pixel the employee list's. The cyan set is those mixes on
+   CLM's teal ramp (#f0fdff / #a5f3fc / #22d3ee). */
+.ops-search--cyan {
+  --ops-a: 6,182,212;  --ops-search-text: #0c4a6e;
+  --ops-fill: linear-gradient(180deg, #f6feff, #f0fdff);
+  --ops-edge: #cef8fd; --ops-ico: #22d3ee; --ops-ph: #50c0d8;
+  --ops-fill-flat: #f6feff;
+}
+.ops-search--violet {
+  --ops-a: 124,58,237; --ops-search-text: #1e1050;
+  --ops-fill: linear-gradient(180deg, #fcf9ff, #faf5ff);
+  --ops-edge: #ece8fe; --ops-ico: #a78bfa; --ops-ph: #9f95e0;
+  --ops-fill-flat: #fcf9ff;
+}
+/* Dark: a translucent wash of the accent, as HRMS does it, rather than a flat
+   panel colour — these pages sit on a violet-black card (#161226) instead of
+   the slate the rest of CLM uses, and a tint reads correctly on either. */
+[data-bs-theme="dark"] .ops-search,
+[data-layout-mode="dark"] .ops-search {
+  background: rgba(var(--ops-a), .10);
+  border-color: rgba(var(--ops-a), .26);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .ops-search input,
+[data-layout-mode="dark"] .ops-search input { color: #e2e8f0; }
+/* Chrome paints an autofilled / previously-searched input with its own pale
+   fill, which shows through as a tinted band across the bar. The 1000px inset
+   shadow is the only way to repaint that internal surface. */
+.ops-search input:-webkit-autofill,
+.ops-search input:-webkit-autofill:hover,
+.ops-search input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ops-search-text);
+  caret-color: var(--ops-search-text);
+  -webkit-box-shadow: 0 0 0 1000px var(--ops-fill-flat) inset !important;
+  box-shadow: 0 0 0 1000px var(--ops-fill-flat) inset !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+[data-bs-theme="dark"] .ops-search input:-webkit-autofill,
+[data-bs-theme="dark"] .ops-search input:-webkit-autofill:hover,
+[data-bs-theme="dark"] .ops-search input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #e2e8f0;
+  caret-color: #e2e8f0;
+  -webkit-box-shadow: 0 0 0 1000px #1e293b inset !important;
+  box-shadow: 0 0 0 1000px #1e293b inset !important;
+}
+@media (max-width: 760px) {
+  .ops-search { flex: 1 1 100%; max-width: none; min-width: 0; }
+}
+`;
+
 export function useOpsTheme(accent: 'cyan' | 'violet'): OpsTokens {
   const { theme } = useTheme();
   const dark = theme === 'dark';

@@ -111,9 +111,10 @@ const DCP_TABS_CSS = `
 .dcp-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: nowrap; flex: 1 1 auto; min-width: 0; }
 .dcp-filter-ms { flex: 0 0 auto; }
 .dcp-toolbar .dcp-filter-btn { flex-shrink: 0; }
-.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 680px; min-width: 180px; max-width: 100%; }
-@media (max-width: 1400px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 480px; } }
-@media (max-width: 1100px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 300px; } }
+/* 500px and the 1280px step, as every other CLM list search. This one was
+   680px, the widest search in the module. */
+.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 500px; min-width: 180px; max-width: 100%; }
+@media (max-width: 1280px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 360px; } }
 @media (max-width: 760px) {
   .dcp-toolbar { width: 100%; flex-wrap: wrap; }
   .dcp-pre-table .dcp-toolbar .clm-search { width: 100%; }
