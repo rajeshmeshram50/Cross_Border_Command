@@ -6,6 +6,7 @@ import { CLM_CSS } from '../../../clm/shared/clmShared';
 import api from '../../../../api';
 import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../../../master/masterFormKit';
 import Tooltip from '../../../../components/ui/Tooltip';
+import '../../../../components/ui/DataTable.css';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
@@ -3043,10 +3044,8 @@ function Stage2Shimmer() {
   return (
     <div>
       {/* Sub-tab row (Company DD / Owner KYC / Trade Licence) */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <Shimmer height={34} width={150} radius={999} />
-        <Shimmer height={34} width={120} radius={999} />
-        <Shimmer height={34} width={140} radius={999} />
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <Shimmer height={46} width={460} radius={11} />
       </div>
       {/* Toolbar (search + add) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -3291,6 +3290,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   .map(o => ({ value: String(o.id), label: o.code ? `${o.code}: ${o.name}` : o.name }))}
                 emptyText="No segment has a Document Control Panel rule yet"
                 placeholder="Select segment"
+                menuClassName="acm-seg-menu"
                 invalid={!!errors.coSeg}
                 onChange={vs => {
                   /* Block removing a segment whose KYC/DD/Trade-License docs
@@ -4014,12 +4014,25 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
 
   return (
     <div className="acm-kyc-stage">
+      {/* Same tab rail as the Customers list (shared .dt-tabrail / .dt-tab). */}
       <div className="acm-subtabs-row">
-        {(['company-dd','owner-kyc','trade-licence'] as KycSubTab[]).map(s => (
-          <button key={s} type="button" className={`acm-subtab-pill ${sub === s ? 'is-active' : ''}`} onClick={() => setSub(s)}>
-            {s === 'company-dd' ? 'Company Due Diligence' : s === 'owner-kyc' ? 'Owner KYC' : 'Trade Licence'}
-          </button>
-        ))}
+        <div className="dt-tabrail hr-dt" data-accent="violet">
+          <div className="dt-tabs" role="tablist">
+            {(['company-dd','owner-kyc','trade-licence'] as KycSubTab[]).map(s => (
+              <button
+                key={s}
+                type="button"
+                role="tab"
+                aria-selected={sub === s}
+                className={`dt-tab ${sub === s ? 'on' : 'off'}`}
+                onClick={() => setSub(s)}
+              >
+                <i className={s === 'company-dd' ? 'ri-building-line' : s === 'owner-kyc' ? 'ri-user-star-line' : 'ri-file-shield-2-line'} />
+                {s === 'company-dd' ? 'Company Due Diligence' : s === 'owner-kyc' ? 'Owner KYC' : 'Trade Licence'}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="acm-section acm-section-purple">
@@ -5426,7 +5439,9 @@ function ReadInline({ label, value, span, node: rich, tip }: { label: string; va
     </div>
   );
   // Tooltip only when there's actual content to disambiguate.
-  return v ? <Tooltip label={tip ? <>{label}: {tip}</> : `${label}: ${v}`}>{node}</Tooltip> : node;
+  // Tooltip text at the table's 500 weight, not the pill's default 600.
+  const tipLabel = <span style={{ fontWeight: 500 }}>{tip ? <>{label}: {tip}</> : `${label}: ${v}`}</span>;
+  return v ? <Tooltip label={tipLabel}>{node}</Tooltip> : node;
 }
 
 /* ───── Stage 1 read-only summary ─────
@@ -5828,11 +5843,11 @@ const SCOPED_CSS = `
 }
 .acm-hs-inline:hover { background: rgba(124,58,237,0.06); }
 .acm-hs-inline-lbl {
-  color: #64748b; font-weight: 600;
+  color: #64748b; font-weight: 500;
   letter-spacing: .01em; white-space: nowrap; flex-shrink: 0;
 }
 .acm-hs-inline-val {
-  color: #6d28d9; font-weight: 600;
+  color: #6d28d9; font-weight: 500;
   line-height: 1.4; min-width: 0; flex: 1 1 auto;
   /* Truncate long values to one line with an ellipsis. Full text is
      still available on hover via the project-wide Tooltip. */
@@ -5953,6 +5968,8 @@ const SCOPED_CSS = `
 
 /* Sub-tabs (Stage 2) */
 .acm-subtabs-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+/* Tab height matches the Customers list rail. */
+.acm-subtabs-row .dt-tabrail .dt-tab { height: 38px; }
 .acm-subtab-pill { padding: 7px 18px; border-radius: 10px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
 .acm-subtab-pill:hover:not(.is-active) { background: #ede9fe; }
 .acm-subtab-pill.is-active { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
@@ -6013,9 +6030,9 @@ const SCOPED_CSS = `
   background: linear-gradient(180deg, #faf7ff, #f5efff);
   padding: 14px 16px;
   text-align: left;
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 800;
-  letter-spacing: .09em;
+  letter-spacing: .07em;
   color: #5b21b6;
   text-transform: uppercase;
   /* Box-shadow stand-in for the bottom border — a real border on a
@@ -6029,10 +6046,27 @@ const SCOPED_CSS = `
   border-bottom: 1px solid #f5f3ff;
   color: #1f2937;
   vertical-align: middle;
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-weight: 500;
   line-height: 1.45;
 }
+/* Same type as the Customers list: every data cell 11.5 / 500. The Actions
+   column's buttons and icon glyphs keep their own sizing. */
+.acm-table tbody td:not(:last-child) *:not(i):not(svg):not(svg *):not(.seg-reg-badge) {
+  font-size: 11.5px;
+  font-weight: 500;
+}
+/* Auto-code chips (DD-004 …) read like the list's ID chip: mono 11 / 600. */
+.acm-table tbody td:not(:last-child) .acm-doc-code.acm-doc-code {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+/* Customer Segment dropdown: list rows at the table's weight (the ticked row
+   was 600), in DM Sans — the menu is portalled to <body>, where the theme's
+   Rubik would otherwise apply. */
+.master-select-menu.acm-seg-menu .master-select-item { font-family: var(--font-sans); font-weight: 500; }
+.master-select-menu.acm-seg-menu .master-select-item.active { font-weight: 500; }
 .acm-table tbody tr:last-child td { border-bottom: none; }
 .acm-table tbody tr:hover td { background: #faf7ff; }
 .acm-empty-row td { text-align: center; color: #9ca3af; padding: 26px 14px !important; font-size: 11.5px; font-style: italic; background: #fafaff; }
