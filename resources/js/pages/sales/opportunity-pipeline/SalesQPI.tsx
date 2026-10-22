@@ -4780,6 +4780,10 @@ const SCOPED_CSS = `
   color: #9ca3af;
   font-size: 13px; font-style: normal;
 }
+.qpi-table-host--empty > .qpi-empty {
+  flex: 1 1 auto;
+  display: flex; align-items: center; justify-content: center;
+}
 
 .qpi-srno { color: var(--vz-body-color, #495057); font-weight: 600; font-size: 13px; }
 
