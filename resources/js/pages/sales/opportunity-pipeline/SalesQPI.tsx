@@ -868,7 +868,7 @@ export default function SalesQPI() {
       const theadH = (host.querySelector('thead') as HTMLElement | null)?.offsetHeight || 44;
       const rowH   = (host.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 48;
       const FOOTER  = 56;   // .qpi-pag height
-      const HOSTPAD = 26;   // .qpi-table-host vertical padding (14 top + 12 bottom)
+      const HOSTPAD = 15;   // .qpi-table-host vertical padding (14 top + 1 bottom)
       const avail   = window.innerHeight - top - theadH - FOOTER - HOSTPAD - 16;
       // Continuous fit — the EXACT number of rows that fit, no snapping to fixed
       // options (that kept the count stuck at 10). WorklistPager adds whatever
@@ -1970,7 +1970,10 @@ export default function SalesQPI() {
         {/* Table — uses the project-standard TableContainer (TanStack)
             so chrome + pagination match the Customer / Recruitment /
             Employee pages. Cell renderers above keep our chips/pills. */}
-        <div className="qpi-table-host" ref={tableHostRef}>
+        <div
+          className={`qpi-table-host${!(tab === 'quotation' ? loadingQt : loadingPi) && totalRows === 0 ? ' qpi-table-host--empty' : ''}`}
+          ref={tableHostRef}
+        >
           {(tab === 'quotation' ? loadingQt : loadingPi) ? (
             /* Loading shimmer instead of a "0 results" empty table. */
             <ShimmerTable rows={rpp} cols={13} />
@@ -5949,7 +5952,19 @@ const SCOPED_CSS = `
  * areas don't visually merge into one blob. Mirrors the same
  * padding 14/14/12 on .smc-table-wrap in SalesCustomers, which is
  * the visual baseline the user pointed to. */
-.qpi-table-host { padding: 14px 14px 12px; flex: 1 1 auto; min-height: 0; }
+.qpi-table-host { padding: 14px 14px 1px; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* Velzon's .table-card has a -16px bottom margin; zero it so the scrollbar
+ * sits a tight 1px (host bottom padding) above the pager footer. */
+.qpi-table-host > .table-card { margin-bottom: 0 !important; }
+/* The shared WorklistPager carries a 12px top margin (app.css .wl-pager);
+ * drop it here so the footer sits flush under the table's scrollbar. */
+.qpi-card .wl-pager { margin-top: 0; }
+/* Stretch the scroll wrapper to fill the host so its horizontal scrollbar
+ * sits directly above the pager footer instead of right under the last row.
+ * flex-shrink 0: a scroll container's auto min-height is 0, so letting it
+ * shrink would add an inner vertical scroll on long pages. Not stretched in
+ * the empty state, where the message must stay right under the header. */
+.qpi-table-host:not(.qpi-table-host--empty) > .table-responsive { flex: 1 0 auto; }
 /* Inner table is flush inside .qpi-card (which already provides the
  * white background + border + 16px outer radius). Giving the table
  * its OWN border/radius produced a card-within-a-card whose rounded
