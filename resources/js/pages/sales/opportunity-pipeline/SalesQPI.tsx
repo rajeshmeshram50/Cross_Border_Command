@@ -20,60 +20,31 @@ import ConvertToPiModal, { ConversionBlockedModal } from './ConvertToPiModal';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import SearchClear from '../../../components/ui/SearchClear';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Quotations V/S Proforma Invoice (QPI)
- *
- * Faithful port of the prototype's `#qpiPage`. Purple-palette page with a
- * Quotation / Proforma Invoice tab switch, a 4-step "What We Are Doing Here"
- * stepper, list cards per tab (Quotation table; PI sub-tabs With/Without
- * Shipment), and two multi-step Create modals (Create Quotation, Create PI).
- *
- * Data is mock for now; the dataset mirrors the screenshots from the
- * SalesMatrix_v4_9 prototype.
- * ──────────────────────────────────────────────────────────────────────── */
 
 type QPITab = 'quotation' | 'pi';
 type PISubTab = 'with' | 'without';
 
 export type Quotation = {
-  id?: number;         // server PK (undefined for legacy seed rows / new draft)
-  qtNo: string;        // QT/2026-27/3
-  qtDate: string;      // dd/mm/yyyy
-  oppId: string;       // 436670875 (display opp_code)
-  // Numeric lead id (quotation.opp_id) — the Send-for-Signature flow POSTs
-  // this as lead_id and the backend verifies record.opp_id === lead_id.
+  id?: number;
+  qtNo: string;
+  qtDate: string;
+  oppId: string;
   leadId?: number | null;
   oppDate: string;
   customer: string;
   consignee: string;
   docType: 'International' | 'Domestic';
-  currency: string;    // $, ₹, €
+  currency: string;
   grandTotal?: number | null;
   salesManager: string;
-  // Drives the "Convert to PI" button state. When the quotation has
-  // already been flipped to converted_to_pi (either via direct convert
-  // or because a PI was POSTed referencing it as source_quotation_id),
-  // the button is locked into a "Converted" disabled chip.
-  status?: string;     // draft | sent | approved | converted_to_pi | cancelled
-  // Email + reminder state — drives which of the two buttons (Email /
-  // Reminder) is enabled in the row's actions:
-  //   emailedAt == null → Email enabled, Reminder disabled
-  //   emailedAt != null → Email disabled (initial mail already went),
-  //                        Reminder enabled (badge shows count)
+  status?: string;
   emailedAt?: string | null;
   reminderCount?: number;
   canModify?: boolean;
-  // Owning branch (eager-loaded). Drives the "Branch" column so
-  // client-level users can tell which branch each record belongs to.
   branchName?: string;
-  // Creator info — drives the "Created By" pill. Pill tone is keyed
-  // off user_type (super_admin / client_admin / client_user /
-  // branch_user); the sub-label shows the creator's branch name.
   createdBy?: string;
   createdById?: number | null;
   creatorUserType?: string;
-  // Zoho Books sync state ('Sync' | 'Not Sync') — drives the sync button's
-  // tooltip/colour so a synced row reads as synced.
   zoho_status?: string;
 };
 
@@ -81,11 +52,10 @@ type PI = {
   id?: number;
   piNo: string;
   piDate: string;
-  btId: string | null;   // BT-13 (null for Without Shipment row variants)
+  btId: string | null;
   btDate: string | null;
   convertFrom: string | null;
   oppId: string;
-  // Numeric lead id (proforma_invoice.opp_id) — for Send-for-Signature.
   leadId?: number | null;
   oppDate: string;
   customer: string;
@@ -93,40 +63,19 @@ type PI = {
   docType: 'International' | 'Domestic';
   currency: string;
   salesManager: string;
-  // Same email/reminder state as Quotation rows above.
   emailedAt?: string | null;
   reminderCount?: number;
-  // Read-only flag — see Quotation type above.
   canModify?: boolean;
-  // Owning branch — see Quotation type above.
   branchName?: string;
-  // Creator info — see Quotation type above.
   createdBy?: string;
   createdById?: number | null;
   creatorUserType?: string;
-  // True when the source opportunity has reached Stage 6 (Victory
-  // Stage) — i.e. shipment is considered complete. Drives the
-  // With Shipment vs Without Shipment tab split. PIs whose
-  // opportunity hasn't won yet stay in Without-Shipment until the
-  // deal closes upstream.
   victoryReached?: boolean;
-  // True only when an actual shipment order (SHP-NNN) has been created and
-  // submitted against the opportunity. This — NOT victoryReached or the
-  // auto-assigned legacy bt_id — drives the With/Without Shipment split: a PI
-  // stays in "Without Shipment" until the shipment id is created & the
-  // shipment form is submitted.
   hasShipment?: boolean;
-  // Zoho Books sync state ('Sync' | 'Not Sync') — drives the sync button's
-  // tooltip/colour so a synced row reads as synced.
   zoho_status?: string;
 };
 
-// Default page size — 10 to match the Customer page. The dynamic page-size
-// effect grows this on taller screens (and never drops below this floor).
 const ROWS_PER_PAGE = 10;
-// Fixed rows-per-page options for the pagination footer (QA CBC-547). The
-// auto-fit snaps to the nearest of these so the selected value is always a
-// listed option.
 const QPI_ROWS_OPTIONS = [10, 25, 50, 100];
 function renderCreatorCell(
   name: string | undefined,
@@ -137,12 +86,9 @@ function renderCreatorCell(
 ) {
   if (!name && !creatorId) return <span className="qpi-em">—</span>;
 
-  // Rule 1: self-created → "You"
   const isSelf = !!currentUserId && !!creatorId && currentUserId === creatorId;
 
   const t = String(userType ?? '').toLowerCase();
-  // Pill tone — keyed off user_type. Self-pill borrows the client tone
-  // (blue) so it reads as "yours" without colliding with other pills.
   const tone =
     isSelf
       ? { bg: '#e0e7ff', fg: '#3730a3', kind: 'self' as const }
@@ -154,12 +100,8 @@ function renderCreatorCell(
       ? { bg: '#ccfbf1', fg: '#0d9488', kind: 'branch' as const }
       : { bg: '#f1f5f9', fg: '#475569', kind: 'other' as const };
 
-  // Primary pill text per rule above. Self-created rows show the creator's
-  // actual NAME (not "You"); the self tone/colour still marks it as yours.
   const primary = isSelf ? (name || 'You') : (name || '—');
 
-  // Sub-label — context line under the pill. Skipped for "You" so the cell
-  // stays compact. For other creators we still show the role / branch context.
   const subLabel = (() => {
     if (isSelf) return '';
     if (tone.kind === 'super')  return 'Super Admin';
@@ -179,27 +121,6 @@ function renderCreatorCell(
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * PDF preview / download — Quotation or PI document, signature variants.
- *
- * Used by the More Options dropdown on both tables. Two backends, both
- * per-row real-data endpoints now:
- *   - kind="quotation" → POST /sales/quotations/{id}/preview-pdf
- *   - kind="pi"        → POST /sales/proforma-invoices/{id}/preview-pdf
- *
- * Both render the SAME Blade template — `pdf_title` + `doc_label_short`
- * switch on the backend so the labels read "QT No"/"PI No" appropriately
- * but the rest of the letterhead, products, bank, totals, etc. are
- * identical in shape.
- *
- * The `withSignature` flag picks the stamped vs blank variant.
- * The `mode` decides what to do with the resulting PDF:
- *   - 'view'     → open in a new tab (the caller pre-opens the window
- *                  SYNCHRONOUSLY from the click handler to bypass the
- *                  browser's popup blocker — see the kebab onClick)
- *   - 'download' → trigger a file save via a hidden <a download> click
- *                  (no popup, no tab — works even with blockers)
- * ════════════════════════════════════════════════════════════════════════ */
 async function openSalesPdf(
   kind: 'quotation' | 'pi',
   payload: Record<string, unknown>,
@@ -210,26 +131,18 @@ async function openSalesPdf(
   const url = kind === 'quotation'
     ? `/sales/quotations/${payload.id}/preview-pdf`
     : `/sales/proforma-invoices/${payload.id}/preview-pdf`;
-  // Both endpoints read the row from the DB by id — only the signature
-  // flag is needed in the body for either.
   const body = { signature: withSignature };
   const res = await api.post(url, body, { responseType: 'blob' });
   const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
   const objectUrl = URL.createObjectURL(blob);
 
   if (mode === 'view') {
-    // Use the window the caller opened synchronously so popup blockers
-    // accept it. If pre-open failed (rare — usually only happens when
-    // window.open is invoked outside a user gesture), fall back to a
-    // fresh window.open here, which may or may not be blocked.
     const win = preOpenedWindow ?? window.open(objectUrl, '_blank', 'noopener,noreferrer');
     if (win && preOpenedWindow) win.location.href = objectUrl;
-    // Revoke after 60s — keeps the tab loadable but eventually GCs the blob.
     setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     return;
   }
 
-  // mode === 'download'
   const code = (payload.piNo as string | undefined) ?? ((payload.id as number | undefined)?.toString() ?? 'document');
   const safeCode = code.replace(/[^A-Za-z0-9_-]/g, '_');
   const label = kind === 'quotation' ? 'Quotation' : 'PI';
@@ -243,10 +156,6 @@ async function openSalesPdf(
 }
 
 function piPayloadFromQuotation(q: Quotation) {
-  // `id` is read by openSalesPdf('quotation', …) to build the per-row
-  // URL `/sales/quotations/{id}/preview-pdf`. The rest is unused for
-  // the real-data endpoint (server reads from the DB), kept here for
-  // backwards-compat in case anything still inspects the payload.
   return {
     id: q.id,
     piNo: q.qtNo, piDate: q.qtDate,
@@ -257,24 +166,11 @@ function piPayloadFromQuotation(q: Quotation) {
   };
 }
 
-/* Currency values are stored as full labels like "SGD - Singapore Dollar".
- * In the table we only want the code ("SGD") so the column stays narrow and
- * the table doesn't need horizontal scroll. Splits on the first dash/en-dash;
- * plain codes ("USD") and symbols ("$") pass through unchanged. */
 function currencyCode(v: string | null | undefined): string {
   if (!v) return '';
   return String(v).split(/\s*[-–—]\s*/)[0].trim();
 }
 
-/* A Domestic document is always in rupees — the wizard has no Currency field
- * for it (Currency lives in the international shipping block), so those rows
- * were saved with currency = null and the column rendered a bare "—".
- *
- * New rows now get 'INR' derived server-side in Quotation/ProformaInvoice
- * ::validatePayload. This fallback is for rows saved BEFORE that, so the list
- * reads correctly without a data migration. Only Domestic falls back; an
- * International row with no currency is genuinely missing one and keeps
- * showing "—" rather than being told it's rupees. */
 function displayCurrency(v: string | null | undefined, docType: string | null | undefined): string {
   const code = currencyCode(v);
   if (code) return code;
@@ -282,9 +178,6 @@ function displayCurrency(v: string | null | undefined, docType: string | null | 
 }
 
 function piPayloadFromPI(p: PI) {
-  // `id` is the only field openSalesPdf actually uses now — both backends
-  // read the row from the DB by id. The rest is kept for backwards-compat
-  // in case anything inspects the payload elsewhere.
   return {
     id: p.id,
     piNo: p.piNo, piDate: p.piDate,
@@ -296,62 +189,29 @@ function piPayloadFromPI(p: PI) {
   };
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- * MoreOptionsMenu — dropdown anchored next to the kebab button.
- *
- * Rendered via portal at document.body so it escapes the table-wrap's
- * overflow:auto clip. Position is computed from a CAPTURED rect snapshot
- * (not a live DOM element) — that way TanStack's row re-renders can't
- * replace the kebab button DOM out from under us and leave us pointing
- * at a detached element. Closes on outside-click, Escape, scroll, and
- * resize.
- *
- * The "click the kebab again to toggle" behaviour is preserved by having
- * the kebab's own onClick call stopPropagation() — that prevents the
- * outside-click handler here from firing for kebab clicks. */
 type AnchorRect = { top: number; bottom: number; left: number; right: number };
 function MoreOptionsMenu(props: {
   rect: AnchorRect;
-  /* Discriminator: quotation rows hit /sales/quotations/{id}/preview-pdf
-   * with branch-letterheaded REAL data; PI rows still use the legacy
-   * mock /sales/pi/preview-pdf until the PI controller is wired the same
-   * way. Labels in the menu also switch on this. */
   kind: 'quotation' | 'pi';
   payload: Record<string, unknown>;
-  /* Zoho Sign completion-certificate request id — present only once the
-   * document is signed. When set, a "Download Signed Certificate" item is
-   * added to the menu. */
   sigId: number | null;
-  /* Raw signature-request status ('declined' / 'recalled' / …). Used to show a
-   * "this document was declined" notice at the top of the menu even though
-   * sigId is null (a declined request has no signed PDF). */
   sigStatus?: string | null;
   docCode: string;
-  /* Customer-signed (Zoho-executed) document handlers — only used when the
-   * row is signed (sigId set). View opens it in a tab; download saves it. */
   onViewSigned?: () => void | Promise<void>;
   onDownloadSigned?: () => void | Promise<void>;
   onClose: () => void;
   onError: (msg: string) => void;
-  /* Reports when any PDF/cert action is in flight so the parent can show a
-   * row-level loader on this row. */
   onBusyChange?: (busy: boolean) => void;
 }) {
   const { rect, kind, payload, sigId, sigStatus, docCode, onViewSigned, onDownloadSigned, onClose, onError, onBusyChange } = props;
   const docLabel = kind === 'quotation' ? 'Quotation' : 'PI';
   const menuRef = useRef<HTMLDivElement>(null);
-  /* Busy key encodes mode + signature so only the clicked item shows a
-   * spinner while the request is in flight. Keys mirror the menu buttons:
-   * view-sig / view-nosig / dl-sig / dl-nosig / cert. */
   type BusyKey = 'view-sig' | 'view-nosig' | 'dl-sig' | 'dl-nosig' | 'cert';
   const [busy, setBusy] = useState<BusyKey | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  /* Bubble busy → parent (for the row loader); clear on unmount so a row never
-   * gets stuck shimmering if the menu closes mid-flight. */
   useEffect(() => { onBusyChange?.(busy !== null); }, [busy, onBusyChange]);
   useEffect(() => () => { onBusyChange?.(false); }, [onBusyChange]);
 
-  // Measure menu against captured rect before paint — no flash.
   useLayoutEffect(() => {
     const place = () => {
       const menuW = menuRef.current?.offsetWidth ?? 200;
@@ -372,8 +232,6 @@ function MoreOptionsMenu(props: {
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;
       if (menuRef.current?.contains(t)) return;
-      // Kebab buttons stop propagation themselves; anything that reaches
-      // here is a genuine outside-click.
       onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -388,21 +246,10 @@ function MoreOptionsMenu(props: {
     };
   }, [onClose]);
 
-  /* CRITICAL: the new tab MUST be opened synchronously in the click
-   * handler (this function is fine — it's called directly from onClick)
-   * — browsers reject window.open invoked after an async await because
-   * the user-gesture token has expired by then. We pre-open the tab
-   * with about:blank, kick off the fetch, then redirect the tab to the
-   * blob URL when the PDF is ready. Download mode skips the pre-open
-   * since it triggers a hidden anchor click instead. */
   const pick = (mode: 'view' | 'download', withSignature: boolean) => {
     const key: BusyKey =
       mode === 'view' ? (withSignature ? 'view-sig' : 'view-nosig')
                       : (withSignature ? 'dl-sig'   : 'dl-nosig');
-    // NOTE: no 'noopener' here — window.open() returns null when noopener is
-    // set, which would lose the pre-opened tab reference and make us fall back
-    // to a second window.open() in openSalesPdf (the "two tabs" bug). We keep
-    // the reference and immediately redirect this tab to the blob URL.
     const win = mode === 'view' ? window.open('', '_blank') : null;
     setBusy(key);
     openSalesPdf(kind, payload, withSignature, mode, win)
@@ -414,9 +261,6 @@ function MoreOptionsMenu(props: {
       .finally(() => setBusy(null));
   };
 
-  /* Download the Zoho Sign completion certificate (audit-trail PDF) for a
-   * signed document. Saved via a hidden <a download> click, mirroring the
-   * Download items above. */
   const downloadCertificate = () => {
     if (sigId == null) return;
     setBusy('cert');
@@ -441,9 +285,6 @@ function MoreOptionsMenu(props: {
       role="menu"
       style={pos ? { top: pos.top, left: pos.left } : { top: -9999, left: -9999 }}
     >
-      {/* Declined / recalled notice — a declined request has no signed PDF, so
-          make it explicit at the top of the menu why the "Signed" options are
-          missing (the row can still be re-sent from the Send button). */}
       {(sigStatus === 'declined' || sigStatus === 'recalled') && (
         <div className="qpi-moremenu-notice" role="note">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
@@ -451,9 +292,6 @@ function MoreOptionsMenu(props: {
         </div>
       )}
       {kind === 'quotation' ? (
-        /* Quotations are never e-signed through Zoho here, so the whole
-           with/without-Signature split (and the certificate) is meaningless
-           for them — show a single plain View + Download. */
         <>
           <button
             type="button" role="menuitem"
@@ -478,9 +316,6 @@ function MoreOptionsMenu(props: {
           </button>
         </>
       ) : sigId != null ? (
-        /* ── SIGNED row: the "with Signature" rows become the actual
-              customer-signed (Zoho-executed) document, plus the blank
-              variant + the completion certificate. ── */
         <>
           <button
             type="button" role="menuitem"
@@ -544,16 +379,11 @@ function MoreOptionsMenu(props: {
           </button>
         </>
       ) : (
-        /* ── NOT signed: the generated PDF with / without the signature
-              block (same four options as before). ── */
         <>
           <button
             type="button" role="menuitem"
             className="qpi-moremenu-item"
             disabled={busy !== null}
-            /* Quotations aren't e-signed through Zoho here, so "with Signature"
-               renders the stamped PDF variant directly (the old stamp output).
-               PIs still gate this behind the Zoho signing flow. */
             onClick={() => {
               if (kind === 'quotation') { pick('view', true); return; }
               onError(`Not signed yet — sign this ${docLabel} via Zoho to view the signed PDF.`); onClose();
@@ -578,7 +408,6 @@ function MoreOptionsMenu(props: {
             type="button" role="menuitem"
             className="qpi-moremenu-item"
             disabled={busy !== null}
-            /* Quotations: stamped PDF variant directly; PIs: Zoho-gated. */
             onClick={() => {
               if (kind === 'quotation') { pick('download', true); return; }
               onError(`Not signed yet — sign this ${docLabel} via Zoho to download the signed PDF.`); onClose();
@@ -634,33 +463,20 @@ const STEPS = [
 
 export default function SalesQPI() {
   const toast = useToast();
-  // Current user — needed by the "Created By" column to swap the creator's
-  // name for "You" on self-created rows.
   const { user: currentUser } = useAuth();
   const [tab, setTab] = useState<QPITab>('quotation');
   const [piSub, setPiSub] = useState<PISubTab>('with');
   const [wdhOpen, setWdhOpen] = useState(false);
   const [q, setQ] = useState('');
-  // Document Type filter (International / Domestic) — applies to both the
-  // Quotation and PI lists so the user can narrow + effectively sort by it.
   const [docTypeFilter, setDocTypeFilter] = useState<'all' | 'International' | 'Domestic'>('all');
-  // Pagination is owned here now (the project "apna wala" footer — Showing
-  // X–Y of Z + numbered chips) instead of TableContainer's built-in bar.
-  // We slice the data ourselves and feed a single page to TableContainer.
   const [page, setPage] = useState(1);
 
   const [createQtOpen, setCreateQtOpen] = useState(false);
   const [createPiOpen, setCreatePiOpen] = useState(false);
   const [piSourceQuotation, setPiSourceQuotation] = useState<Quotation | null>(null);
-  // Edit mode — the modal opens pre-filled from GET /sales/{kind}/{id}
-  // and the submit handler PUTs instead of POSTing. null = create mode.
   const [editingQuotationId, setEditingQuotationId] = useState<number | null>(null);
   const [editingPiId, setEditingPiId] = useState<number | null>(null);
 
-  // Real quotation list from /sales/quotations. Each row maps the API's
-  // snake_case header columns to the display shape the existing table
-  // JSX expects (qtNo, qtDate, oppId, …) so we don't have to refactor
-  // the renderer.
   const [quotations, setQuotations] = useState<Quotation[]>([]);
   const [loadingQt, setLoadingQt] = useState(true);
   const reloadQuotations = () => {
@@ -681,14 +497,10 @@ export default function SalesQPI() {
           docType:      (r.doc_type ?? 'International') as 'International' | 'Domestic',
           currency:     r.currency ?? '',
           grandTotal:   r.grand_total != null ? Number(r.grand_total) : null,
-          // Strictly the owner's Reporting Manager (backend-resolved). Do NOT
-          // fall back to r.salesManager (the owner) — that reintroduced the
-          // employee's own name in this column (QA #4).
           salesManager: r.sales_manager_name ?? '—',
           status:       r.status ?? 'draft',
           emailedAt:    r.emailed_at ?? null,
           reminderCount: Number(r.reminder_count ?? 0),
-          // Default to TRUE so rows from older API versions stay editable.
           canModify:    r.can_modify !== false,
           branchName:   r.branch?.name ?? '',
           createdBy:    r.creator_name ?? r.creator?.name ?? '',
@@ -703,9 +515,6 @@ export default function SalesQPI() {
   };
   useEffect(() => { reloadQuotations(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Real PI list from /sales/proforma-invoices. Single fetch — the two
-  // pill sub-tabs (With Shipment / Without Shipment) are derived from
-  // `pi_type` on each row, so we don't need separate API calls.
   const [pis, setPis] = useState<PI[]>([]);
   const [loadingPi, setLoadingPi] = useState(true);
   const reloadPis = () => {
@@ -716,15 +525,7 @@ export default function SalesQPI() {
           id:          r.id,
           piNo:        r.code,
           piDate:      r.created_at ? formatDmy(r.created_at) : '',
-          // "Shipp ID" column — prefer the new sequential shipment code
-          // (SHP-NNN) created against the opportunity; fall back to the
-          // legacy bt_id for older records not yet shipped.
           btId:        r.shipment_code ?? r.bt_id ?? null,
-          // "SHP Date" — mirror the id column's preference: the real shipment
-          // order's date first, legacy bt_date only as the fallback. Reading
-          // bt_date alone left the column blank on every shipped PI that was
-          // created directly (bt_date is stamped only by convert-to-PI), so a
-          // row showed SHP-NNN with no date beside it.
           btDate:      r.shipment_date
                          ? formatDmy(r.shipment_date)
                          : (r.bt_date ? formatDmy(r.bt_date) : null),
@@ -738,9 +539,6 @@ export default function SalesQPI() {
           consignee:   r.consignee_name ?? r.consignee?.company_name ?? '',
           docType:     (r.doc_type ?? 'International') as 'International' | 'Domestic',
           currency:    r.currency ?? '',
-          // Strictly the owner's Reporting Manager (backend-resolved). Do NOT
-          // fall back to r.salesManager (the owner) — that reintroduced the
-          // employee's own name in this column (QA #4).
           salesManager: r.sales_manager_name ?? '—',
           emailedAt:   r.emailed_at ?? null,
           reminderCount: Number(r.reminder_count ?? 0),
@@ -749,22 +547,12 @@ export default function SalesQPI() {
           createdBy:   r.creator_name ?? r.creator?.name ?? '',
           createdById: r.created_by ?? r.creator?.id ?? null,
           creatorUserType:     r.creator_user_type ?? r.creator?.user_type ?? '',
-          // Server-computed: opportunity reached Stage 6 (Victory).
-          // Fallback to checking the eager-loaded lead.lead_stage_id /
-          // lead.won_at directly so an older API response that doesn't
-          // ship the flag yet still bucketizes correctly.
           victoryReached: Boolean(
             r.victory_reached
             ?? ((Number(r.lead?.lead_stage_id ?? 0) >= 6) || !!r.lead?.won_at)
           ),
-          // Real shipment order created & submitted (SHP-NNN) — drives the
-          // With/Without Shipment split. The legacy bt_id fallback is NOT
-          // counted here, so an auto-assigned BT-code alone keeps the PI in
-          // the Without-Shipment bucket until the shipment form is submitted.
           hasShipment: Boolean(r.shipment_code),
           zoho_status: r.zoho_status ?? 'Not Sync',
-          // Stash pi_type on the row so the sub-tab filter can split it.
-          // Cast to any so we don't have to widen the public PI type.
           ...(r.pi_type ? { _piType: r.pi_type } : {}),
         }));
         setPis(rows);
@@ -774,12 +562,6 @@ export default function SalesQPI() {
   };
   useEffect(() => { reloadPis(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Split the single PI list into With/Without buckets by whether an actual
-  // shipment order (SHP-NNN) has been created & submitted against the
-  // opportunity. A PI lands in "With Shipment" ONLY once that shipment id
-  // exists — until the shipment is created and its form submitted, the PI
-  // stays in "Without Shipment" (a victory-stage deal or an auto-assigned
-  // legacy BT-code alone is not enough).
   const piWithShipment = useMemo(
     () => pis.filter(r => r.hasShipment === true),
     [pis],
@@ -798,10 +580,8 @@ export default function SalesQPI() {
     document.head.appendChild(link);
   }, []);
 
-  /* ─── Filter + paginate ─── */
   const filtered = useMemo(() => {
     const lo = q.trim().toLowerCase();
-    // Document-type narrowing shared by both tabs.
     const byDoc = <T extends { docType: string }>(arr: T[]) =>
       docTypeFilter === 'all' ? arr : arr.filter(r => r.docType === docTypeFilter);
     if (tab === 'quotation') {
@@ -827,62 +607,39 @@ export default function SalesQPI() {
     ));
   }, [tab, piSub, q, quotations, pis, piWithShipment, piWithoutShipment, docTypeFilter]);
 
-  /* ─── Dynamic page size ───
-   * Rows-per-page auto-fits the space between the table header and the
-   * footer so the table fills the viewport (same behaviour as the Customer
-   * page). `rpp` starts at ROWS_PER_PAGE and grows on taller screens; the
-   * remaining rows spill onto the next page (no internal scroll). */
   const tableHostRef = useRef<HTMLDivElement>(null);
-  // Card is stretched to fill the space from its top down to the viewport bottom
-  // so the pager pins to the bottom even when there are few rows — the same
-  // dynamic table-fill as My Workplace / CLM Segment Master / Suppliers.
   const cardRef = useRef<HTMLDivElement>(null);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const [rpp, setRpp] = useState(ROWS_PER_PAGE);
-  // Once the user picks a Rows-per-page value the auto-fit stops overriding it.
   const rppManualRef = useRef(false);
   useEffect(() => {
     const host = tableHostRef.current;
     if (!host) return;
     const fit = () => {
-      // Stretch the card to the viewport bottom (always — even when the row
-      // count is a manual pick), so the pager sits at the bottom, not mid-page.
       const cardEl = cardRef.current;
       if (cardEl) {
         const cardTop = cardEl.getBoundingClientRect().top;
         const cardH = Math.max(0, window.innerHeight - cardTop - 16);
         setFillH(prev => (prev === cardH ? prev : cardH));
       }
-      /* Publish the header band's width for the pinned ACTION header, which
-       * repaints the row's gradient as a right-anchored slice of exactly this
-       * size (see --qpi-band-w in SCOPED_CSS). Set BEFORE the manual-rows
-       * early-return below — the band still has to match when the user has
-       * picked their own row count. */
       const headRow = host.querySelector('thead tr') as HTMLElement | null;
       if (headRow) {
         const bw = headRow.getBoundingClientRect().width;
         if (bw) host.style.setProperty('--qpi-band-w', `${bw}px`);
       }
-      if (rppManualRef.current) return;   // user chose a value — respect it
+      if (rppManualRef.current) return;
       const top    = host.getBoundingClientRect().top;
       const theadH = (host.querySelector('thead') as HTMLElement | null)?.offsetHeight || 44;
       const rowH   = (host.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 48;
-      const FOOTER  = 56;   // .qpi-pag height
-      const HOSTPAD = 15;   // .qpi-table-host vertical padding (14 top + 1 bottom)
+      const FOOTER  = 56;
+      const HOSTPAD = 15;
       const avail   = window.innerHeight - top - theadH - FOOTER - HOSTPAD - 16;
-      // Continuous fit — the EXACT number of rows that fit, no snapping to fixed
-      // options (that kept the count stuck at 10). WorklistPager adds whatever
-      // the current value is to its dropdown, so an off-list count is fine.
-      // Mirrors CLM Segment Master's Math.max(4, floor(avail / ROW)).
       const rowsFit = Math.max(4, Math.floor(avail / rowH));
       setRpp(prev => (prev === rowsFit ? prev : rowsFit));
     };
     fit();
-    // Re-fit after the layout settles (banner animation / async rows).
     const t = window.setTimeout(fit, 130);
     window.addEventListener('resize', fit);
-    // The "What We Are Doing Here" banner expands/collapses with a transition;
-    // observe it so the table grows into the freed space as it settles.
     let ro: ResizeObserver | undefined;
     const banner = document.querySelector('.qpi-wdh');
     if (banner && typeof ResizeObserver !== 'undefined') {
@@ -897,51 +654,28 @@ export default function SalesQPI() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wdhOpen, loadingQt, loadingPi, tab, piSub]);
 
-  /* ─── Pagination (our own footer) ───
-   * Slice `filtered` into pages of `rpp`. `pageRows` is what we hand to
-   * TableContainer so its internal bar collapses to a single page; the
-   * visible Showing X–Y of Z + numbered chips footer is rendered below. */
   const totalRows = filtered.length;
   const pageCount = Math.max(1, Math.ceil(totalRows / rpp));
   const safePage  = Math.min(Math.max(1, page), pageCount);
   const pageStart = (safePage - 1) * rpp;
   const pageRows  = filtered.slice(pageStart, pageStart + rpp);
-  // Snap back to page 1 whenever the active dataset changes (tab, sub-tab or
-  // search), so we never sit on an out-of-range empty page.
   useEffect(() => { setPage(1); }, [tab, piSub, q, docTypeFilter]);
 
-  /* ─── Helpers ─── */
-  // Clear the search box on tab switch so the new tab starts unfiltered.
   const switchTab = (next: QPITab) => { setTab(next); setQ(''); };
   const switchPiSub = (next: PISubTab) => { setPiSub(next); setQ(''); };
 
   const [convertingId, setConvertingId] = useState<number | null>(null);
-  // Convert-to-PI confirmation popup: the quotation pending conversion and
-  // the previewed next PI code shown inside the dialog.
   const [convertTarget, setConvertTarget] = useState<Quotation | null>(null);
   const [convertPreviewCode, setConvertPreviewCode] = useState<string | null>(null);
-  // Conversion-blocked popup: shown when the lead already has a PI. Holds
-  // the quotation they tried to convert + the existing PI that blocks it.
   const [convertBlocked, setConvertBlocked] = useState<{ fromQt: string; pi: PI } | null>(null);
 
-  /* ── Send-for-Signature (Zoho Sign) — same flow as Sales Matrix Stage 5.
-   * `sigSendFor` opens the modal for one row; `sigByRow` holds the live
-   * status per row keyed `${kind}:${docId}` (quotation/pi), driving the
-   * action button (Send -> Sent +Remind/View -> Signed +View). `sigTick`
-   * is bumped after a send so the poller refreshes immediately. */
   const [sigSendFor, setSigSendFor] = useState<
     { kind: 'quotation' | 'pi'; id: number; code: string; customerName: string | null; leadId: number | null } | null
   >(null);
   const [sigByRow, setSigByRow] = useState<Record<string, { id: number; status: string }>>({});
   const [sigTick, setSigTick] = useState(0);
-  /* False until the first signature-status poll resolves — while loading, the
-   * Send-for-Signature pill shows a loader and is disabled so a row can't be
-   * sent again before we know it was already sent/signed. */
   const [sigLoaded, setSigLoaded] = useState(false);
 
-  /* Poll signature status for ALL quotations + PIs of this client (no
-   * lead filter — this page spans many leads). `sync=1` round-trips Zoho
-   * so an in-progress request flips to Signed without a manual refresh. */
   useEffect(() => {
     let alive = true;
     const load = async (sync: boolean) => {
@@ -961,14 +695,9 @@ export default function SalesQPI() {
         if (qr.status === 'fulfilled') ingest((qr.value as any).data?.data, 'quotation');
         if (pr.status === 'fulfilled') ingest((pr.value as any).data?.data, 'pi');
         setSigByRow(map);
-      } catch { /* signature status is best-effort — never blocks the table */ }
+      } catch {  }
       finally { if (alive) setSigLoaded(true); }
     };
-    /* Read our own database first so the rows unlock immediately, then sync
-       with Zoho. Both calls here span the whole client, so a single sync=1
-       load left every row waiting on the slowest Zoho round-trip. Mirrors
-       Stage 5; our database can only lag Zoho, never lead it, so the brief
-       pre-sync state never unlocks something it shouldn't. */
     void load(false).then(() => load(true));
     const t = setInterval(() => void load(true), 20000);
     return () => { alive = false; clearInterval(t); };
@@ -990,8 +719,6 @@ export default function SalesQPI() {
       toast.error('Open failed', e?.response?.data?.message ?? 'Could not open the signed document.');
     }
   };
-  /* Download (not just view) the signed PDF — fired by the labelled
-   * "Signed PDF" button on a completed row. */
   const onDownloadSignedSig = async (sigId: number, code: string) => {
     try {
       const r = await api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' });
@@ -1015,23 +742,10 @@ export default function SalesQPI() {
     }
   };
 
-  /* Email PDF state — PER-ROW in-flight tracking. Each row's send is
-   * independent: only the row being sent shows the disabled spinner, and a
-   * DIFFERENT quotation/PI can be emailed at the same time. The set holds the
-   * `${kind}:${id}` keys currently sending (covers both initial emails and
-   * reminders — mutually exclusive per row). */
   const [emailingKeys, setEmailingKeys] = useState<Set<string>>(new Set());
-  // Synchronous mirror of the set — React state only updates on the next
-  // render, so a fast double-click on the SAME row could fire twice before the
-  // disable lands. The ref blocks a repeat of the same key in the same tick;
-  // other rows' keys are unaffected, so concurrent sends are still allowed.
   const emailingRef = useRef<Set<string>>(new Set());
   const isEmailing = (kind: 'quotation' | 'pi', id: number) => emailingKeys.has(`${kind}:${id}`);
 
-  /* Rate-limit cooldown — once the server returns 429 (max 3 sends per
-   * doc per minute) we keep that row's Email button disabled-looking until
-   * the cooldown elapses. Keyed by `${kind}:${id}` → epoch-ms when it frees.
-   * A 1s ticker re-renders so the remaining time / disabled state updates. */
   const [emailCooldowns, setEmailCooldowns] = useState<Record<string, number>>({});
   const cdKey = (kind: 'quotation' | 'pi', id: number) => `${kind}:${id}`;
   const cooldownLeft = (kind: 'quotation' | 'pi', id: number): number => {
@@ -1057,11 +771,7 @@ export default function SalesQPI() {
   const sendDocEmail = async (kind: 'quotation' | 'pi', id: number, code: string) => {
     if (!id) { toast.error('Cannot email', 'This record has no server id yet.'); return; }
     const key = `${kind}:${id}`;
-    // Block only a repeat send of THIS SAME row (the button is disabled while
-    // its send is in flight; the ref catches a same-tick double-click). Other
-    // rows are unaffected — they can be emailed concurrently.
     if (emailingRef.current.has(key)) return;
-    // Still cooling down from a previous rate-limit hit — surface the wait.
     const left = cooldownLeft(kind, id);
     if (left > 0) {
       toast.warning('Please wait', `You can email this ${kind === 'pi' ? 'PI' : 'quotation'} again in ${left}s (max 3 per minute).`);
@@ -1075,18 +785,11 @@ export default function SalesQPI() {
     try {
       const { data } = await api.post(url, { signature: true });
       toast.success('Email sent', `${code} → ${data?.to ?? 'customer'}`);
-      // Optimistically flip the row's emailedAt so the buttons swap
-      // immediately (Email → disabled, Reminder → enabled) without
-      // waiting for a full reload. Server response also carries the
-      // canonical timestamp; we prefer it when present.
       const stamp = data?.emailed_at ?? new Date().toISOString();
       const patch = (r: any) => r.id === id ? { ...r, emailedAt: stamp } : r;
       if (kind === 'quotation') setQuotations(rows => rows.map(patch));
       else                       setPis(rows => rows.map(patch));
     } catch (e: any) {
-      // 429 = throttle (max 3 sends per doc per minute). Surface it as a
-      // "please wait" warning, not an error — the send didn't fail, it's
-      // capped — and start the cooldown so the button stays disabled.
       if (e?.response?.status === 429) {
         const wait = Number(e?.response?.data?.retry_after_seconds) || 60;
         startCooldown(kind, id, wait);
@@ -1101,10 +804,6 @@ export default function SalesQPI() {
     }
   };
 
-  /* Reminder follow-up — gated by emailedAt server-side (controller
-   * returns 422 if the initial email hasn't been sent yet). On success
-   * we patch the row's reminderCount locally so the badge updates
-   * without a full reload. */
   const sendReminder = async (kind: 'quotation' | 'pi', id: number, code: string) => {
     if (!id) { toast.error('Cannot remind', 'This record has no server id yet.'); return; }
     const key = `${kind}:${id}`;
@@ -1134,9 +833,6 @@ export default function SalesQPI() {
     }
   };
 
-  /* Delete confirmation state — same DeleteConfirmModal used across the
-   * project (Customers, Clients, etc.). `kind` discriminates which API
-   * to call; `code` shows in the message; `id` is the row PK. */
   const [deleteTarget, setDeleteTarget] = useState<{ kind: 'quotation' | 'pi'; id: number; code: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -1163,8 +859,6 @@ export default function SalesQPI() {
     }
   };
 
-  // Push a quotation (→ Zoho Estimate) or PI (→ Zoho Invoice) to Zoho Books.
-  // The backend surfaces the real message (already-synced, GST errors, etc.).
   const [syncingKeys, setSyncingKeys] = useState<Set<string>>(new Set());
   const syncRow = async (kind: 'quotation' | 'pi', id: number | undefined, code: string) => {
     if (!id) { toast.error('Cannot sync', 'This record has no server id yet.'); return; }
@@ -1183,44 +877,26 @@ export default function SalesQPI() {
     }
   };
 
-  // Direct convert: POST /sales/proforma-invoices/from-quotation/{id}.
-  // The backend enforces "one PI per opportunity" — we also pre-check
-  // against the in-memory PI list so the user gets instant feedback
-  // when the rule blocks them instead of a network round-trip.
-  /* Convert-to-PI now goes through a confirmation popup (ConvertToPiModal)
-   * instead of firing immediately. openConvert() runs the same guards and,
-   * if they pass, opens the dialog and best-effort fetches the next PI code
-   * to preview; confirmConvert() does the actual POST on "Yes, Convert". */
   const openConvert = (qt: Quotation) => {
     if (!qt.id) {
       toast.error('Cannot convert', 'This quotation has no server id yet.');
       return;
     }
-    // Already-converted safety net. The button is disabled in this state,
-    // so this only fires if a stale row beat the next reload — explain it
-    // and bail before hitting the network.
     if (qt.status === 'converted_to_pi') {
       toast.info('Already converted', `${qt.qtNo} has already been converted to a PI.`);
       return;
     }
-    // Pre-check: any non-cancelled PI for the same opportunity? If so, the
-    // one-PI-per-lead rule blocks conversion — show the blocker popup that
-    // points the user at editing the existing PI (not deleting it).
     if (qt.oppId) {
       const blocker = pis.find(p => p.oppId === qt.oppId);
       if (blocker) {
-        // Mutually exclusive with the confirm popup — clear it so a prior
-        // open ConvertToPiModal can't stack behind the blocked dialog.
         setConvertTarget(null);
         setConvertBlocked({ fromQt: qt.qtNo, pi: blocker });
         return;
       }
     }
-    // Clear any lingering blocked dialog before opening the confirm popup.
     setConvertBlocked(null);
     setConvertTarget(qt);
     setConvertPreviewCode(null);
-    // Best-effort preview of the next PI number (never consumes a number).
     api.get('/sales/proforma-invoices/preview-code')
       .then(({ data }) => setConvertPreviewCode(data?.data?.code ?? null))
       .catch(() => setConvertPreviewCode(null));
@@ -1234,17 +910,12 @@ export default function SalesQPI() {
       const { data } = await api.post(`/sales/proforma-invoices/from-quotation/${qt.id}`);
       const newPiCode = data?.data?.code ?? 'a new PI';
       toast.success('Converted to PI', `${qt.qtNo} → ${newPiCode}`);
-      // Refresh both lists — quotation status flipped to converted_to_pi,
-      // PI table gets the new row.
       reloadQuotations();
       reloadPis();
       setConvertTarget(null);
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? 'Could not convert this quotation.';
       toast.error('Convert failed', String(msg));
-      // State changed under us (e.g. another tab already converted) — refresh
-      // both lists so the Convert button disables and the PI count updates
-      // immediately, and close the confirm popup.
       reloadQuotations();
       reloadPis();
       setConvertTarget(null);
@@ -1253,38 +924,19 @@ export default function SalesQPI() {
     }
   };
 
-  /* ── More-Options anchor state. Lives on the parent so the column
-   *    cell-renderer can open / close it; the portal'd menu is rendered
-   *    once outside the table at the bottom of this component. */
-  // Capture coordinates (not DOM element) so a TanStack re-render of the
-  // row doesn't leave us pointing at a detached node and dump the menu
-  // at top-left.
   const [qtMenuFor, setQtMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
   const [piMenuFor, setPiMenuFor] = useState<{ id: string; rect: AnchorRect; payload: Record<string, unknown>; sigId: number | null } | null>(null);
-  /* Row id whose PDF (view/download/cert) is currently generating — drives the
-   * row-level loading shimmer (matches Stage 4's row loader). */
   const [pdfBusyRowId, setPdfBusyRowId] = useState<number | null>(null);
-  // Signing Tracker modal — opened from the "Tracker" action on sent rows.
   const [trackerFor, setTrackerFor] = useState<{ sigId: number; code: string } | null>(null);
 
-  /* Stable ActionBtn — matches the customer-page pattern: neutral tile,
-   * hover shifts border + icon to the column accent.
-   * Optional `disabled` greys the tile and blocks the click handler.
-   * Optional `badge` overlays a small count chip in the top-right
-   * corner (used by the Reminder button to show how many reminders
-   * have already gone out). */
   const ActionBtn = (p: {
     title: string;
     icon: React.ReactNode;
     color: string;
-    // While true, the icon is swapped for a spinner so the action clearly reads
-    // as in-flight (e.g. Email "Sending…") instead of just going quiet (QA #11).
     loading?: boolean;
     onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
     ariaLabel?: string;
     disabled?: boolean;
-    // Rate-limit cooldown: render the dimmed/disabled LOOK but keep the
-    // button clickable so the click can surface the "please wait" toast.
     cooling?: boolean;
     badge?: number;
   }) => (
@@ -1295,9 +947,6 @@ export default function SalesQPI() {
         aria-disabled={p.disabled || undefined}
         className={`qpi-act${p.disabled || p.cooling ? ' qpi-act-disabled' : ''}`}
         style={{ ['--qpi-act-accent' as any]: p.color, position: 'relative' }}
-        /* Not natively disabled — a soft-disabled button stays clickable so a
-           click can surface a short "why it's unavailable" toast (the button's
-           own title is the reason). */
         onClick={(e) => { if (p.disabled) { toast.info(p.title); return; } p.onClick(e); }}
       >
         {p.loading
@@ -1317,17 +966,6 @@ export default function SalesQPI() {
     </Tooltip>
   );
 
-  /* Send-for-Signature control for a row — status-aware, shared by both
-   * the Quotation and PI action cells:
-   *   not sent   -> "Send for Sign" (opens the Zoho modal)
-   *   inprogress -> View sent doc + Send reminder
-   *   completed  -> View signed PDF
-   * Disabled when the row is read-only or has no numeric lead id. */
-  /* Render the FOUR signing slots for EVERY row in a fixed order — Send,
-   * View, Reminder, Tracker — so the action column has one consistent layout
-   * regardless of the row's signing status. Slots that don't apply to the
-   * current status are shown disabled (greyed) rather than hidden, so the
-   * icons always line up across rows. */
   const renderSignAction = (
     kind: 'quotation' | 'pi', id: number | undefined, code: string,
     customer: string, leadId: number | null | undefined, readOnly: boolean,
@@ -1338,21 +976,11 @@ export default function SalesQPI() {
     const notSent    = st !== 'inprogress' && st !== 'completed';
     const inProgress = st === 'inprogress';
     const signed     = st === 'completed';
-    // A declined / recalled request WAS sent — so it can be re-sent, and the
-    // signing tracker must stay open so the decline reason/date is reachable.
     const declined   = st === 'declined' || st === 'recalled';
-    // Tracker is available for EVERY document that has a signature request,
-    // whatever its state (sent / signed / declined / recalled).
     const hasSig     = !!sig?.id;
-    // When signed, Send/View/Reminder are all moot — point the user to the
-    // history (tracker) icon, which holds the signed document + full timeline.
     const signedHint = 'Document already signed — open the history icon to view it.';
     return (
       <>
-        {/* Send-for-Signature — only on PI rows; hidden for Quotation.
-            Rendered as a labelled pill (same shape as the Quotation "Convert
-            to PI" button) instead of a bare icon, with three states:
-            Send for Sign (active) → Sent (awaiting) → Signed (done). */}
         {kind === 'pi' && (
           !sigLoaded ? (
             <Tooltip label="Checking signing status…">
@@ -1390,7 +1018,6 @@ export default function SalesQPI() {
           color="#0ea5e9" disabled={!inProgress}
           onClick={() => inProgress && void onViewSentPdf(kind, id)}
           icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>} />
-        {/* Signing reminder — only on PI rows; hidden for Quotation. */}
         {kind === 'pi' && (
         <ActionBtn
           title={inProgress ? 'Send signing reminder' : signed ? signedHint : 'Reminders available once the document is sent'}
@@ -1407,10 +1034,6 @@ export default function SalesQPI() {
     );
   };
 
-  /* Opportunities that ALREADY have a Proforma Invoice. Once an opp has a PI the
-   * deal is committed to it, so EVERY quotation on that opp is locked from
-   * editing — not just the one that was converted. Keyed by opp_code AND numeric
-   * lead id so either identifier on a quotation row resolves. */
   const oppsWithPi = useMemo(() => {
     const s = new Set<string>();
     for (const p of pis) {
@@ -1422,7 +1045,6 @@ export default function SalesQPI() {
   const oppHasPi = (r: { oppId?: string; leadId?: number | null }): boolean =>
     !!(r.oppId && oppsWithPi.has(r.oppId)) || (r.leadId != null && oppsWithPi.has(`lead:${r.leadId}`));
 
-  /* ── Quotation table columns ──────────────────────────────────── */
   const quotationColumns = useMemo<any[]>(() => [
     {
       header: 'Sr No', id: '__sr', meta: { align: 'center' },
@@ -1469,10 +1091,6 @@ export default function SalesQPI() {
       cell: (info: any) => <span className="qpi-sm">{info.getValue() || '—'}</span>,
     },
     {
-      // Created By — name of the user who originally created the row,
-      // styled as a colored pill (tone keyed off user_type) with the
-      // creator's branch/client tier as a sub-label. Mirrors the
-      // Master Details "Created By" column.
       header: 'Created By', accessorKey: 'createdBy',
       cell: (info: any) => {
         const r = info.row.original as Quotation;
@@ -1487,11 +1105,6 @@ export default function SalesQPI() {
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
         const r = info.row.original as Quotation;
-        // A row the user lacks permission to mutate can still be SEEN (and
-        // opened in the More-Options preview) but Convert / Email / Remind /
-        // Edit / Delete are dimmed with an explanatory tooltip so the user
-        // understands why the action is unavailable instead of just clicking
-        // and hitting a 403.
         const readOnly = r.canModify === false;
         const readOnlyHint = 'View-only — you don\'t have permission to modify this record.';
         return (
@@ -1503,8 +1116,6 @@ export default function SalesQPI() {
                 </button>
               </Tooltip>
             ) : (
-              /* Its opportunity already has a PI → the deal is committed, so NO
-                 further PIs can be created from ANY of the opp's quotations. */
               <Tooltip label={readOnly ? readOnlyHint : oppHasPi(r) ? 'This opportunity already has a Proforma Invoice — its quotations can no longer be converted' : (convertingId === r.id ? 'Converting…' : 'Convert this quotation into a PI')}>
                 <button
                   type="button"
@@ -1519,15 +1130,6 @@ export default function SalesQPI() {
                 </button>
               </Tooltip>
             )}
-            {/* Signing icons (view-sent + tracker) intentionally NOT rendered
-                for Quotations — quotations are not sent through Zoho Sign here,
-                so the view-sent and signing-tracker actions are hidden. They
-                remain on the PI tab via renderSignAction('pi', …). */}
-            {/* Email button — matches the in-matrix Stage 5 table: stays
-                available after every send (no one-time disable) so the
-                quotation can be re-emailed; each send fires a toast.
-                Read-only rows (no mutate permission) show a hint and stay
-                disabled. */}
             <ActionBtn
               title={
                 readOnly
@@ -1545,11 +1147,6 @@ export default function SalesQPI() {
               cooling={!!r.id && cooldownLeft('quotation', r.id) > 0}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
-            {/* Reminder button — REMOVED for the email flow. The only
-                reminder on this page is the Zoho Sign signing reminder,
-                rendered inside renderSignAction() above. Code kept under
-                {false && ...} so the email-follow-up reminder can be
-                restored later without re-deriving the state wiring. */}
             {false && (
             <ActionBtn
               title={
@@ -1569,13 +1166,8 @@ export default function SalesQPI() {
             />
             )}
             {(() => {
-              // Once a quotation is e-signed (signature status 'completed') it
-              // is a finalised document — editing must be locked.
               const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
-              // A quotation converted to a PI is locked — the PI is the live doc.
               const qConverted = r.status === 'converted_to_pi';
-              // Its opportunity already has a PI (via ANY quotation) → the deal is
-              // committed, so this (other) quotation is locked from editing too.
               const oppLocked = !qConverted && oppHasPi(r);
               return (
             <ActionBtn
@@ -1612,8 +1204,6 @@ export default function SalesQPI() {
                 className="qpi-act"
                 style={{ ['--qpi-act-accent' as any]: '#7c3aed' }}
                 aria-haspopup="menu"
-                /* stopPropagation prevents the menu's outside-click handler
-                 * from immediately closing what this click is about to open. */
                 onClick={(e) => {
                   e.stopPropagation();
                   const b = e.currentTarget.getBoundingClientRect();
@@ -1627,12 +1217,8 @@ export default function SalesQPI() {
                 <IconKebab />
               </button>
             </Tooltip>
-            {/* Always rendered (disabled when signed) so the icon row lines up
-                across rows; a signed record stays un-deletable via the disable. */}
             {(() => {
               const qSigned    = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
-              // A quotation already converted to a PI is locked — the backend
-              // rejects the cancel with a 409, so disable the button up front.
               const qConverted = r.status === 'converted_to_pi';
               const delTitle = readOnly ? readOnlyHint
                 : qConverted ? 'Converted to PI — cannot be deleted'
@@ -1654,8 +1240,6 @@ export default function SalesQPI() {
     },
   ], [convertingId, sigByRow, currentUser?.id, emailingKeys, emailCooldowns, oppsWithPi]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── PI table columns — header set differs by sub-tab (BT ID / BT Date
-   *    only on With Shipment). Build both column sets memoised. */
   const piColumnsBase = (withShipment: boolean): any[] => [
     {
       header: 'Sr No', id: '__sr', meta: { align: 'center' },
@@ -1685,7 +1269,6 @@ export default function SalesQPI() {
     { header: 'Sales Manager', accessorKey: 'salesManager',
       cell: (info: any) => <span className="qpi-sm">{info.getValue() || '—'}</span> },
     {
-      // Created By — mirrors the Quotation table column. See helper.
       header: 'Created By', accessorKey: 'createdBy',
       cell: (info: any) => {
         const r = info.row.original as PI;
@@ -1696,8 +1279,6 @@ export default function SalesQPI() {
       },
     },
     {
-      // Signature status — mirrors the Quotation table (and the in-matrix
-      // Stage 5 PI table): Not Sent -> Sent (awaiting signature) -> Signed.
       header: () => <div className="text-center">Status</div>,
       id: '__sigstatus', meta: { align: 'center' },
       cell: (info: any) => {
@@ -1705,8 +1286,6 @@ export default function SalesQPI() {
         const st = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
         if (st === 'completed')  return <span className="qpi-sig-pill qpi-sig-signed">Signed</span>;
         if (st === 'inprogress') return <span className="qpi-sig-pill qpi-sig-sent">Sent</span>;
-        // A declined / recalled request reads "Declined" (not "Not Sent") until
-        // it is re-sent — then sigByRow flips to inprogress and it shows "Sent".
         if (st === 'declined')   return <span className="qpi-sig-pill qpi-sig-declined">Declined</span>;
         if (st === 'recalled')   return <span className="qpi-sig-pill qpi-sig-recalled">Recalled</span>;
         return <span className="qpi-sig-pill qpi-sig-none">Not Sent</span>;
@@ -1717,19 +1296,11 @@ export default function SalesQPI() {
       id: '__actions', meta: { align: 'center' },
       cell: (info: any) => {
         const r = info.row.original as PI;
-        // Same permission gate as the Quotation row — a PI the user can't
-        // mutate is visible-but-locked.
         const readOnly = r.canModify === false;
         const readOnlyHint = 'View-only — you don\'t have permission to modify this record.';
         return (
           <div className="d-inline-flex align-items-center gap-2 justify-content-center">
-            {/* Send for Signature (Zoho Sign) — status-aware control. */}
             {renderSignAction('pi', r.id, r.piNo, r.customer, r.leadId, readOnly)}
-            {/* Email button — matches the in-matrix Stage 5 PI table: stays
-                available after every send (no one-time disable) so the PI can
-                be re-emailed to the customer; each send fires a toast. The
-                follow-up Reminder button stays retired (Zoho Sign reminders
-                cover PI signing) — kept under `false &&` for restore. */}
             <ActionBtn
               title={
                 readOnly
@@ -1766,17 +1337,9 @@ export default function SalesQPI() {
               />
             )}
             {(() => {
-              // Editing is locked once the PI has been SENT for signature
-              // (awaiting) or SIGNED — the document must keep matching what was
-              // sent to / executed by the customer.
               const pStatus = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
               const pSent   = pStatus === 'inprogress';
               const pSigned = pStatus === 'completed';
-              /* Locked until the status is KNOWN. pStatus is undefined for the
-                 seconds the signature fetch takes, so both flags read false and
-                 the pencil rendered fully enabled on an already-sent PI for that
-                 whole window. Stage 5 already waits on this flag; this page did
-                 not, which is why the flash survived every earlier fix here. */
               const pLocked = !sigLoaded || pSent || pSigned;
               return (
             <ActionBtn
@@ -1818,9 +1381,6 @@ export default function SalesQPI() {
                 <IconKebab />
               </button>
             </Tooltip>
-            {/* Delete is DISABLED for PI — a PI shouldn't be removed from the
-                history once issued. Code kept under `false &&` (not deleted)
-                so it can be re-enabled later. Quotations keep their delete. */}
             {false && (
               <ActionBtn
                 title={readOnly ? readOnlyHint : 'Delete PI'}
@@ -1842,7 +1402,6 @@ export default function SalesQPI() {
     <div className="qpi-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* ─── Header strip ─── */}
       <div className="qpi-header">
         <span className="qpi-accent" />
         <span className="qpi-glow" />
@@ -1866,7 +1425,6 @@ export default function SalesQPI() {
         </div>
       </div>
 
-      {/* ─── What We Are Doing Here ─── */}
       <div className="qpi-wdh">
         <div className="qpi-wdh-header" onClick={() => setWdhOpen(o => !o)} role="button">
           <div className="qpi-wdh-title">
@@ -1898,17 +1456,8 @@ export default function SalesQPI() {
         )}
       </div>
 
-      {/* ─── Table card ─── */}
       <div className="qpi-card" ref={cardRef} style={fillH ? { minHeight: fillH } : undefined}>
-        {/* Row 1 — "<Tab> List" pill + search + create button (matches the
-            Figma reference, which keeps the list pill on the left of the
-            toolbar). Label follows the active tab so it reads correctly on
-            both the Quotation and Proforma Invoice views. */}
         <div className="qpi-tablebar">
-          {/* On the PI view the list-pill label is replaced by the shipment
-              sub-tabs (With / Without Shipment), styled like the Customer list
-              view tabs with a live count on each. Quotation has no split, so it
-              keeps the plain "Quotation List" label. */}
           {tab === 'pi' ? (
             <div className="qpi-pill-group">
               <button className={`qpi-pi-subtab ${piSub === 'with' ? 'on' : 'off'}`} onClick={() => switchPiSub('with')}>
@@ -1938,12 +1487,7 @@ export default function SalesQPI() {
             <SearchClear show={q} onClear={() => { setQ(''); }} />
           </div>
 
-          {/* Document Type filter — the "Doc Type" label lives INSIDE the
-              dropdown (as the default "Doc Type: All Types" option), matching
-              the app's other filter dropdowns. Uses the styled MasterSelect. */}
           <div className={`qpi-doctype-filter ${docTypeFilter !== 'all' ? 'active' : ''}`}>
-            {/* Funnel icon so it reads as a filter (like the app's other filter
-                dropdowns). */}
             <svg className="qpi-doctype-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
             <MasterSelect
               value={docTypeFilter}
@@ -1967,15 +1511,11 @@ export default function SalesQPI() {
           )}
         </div>
 
-        {/* Table — uses the project-standard TableContainer (TanStack)
-            so chrome + pagination match the Customer / Recruitment /
-            Employee pages. Cell renderers above keep our chips/pills. */}
         <div
           className={`qpi-table-host${!(tab === 'quotation' ? loadingQt : loadingPi) && totalRows === 0 ? ' qpi-table-host--empty' : ''}`}
           ref={tableHostRef}
         >
           {(tab === 'quotation' ? loadingQt : loadingPi) ? (
-            /* Loading shimmer instead of a "0 results" empty table. */
             <ShimmerTable rows={rpp} cols={13} />
           ) : tab === 'quotation' ? (
             <TableContainer
@@ -2030,9 +1570,6 @@ export default function SalesQPI() {
             />
           )}
 
-          {/* Empty state — centered message in the table body when the active
-              dataset has no rows (the TableContainer still shows its header).
-              Replaces the previous blank gap below the header. */}
           {!(tab === 'quotation' ? loadingQt : loadingPi) && totalRows === 0 && (
             <div className="qpi-empty">
               {tab === 'quotation' ? 'No quotations found' : 'No proforma invoices found'}
@@ -2040,10 +1577,6 @@ export default function SalesQPI() {
           )}
         </div>
 
-        {/* ─── Pagination footer — the shared WorklistPager (Showing X–Y of Z
-            pill + Rows-per-page selector + page pill + ‹ › arrows). Themed
-            violet by the global .tc-wl-* defaults, matching the QPI palette.
-            Hidden while loading or when the active dataset is empty. */}
         {!(tab === 'quotation' ? loadingQt : loadingPi) && totalRows > 0 && (
           <WorklistPager
             total={totalRows}
@@ -2055,8 +1588,6 @@ export default function SalesQPI() {
           />
         )}
 
-        {/* Portal'd More-Options menu — rendered once outside the table
-            since the column cell-renderer only sets anchor state. */}
         {qtMenuFor && (
           <MoreOptionsMenu
             kind="quotation"
@@ -2091,10 +1622,6 @@ export default function SalesQPI() {
           <SigningTrackerModal sigId={trackerFor.sigId} code={trackerFor.code} onClose={() => setTrackerFor(null)} />
         )}
 
-        {/* Soft-delete confirmation — backed by the project-wide
-            DeleteConfirmModal so the UX matches Customers/Clients/etc.
-            "Cancel" here = flips status to `cancelled` server-side (the
-            record stays for audit), not a hard row delete. */}
         <DeleteConfirmModal
           open={!!deleteTarget}
           title={deleteTarget?.kind === 'pi' ? 'Cancel Proforma Invoice' : 'Cancel Quotation'}
@@ -2112,7 +1639,6 @@ export default function SalesQPI() {
           onConfirm={onConfirmDelete}
         />
 
-        {/* Convert-to-PI confirmation popup. */}
         <ConvertToPiModal
           open={!!convertTarget}
           fromQuotation={convertTarget?.qtNo ?? ''}
@@ -2126,7 +1652,6 @@ export default function SalesQPI() {
           onConfirm={() => void confirmConvert()}
         />
 
-        {/* Conversion blocked — lead already has a PI. */}
         <ConversionBlockedModal
           open={!!convertBlocked}
           fromQuotation={convertBlocked?.fromQt ?? ''}
@@ -2138,14 +1663,10 @@ export default function SalesQPI() {
         />
       </div>
 
-      {/* ─── Modals ─── */}
       {createQtOpen && (
         <CreateQuotationModal
           editId={editingQuotationId}
           onClose={() => { setCreateQtOpen(false); setEditingQuotationId(null); }}
-          /* Modal shows its own success toast and only invokes onSubmit on
-           * a successful POST/PUT — we just close, clear edit state, and
-           * reload the list so the new/updated row appears. */
           onSubmit={() => {
             setCreateQtOpen(false);
             setEditingQuotationId(null);
@@ -2168,8 +1689,6 @@ export default function SalesQPI() {
         />
       )}
 
-      {/* Send for Signature (Zoho Sign) — Quotation / PI, same modal as
-          Sales Matrix Stage 5. Refreshes the status poller on send. */}
       {sigSendFor && (
         <SalesDocSendForSignatureModal
           open={!!sigSendFor}
@@ -2179,11 +1698,6 @@ export default function SalesQPI() {
           leadId={sigSendFor.leadId}
           customerName={sigSendFor.customerName}
           onClose={() => setSigSendFor(null)}
-          /* Lock the row on success rather than waiting for the poller.
-             sigTick only schedules a refetch, and that refetch syncs with
-             Zoho -- until it lands the row still reads as unsent, so Send
-             stayed clickable and Edit stayed enabled on a PI already out
-             with the customer. Mirrors Stage 5. */
           onSent={(created) => {
             if (created && sigSendFor) {
               const key = `${sigSendFor.kind}:${sigSendFor.id}`;
@@ -2197,14 +1711,7 @@ export default function SalesQPI() {
   );
 }
 
-/* QuotationTable + PITable removed — both replaced by inline column
- * definitions feeding the project-standard TableContainer (TanStack).
- * See `quotationColumns` / `piWithColumns` / `piWithoutColumns` in the
- * parent SalesQPI component. */
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Shared Modal building blocks
- * ════════════════════════════════════════════════════════════════════════ */
 
 type BasicFormState = {
   docType: string; opportunity: string; opportunityDate: string;
@@ -2212,26 +1719,17 @@ type BasicFormState = {
   currency: string; exchangeRate: string; incoTerm: string;
   portOfLoading: string; portOfDischarge: string; finalDestination: string;
   originCountry: string;
-  stateCode: string;  // Domestic-only: replaces ports / inco / origin
-  // Domestic-only. Dispatch From / Deliver To are free text; Customer GST No
-  // is auto-fetched from the customer master and read-only.
+  stateCode: string;
   dispatchFrom: string;
   deliverTo: string;
   customerGstNo: string;
 
-  // Numeric FK ids — populated by the cascade alongside the display
-  // labels above. These are what gets POSTed to /sales/quotations.
   oppId: number | null;
   customerId: number | null;
   consigneeId: number | null;
   bankAccountId: number | null;
 };
 
-// Default state — every dropdown / input blank. The cascade in BasicForm
-// fills downstream fields when the user picks an Opportunity or a
-// Customer. Document Type defaults to International so the full
-// international field block renders out of the gate (Domestic is the
-// narrower variant — user opts in by switching the type).
 const EMPTY_BASIC: BasicFormState = {
   docType:         'International',
   opportunity:     '',
@@ -2256,12 +1754,6 @@ const EMPTY_BASIC: BasicFormState = {
   bankAccountId:   null,
 };
 
-/* Seed the Basic form from a lead's opportunity context (Sales Matrix
- * Stage 5). Pre-fills Opportunity / Date / Customer / Consignee AS REAL
- * SELECTIONS — i.e. the "CODE – NAME" dropdown labels AND the FK ids —
- * so the lead's mapped customer & consignee carry through to validation
- * and the POST payload without the user re-picking them. Falls back to
- * name-only labels when a code/id wasn't supplied. */
 function seedBasicFromOpp(o: QpiInitialOpp): BasicFormState {
   const custLabel = o.customerCode && o.customerLabel
     ? `${o.customerCode} – ${o.customerLabel}`
@@ -2282,8 +1774,8 @@ function seedBasicFromOpp(o: QpiInitialOpp): BasicFormState {
 }
 
 type ProductRow = {
-  id: number;          // local UI key
-  productId: number | null;  // FK to products.id — null for free-text rows
+  id: number;
+  productId: number | null;
   hsn: string | null;
   name: string;
   qty: number;
@@ -2292,69 +1784,30 @@ type ProductRow = {
 };
 
 function calcRow(p: ProductRow) {
-  const sub = p.qty * p.rate;                    // Sub Total (per line) = QTY × Product Rate
-  const taxUnit = p.rate * (p.taxPct / 100);     // per-UNIT tax — shown in the row's Tax Amount column
-  const taxAmt = taxUnit * p.qty;                // per-LINE tax = Tax Amount × QTY — feeds the Total Tax & Amount
+  const sub = p.qty * p.rate;
+  const taxUnit = p.rate * (p.taxPct / 100);
+  const taxAmt = taxUnit * p.qty;
   const rateWithTax = p.rate * (1 + p.taxPct / 100);
-  const amount = sub + taxAmt;                   // = QTY × Rate with Tax
+  const amount = sub + taxAmt;
   return { sub, taxUnit, taxAmt, rateWithTax, amount };
 }
 
-/* ── Domestic GST place-of-supply ────────────────────────────────────────
- * Mirrors the Purchase Order wizard (CreatePoWizard.tsx) and the server's
- * App\Support\Gst: the line's Tax % is the total GST, which splits into
- * CGST + SGST at half each when the customer sits in OUR state, or becomes a
- * single full-rate IGST when they don't.
- *
- * This is a display split only — cgstA + sgstA === igstA === calcRow().taxAmt
- * for the same row, so Sub Total / Grand Total are identical either way and
- * the server's totals never disagree with what the user saw. */
 
-/* Resolve a stored State Code down to its bare GST code.
- *
- * New documents store the customer's own `customer_addresses.state_code`, so
- * this is normally already a bare "27". Documents written before State Code
- * was derived from the customer stored the old dropdown's label instead
- * ("27 – Maharashtra"), and those still have to open and tax correctly on
- * edit — hence the en-dash case. */
 const stateCodeOf = (label: string): string => {
   const v = (label || '').trim();
   if (!v) return '';
   const head = v.split(' – ')[0]?.trim() ?? '';
-  /* Only a 1-2 digit code counts. Anything else (a bare state name from some
-   * older row) is "unresolved" → intra below, rather than being compared as a
-   * string against "27" and silently reading as inter-state. */
   return /^\d{1,2}$/.test(head) ? head : '';
 };
-// Leading zeros don't count: "07" === "7".
 const normStateCode = (code: string): string => {
   const t = (code || '').trim();
   return /^\d+$/.test(t) ? String(Number(t)) : '';
 };
-/* Our own registered state. Mirrors App\Support\Gst::DEFAULT_HOME_STATE_CODE so
- * the frontend never assumes a *different* home state than the backend while
- * /sales/gst-home-state is still in flight. */
 const DEFAULT_HOME_STATE_CODE = '27';
 
-/* Terms & Conditions cap. Mirrors the server rule (`terms => max:8000` in both
- * QuotationController and ProformaInvoiceController) so the user is told at the
- * keystroke that overflowed rather than after a failed save. Anything longer
- * belongs in the T&C master and gets referenced from there. */
 const TERMS_MAX_LEN = 8000;
 const TERMS_LIMIT_MSG = `Limit is ${TERMS_MAX_LEN} characters. Add more against the segment in the T&C master.`;
 
-/* Intra-state (CGST + SGST) only when the customer's GST state code equals our
- * own; anything else is inter-state (IGST).
- *
- * The home side falls back to the default rather than to "unknown". It used to
- * be allowed to arrive empty, and an empty home short-circuited the whole
- * comparison to intra — so while the home-state fetch was in flight (or had
- * failed) a Gujarat customer (24) rendered "Intra-state — CGST + SGST" against
- * a Maharashtra (27) branch, with CGST/SGST columns instead of IGST. The state
- * code shown in the summary and the tax split disagreed on screen.
- *
- * An unresolvable PARTY code still counts as intra — that's a half-filled form,
- * not a wrong answer, and it matches the PO wizard. */
 const isIntraState = (stateCodeLabel: string, homeStateCode: string): boolean => {
   const party = normStateCode(stateCodeOf(stateCodeLabel));
   const home  = normStateCode(homeStateCode) || DEFAULT_HOME_STATE_CODE;
@@ -2364,9 +1817,7 @@ const isIntraState = (stateCodeLabel: string, homeStateCode: string): boolean =>
 
 type TaxSplit = {
   cgstP: number; sgstP: number; igstP: number;
-  // Per-LINE amounts (qty × rate × pct) — used by the summary tax breakdown.
   cgstA: number; sgstA: number; igstA: number;
-  // Per-UNIT amounts (rate × pct) — shown in the product ROW so Total = Amount × QTY.
   cgstAU: number; sgstAU: number; igstAU: number;
 };
 function splitTax(p: ProductRow, intra: boolean): TaxSplit {
@@ -2386,45 +1837,15 @@ function splitTax(p: ProductRow, intra: boolean): TaxSplit {
   };
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Masters hook — pulled once when either Create modal opens so every
- * dropdown gets real, fresh data instead of free-text inputs.
- * ════════════════════════════════════════════════════════════════════════ */
 type MasterOpt = {
   value: string;
   label: string;
-  /* Master row id, carried on options whose selection is stored by id rather
-     than by label (INCO Term — see shapeQpiMasters). */
   id?: number;
-  /* Optional pill shown to the right of the label in MasterSelect. Used on the
-     Customer / Consignee lists to mark each party Domestic vs International, so
-     the user can see at a glance which ones suit the chosen Document Type
-     instead of having to remember each party's country. */
   badge?: { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string };
-  /* Renders the option greyed and unselectable, with `disabledReason` shown on
-     hover. Used for off-segment products — see visibleProductOptions. */
   disabled?: boolean;
   disabledReason?: string;
 };
 
-/* India → Domestic, anything else → International. Same rule as the customer
- * form's isDomesticCountry; a blank country stays unlabelled rather than being
- * guessed, so an incomplete party doesn't claim to be either. */
-/* `customers.segment` is a comma-joined list of segment NAMES ("Tobacco, Rice").
- * Split + trim it into the array the product picker compares against — the
- * trim matters, because the stored string has a space after each comma and an
- * untrimmed " Rice" would never match a product's "Rice".
- *
- * Same derivation as SalesMatrixDetail's `customerSegments`, which feeds the
- * Product Directory picker, so both screens agree on what the customer's
- * segments are. Mirrors App\Support\SegmentGuard::names() on the server. */
-/* "P-10 – test" → "P-010 – test", for DISPLAY ONLY.
- *
- * The raw label is the option's `value`, is stored in `draft.name`, and is what
- * gets POSTed as `product_name` — so it must stay exactly as the master has it.
- * Formatting the stored string instead would write "P-010" into the DB while
- * products.product_code still says "P-10", and the two would drift apart. This
- * is the same display-only rule the SPI wizard follows for the same reason. */
 function displayProductLabel(rawLabel: string): string {
   const [code, ...rest] = rawLabel.split(' – ');
   return rest.length ? `${formatProductCode(code)} – ${rest.join(' – ')}` : rawLabel;
@@ -2443,71 +1864,46 @@ function partyScopeBadge(country: string | null | undefined): MasterOpt['badge']
     ? { text: 'Domestic', tone: 'green', title: 'India — use with a Domestic document' }
     : { text: 'International', tone: 'violet', title: `${c} — use with an International document` };
 }
-// Raw rows kept alongside the dropdown options so the form can cascade
-// (pick opportunity → fill customer + consignee + date + currency; pick
-// customer → filter opportunities and consignees).
-//
-// The KEY field on every row is `dbId` — the numeric primary-key Laravel
-// uses for the FK joins (lead.customer_id, consignee.customer_id). The
-// display `code` ("C-012", "OPP-0001") is just for label rendering.
 type LeadRow = {
-  leadId:          number;           // leads.id — POSTed as opp_id
+  leadId:          number;
   opp_code:        string;
   sender_company:  string;
   sender_country:  string;
   date:            string;
-  // Numeric FKs that join to customers.id / consignees.id. From
-  // /sales/leads' eager-loaded customer{} + consignee{} relations.
   customerDbId:    number | null;
   consigneeDbId:   number | null;
   currency:        string | null;
 };
 type CustomerRow = {
-  dbId:      number;          // customers.id (numeric PK)
-  /** The customer's segment ids — tells same-named Less / Highly segments apart. */
+  dbId:      number;
   segmentIds?: number[];
-  code:      string;          // "C-012" (display, from customer_code)
+  code:      string;
   company:   string;
   country:   string;
   currency:  string | null;
-  /* Both read straight off the customer's primary address — the customer form
-   * already derives `state_code` from the chosen state via the State Codes
-   * master, so Quotation/PI consume it rather than re-deriving it. Blank for a
-   * non-India customer (no GST state code exists) or one saved before the
-   * customer form gained the field. */
-  stateCode: string;          // customer_addresses.state_code, e.g. "27"
-  gstNumber: string;          // customers.gst_number, shown read-only on Domestic
-  /* `customers.segment` verbatim — a COMMA-JOINED list of segment NAMES
-     ("Tobacco, Rice"), not ids. Used to restrict the Step 2 product list to the
-     customer's own segments. See App\Support\SegmentGuard for the canonical
-     split; the customer side is names while the product side is an id, so the
-     two are matched by NAME (house style — see EnforcesSegmentBuyerConsignee). */
+  stateCode: string;
+  gstNumber: string;
   segment:   string | null;
 };
 type ConsigneeRow = {
-  dbId:          number;          // consignees.id (numeric PK)
-  code:          string;          // "CN-012"
+  dbId:          number;
+  code:          string;
   company:       string;
-  customerDbId:  number | null;   // FK → customers.id (legacy primary customer)
-  customerDbIds: number[];        // all mapped customers (consignee_customer pivot)
+  customerDbId:  number | null;
+  customerDbIds: number[];
   country:       string;
 };
 type BankRow = {
-  dbId:   number;   // master_bank_accounts.id
-  label:  string;   // "Bank Name (Holder)"
+  dbId:   number;
+  label:  string;
 };
 type ProductMasterRow = {
-  dbId:    number;   // products.id (numeric PK)
-  code:    string;   // P-01
+  dbId:    number;
+  code:    string;
   name:    string;
-  hsn:     string | null;   // resolved HSN code
-  rate:    number;          // base_price (default sell rate)
-  taxPct:  number;          // gst percentage
-  /* Resolved segment NAME from the eager-loaded `segment` relation
-     (products.segment_id → clm_segments.name). A product has at most ONE
-     segment. Null when the product has none, or when segment_id points at a
-     deleted row — products.segment_id carries no FK constraint, so that state
-     is reachable and must not be treated as a mismatch. */
+  hsn:     string | null;
+  rate:    number;
+  taxPct:  number;
   segment: string | null;
   segmentId?: number | null;
   segmentReg?: string | null;
@@ -2515,18 +1911,15 @@ type ProductMasterRow = {
 type LoadedMasters = {
   currencies:       MasterOpt[];
   incoterms:        MasterOpt[];
-  ports:            MasterOpt[];   // Port of Loading master
-  portsDischarge:   MasterOpt[];   // Port of Discharge master (separate rows)
+  ports:            MasterOpt[];
+  portsDischarge:   MasterOpt[];
   countries:        MasterOpt[];
   customers:        MasterOpt[];
   consignees:       MasterOpt[];
   banks:            MasterOpt[];
   opportunities:    MasterOpt[];
-  products:         MasterOpt[];   // Step 2 product dropdown
-  // Our own GST state code (branch.gst_state_code). Drives the Domestic
-  // CGST+SGST vs IGST split against the document's State Code.
+  products:         MasterOpt[];
   homeStateCode:    string;
-  // Raw rows for cascade lookups
   opportunitiesRaw: LeadRow[];
   customersRaw:     CustomerRow[];
   consigneesRaw:    ConsigneeRow[];
@@ -2535,37 +1928,19 @@ type LoadedMasters = {
   loading:          boolean;
 };
 
-/* Module-level cache for the QPI masters. The Create Quotation / Create
- * PI modals fan out 11 GETs to populate their dropdowns; without a cache
- * every re-open of the modal repeats all 11. We keep one in-memory copy
- * keyed by the active branch (so a Branch Switcher change still triggers
- * a fresh load) and a 5-minute TTL so stale data doesn't haunt a long
- * session. Most of these masters (currencies, incoterms, ports,
- * countries, states, banks) change less than once a week — caching them
- * for 5 minutes is safe and dramatically speeds up the modal. */
 const QPI_MASTERS_CACHE_TTL_MS = 5 * 60 * 1000;
 let qpiMastersCache: {
   data:     LoadedMasters;
   branchId: string;
   loadedAt: number;
 } | null = null;
-/* Promise dedupe — if two modals open back-to-back (e.g. user double-
- * clicks), only one wave of network traffic actually fires. */
 let qpiMastersInFlight: Promise<LoadedMasters> | null = null;
 
-/* Public helper so callers (e.g. after a successful Map Product / Add
- * Customer flow) can drop the cache and force the next open to refetch. */
 export function invalidateQpiMastersCache() {
   qpiMastersCache    = null;
   qpiMastersInFlight = null;
 }
 
-/* Public prewarm helper — call from a parent screen (e.g. Stage 5 mount)
- * to start the 11-call fan-out + shape work in the background BEFORE
- * the user clicks "+ Create Quotation". By the time they do, the cache
- * is already warm and the modal opens with all dropdowns populated
- * instantly. Safe to call repeatedly: cache + in-flight dedupe make
- * extra calls cheap no-ops. */
 export function prewarmQpiMasters(): void {
   const branch = currentBranchKey();
   if (
@@ -2574,41 +1949,11 @@ export function prewarmQpiMasters(): void {
     && Date.now() - qpiMastersCache.loadedAt < QPI_MASTERS_CACHE_TTL_MS
   ) return;
   if (qpiMastersInFlight) return;
-  // Kick the same load the hook uses. Errors are swallowed here; the
-  // actual modal open will see `qpiMastersInFlight === null` and retry.
   void loadQpiMasters(branch).catch(() => {});
 }
 
-/* The actual fetch+shape work, used by both the prewarm helper and the
- * useQpiMasters hook. Sets `qpiMastersInFlight` for concurrent-open
- * dedupe and writes `qpiMastersCache` on success. */
 function loadQpiMasters(branch: string): Promise<LoadedMasters> {
   if (qpiMastersInFlight) return qpiMastersInFlight;
-  /* ONE request for every list this form needs.
-   *
-   * This was eleven parallel GETs — currencies, incoterms, both port masters,
-   * countries, customers, consignees, bank accounts, leads, products and the
-   * GST home state. Parallel here, but the server takes them one at a time and
-   * each pays a full framework bootstrap before it reaches a query, so the user
-   * waited for eleven bootstraps: ~7.6s locally to fill a form holding a few
-   * hundred rows.
-   *
-   * /sales/qpi/master-bundle runs the same eleven endpoints in process and
-   * returns their payloads verbatim under named keys, so each slice below is
-   * byte-identical to what its own call returned and shapeQpiMasters is
-   * unchanged. It wraps them back into { data } because that is the axios
-   * envelope that function has always been handed.
-   *
-   * Failure handling is preserved rather than dropped: every call used to carry
-   * its own .catch falling back to an empty list, so one dead endpoint left the
-   * rest of the form usable. The server catches per list and sends null for a
-   * failed one; `pick` turns null — and a failure of the bundle request itself —
-   * back into that same empty fallback. */
-  /* Two requests, in parallel, instead of the eleven this used to fire.
-     They are split by the KIND of data rather than to save a round trip:
-     master-bundle is tenant working data (customers, consignees, leads,
-     products, bank accounts), geo-bundle is the global country master plus
-     this branch's GST state code. See QuotationController. */
   const grab = (url: string) => api
     .get(url)
     .then(r => (r.data ?? {}) as Record<string, unknown>)
@@ -2646,9 +1991,6 @@ function loadQpiMasters(branch: string): Promise<LoadedMasters> {
   return qpiMastersInFlight;
 }
 
-/* Pure shaper — extracted so the prewarm path and the hook path both
- * produce the exact same `LoadedMasters` object, avoiding any drift
- * between two slightly different shaping implementations. */
 function shapeQpiMasters(
   cur: any, inco: any, port: any, portDis: any, ctry: any,
   cust: any, cons: any, bank: any, lead: any,
@@ -2662,12 +2004,6 @@ function shapeQpiMasters(
       const label = code && name ? `${code} – ${name}` : (name || code || '');
       return { value: label, label };
     }).filter(o => o.label);
-  /* INCO Term — the trade desk works with four terms only, so the master's
-   * eleven official Incoterms are filtered down to them here (one place, so
-   * the Quotation/PI form and the Create Shipment form agree). CFR is the
-   * official code for what the desk writes as C&F, so that row is surfaced
-   * under the C&F name while keeping its real master id. Options carry `id`
-   * because shipments store the incoterm by id, not by label. */
   const INCO_CODE_MAP: Record<string, string> = { EXW: 'EXW', FOB: 'FOB', CIF: 'CIF', CFR: 'C&F', CNF: 'C&F', 'C&F': 'C&F' };
   const INCO_ORDER = ['FOB', 'EXW', 'CIF', 'C&F'];
   const incoSeen = new Set<string>();
@@ -2699,9 +2035,6 @@ function shapeQpiMasters(
     const name = r.name ?? '';
     if (!name) return;
     const label = `${code} – ${name}`;
-    /* value = the RAW label (what gets stored / POSTed / matched back against
-       the master); label = the padded code shown on screen. Keeping them apart
-       is what stops the display format from leaking into the saved data. */
     productOptList.push({ value: label, label: displayProductLabel(label) });
     const gstPct = Number(
       r.gstPercentage?.percentage
@@ -2714,8 +2047,6 @@ function shapeQpiMasters(
       hsn:    r.hsn?.code ?? r.hsn_code ?? null,
       rate:   Number(r.base_price ?? 0),
       taxPct: isFinite(gstPct) ? Number(gstPct.toFixed(2)) : 0,
-      /* ProductController eager-loads `segment`, so the NAME is already
-         resolved here — no second lookup against the segment master. */
       segment: (r.segment?.name ?? '').trim() || null,
       segmentId: r.segment_id ?? r.segment?.id ?? null,
       segmentReg: r.segment?.regulatory_status ?? null,
@@ -2750,10 +2081,8 @@ function shapeQpiMasters(
       dbId, code, company: co,
       country,
       currency: r.currency ?? r.default_currency ?? null,
-      // CustomerController::shapeCustomer camelCases both of these.
       stateCode: String(r.stateCode ?? r.state_code ?? ''),
       gstNumber: String(r.gstNumber ?? r.gst_number ?? ''),
-      // shapeCustomer passes `segment` through verbatim (comma-joined names).
       segment:   (r.segment ?? '').trim() || null,
       segmentIds: Array.isArray(r.segment_ids) ? r.segment_ids.map(Number).filter(Boolean) : [],
     });
@@ -2767,12 +2096,7 @@ function shapeQpiMasters(
     const co   = r.company ?? r.company_name ?? r.name ?? '';
     if (!co) return;
     const label = `${code} – ${co}`;
-    // Same Domestic/International pill as the Customer list — the two fields
-    // sit side by side and have to agree on scope.
     consigneeOpts.push({ value: label, label, badge: partyScopeBadge(r.country) });
-    // A consignee can be mapped to MANY customers (consignee_customer pivot).
-    // Prefer the full customer_ids array; fall back to the single legacy
-    // customer_id so older rows still resolve.
     const mappedIds: number[] = Array.isArray(r.customer_ids)
       ? r.customer_ids.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)
       : [];
@@ -2789,9 +2113,6 @@ function shapeQpiMasters(
   const opportunitiesRaw: LeadRow[] = [];
   leadRows.forEach((r: any) => {
     const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
-    // Show the mapped customer's COMPANY name (not legal name) beside the
-    // Opp ID. Falls back to the lead's sender/company only when the opp has
-    // no customer mapped yet.
     const who  = (
       r.customer?.company_name
       || r.customer_company_name
@@ -2829,8 +2150,6 @@ function shapeQpiMasters(
     banksRaw:   bankRawList,
     products:   productOptList,
     productsRaw: productRawList,
-    // Falls back to Maharashtra when the endpoint fails or the branch has no
-    // GSTIN on file — same default as the server's Gst::homeStateCode.
     homeStateCode: String(home?.data?.data?.state_code ?? '') || DEFAULT_HOME_STATE_CODE,
     opportunities:    opportunityOpts,
     opportunitiesRaw,
@@ -2852,8 +2171,6 @@ function currentBranchKey(): string {
 
 export function useQpiMasters(open: boolean): LoadedMasters {
   const [state, setState] = useState<LoadedMasters>(() => {
-    // Hydrate from cache synchronously so the first render of a re-opened
-    // modal already has the dropdown options — no flash of "Loading…".
     const branch = currentBranchKey();
     if (
       qpiMastersCache
@@ -2864,8 +2181,6 @@ export function useQpiMasters(open: boolean): LoadedMasters {
       currencies: [], incoterms: [], ports: [], portsDischarge: [], countries: [],
       customers: [], consignees: [], banks: [], opportunities: [],
       products: [],
-      // Never '' — an unknown home state used to read as intra-state, which
-      // taxed an out-of-state customer as CGST + SGST until the fetch landed.
       homeStateCode: DEFAULT_HOME_STATE_CODE,
       opportunitiesRaw: [], customersRaw: [], consigneesRaw: [],
       banksRaw: [], productsRaw: [],
@@ -2877,12 +2192,6 @@ export function useQpiMasters(open: boolean): LoadedMasters {
     let cancelled = false;
     const branch = currentBranchKey();
 
-    // Cache hit — render the cached data INSTANTLY (no "Loading…" flash), but
-    // ALSO revalidate in the background. Without this, a customer edited after
-    // the cache was written (e.g. its State Code / GST No / country) kept the
-    // stale value here for up to the 5-min TTL, so picking that customer on the
-    // PI/Quotation form auto-filled the OLD State Code. Stale-while-revalidate
-    // keeps the instant open while guaranteeing freshness.
     if (
       qpiMastersCache
       && qpiMastersCache.branchId === branch
@@ -2895,7 +2204,6 @@ export function useQpiMasters(open: boolean): LoadedMasters {
       return () => { cancelled = true; };
     }
 
-    // Concurrent-open dedupe — piggy-back on the in-flight wave.
     if (qpiMastersInFlight) {
       setState(s => ({ ...s, loading: true }));
       qpiMastersInFlight.then(d => { if (!cancelled) setState(d); }).catch(() => {});
@@ -2903,9 +2211,6 @@ export function useQpiMasters(open: boolean): LoadedMasters {
     }
 
     setState(s => ({ ...s, loading: true }));
-    // Delegate to the shared loader — it handles the fan-out fetch +
-    // shape work and writes the module cache so this and any
-    // pre-warmed/sibling caller share the same result.
     loadQpiMasters(branch)
       .then(d => { if (!cancelled) setState(d); })
       .catch(() => { if (!cancelled) setState(s => ({ ...s, loading: false })); });
@@ -2914,47 +2219,19 @@ export function useQpiMasters(open: boolean): LoadedMasters {
   return state;
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Create Quotation Modal (2-step wizard)
- * ════════════════════════════════════════════════════════════════════════ */
 
 export type QpiInitialOpp = {
   oppId:            number;
   oppCode:          string;
   oppDate?:         string;
-  /** Customer company NAME — used to build the Opportunity label
-   *  ("OPP-005 – Acme"). */
   customerLabel?:   string;
-  /** Customer master code (e.g. C-012). Combined with the name to seed
-   *  the Customer dropdown's "CODE – NAME" value. */
   customerCode?:    string;
-  /** Customer FK — seeded so the lead's mapped customer is a real
-   *  selection (validation + submit need the id, not just the label). */
   customerId?:      number | null;
-  /** Consignee company name + code + FK — same idea for the consignee
-   *  the lead was mapped to (so the user never re-picks it). */
   consigneeLabel?:  string;
   consigneeCode?:   string;
   consigneeId?:     number | null;
 };
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Consignee freeze — shared by the Quotation and PI wizards.
- *
- * BUSINESS RULE: an opportunity can carry SEVERAL quotations, each addressed
- * to a different consignee, so nothing writes the consignee back onto the
- * lead at quotation time. The Proforma Invoice is what settles the deal's
- * final consignee: ProformaInvoiceController freezes it onto the lead on both
- * PI paths (direct create + convert-from-quotation). From then on the field
- * is read-only in every form on the opportunity.
- *
- * Resolution order — first non-null wins:
- *   1. `leadConsigneeId`  — the parent's live lead header (freshest; survives
- *                           edit mode, where `initialOpp` isn't passed).
- *   2. `initialOpp.consigneeId` — the lead context the modal was opened with.
- *   3. the leads master row for the picked opportunity — the only source the
- *      standalone /sales/qpi workspace has (may be a cached snapshot).
- * ───────────────────────────────────────────────────────────────────────── */
 function useFrozenConsigneeId(
   leadConsigneeId: number | null | undefined,
   initialOpp: QpiInitialOpp | undefined,
@@ -2972,11 +2249,6 @@ function useFrozenConsigneeId(
 export function CreateQuotationModal(props: {
   editId: number | null;
   initialOpp?: QpiInitialOpp;
-  /* The lead's FROZEN consignee, if it has one. A lead only gets one once a
-   * Proforma Invoice is made against it (see freezeLeadConsignee server-side),
-   * so before that this is null and every quotation on the opportunity may
-   * pick its own consignee. Passed separately from `initialOpp` because the
-   * parent doesn't send `initialOpp` in edit mode. */
   leadConsigneeId?: number | null;
   onClose: () => void;
   onSubmit: () => void;
@@ -2984,23 +2256,11 @@ export function CreateQuotationModal(props: {
   const { editId, initialOpp, leadConsigneeId, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
-  useScrollLock();      // freeze background scroll while the modal is open
-  useSelectionLock();   // block selecting/copying the background while open
+  useScrollLock();
+  useSelectionLock();
   const [step, setStep] = useState<1 | 2>(1);
-  /* If the modal was opened from inside a Sales Matrix lead, the parent
-   * passes the opportunity context so the user doesn't have to re-pick it
-   * from the Opportunity dropdown. The form is still freely editable —
-   * only the visible labels are pre-filled. */
   const seededFromOpp: BasicFormState = initialOpp ? seedBasicFromOpp(initialOpp) : EMPTY_BASIC;
   const [form, setForm] = useState<BasicFormState>(seededFromOpp);
-  /* Step-1 validation gate for the "Save & Next" button.
-   * Server-required fields per QuotationController::validatePayload:
-   *   - Always: doc_type, customer_id
-   *   - International: inco_term, port_of_loading, port_of_discharge,
-   *                    final_destination, origin_country
-   *   - Domestic:      state_code
-   * Opportunity / Consignee / Bank / Currency are nullable on the server
-   * so the wizard doesn't gate on them. */
   const [step1Errors, setStep1Errors] = useState<Set<string>>(new Set());
   const onSaveNext = () => {
     const errs = new Set<string>();
@@ -3021,19 +2281,12 @@ export function CreateQuotationModal(props: {
       if (!form.finalDestination)    errs.add('finalDestination');
       if (!form.originCountry)       errs.add('originCountry');
     } else {
-      /* Only once a customer is picked — with none selected the Customer error
-       * below already covers it, and "fill State Code" would be noise. */
       if (form.customerId && !form.stateCode) errs.add('stateCode');
       if (!form.dispatchFrom.trim())          errs.add('dispatchFrom');
       if (!form.deliverTo.trim())             errs.add('deliverTo');
     }
     setStep1Errors(errs);
     if (errs.size > 0) {
-      /* State Code is auto-fetched from the customer and read-only here, so
-       * "Please fill: State Code" would be a dead end. Report the fields the
-       * user CAN fix first; once only State Code is left, point them at the
-       * customer record that actually owns it. Either way the field itself
-       * still shows its red required highlight via setStep1Errors above. */
       const fillable = Array.from(errs).filter(k => k !== 'stateCode');
       if (fillable.length === 0) {
         toast.error(
@@ -3048,41 +2301,28 @@ export function CreateQuotationModal(props: {
     setStep(2);
   };
   const masters = useQpiMasters(true);
-  /* Is this opportunity's consignee already FROZEN? Only a PI freezes it, so
-   * until one exists this is null and the Consignee dropdown stays open —
-   * that's what lets quotation #1 go to consignee A and #2 to consignee B on
-   * the same lead. Prefer the parent's freshly-reloaded value; fall back to
-   * the (possibly cached) leads master for the standalone QPI workspace. */
   const frozenConsigneeId = useFrozenConsigneeId(leadConsigneeId, initialOpp, form.oppId, masters);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [terms, setTerms] = useState('');
   const [shipping, setShipping] = useState<number>(0);
   const [draft, setDraft] = useState<ProductRow>({ id:0, productId:null, hsn:null, name:'', qty:0, rate:0, taxPct:0 });
   const [saving, setSaving] = useState(false);
-  // Existing record metadata shown in the top-right pills + used for the
-  // PUT URL. Populated by the hydrate effect below when editId is set.
   const [existingCode, setExistingCode] = useState<string | null>(null);
   const [existingDate, setExistingDate] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(false);
-  /* Indicative next code (QT/<FY>/<n>) shown in the header pill while
-   * creating — the real code is allocated atomically on save. */
   const [previewCode, setPreviewCode] = useState<string | null>(null);
   useEffect(() => {
     if (isEdit) return;
     let cancelled = false;
     api.get('/sales/quotations/preview-code')
       .then(({ data }) => { if (!cancelled) setPreviewCode(data?.data?.code ?? null); })
-      .catch(() => { /* fall back to "Auto-assigned" */ });
+      .catch(() => {  });
     return () => { cancelled = true; };
   }, [isEdit]);
 
-  // Edit-mode hydration. When editId is provided, fetch the full row
-  // (with items + eager-loaded customer/consignee/lead/salesManager) and
-  // map it into our form state. This runs only after `masters` finishes
-  // loading so we can resolve display labels like "C-012 – Acme Corp".
   useEffect(() => {
     if (!isEdit) return;
-    if (masters.loading) return;       // wait for masters to populate
+    if (masters.loading) return;
     let cancelled = false;
     setHydrating(true);
     api.get(`/sales/quotations/${editId}`)
@@ -3093,9 +2333,6 @@ export function CreateQuotationModal(props: {
         setExistingCode(r.code ?? null);
         setExistingDate(r.created_at ? formatDmy(r.created_at) : null);
 
-        // Resolve label-formatted dropdown values from the raw rows in
-        // masters. We already have customer_id / consignee_id / opp_id /
-        // bank_account_id as numeric FKs from the server.
         const custRow = r.customer_id != null
           ? masters.customersRaw.find(c => c.dbId === r.customer_id) : null;
         const consRow = r.consignee_id != null
@@ -3119,12 +2356,6 @@ export function CreateQuotationModal(props: {
           portOfDischarge:  r.port_of_discharge ?? '',
           finalDestination: r.final_destination ?? '',
           originCountry:    r.origin_country ?? '',
-          // Re-pull the customer's CURRENT state code + GSTIN from the live
-          // customer record (custRow) instead of the snapshot stored at create
-          // time — so editing the customer's state reflects in the QT/PI on
-          // re-edit, and GST (CGST+SGST intra vs IGST inter) recomputes against
-          // the customer's new state. Falls back to the snapshot when the live
-          // customer can't be resolved or has no state/GST on file.
           stateCode:        custRow?.stateCode || (r.state_code ?? ''),
           dispatchFrom:     r.dispatch_from ?? '',
           deliverTo:        r.deliver_to ?? '',
@@ -3135,10 +2366,7 @@ export function CreateQuotationModal(props: {
           bankAccountId:    r.bank_account_id ?? null,
         });
 
-        // Hydrate the products grid from the server's items array.
         const items = (Array.isArray(r.items) ? r.items : [])
-          // Drop any blank line (no product + no name) so an empty saved row
-          // never renders as a stray empty product in the list.
           .filter((it: any) => it.product_id != null || (it.product_name ?? '').toString().trim() !== '');
         setProducts(items.map((it: any, i: number) => ({
           id:        Date.now() + i,
@@ -3157,17 +2385,11 @@ export function CreateQuotationModal(props: {
     return () => { cancelled = true; };
   }, [editId, isEdit, masters.loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // POST (create) → /sales/quotations  •  PUT (update) → /sales/quotations/{id}.
-  // Server is the source of truth for line totals — we send the picked
-  // FK ids + items and let the controller recompute.
   const submit = async () => {
     if (saving) return;
     if (!form.customerId) { toast.error('Customer required', 'Pick a customer before saving.'); return; }
     if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
-    // Backstop for terms loaded from an older record that predates the cap —
-    // the textarea clamps live typing, this catches everything else before the
-    // server answers with a bare 422.
     if (terms.length > TERMS_MAX_LEN) { toast.error('Character limit reached', TERMS_LIMIT_MSG); return; }
     setSaving(true);
     const isDomestic = form.docType === 'Domestic';
@@ -3178,9 +2400,6 @@ export function CreateQuotationModal(props: {
         customer_id:       form.customerId,
         consignee_id:      form.consigneeId,
         bank_account_id:   form.bankAccountId,
-        // Domestic has no Currency field on screen — it's rupees by definition.
-        // The server derives the same value; sending it keeps the request
-        // honest rather than posting null and relying on the fix-up.
         currency:          isDomestic ? 'INR' : (form.currency || null),
         exchange_rate:     form.exchangeRate ? Number(form.exchangeRate) : null,
         inco_term:         form.incoTerm        || null,
@@ -3189,16 +2408,13 @@ export function CreateQuotationModal(props: {
         final_destination: form.finalDestination|| null,
         origin_country:    form.originCountry   || null,
         state_code:        form.stateCode       || null,
-        // Domestic-only — the form doesn't render these on International, and
-        // the cascade may have pre-filled GST No / State Code from the
-        // customer regardless, so don't persist them onto an export document.
         dispatch_from:     isDomestic ? (form.dispatchFrom  || null) : null,
         deliver_to:        isDomestic ? (form.deliverTo     || null) : null,
         customer_gst_no:   isDomestic ? (form.customerGstNo || null) : null,
         shipping:          Number(shipping) || 0,
         terms:             terms || null,
         items: products.map(p => ({
-          product_id:   p.productId,    // FK from master pick, null for free-text
+          product_id:   p.productId,
           product_name: p.name,
           hsn_code:     p.hsn,
           quantity:     Number(p.qty),
@@ -3213,16 +2429,8 @@ export function CreateQuotationModal(props: {
         await api.post('/sales/quotations', payload);
         toast.success('Quotation Created', 'Saved as draft for review');
       }
-      /* NO consignee write-back to the lead here — deliberately. A quotation
-       * is an offer, not a commitment, so the same opportunity can quote
-       * consignee A on one quotation and consignee B on the next. The lead's
-       * consignee is frozen only when a Proforma Invoice is raised (done
-       * server-side in ProformaInvoiceController). */
-      onSubmit();   // Parent closes modal + reloads list.
+      onSubmit();
     } catch (e: any) {
-      // Use ?? + explicit parens to avoid the (|| ? :) precedence trap —
-      // the old code crashed when the API returned `{message: '...'}`
-      // without an `errors` map (it'd run `Object.values(undefined)`).
       const data = e?.response?.data;
       const msg = data?.message
         ?? (data?.errors ? Object.values(data.errors).flat().join(' ') : 'Could not save the quotation.');
@@ -3233,8 +2441,6 @@ export function CreateQuotationModal(props: {
   };
 
   const addProduct = () => {
-    // Required-field validation with explicit feedback — the old silent
-    // `return` left the user wondering why the Add button "did nothing".
     if (!draft.name) {
       toast.error('Product required', 'Please select a product from the dropdown first.');
       return;
@@ -3247,10 +2453,6 @@ export function CreateQuotationModal(props: {
       toast.error('Rate required', 'Enter a product rate greater than 0.');
       return;
     }
-    // Duplicate guard — the dropdown already filters out added products,
-    // so this is a backstop for free-text rows or race conditions. By
-    // productId for master-picked rows, by name as a fallback for
-    // free-text rows.
     const dup = draft.productId
       ? products.some(p => p.productId === draft.productId)
       : products.some(p => p.name === draft.name);
@@ -3262,40 +2464,19 @@ export function CreateQuotationModal(props: {
     setDraft({ id:0, productId:null, hsn:null, name:'', qty:0, rate:0, taxPct:0 });
   };
   const removeProduct = (id: number) => {
-    // Look up the name BEFORE filtering so the toast can name the product; the
-    // toast fires outside the state updater so it isn't double-called.
     const removed = products.find(x => x.id === id);
     setProducts(p => p.filter(x => x.id !== id));
     toast.success('Product removed', removed?.name ? `${removed.name} removed from the list.` : 'Removed from the list.');
   };
 
-  /* Sub Total is the PRE-TAX total (qty x rate), tax is its own line, and the
-   * Grand Total adds them plus shipping. It used to sum calcRow().amount, which
-   * is tax-INCLUSIVE — so the summary read "Sub Total (incl. tax) + Total GST
-   * Amount = Grand Total (unchanged)" and the GST looked double-counted even
-   * though the Grand Total was right. calcRow().sub + .taxAmt === .amount, so
-   * the Grand Total is numerically identical to before (CBC #184). */
   const subTotal = products.reduce((s, p) => s + calcRow(p).sub, 0);
   const taxTotal = products.reduce((s, p) => s + calcRow(p).taxAmt, 0);
   const grandTotal = subTotal + taxTotal + (Number(shipping) || 0);
 
-  /* PORTALLED TO <body> — same as the Add Customer / Add Product wizards.
-   * Rendered inline, the backdrop stayed trapped inside the Sales Matrix
-   * page's stacking context, so the app topbar/nav sat ON TOP of it and the
-   * form only dimmed the page body. Portalling lifts it to the document root
-   * where its fixed/inset-0 backdrop covers the whole viewport, chrome
-   * included. */
   return createPortal((
-    /* Backdrop is purely visual — closing only via the X / Cancel button
-     * so accidental outside-clicks don't wipe an in-progress quote. */
     <div className="qpi-modal-backdrop">
-      {/* The QPI stylesheet lives at the bottom of this file and is injected
-       * once per modal mount so the modal renders correctly even when opened
-       * from outside the /sales/qpi workspace (e.g. Sales Matrix Stage 5).
-       * Duplicate <style> tags are inert when the workspace is also mounted. */}
       <style>{SCOPED_CSS}</style>
       <div className={`qpi-modal qpi-modal-teal${saving ? ' qpi-modal-busy' : ''}`}>
-        {/* Header (teal) — title + pills reflect create vs edit mode. */}
         <div className="qpi-modal-head qpi-modal-head-teal">
           <div className="qpi-modal-head-left">
             <div className="qpi-modal-head-icon"><IconFile /></div>
@@ -3324,14 +2505,12 @@ export function CreateQuotationModal(props: {
           </div>
         </div>
 
-        {/* Stepper */}
         <div className="qpi-modal-stepper">
           <StepBadge n={1} title="Basic Quotation Details" subtitle="Document & party info" state={step >= 1 ? (step === 1 ? 'active' : 'done') : 'idle'} theme="teal" />
           <div className="qpi-modal-step-divider" />
           <StepBadge n={2} title="Product Details" subtitle="Items, pricing & totals" state={step === 2 ? 'active' : 'idle'} theme="teal" />
         </div>
 
-        {/* Body */}
         <div className="qpi-modal-body">
           {step === 1 && (
             hydrating ? <BasicFormSkeleton theme="teal" /> : (
@@ -3339,19 +2518,8 @@ export function CreateQuotationModal(props: {
               form={form} setForm={setForm}
               masters={masters} theme="teal"
               titleLabel="Basic Quotation Details" partyKind="Quotation"
-              /* Lock the Customer on edit too (same as the PI wizard) — the
-               * party is fixed once the quotation exists; changing it would
-               * detach the saved doc from its customer/consignee/opportunity. */
               lockParty={!!initialOpp || isEdit}
-              /* Consignee stays OPEN on quotations — each quotation on an
-               * opportunity may be addressed to a different consignee. It
-               * turns read-only only once the deal's consignee is FROZEN,
-               * which happens when a PI is raised (see useFrozenConsigneeId). */
               lockConsignee={!!frozenConsigneeId}
-              /* Same edit lock as the PI wizard: flipping International/
-               * Domestic on a saved quotation would break its tax/costing
-               * structure. (On create, the type follows the customer's
-               * country and locks automatically inside BasicForm.) */
               lockDocType={isEdit}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
@@ -3388,7 +2556,6 @@ export function CreateQuotationModal(props: {
           )}
         </div>
 
-        {/* Footer */}
         <div className="qpi-modal-foot">
           <div className="qpi-modal-foot-actions">
             <button className="qpi-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
@@ -3416,18 +2583,11 @@ export function CreateQuotationModal(props: {
   ), document.body);
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Create Proforma Invoice (PI) Modal (2-step wizard, purple theme)
- * ════════════════════════════════════════════════════════════════════════ */
 
 export function CreatePIModal(props: {
   editId: number | null;
   source: Quotation | null;
-  /* Lead-scoped opening (from Sales Matrix Stage 5). Same shape as the
-   * Quotation modal — pre-fills the Opportunity dropdown. */
   initialOpp?: QpiInitialOpp;
-  /* The lead's already-FROZEN consignee, when it has one. See the Quotation
-   * modal's prop doc + useFrozenConsigneeId. */
   leadConsigneeId?: number | null;
   onClose: () => void;
   onSubmit: () => void;
@@ -3435,30 +2595,22 @@ export function CreatePIModal(props: {
   const { editId, source, initialOpp, leadConsigneeId, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
-  useScrollLock();      // freeze background scroll while the modal is open
-  useSelectionLock();   // block selecting/copying the background while open
+  useScrollLock();
+  useSelectionLock();
   const [step, setStep] = useState<1 | 2>(1);
-  // Existing PI metadata shown in the top-right pills + used for the
-  // PUT URL when in edit mode.
   const [existingCode, setExistingCode] = useState<string | null>(null);
   const [existingDate, setExistingDate] = useState<string | null>(null);
   const [hydrating, setHydrating] = useState(false);
-  /* Indicative next PI code (INV/<FY>/<n>) for the header pill. */
   const [previewCode, setPreviewCode] = useState<string | null>(null);
   useEffect(() => {
     if (isEdit) return;
     let cancelled = false;
     api.get('/sales/proforma-invoices/preview-code')
       .then(({ data }) => { if (!cancelled) setPreviewCode(data?.data?.code ?? null); })
-      .catch(() => { /* fall back to "Auto-assigned" */ });
+      .catch(() => {  });
     return () => { cancelled = true; };
   }, [isEdit]);
 
-  // When PI is created from an existing Quotation row, prefill the
-  // visible labels from that row so the user sees what they're carrying
-  // over. When opened standalone, start blank — the same opportunity /
-  // customer cascade fills the rest. When the matrix Stage 5 opens this
-  // modal, `initialOpp` takes precedence over `source` to lock the lead.
   const seeded: BasicFormState = initialOpp ? seedBasicFromOpp(initialOpp) : source ? {
     ...EMPTY_BASIC,
     opportunity:     source.oppId ? `${source.oppId} – ${source.customer}` : '',
@@ -3468,8 +2620,6 @@ export function CreatePIModal(props: {
   } : { ...EMPTY_BASIC };
   const [form, setForm] = useState<BasicFormState>(seeded);
   const masters = useQpiMasters(true);
-  /* Frozen consignee, if this lead already has one. On a PI it's also frozen
-   * by definition in edit mode — the saved PI IS what fixed it. */
   const frozenConsigneeId = useFrozenConsigneeId(leadConsigneeId, initialOpp, form.oppId, masters);
 
   const [products, setProducts] = useState<ProductRow[]>([]);
@@ -3477,16 +2627,9 @@ export function CreatePIModal(props: {
   const [shipping, setShipping] = useState<number>(0);
   const [draft, setDraft] = useState<ProductRow>({ id:0, productId:null, hsn:null, name:'', qty:0, rate:0, taxPct:0 });
   const [saving, setSaving] = useState(false);
-  // pi_type lives in state so the edit hydrate can restore the original
-  // variant (with_shipment / without_shipment) when re-opening a row.
   const [piType, setPiType] = useState<'with_shipment' | 'without_shipment'>('with_shipment');
 
-  /* Step-1 validation gate — same rules as the Quotation modal since
-   * ProformaInvoiceController::validatePayload mirrors the Quotation one. */
   const [step1Errors, setStep1Errors] = useState<Set<string>>(new Set());
-  /* True while the Step-2 document gate is round-tripping — the Save & Next
-   * button shows a spinner so the (brief) pause is visible and can't be
-   * double-fired. */
   const [docChecking, setDocChecking] = useState(false);
   const onSaveNext = async () => {
     if (docChecking) return;
@@ -3508,19 +2651,12 @@ export function CreatePIModal(props: {
       if (!form.finalDestination)    errs.add('finalDestination');
       if (!form.originCountry)       errs.add('originCountry');
     } else {
-      /* Only once a customer is picked — with none selected the Customer error
-       * below already covers it, and "fill State Code" would be noise. */
       if (form.customerId && !form.stateCode) errs.add('stateCode');
       if (!form.dispatchFrom.trim())          errs.add('dispatchFrom');
       if (!form.deliverTo.trim())             errs.add('deliverTo');
     }
     setStep1Errors(errs);
     if (errs.size > 0) {
-      /* State Code is auto-fetched from the customer and read-only here, so
-       * "Please fill: State Code" would be a dead end. Report the fields the
-       * user CAN fix first; once only State Code is left, point them at the
-       * customer record that actually owns it. Either way the field itself
-       * still shows its red required highlight via setStep1Errors above. */
       const fillable = Array.from(errs).filter(k => k !== 'stateCode');
       if (fillable.length === 0) {
         toast.error(
@@ -3533,18 +2669,6 @@ export function CreatePIModal(props: {
       return;
     }
 
-    /* ── Step-2 document gate ────────────────────────────────────────────
-     * A PI can only be raised for parties that are DCP-document-complete.
-     * The consignee is picked right here on Step 1 (it isn't inherited from
-     * the lead any more — quotations may each name a different one), so this
-     * is the first moment we know WHICH consignee to verify. Check it before
-     * letting the user into the product step rather than after they've
-     * priced the whole deal.
-     *
-     * Skipped on edit: an existing PI already passed this gate at creation,
-     * and ProformaInvoiceController::update doesn't re-run it — so blocking
-     * here would strand the user on a doc that expired after the fact.
-     * The server re-checks on create either way; this is UX, not the gate. */
     if (!isEdit) {
       setDocChecking(true);
       try {
@@ -3561,8 +2685,6 @@ export function CreatePIModal(props: {
           return;
         }
       } catch {
-        /* Non-fatal — the probe is a convenience. If it fails (offline, 500)
-         * let the user proceed; the server still blocks the actual save. */
       } finally {
         setDocChecking(false);
       }
@@ -3571,8 +2693,6 @@ export function CreatePIModal(props: {
     setStep(2);
   };
 
-  // Edit-mode hydration — same pattern as the Quotation modal. Waits
-  // for masters to load so dropdown labels resolve correctly.
   useEffect(() => {
     if (!isEdit) return;
     if (masters.loading) return;
@@ -3610,12 +2730,6 @@ export function CreatePIModal(props: {
           portOfDischarge:  r.port_of_discharge ?? '',
           finalDestination: r.final_destination ?? '',
           originCountry:    r.origin_country ?? '',
-          // Re-pull the customer's CURRENT state code + GSTIN from the live
-          // customer record (custRow) instead of the snapshot stored at create
-          // time — so editing the customer's state reflects in the QT/PI on
-          // re-edit, and GST (CGST+SGST intra vs IGST inter) recomputes against
-          // the customer's new state. Falls back to the snapshot when the live
-          // customer can't be resolved or has no state/GST on file.
           stateCode:        custRow?.stateCode || (r.state_code ?? ''),
           dispatchFrom:     r.dispatch_from ?? '',
           deliverTo:        r.deliver_to ?? '',
@@ -3627,8 +2741,6 @@ export function CreatePIModal(props: {
         });
 
         const items = (Array.isArray(r.items) ? r.items : [])
-          // Drop any blank line (no product + no name) so an empty saved row
-          // never renders as a stray empty product in the list.
           .filter((it: any) => it.product_id != null || (it.product_name ?? '').toString().trim() !== '');
         setProducts(items.map((it: any, i: number) => ({
           id:        Date.now() + i,
@@ -3647,17 +2759,11 @@ export function CreatePIModal(props: {
     return () => { cancelled = true; };
   }, [editId, isEdit, masters.loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // POST (create) → /sales/proforma-invoices  •  PUT (update) → /sales/proforma-invoices/{id}.
-  // If `source` is set on create (Convert flow), we link via source_quotation_id
-  // and the backend flips the source quotation's status to converted_to_pi.
   const submitPi = async () => {
     if (saving) return;
     if (!form.customerId) { toast.error('Customer required', 'Pick a customer before saving.'); return; }
     if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
-    // Backstop for terms loaded from an older record that predates the cap —
-    // the textarea clamps live typing, this catches everything else before the
-    // server answers with a bare 422.
     if (terms.length > TERMS_MAX_LEN) { toast.error('Character limit reached', TERMS_LIMIT_MSG); return; }
     setSaving(true);
     const isDomestic = form.docType === 'Domestic';
@@ -3670,7 +2776,6 @@ export function CreatePIModal(props: {
         customer_id:         form.customerId,
         consignee_id:        form.consigneeId,
         bank_account_id:     form.bankAccountId,
-        // Domestic is rupees by definition — see the quotation payload's note.
         currency:            isDomestic ? 'INR' : (form.currency || null),
         exchange_rate:       form.exchangeRate ? Number(form.exchangeRate) : null,
         inco_term:           form.incoTerm        || null,
@@ -3679,7 +2784,6 @@ export function CreatePIModal(props: {
         final_destination:   form.finalDestination|| null,
         origin_country:      form.originCountry   || null,
         state_code:          form.stateCode       || null,
-        // Domestic-only — see the Quotation payload for why these are gated.
         dispatch_from:       isDomestic ? (form.dispatchFrom  || null) : null,
         deliver_to:          isDomestic ? (form.deliverTo     || null) : null,
         customer_gst_no:     isDomestic ? (form.customerGstNo || null) : null,
@@ -3703,11 +2807,6 @@ export function CreatePIModal(props: {
           ? `Converted ${source.qtNo} → new draft PI`
           : 'Saved as draft for review');
       }
-      /* The consignee freeze (writing it onto the lead) is done SERVER-side
-       * inside the same transaction that creates the PI — see
-       * ProformaInvoiceController::freezeLeadConsignee. Doing it here as a
-       * second request could leave the lead unfrozen if that request failed.
-       * The parent reloads the lead header after onSubmit to pick it up. */
       onSubmit();
     } catch (e: any) {
       const data = e?.response?.data;
@@ -3720,8 +2819,6 @@ export function CreatePIModal(props: {
   };
 
   const addProduct = () => {
-    // Required-field validation with explicit feedback — the old silent
-    // `return` left the user wondering why the Add button "did nothing".
     if (!draft.name) {
       toast.error('Product required', 'Please select a product from the dropdown first.');
       return;
@@ -3734,10 +2831,6 @@ export function CreatePIModal(props: {
       toast.error('Rate required', 'Enter a product rate greater than 0.');
       return;
     }
-    // Duplicate guard — the dropdown already filters out added products,
-    // so this is a backstop for free-text rows or race conditions. By
-    // productId for master-picked rows, by name as a fallback for
-    // free-text rows.
     const dup = draft.productId
       ? products.some(p => p.productId === draft.productId)
       : products.some(p => p.name === draft.name);
@@ -3749,34 +2842,19 @@ export function CreatePIModal(props: {
     setDraft({ id:0, productId:null, hsn:null, name:'', qty:0, rate:0, taxPct:0 });
   };
   const removeProduct = (id: number) => {
-    // Look up the name BEFORE filtering so the toast can name the product; the
-    // toast fires outside the state updater so it isn't double-called.
     const removed = products.find(x => x.id === id);
     setProducts(p => p.filter(x => x.id !== id));
     toast.success('Product removed', removed?.name ? `${removed.name} removed from the list.` : 'Removed from the list.');
   };
 
-  /* Sub Total is the PRE-TAX total (qty x rate), tax is its own line, and the
-   * Grand Total adds them plus shipping. It used to sum calcRow().amount, which
-   * is tax-INCLUSIVE — so the summary read "Sub Total (incl. tax) + Total GST
-   * Amount = Grand Total (unchanged)" and the GST looked double-counted even
-   * though the Grand Total was right. calcRow().sub + .taxAmt === .amount, so
-   * the Grand Total is numerically identical to before (CBC #184). */
   const subTotal = products.reduce((s, p) => s + calcRow(p).sub, 0);
   const taxTotal = products.reduce((s, p) => s + calcRow(p).taxAmt, 0);
   const grandTotal = subTotal + taxTotal + (Number(shipping) || 0);
 
-  /* Portalled to <body> for the same reason as the Quotation wizard above —
-   * otherwise the app topbar renders over the backdrop. */
   return createPortal((
-    /* Backdrop is purely visual — closing only via the X / Cancel button
-     * so accidental outside-clicks don't wipe an in-progress quote. */
     <div className="qpi-modal-backdrop">
-      {/* Same scope CSS injection as the Quotation modal — keeps the PI
-       * modal styled regardless of where it's mounted. */}
       <style>{SCOPED_CSS}</style>
       <div className={`qpi-modal qpi-modal-purple${saving || docChecking ? ' qpi-modal-busy' : ''}`}>
-        {/* Header (purple) — title + pills reflect create vs edit mode. */}
         <div className="qpi-modal-head qpi-modal-head-purple">
           <div className="qpi-modal-head-left">
             <div className="qpi-modal-head-icon"><IconFile /></div>
@@ -3805,14 +2883,12 @@ export function CreatePIModal(props: {
           </div>
         </div>
 
-        {/* Stepper */}
         <div className="qpi-modal-stepper">
           <StepBadge n={1} title="Basic PI Details" subtitle="Document & party info" state={step >= 1 ? (step === 1 ? 'active' : 'done') : 'idle'} theme="purple" />
           <div className="qpi-modal-step-divider" />
           <StepBadge n={2} title="Product Details" subtitle="Items, pricing & totals" state={step === 2 ? 'active' : 'idle'} theme="purple" />
         </div>
 
-        {/* Body */}
         <div className="qpi-modal-body">
           {step === 1 && (
             hydrating ? <BasicFormSkeleton theme="purple" /> : (
@@ -3820,13 +2896,7 @@ export function CreatePIModal(props: {
               form={form} setForm={setForm}
               masters={masters} theme="purple"
               titleLabel="Basic PI Details" partyKind="PI"
-              /* All Step-1 fields stay editable when going back from Step 2
-                 (the post-Step-2 core lock was removed). Lead-opened (initialOpp)
-                 and edit-mode locks still apply. */
               lockParty={!!initialOpp || isEdit}
-              /* On a NEW PI the consignee is pickable (this form is where the
-                 deal's final consignee is chosen) unless the lead is already
-                 frozen. On edit it's always fixed — this PI is what froze it. */
               lockConsignee={isEdit || !!frozenConsigneeId}
               lockDocType={isEdit}
               errors={step1Errors}
@@ -3864,7 +2934,6 @@ export function CreatePIModal(props: {
           )}
         </div>
 
-        {/* Footer */}
         <div className="qpi-modal-foot">
           <div className="qpi-modal-foot-actions">
             <button className="qpi-btn-cancel" onClick={onClose} disabled={saving || docChecking}>Cancel</button>
@@ -3897,7 +2966,6 @@ export function CreatePIModal(props: {
   ), document.body);
 }
 
-/* ─── Step badge (1 or 2) ─── */
 function StepBadge(props: { n: number; title: string; subtitle: string; state: 'idle' | 'active' | 'done'; theme: 'teal' | 'purple' }) {
   const { n, title, subtitle, state, theme } = props;
   return (
@@ -3913,10 +2981,6 @@ function StepBadge(props: { n: number; title: string; subtitle: string; state: '
   );
 }
 
-/* ─── Basic form skeleton — shown while an Edit modal hydrates the
- *      record from the server, so the user sees a shimmer instead of a
- *      momentarily-empty form (which read as "the saved values are
- *      missing"). Mirrors the 3-column field grid + note. */
 function BasicFormSkeleton({ theme }: { theme: 'teal' | 'purple' }) {
   return (
     <>
@@ -3934,18 +2998,6 @@ function BasicFormSkeleton({ theme }: { theme: 'teal' | 'purple' }) {
   );
 }
 
-/* ─── Opportunity picker — async, server-paginated + globally searchable.
- *  Replaces the static 50-row MasterSelect: it fetches /sales/leads one
- *  page at a time, appends the next page when the list is scrolled to the
- *  bottom (infinite scroll), and routes the search box to the server's
- *  full-table `search` so a query matches EVERY lead, not just the loaded
- *  page. `customerId` (when a customer is picked) narrows the list
- *  server-side via the leads `customer_id` filter. onPick hands the parent
- *  the fully-mapped LeadRow so the cascade (customer/consignee/currency)
- *  works without a second lookup. */
-/* One row of the async Opportunity picker: the dropdown option plus the raw
- * lead it came from (the parent cascades customer / consignee / date off it)
- * and the Domestic / International pill derived from that lead's customer. */
 type OppOption = { value: string; label: string; row: LeadRow; badge?: MasterOpt['badge'] };
 
 function OpportunitySelect({
@@ -3954,17 +3006,7 @@ function OpportunitySelect({
   value: string;
   customerId: number | null;
   disabled?: boolean;
-  /* When true (Create Quotation), opportunities that already have a Proforma
-   * Invoice are hidden — a quotation can't be created against an opp with a PI. */
   excludeWithPi?: boolean;
-  /* The form's Document Type. Narrows the list to opportunities whose CUSTOMER
-   * suits that type: an Indian customer's opps for Domestic, a foreign
-   * customer's for International. Without it the picker offered opps that
-   * silently flipped Document Type on selection (forcedDocType rewrites the
-   * field from the customer's country the moment one is picked, then locks it),
-   * so the user's International choice was revoked with no message.
-   * Opps with no customer mapped yet resolve to no scope and stay in both
-   * lists — they force no Document Type either. */
   docType?: 'International' | 'Domestic';
   onPick: (oppValue: string, row: LeadRow | null) => void;
 }) {
@@ -3979,13 +3021,8 @@ function OpportunitySelect({
   const [menuWidth, setMenuWidth] = useState<number | undefined>(undefined);
   const [dropDir, setDropDir]     = useState<'up' | 'down'>('down');
 
-  // Map an API lead row → option + LeadRow (identical shape to the static
-  // masters loader so the parent cascade reads the same fields).
   const mapLead = (r: any): OppOption | null => {
     const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
-    // Show the mapped customer's COMPANY name (not legal name) beside the
-    // Opp ID. Falls back to the lead's sender/company only when the opp has
-    // no customer mapped yet.
     const who  = (
       r.customer?.company_name
       || r.customer_company_name
@@ -4007,10 +3044,6 @@ function OpportunitySelect({
       consigneeDbId:  r.consignee_id != null ? Number(r.consignee_id) : (r.consignee?.id != null ? Number(r.consignee.id) : null),
       currency:       r.currency ?? r.quote_currency ?? null,
     };
-    // Scope pill, from the mapped customer's PRIMARY address — the same
-    // country forcedDocType reads, so the badge can never contradict the
-    // Document Type the field will settle on. No customer / no country on
-    // file means no pill rather than a guessed one.
     const badge = partyScopeBadge(r.customer?.primary_address?.country);
     return { value: label, label, row, badge };
   };
@@ -4023,14 +3056,8 @@ function OpportunitySelect({
           page: pageNum, per_page: 50, with_counts: 0,
           search:      q.trim() || undefined,
           customer_id: customerId || undefined,
-          // Only offer opportunities whose Stage 2 (Lead Acknowledgement) is
-          // complete — i.e. the lead is QUALIFIED. Opps that haven't cleared
-          // Stage 2 are hidden regardless of any later progress (price shared,
-          // etc.). The customer_id filter (when set) stacks on top.
           lead_ack_complete: 1,
-          // Create Quotation: hide opps that already have a Proforma Invoice.
           exclude_with_pi: excludeWithPi ? 1 : undefined,
-          // Server-side scope narrowing — see the docType prop above.
           doc_scope:   docType || undefined,
         },
       });
@@ -4048,8 +3075,6 @@ function OpportunitySelect({
     }
   }, [customerId, excludeWithPi, docType]);
 
-  // (Re)load page 1 on open and whenever the search text or customer
-  // changes while open. Debounce typed searches so we don't fire per key.
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => { void fetchPage(1, search, true); }, search ? 300 : 0);
@@ -4057,7 +3082,6 @@ function OpportunitySelect({
   }, [open, search, fetchPage]);
   useEffect(() => { if (!open) setSearch(''); }, [open]);
 
-  // Width + auto-flip, mirroring MasterSelect so the portalled menu lines up.
   useEffect(() => {
     if (!open || !wrapRef.current) return;
     const update = () => {
@@ -4072,7 +3096,6 @@ function OpportunitySelect({
     return () => window.removeEventListener('resize', update);
   }, [open]);
 
-  // Infinite scroll — append the next page as the list nears its bottom.
   const onScroll = () => {
     const el = listRef.current;
     if (!el || loading || !hasMore) return;
@@ -4117,9 +3140,6 @@ function OpportunitySelect({
           </div>
           <div className="master-select-list" ref={listRef} onScroll={onScroll} style={{ maxHeight: 220, overflowY: 'auto' }}>
             {items.length === 0 && !loading ? (
-              /* Naming the scope matters here: with the filter on, an empty
-                 list is a normal state (no foreign-customer opp qualified yet),
-                 not a broken screen. Say which type is empty and what to do. */
               <div className="master-select-empty">
                 {search ? 'No results' : (
                   docType ? (
@@ -4160,55 +3180,28 @@ function OpportunitySelect({
   );
 }
 
-/* ─── Basic form (Step 1) ─── */
 function BasicForm(props: {
-  /* setForm is the raw useState dispatcher — the currency + customer-backfill
-   * effects below need the functional form to avoid clobbering concurrent
-   * field edits, so it can't be narrowed to (f: BasicFormState) => void. */
   form: BasicFormState; setForm: Dispatch<SetStateAction<BasicFormState>>;
   masters: LoadedMasters;
   theme: 'teal' | 'purple'; titleLabel: string; partyKind: 'Quotation' | 'PI';
-  /* Validation error keys for the required-field highlight. Parent owns
-   * the Set; we read it to add `.has-error` and call `clearError` when
-   * the user provides a value so the red border disappears immediately
-   * (without waiting for the next Save & Next click). */
   errors?: Set<string>;
   clearError?: (k: string) => void;
-  /* When the modal was opened from a Sales Matrix lead, the lead already
-   * fixes the Opportunity + its mapped Customer & Consignee — those four
-   * fields render read-only so they can't drift away from the lead. */
   lockParty?: boolean;
-  /* Lock ONLY the Consignee field. When the lead this was opened from has a
-   * consignee mapped it's read-only (like the customer); when the lead has
-   * NO consignee, this is false so the user can pick one here — and the
-   * parent maps that choice back onto the lead on save. */
   lockConsignee?: boolean;
-  /* Lock the Document Type (e.g. when EDITING a PI) — changing
-   * International/Domestic on an existing doc would break its tax/costing
-   * structure, so it renders read-only. */
   lockDocType?: boolean;
 }) {
   const { form, setForm, masters, theme, partyKind, errors, clearError, lockParty, lockConsignee, lockDocType } = props;
   const hasError = (k: string) => errors?.has(k) ?? false;
   const set = <K extends keyof BasicFormState>(k: K, v: BasicFormState[K]) => {
     setForm({ ...form, [k]: v });
-    // Clear the matching error key when the user fills the field.
     if (v && clearError) clearError(k as string);
   };
 
-  // Helper — make sure the current value always renders even if the master
-  // hasn't loaded yet (or the value comes from an older record that isn't
-  // in the live master list anymore). Otherwise the MasterSelect shows blank.
   const withCurrent = (opts: MasterOpt[], value: string): MasterOpt[] =>
     value && !opts.find(o => o.value === value) ? [...opts, { value, label: value }] : opts;
 
-  // ── Cascade logic ─────────────────────────────────────────────
-  // Labels are deterministic: "{code} – {company}". We parse the label
-  // back to a code so we can resolve the underlying numeric db_id.
   const labelCode = (label: string) => (label || '').split(' – ')[0]?.trim() ?? '';
 
-  // Resolve the currently-selected customer row by parsing the label's
-  // code prefix (e.g. "C-012 – GreenHarvest Global" → "C-012").
   const selectedCustomerRow = useMemo<CustomerRow | null>(() => {
     if (!form.customer) return null;
     const code = labelCode(form.customer);
@@ -4216,20 +3209,10 @@ function BasicForm(props: {
   }, [form.customer, masters.customersRaw]);
 
 
-  /* ── Document Type follows the CUSTOMER's country ─────────────────
-   * An Indian customer's documents are Domestic; a foreign customer's are
-   * International — the GST/tax structure follows the customer, so the
-   * user must not be able to pick the other type. When the customer's
-   * country is known the field auto-selects and renders read-only; with
-   * no customer picked (or a legacy customer saved without a country) the
-   * dropdown stays editable. Edit mode (lockDocType) never rewrites the
-   * saved type — the stored document keeps whatever it was created as. */
   const isIndiaCountry = (c?: string | null): boolean => {
     const v = (c ?? '').trim().toLowerCase();
     return v === 'india' || v === 'in' || v === 'ind';
   };
-  // customerId (set by every cascade + the matrix pre-seed) is the primary
-  // key; the label-parsed row is the fallback for older paths.
   const custCountry = (
     (form.customerId != null ? masters.customersRaw.find(c => c.dbId === form.customerId) : null)
       ?? selectedCustomerRow
@@ -4241,19 +3224,7 @@ function BasicForm(props: {
     setForm(f => (f.docType === forcedDocType ? f : { ...f, docType: forcedDocType }));
   }, [forcedDocType, lockDocType, setForm]);
 
-  // (Opportunity filtering now happens server-side inside OpportunitySelect
-  // via the leads `customer_id` param + paginated fetch — the old client-side
-  // `filteredOpportunities` memo over the static 50-row list was removed.)
 
-  // Consignees filtered by selected customer — matches the customer's numeric
-  // dbId against the consignee's full set of mapped customers (customerDbIds,
-  // from the consignee_customer pivot), NOT just the legacy primary customer.
-  // A consignee mapped to several customers must show for every one of them.
-  // STRICT: only the consignees mapped to this customer are shown (whether the
-  // customer was picked directly or auto-filled from an opportunity). When the
-  // customer has none mapped, the list is empty and the field shows the
-  // "No consignees for this customer" placeholder — we no longer fall back to
-  // the full list, which used to leak every consignee.
   const consigneesForCustomer = useMemo(() => {
     if (!selectedCustomerRow) return masters.consignees;
     const matchValues = new Set(
@@ -4264,34 +3235,13 @@ function BasicForm(props: {
     return masters.consignees.filter(opt => matchValues.has(opt.value));
   }, [selectedCustomerRow, masters.consignees, masters.consigneesRaw]);
 
-  /* Scope narrowing on top of the customer mapping — International documents
-   * offer foreign consignees, Domestic ones Indian consignees.
-   *
-   * Being mapped to the right customer is NOT enough on its own: the pivot is
-   * many-to-many and nothing stops an Indian consignee from being mapped to a
-   * foreign customer (CN-030 sits under a United Kingdom customer in live
-   * data), so a Domestic consignee surfaced on an International document and
-   * the option's own pill contradicted the Document Type on the same screen.
-   *
-   * Same rule as the Customer field a few lines up, including the exemption:
-   * a consignee with no country on file carries no pill, can't be classified,
-   * and therefore is never hidden. */
   const filteredConsignees = useMemo(
     () => consigneesForCustomer.filter(o => !o.badge?.text || o.badge.text === form.docType),
     [consigneesForCustomer, form.docType],
   );
 
-  // ── Auto-fill on Opportunity selection ────────────────────────
-  // 1. Look up the lead row from the picked OPP code.
-  // 2. Use lead.customerDbId → resolve the Customer master row → fill Customer.
-  // 3. Use lead.consigneeDbId → resolve the Consignee master row → fill
-  //    the EXACT consignee mapped on that lead.
-  // 4. Auto-fill Opportunity Date and Origin Country from the lead.
   const onOpportunityChange = (oppValue: string, providedRow?: LeadRow | null) => {
     const code = labelCode(oppValue);
-    // The async OpportunitySelect hands us the picked LeadRow directly (it
-    // may not live in the static masters list when paginated). Fall back to
-    // the masters lookup for any other caller.
     const row  = providedRow ?? masters.opportunitiesRaw.find(o => o.opp_code === code);
     if (!row) { setForm({ ...form, opportunity: oppValue, oppId: null }); return; }
 
@@ -4303,8 +3253,6 @@ function BasicForm(props: {
     let nextGstNo     = form.customerGstNo;
     let nextStateCode = form.stateCode;
 
-    // Resolve the customer for this lead by numeric FK first, fall back
-    // to company-name match for legacy/sync'd rows missing customer_id.
     const custRow = (row.customerDbId != null
       ? masters.customersRaw.find(c => c.dbId === row.customerDbId)
       : null)
@@ -4316,23 +3264,12 @@ function BasicForm(props: {
       nextCustomer    = `${custRow.code} – ${custRow.company}`;
       nextCustomerId  = custRow.dbId;
       if (custRow.currency) nextCurrency = custRow.currency;
-      // The opportunity fixes the customer, so its GST No + State Code
-      // auto-fill here too — same rule as picking the customer directly.
       nextGstNo     = custRow.gstNumber;
       nextStateCode = custRow.stateCode;
     }
 
-    // Currency is driven by the opportunity's PRODUCTS (lead enforces a
-    // single currency across its products), so the lead/opportunity currency
-    // wins over the customer default. The Currency field is read-only and
-    // simply reflects this.
     if (row.currency) nextCurrency = row.currency;
 
-    // Consignee resolution priority:
-    //  (a) If the lead itself has a consignee mapped, use it.
-    //  (b) Otherwise, if the matched customer has exactly one consignee, pick it.
-    //  (c) Multiple → leave blank for user to pick from the filtered dropdown.
-    //  (d) 0 → blank.
     if (row.consigneeDbId != null) {
       const conRow = masters.consigneesRaw.find(c => c.dbId === row.consigneeDbId);
       if (conRow) {
@@ -4350,10 +3287,6 @@ function BasicForm(props: {
       }
     }
 
-    // Pull opp_id (numeric lead id) so the POST payload can include it.
-    // The opportunities raw rows don't currently carry the lead.id —
-    // resolve it by matching opp_code to the lead in masters loading.
-    // For now we leave oppId in sync with the cascade's own knowledge.
     setForm({
       ...form,
       opportunity:     oppValue,
@@ -4371,11 +3304,6 @@ function BasicForm(props: {
     if (nextStateCode) clearError?.('stateCode');
   };
 
-  // ── Auto-fill on Customer selection ──────────────────────────
-  // 1. Currency from customer master if set.
-  // 2. Clear Opportunity if it doesn't belong to this customer.
-  // 3. Filter Consignees — auto-pick single, clear stale, keep if still valid.
-  // 4. Domestic: GST No + State Code from the customer's primary address.
   const onCustomerChange = (custValue: string) => {
     const cust = masters.customersRaw.find(c => c.code === labelCode(custValue));
     let nextOpportunity = form.opportunity;
@@ -4383,26 +3311,15 @@ function BasicForm(props: {
     let nextCurrency    = form.currency;
     let nextOppId: number | null       = form.oppId;
     let nextConsigneeId: number | null = form.consigneeId;
-    // Cleared when the customer is deselected, so a stale GSTIN / state can't
-    // linger from a previously-picked customer.
     let nextGstNo     = '';
     let nextStateCode = '';
 
     if (cust) {
       if (cust.currency) nextCurrency = cust.currency;
 
-      /* Both auto-fetched from the customer master and read-only on the form —
-       * the customer record is the single source of truth for them. Set on both
-       * document types: only Domestic renders them, but pre-filling means
-       * switching International → Domestic doesn't land on empty fields.
-       * Assigned unconditionally (not `|| form.stateCode`) so a customer with
-       * no state code CLEARS a previous customer's code rather than inheriting
-       * it — silently taxing against the wrong state would be worse than blank. */
       nextGstNo     = cust.gstNumber;
       nextStateCode = cust.stateCode;
 
-      // Clear opportunity only when the currently-selected opportunity
-      // exists in the master list and does not belong to this customer.
       const oppRow = masters.opportunitiesRaw.find(o => o.opp_code === labelCode(form.opportunity));
       const oppMatches = oppRow && (
         oppRow.customerDbId === cust.dbId ||
@@ -4410,8 +3327,6 @@ function BasicForm(props: {
       );
       if (oppRow && !oppMatches) { nextOpportunity = ''; nextOppId = null; }
 
-      // Filter consignees by mapped customers — auto-pick if exactly one,
-      // clear if the current selection no longer belongs to this customer.
       const mine = masters.consigneesRaw.filter(c => c.customerDbIds.includes(cust.dbId));
       const stillValid = mine.find(c => `${c.code} – ${c.company}` === form.consignee);
       if (mine.length === 1) {
@@ -4437,12 +3352,9 @@ function BasicForm(props: {
       customerGstNo: nextGstNo,
       stateCode:     nextStateCode,
     });
-    // The State Code error clears itself when the auto-fill resolved one.
     if (nextStateCode) clearError?.('stateCode');
   };
 
-  // Direct (non-cascade) onChange wrappers for fields that still need
-  // to capture an FK id alongside the display label.
   const onConsigneeChange = (v: string) => {
     const c = masters.consigneesRaw.find(c => `${c.code} – ${c.company}` === v);
     setForm({ ...form, consignee: v, consigneeId: c?.dbId ?? null });
@@ -4452,11 +3364,6 @@ function BasicForm(props: {
     setForm({ ...form, bankName: v, bankAccountId: b?.dbId ?? null });
   };
 
-  /* Backfill the customer-derived Domestic fields when neither cascade ran.
-   * Two cases: the modal was opened from a Sales Matrix lead (Customer is
-   * pre-seeded and read-only), or an older document is being edited that
-   * predates these fields. Only fills what's blank, so a value already on the
-   * record — or one the user just typed — always wins. */
   useEffect(() => {
     if (masters.loading || !form.customerId) return;
     if (form.customerGstNo && form.stateCode) return;
@@ -4469,10 +3376,6 @@ function BasicForm(props: {
     }));
   }, [masters.loading, masters.customersRaw, form.customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Currency is owned by the opportunity's PRODUCTS (the lead enforces one
-  // currency across them). Whenever an opportunity is active — whether the
-  // user picks it here or it's pre-selected when the modal opens from Stage 5
-  // — fetch the product currency and reflect it in the read-only field.
   useEffect(() => {
     if (!form.oppId) return;
     let cancelled = false;
@@ -4483,7 +3386,7 @@ function BasicForm(props: {
         const ccy = rows.map((r: any) => r.currency).find((c: any) => c);
         if (ccy) setForm((f) => ({ ...f, currency: ccy }));
       })
-      .catch(() => { /* leave currency as-is on failure */ });
+      .catch(() => {  });
     return () => { cancelled = true; };
   }, [form.oppId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -4514,11 +3417,7 @@ function BasicForm(props: {
             <OpportunitySelect
               value={form.opportunity}
               customerId={form.customerId}
-              /* Hide opportunities that already have a PI — applies to BOTH the
-                 Quotation and PI pickers (one PI per opp; no quoting after PI). */
               excludeWithPi
-              /* Keeps the list in step with the Document Type field — see the
-                 prop's note on forcedDocType. */
               docType={form.docType}
               onPick={(val, row) => onOpportunityChange(val, row)}
             />
@@ -4537,10 +3436,6 @@ function BasicForm(props: {
               value={form.customer}
               loading={masters.loading}
               placeholder="— Select Customer —"
-              /* Only customers matching the chosen Document Type: International →
-                 foreign customers, Domestic → Indian ones. The scope pill already
-                 marks each; here we filter to it. Customers with no country stay
-                 visible (can't be classified, so never hidden). */
               options={withCurrent(masters.customers.filter(o => !o.badge?.text || o.badge.text === form.docType), form.customer)}
               onChange={(v) => { onCustomerChange(v); if (v) clearError?.('customer'); }}
             />
@@ -4578,16 +3473,6 @@ function BasicForm(props: {
         </Field>
 
         {form.docType === 'Domestic' ? (
-          /* ── Domestic-only fields — replace the international shipping
-             block (Currency / Exchange Rate / INCO / Ports / Origin) with
-             State Code + the customer's GSTIN (both auto-fetched, read-only)
-             and free-text Dispatch From / Deliver To.
-
-             State Code and GST No are NOT editable here: the customer form
-             already derives state_code from the chosen state, so the customer
-             record owns both. A dropdown would let a quotation be taxed against
-             a state the customer isn't registered in. Blank means the customer
-             record is missing it — fix it there, not here. */
           <>
             <Field label="State Code" required error={hasError('stateCode')}>
               <input
@@ -4603,9 +3488,6 @@ function BasicForm(props: {
                   : 'GST state code — auto-fetched from the customer'}
               />
             </Field>
-            {/* Same rule as State Code — the GSTIN belongs to the customer
-                master; editing it here would let an issued document disagree
-                with the record it was raised against. */}
             <Field label="Customer GST No">
               <input
                 className="qpi-input qpi-input-readonly"
@@ -4639,13 +3521,6 @@ function BasicForm(props: {
           </>
         ) : (
           <>
-            {/* Currency:
-                 • With an Opportunity → driven by the opp's products (the lead
-                   enforces one currency across its products), so it stays
-                   read-only here to avoid drifting from the product pricing.
-                 • Direct customer (no Opportunity) → there are no opp products
-                   to source from, so the user picks the currency from the
-                   Currencies master dropdown. */}
             <Field label="Currency" required>
               {form.opportunity ? (
                 <input
@@ -4662,12 +3537,6 @@ function BasicForm(props: {
                   value={form.currency}
                   loading={masters.loading}
                   placeholder="— Select Currency —"
-                  /* International documents are never quoted in rupees, so INR
-                     is dropped from the picker here. (This branch only renders
-                     for International; Domestic is rupees by definition and has
-                     no Currency field at all.) withCurrent still re-adds the
-                     saved value so an older INR-tagged International row keeps
-                     displaying its currency when reopened. */
                   options={withCurrent(
                     masters.currencies.filter((o) => currencyCode(o.value) !== 'INR'),
                     form.currency,
@@ -4683,7 +3552,6 @@ function BasicForm(props: {
                 inputMode="decimal"
                 value={form.exchangeRate}
                 onChange={(e) => {
-                  // Allow only digits and a single decimal point — no letters/symbols.
                   let v = e.target.value.replace(/[^0-9.]/g, '');
                   const dot = v.indexOf('.');
                   if (dot !== -1) v = v.slice(0, dot + 1) + v.slice(dot + 1).replace(/\./g, '');
@@ -4728,7 +3596,6 @@ function BasicForm(props: {
                 placeholder="Enter final destination"
                 maxLength={100}
                 value={form.finalDestination}
-                /* Auto-capitalise the first letter (e.g. "pune" → "Pune"). */
                 onChange={(e) => { const v = e.target.value; set('finalDestination', v.charAt(0).toUpperCase() + v.slice(1)); }}
               />
             </Field>
@@ -4778,7 +3645,6 @@ function Field(props: { label: string; required?: boolean; error?: boolean; chil
   );
 }
 
-/* ─── Products step (Step 2) ─── */
 function ProductsStep(props: {
   form: BasicFormState;
   products: ProductRow[];
@@ -4791,18 +3657,10 @@ function ProductsStep(props: {
   subTotal: number; grandTotal: number;
   theme: 'teal' | 'purple';
   titleLabel: string;
-  // Products master from useQpiMasters — drives the line-item dropdown.
   productOptions: MasterOpt[];
   productsRaw:    ProductMasterRow[];
   loadingProducts: boolean;
-  // Our own GST state code — compared against form.stateCode to pick the
-  // Domestic tax split. See isIntraState.
   homeStateCode: string;
-  /* Segment NAMES of the selected customer, already split. A product may only
-     be quoted to a customer that shares its segment, so off-segment products
-     are greyed out below. Empty (no customer picked, or the customer carries no
-     segment) means NO restriction — matching the server, which skips the check
-     entirely in that case rather than blocking everything. */
   customerSegments: string[];
   customerSegmentIds?: number[];
 }) {
@@ -4810,12 +3668,6 @@ function ProductsStep(props: {
           productOptions, productsRaw, loadingProducts, homeStateCode, customerSegments, customerSegmentIds } = props;
   const toast = useToast();
 
-  /* Terms & Conditions is capped at TERMS_MAX_LEN (the server rejects longer).
-   * The textarea deliberately has NO maxLength attribute: the browser would
-   * swallow the extra characters silently and onChange would never fire, so the
-   * user gets no explanation. Instead we clamp here and toast — which also
-   * covers a paste that blows past the cap in one go. The ref throttles the
-   * toast so holding a key down doesn't stack a dozen of them. */
   const termsToastAt = useRef(0);
   const onTermsChange = (next: string) => {
     if (next.length > TERMS_MAX_LEN) {
@@ -4830,26 +3682,13 @@ function ProductsStep(props: {
     setTerms(next);
   };
 
-  // Per-opportunity product filter. When the user picks an Opportunity
-  // on Step 1, the Product Directory mapping (lead_products) tells us
-  // which products that opportunity is actively quoting for — narrow
-  // the Step 2 dropdown to just those products + a target price/qty
-  // we can auto-fill into the line. When no opportunity is selected
-  // (general quotation), allow the full Products master.
   const [allowedProductIds, setAllowedProductIds] = useState<Set<number> | null>(null);
   const [leadPriceMap, setLeadPriceMap] = useState<Map<number, { rate: number; qty: number }>>(new Map());
-  // Latest quoted price per product (from Stage 4 "Price Shared"). This is the
-  // most recently shared price the customer was quoted — it takes priority over
-  // the Product Directory's target_price when auto-filling the rate on pick.
   const [latestQuotedMap, setLatestQuotedMap] = useState<Map<number, number>>(new Map());
   const [loadingLeadProducts, setLoadingLeadProducts] = useState(false);
-  // The opportunity that `allowedProductIds` was actually resolved for.
-  // Lets us tell "narrowed set not ready yet" (suppress the full master so it
-  // doesn't flash) apart from "resolved, no opp / error fallback → show all".
   const [resolvedOppId, setResolvedOppId] = useState<unknown>(undefined);
 
   useEffect(() => {
-    // No opportunity → show all master products.
     if (!form.oppId) {
       setAllowedProductIds(null);
       setLeadPriceMap(new Map());
@@ -4861,9 +3700,6 @@ function ProductsStep(props: {
     setLoadingLeadProducts(true);
     Promise.all([
       api.get<{ status: boolean; data: Array<any> }>(`/sales/leads/${form.oppId}/products`),
-      // Shared prices come back ordered by shared_at DESC, so the FIRST row per
-      // product_id is its latest quoted price. Best-effort — a lead with no
-      // Stage-4 shares just falls back to target_price.
       api.get<{ status: boolean; data: Array<any> }>(`/sales/leads/${form.oppId}/shared-prices`)
         .catch(() => ({ data: { data: [] } })),
     ])
@@ -4887,59 +3723,29 @@ function ProductsStep(props: {
         sharedRows.forEach((s) => {
           const pid = Number(s.product_id ?? 0);
           const price = Number(s.quoted_price ?? 0);
-          // First row per product wins (rows are shared_at DESC = newest first).
           if (pid && price > 0 && !quotedMap.has(pid)) quotedMap.set(pid, price);
           if (pid) quotedIds.add(pid);
         });
-        // Product list = the lead's LATEST QUOTED PRICE list (the same products
-        // shown in the "Latest Quoted Price Summary" popup, from the
-        // /shared-prices API). Fall back to the Product Directory mapping only
-        // when the lead has no shared prices yet, so it's never empty.
         setAllowedProductIds(quotedIds.size > 0 ? quotedIds : ids);
         setLeadPriceMap(priceMap);
         setLatestQuotedMap(quotedMap);
       })
       .catch(() => {
-        // On error, fall back to the full master so the user is never
-        // blocked from quoting — just lose the per-opp narrowing.
         if (!cancelled) { setAllowedProductIds(null); setLeadPriceMap(new Map()); setLatestQuotedMap(new Map()); }
       })
       .finally(() => { if (!cancelled) { setLoadingLeadProducts(false); setResolvedOppId(form.oppId); } });
     return () => { cancelled = true; };
   }, [form.oppId]);
 
-  /* An opportunity is selected but its narrowed product set hasn't resolved
-   * yet (initial mount or the ~2s lead-products fetch is in flight). Until it
-   * does, suppress the dropdown options so the field shows "Loading products…"
-   * instead of flashing the entire Products master and then snapping to the
-   * opportunity's list. */
   const leadProductsPending = !!form.oppId && resolvedOppId !== form.oppId;
 
-  // Narrowed dropdown — keeps the source of truth + lookup mapping in
-  // sync without re-fetching the master.
-  // Two filters stack:
-  //   1) Lead-product restriction (when an opportunity is picked, only
-  //      products mapped to that opp are pickable).
-  //   2) Hide products already added to this quotation/PI so the user
-  //      can't add the same line twice. To change qty/rate on an
-  //      existing line, the user must remove it first — then the
-  //      product reappears in the dropdown.
-  // Stable identity for the segment list — see the memo's dependency note.
   const customerSegmentKey = customerSegments.join('|').toLowerCase() + '#' + (customerSegmentIds ?? []).join(',');
 
   const visibleProductOptions = useMemo(() => {
-    // Narrowed set for the selected opportunity isn't ready — show nothing
-    // (field reads "Loading products…") rather than flashing the full master.
     if (leadProductsPending) return [];
 
     let opts = productOptions;
 
-    /* When an opportunity is selected, restrict to its Product Directory
-     * mapping — even when that mapping is empty (show nothing, prompting
-     * the user to add products to the directory first) rather than
-     * leaking the full master. `allowedProductIds === null` means "no
-     * opportunity / fetch failed" → keep the full master as a safe
-     * fallback so general quotations aren't blocked. */
     if (allowedProductIds) {
       const allowedLabels = new Set(
         productsRaw.filter(p => allowedProductIds.has(p.dbId))
@@ -4948,32 +3754,12 @@ function ProductsStep(props: {
       opts = opts.filter(o => allowedLabels.has(o.value));
     }
 
-    /* Segment gate + segment badge.
-     *
-     * Every product shows its SEGMENT as a violet pill (so the user can see
-     * which segment each belongs to — same as the Product Directory picker).
-     * A product whose segment isn't among the customer's is kept in the list
-     * but DISABLED (greyed) with a short reason on hover / toast on click,
-     * rather than hidden — the user asked to still see off-segment items and be
-     * told why they can't be added.
-     *
-     * Three deliberate no-disable cases, all matching the server guard in
-     * EnforcesSegmentBuyerConsignee so the UI never blocks something the API
-     * would accept:
-     *   · customer has no segment  → segmentSet empty  → nothing disabled
-     *   · product has no segment   → nothing to compare → enabled (no badge)
-     *   · option has no master row → free-text edge case → left alone
-     * Comparison is lowercased both sides; segment names are free text so their
-     * case can drift. The badge text is capped so a long segment name can't
-     * blow out the row. */
     const segmentSet = new Set(customerSegments.map(s => s.toLowerCase()));
     opts = opts.map(o => {
       const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
       const prodRow = productsRaw.find(pr => pr.code === code);
       const seg = prodRow?.segment;
-      if (!seg) return o;   // free-text / no-segment products stay as-is
-      // Short cap so the badge stays compact and the product code+name keeps the
-      // row — full segment name is on the badge's hover title.
+      if (!seg) return o;
       const short = seg.length > 24 ? `${seg.slice(0, 24)}…` : seg;
       const badge = { text: short, tone: 'violet' as const, title: segmentLabel(seg, prodRow?.segmentReg), reg: prodRow?.segmentReg ?? null };
       const offSegment = customerSegmentIds?.length
@@ -4985,8 +3771,6 @@ function ProductsStep(props: {
         : { ...o, badge, fullLabel };
     });
 
-    // Build a set of already-added productIds (skip free-text rows that
-    // have no productId, otherwise we'd over-filter).
     const addedIds = new Set(
       products.map(p => p.productId).filter((id): id is number => id != null)
     );
@@ -4994,73 +3778,30 @@ function ProductsStep(props: {
       opts = opts.filter(o => {
         const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
         const master = productsRaw.find(pr => pr.code === code);
-        // Keep options without a master match (free-text edge case) and
-        // those whose productId is NOT already in the list.
         return !master || !addedIds.has(master.dbId);
       });
     }
 
     return opts;
-    /* `customerSegments` is rebuilt by the parent on every render, so its
-       identity always changes and can't be a dependency — the memo would
-       recompute on every render and defeat itself. The joined string is stable
-       for the same segments, so depend on that instead. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadProductsPending, allowedProductIds, productOptions, productsRaw, products, customerSegmentKey]);
 
-  /* No selectable products left to add (every mapped product is already in the
-   * list, or none are mapped) → the whole "add product" draft row is hidden. */
   const noMoreProducts = !loadingProducts && !loadingLeadProducts && !leadProductsPending && visibleProductOptions.length === 0;
-  /* Show the "add product" draft row ONLY once product loading has SETTLED and
-   * there are options to pick. `!noMoreProducts` also matched the loading phase,
-   * so on edit (where a masters refetch re-triggers loading) the empty draft row
-   * flashed in and back out. Gate it on "not loading + has options" instead. */
   const anyProductsLoading = loadingProducts || loadingLeadProducts || leadProductsPending;
   const showAddProductRow  = !anyProductsLoading && visibleProductOptions.length > 0;
 
   const isIntl = form.docType === 'International';
-  /* Domestic GST split. International documents are tax-free, so they keep the
-   * plain "Tax % + Tax Amount" pair and never show a CGST/SGST/IGST
-   * breakdown. `intra` is only meaningful when !isIntl. */
   const intra = isIntraState(form.stateCode, homeStateCode);
-  /* Tax columns vary by document type, so the skeleton row has to match the
-     header or the table jumps a column when the real row arrives. */
   const taxColCount = isIntl ? 2 : (intra ? 4 : 2);
-  /* The tax block changes the column COUNT (8 / 10 / 8), so the colgroup is
-   * per-mode rather than one fixed list. Each set sums to 100% — the table is
-   * `table-layout: fixed`, so widths that overflow 100 get renormalised and
-   * silently drift from these numbers.
-   *
-   * Domestic drops the "Tax %" column entirely: CGST%+SGST% (or IGST%) already
-   * state the rate, so a Tax % beside them was the same number twice. Matches
-   * the PO wizard, which likewise shows only the split.
-   *   Name | Qty | Rate | …tax block… | Rate w/Tax | Amount | Action
-   *
-   * The ACTION column is 11% in every mode, and the table carries a min-width
-   * (see .qpi-products-table in SCOPED_CSS) so that 11% can never resolve
-   * below ~88px. The "+ Add" button measures 58.5px and the cell keeps an 8px
-   * gutter either side, so 11% clears it at every size the table can take.
-   * The intra set had ACTION at 5% — about 63px on a full-width modal, 19px
-   * short — so the button hung out past the last column and past the table's
-   * own edge, which is what grew the horizontal scrollbar. */
   const colWidths = isIntl
-    // Tax % | Tax Amount
     ? ['29%', '7%', '11%', '7%', '11%', '12%', '12%', '11%']
     : intra
-      // CGST % | SGST % | CGST Amount | SGST Amount
       ? ['19%', '7%', '10%', '7%', '7%', '10%', '10%', '11%', '8%', '11%']
-      // IGST % | IGST Amount
       : ['25%', '8%', '11%', '9%', '12%', '12%', '12%', '11%'];
-  /* Domestic lines whose product carries no GST % in the master. They quote
-   * tax-free, and with the Tax % input gone there's no way to correct that from
-   * here — so say so rather than let a 0% quotation go out silently. */
   const zeroTaxLines = useMemo(
     () => (isIntl ? [] : products.filter(p => !(p.taxPct > 0))),
     [isIntl, products],
   );
-  // Domestic summary breakdown. cgst + sgst (or igst alone) always equals the
-  // document's total tax, which sits BETWEEN the pre-tax Sub Total and the
-  // Grand Total — the intra/inter split is presentation only.
   const taxTotals = useMemo(() => {
     let cgst = 0, sgst = 0, igst = 0;
     products.forEach(p => {
@@ -5069,12 +3810,6 @@ function ProductsStep(props: {
     });
     return { cgst, sgst, igst };
   }, [products, intra]);
-  /* On product selection, auto-fill hsn + (qty/rate/tax) from masters.
-   * Priority for rate: latest QUOTED price (Stage 4) > lead-product
-   *   target_price > product master base_price.
-   * Priority for qty:  lead-product quantity (Product Directory) > empty.
-   * Typed qty/rate survive only a re-pick of the SAME product — switching
-   * products refills every field from the new one. See the notes inside. */
   const onProductPick = (label: string) => {
     const code = (label || '').split(' – ')[0]?.trim() ?? '';
     const p = productsRaw.find(pr => pr.code === code);
@@ -5084,35 +3819,14 @@ function ProductsStep(props: {
     }
     const leadPrice = leadPriceMap.get(p.dbId);
     const latestQuoted = latestQuotedMap.get(p.dbId);
-    // Re-picking the same product keeps the user's typed qty/rate; picking a
-    // different one refills them from the new product. See the note below.
     const samePick = draft.productId === p.dbId;
     setDraft({
       ...draft,
       name:      `${p.code} – ${p.name}`,
       productId: p.dbId,
       hsn:       p.hsn,
-      /* Preserve what the user typed ONLY when they re-picked the SAME product
-       * (e.g. reopening the dropdown and confirming). Switching to a DIFFERENT
-       * product refills from that product's own master.
-       *
-       * These two used to keep any non-zero draft value unconditionally, which
-       * carried the previous product's numbers onto the new line: type a rate
-       * for P-10, then switch to P-06, and P-06 kept P-10's rate — a silently
-       * wrong price on a document that goes to the customer. Exactly the failure
-       * the taxPct note below already guards against; rate and qty simply hadn't
-       * been brought in line with it.
-       *
-       * On a change, qty falls back to the Product Directory quantity when the
-       * opportunity defines one, otherwise 0 so the field reads empty and has to
-       * be entered deliberately for the new product. */
       qty:    samePick && draft.qty  > 0 ? draft.qty  : (leadPrice?.qty ?? 0),
       rate:   samePick && draft.rate > 0 ? draft.rate : (latestQuoted ?? leadPrice?.rate ?? p.rate),
-      /* Tax always comes from the picked product's master GST — International
-       * is tax-free (0), Domestic has no Tax % input to type into any more.
-       * This must NOT preserve a non-zero draft.taxPct: with no input to clear,
-       * switching from an 18% product to a 28% one would otherwise silently
-       * keep taxing the new line at 18%. */
       taxPct: isIntl ? 0 : p.taxPct,
     });
   };
@@ -5121,17 +3835,10 @@ function ProductsStep(props: {
     <>
       <div className={`qpi-form-heading qpi-form-heading-${theme}`}>ORDER SUMMARY</div>
 
-      {/* Read-only mirror of Step 1 data — splits the "CODE – NAME"
-          dropdown labels into separate ID + Name pills where applicable
-          and shows the raw value (no false "OPP-001" placeholder) when
-          the field is empty. International-only fields are skipped on
-          Domestic and vice-versa so the summary matches what the user
-          actually filled. */}
       <div className={`qpi-order-summary qpi-order-summary-${theme}`}>
 
 
 
-      {/* test */}
         <SummaryItem label="Opportunity ID"    value={(form.opportunity.split(' – ')[0] || form.opportunity)} />
         <SummaryItem label="Opportunity Date"  value={form.opportunityDate} />
         <SummaryItem label="Customer ID"       value={form.customer.split(' – ')[0] || ''} />
@@ -5140,9 +3847,6 @@ function ProductsStep(props: {
         <SummaryItem label="Consignee Name"    value={form.consignee.split(' – ')[1] || form.consignee} />
         <SummaryItem label="Document Type"     value={form.docType} />
         <SummaryItem label="Bank Name"         value={form.bankName} />
-        {/* International-only commercial + shipping fields. Domestic
-            collects none of these (only a State Code), so the readonly
-            summary mirrors exactly what Step 1 captured. */}
         {form.docType === 'International' ? (
           <>
             <SummaryItem label="Currency"          value={form.currency} />
@@ -5159,8 +3863,6 @@ function ProductsStep(props: {
             <SummaryItem label="Customer GST No" value={form.customerGstNo} />
             <SummaryItem label="Dispatch From"   value={form.dispatchFrom} />
             <SummaryItem label="Deliver To"      value={form.deliverTo} />
-            {/* Says WHY the tax columns look the way they do — otherwise a
-                CGST/SGST vs IGST flip on the table below looks arbitrary. */}
             <SummaryItem
               label="Place of Supply"
               value={intra ? 'Intra-state — CGST + SGST' : 'Inter-state — IGST'}
@@ -5185,21 +3887,11 @@ function ProductsStep(props: {
       )}
 
       <div className="qpi-products-wrap">
-        {/* --wide gives the 10-column intra-state layout (CGST + SGST split)
-            room to breathe — the wrap scrolls horizontally rather than
-            crushing the numeric columns. */}
         <table className={`qpi-products-table qpi-pt-${theme}${!isIntl && intra ? ' qpi-products-table--wide' : ''}`}>
-          {/* Product Name is the dominant column (matches the figma); the
-              numeric columns are sized just wide enough for their inputs. */}
           <colgroup>
             {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
           </colgroup>
           <thead>
-            {/* Tax columns track the place of supply: intra-state splits the
-                product's GST into CGST + SGST at half each, inter-state shows a
-                single full-rate IGST. Domestic has no separate "Tax %" — the
-                split columns already state the rate. International, being
-                tax-free, keeps the plain Tax % + Tax Amount pair. */}
             <tr>
               <th>Product Name</th>
               <th>Qty</th>
@@ -5222,10 +3914,6 @@ function ProductsStep(props: {
               const t = splitTax(p, intra);
               return (
                 <tr key={p.id}>
-                  {/* Formatted on the way OUT only — p.name keeps the raw
-                      master label, which is what gets saved. Truncated to one
-                      line (full name on hover) so a long product name can't
-                      wrap and shove the QTY / rate columns out of alignment. */}
                   <td><Tooltip label={displayProductLabel(p.name)} themed maxWidth={420}><div className="qpi-prodname-cell">{displayProductLabel(p.name)}</div></Tooltip></td>
                   <td>{p.qty}</td>
                   <td>{p.rate.toFixed(2)}</td>
@@ -5254,18 +3942,6 @@ function ProductsStep(props: {
                 </tr>
               );
             })}
-            {/* Skeleton rows for the whole table body while it loads.
-             *
-                Step 2 opens instantly, but its contents do not: the product
-                options wait on masters, and on EDIT the already-saved lines
-                wait on the same hydration. Until both settled the tbody was
-                simply empty, so the step read as "nothing here" rather than
-                "still loading", and the rows then popped in (QA #32 / #33).
-             *
-                Three rows, because that is roughly what a typical document
-                holds — enough to occupy the table so the real rows replace
-                the placeholder instead of appearing out of nothing. Same
-                column count as the header, so nothing shifts on the swap. */}
             {anyProductsLoading && products.length === 0 && Array.from({ length: 3 }).map((_, r) => (
               <tr key={`sk-${r}`} className="qpi-products-skel-row">
                 {Array.from({ length: taxColCount + 5 }).map((_, c) => (
@@ -5273,9 +3949,6 @@ function ProductsStep(props: {
                 ))}
               </tr>
             ))}
-            {/* Add-product draft row — hidden entirely once there are no more
-                products to add (all mapped products already in the list, or
-                none mapped to the opportunity). */}
             {showAddProductRow && (
             <tr className="qpi-products-input-row">
               <td>
@@ -5293,29 +3966,19 @@ function ProductsStep(props: {
                     ? [...visibleProductOptions, { value: draft.name, label: displayProductLabel(draft.name) }]
                     : visibleProductOptions}
                   onChange={onProductPick}
-                  // Clicking a greyed (off-segment) product explains why, short.
                   onDisabledClick={() => toast.warning('Segment mismatch', 'Customer and product segment must match to add.')}
                 />
               </td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.qty || ''} onChange={(e) => setDraft({ ...draft, qty: Number(e.target.value) })} /></td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.rate || ''} onChange={(e) => setDraft({ ...draft, rate: Number(e.target.value) })} /></td>
-              {/* Tax block — all read-only. The rate comes from the picked
-                  product's master GST (International is tax-free at 0), so there
-                  is nothing to type here; the amounts fill live from qty × rate.
-                  Must emit the same columns as the header above. */}
               {(() => {
                 const dc = calcRow(draft);
                 const dt = splitTax(draft, intra);
                 const has = draft.qty > 0 && draft.rate > 0;
-                /* Computed columns are read-only — styled as disabled (grey)
-                   boxes and showing 0.00 (not a dash) until qty × rate fill. */
                 const cell = (val: number) => (
                   <td><input className="qpi-input qpi-input-num qpi-input-readonly" type="text" readOnly tabIndex={-1}
                     value={has ? val.toFixed(2) : '0.00'} /></td>
                 );
-                /* Rate cells (Tax % / CGST % / SGST % / IGST %) come straight
-                   from the product, so they show as soon as one is picked —
-                   they don't depend on qty × rate. */
                 const pctCell = (val: number, title?: string) => (
                   <td><input className="qpi-input qpi-input-num qpi-input-readonly" type="text" readOnly tabIndex={-1}
                     title={title} value={String(val)} /></td>
@@ -5360,13 +4023,6 @@ function ProductsStep(props: {
             <span>Sub Total</span>
             <span className="qpi-summary-val">{subTotal.toFixed(2)}</span>
           </div>
-          {/* Tax breakdown. Sub Total above is PRE-tax, so these lines ARE part
-              of the Grand Total: Sub Total + tax + Shipping = Grand Total. The
-              domestic split is cosmetic — cgst + sgst === igst === the same
-              total tax either way. International documents show a single
-              un-split "Total Tax Amount"; without it the summary would jump
-              from a pre-tax Sub Total straight to a tax-inclusive Grand Total
-              with nothing explaining the difference. */}
           {isIntl && (
             <div className="qpi-summary-line">
               <span>Total Tax Amount</span>
@@ -5398,11 +4054,7 @@ function ProductsStep(props: {
               className="qpi-input qpi-summary-input"
               type="number" min="0"
               placeholder="0"
-              /* Right-aligned so the value lines up under Sub Total / Grand
-               * Total; inline style guarantees it over any base .qpi-input rule. */
               style={{ textAlign: 'right' }}
-              /* Show empty (not a literal "0") when zero, so typing replaces it
-               * instead of leaving a leading zero like "05". Empty = 0. */
               value={shipping || ''}
               onChange={(e) => setShipping(Number(e.target.value))}
             />
@@ -5422,16 +4074,11 @@ function SummaryItem(props: { label: string; value: string }) {
   return (
     <div className="qpi-summary-item">
       <div className="qpi-summary-item-label">{props.label}</div>
-      {/* Single line — long values (e.g. a bank's full legal name) truncate
-          with an ellipsis and expose the full text on hover. */}
       <div className="qpi-summary-item-value" title={val}>{val}</div>
     </div>
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Icons (inline SVG, Lucide-style stroke)
- * ════════════════════════════════════════════════════════════════════════ */
 
 const IconUsers = () => (
   <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -5542,8 +4189,6 @@ const IconCheck = () => (
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
-/* Paper-plane glyph for the PI "Send for Sign" pill. White stroke since the
-   pill has a coloured (sky/amber) background — matches IconCheck's treatment. */
 const IconPaperPlaneSm = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4 20-7z" />
@@ -5556,15 +4201,8 @@ const IconWarn = () => (
   </svg>
 );
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Scoped CSS (all rules under .qpi-root or .qpi-modal-backdrop)
- * ════════════════════════════════════════════════════════════════════════ */
 
 const SCOPED_CSS = `
-/* Match the Customer Master root (.smc-root) — no own padding, no
- * negative margin trick, no full-viewport purple wash. The parent
- * layout container already provides the page gutters, so adding our
- * own caused the extra empty rim on the left/right edges. */
 .qpi-root {
   font-family: var(--font-sans);
   background: transparent;
@@ -5575,11 +4213,7 @@ const SCOPED_CSS = `
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
 
-/* ─── Header strip ─── */
 .qpi-header {
-  /* Matches the Customer page hero (.smc-cstrip) exactly — same gradient
-     ring (padding-box / border-box trick), height, shadow and glow — so
-     both top-level Sales Matrix pages read as one design language. */
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
   padding: 12px 18px; min-height: 70px;
@@ -5612,7 +4246,6 @@ const SCOPED_CSS = `
 .qpi-header-left { display: flex; align-items: center; gap: 12px; z-index: 1; padding-left: 6px; }
 .qpi-avatar-wrap { position: relative; flex-shrink: 0; }
 .qpi-header-icon {
-  /* Same size + gradient + ring as .smc-cstrip-icon on the Customer page. */
   width: 46px; height: 46px; border-radius: 12px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: flex; align-items: center; justify-content: center; color: #fff;
@@ -5624,9 +4257,6 @@ const SCOPED_CSS = `
 
 .qpi-tab-switch {
   display: flex; gap: 4px; padding: 4px;
-  /* Opaque (was rgba white .7) + positioned so the decorative header glow
-     (.qpi-glow) can't bleed through onto the tabs as a "half-curve" overlay
-     (QA CBC-558). z-index only applies to positioned elements. */
   background: #ffffff;
   border: 1px solid rgba(124,58,237,.2);
   border-radius: 10px;
@@ -5642,7 +4272,6 @@ const SCOPED_CSS = `
 }
 .qpi-tab:hover { background: rgba(124,58,237,.08); }
 .qpi-tab.active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.4); }
-/* Count chip on each tab — shows how many quotations / PIs exist. */
 .qpi-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
@@ -5650,22 +4279,16 @@ const SCOPED_CSS = `
   font-size: 10.5px; font-weight: 800; line-height: 1;
 }
 .qpi-tab.active .qpi-tab-count { background: rgba(255,255,255,.25); color: #fff; }
-/* Signature-status pill in the Quotation table Status column. */
 .qpi-sig-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
 .qpi-sig-none   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 .qpi-sig-sent   { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
 .qpi-sig-signed { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 .qpi-sig-declined { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
 .qpi-sig-recalled { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-/* Dark mode — translucent fills + light text, like the other app badges. */
 [data-bs-theme="dark"] .qpi-sig-none   { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.34); }
 [data-bs-theme="dark"] .qpi-sig-sent   { background: rgba(234,179,8,.16);   color: #fde68a; border-color: rgba(234,179,8,.40); }
 [data-bs-theme="dark"] .qpi-sig-signed { background: rgba(34,197,94,.16);    color: #86efac; border-color: rgba(34,197,94,.40); }
 
-/* ─── What We Are Doing Here ─── */
-/* Matches the Customer page .smc-wdh-card design: lavender gradient card,
-   40px gradient bulb icon, circular tinted chevron, white step tiles with a
-   purple left-accent stripe + hover lift, and white arrow circles. */
 .qpi-wdh {
   position: relative;
   background: linear-gradient(135deg, #faf5ff 0%, #f3eaff 45%, #ede1ff 100%);
@@ -5743,10 +4366,6 @@ const SCOPED_CSS = `
   box-shadow: 0 1px 4px rgba(124,58,237,.12);
 }
 
-/* ─── Table card ─── Clean neutral card. The 3px violet accent stripe
-   that used to sit on ::before was reading as a floating "ptti" between
-   the WDH section and the table card, so it's removed — the toolbar
-   below it already carries the violet wash. */
 .qpi-card {
   position: relative;
   background: var(--vz-card-bg, #fff);
@@ -5754,25 +4373,16 @@ const SCOPED_CSS = `
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(0,0,0,.04);
-  /* Flex column so the table host grows to fill the stretched card and the
-     pager (last child) pins to the bottom. */
   display: flex;
   flex-direction: column;
 }
 .qpi-tablebar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  /* Match SalesCustomers.smc-toolbar exactly — same 14px vertical
-   * padding, same soft lavender wash, same 1px violet bottom border.
-   * Keeps the toolbar / header relationship identical to the customer
-   * page (which is the design baseline the user pointed to). */
   padding: 14px 18px;
   background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
   border-bottom: 1px solid rgba(124,58,237,0.15);
   position: relative; z-index: 1;
 }
-/* "<Tab> List" pill on the left of the toolbar — re-added to match the
-   Figma. White rounded chip with a purple gradient icon box, echoing the
-   page-header icon styling so the two read as the same design language. */
 .qpi-listpill {
   display: inline-flex; align-items: center; gap: 9px;
   padding: 6px 14px 6px 7px; border-radius: 10px;
@@ -5796,9 +4406,6 @@ const SCOPED_CSS = `
   color: #e9e3ff;
 }
 
-/* Tabs bar (row 2) — mirrors .smc-tabs-bar on the Customer page.
-   Light violet wash + same horizontal padding as the toolbar above,
-   with its own bottom border so it reads as a separate strip. */
 .qpi-tabs-bar {
   padding: 12px 18px;
   border-bottom: 1px solid rgba(124,58,237,.15);
@@ -5806,10 +4413,6 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, rgba(124,58,237,.04), rgba(167,139,250,.02));
 }
 
-/* Pill group (segmented control) — mirrors .smc-pill-group. */
-/* Shipment sub-tabs — styled to match the Customer list-view pills
-   (.smc-pill): translucent rail, light-violet inactive tabs, a deep-violet
-   gradient active tab, and a count badge on each. */
 .qpi-pill-group {
   display: inline-flex; align-items: center; gap: 8px;
   background: rgba(255, 255, 255, .55);
@@ -5845,7 +4448,6 @@ const SCOPED_CSS = `
   text-shadow: 0 1px 2px rgba(76,29,149,.4);
 }
 .qpi-pi-subtab svg { width: 14px; height: 14px; }
-/* Count badge — white on inactive tabs, translucent-white on the active one. */
 .qpi-pi-subtab-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 18px; padding: 0 7px;
@@ -5855,12 +4457,8 @@ const SCOPED_CSS = `
 .qpi-pi-subtab.off .qpi-pi-subtab-count { color: #7c3aed; background: #fff; border: 1px solid #ddd0f7; }
 .qpi-pi-subtab.on  .qpi-pi-subtab-count { color: #fff; background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.4); }
 
-/* Legacy .qpi-pi-subtabs left as alias so the responsive rules below
-   that still reference it don't break. */
 .qpi-pi-subtabs { display: contents; }
 
-/* Search field — match .smc-toolbar .smc-search exactly (42px tall,
-   10px radius, translucent white, violet border). */
 .qpi-search {
   position: relative;
   flex: 1; min-width: 240px;
@@ -5891,35 +4489,22 @@ const SCOPED_CSS = `
 }
 .qpi-search input::placeholder { color: var(--vz-secondary-color, #878a99); }
 
-/* Document Type filter — the app's styled MasterSelect dropdown (searchable),
-   with the "Doc Type" label baked into its default option. */
 .qpi-doctype-filter {
   display: flex; align-items: center;
   position: relative;
   height: 42px;
-  /* Locked basis so the box is the same width whichever label is selected and
-     the toolbar never reflows. Sized to the longest label rather than rounded
-     up, so no slack is left showing as a gap before Create (QA #60). */
   flex: 0 0 186px;
   width: 186px; min-width: 186px; max-width: 186px;
 }
-/* Force the MasterSelect wrap + toggle to the container's fixed width/height so
-   they never resize to their text content. MasterSelect wraps its dropdown in a
-   bare unclassed <div>; as a flex item that sizes to its content, so without
-   this the dropdown sat short of the 200px box and the slack read as a gap
-   before the Create button (QA #60). */
 .qpi-doctype-filter > div { flex: 1 1 auto; width: 100%; min-width: 0; }
 .qpi-doctype-filter .master-select-wrap { width: 100% !important; }
 .qpi-doctype-filter .master-select-toggle { height: 42px; width: 100% !important; padding-left: 34px !important; }
-/* Funnel icon pinned to the left of the Doc Type dropdown. */
 .qpi-doctype-ico { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #7c3aed; pointer-events: none; z-index: 2; }
 [data-bs-theme="dark"] .qpi-doctype-ico { color: #c4b5fd; }
-/* Truncate an over-long selected label instead of stretching the box. */
 .qpi-doctype-filter .master-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qpi-doctype-filter.active .master-select-toggle { border-color: #7c3aed; background: rgba(124,58,237,.06); }
 [data-bs-theme="dark"] .qpi-doctype-filter.active .master-select-toggle { background: rgba(124,58,237,.22); }
 
-/* Create button — match .smc-add-btn (42px pill, purple gradient). */
 .qpi-create-btn {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 0 22px; height: 42px;
@@ -5938,40 +4523,11 @@ const SCOPED_CSS = `
 .qpi-create-btn:active { transform: translateY(0); }
 .qpi-create-btn svg { width: 16px; height: 16px; }
 
-/* (removed: legacy .qpi-table-wrap rules — TableContainer renders into
-    .qpi-table-host now; the scrollbar styling lives on
-    .qpi-table-host .table-responsive below.) */
 
-/* Scope project-standard TableContainer to our card. Same soft violet
-   header wash + 14px vertical cell padding the recruitment list uses,
-   but applied to the Bootstrap .table the shared component renders.
-   Top padding gives breathing room between the toolbar/tabs row above
-   and the violet header row of the table so they don't visually stick. */
-/* 14px top padding creates a WHITE GAP between the toolbar's bottom
- * border and the lavender table header band, so the two lavender
- * areas don't visually merge into one blob. Mirrors the same
- * padding 14/14/12 on .smc-table-wrap in SalesCustomers, which is
- * the visual baseline the user pointed to. */
 .qpi-table-host { padding: 14px 14px 1px; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-/* Velzon's .table-card has a -16px bottom margin; zero it so the scrollbar
- * sits a tight 1px (host bottom padding) above the pager footer. */
 .qpi-table-host > .table-card { margin-bottom: 0 !important; }
-/* The shared WorklistPager carries a 12px top margin (app.css .wl-pager);
- * drop it here so the footer sits flush under the table's scrollbar. */
 .qpi-card .wl-pager { margin-top: 0; }
-/* Stretch the scroll wrapper to fill the host so its horizontal scrollbar
- * sits directly above the pager footer instead of right under the last row.
- * flex-shrink 0: a scroll container's auto min-height is 0, so letting it
- * shrink would add an inner vertical scroll on long pages. Not stretched in
- * the empty state, where the message must stay right under the header. */
 .qpi-table-host:not(.qpi-table-host--empty) > .table-responsive { flex: 1 0 auto; }
-/* Inner table is flush inside .qpi-card (which already provides the
- * white background + border + 16px outer radius). Giving the table
- * its OWN border/radius produced a card-within-a-card whose rounded
- * top corners poked up next to the search pill above and read as
- * "overlap". Now: no inner border, no inner radius, transparent
- * background — the white gap above + lavender header band below
- * are the visual dividers between the toolbar and the row area. */
 .qpi-table-host .table-responsive {
   background: transparent !important;
   border: 0 !important;
@@ -5980,10 +4536,6 @@ const SCOPED_CSS = `
   overflow-y: visible;
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
-  /* Promote the WHOLE scroll area to one compositor layer so Chrome
-   * repositions the sticky ACTION column on the GPU during horizontal scroll
-   * — kills the jitter/shake. Done on the container (not per-cell) so every
-   * sticky cell stays in the SAME layer and can't desync ("alag alag shake"). */
   will-change: transform;
   transform: translateZ(0);
 }
@@ -6004,13 +4556,9 @@ const SCOPED_CSS = `
   margin-bottom: 0 !important;
 }
 .qpi-table-host .table thead.table-light tr {
-  /* Violet header band — EXACT same gradient as the Customer page
-   * (.smc-table-wrap thead tr) so both tables read identically. The
-   * gradient lives on the row so it's seamless across columns. */
   background: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
 }
 .qpi-table-host .table thead.table-light th {
-  /* White uppercase labels on the violet band, matching the Figma. */
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
   background: transparent !important;
@@ -6019,16 +4567,12 @@ const SCOPED_CSS = `
   font-weight: 700 !important;
   letter-spacing: .03em !important;
   text-transform: uppercase;
-  /* Match SalesCustomers .smc-table-wrap th padding exactly. */
   padding: 11px 14px !important;
   border-bottom: 0 !important;
   white-space: nowrap;
   vertical-align: middle !important;
   line-height: 1.3 !important;
 }
-/* Header content is wrapped in a flex span by TableContainer. We need it
- * to behave like inline text so it stacks exactly above the body cell
- * content. Force block display + zero offset + matching line-height. */
 .qpi-table-host .table thead.table-light th > span {
   display: block !important;
   padding: 0 !important;
@@ -6036,15 +4580,9 @@ const SCOPED_CSS = `
   gap: 0 !important;
   line-height: 1.3;
 }
-/* Centered columns — keep the flex span centered (so the centered
- * action-column header lines up with the centered action buttons). */
 .qpi-table-host .table thead.table-light th[style*="text-align: center"] > span {
   text-align: center;
 }
-/* First/last column edge padding — match the toolbar's 18px outer padding
- * AND the toolbar pill's own internal padding (16px) so the column header
- * lines up with the toolbar pill label, not its outer edge. Total: ~18px
- * for the first column, 18px for the last. */
 .qpi-table-host .table thead.table-light th:first-child,
 .qpi-table-host .table tbody td:first-child { padding-left: 18px !important; }
 .qpi-table-host .table thead.table-light th:last-child,
@@ -6054,21 +4592,13 @@ const SCOPED_CSS = `
   background: transparent;
   transition: background .14s ease;
 }
-/* Zebra striping — alternating two-tone rows like the Figma. Odd rows stay
- * white (the card background); even rows get a soft lavender tint. Targeting
- * the cells (not the row) with !important also recolours the pinned ACTION
- * cell so it matches its row's stripe instead of showing through white. */
 .qpi-table-host .table tbody tr:nth-child(even) td { background: #f4f0ff !important; }
-/* Hover wins over the stripe (declared after) — a deeper lavender so the
- * active row stands out from both stripe tones. */
 .qpi-table-host .table tbody tr:hover td {
   background: #ece5fb !important;
 }
 .qpi-table-host .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
-  /* Padding mirrors .smc-table-wrap so rows have the same density; the type
-   * is the Customers table's, as everywhere else. */
   padding: 12px 14px !important;
   font-size: 11.5px;
   font-weight: 500;
@@ -6080,30 +4610,11 @@ const SCOPED_CSS = `
 }
 .qpi-table-host .table tbody tr:last-child td { border-bottom: 0 !important; }
 
-/* ── Pin the ACTION column (last) ──
-   The table carries 13 columns and a wide action cluster (Convert to PI +
-   the row tools), so it scrolls horizontally. Pinning the last column to the
-   right keeps the actions aligned under their header and always reachable,
-   instead of scrolling out of view / breaking past the header band. */
 .qpi-table-host .table thead.table-light th:last-child,
 .qpi-table-host .table tbody td:last-child {
   position: sticky; right: 0;
 }
 .qpi-table-host .table thead.table-light th:last-child {
-  /* The header band lives on the <tr> and a sticky cell cannot ride it — it
-     has to paint its own opaque background, or the scrolling header cells
-     show through.
-     No FLAT colour can be right: the band is still changing across this
-     cell's own ~400px, so whichever stop is picked leaves a step at the
-     cell's left edge. Measured: the band arrives at the seam on #431984
-     while a cell filled with the end stop paints #3b1675.
-     So the cell paints the SAME gradient, sized to the whole row and
-     right-anchored. Its right edge is the row's right edge, so the slice
-     under the cell is exactly what the row would have drawn there — seam
-     gone, at any column width.
-     --qpi-band-w is published by the table's fit() effect. The fallback is
-     the ratio this column usually occupies, so the single frame before that
-     effect runs is already close rather than a bright flash of the 0% stop. */
   background-color: transparent !important;
   background-image: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
   background-size: var(--qpi-band-w, 480%) 100% !important;
@@ -6117,18 +4628,6 @@ const SCOPED_CSS = `
   box-shadow: -10px 0 12px -10px rgba(15,23,42,.18);
 }
 .qpi-table-host .table tbody tr:hover td:last-child { background: #ece5fb !important; }
-/* Dark-mode zebra + pinned-cell tints.
- *
- * Every row colour is derived from ONE pair of bases. The pinned ACTION cell
- * has to repeat its row's colour as an OPAQUE value (see the hover note
- * below), and when those opaque values were written out by hand they drifted:
- * the even row composited rgba(124,58,237,.06) over the card to #262635,
- * while its pinned cell was hardcoded #1d1830 — darker and more purple, so
- * the ACTION column read as a separate block running down the table.
- *
- * color-mix with srgb weights is exactly source-over compositing of a 6%
- * alpha over an opaque backdrop, so --qpi-row-even IS what the translucent
- * tint paints — by construction, not by a matching hex kept in step by hand. */
 [data-bs-theme="dark"] .qpi-table-host {
   --qpi-row-odd:  var(--vz-card-bg, #212529);
   --qpi-row-even: color-mix(in srgb, #7c3aed 6%, var(--vz-card-bg, #212529));
@@ -6140,22 +4639,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even) td:last-child {
   background: var(--qpi-row-even) !important;
 }
-/* Hover on the PINNED cell must be OPAQUE.
- *
- * This was rgba(134,92,226,.12) — a translucent tint. On every other cell that
- * reads fine, because the row behind it is opaque. But the pinned cell sits
- * ABOVE the horizontally-scrolling cells, so any alpha lets them slide visibly
- * underneath it: the ACTION column looked see-through and rows appeared to run
- * "inside" it while scrolling.
- *
- * color-mix flattens the same tint against the row's own base colour, so the
- * hover looks identical but nothing shows through. Two rules because the zebra
- * gives odd and even rows different bases — one flat colour would make the
- * pinned cell drift out of step with its own row on hover.
- *
- * The weight is 8%, matching the rgba(134,92,226,.08) the hover actually
- * paints on every other cell. It was 12%, so hovering a row lit the ACTION
- * cell brighter than the rest of the row it belongs to. */
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:hover td:last-child {
   background: color-mix(in srgb, #865ce2 8%, var(--qpi-row-odd)) !important;
 }
@@ -6163,17 +4646,8 @@ const SCOPED_CSS = `
   background: color-mix(in srgb, #865ce2 8%, var(--qpi-row-even)) !important;
 }
 
-/* TableContainer's built-in pagination strip — styled as a proper card
- * footer that MIRRORS the toolbar above (same soft lavender wash + violet
- * hairline border + violet pagination), so it reads as part of .qpi-card,
- * not a separate coloured strip. The card's overflow:hidden + 16px radius
- * already round the footer's bottom corners. */
-/* TableContainer's built-in pagination Row is hidden — we render our own
-   "apna wala" footer (.qpi-pag) below the table instead. */
 .qpi-table-host > .row { display: none !important; }
 
-/* ─── Our pagination footer — Showing X–Y of Z + numbered chips. Mirrors
-   the CLM .clm-pag footer but in the QPI violet palette. */
 .qpi-pag {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 10px;
@@ -6229,7 +4703,6 @@ const SCOPED_CSS = `
   background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); color: #c4b5fd;
 }
 .qpi-table-host > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
-/* "Showing X of Y Results" — plain muted text, no pill. */
 .qpi-table-host .text-muted {
   display: inline-flex; align-items: center; gap: 4px;
   color: var(--vz-secondary-color, #878a99) !important;
@@ -6240,7 +4713,6 @@ const SCOPED_CSS = `
   color: var(--vz-body-color, #212529) !important;
   font-weight: 700;
 }
-/* Pagination — violet rounded buttons matching the qpi accent. */
 .qpi-table-host .pagination { align-items: center; margin: 0; gap: 4px; }
 .qpi-table-host .pagination .page-item { display: inline-flex; }
 .qpi-table-host .pagination .page-link {
@@ -6270,7 +4742,6 @@ const SCOPED_CSS = `
   color: #c4b5fd !important;
   opacity: .6;
 }
-/* prev / next chevron buttons */
 .qpi-table-host .pagination .page-item:first-child .page-link,
 .qpi-table-host .pagination .page-item:last-child  .page-link {
   min-width: 32px; padding: 0;
@@ -6280,7 +4751,6 @@ const SCOPED_CSS = `
   font-size: 16px;
   line-height: 1;
 }
-/* Dark mode — flat footer (no bar / border), matching light. */
 [data-bs-theme="dark"] .qpi-table-host > .row,
 [data-layout-mode="dark"] .qpi-table-host > .row {
   border-top: none;
@@ -6311,10 +4781,8 @@ const SCOPED_CSS = `
   font-size: 13px; font-style: normal;
 }
 
-/* Sr No — plain numeric, no badge. */
 .qpi-srno { color: var(--vz-body-color, #495057); font-weight: 600; font-size: 13px; }
 
-/* Quotation No / Opp ID — match .rec-id-pill exactly. */
 .qpi-link {
   display: inline-flex; align-items: center;
   padding: 4px 10px; border-radius: 999px;
@@ -6330,17 +4798,9 @@ const SCOPED_CSS = `
   text-decoration: none;
 }
 
-/* Customer / Consignee — strong heading hierarchy. */
 .qpi-strong { color: #0f1729; font-weight: 600; font-size: 13px; text-transform: capitalize; }
-/* Same capitalization on Consignee but at normal body weight, so the
-   first letter of each word is always uppercase regardless of what the
-   user typed in the customer/consignee record. */
 .qpi-cap { text-transform: capitalize; }
 
-/* Branch column — owner branch name + optional MAIN chip. The chip
-   uses the brand purple so it pops without clashing with the per-row
-   action accents. Whole cell stays compact so the QPI table doesn't
-   need an extra horizontal scroll when the column is added. */
 .qpi-branch-cell {
   display: inline-flex;
   align-items: center;
@@ -6375,7 +4835,6 @@ const SCOPED_CSS = `
   border-color: rgba(167,139,250,.30);
 }
 
-/* Dates — tabular monospace numerics, secondary color. */
 .qpi-date {
   font-variant-numeric: tabular-nums;
   letter-spacing: .01em;
@@ -6384,7 +4843,6 @@ const SCOPED_CSS = `
   font-size: 13px;
 }
 
-/* Currency — small soft pill (matches .rec-pill density). */
 .qpi-currency {
   display: inline-flex; align-items: center;
   padding: 3px 10px; border-radius: 999px;
@@ -6399,10 +4857,6 @@ const SCOPED_CSS = `
 .qpi-em { color: #cbd5e1; font-weight: 400; }
 .qpi-em-center { text-align: center; color: #cbd5e1; font-weight: 400; }
 
-/* Created By — colored pill keyed off user_type, with a small
- * sub-label (branch name / role). Same scheme as the Master Details
- * "Created By" column so the visual language stays consistent between
- * the two pages. */
 .qpi-creator-cell {
   display: flex;
   flex-direction: column;
@@ -6423,9 +4877,6 @@ const SCOPED_CSS = `
   color: var(--vz-secondary-color, #878a99);
 }
 [data-bs-theme="dark"] .qpi-creator-sub { color: rgba(255,255,255,.55); }
-/* Dark mode — the pill colours are set inline (light tints), so override with
-   translucent fills + light text (!important to beat the inline style), matching
-   how the other app badges read in dark mode. */
 [data-bs-theme="dark"] .qpi-creator-self   { background: rgba(99,102,241,.20) !important;  color: #c7d2fe !important; }
 [data-bs-theme="dark"] .qpi-creator-super  { background: rgba(139,92,246,.20) !important;  color: #ddd6fe !important; }
 [data-bs-theme="dark"] .qpi-creator-client { background: rgba(59,130,246,.20) !important;   color: #bfdbfe !important; }
@@ -6447,18 +4898,13 @@ const SCOPED_CSS = `
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
 
-/* Action group — center-aligned, tight 6px gap (matches customer page). */
 .qpi-actions {
   display: inline-flex; align-items: center; justify-content: center;
   gap: 6px; flex-wrap: nowrap;
 }
 
-/* Convert to PI — restrained pill matching .smc-add-btn weight (gradient
-   fill, modest shadow, NO heavy inset highlight). */
 .qpi-convert-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  /* Fixed width so the "Convert to PI" and "Converted" pills are identical —
-     keeps the trailing action icons vertically aligned across every row. */
   min-width: 132px;
   padding: 0 12px; height: 30px;
   border: 0; border-radius: 999px;
@@ -6479,8 +4925,6 @@ const SCOPED_CSS = `
   box-shadow: 0 0 0 3px rgba(124,58,237,.25), 0 3px 10px rgba(124,58,237,.30);
 }
 .qpi-convert-btn:disabled { opacity: .65; cursor: wait; }
-/* Replaces the repeat icon while converting — white, because this button
-   carries a filled accent background. */
 .qpi-convert-spinner {
   width: 13px; height: 13px; flex: 0 0 auto; border-radius: 50%;
   border: 2px solid rgba(255,255,255,.35); border-top-color: #fff;
@@ -6490,7 +4934,6 @@ const SCOPED_CSS = `
 @media (prefers-reduced-motion: reduce) { .qpi-convert-spinner { animation-duration: 2s; } }
 .qpi-convert-btn svg { width: 12px; height: 12px; }
 
-/* "Already converted" locked state — green pill, no hover lift. */
 .qpi-convert-btn-done,
 .qpi-convert-btn-done:disabled {
   background: linear-gradient(135deg, #16a34a, #15803d);
@@ -6500,8 +4943,6 @@ const SCOPED_CSS = `
 }
 .qpi-convert-btn-done:hover { transform: none; }
 
-/* Send-for-Signature pill (PI tab) — same pill shape as the convert button,
-   in sky blue. "Sent" turns amber, "Signed" turns green; both are locked. */
 .qpi-send-btn {
   background: linear-gradient(135deg, #0ea5e9, #0284c7);
   box-shadow: 0 3px 10px rgba(14,165,233,.30);
@@ -6510,8 +4951,6 @@ const SCOPED_CSS = `
 .qpi-send-btn:disabled { cursor: not-allowed; }
 .qpi-send-btn-sent, .qpi-send-btn-sent:disabled {
   background: linear-gradient(135deg, #6366f1, #4f46e5);
-  /* Faded + shadowless so the already-sent state reads as inert (non-clickable)
-     rather than looking like a live blue button. */
   box-shadow: none;
   opacity: .55; cursor: not-allowed;
 }
@@ -6522,15 +4961,11 @@ const SCOPED_CSS = `
   opacity: 1; cursor: not-allowed;
 }
 .qpi-send-btn-signed:hover { transform: none; }
-/* Resend state — a declined / recalled PI can be sent again; a warm red-orange
-   gradient distinguishes it from the plain first-time "Send for Sign" blue. */
 .qpi-send-btn-resend {
   background: linear-gradient(135deg, #f97316, #dc2626);
   box-shadow: 0 3px 10px rgba(220,38,38,.30);
 }
 .qpi-send-btn-resend:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(220,38,38,.42); }
-/* Loading state — shown until the first signing-status poll resolves so a PI
-   can't be re-sent before we know it was already sent/signed. */
 .qpi-send-btn-loading, .qpi-send-btn-loading:disabled {
   background: linear-gradient(135deg, #a78bfa, #7c3aed);
   box-shadow: 0 3px 10px rgba(124,58,237,.28);
@@ -6543,8 +4978,6 @@ const SCOPED_CSS = `
 }
 @keyframes qpi-send-spin-rot { to { transform: rotate(360deg); } }
 
-/* "Signed PDF" download button — green pill, clickable (unlike the locked
-   "converted" state above). Shown on completed e-signature rows. */
 .qpi-signed-btn {
   background: linear-gradient(135deg, #16a34a, #15803d);
   box-shadow: 0 3px 10px rgba(22,163,74,.28);
@@ -6556,16 +4989,10 @@ const SCOPED_CSS = `
   box-shadow: 0 0 0 3px rgba(22,163,74,.28), 0 3px 10px rgba(22,163,74,.28);
 }
 
-/* Action tiles — colour-coded like the Customer page ActionBtn: each tile
-   shows a soft tint of its per-action accent (--qpi-act-accent) with a
-   matching border + icon, and fills solid with a lift on hover. The accent
-   is set inline per button (email = blue, edit = green, delete = red, etc.). */
 .qpi-act {
   width: 30px; height: 30px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; flex-shrink: 0; padding: 0;
-  /* Fallbacks first for browsers without color-mix; modern browsers use the
-     accent-derived tint below. */
   background: #f6f4ff;
   background: color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 10%, #fff);
   border: 1px solid #e5e0f5;
@@ -6578,19 +5005,10 @@ const SCOPED_CSS = `
   background: var(--qpi-act-accent, #7c3aed);
   border-color: transparent;
   color: #fff;
-  /* Scale only — no lift. translateY(-2px) moved the button up out from
-     under a cursor resting near its bottom edge, which dropped :hover,
-     which moved it back, which re-entered hover: a flicker loop. Dark mode
-     made it obvious because the base tile is dark and the hover fill is the
-     full accent, so the flicker read as the colour flipping (QA #57).
-     Growing is safe — a larger box cannot leave the pointer behind. The
-     box-shadow below still gives the raised feel. */
   transform: scale(1.08);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 45%, transparent);
 }
 .qpi-act:active { transform: translateY(0) scale(1); }
-/* Disabled state for action tiles (e.g. Email after first send, or
-   Reminder before first send). Greyed out, no hover lift, no pointer. */
 .qpi-act-disabled,
 .qpi-act:disabled,
 .qpi-act[disabled] {
@@ -6614,7 +5032,6 @@ const SCOPED_CSS = `
 }
 .qpi-act svg { width: 14px; height: 14px; }
 
-/* ─── More-Options dropdown (portal'd into <body>; positioned via inline style) ─── */
 .qpi-moremenu {
   position: fixed;
   z-index: 9999;
@@ -6641,13 +5058,8 @@ const SCOPED_CSS = `
 .qpi-moremenu-item:hover:not(:disabled) { background: #eff6ff; color: #0369a1; }
 .qpi-moremenu-item:disabled { opacity: .65; cursor: wait; }
 .qpi-moremenu-item svg { flex-shrink: 0; color: #0ea5e9; }
-/* The label span takes the free space so the spinner sits at the right edge.
-   Scoped away from the spinner, which is also a <span>: it was picking up
-   flex:1 as well, and flex-basis:0 + grow overrode its 12px width, so the
-   ring stretched across the row as a pill-shaped blob (QA #58). */
 .qpi-moremenu-item span:not(.qpi-moremenu-spinner) { flex: 1; white-space: nowrap; }
 .qpi-moremenu-item span.qpi-moremenu-spinner { flex: 0 0 auto; }
-/* Declined / recalled notice banner at the top of the menu. */
 .qpi-moremenu-notice {
   display: flex; align-items: flex-start; gap: 8px;
   margin: 2px 4px 6px; padding: 9px 11px; border-radius: 8px;
@@ -6657,7 +5069,6 @@ const SCOPED_CSS = `
 .qpi-moremenu-notice svg { flex-shrink: 0; color: #ef4444; margin-top: 1px; }
 [data-bs-theme="dark"] .qpi-moremenu-notice { color: #fca5a5; background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.34); }
 [data-bs-theme="dark"] .qpi-moremenu-notice svg { color: #f87171; }
-/* Slim divider between the View group and the Download group. */
 .qpi-moremenu-sep {
   height: 1px;
   margin: 4px 8px;
@@ -6682,9 +5093,6 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .qpi-moremenu-item svg { color: #38bdf8; }
 
-/* ─── Pagination ─── Matches the Recruitment list-footer:
-   plain "Showing X of Y Results" text on the left, prev / numbered
-   page buttons / next on the right. Active page = purple gradient. */
 .qpi-pagination {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 10px;
@@ -6702,13 +5110,7 @@ const SCOPED_CSS = `
   margin: 0 2px;
 }
 .qpi-pag-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-/* (removed: legacy .qpi-pag-btn rules — TableContainer renders pagination
-    as Bootstrap .pagination .page-link, which is styled directly via
-    .qpi-table-host .pagination .page-link further up.) */
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Modal styles (shared between Create Quotation and Create PI)
- * ════════════════════════════════════════════════════════════════════════ */
 .qpi-modal-backdrop {
   position: fixed; inset: 0; z-index: 9999;
   background: rgba(15, 23, 42, .55);
@@ -6717,15 +5119,10 @@ const SCOPED_CSS = `
   padding: 16px;
   overflow-y: auto;
   font-family: var(--font-sans);
-  /* While the modal is open, useSelectionLock sets user-select:none on <body>
-     to stop Ctrl+A / drag-select from grabbing the background. Re-enable it
-     here so the modal's own content stays selectable/copyable. */
   -webkit-user-select: text; user-select: text;
 }
 .qpi-modal-backdrop *, .qpi-modal-backdrop *::before, .qpi-modal-backdrop *::after { box-sizing: border-box; }
 .qpi-modal {
-  /* 1140 → 1280: the Step-2 product grid (rate/tax/amount columns) was
-     cramped and forced an inner horizontal scroll on 1366px+ screens. */
   width: 100%; max-width: 1380px;
   background: #fff; border-radius: 12px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, .40), 0 8px 24px rgba(124,58,237,.14);
@@ -6771,7 +5168,6 @@ const SCOPED_CSS = `
 .qpi-modal-close:hover:not(:disabled) { background: rgba(255,255,255,.2); }
 .qpi-modal-close svg { width: 13px; height: 13px; }
 
-/* Stepper — compact: smaller badge, tighter padding. */
 .qpi-modal-stepper {
   display: flex; align-items: center; gap: 0;
   padding: 10px 16px 8px;
@@ -6784,9 +5180,6 @@ const SCOPED_CSS = `
   background: #e2e8f0;
   margin: 0 0;
 }
-/* Steps are sized to their content and left-aligned (matching the figma)
- * rather than stretched to fill the row — the connector + trailing space
- * read as a proper 2-step progress indicator. */
 .qpi-step-badge {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 16px; border-radius: 10px;
@@ -6803,24 +5196,20 @@ const SCOPED_CSS = `
 }
 .qpi-step-badge-title { font-size: 12px; font-weight: 800; line-height: 1.2; }
 .qpi-step-badge-sub   { font-size: 10px; color: #94a3b8; margin-top: 1px; line-height: 1.2; }
-/* idle */
 .qpi-step-idle { background: #fff; border-color: #e2e8f0; }
 .qpi-step-idle .qpi-step-badge-num { background: #f1f5f9; color: #94a3b8; }
 .qpi-step-idle .qpi-step-badge-title { color: #94a3b8; }
-/* active */
 .qpi-step-active.qpi-step-teal   { background: #ecfeff; border-color: #67e8f9; box-shadow: 0 4px 12px rgba(8, 145, 178, .15); }
 .qpi-step-active.qpi-step-teal   .qpi-step-badge-num { background: linear-gradient(135deg, #0e7490, #0891b2); color: #fff; }
 .qpi-step-active.qpi-step-teal   .qpi-step-badge-title { color: #0e7490; }
 .qpi-step-active.qpi-step-purple { background: #f5f3ff; border-color: #c4b5fd; box-shadow: 0 4px 12px rgba(124,58,237,.15); }
 .qpi-step-active.qpi-step-purple .qpi-step-badge-num { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; }
 .qpi-step-active.qpi-step-purple .qpi-step-badge-title { color: #6d28d9; }
-/* done */
 .qpi-step-done .qpi-step-badge-num { background: linear-gradient(135deg, #4ade80, #22c55e); color: #fff; }
 .qpi-step-done .qpi-step-badge-title { color: #15803d; }
 .qpi-step-done.qpi-step-teal   { background: #f0fdfa; border-color: #99f6e4; }
 .qpi-step-done.qpi-step-purple { background: #f0fdf4; border-color: #bbf7d0; }
 
-/* Body — compact: tighter padding so the modal feels denser. */
 .qpi-modal-body {
   padding: 12px 18px;
   overflow-y: auto;
@@ -6840,9 +5229,6 @@ const SCOPED_CSS = `
 .qpi-form-grid {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px;
 }
-/* Each form-grid cell — block flow (.qpi-form-grid is a CSS Grid so
-   flex props would be ignored on children anyway). The 4px gap stacks
-   the label above the input/select inside the cell. */
 .qpi-field { display: block; min-width: 0; }
 .qpi-field > label { display: block; margin-bottom: 4px; }
 .qpi-field-label {
@@ -6861,14 +5247,9 @@ const SCOPED_CSS = `
 }
 .qpi-input:hover  { border-color: #cbd5e1; }
 .qpi-input:focus  { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.14); }
-/* Same surface as an editable field in light too — read-only shows in the
-   dimmed text and the cursor, not in a second box colour. */
 .qpi-input-readonly { background: #fff; color: #64748b; cursor: not-allowed; }
 .qpi-input-num { text-align: right; }
 
-/* Row-level loader while a PDF (view / download / certificate) generates —
- * the whole row sweeps violet and its buttons dim, matching Stage 4's loader.
- * Prevents double-clicks and makes it obvious which row is working. */
 @keyframes qpi-row-sweep { 0% { background-position: -360px 0; } 100% { background-position: 360px 0; } }
 .qpi-row-busy { pointer-events: none; }
 .qpi-row-busy td {
@@ -6882,7 +5263,6 @@ const SCOPED_CSS = `
   background-image: linear-gradient(90deg, rgba(167,139,250,0) 0%, rgba(167,139,250,.20) 50%, rgba(167,139,250,0) 100%) !important;
 }
 
-/* Edit-mode hydration shimmer */
 @keyframes qpi-shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
 .qpi-skel {
   display: block; border-radius: 7px;
@@ -6892,13 +5272,6 @@ const SCOPED_CSS = `
 .qpi-skel-label { width: 38%; height: 9px; border-radius: 4px; margin-bottom: 7px; }
 .qpi-skel-input { width: 100%; height: 38px; }
 .qpi-skel-note  { width: 100%; height: 64px; margin-top: 12px; }
-/* Placeholder row in the products table while the product lists load. The
-   height matches the real draft row's inputs so the table does not resize
-   when the two swap. */
-/* Placeholder rows standing in for the products table while it loads. The
-   cell padding and bar height match a real row so the table keeps its size
-   when the two swap — the width per cell is set inline, narrower than the
-   column, so the block reads as text rather than a solid slab. */
 .qpi-products-skel-row td { padding: 10px 12px; }
 .qpi-products-skel-row .qpi-skel { height: 18px; border-radius: 5px; }
 @media (prefers-reduced-motion: reduce) { .qpi-skel { animation: none; } }
@@ -6907,12 +5280,6 @@ const SCOPED_CSS = `
   background-size: 800px 100%;
 }
 
-/* ── Required-field error state (gated by Save and Next validation) ──
- * .qpi-field.has-error is set by the parent form when the user tries
- * to advance with this field empty. We tint the label red, paint the
- * input + MasterSelect trigger borders red with a soft halo, and surface
- * a tiny hint below. As soon as the user picks/types a value, the parent
- * clears the error and the styling disappears. */
 .qpi-field.has-error .qpi-field-label { color: #dc2626; }
 .qpi-field.has-error .qpi-input {
   border-color: #ef4444;
@@ -6938,10 +5305,6 @@ const SCOPED_CSS = `
   line-height: 1.2;
 }
 [data-bs-theme="dark"] .qpi-field.has-error .qpi-field-label { color: #fca5a5; }
-/* Opaque for the same reason as .qpi-input-readonly: rgba(239,68,68,.08)
-   takes its tint from whatever sits behind, so a flagged field looked one red
-   in the form grid and another in the draft row. #321d3b is that 8% red
-   already mixed against the modal body. */
 [data-bs-theme="dark"] .qpi-field.has-error .qpi-input,
 [data-bs-theme="dark"] .qpi-field.has-error .master-select-toggle {
   background-color: #321d3b !important;
@@ -6949,7 +5312,6 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .qpi-field-error-msg { color: #fca5a5; }
 
-/* MasterSelect override — match the (now compact) qpi-input dimensions. */
 .qpi-modal-body .master-select-toggle {
   height: 32px;
   border-radius: 7px;
@@ -6966,10 +5328,8 @@ const SCOPED_CSS = `
   box-shadow: 0 0 0 3px rgba(124,58,237,.14) !important;
 }
 .qpi-modal-body .master-select-wrap.show .master-select-chev { color: #7c3aed; }
-/* Bump dropdown above the modal backdrop */
 .master-select-menu.dropdown-menu { z-index: 11000 !important; }
 
-/* Note panel — compact. */
 .qpi-note {
   margin-top: 12px;
   padding: 10px 12px;
@@ -6983,8 +5343,6 @@ const SCOPED_CSS = `
 .qpi-note-line { font-size: 11px; color: #78350f; line-height: 1.45; }
 .qpi-note-line + .qpi-note-line { margin-top: 2px; }
 .qpi-note-line strong { color: #92400e; font-weight: 800; }
-/* Note tinted to match the modal's theme (teal for Quotation, purple
-   for PI) so it reads as part of the same surface, not an amber alert. */
 .qpi-note-teal { background: linear-gradient(110deg, #ecfeff 0%, #cffafe 100%); border-color: #a5f3fc; }
 .qpi-note-teal .qpi-note-icon { color: #0e7490; }
 .qpi-note-teal .qpi-note-line { color: #155e75; }
@@ -6994,8 +5352,6 @@ const SCOPED_CSS = `
 .qpi-note-purple .qpi-note-line { color: #5b21b6; }
 .qpi-note-purple .qpi-note-line strong { color: #4c1d95; }
 
-/* Order summary card (step 2) — compact density so 12+ fields fit
-   without the panel dominating the modal body. */
 .qpi-order-summary {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 14px;
   padding: 10px 12px;
@@ -7011,7 +5367,6 @@ const SCOPED_CSS = `
 .qpi-order-summary-teal .qpi-summary-item-label { color: #0e7490; }
 .qpi-summary-item-value { font-size: 12px; font-weight: 600; color: #475569; margin-top: 1px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Product warning */
 .qpi-product-warn {
   display: flex; align-items: center; gap: 8px;
   padding: 11px 14px;
@@ -7023,16 +5378,9 @@ const SCOPED_CSS = `
 }
 .qpi-product-warn-icon { color: #dc2626; display: inline-flex; }
 
-/* Products table — caps at ~5 product rows + header + input row,
-   anything beyond that scrolls vertically inside the wrap so the
-   modal footer stays on-screen. Horizontal scroll still kicks in
-   when the table's min-width exceeds the modal width. */
 .qpi-products-wrap {
   overflow-x: auto;
   overflow-y: auto;
-  /* 36px header + 5 × ~42px product rows + ~52px input row ≈ 298px.
-     Bumped to 320 to give a small breathing margin so the input
-     row isn't right against the scroll edge. */
   max-height: 320px;
   margin-bottom: 18px;
   -webkit-overflow-scrolling: touch;
@@ -7045,58 +5393,22 @@ const SCOPED_CSS = `
   background: #d1d5db; border-radius: 999px;
 }
 .qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
-/* The min-widths apply at EVERY width, not only below the tablet breakpoint.
-   table-layout:fixed sizes columns from the colgroup percentages alone, so a
-   narrow table shrinks every column without limit — and content that no
-   longer fits does not wrap the cell, it spills out of it. That is how the
-   "+ Add" button ended up hanging past the last column and past the table's
-   right edge, dragging a horizontal scrollbar with it.
-   A floor on the table width turns that into an honest scroll of a table
-   whose columns are still the right size. 800px is the smallest width at
-   which the narrowest column (ACTION, 11%) still clears the 58.5px button
-   plus its 8px gutters. */
 .qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; min-width: 800px; }
-/* The 10-column intra-state layout (CGST + SGST split) needs more room before
-   the numeric columns start crushing. */
 .qpi-products-table--wide { min-width: 1020px; }
-/* Saved product name cell — one line, ellipsis. Without this a long name
-   wrapped over several lines and misaligned QTY / rate / amount. Full name is
-   on the hover tooltip. */
 .qpi-prodname-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-/* Header matches the modal's popup chrome — teal gradient for the
-   Quotation modal, purple for PI — using the same gradient as the modal
-   header. The gradient lives on the ROW (with transparent cells) so it
-   flows as ONE continuous sweep across the whole header instead of
-   restarting in every cell. */
 .qpi-products-table.qpi-pt-teal   thead tr { background: linear-gradient(90deg, #0f4c5c 0%, #0d3b48 60%, #042f36 100%); }
 .qpi-products-table.qpi-pt-purple thead tr { background: linear-gradient(90deg, #6d28d9 0%, #5b21b6 60%, #4c1d95 100%); }
-/* Sticky header — keep column labels visible while rows scroll.
-   position:sticky needs an OWN background on the <th> (the <tr>'s
-   gradient doesn't follow a positioned cell), so we paint the
-   gradient directly here. z-index 5 keeps it above the input row's
-   sticky background below. */
 .qpi-products-table thead th {
-  /* Transparent so the single row-level gradient shows through as one
-     continuous sweep (no per-cell seams). */
   background: transparent;
   color: #fff; font-size: 9.5px; font-weight: 800;
   padding: 11px 12px;
   text-transform: uppercase; letter-spacing: .06em; text-align: left;
 }
 .qpi-products-table tbody td { padding: 10px 12px; border-bottom: 1px solid #f1f0fc; vertical-align: middle; color: #475569; }
-/* ACTION column keeps an 8px gutter instead of 12px — the same on the header
-   and on every row, so the label and the button below it share one pair of
-   edges. The 4px it gives back is what lets the button clear its column at
-   the table's 800px floor. */
 .qpi-products-table thead th:last-child,
 .qpi-products-table tbody td:last-child { padding-left: 8px; padding-right: 8px; }
-/* Belt and braces: whatever the column resolves to, the button is clipped to
-   it rather than drawn outside it. */
 .qpi-products-table tbody td:last-child > .qpi-prod-add { max-width: 100%; }
 .qpi-products-table tbody tr:last-child td { border-bottom: none; }
-/* Add-product row stays anchored to the bottom of the scroll wrap
-   so the "+ Add" button is always reachable without scrolling
-   through every existing line. */
 .qpi-products-input-row td {
   position: sticky;
   bottom: 0;
@@ -7105,12 +5417,8 @@ const SCOPED_CSS = `
   box-shadow: inset 0 1px 0 0 #ede9fe;
 }
 .qpi-amt { font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
-/* Product Name (col 1) stays left-aligned; EVERY other column — header, data
-   rows AND the draft input boxes — is centered. */
 .qpi-products-table thead th:not(:first-child),
 .qpi-products-table tbody td:not(:first-child) { text-align: center; }
-/* Center the numeric inputs' text too so typed values sit under their centered
-   headers (overrides the global right-aligned .qpi-input-num inside this table). */
 .qpi-products-table .qpi-input-num { text-align: center; }
 .qpi-prod-remove {
   width: 30px; height: 30px; border-radius: 8px;
@@ -7128,7 +5436,6 @@ const SCOPED_CSS = `
 .qpi-prod-add-teal   { background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(14,116,144,.35); }
 .qpi-prod-add-purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
 
-/* Totals row */
 .qpi-totals-row {
   display: grid; grid-template-columns: 1fr 320px; gap: 18px;
 }
@@ -7150,8 +5457,6 @@ const SCOPED_CSS = `
 .qpi-textarea::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 .qpi-textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
 
-/* Totals summary panel (right column on step 2) — tightened to match
-   the order-summary density above. */
 .qpi-summary {
   padding: 10px 12px;
   border-radius: 8px;
@@ -7171,8 +5476,6 @@ const SCOPED_CSS = `
 }
 .qpi-summary-val { font-weight: 800; color: #1e1b4b; font-variant-numeric: tabular-nums; }
 .qpi-summary-input { width: 96px; height: 28px; padding: 0 10px; font-size: 12px; text-align: right; }
-/* Drop the native number-spinner arrows so the right-aligned value / placeholder
-   ("0") sits flush at the right edge instead of being pushed left by the spinner. */
 .qpi-summary-input::-webkit-outer-spin-button,
 .qpi-summary-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .qpi-summary-input { -moz-appearance: textfield; appearance: textfield; }
@@ -7186,8 +5489,6 @@ const SCOPED_CSS = `
 .qpi-summary-teal   .qpi-summary-grand { border-top-color: #a5f3fc; color: #0e7490; }
 .qpi-summary-purple .qpi-summary-grand { border-top-color: #ddd6fe; color: #6d28d9; }
 
-/* Footer — compact strip. Buttons sit right-aligned now that the
-   "* Required fields" hint on the left has been removed. */
 .qpi-modal-foot {
   display: flex; align-items: center; justify-content: flex-end;
   padding: 10px 18px;
@@ -7257,19 +5558,6 @@ const SCOPED_CSS = `
 .qpi-btn-submit-purple:focus-visible { box-shadow: 0 0 0 3px rgba(124,58,237,.28), 0 4px 12px rgba(124,58,237,.4); }
 .qpi-btn-submit:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 
-/* ── Save in flight: the whole wizard goes read-only ──────────────────
-   Disabling only the submit button was not enough. Cancel, Back and the
-   header X stayed live, so a slow POST could be abandoned half-way, and
-   the body stayed fully editable - a product row could be deleted or the
-   customer swapped while the request that was already carrying the old
-   values was in the air. Whatever came back then disagreed with what the
-   screen showed.
-
-   pointer-events on the body and stepper kills clicks on every field,
-   dropdown and row control at once, which is why this is a class on the
-   shell rather than a disabled prop threaded through each input. The
-   footer stays interactive so the spinner on the submit button is still
-   visible and readable. */
 .qpi-modal-busy .qpi-modal-body,
 .qpi-modal-busy .qpi-modal-stepper {
   pointer-events: none;
@@ -7277,8 +5565,6 @@ const SCOPED_CSS = `
   opacity: .55;
   transition: opacity .15s ease;
 }
-/* Cursor + fade for the shell buttons the busy class cannot reach,
-   matching .qpi-btn-submit:disabled above. */
 .qpi-btn-cancel:disabled,
 .qpi-btn-back:disabled,
 .qpi-btn-next:disabled {
@@ -7287,23 +5573,13 @@ const SCOPED_CSS = `
 .qpi-modal-close:disabled { opacity: .45; cursor: not-allowed; }
 .qpi-btn-cancel:hover:not(:disabled) { background: #f8fafc; }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Dark mode — mirrors the SalesLeadAckMaster palette so the two Sales-Matrix
- * pages feel consistent. Page bg #14101d, cards #1a1530, body bg #221a3a,
- * inputs #0f0c19, text #e9d5ff / #c4b5fd, borders rgba(167,139,250,.25–.45).
- * ════════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .qpi-root {
   background: transparent;
   color: var(--vz-body-color);
 }
 
-/* Clean, calm dark banner — matches the Customer page hero: a mostly-dark,
- * low-chroma violet surface with a SINGLE subtle border. The old version
- * stacked a saturated fill + a bright pink/magenta gradient ring + glow blobs
- * + a white shine line, which read as noisy/over-saturated on dark. */
 [data-bs-theme="dark"] .qpi-header {
   border: 1px solid rgba(139,92,246,0.22);
-  /* Flat, even dark (no lighter right end that reads as a glowy patch). */
   background: linear-gradient(110deg, #181426 0%, #1e1838 100%);
   box-shadow: 0 6px 20px rgba(0,0,0,0.40);
 }
@@ -7317,17 +5593,14 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .qpi-online-dot   { border-color: #1a1530; }
 [data-bs-theme="dark"] .qpi-tab-switch {
-  background: #221b36;   /* opaque so the glow can't bleed through (QA CBC-558) */
+  background: #221b36;
   border-color: rgba(167,139,250,.25);
 }
 [data-bs-theme="dark"] .qpi-tab        { color: #ede9fe; }
 [data-bs-theme="dark"] .qpi-tab:hover  { background: rgba(167,139,250,.12); }
-/* Inactive count chip — the light-mode dark-purple text/bg is invisible on
-   the dark toggle, so brighten both. The active chip stays white-on-glass. */
 [data-bs-theme="dark"] .qpi-tab-count { background: rgba(167,139,250,.22); color: #e9d5ff; }
 [data-bs-theme="dark"] .qpi-tab.active .qpi-tab-count { background: rgba(255,255,255,.28); color: #fff; }
 
-/* What We Are Doing Here */
 [data-bs-theme="dark"] .qpi-wdh {
   background: linear-gradient(110deg, #181426 0%, #1e1838 100%);
   border-color: rgba(167,139,250,.22);
@@ -7342,7 +5615,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-wdh-step {
   background: #1a1530;
   border-color: rgba(167,139,250,.25);
-  /* Keep the accent stripe visible on the dark tile (brighter violet). */
   border-left-color: #a78bfa;
 }
 [data-bs-theme="dark"] .qpi-wdh-step-title { color: #e9d5ff; }
@@ -7354,7 +5626,6 @@ const SCOPED_CSS = `
   color: #c4b5fd;
 }
 
-/* Table card */
 [data-bs-theme="dark"] .qpi-card {
   background: var(--vz-card-bg);
   border-color: var(--vz-border-color);
@@ -7391,23 +5662,17 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-search input::placeholder,
 [data-bs-theme="dark"] .qpi-search svg { color: var(--vz-secondary-color); }
 
-/* Table — dark variant for TableContainer chrome */
 [data-bs-theme="dark"] .qpi-table-host .table-responsive { scrollbar-color: rgba(255,255,255,.12) transparent; }
 [data-bs-theme="dark"] .qpi-table-host .table-responsive::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); }
 [data-bs-theme="dark"] .qpi-table-host .table-responsive::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.20); }
 [data-bs-theme="dark"] .qpi-table-host .table { color: var(--vz-body-color); }
 [data-bs-theme="dark"] .qpi-table-host .table thead.table-light tr {
-  /* Match the Customer page's dark header gradient. */
   background: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
 }
 [data-bs-theme="dark"] .qpi-table-host .table thead.table-light th {
   color: #fff !important;
   border-bottom: 0 !important;
 }
-/* The pinned ACTION header repaints the DARK band's gradient — same slice
- * trick as the light rule. Without a dark override it kept the light theme's
- * violet, lighter than every stop in the dark gradient, so the ACTION header
- * showed as a pale patch cut out of the band. */
 [data-bs-theme="dark"] .qpi-table-host .table thead.table-light th:last-child {
   background-image: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
 }
@@ -7440,7 +5705,6 @@ const SCOPED_CSS = `
   border-color: rgba(167,139,250,.18);
 }
 
-/* Cell-level chrome */
 [data-bs-theme="dark"] .qpi-srno                 { color: rgba(255,255,255,.88); }
 [data-bs-theme="dark"] .qpi-strong               { color: #ffffff; }
 [data-bs-theme="dark"] .qpi-sm                   { color: rgba(255,255,255,.85); }
@@ -7467,7 +5731,6 @@ const SCOPED_CSS = `
   background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.40);
 }
 
-/* Action tiles — slate base with lavender hover accent. */
 [data-bs-theme="dark"] .qpi-act {
   background: #1c2531;
   background: color-mix(in srgb, var(--qpi-act-accent, #7c3aed) 20%, #141a26);
@@ -7482,10 +5745,6 @@ const SCOPED_CSS = `
   color: #fff;
 }
 [data-bs-theme="dark"] .qpi-act:focus-visible { box-shadow: 0 0 0 3px rgba(167,139,250,.30); }
-/* Disabled-state action tile in dark mode — keep the muted look that
-   reads as "not interactive" without going invisible against the dark
-   table row background. Targets both the explicit class (.qpi-act-disabled)
-   and the native :disabled / [disabled] selectors. */
 [data-bs-theme="dark"] .qpi-act-disabled,
 [data-bs-theme="dark"] .qpi-act:disabled,
 [data-bs-theme="dark"] .qpi-act[disabled] {
@@ -7495,7 +5754,6 @@ const SCOPED_CSS = `
   opacity: 0.55;
 }
 
-/* Convert button */
 [data-bs-theme="dark"] .qpi-convert-btn {
   background: linear-gradient(135deg, #6d28d9, #4c1d95);
   box-shadow: 0 3px 10px rgba(0,0,0,.45);
@@ -7512,7 +5770,6 @@ const SCOPED_CSS = `
   box-shadow: 0 3px 10px rgba(0,0,0,.40);
 }
 
-/* Pagination — dark variant of the slim footer. */
 [data-bs-theme="dark"] .qpi-pag-info        { color: rgba(255,255,255,.70); }
 [data-bs-theme="dark"] .qpi-pag-info strong { color: #ffffff; }
 [data-bs-theme="dark"] .qpi-pag-btn {
@@ -7533,8 +5790,6 @@ const SCOPED_CSS = `
   color: #fff;
 }
 
-/* Modals — backdrop is already dark enough; we just need to dark-mode
-   the modal shell, stepper, body, inputs, totals card, and footer. */
 [data-bs-theme="dark"] .qpi-modal {
   background: #1a1530;
   box-shadow: 0 25px 60px rgba(0,0,0,.65);
@@ -7578,13 +5833,6 @@ const SCOPED_CSS = `
   border-color: #a78bfa;
   box-shadow: 0 0 0 3px rgba(167,139,250,.20);
 }
-/* ONE field colour, read-only or not (#80, #81 re-raised).
-   This was rgba(255,255,255,.04), which took its tint from whatever sat
-   behind it - ~#2b2342 over the modal body, ~#251e40 over the draft row. Made
-   opaque first, then matched to the editable fields outright: two deliberate
-   shades still read as "the boxes are different colours".
-   Read-only is carried by the dimmed text and the cursor instead, which does
-   not put a second surface in the form. */
 [data-bs-theme="dark"] .qpi-input-readonly {
   background: #0f0c19; color: #9aa0b4; cursor: not-allowed;
 }
@@ -7603,14 +5851,12 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-form-heading-teal   { color: #67e8f9; border-color: #0891b2; }
 [data-bs-theme="dark"] .qpi-form-heading-purple { color: #c4b5fd; border-color: #a78bfa; }
 
-/* Note panel — keep amber theme but darken */
 [data-bs-theme="dark"] .qpi-note {
   background: rgba(180,83,9,.18); border-color: rgba(217,119,6,.45);
 }
 [data-bs-theme="dark"] .qpi-note-line   { color: #fde68a; }
 [data-bs-theme="dark"] .qpi-note-line strong { color: #fcd34d; }
 
-/* Order summary + product table + totals + summary card */
 [data-bs-theme="dark"] .qpi-order-summary-purple { background: rgba(124,58,237,.15); border-color: rgba(167,139,250,.35); }
 [data-bs-theme="dark"] .qpi-order-summary-teal   { background: rgba(14,165,233,.12); border-color: rgba(14,165,233,.35); }
 [data-bs-theme="dark"] .qpi-summary-item-label   { color: #c4b5fd; }
@@ -7623,13 +5869,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-products-table tbody td {
   border-bottom-color: rgba(167,139,250,.15); color: #d4d1de;
 }
-/* Sticky thead in dark mode — needs its own opaque background so
-   scrolling rows don't show through. Slightly deeper purple
-   gradient so the strip still feels like a header band against
-   the modal's dark canvas. */
-/* Header keeps its popup-matching teal/purple gradient in dark mode too
-   (both are already dark enough), so it stays consistent with the modal
-   chrome — no separate dark override needed. */
 [data-bs-theme="dark"] .qpi-products-input-row td {
   background: #1c1538;
   box-shadow: inset 0 1px 0 0 rgba(167,139,250,.25);
@@ -7659,7 +5898,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-summary-teal   .qpi-summary-grand { border-top-color: rgba(14,165,233,.45); color: #67e8f9; }
 [data-bs-theme="dark"] .qpi-summary-purple .qpi-summary-grand { border-top-color: rgba(167,139,250,.45); color: #c4b5fd; }
 
-/* Modal footer + secondary buttons */
 [data-bs-theme="dark"] .qpi-modal-foot {
   background: #1a1530;
   border-top-color: rgba(167,139,250,.20);
@@ -7686,16 +5924,6 @@ const SCOPED_CSS = `
   box-shadow: 0 0 0 3px rgba(167,139,250,.30);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Responsive ladder
- *  ≤1100px  — drop wizard stepper / order-summary / form grid to 2 cols, WDH stacks
- *  ≤ 900px  — header tabs wrap below title, WDH cards lose min-height
- *  ≤ 680px  — tablebar stacks (search full-width, list pill + Create on row 2),
- *             form grids drop to 1 col, modal stepper + head collapse
- *  ≤ 520px  — pagination rows split, action chips & row text shrink, page padding tightens
- *  ≤ 400px  — modal backdrop padding minimised, modal pills reduce, Convert-to-PI button
- *             shrinks so 4-button action group fits on one row
- * ═══════════════════════════════════════════════════════════════════════ */
 @media (max-width: 1100px) {
   .qpi-wdh-body { grid-template-columns: 1fr; }
   .qpi-wdh-arrow { display: none; }
@@ -7710,30 +5938,22 @@ const SCOPED_CSS = `
   .qpi-tab { flex: 1; justify-content: center; }
   .qpi-wdh-step { min-height: 0; }
   .qpi-wdh-body { padding: 6px 12px 10px; gap: 10px; }
-  /* The products table's min-widths are no longer set here — they apply at
-     every width now (see .qpi-products-table), because the columns could be
-     crushed on a narrow desktop modal too, not only below tablet width. */
 }
 
 @media (max-width: 680px) {
-  /* Root no longer needs its own padding — parent layout handles gutters. */
   .qpi-header-title { font-size: 13.5px; }
   .qpi-header-sub   { font-size: 10.5px; }
 
-  /* Tablebar stacks: search full-width, create button shrinks below it. */
   .qpi-tablebar { padding: 10px 12px; gap: 10px; flex-wrap: wrap; }
   .qpi-search { flex: 1 1 100%; min-width: 0; }
   .qpi-create-btn { flex: 1 1 100%; justify-content: center; }
-  /* PI sub-tabs row goes full-width and the pill-group stretches. */
   .qpi-tabs-bar { padding: 10px 12px; }
   .qpi-pill-group { width: 100%; }
   .qpi-pi-subtab { flex: 1; justify-content: center; }
 
-  /* Table forces its natural min-width and the wrapper scrolls. */
   .qpi-table-host { padding: 0; }
   .qpi-table-host .table-responsive { overflow-x: auto; }
 
-  /* Form / order-summary / wizard stepper / modal head all collapse */
   .qpi-form-grid { grid-template-columns: 1fr; }
   .qpi-order-summary { grid-template-columns: 1fr; }
   .qpi-modal-stepper { flex-direction: column; gap: 8px; padding: 14px 16px 10px; }
@@ -7751,31 +5971,23 @@ const SCOPED_CSS = `
   .qpi-header-icon { width: 36px; height: 36px; }
   .qpi-header-title { font-size: 13px; }
 
-  /* "What we are doing here" — tighter padding so it doesn't dominate */
   .qpi-wdh-header { padding: 8px 10px; }
   .qpi-wdh-body   { padding: 4px 10px 10px; }
   .qpi-wdh-step   { padding: 9px 10px; }
 
-  /* Pagination split: "Showing X of Y" on row 1, prev/next/numbered
-     buttons full-width on row 2 so nothing gets crammed. */
   .qpi-table-host > .row { padding: 10px 12px; }
   .qpi-table-host > .row > .col-sm { width: 100%; text-align: center; }
   .qpi-table-host > .row > .col-sm-auto { width: 100%; }
   .qpi-table-host .pagination { justify-content: center; flex-wrap: wrap; }
 
-  /* Tighten the table's outer cell padding on narrow screens so the
-     horizontal scroll bar isn't fighting for space. */
   .qpi-table-host .table thead.table-light th:first-child,
   .qpi-table-host .table tbody td:first-child { padding-left: 12px !important; }
   .qpi-table-host .table thead.table-light th:last-child,
   .qpi-table-host .table tbody td:last-child  { padding-right: 12px !important; }
 
-  /* Action buttons compress — Convert label hides, icon stays.
-     Drop the fixed pill width here so the icon-only button stays compact. */
   .qpi-convert-btn-label { display: none; }
   .qpi-convert-btn { padding: 0 9px; min-width: 0; }
 
-  /* Modal backdrop hugs the edge — give the modal more breathing room */
   .qpi-modal-backdrop { padding: 8px; }
   .qpi-modal { max-height: calc(100vh - 16px); border-radius: 12px; }
   .qpi-modal-head { padding: 12px 14px; gap: 10px; }
@@ -7787,7 +5999,6 @@ const SCOPED_CSS = `
     padding: 9px 14px; font-size: 12px;
   }
 
-  /* More-options portal'd menu fits within viewport */
   .qpi-moremenu { min-width: 180px; }
 }
 
@@ -7799,10 +6010,5 @@ const SCOPED_CSS = `
   .qpi-actions { gap: 4px; }
   .qpi-act { width: 28px; height: 28px; }
   .qpi-convert-btn { padding: 6px 8px; }
-  /* The 700px floor that used to live here is gone. It overrode the 800px
-     base (same specificity, later in the sheet) and took the ACTION column
-     down to ~77px, which is under what the button needs — so the smallest
-     screens were the ones where it broke out of its column. Scrolling 100px
-     more is the cheaper price. */
 }
 `;
