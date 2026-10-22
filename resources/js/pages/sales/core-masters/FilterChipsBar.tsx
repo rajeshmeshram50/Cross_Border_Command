@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import useDismissPopover from '../../../hooks/useDismissPopover';
+import Tooltip from '../../../components/ui/Tooltip';
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * The applied-filter bar for the party pages (Customers, Consignee).
@@ -40,8 +41,8 @@ export default function FilterChipsBar({ chips, onClearAll, prefix }: {
   const hidden = chips.length - shown.length;
 
   const chip = (c: FilterChip, i: number) => (
-    <span key={i} className={`${prefix}-filterchip`} title={c.label}>
-      <span>{c.label}</span>
+    <span key={i} className={`${prefix}-filterchip`}>
+      <Tooltip label={c.label}><span>{c.label}</span></Tooltip>
       <button type="button" onClick={c.onRemove} aria-label={`Remove ${c.label}`}>×</button>
     </span>
   );
@@ -91,7 +92,9 @@ export default function FilterChipsBar({ chips, onClearAll, prefix }: {
                 <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
                   {chips.map((c, i) => (
                     <div key={i} className={`${prefix}-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                      <span className={`${prefix}-filterpop-lbl`} title={c.label}>{c.label}</span>
+                      <Tooltip label={c.label}>
+                        <span className={`${prefix}-filterpop-lbl`}>{c.label}</span>
+                      </Tooltip>
                       <button
                         type="button"
                         className={`${prefix}-filterpop-x`}

@@ -422,6 +422,7 @@
   background: none; border: 0; padding: 0;
   font: inherit; font-weight: 700;
   color: #7c3aed; cursor: pointer; text-decoration: underline;
+  pointer-events: auto;
 }
 .smc-empty-link:hover { color: #5b21b6; }
 .smc-toolbar .smc-search {
@@ -1027,13 +1028,17 @@
 .smc-table tbody tr:hover td { background: linear-gradient(90deg, rgba(196,181,253,.25), rgba(167,139,250,.2), rgba(196,181,253,.25)) !important; }
 .smc-table tbody tr:last-child td { border-bottom: none; }
 
+/* Centred on the table BODY — the strip between the header and the pager —
+   not on the whole wrap, which includes the pager and pushed the message
+   onto/below it when the card was short. Both heights are published by fit(). */
 .smc-empty {
   position: absolute;
   left: 50%;
-  top: calc(50% + 16px);
+  top: calc(var(--smc-thead-h, 36px) + (100% - var(--smc-thead-h, 36px) - var(--smc-foot-h, 52px)) / 2);
+  width: max-content; max-width: calc(100% - 24px);
   transform: translate(-50%, -50%);
   text-align: center;
-  color: #a78bfa; font-size: 12px; font-style: italic;
+  color: #a78bfa; font-family: inherit; font-size: 13px; font-weight: 500; font-style: normal;
   pointer-events: none;
   z-index: 2;
 }

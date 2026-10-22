@@ -25,6 +25,12 @@ use Illuminate\Support\Carbon;
  *   • no uploaded file's expiry date has passed, and
  *   • every applicable Supplier-party Agreement has a COMPLETED signature.
  *
+ * Trade Documents and Agreements are CASE-TO-CASE: they exist per purchase
+ * order, and the Evidence Vault lists no case at all for a supplier with no PO
+ * (CS-409). Such a supplier is judged on its standard set alone (KYC, DD,
+ * Trade Licences) — demanding per-deal papers before there is a deal kept it
+ * Non Compliant forever (QA #45). Once a PO exists, both count again.
+ *
  * Optional docs are ignored — that is what "mandatory document set" means, and
  * it matches the CLM card's own "X of Y" counter, which has always counted
  * requirement === 'M' only.
@@ -46,6 +52,9 @@ class SupplierCompliance
 
     /** Upload-backed buckets. Agreements are signature-backed and handled apart. */
     private const DOC_CATEGORIES = ['kyc', 'dd', 'tl', 'td'];
+
+    /** Per-deal buckets — only owed once the supplier has a purchase order. */
+    private const CASE_CATEGORIES = ['td'];
 
     /**
      * @param  array<int>  $vendorIds
@@ -104,6 +113,20 @@ class SupplierCompliance
         $agreementsBySegment = self::agreementLibrary($clientId, $allSegIds);
         $signedByVendor      = self::signedAgreements($clientId, $vendorIds);
 
+        /* 4b. Which suppliers have a case at all — the same test the vault's
+               Case to Case section uses (buildPoDeals): a live PO raised on them. */
+        $hasPo = array_fill_keys(
+            \Illuminate\Support\Facades\DB::table('p2p_purchase_orders')
+                ->where('client_id', $clientId)
+                ->whereIn('vendor_id', $vendorIds)
+                ->whereNull('deleted_at')
+                ->distinct()
+                ->pluck('vendor_id')
+                ->map(fn ($x) => (int) $x)
+                ->all(),
+            true
+        );
+
         /* 5. Evaluate. Every supplier asked about gets an answer, including any
               whose row was not returned above (deleted mid-request). */
         $out = [];
@@ -115,7 +138,8 @@ class SupplierCompliance
                 $uploadsByVendor[$vid] ?? [],
                 $agreementsBySegment,
                 $signedByVendor[$vid] ?? [],
-                $today
+                $today,
+                isset($hasPo[$vid])
             );
         }
         return $out;
@@ -134,7 +158,8 @@ class SupplierCompliance
         array $uploads,
         array $agreementsBySegment,
         array $signed,
-        Carbon $today
+        Carbon $today,
+        bool $hasCase
     ): string {
         /* Mandatory codes per category, unioned across the supplier's segments.
            One rule per segment: the one matching the supplier's trade type, or
@@ -151,6 +176,8 @@ class SupplierCompliance
 
             $sel = $rule->doc_selections ?? [];
             foreach (self::DOC_CATEGORIES as $cat) {
+                // No PO, no case: per-deal documents are not owed yet.
+                if (!$hasCase && in_array($cat, self::CASE_CATEGORIES, true)) continue;
                 $entries = $sel[$cat] ?? [];
                 if (!is_array($entries)) continue;
                 foreach ($entries as $code => $req) {
@@ -177,6 +204,7 @@ class SupplierCompliance
         /* Applicable agreements must be signed, and that signature still in
            date. Expiry lives on the SIGNATURE, not the library row — the
            library defines the agreement, the request is the executed copy. */
+        if (!$hasCase) return self::COMPLIANT;   // agreements are per deal too
         foreach ($segIds as $sid) {
             foreach ($agreementsBySegment[$sid] ?? [] as $agrId) {
                 if (!array_key_exists($agrId, $signed)) return self::NON_COMPLIANT;

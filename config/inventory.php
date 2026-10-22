@@ -18,7 +18,16 @@ return [
      * that simulation is replaced by a server call — a mismatch makes every
      * genuine sticker read as tampered.
      */
-    'sticker_secret' => env('STICKER_SECRET', 'demo-signing-secret'),
+    /* No default, deliberately. The old one ('demo-signing-secret') shipped in
+       git, so every label it signed could be forged by anyone who read the
+       repo. Unset, StickerKey derives the key from APP_KEY instead — random
+       per environment, and already secret. */
+    'sticker_secret' => env('STICKER_SECRET'),
+
+    /* Honour labels signed by the retired FNV fold.
+       Those labels are forgeable, so this is a transition switch, not a
+       setting: turn it off once the floor has been reprinted. */
+    'sticker_accept_legacy' => (bool) env('STICKER_ACCEPT_LEGACY', true),
 
     /*
      * How long a HALF-FINISHED scan stays valid, in minutes.

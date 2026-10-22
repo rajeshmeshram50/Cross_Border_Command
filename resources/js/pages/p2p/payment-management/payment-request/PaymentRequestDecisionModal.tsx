@@ -5,8 +5,9 @@ import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent } from 'r
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
-import { Box, Chip, HeroRefChips, ICON_X, STAT_ICONS, Stat, fmtDate, money } from '../../purchase-management/order/manage-payment/payment-shared';
+import { Box, Chip, HeroRefChips, ICON_X, STAT_ICONS, Stat, fmtDate, moneyIn } from '../../purchase-management/order/manage-payment/payment-shared';
 import { decidePaymentRequest, type PaymentRequestRow } from './paymentRequestData';
+import { ccySymbol } from '../../../../utils/currency';
 import { PoApiError } from '../../purchase-management/order/api/po-api';
 import type { PaymentRequestDetail } from './paymentRequestDetailData';
 import '../../p2p-detail.css';
@@ -77,6 +78,8 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   const { user } = useAuth();
   const approve = mode === 'approve';
   const { doc, ledger, linked, supplier, po } = detail;
+  // Amounts follow the PO's own currency — an import must not print ₹ (QA #167).
+  const money = moneyIn(request.currency);
   const D = doc.kind === 'spi' ? 'SPI' : 'PO';
 
   const cap = approvalCap(detail, request);
@@ -113,7 +116,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
       ? `Only ${money(cap)} is still open on this document.`
       : `Cannot exceed the ${money(request.requestedAmount)} that was requested.`)
     : amtText !== '' && amount <= 0 ? 'Enter the amount being approved.'
-    : amtText !== '' && amount < 1 ? 'The approved amount must be at least ₹1.' : '';
+    : amtText !== '' && amount < 1 ? `The approved amount must be at least ${money(1)}.` : '';
 
   // Figures as the requester saw them when raising the request.
   const awaiting = linked.filter(r => r.status === 'awaiting').reduce((s, r) => s + r.requestedAmount, 0);
@@ -155,7 +158,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   const submit = async () => {
     if (approve) {
       if (amount <= 0) { setError('Enter the amount being approved.'); return; }
-      if (amount < 1) { setError('The approved amount must be at least ₹1.'); return; }
+      if (amount < 1) { setError(`The approved amount must be at least ${money(1)}.`); return; }
       if (amount > cap) {
         setError(cap < request.requestedAmount
           ? `Only ${money(cap)} is still open on this ${D} — the rest is already paid or committed to other requests.`
@@ -277,7 +280,7 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
                 <div className="prd-dec__field is-live">
                   <label htmlFor="prd-dec-amt">Amount To Be Approved</label>
                   <div className="rpr-amtwrap prd-dec__amt">
-                    <span className="rpr-amtwrap__cur">₹</span>
+                    <span className="rpr-amtwrap__cur">{ccySymbol(request.currency)}</span>
                     <input
                       id="prd-dec-amt" type="number" className="rpr-amtwrap__in" min={0} max={cap} step={1} disabled={saving}
                       value={amtText} onChange={e => { setAmtText(e.target.value); setError(''); }}

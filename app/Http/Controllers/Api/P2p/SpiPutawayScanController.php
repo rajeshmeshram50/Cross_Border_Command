@@ -343,10 +343,43 @@ class SpiPutawayScanController extends Controller
     /** The box half of the pair. */
     private function scanBox(ScanDevice $device, ?SpiPutawayTask $task, array $hit, array $data)
     {
-        $box = SpiBox::where('client_id', $device->client_id)->find($hit['id']);
+        /* The box by id first, then judged — not filtered by client.
+         *
+         * Scoping the lookup made the client a hidden filter, so a box
+         * belonging to another organisation or another branch came back as
+         * "no box matches that label". The operator is holding a carton whose
+         * label just passed its signature check and is told it does not exist,
+         * which sends them off to raise a duplicate.
+         *
+         * Looking it up unscoped is a cross-tenant READ, so the refusals below
+         * say nothing ABOUT the other tenant — no name, no invoice, no
+         * location, only that this device may not touch it. Reachable only
+         * with a genuinely signed label, since the signature is checked before
+         * anything here runs.
+         */
+        $box = SpiBox::withoutGlobalScopes()->whereNull('deleted_at')->find($hit['id']);
         if (!$box) {
             return $this->refuse($task, $device, 'unknown_box',
-                'No box on this account matches that label.', $data);
+                'No box matches that label.', $data);
+        }
+
+        /* Whose box is it? The device's client is the PERMISSION, and it is
+           the one thing a printed label can never prove — a sticker can be
+           photographed or reprinted by anyone. */
+        if ((int) $box->client_id !== (int) $device->client_id) {
+            return $this->refuse($task, $device, 'device_wrong_client',
+                'That box belongs to another organisation. This device is not allocated to it.', $data);
+        }
+
+        /* Right client, wrong branch. A null branch on either side is
+           client-wide, mirroring the tenant scope — otherwise a shared box
+           would be unreachable from every branch at once. */
+        $deviceBranch = TenantContext::branchId();
+        if ($deviceBranch !== null && $box->branch_id !== null
+            && (int) $box->branch_id !== (int) $deviceBranch) {
+            return $this->refuse($task, $device, 'device_wrong_branch',
+                "{$box->box_code} belongs to another branch. Ask your administrator "
+                . 'to allocate this device to that branch.', $data);
         }
 
         /* THE INVOICE THIS CARTON WAS PACKED UNDER — resolved before anything

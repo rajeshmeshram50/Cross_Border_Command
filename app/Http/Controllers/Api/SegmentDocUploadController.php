@@ -561,7 +561,8 @@ class SegmentDocUploadController extends Controller
             return response()->json([
                 'data' => [
                     // The owner's segments by id — two can share a name (Less / High).
-                    'segment_rows'           => in_array($type, ['customer', 'consignee'], true) ? \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($owner)) : [],
+                    'segment_rows'           => $this->segmentRowsOf($type, $owner),
+                    'party_contact'          => $this->partyContactOf($owner),
                     'same_as_customer'       => $sameAsCustomer,
                     'mirror_customer'        => $mirrorCustomer,
                     'company_dd'             => $company_dd,
@@ -872,7 +873,8 @@ class SegmentDocUploadController extends Controller
                 'same_as_customer'       => $sameAsCustomer,
                 'mirror_customer'        => $mirrorCustomer,
                 // The owner's segments by id — two can share a name (Less / High).
-                'segment_rows'           => in_array($type, ['customer', 'consignee'], true) ? \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($owner)) : [],
+                'segment_rows'           => $this->segmentRowsOf($type, $owner),
+                'party_contact'          => $this->partyContactOf($owner),
                 'vendor_with_shipment'    => $vendorDeals['with_shipment'],
                 'vendor_without_shipment' => $vendorDeals['without_shipment'],
                 'vendor_deal_ratios'      => $vendorDeals['ratios'],
@@ -2565,6 +2567,42 @@ class SegmentDocUploadController extends Controller
      * is a programming error that should fail loudly against the
      * consignee's own row (not silently mutate the customer's uploads).
      */
+    /**
+     * The owner's segments by id (code / name / regulatory_status) for the
+     * vault header chip. A supplier keeps its multi-select set in the
+     * vendor_segments pivot (scalar segment_id = the first one); customers
+     * and consignees resolve through SegmentGuard.
+     */
+    private function segmentRowsOf(string $type, $owner): array
+    {
+        if (in_array($type, ['customer', 'consignee'], true)) {
+            return \App\Support\SegmentGuard::rowsFor(\App\Support\SegmentGuard::idsOf($owner));
+        }
+        if ($owner instanceof \App\Models\Vendor) {
+            $ids = DB::table('vendor_segments')->where('vendor_id', $owner->id)->orderBy('id')->pluck('segment_id')->all();
+            if (!$ids && $owner->segment_id) $ids = [$owner->segment_id];
+            return \App\Support\SegmentGuard::rowsFor($ids);
+        }
+        return [];
+    }
+
+    /**
+     * A supplier's signing contact for the vault's Send-for-Signature preview:
+     * primary address contact, then the vendor's primary_email — the same
+     * resolution PoDocumentService::supplierContact uses at send time, so the
+     * recipient shown is the one Zoho gets. Callers opening the vault do not
+     * all carry an email, which left the preview on "—" (QA #139).
+     */
+    private function partyContactOf($owner): ?array
+    {
+        if (!$owner instanceof \App\Models\Vendor) return null;
+        $addr = $owner->primaryAddress;
+        return [
+            'name'  => $addr?->contact_name ?: null,
+            'email' => strtolower(trim((string) ($addr?->email ?: ($owner->primary_email ?? '')))) ?: null,
+        ];
+    }
+
     private function resolveOwner(Request $request, string $type, int $id, string $action = 'view'): Model
     {
         $class = self::TYPE_MAP[$type] ?? null;

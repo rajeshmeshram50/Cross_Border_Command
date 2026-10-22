@@ -19,10 +19,18 @@ namespace App\Services\Inventory;
  * The id, never the code. A box id is unique across every invoice; B-001
  * exists on almost every SPI. Location codes restart at 001 per branch.
  *
- * Mirrors makeKey()/makeSticker() in resources/js/pages/inventory/putAwayStore.ts.
- * The signature there is an FNV-1a fold, not an HMAC, and this reproduces it
- * exactly so a PHP-printed label validates in that scanner. When the real
- * server-side signing lands, both sides change together.
+ * SIGNED WITH HMAC-SHA256, server side only.
+ *
+ * It used to be an FNV-1a fold keyed with a secret committed to the repo, to
+ * mirror makeKey() in resources/js/pages/inventory/putAwayStore.ts. FNV is a
+ * hash-table function, not a MAC: with the secret in hand — and it was, in
+ * git — anyone could edit BOX.15 to any id in any tenant and recompute the
+ * seven characters that vouch for it. The label stopped proving anything.
+ *
+ * The browser can no longer sign, by design: a key a client holds is not a
+ * key. Labels are printed by the server, which is where they were already
+ * printed from. The Inventory Management simulation keeps its own JS signing
+ * for its own sample stickers; the two were never the same trust domain.
  */
 class StickerKey
 {
@@ -109,6 +117,16 @@ class StickerKey
         if (count($parts) !== 6 || $parts[0] !== 'CBC1') return null;
 
         [, $tenant, $type, $id, , $sig] = $parts;
+        $body = implode('|', array_slice($parts, 0, 5));
+
+        /* Labels already stuck to racks carry the old seven-character fold.
+           Accepted while inventory.sticker_accept_legacy is on, and reported
+           as legacy so a reprint can be chased — turn it off once the floor
+           has been reprinted, and every forgeable label dies with it. */
+        $valid  = hash_equals(self::sign($body), $sig);
+        $legacy = !$valid
+            && config('inventory.sticker_accept_legacy', true)
+            && hash_equals(self::signLegacy($body), $sig);
 
         return [
             'tenant' => $tenant,
@@ -116,7 +134,8 @@ class StickerKey
             'id'     => $id,
             // Reported, not enforced here: refusing a scan is the caller's job,
             // and it needs to say WHY in its own words.
-            'valid'  => hash_equals(self::sign(implode('|', array_slice($parts, 0, 5))), $sig),
+            'valid'  => $valid || $legacy,
+            'legacy' => $legacy,
         ];
     }
 
@@ -132,9 +151,54 @@ class StickerKey
 
     /* ─────────────────────────────── signing ─────────────────────────────── */
 
+    /**
+     * 80 bits of HMAC-SHA256, base32 so it survives a scanner that upper-cases.
+     *
+     * Not the full 256: a label is read by a human-held device and every
+     * character is one more module in the QR. Eighty bits is far past what an
+     * attacker could search against a server that refuses unenrolled devices.
+     */
     private static function sign(string $body): string
     {
-        $h = self::fold($body . '|' . config('inventory.sticker_secret'), 0x811c9dc5);
+        $mac = hash_hmac('sha256', $body, self::keyBytes(), true);
+
+        return substr(self::b32($mac), 0, 16);
+    }
+
+    /**
+     * The signing key — never a literal, and never the same across environments.
+     *
+     * STICKER_SECRET when set, otherwise derived from APP_KEY, which is already
+     * random per environment and already must not leak. There is deliberately
+     * no fallback default: the previous one shipped in git, which made every
+     * label forgeable by anyone who could read the repo.
+     *
+     * HKDF rather than the raw secret, so this use cannot be replayed against
+     * anything else APP_KEY protects.
+     */
+    private static function keyBytes(): string
+    {
+        $secret = trim((string) config('inventory.sticker_secret'));
+
+        if ($secret === '' || $secret === 'demo-signing-secret') {
+            $secret = (string) config('app.key');
+        }
+
+        if (str_starts_with($secret, 'base64:')) {
+            $secret = (string) base64_decode(substr($secret, 7), true);
+        }
+
+        if ($secret === '') {
+            throw new \RuntimeException('Sticker signing needs STICKER_SECRET or APP_KEY.');
+        }
+
+        return hash_hkdf('sha256', $secret, 32, 'cbc-sticker-hmac-v2');
+    }
+
+    /** The retired FNV fold, kept only to recognise labels already printed. */
+    private static function signLegacy(string $body): string
+    {
+        $h = self::fold($body . '|' . (config('inventory.sticker_secret') ?: 'demo-signing-secret'), 0x811c9dc5);
 
         return substr(str_pad(self::b36($h), 7, '0', STR_PAD_LEFT), -7);
     }
@@ -165,5 +229,23 @@ class StickerKey
     private static function b36(int $h): string
     {
         return strtoupper(base_convert((string) $h, 10, 36));
+    }
+
+    /** RFC 4648 base32 without padding. Upper-case only, so parse() cannot lose it. */
+    private static function b32(string $raw): string
+    {
+        $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+        $bits = '';
+        for ($i = 0, $n = strlen($raw); $i < $n; $i++) {
+            $bits .= str_pad(decbin(ord($raw[$i])), 8, '0', STR_PAD_LEFT);
+        }
+
+        $out = '';
+        foreach (str_split($bits, 5) as $chunk) {
+            if (strlen($chunk) < 5) break;
+            $out .= $alphabet[bindec($chunk)];
+        }
+
+        return $out;
     }
 }
