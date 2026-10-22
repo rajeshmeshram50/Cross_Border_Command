@@ -219,7 +219,19 @@ class SupplierInvoiceController extends Controller
                 // 'Approved' silently matched nothing.
                 ->withSum(['paymentRequests as approved_unpaid_amount' =>
                     fn ($r) => $r->where('status', PoPaymentRequest::STATUS_APPROVED)],
-                    DB::raw('GREATEST(approved_amount - paid_amount, 0)'));
+                    DB::raw('GREATEST(approved_amount - paid_amount, 0)'))
+                /* Is the FLOOR finished — every packed box physically on a shelf.
+                   A different fact from status/stage_completed, which is a person
+                   pressing Submit. Both matter and they are not the same: an
+                   invoice can be fully put away and still unsigned, and until now
+                   nothing in a list could show that.
+                   Subqueries on the one list query, like the two above, so a page
+                   of ten rows costs two extra queries rather than twenty. Derived
+                   every time rather than stored, so it cannot drift. */
+                ->withCount([
+                    'boxes as boxes_total',
+                    'putaways as boxes_placed' => fn ($r) => $r->where('status', SpiPutaway::PLACED),
+                ]);
 
             $this->applyPoMode($q, $f['po_mode'] ?? null);
             $this->applyShipmentMode($q, $f['shipment_mode'] ?? null);
@@ -930,8 +942,21 @@ class SupplierInvoiceController extends Controller
         $opp  = $po?->proforma_invoice_id ? ($refs['opp'][$po->proforma_invoice_id] ?? null) : null;
         $day  = fn ($d) => $d ? substr((string) $d, 0, 10) : null;
 
+        /* Counts come from withCount on the list query; null on any caller that
+           did not ask for them, so the frontend can tell "not loaded" from
+           "nothing placed" instead of reading 0 as complete. */
+        $boxes  = $s->boxes_total  ?? null;
+        $placed = $s->boxes_placed ?? null;
+
         return [
             'id'          => $s->id,
+            'boxes_total'       => $boxes,
+            'boxes_placed'      => $placed,
+            // The floor is done. Null when the counts were not loaded, and
+            // false for an invoice with no boxes — nothing packed is not done.
+            'putaway_complete'  => ($boxes === null || $placed === null)
+                ? null
+                : ($boxes > 0 && $placed >= $boxes),
             'spi_number'  => $s->code,
             // A draft has no supplier invoice date until Stage 02, so the
             // column would read blank for the whole of Stage 01.
