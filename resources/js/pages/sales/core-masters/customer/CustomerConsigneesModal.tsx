@@ -13,8 +13,8 @@ import SearchClear from '../../../../components/ui/SearchClear';
 
 
 export interface CustomerLite {
-  id: string;          // C-001 display code
-  db_id: number;       // numeric primary key
+  id: string;
+  db_id: number;
   company: string;
   country?: string;
 }
@@ -37,10 +37,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
     text:          isDark ? '#e2e8f0' : '#334155',
     textMuted:     isDark ? '#94a3b8' : '#6b7280',
     border:        isDark ? 'rgba(148,163,184,.20)' : '#e5e7eb',
-    /* One tone for both choices. Add New used to be violet against Map
-       Existing's teal, which coloured them as if they came from different
-       parts of the app; both create a consignee, so they are one pair. The
-       icon and the heading tell them apart. */
     choiceBg:      isDark ? 'rgba(13,148,136,.14)' : '#f0fdfa',
     choiceBorder:  isDark ? 'rgba(13,148,136,.35)' : '#ccfbf1',
     btnBg:         isDark ? '#1b2233' : '#ffffff',
@@ -160,7 +156,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
       <div className="ccm-overlay" onMouseDown={onClose}>
         <style>{SCOPED_CSS}</style>
         <div className="ccm-card" onMouseDown={e => e.stopPropagation()}>
-          {/* Header */}
           <div className="ccm-header">
             <div className="ccm-header-left">
               <div className="ccm-header-icon">
@@ -192,7 +187,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
             </div>
           </div>
 
-          {/* Toolbar */}
           <div className="ccm-toolbar">
             <div className="ccm-search ui-search-abs">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
@@ -218,8 +212,8 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
             </div>
           </div>
 
-          {/* Table */}
           <div className="ccm-body">
+            <div className="ccm-tablecard">
             <div className="ccm-table-wrap">
               <table className="ccm-table">
                 <thead>
@@ -239,12 +233,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 </thead>
                 <tbody>
                   {loading ? (
-                    /* Skeleton rows, not a spinner in a merged cell (QA #10).
-                       A single centred spinner collapses the eleven columns into
-                       one and the table visibly reflows when the rows arrive;
-                       shimmer in the real cells keeps the grid still and shows
-                       what is coming. Five rows because that is this modal's page
-                       size, so nothing jumps when the data lands. */
                     Array.from({ length: 5 }).map((_, r) => (
                       <tr key={`skel-${r}`} className="ccm-skel-row">
                         {Array.from({ length: 11 }).map((__, c) => (
@@ -319,17 +307,8 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 </tbody>
               </table>
             </div>
-            {/* The app's own pager. This popup had a bespoke one -- a plain
-                "Showing X-Y of Z" beside arrow buttons and a numbered button
-                per page -- which matched nothing else in the product, least of
-                all the customer list it opens from. (QA #42) */}
             {filtered.length > 0 && (
               <div className="ccm-pag">
-                {/* No hideNavWhenSinglePage: these two popups are compared
-                    side by side, and a footer that shows its controls in one
-                    and hides them in the other reads as one of them being
-                    broken. The rack Shelves dialog still hides them -- nothing
-                    sits beside that one to compare it against. */}
                 <WorklistPager
                   total={filtered.length}
                   page={page}
@@ -338,6 +317,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 />
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>
@@ -351,14 +331,9 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
         onSaved={() => fetchRows()}
       />
 
-      {/* Add-or-Map chooser */}
       {chooseOpen && createPortal(
         <div onMouseDown={() => setChooseOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: pk.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
-            {/* Teal, not violet. Violet is the customer's colour; everything
-                under this modal is consignee work, and the Map popup this one
-                leads into already wears teal — so the chooser was the single
-                violet step in an otherwise teal flow. */}
             <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#0e9f86,#14b8a6)', color: '#fff' }}>
               <div style={{ fontSize: 16, fontWeight: 800 }}>Add or Map Consignee</div>
               <div style={{ fontSize: 12.5, opacity: .9, marginTop: 2 }}>Create a brand-new consignee, or map an existing one to <strong>{customer.id}</strong>.</div>
@@ -387,7 +362,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
         document.body,
       )}
 
-      {/* Map existing consignee → pick from dropdown */}
       {mapOpen && createPortal(
         <div onMouseDown={() => !mapping && setMapOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: pk.card, borderRadius: 16, overflow: 'visible', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
@@ -428,7 +402,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
       )}
 
       {segOpen && (() => {
-        const ROWS_MAX_H = 108;                          // ≈ 3 rows (~34px each)
+        const ROWS_MAX_H = 108;
         const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.names.length * 34);
         const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 340));
         const top  = Math.max(8, Math.min(segOpen.y, window.innerHeight - estH - 8));
@@ -463,8 +437,6 @@ const SCOPED_CSS = `
   position: fixed; inset: 0;
   background: rgba(46, 16, 101, .50);
   backdrop-filter: blur(6px);
-  /* Sits below AddConsigneeModal (z-index 1095) so the consignee
-   * form launched from inside this popup stacks above it. */
   z-index: 1090;
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
@@ -488,8 +460,6 @@ const SCOPED_CSS = `
   color: #fff;
   overflow: hidden;
 }
-/* Subtle radial highlights — same flavour as the AddCustomerModal
-   header so the two popups feel like one design family. */
 .ccm-header::before {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background-image:
@@ -507,15 +477,9 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 12px rgba(0,0,0,0.18);
 }
 .ccm-header-text { min-width: 0; }
-.ccm-title { font-size: 17px; font-weight: 800; letter-spacing: -.2px; line-height: 1.2; }
-.ccm-sub   { font-size: 12px; color: rgba(255,255,255,.80); margin-top: 3px; max-width: 520px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ccm-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; line-height: 1.2; }
+.ccm-sub   { font-size: 12px; font-weight: 500; color: rgba(255,255,255,.80); margin-top: 3px; max-width: 520px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ccm-header-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; position: relative; z-index: 1; }
-/* Stacked chip: small label on top, then a single row with the
-   customer code, company name and country. Cleaner than the previous
-   single-line layout where the long company name was crowding the
-   close button. */
-/* Horizontal pill rail (Figma): "CONSIGNEES FOR" label + each value as its
-   own translucent capsule pill, inside a soft rounded container. */
 .ccm-link-chip {
   display: inline-flex; flex-direction: row; align-items: center; gap: 10px;
   padding: 6px 10px 6px 14px;
@@ -564,12 +528,12 @@ const SCOPED_CSS = `
   width: 100%;
   padding: 8px 12px 8px 34px;
   border: 1px solid #d1d5db; border-radius: 10px;
-  font-size: 13px; background: #fff;
+  font-size: 13px; font-weight: 500; background: #fff;
 }
 .ccm-search input:focus { outline: none; border-color: #059669; box-shadow: 0 0 0 3px rgba(5,150,105,.15); }
 .ccm-toolbar-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .ccm-count {
-  font-size: 12.5px; color: #047857; font-weight: 700;
+  font-size: 11.5px; color: #047857; font-weight: 600;
   padding: 6px 12px;
   background: #f5f3ff; border: 1px solid rgba(52,211,153,.40);
   border-radius: 999px;
@@ -580,33 +544,51 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #059669 0%, #065f46 100%);
   color: #fff;
   border: none; border-radius: 10px;
-  font-weight: 700; font-size: 13px;
+  font-weight: 700; font-size: 11.5px;
   cursor: pointer; transition: all .15s ease;
   box-shadow: 0 4px 10px rgba(5,150,105,.30);
 }
 .ccm-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(5,150,105,.40); }
 
 .ccm-body { flex: 1; overflow: auto; padding: 0; background: #fafafd; }
-.ccm-table-wrap { overflow-x: auto; padding: 12px 18px 18px; }
-.ccm-table {
-  width: 100%; border-collapse: separate; border-spacing: 0;
-  font-size: 12.5px; color: #1f2937;
+.ccm-tablecard {
+  margin: 12px 18px 18px;
   background: #fff;
   border: 1px solid #d1fae5;
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 12px rgba(4,120,87,.06);
 }
-.ccm-table thead tr {
-  background: linear-gradient(110deg, #059669 0%, #047857 55%, #065f46 100%);
+.ccm-table-wrap { overflow-x: auto; padding: 0; }
+.ccm-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: 11.5px; color: #1f2937;
+  background: #fff;
 }
+.ccm-table thead tr { background: transparent; }
+.ccm-table tbody td:not(:last-child),
+.ccm-table tbody td:not(:last-child) *:not(i):not(svg):not(svg *) {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+}
+.ccm-table tbody td:not(:last-child) .ccm-srno.ccm-srno { font-size: 11px !important; font-weight: 800 !important; }
+.ccm-table tbody td:not(:last-child) .ccm-id-chip.ccm-id-chip,
+.ccm-table tbody td:not(:last-child) .ccm-cust-chip.ccm-cust-chip {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+}
+.ccm-table tbody td:not(:last-child) .seg-reg-badge.seg-reg-badge { font-size: 10px !important; font-weight: 600 !important; }
+.ccm-table tbody td:not(:last-child) .ccm-seg-more.ccm-seg-more { font-size: 10px !important; font-weight: 800 !important; }
 .ccm-table thead th {
   padding: 11px 9px;
   text-align: left;
   font-weight: 800; font-size: 9.5px; letter-spacing: .07em;
-  color: #ffffff; text-transform: uppercase;
+  color: #306865; text-transform: uppercase;
   white-space: nowrap;
   border-bottom: 0;
+  background: linear-gradient(180deg, #f6fefb, #e3f8ef);
+  box-shadow: inset 0 1px 0 #d6f5e8, inset 0 -1.5px 0 #bdf0da;
 }
 .ccm-table tbody tr { background: #ffffff; }
 .ccm-table tbody tr:nth-child(even) { background: #f6fefb; }
@@ -618,9 +600,6 @@ const SCOPED_CSS = `
   color: #064e3b;
   background: transparent;
 }
-/* Alignment: short single-value columns centered (Sr No, Consignee ID,
-   Segment, Risk Level, Same as Customer, Contact No, Actions); the big
-   text columns (Company Name, Contact Person, Email, Location) stay left. */
 .ccm-table th:nth-child(1), .ccm-table td:nth-child(1),
 .ccm-table th:nth-child(2), .ccm-table td:nth-child(2),
 .ccm-table th:nth-child(4), .ccm-table td:nth-child(4),
@@ -630,7 +609,6 @@ const SCOPED_CSS = `
 .ccm-table th:nth-child(11), .ccm-table td:nth-child(11) { text-align: center; }
 .ccm-table tbody tr:last-child td { border-bottom: none; }
 .ccm-table tbody tr:hover { background: #ecfdf5; }
-/* SR No — purple rounded-square badge. */
 .ccm-srno {
   display: inline-flex; align-items: center; justify-content: center;
   width: 24px; height: 24px; border-radius: 7px;
@@ -638,7 +616,6 @@ const SCOPED_CSS = `
   color: #fff; font-weight: 800; font-size: 11px;
   box-shadow: 0 2px 6px rgba(4,120,87,0.30);
 }
-/* Segment — soft lavender pill with a dot. */
 .ccm-seg {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 11px; font-weight: 600; color: #065f46;
@@ -646,7 +623,6 @@ const SCOPED_CSS = `
   padding: 3px 10px; white-space: nowrap;
 }
 .ccm-seg::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-/* "+N" segment overflow pill + popover — emerald accent to match the modal. */
 .ccm-seg-more {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 20px;
@@ -659,9 +635,17 @@ const SCOPED_CSS = `
 .ccm-seg-pop {
   background: #fff; border: 1.5px solid #a7f3d0;
   box-shadow: 0 16px 40px rgba(0,0,0,.18);
+  font-family: var(--font-sans);
 }
+.ccm-seg-pop .ccm-seg-pop-row .ccm-seg {
+  font-family: var(--font-sans) !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+}
+.ccm-seg-pop .ccm-seg-pop-row .seg-reg-badge { font-size: 10px !important; font-weight: 600 !important; }
 .ccm-seg-pop-title {
-  font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 9.5px !important; font-weight: 800 !important; letter-spacing: .07em; text-transform: uppercase;
   color: #047857; padding: 4px 8px 7px;
 }
 .ccm-seg-pop-row { display: flex; align-items: center; padding: 6px 8px; border-radius: 8px; }
@@ -672,15 +656,12 @@ const SCOPED_CSS = `
 .ccm-empty td {
   text-align: center;
   padding: 48px 16px !important;
-  color: #6b7280; font-size: 13px;
+  color: #6b7280; font-size: 12.5px; font-weight: 600;
   white-space: normal;
   background: #fff;
 }
 .ccm-empty td strong { color: #047857; }
 .ccm-empty-state { display: inline-flex; align-items: center; gap: 10px; color: #047857; font-weight: 600; }
-/* Loading skeleton for the consignee table. Emerald-tinted to match this
-   modal's accent, and the same 1.1s sweep the worksheet and the agreement
-   popup use so loading reads the same everywhere in the app. */
 .ccm-skel-row td { padding-top: 14px; padding-bottom: 14px; }
 .ccm-skel-row:hover td { background: transparent !important; }
 .ccm-skel {
@@ -726,7 +707,6 @@ const SCOPED_CSS = `
   font-size: 11px; font-weight: 700; border: 1px solid transparent;
 }
 .ccm-pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-/* Same-as-Customer Yes/No pill. */
 .ccm-sac { display: inline-flex; align-items: center; padding: 3px 11px; border-radius: 999px; font-size: 11px; font-weight: 800; }
 .ccm-sac.is-yes { background: rgba(16,185,129,.14); color: #059669; }
 .ccm-sac.is-no  { background: rgba(100,116,139,.12); color: #64748b; }
@@ -735,7 +715,6 @@ const SCOPED_CSS = `
 .ccm-pill-high { background: #fef2f2; color: #b91c1c; border-color: #fca5a5; }
 
 .ccm-row-actions { display: inline-flex; gap: 6px; }
-/* Edit action — green/teal to match the consignee table theme. */
 .ccm-row-btn {
   width: 28px; height: 28px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -749,7 +728,6 @@ const SCOPED_CSS = `
 }
 .ccm-row-btn-del:hover { background: #fef2f2; border-color: #ef4444; color: #b91c1c; }
 
-/* Dark mode */
 [data-bs-theme="dark"] .ccm-overlay { background: rgba(0,0,0,.65); }
 [data-bs-theme="dark"] .ccm-card { background: linear-gradient(165deg, #0b1220 0%, #11182a 45%, #131c30 100%); border: 1px solid rgba(52,211,153,0.20); }
 [data-bs-theme="dark"] .ccm-body { background: #0c1322; }
@@ -758,9 +736,14 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .ccm-search input::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] .ccm-search svg { color: #6ee7b7; }
 [data-bs-theme="dark"] .ccm-count { background: rgba(5,150,105,.20); border-color: rgba(52,211,153,.35); color: #a7f3d0; }
-[data-bs-theme="dark"] .ccm-table { background: #1a2236; border-color: rgba(52,211,153,0.22); box-shadow: 0 4px 18px rgba(0,0,0,0.45); }
-[data-bs-theme="dark"] .ccm-table thead tr { background: linear-gradient(110deg, #065f46 0%, #064e3b 55%, #053d2e 100%); }
-[data-bs-theme="dark"] .ccm-table thead th { color: #ffffff; border-bottom: 0; }
+[data-bs-theme="dark"] .ccm-tablecard { background: #1a2236; border-color: rgba(52,211,153,0.22); box-shadow: 0 4px 18px rgba(0,0,0,0.45); }
+[data-bs-theme="dark"] .ccm-table { background: #1a2236; }
+[data-bs-theme="dark"] .ccm-table thead tr { background: transparent; }
+[data-bs-theme="dark"] .ccm-table thead th {
+  color: rgba(167,243,208,.85); border-bottom: 0;
+  background: rgba(5,150,105,.12);
+  box-shadow: inset 0 1px 0 rgba(52,211,153,.18), inset 0 -1.5px 0 rgba(52,211,153,.28);
+}
 [data-bs-theme="dark"] .ccm-table tbody tr { background: transparent; }
 [data-bs-theme="dark"] .ccm-table tbody tr:nth-child(even) { background: rgba(52,211,153,.05); }
 [data-bs-theme="dark"] .ccm-table tbody td { color: #d1fae5; border-bottom-color: rgba(52,211,153,.12); }
@@ -770,30 +753,20 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .ccm-empty td strong { color: #6ee7b7; }
 [data-bs-theme="dark"] .ccm-empty-state { color: #6ee7b7; }
 
-/* Pagination footer — sits under the table inside .ccm-body. It holds the
- * shared WorklistPager now, which brings its own band, pills and arrows, so
- * this is only the padding around it. The old .ccm-pag-info chip and the
- * .ccm-pag-btn page buttons went with the bespoke pager; nothing else in the
- * app carried those classes. */
-.ccm-pag { padding: 10px 18px 14px; display: flex; }
+.ccm-pag { display: flex; }
 .ccm-pag .wl-pager {
   flex: 1;
   min-width: 0;
   margin: 0;
-  padding: 0;
-  border-top: 0;
+  padding: 10px 14px;
+  border-top: 2px solid #a7f3d0;
   border-radius: 0;
-  background: none;
+  background: linear-gradient(90deg, #f0fdf9 0%, #e7fbf3 40%, #f0fdf9 100%);
 }
-[data-bs-theme="dark"] .ccm-pag .wl-pager { background: none; }
-/* Green, not the pager's default violet.
-   WorklistPager ships violet and offers a teal variant; this popup is green
-   throughout -- header, id pills, the Add Or Map button -- so a violet page
-   pill and violet arrows at its foot read as a piece of another screen. The
-   component exposes its colours as custom properties, so they are restated
-   here rather than the component being given a third variant for one caller.
-   The paired Mapped Customers popup on the Consignee side is violet already,
-   so it needs none of this. */
+[data-bs-theme="dark"] .ccm-pag .wl-pager {
+  border-top-color: rgba(52, 211, 153, .32);
+  background: linear-gradient(90deg, rgba(16, 185, 129, .08), rgba(16, 185, 129, .14), rgba(16, 185, 129, .08));
+}
 .ccm-pag .wl-pager {
   --tcwl-accent: #059669;
   --tcwl-text: #047857;
@@ -818,13 +791,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .ccm-row-btn:hover { background: rgba(5,150,105,.22); border-color: #34d399; color: #fff; }
 [data-bs-theme="dark"] .ccm-row-btn-del:hover { background: rgba(239,68,68,.20); border-color: #fca5a5; color: #fca5a5; }
 
-/* ============================================================
- *  RESPONSIVE — tablet & mobile
- *  The popup is a wide 12-column table by default. On smaller
- *  viewports it eats the side padding and lets the table scroll
- *  horizontally (rather than forcing a card stack), so the user
- *  can still see all columns at a glance — just scroll.
- * ============================================================ */
 @media (max-width: 1024px) {
   .ccm-overlay { padding: 12px; }
   .ccm-card { max-height: calc(100vh - 24px); }
@@ -838,7 +804,6 @@ const SCOPED_CSS = `
     height: 100vh;
     width: 100vw;
   }
-  /* Header: stack chip + close below the title block */
   .ccm-header { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; }
   .ccm-header-left { align-items: flex-start; }
   .ccm-title { font-size: 16px; }
@@ -847,13 +812,10 @@ const SCOPED_CSS = `
   .ccm-link-chip { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
   .ccm-link-chip-name { max-width: 100%; }
   .ccm-close { position: absolute; top: 12px; right: 12px; }
-  /* Toolbar: search above, controls below */
   .ccm-toolbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
   .ccm-search { max-width: 100%; }
   .ccm-toolbar-right { width: 100%; justify-content: space-between; }
   .ccm-add-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 12.5px; }
-  /* Table scrolls horizontally — keep all 12 cols visible just slide
-     left/right with thumb on mobile. */
   .ccm-table { font-size: 11.5px; }
   .ccm-table thead th, .ccm-table tbody td { padding: 10px 8px; }
 }
