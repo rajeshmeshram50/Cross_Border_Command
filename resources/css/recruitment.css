@@ -375,6 +375,37 @@
 }
 .rec-form-modal-navy .rec-form-section > .row > [class*="col-"] { margin-bottom: 0; }
 
+/* Step section heading — "Basic Details", "Audience Selection".
+   These were `text-uppercase fw-semibold` with no size, so they inherited the
+   body's 13px while .rec-form-label beneath them is 10px/800 — the small
+   label read as the stronger of the two and the hierarchy ran backwards.
+   lineHeight:1 on a row containing an icon also dropped the glyph off the
+   text's baseline, which is the tilt in the screenshot. */
+.rec-sec-head {
+  display: flex; align-items: center; gap: 7px;
+  /* 700, not 800. The field labels under it are already 800 uppercase, so a
+     heavier heading did not read as "above" them — it read as the same shout,
+     twice. The step up comes from SIZE, the icon chip and the rule beneath;
+     the weight comes back down so the two levels are distinguishable. */
+  font-size: 12.5px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  line-height: 1.2;
+  color: #6d28d9;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--vz-border-color, #ececf2);
+}
+.rec-sec-head i {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+  background: rgba(124, 58, 237, 0.12);
+  font-size: 13px;
+  /* The icon carries the weight of a chip; the text should not inherit it. */
+  font-weight: 400;
+}
+
+[data-bs-theme="dark"] .rec-sec-head { color: #c4b5fd; border-bottom-color: var(--vz-border-color); }
+[data-bs-theme="dark"] .rec-sec-head i { background: rgba(167, 139, 250, 0.18); }
+
 .rec-form-modal-navy .rec-form-label {
   font-size: 11.5px;
   margin-bottom: 7px;
@@ -6549,7 +6580,7 @@
   border-color: rgba(16,185,129,0.40);
 }
 
-.modal-dialog:has(> .ev-modal) { max-width: 1180px; }
+.modal-dialog:has(> .ev-modal) { max-width: 1320px; }
 .ev-modal {
   border-radius: 16px !important;
   overflow: hidden;
@@ -6706,6 +6737,27 @@
 .ev-tab:not(.is-active) .ev-tab-badge { background: #e5e7eb; color: var(--vz-secondary-color); }
 [data-bs-theme="dark"] .ev-tab:not(.is-active) .ev-tab-badge { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.70); }
 
+/* Dark mode: lift the active sub-tab off the card.
+   #6d28d9 is a deep violet picked to read on white — on a dark panel it sinks
+   into the background, so the active tab looked no more selected than the
+   inactive one and the 2px rule under it all but vanished. A light violet
+   reads as "this one" at a glance, which is the tab's only job. */
+[data-bs-theme="dark"] .ev-tab.is-active {
+  color: #c4b5fd;
+  border-bottom-color: #a78bfa;
+}
+[data-bs-theme="dark"] .ev-tab:not(.is-active) { color: rgba(255, 255, 255, 0.62); }
+[data-bs-theme="dark"] .ev-tab:not(.is-active):hover { color: rgba(255, 255, 255, 0.86); }
+
+/* The count on the active tab: solid deep violet went muddy against the
+   panel. A translucent violet with a light figure keeps it legible and lets
+   the tab colour carry the selection instead of competing with it. */
+[data-bs-theme="dark"] .ev-tab.is-active .ev-tab-badge {
+  background: rgba(167, 139, 250, 0.26);
+  color: #ddd6fe;
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.40);
+}
+
 /* Main-tab strip: pill rail on the left, search on the right. */
 .ev-tabstrip {
   display: flex;
@@ -6722,6 +6774,11 @@
 /* Audit Trail popup: round the modal-content itself and clip it, so its white
    background doesn't show through the body's rounded corners. */
 .ev-sig-content { border-radius: 18px; overflow: hidden; }
+
+/* The document preview, wider than Bootstrap's lg (800px).
+   A letter rendered at 800px wraps where the real page does not, so the
+   preview disagreed with the PDF it is a preview of. */
+.modal-dialog:has(> .ev-prev-content) { max-width: 1040px; }
 
 /* Pending / Complete sub-tabs: underline style, pinned to the top of the
    scrolling body so they stay put while the document groups scroll under them. */
@@ -6748,6 +6805,27 @@
   background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
   gap: 4px;
 }
+/* Dark mode: the trough is mixed with #fff, so it stayed a white pill on a
+   dark modal — the one thing in the screenshot that looked broken rather than
+   merely bright. A faint lift off the card reads as a trough without being a
+   light surface. */
+[data-bs-theme="dark"] .ev-softrail.dt-tabs {
+  border-color: rgba(167, 139, 250, 0.22);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+}
+/* Inactive pills carried --dt-a-700 (#6d28d9): dark violet, legible on the
+   light trough and nearly invisible once the trough went dark. */
+[data-bs-theme="dark"] .ev-tabstrip .dt-tab.off { color: #c4b5fd; }
+[data-bs-theme="dark"] .ev-tabstrip .dt-tab.off:hover {
+  background: rgba(167, 139, 250, 0.12);
+  color: #ddd6fe;
+}
+[data-bs-theme="dark"] .ev-tabstrip .dt-tab-count {
+  border-color: rgba(167, 139, 250, 0.32);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ddd6fe;
+}
+
 .ev-tabstrip .dt-tab { font-weight: 650; border-color: transparent; }
 /* Inactive: no border/shadow — just the transparent pill on the trough. */
 .ev-tabstrip .dt-tab.off { background: transparent; color: var(--dt-a-700); border-color: transparent; box-shadow: none; }
@@ -6791,12 +6869,29 @@
 .ev-search button:hover { color: #7c3aed; }
 
 /* Document table — the vault lists read as a grid, not a stack of cards. */
+/* Auto layout, deliberately. table-layout:fixed honoured the th widths but
+   then CLIPPED the signing chain to its 120px column — three avatars and two
+   arrows do not fit, so the row overflowed and pushed Sr No off the left edge
+   behind a scrollbar. The name is truncated by a max-width on the cell
+   instead, which needs no layout mode. */
 .ev-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
 /* One gradient across the whole row: on the cells it restarted per column and
    printed a seam at every border. */
 .ev-table thead tr {
   background: linear-gradient(135deg, #7c5cfc 0%, #6d28d9 60%, #5b21b6 100%);
 }
+/* Dark mode: the same band, receded.
+   At full strength it was the brightest thing on a dark modal — a header row
+   shouting over the rows it labels. Translucent over the card instead, so it
+   still reads as the violet header without becoming the focus. */
+[data-bs-theme="dark"] .ev-table thead tr {
+  background: linear-gradient(135deg,
+    rgba(124, 92, 252, 0.26) 0%,
+    rgba(109, 40, 217, 0.30) 60%,
+    rgba(91, 33, 182, 0.34) 100%);
+}
+[data-bs-theme="dark"] .ev-table thead th { color: #ddd6fe; }
+
 .ev-table thead th {
   padding: 10px 12px;
   background: transparent;
@@ -6846,8 +6941,12 @@
   margin-top: 2px;
 }
 /* Document Name: a single line that truncates, full text on hover. */
+/* A px ceiling is what makes the ellipsis fire. Under auto layout the cell
+   grows to fit its text, so overflow never happens and the column steals room
+   from every other one — which is how one long name squeezed the table. The
+   full name is on the tooltip. */
 .ev-td-name--trunc {
-  display: block; min-width: 0;
+  display: block; min-width: 0; max-width: 260px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* Signing chain in the Signing Status column: circle + role label per signer. */
@@ -7007,6 +7106,35 @@
   color: rgba(255,255,255,0.70);
 }
 
+/* ── Evidence Vault · document code + version badge (QA #28, #32) ───────
+   These were inline styles on the elements, which no dark-mode rule could
+   reach: indigo ink on a near-white chip stayed put when the modal went dark
+   and the version badge was the brightest thing on the row. Classes instead,
+   so the theme can answer for them like every other chip here. */
+.ev-code {
+  font-weight: 650;
+  color: #4338ca;
+  white-space: nowrap;
+}
+
+.ev-ver {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #4338ca;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+
+[data-bs-theme="dark"] .ev-code { color: #a5b4fc; }
+[data-bs-theme="dark"] .ev-ver {
+  color: #c7d2fe;
+  background: rgba(99,102,241,0.20);
+  border-color: rgba(99,102,241,0.42);
+}
+
 .ev-doc-status {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 3px 10px;
@@ -7025,6 +7153,11 @@
 .ev-doc-status--signed        { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 .ev-doc-status--sent          { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .ev-doc-status--pending       { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+/* Rejected had no class of its own and borrowed --pending, so a refused
+   document wore the same amber as one merely waiting. Refusal is not a
+   waiting state and should not read like one. */
+.ev-doc-status--rejected      { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+.ev-doc-status--cancelled     { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
 .ev-doc-status--not-generated { background: #f3f4f6; color: var(--vz-secondary-color); border: 1px solid #e5e7eb; }
 .ev-doc-status--optional      { background: #f3f4f6; color: var(--vz-secondary-color); border: 1px solid #e5e7eb; }
 .ev-doc-status--generated     { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
@@ -7037,6 +7170,8 @@
 [data-bs-theme="dark"] .ev-doc-status--sent      { background: rgba(56,189,248,0.20); color: #7dd3fc; border-color: rgba(56,189,248,0.40); }
 [data-bs-theme="dark"] .ev-doc-status--signed     { background: rgba(124,92,252,0.22); color: #c4b5fd; border-color: rgba(124,92,252,0.40); }
 [data-bs-theme="dark"] .ev-doc-status--pending    { background: rgba(245,158,11,0.22); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
+[data-bs-theme="dark"] .ev-doc-status--rejected   { background: rgba(239,68,68,0.22);  color: #fca5a5; border-color: rgba(239,68,68,0.42); }
+[data-bs-theme="dark"] .ev-doc-status--cancelled  { background: rgba(255,255,255,0.10); color: rgba(255,255,255,0.65); border-color: rgba(255,255,255,0.18); }
 [data-bs-theme="dark"] .ev-doc-status--not-generated,
 [data-bs-theme="dark"] .ev-doc-status--optional   { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.70); border-color: rgba(255,255,255,0.15); }
 
@@ -7120,6 +7255,101 @@
   border-color: #7c5cfc;
   color: #7c5cfc;
 }
+/* Soft pill — a tinted chip with its label, not a solid call-to-action.
+   View and Track are things you do to READ a row; the row's one real action
+   (Send, Re-send, Download) keeps the filled button. Making all of them solid
+   left three equal-weight buttons and nothing to look at first. */
+.ev-doc-btn--soft {
+  background: #ecfeff;
+  color: #0e7490;
+  border-color: #a5f3fc;
+  font-weight: 650;
+}
+.ev-doc-btn--soft:hover:not(:disabled) {
+  background: #cffafe;
+  border-color: #67e8f9;
+  color: #0891b2;
+}
+
+[data-bs-theme="dark"] .ev-doc-btn--soft {
+  background: rgba(34, 211, 238, 0.14);
+  color: #67e8f9;
+  border-color: rgba(34, 211, 238, 0.34);
+}
+[data-bs-theme="dark"] .ev-doc-btn--soft:hover:not(:disabled) {
+  background: rgba(34, 211, 238, 0.22);
+  border-color: rgba(34, 211, 238, 0.50);
+  color: #a5f3fc;
+}
+
+/* View — indigo. Track is cyan, Send violet. Three soft pills in one family
+   but three hues, because a row offering Track / View / Re-send in identical
+   chips is three buttons the eye has to read word by word. */
+.ev-doc-btn--open {
+  background: #eef2ff;
+  color: #4338ca;
+  border-color: #c7d2fe;
+  font-weight: 650;
+}
+.ev-doc-btn--open:hover:not(:disabled) {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+  color: #3730a3;
+}
+
+[data-bs-theme="dark"] .ev-doc-btn--open {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+  border-color: rgba(99, 102, 241, 0.38);
+}
+[data-bs-theme="dark"] .ev-doc-btn--open:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.26);
+  border-color: rgba(99, 102, 241, 0.52);
+  color: #c7d2fe;
+}
+
+/* Awaiting signature — present but not pressable.
+   The Action column was empty on a sent-but-unsigned row, so a document out
+   with its signers looked the same as one with nothing to do. A dead chip
+   says "this is in flight, there is nothing for you here" without pretending
+   to be a button. */
+.ev-doc-btn--await {
+  background: var(--vz-secondary-bg);
+  color: var(--vz-secondary-color);
+  border-color: var(--vz-border-color);
+  font-weight: 600;
+  cursor: default;
+}
+
+[data-bs-theme="dark"] .ev-doc-btn--await {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.55);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.ev-doc-btn--send {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border-color: #ddd6fe;
+  font-weight: 650;
+}
+.ev-doc-btn--send:hover:not(:disabled) {
+  background: #ede9fe;
+  border-color: #c4b5fd;
+  color: #5b21b6;
+}
+
+[data-bs-theme="dark"] .ev-doc-btn--send {
+  background: rgba(139, 92, 246, 0.18);
+  color: #c4b5fd;
+  border-color: rgba(139, 92, 246, 0.38);
+}
+[data-bs-theme="dark"] .ev-doc-btn--send:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.26);
+  border-color: rgba(139, 92, 246, 0.52);
+  color: #ddd6fe;
+}
+
 .ev-doc-btn--preview {
   background: #ffffff;
   color: #047857;
