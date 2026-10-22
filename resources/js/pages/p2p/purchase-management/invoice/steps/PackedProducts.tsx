@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import { IcoBox, IcoPencil } from '../../../icons';
+import { IcoBox, IcoPencil, IcoPrinter } from '../../../icons';
 import { truncateName, NAME_MAX, type ProductLine } from '../invoice-products';
 import BoxStickerModal from './BoxStickerModal';
 
@@ -183,14 +183,17 @@ export default function PackedProducts({
         {/* Boxes, then products, then units — each one counts a different
             thing, which is why all three are here: five boxes can hold one
             product, and one product can be 150 units. */}
+        {/* Cyan counts the containers, green the things inside them, amber the
+            units still being added up — the same three tones this step uses
+            everywhere else. Boxes and Products had them the other way round. */}
         <div className="vti-header-stats">
-          <div className="vti-stat-pill boxed">
+          <div className="vti-stat-pill total">
             <div className="vti-stat-dot" />{boxes.length} Box{boxes.length === 1 ? '' : 'es'}
           </div>
-          <div className="vti-stat-pill total">
+          <div className="vti-stat-pill boxed">
             <div className="vti-stat-dot" />{productCount} Product{productCount === 1 ? '' : 's'}
           </div>
-          <div className="vti-stat-pill units">
+          <div className="vti-stat-pill pending">
             <div className="vti-stat-dot" />{unitsPacked} Units Packed
           </div>
         </div>
@@ -200,7 +203,7 @@ export default function PackedProducts({
         <table className="vti-table invf-packed-table">
           <thead>
             <tr>
-              <th className="invf-c-sr">Sr No</th>
+              <th className="invf-c-sr">Sr. No</th>
               <th>Box ID</th>
               <th>Box Packaging Scenario</th>
               <th className="invf-c-prod">Box Product(s)</th>
@@ -264,11 +267,15 @@ export default function PackedProducts({
                             <span className="invf-pb-share">&times; {it.qty}</span>
                           )}
                         </div>
+                        {/* Label quiet, value loud — HSN and GST are looked up
+                            by their numbers, so the number is what has to
+                            carry. The separator is a drawn dot rather than a
+                            middot glyph, which sat low and off-centre. */}
                         <div className="invf-pb-meta">
                           <span className="vti-code">{it.line.code}</span>
-                          <span className="invf-pb-hsn">HSN {it.line.hsn}</span>
-                          <span className="invf-pb-dot">&middot;</span>
-                          <span className="invf-pb-gst">GST {it.line.gst}%</span>
+                          <span className="invf-pb-hsn">HSN <b>{it.line.hsn}</b></span>
+                          <span className="invf-pb-dot" aria-hidden />
+                          <span className="invf-pb-gst">GST <b>{it.line.gst}%</b></span>
                         </div>
                       </div>
                     ))}
@@ -308,7 +315,7 @@ export default function PackedProducts({
                           type="button" className="invf-pb-sticker"
                           onClick={() => setSticker(b)}
                           aria-label={`Print the sticker for ${b.code}`}
-                        ><IcoBox size={12} stroke={2.3} />{b.code} Sticker</button>
+                        ><IcoPrinter size={14} /><span className="invf-pb-stkid">{b.code}</span> Sticker</button>
                       </Tooltip>
                     </span>
                   </td>

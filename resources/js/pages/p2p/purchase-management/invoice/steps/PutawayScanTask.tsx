@@ -76,11 +76,6 @@ const IcoPin = ({ size = 13 }: { size?: number }) => (
     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
   </svg>
 );
-const IcoBolt = ({ size = 12 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none">
-    <polygon points="13 2 4 14 11 14 10 22 20 9 13 9" />
-  </svg>
-);
 const IcoArrow = ({ size = 13 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
     <line x1="4" y1="12" x2="19" y2="12" /><polyline points="13 6 19 12 13 18" />
@@ -96,9 +91,12 @@ const F = ({ k, v, na }: { k: string; v: ReactNode; na?: boolean }) => (
 );
 
 export default function PutawayScanTask({
-  taskId, spiCode = null, createdAt, box, spot, reservedPct, onClose, onComplete, onScan,
+  taskId, allocRef = null, spiCode = null, createdAt, box, spot, reservedPct,
+  onClose, onComplete, onCancelTask, onScan,
 }: {
   taskId: string;
+  /** What the allocation is locked under once both scans pass. */
+  allocRef?: string | null;
   /** The invoice this task belongs to, for the header's first chip. */
   spiCode?: string | null;
   createdAt: string;
@@ -108,6 +106,8 @@ export default function PutawayScanTask({
   reservedPct: number;
   onClose: () => void;
   onComplete: () => void;
+  /** Drop the task. Absent, or once both scans are in, the button is not shown. */
+  onCancelTask?: () => void;
   /** Each leg as it resolves, so the stage can write it into the scan logs. */
   onScan?: (leg: 'box' | 'loc', ok: boolean) => void;
 }) {
@@ -117,7 +117,10 @@ export default function PutawayScanTask({
 
   const done = qr.state === 'ok' && sh.state === 'ok';
   const failed = qr.state === 'fail' || sh.state === 'fail';
-  const status = done ? ['Device Verified · 2/2', 'ok']
+  /* "Putaway Completed", not "Device Verified · 2/2". Once both legs pass the
+     task is closed and the box is locked to its slot — the scan count is how
+     it got there, not what it now IS, and the two scan cards already carry it. */
+  const status = done ? ['Putaway Completed', 'ok']
     : failed ? ['Verification Failed', 'bad']
     : qr.state === 'ok' ? ['Box Scan Verified · 1/2', 'half']
     : ['Pending Device Scan', 'wait'];
@@ -198,24 +201,20 @@ export default function PutawayScanTask({
           </div>
         )}
 
-        {/* Only in prototype mode, and only where a scan is actually due. */}
+        {/* Only in prototype mode, and only where a scan is actually due.
+            ONE button, as the design has it: it stands in for the handheld,
+            and a handheld has one trigger. The pair that was here — simulate
+            correct, simulate wrong — turned the stand-in into a control
+            panel, and offered "scan the wrong box" as an equal choice beside
+            scanning the right one. */}
         {proto && !locked && leg.state !== 'ok' && (
-          <div className="s4zt-leg__sim">
-            <button
-              type="button"
-              className="s4zt-sim s4zt-sim--ok"
-              onClick={() => { set({ state: 'ok', at: clock() }); onScan?.(isBox ? 'box' : 'loc', true); }}
-            >
-              <IcoBolt />Simulate correct
-            </button>
-            <button
-              type="button"
-              className="s4zt-sim s4zt-sim--bad"
-              onClick={() => { set({ state: 'fail' }); onScan?.(isBox ? 'box' : 'loc', false); }}
-            >
-              <IcoBolt />Simulate wrong
-            </button>
-          </div>
+          <button
+            type="button"
+            className="s4zt-sim"
+            onClick={() => { set({ state: 'ok', at: clock() }); onScan?.(isBox ? 'box' : 'loc', true); }}
+          >
+            <IcoScan size={13} />Simulate {isBox ? 'Box' : Dest} QR scan
+          </button>
         )}
       </div>
     );
@@ -252,6 +251,12 @@ export default function PutawayScanTask({
 
         <div className="s4qm__bd">
           <div className="s4zt-card">
+            {/* The task and its address are ONE card, as the design has them —
+                the id, its state, and the five fields that say where the box
+                is going, divided by a rule rather than a gap. The scanning
+                strip, the two scan legs and the destination each stand on
+                their own below it. */}
+            <div className="s4zt-sec">
             <div className="s4zt-top">
               <span className="s4zt-top__ic"><IcoScan size={17} /></span>
               <div className="s4zt-top__tx">
@@ -281,12 +286,17 @@ export default function PutawayScanTask({
                 <F k="Shelf" v={spot.shelf} />
               </>}
             </div>
+            </div>
 
             <div className="s4zt-bar">
               <span className="s4zt-bar__ic"><IcoScan size={15} /></span>
               <span className="s4zt-bar__k">
                 <b>Warehouse Scanning · Zebra Handheld</b>
-                <em>Scans from the Zebra handheld are received here automatically</em>
+                {/* The strip says what it is doing NOW — waiting for scans, or
+                    finished with them. */}
+                <em>{done
+                  ? 'Both QR codes verified — task closed.'
+                  : 'Scans from the Zebra handheld are received here automatically'}</em>
               </span>
               {/* A browser has no handheld attached. This stands in for one,
                   and says so - every result it produces is marked SIMULATED. */}
@@ -312,7 +322,10 @@ export default function PutawayScanTask({
               <span className="s4zt-dest__chain">
                 {chain.map((c, i) => (
                   <span key={c + String(i)}>
-                    {i > 0 && <i>→</i>}
+                    {/* A chevron, as the design draws it and as Step 02's own
+                        chain already does — this was the one place using a
+                        full arrow. */}
+                    {i > 0 && <i>›</i>}
                     <span className={`s4sl-code s4sl-code--${['w', 'z', 'r', 's'][i] ?? 'w'}`}>{c}</span>
                   </span>
                 ))}
@@ -321,14 +334,42 @@ export default function PutawayScanTask({
                 {done ? <><IcoTick size={12} />Destination Verified</> : <><IcoScan size={12} />Destination verification pending</>}
               </span>
             </div>
+
+            {/* What the two scans actually bought. The rows above report the
+                scanning; this reports the OUTCOME — the box is no longer in
+                transit between steps, it is at an address, under a reference
+                somebody can quote. */}
+            {done && (
+              <div className="s4zt-locked">
+                <span className="s4zt-locked__i"><IcoTick size={13} /></span>
+                <div>
+                  <b>Putaway allocation confirmed</b>
+                  <span>
+                    {box.code} is locked at {chain.join(' › ')}
+                    {allocRef && <> &middot; {allocRef}</>}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="s4qm__ft s4zt-ft">
           <button type="button" className="s4-btn-back" onClick={onClose}>Close</button>
           <span className={`s4zt-foot${done ? ' is-done' : ''}`}>
-            <i />{done ? 'Both scans verified — completing task…' : 'Task completes automatically once both QR scans are verified'}
+            <i />{done
+              ? 'Task completed — putaway allocation is locked'
+              : 'Task completes automatically once both QR scans are verified'}
           </span>
+          {/* Dropping the task belongs here, beside the dialog that holds it —
+              the card behind this one offers the same thing, but by the time
+              you are reading the scan legs this is the screen in front of you.
+              Gone once both scans are in: there is nothing left to cancel. */}
+          {onCancelTask && !done && (
+            <button type="button" className="s4zt-cancel" onClick={onCancelTask}>
+              Cancel Task
+            </button>
+          )}
         </div>
       </div>
     </div>

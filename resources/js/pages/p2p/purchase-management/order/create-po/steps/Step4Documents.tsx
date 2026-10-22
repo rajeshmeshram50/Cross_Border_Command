@@ -408,6 +408,19 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
     setSelected((all) => [...all, ...preselectIds.filter((id) => !all.includes(id))]);
   }, [preselectIds.join(',')]);
 
+  /* The Purchase Order is Necessary BY DEFAULT (QA #164), and its chip reads
+     from its tick — so the tick must not be lost to anything but the user.
+     The one-shot pre-tick above missed it whenever the first rows to land
+     did not include it, and an email (which clears the selection) or a
+     single-row resend (which selects just that row) silently dropped it to
+     NOT NECESSARY. Keep it ticked until the user unticks it themselves. */
+  const poUntickedByUser = useRef(false);
+  const openPoId = docs.find((d) => isMandatory(d) && !isSettled(d))?.id ?? null;
+  useEffect(() => {
+    if (openPoId == null || poUntickedByUser.current) return;
+    setSelected((all) => (all.includes(openPoId) ? all : [...all, openPoId]));
+  }, [openPoId, selected]);
+
   // Rows already out for signature / signed cannot be ticked, so "all" means the rest.
   const selectable = docs.filter((d) => !isSettled(d));
   const allSelected = selectable.length > 0 && selectable.every((d) => selected.includes(d.id));
@@ -417,13 +430,14 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
      Mark buttons and Send act on. Necessity is changed solely through the Mark
      Necessary / Mark Not necessary buttons (setNeeds). The PO stays ticked. */
   const toggleAll = () => {
-    if (allSelected) { clearNeeds(selected); setSelected([]); }
-    else setSelected(selectable.map((d) => d.id));
+    if (allSelected) { poUntickedByUser.current = true; clearNeeds(selected); setSelected([]); }
+    else { poUntickedByUser.current = false; setSelected(selectable.map((d) => d.id)); }
   };
   const toggleOne = (id: number) => {
     const doc = docs.find((d) => d.id === id);
     if (doc && isSettled(doc)) return;                       // settled can't be picked
     const removing = selected.includes(id);
+    if (doc && isMandatory(doc)) poUntickedByUser.current = removing;
     setSelected((all) => (all.includes(id) ? all.filter((c) => c !== id) : [...all, id]));
     if (removing) clearNeeds([id]);                          // untick drops the mark
   };
@@ -741,7 +755,7 @@ export default function Step4Documents({ draft, ctx, poId }: { draft: PoDraft; c
             {selected.length > 0 ? (
               <span className="cdoc-selbar">
                 <b>{selected.length}</b> selected
-                <button type="button" className="cdoc-selbar__x" aria-label="Clear selection" onClick={() => setSelected([])}>×</button>
+                <button type="button" className="cdoc-selbar__x" aria-label="Clear selection" onClick={() => { poUntickedByUser.current = true; setSelected([]); }}>×</button>
                 {/* No "Mark Not necessary" button (QA #140): unticking a row
                     already clears its mark, so that is the one way to undo it. */}
                 <button type="button" className="cdoc-markbtn" disabled={busy === 'needs'} onClick={() => setNeeds(selected, true)}>

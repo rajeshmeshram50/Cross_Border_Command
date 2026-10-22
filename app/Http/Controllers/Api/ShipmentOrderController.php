@@ -15,6 +15,16 @@ use Illuminate\Support\Facades\Storage;
 
 class ShipmentOrderController extends Controller
 {
+    /**
+     * Create the shipment order for a lead (Stage 6 "Create Shipment ID").
+     *
+     * Timing note (QA #2, "save takes 14-15 s"): this method itself runs in
+     * ~20 ms (~24 ms with the max 2 MB attachment), 17 queries, no mail /
+     * Zoho / PDF work. A slow save is therefore either the attachment upload
+     * on the client's network, or a wait on the clients-row lock below, which
+     * the CLM bulk imports also hold while they run. Check the browser
+     * Network tab ("Request sent" vs "Waiting") before changing code here.
+     */
     public function store(Request $request)
     {
         $user = $request->user();

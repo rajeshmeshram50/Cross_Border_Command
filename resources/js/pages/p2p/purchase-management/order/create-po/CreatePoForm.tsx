@@ -5,6 +5,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import Step1LinkSupplier from './steps/Step1LinkSupplier';
 import Step2ProductDetails from './steps/Step2ProductDetails';
 import Step3Terms from './steps/Step3Terms';
@@ -625,12 +626,17 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
               the step's fields — nothing can change under the save in flight. */}
           <div className="spi-dt-steps cpf-steps4" inert={saving}>
             {STAGES.map((s, i) => (
-              <div
+              /* The shared pill, as on the SPI stepper — `title` drew the
+                 browser's own tooltip instead. */
+              <Tooltip
                 key={s.title}
+                label={i <= reached ? `Go to Step ${i + 1}` : 'Save the current step first'}
+                position="bottom"
+              >
+              <div
                 className={`spi-dt-step spi-dt-step--nav ${i === stage ? 'is-active' : ''} ${i < stage ? 'is-done' : ''}`}
                 role="button"
                 tabIndex={0}
-                title={i <= reached ? `Go to Step ${i + 1}` : 'Save the current step first'}
                 onClick={() => goTo(i)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo(i); } }}
               >
@@ -644,6 +650,7 @@ export default function CreatePoForm({ link, onClose, onChangeLink }: Props) {
                 <div className="spi-dt-step-desc">{s.desc}</div>
                 <span className="spi-dt-step-ghost">{String(i + 1).padStart(2, '0')}</span>
               </div>
+              </Tooltip>
             ))}
           </div>
         </div>

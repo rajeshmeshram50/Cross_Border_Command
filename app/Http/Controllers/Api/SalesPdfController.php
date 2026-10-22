@@ -1856,8 +1856,12 @@ class SalesPdfController extends Controller
             'quotation'              => $quotation,
             'quotationProducts'      => $quotationProducts,
             'opportunity_id'         => $q->opp_code ?? null,
+            // '!' zeroes the time. Without it createFromFormat stamps the
+            // current clock time on the date, so the PDF cache key changed
+            // every second and View/Download re-rendered every time (QA #6).
+            // The template prints d/m/Y only, so the PDF itself is unchanged.
             'opportunity_date'       => $q->opportunity_date
-                ? \DateTime::createFromFormat('Y-m-d', $q->opportunity_date->format('Y-m-d'))
+                ? \DateTime::createFromFormat('!Y-m-d', $q->opportunity_date->format('Y-m-d'))
                 : null,
             'termsAndConditions'     => null,
             // Auto-fetched from the T&C Library: matched by the document's

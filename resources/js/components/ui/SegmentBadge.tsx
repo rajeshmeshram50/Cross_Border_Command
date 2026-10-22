@@ -81,7 +81,7 @@ let nameMapAt = 0;
 function loadNameMap(): Promise<Map<string, string | null>> {
   if (nameMapPromise && Date.now() - nameMapAt < 5 * 60_000) return nameMapPromise;
   nameMapAt = Date.now();
-  nameMapPromise = api.get<{ data?: { name?: string; regulatory_status?: string }[] }>('/clm/segments', { params: { branch_id: 0 } })
+  nameMapPromise = api.get<{ data?: { name?: string; regulatory_status?: string }[] }>('/clm/segments', { params: { branch_id: 0, lite: 1 } })
     .then(res => {
       const m = new Map<string, string | null>();
       for (const s of res.data?.data ?? []) {

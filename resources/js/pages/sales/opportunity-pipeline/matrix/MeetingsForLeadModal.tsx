@@ -402,12 +402,23 @@ export default function MeetingsForLeadModal({
           </div>
           <div className="mfl-foot-actions">
             <button className="mfl-btn mfl-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-            <button className="mfl-btn mfl-btn-primary" onClick={() => void save()} disabled={saving || !oppId}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                <polyline points="17 21 17 13 7 13 7 21" />
-                <polyline points="7 3 7 8 15 8" />
-              </svg>
+            <button
+              className={`mfl-btn mfl-btn-primary${saving ? ' is-saving' : ''}`}
+              onClick={() => void save()}
+              disabled={saving || !oppId}
+              aria-busy={saving}
+            >
+              {/* A word is not a loader (QA #7): while the POST is in flight the
+                  save icon becomes a spinner, so the pause reads as the app working. */}
+              {saving ? (
+                <span className="mfl-save-spin" aria-hidden />
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+              )}
               {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
@@ -716,6 +727,17 @@ const MFL_CSS = `
   color: #fff;
   box-shadow: 0 3px 10px rgba(15, 118, 110, .30);
 }
+/* In-flight save: keep the button readable (the generic :disabled fade would
+   hide the spinner) and don't lift it on hover. */
+.mfl-btn-primary.is-saving:disabled { opacity: .85; cursor: progress; }
+.mfl-save-spin {
+  display: inline-block; width: 13px; height: 13px; flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  animation: mfl-save-spin .65s linear infinite;
+}
+@keyframes mfl-save-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .mfl-save-spin { animation: none; } }
 .mfl-btn-primary:hover:not(:disabled) {
   background: linear-gradient(135deg, #0E7490, #155E75);
   transform: translateY(-1px);

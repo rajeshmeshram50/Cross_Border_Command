@@ -4,6 +4,24 @@ import { cloneElement, useLayoutEffect, useRef, useState, type ReactElement, typ
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../../components/ui/Tooltip';
 
+/**
+ * Work in flight, said in the control itself.
+ *
+ * A disabled button is not an answer: it says you cannot press this, not that
+ * something is happening because you already did. On an icon-only button
+ * there is not even a word to change, so without this the press looks like it
+ * missed. The `.spi-dt-spin` class is the P2P wizard's own, used so a spinner
+ * in the SPI steps turns at the same rate as one in the PO form.
+ */
+export function WizSpinner({ size = 14 }: { size?: number }) {
+  return (
+    <svg className="spi-dt-spin" width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" aria-hidden>
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
+  );
+}
+
 /* Anything this module cuts off must be readable somewhere, so every element
    that can end in "…" is wrapped in this: it watches the element and turns the
    app's own tooltip on only once the text really is cut. Never the browser's

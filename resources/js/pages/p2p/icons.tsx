@@ -68,6 +68,15 @@ export const IcoBox = (p: IconProps) => (
   </Svg>
 );
 
+/** Printer — on buttons that send something to a label printer. */
+export const IcoPrinter = (p: IconProps) => (
+  <Svg size={13} stroke={2.3} {...p}>
+    <polyline points="6 9 6 2 18 2 18 9" />
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+    <rect x="6" y="14" width="12" height="8" />
+  </Svg>
+);
+
 export const IcoShip = (p: IconProps) => (
   <Svg size={13} stroke={2.4} {...p}>
     <rect x="1" y="3" width="15" height="13" />

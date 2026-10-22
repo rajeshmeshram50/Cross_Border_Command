@@ -17,6 +17,7 @@ import { BranchSwitcherProvider } from '../contexts/BranchSwitcherContext';
 import { SettingsProvider } from '../contexts/SettingsContext';
 import CookieBanner from './CookieBanner';
 import IdleTimeout from './IdleTimeout';
+import NativeTitleTooltips from './NativeTitleTooltips';
 import VelzonShell from '../velzon/VelzonShell';
 import AccessDenied from './AccessDenied';
 import { canAccessPath } from '../utils/routeAccess';
@@ -860,6 +861,8 @@ export default function App() {
                 </BrowserRouter>
                 <CookieBanner />
                 <IdleTimeout />
+                {/* Draws every native `title` in the app as the app's own pill. */}
+                <NativeTitleTooltips />
               </SettingsProvider>
             </AuthProvider>
             </ConfirmProvider>

@@ -23,12 +23,12 @@
     transition: border-color .18s ease, box-shadow .18s ease;
   }
   .master-datepicker-toggle:hover:not([aria-disabled="true"]) {
-    border-color: rgba(99,102,241,0.55);
-    box-shadow: 0 2px 6px rgba(99,102,241,0.08);
+    border-color: rgba(8,145,178,0.55);
+    box-shadow: 0 2px 6px rgba(8,145,178,0.08);
   }
   .master-datepicker-toggle.open {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99,102,241,0.15), 0 4px 12px rgba(99,102,241,0.12);
+    border-color: #0891b2;
+    box-shadow: 0 0 0 3px rgba(8,145,178,0.15), 0 4px 12px rgba(8,145,178,0.12);
   }
   .master-datepicker-wrap.invalid .master-datepicker-toggle {
     border-color: #f06548;
@@ -68,7 +68,7 @@
   .master-field .master-datepicker-icon { display: none; }
   /* Tint the master-field prefix icon indigo while the picker is open */
   .master-field:has(.master-datepicker-toggle.open) .master-field-icon {
-    color: #6366f1;
+    color: #0891b2;
   }
 
   .master-datepicker-placeholder {
@@ -89,7 +89,7 @@
     text-overflow: ellipsis;
   }
   .master-datepicker-icon {
-    color: #6366f1;
+    color: #0891b2;
     font-size: 16px;
     flex-shrink: 0;
   }
@@ -150,9 +150,9 @@
      * the sidebar's own dark panel surface and the user perceived it
      * as overlapping with the filter rows beneath. */
     background-color: #161a1f !important;
-    border-color: rgba(124, 92, 252, 0.45);
+    border-color: rgba(34,211,238, 0.45);
     box-shadow:
-      0 0 0 1px rgba(124, 92, 252, 0.18),
+      0 0 0 1px rgba(34,211,238, 0.18),
       0 18px 40px rgba(0, 0, 0, 0.55);
   }
   .master-datepicker-nav {
@@ -170,9 +170,9 @@
     transition: background .15s ease, color .15s ease, border-color .15s ease;
   }
   .master-datepicker-nav:hover {
-    background: rgba(99,102,241,0.10);
-    color: #6366f1;
-    border-color: rgba(99,102,241,0.3);
+    background: rgba(8,145,178,0.10);
+    color: #0891b2;
+    border-color: rgba(8,145,178,0.3);
   }
   .master-datepicker-title {
     font-weight: 700;
@@ -201,24 +201,24 @@
   }
   .master-datepicker-title-btn.is-clickable {
     cursor: pointer;
-    background: rgba(99,102,241,0.08);
-    border-color: rgba(99,102,241,0.18);
-    color: #4f46e5;
+    background: rgba(8,145,178,0.08);
+    border-color: rgba(8,145,178,0.18);
+    color: #0891b2;
   }
   .master-datepicker-title-btn.is-clickable:hover {
-    background: rgba(99,102,241,0.18);
-    border-color: rgba(99,102,241,0.40);
-    color: #4338ca;
+    background: rgba(8,145,178,0.18);
+    border-color: rgba(8,145,178,0.40);
+    color: #0e7490;
   }
   [data-bs-theme="dark"] .master-datepicker-title-btn.is-clickable {
-    background: rgba(124,92,252,0.18);
-    border-color: rgba(124,92,252,0.35);
-    color: #c4b5fd;
+    background: rgba(34,211,238,0.18);
+    border-color: rgba(34,211,238,0.35);
+    color: #7dd3e8;
   }
   [data-bs-theme="dark"] .master-datepicker-title-btn.is-clickable:hover {
-    background: rgba(124,92,252,0.28);
-    border-color: rgba(124,92,252,0.55);
-    color: #e9e3ff;
+    background: rgba(34,211,238,0.28);
+    border-color: rgba(34,211,238,0.55);
+    color: #ecfeff;
   }
   .master-datepicker-title-btn:disabled {
     cursor: default;
@@ -244,19 +244,19 @@
     transition: background .15s ease, color .15s ease;
   }
   .master-datepicker-cell:hover:not(.is-selected) {
-    background: rgba(99,102,241,0.10);
-    color: #6366f1;
+    background: rgba(8,145,178,0.10);
+    color: #0891b2;
   }
   .master-datepicker-cell.is-today {
-    background: rgba(99,102,241,0.12);
-    color: #6366f1;
+    background: rgba(8,145,178,0.12);
+    color: #0891b2;
     font-weight: 700;
   }
   .master-datepicker-cell.is-selected {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #06b6d4, #0891b2);
     color: #fff;
     font-weight: 700;
-    box-shadow: 0 3px 8px rgba(99,102,241,0.30);
+    box-shadow: 0 3px 8px rgba(8,145,178,0.30);
   }
   .master-datepicker-dow {
     font-size: 9.5px;
@@ -282,19 +282,19 @@
     transition: background .15s ease, color .15s ease;
   }
   .master-datepicker-day:hover:not(:disabled):not(.is-selected) {
-    background: rgba(99,102,241,0.10);
-    color: #6366f1;
+    background: rgba(8,145,178,0.10);
+    color: #0891b2;
   }
   .master-datepicker-day.is-today {
-    background: rgba(99,102,241,0.12);
-    color: #6366f1;
+    background: rgba(8,145,178,0.12);
+    color: #0891b2;
     font-weight: 600;
   }
   .master-datepicker-day.is-selected {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    background: linear-gradient(135deg, #06b6d4, #0891b2);
     color: #fff;
     font-weight: 700;
-    box-shadow: 0 3px 8px rgba(99,102,241,0.30);
+    box-shadow: 0 3px 8px rgba(8,145,178,0.30);
   }
   .master-datepicker-day:disabled {
     color: var(--vz-secondary-color);
@@ -335,6 +335,6 @@
     font-weight: 600;
   }
   .master-datepicker-footer .today-btn {
-    color: #6366f1;
+    color: #0891b2;
     font-weight: 700;
   }

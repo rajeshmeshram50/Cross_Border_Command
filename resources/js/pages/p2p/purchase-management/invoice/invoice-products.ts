@@ -285,8 +285,25 @@ export function truncateDesc(text: string): string {
  */
 export const NAME_MAX = 20;
 
+/**
+ * The 3-way match table gives the name a column of its own, so it can carry
+ * half again as much as NAME_MAX's narrow cells.
+ *
+ * A name is free text and plenty of them arrive with no spaces at all, which
+ * is the case that actually breaks: a 60-character run cannot wrap, so the
+ * column grows to fit it and pushes the quantity cells off the right of the
+ * table. Cut it here and the full name stays on the cell's tooltip.
+ */
+export const MATCH_NAME_MAX = 30;
+
+export function truncate(text: string, max: number): string {
+  /* One over is left whole: the ellipsis costs a character itself, so cutting
+     a 31-character name to 30 + "…" is the same width and two fewer letters. */
+  return text.length <= max + 1 ? text : `${text.slice(0, max).trimEnd()}…`;
+}
+
 export function truncateName(text: string): string {
-  return text.length <= NAME_MAX ? text : `${text.slice(0, NAME_MAX).trimEnd()}…`;
+  return truncate(text, NAME_MAX);
 }
 
 export const PRODUCT_CATALOGUE = PRODUCT_LINES.map(l => ({

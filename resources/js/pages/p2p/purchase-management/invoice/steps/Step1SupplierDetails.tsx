@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
-import { EditSelect, Field } from '../../order/create-po/form-fields';
+import { EditSelect, Field, WizSpinner } from '../../order/create-po/form-fields';
 import {
   SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
@@ -387,17 +387,23 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                         onChange={v => set({ supplier: v })}
                       />
                     )}
+                    {/* The supplier is fetched before the form can open, and on
+                        a slow server that is a second or two of nothing. The
+                        button turns, so the press is visibly received. */}
                     {hasSupplier && (
-                      <Tooltip label={`Edit ${supplier} in the Supplier master`}>
+                      <Tooltip label={busy === 'edit'
+                        ? 'Opening the supplier…'
+                        : `Edit ${supplier} in the Supplier master`}>
                         <button
                           type="button"
                           className="cpf-supedit"
-                          aria-label="Edit supplier"
+                          aria-label={busy === 'edit' ? 'Opening the supplier' : 'Edit supplier'}
+                          aria-busy={busy === 'edit'}
                           disabled={busy === 'edit' || refreshing}
                           onPointerEnter={warmSupplierFlow}
                           onClick={() => void openEdit()}
                         >
-                          <IcoPencil />
+                          {busy === 'edit' ? <WizSpinner /> : <IcoPencil />}
                         </button>
                       </Tooltip>
                     )}
@@ -485,8 +491,10 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                       onClick={e => { e.stopPropagation(); void openVault(); }}
                       onPointerEnter={warmVault}
                       disabled={busy === 'vault'}
+                      aria-busy={busy === 'vault'}
                     >
-                      <IcoShield /> <span>{busy === 'vault' ? 'Opening…' : 'Visit Supplier Evidence Vault'}</span>
+                      {busy === 'vault' ? <WizSpinner /> : <IcoShield />}{' '}
+                      <span>{busy === 'vault' ? 'Opening…' : 'Visit Supplier Evidence Vault'}</span>
                     </button>
                   </Tooltip>
                   <span className="cpf-lgbar">

@@ -262,6 +262,8 @@ export default function SalesConsignee() {
          narrow column, which is exactly when a fixed value would be wrong. */
       const headH = (el.querySelector('.smcg-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
       if (headH) el.style.setProperty('--smcg-thead-h', `${headH}px`);
+      const footH = (el.querySelector('.smcg-table-wrap .tc-wl-pag') as HTMLElement | null)?.offsetHeight || 0;
+      if (footH) el.style.setProperty('--smcg-foot-h', `${footH}px`);
 
       /* Measured INSIDE the scroller, not against the viewport.
        *
