@@ -1,5 +1,7 @@
-import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SegmentBadge, { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import '../../../../components/ui/DataTable.css';
+import '../../../p2p/p2p-master-management/supplier-management/supplier-management.css';
 import './SalesCustomers.css';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -16,7 +18,6 @@ import { useIsClipped } from '../../../../components/ui/DataTable';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from './customerBundleCache';
-import SearchClear from '../../../../components/ui/SearchClear';
 import PartyFilterModal, {
   applyPartyFilters,
   countPartyFilterValues,
@@ -217,7 +218,7 @@ export default function SalesCustomers() {
   useEffect(() => {
     const el = tableCardRef.current;
     if (!el) return;
-    const fit = () => {
+    const fit = (heightOnly = false) => {
       /* First, and unconditionally. tbody's max-height is
          `calc(100% - var(--smc-thead-h))`, so this has to be published on every
          pass -- including the unpinned one, which returns early. Measured
@@ -274,7 +275,7 @@ export default function SalesCustomers() {
         el.style.maxHeight = next;
       }
 
-      if (manualSize) return;   // user chose a Rows-per-page value — don't override it
+      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smc-toolbar') as HTMLElement | null)?.offsetHeight || 0;
       /* The filter-chips bar only exists when filters are active. It sits above
        * the table and used to be left OUT of the subtraction, so turning a
@@ -297,12 +298,13 @@ export default function SalesCustomers() {
       const rowsFit = Math.max(5, Math.floor(avail / rowH));
       setPageSize(rowsFit);
     };
+    const onResize = () => fit();
     fit();
-    const t = window.setTimeout(fit, 120);
-    window.addEventListener('resize', fit);
+    const t = window.setTimeout(onResize, 120);
+    window.addEventListener('resize', onResize);
     let ro: ResizeObserver | undefined;
     let roSettle: (() => void) | undefined;
-    const banner = document.querySelector('.smc-wdh-body-wrap');
+    const banner = document.querySelector('.smc-bref');
     if (banner && typeof ResizeObserver !== 'undefined') {
       /* HEIGHT only. This observer is here for one thing: the banner being
          expanded or collapsed. But a ResizeObserver reports WIDTH too, and
@@ -314,26 +316,27 @@ export default function SalesCustomers() {
          Ignoring width-only notifications breaks it: the scrollbar can come
          and go without re-running the measurement. */
       let lastH = (banner as HTMLElement).getBoundingClientRect().height;
-      /* Debounced, and that is the point.
-         This banner animates its max-height over .35s, so the observer fires
-         on every frame of the open/close -- roughly twenty times -- and each
-         firing wrote a new height onto the card. The card sprang around for
-         the length of the animation, which is the bouncing. Trailing by 180ms,
-         fit() runs once, after the banner has settled on its final height. */
+      /* The card's HEIGHT follows the banner on every frame of its open/close
+         animation, so banner + card always add up to the same page height. When
+         the card only caught up after the animation, the page was briefly taller
+         than the viewport: a scrollbar appeared for the length of the animation,
+         narrowed the page, and everything shook. The row count is the expensive,
+         visible part, so that still waits until the banner has settled. */
       let settle: number | undefined;
       ro = new ResizeObserver(entries => {
         const h = entries[0]?.contentRect.height ?? 0;
         if (Math.abs(h - lastH) < 1) return;
         lastH = h;
+        fit(true);
         window.clearTimeout(settle);
-        settle = window.setTimeout(fit, 180);
+        settle = window.setTimeout(onResize, 180);
       });
       ro.observe(banner);
       roSettle = () => window.clearTimeout(settle);
     }
     return () => {
       window.clearTimeout(t);
-      window.removeEventListener('resize', fit);
+      window.removeEventListener('resize', onResize);
       roSettle?.();
       ro?.disconnect();
     };
@@ -453,14 +456,14 @@ export default function SalesCustomers() {
       id: '__sr',
       accessorFn: (_row: any, i: number) => i + 1,
       meta: { align: 'center' },
-      cell: (info: any) => <span className="smc-srno">{info.row.index + 1}</span>,
+      cell: (info: any) => <span className="dt-serial">{info.row.index + 1}</span>,
       enableSorting: false,
     },
     {
       header: 'Customer ID',
       accessorKey: 'id',
       meta: { align: 'center' },
-      cell: (info: any) => <span className="smc-id-chip">{info.getValue()}</span>,
+      cell: (info: any) => <span className="dt-id-chip">{info.getValue()}</span>,
     },
     {
       header: 'Company Name',
@@ -622,99 +625,85 @@ export default function SalesCustomers() {
   return (
     <div className="smc-root">
 
-      <div className="smc-cstrip">
-        <span className="cv-cstrip__accent"></span>
-              <span className="cv-cstrip__glow"></span>
-      <span className="cv-cstrip__sheen"></span>
-        <div className="smc-cstrip-left">
-
-          <div className="smc-cstrip-icon">
-            <i className="ri-group-line" />
-          </div>
-          <div>
-            <div className="smc-cstrip-title">Customers</div>
-            <div className="smc-cstrip-sub">
+      {/* HRMS header strip — the same one the Employee list uses. */}
+      <div className="frm-cstrip hr-cstrip">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-group-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Customers</div>
+            <div className="frm-cstrip-sub">
               Manage customer onboarding and lifecycle with strict compliance, KYC verification, and product mapping for sales readiness.
             </div>
           </div>
         </div>
         {canAdd && (
-          <button
-            type="button"
-            className="smc-cstrip-add"
-            onClick={() => { setEditing(null); setAddOpen(true); }}
-          >
-            <i className="ri-add-line" />
-            Add Customer
-          </button>
+          <span className="sup-fig" style={{ display: 'contents' }}>
+            <button
+              type="button"
+              className="cstrip__action-btn flex-shrink-0"
+              onClick={() => { setEditing(null); setAddOpen(true); }}
+            >
+              <span className="cstrip__action-btn-sheen" />
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              Add Customer
+            </button>
+          </span>
         )}
       </div>
 
-      <div className={`smc-wdh-card ${wdhOpen ? 'is-open' : ''}`}>
-        <button
-          type="button"
-          className="smc-wdh-toggle-row"
-          onClick={() => setWdhOpen(o => !o)}
-        >
-          <div className="smc-wdh-heading">
-            <span className="smc-wdh-bulb">
-              <i className="ri-group-line" />
-            </span>
-            <div>
-              <div className="smc-wdh-title">Customers — What We Are Doing Here:</div>
-              <small className="smc-wdh-sub">4 steps to complete customer setup</small>
+      {/* "What We Are Doing Here" — the Supplier list's step-card banner. */}
+      <div className="sup-fig">
+        <div className={`bref-box smc-bref ${wdhOpen ? '' : 'is-collapsed'}`}>
+          <div className="bref-box__header" onClick={() => setWdhOpen(o => !o)} role="button">
+            <div className="bref-box__header-ico"><i className="ri-group-line" style={{ fontSize: 15 }} /></div>
+            <div className="bref-box__header-mid">
+              <div className="bref-box__header-row">
+                <div className="bref-box__header-label">Customers</div>
+                <div className="bref-box__header-sep" />
+                <div className="bref-box__header-title">What We Are Doing Here</div>
+              </div>
+              <div className="bref-box__header-sub">4 steps to complete customer setup.</div>
+            </div>
+            <div className="bref-box__header-right">
+              <div className="bref-box__toggle">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              </div>
             </div>
           </div>
-          <span className={`smc-wdh-chev ${wdhOpen ? 'is-open' : ''}`}>
-            <i className="ri-arrow-down-s-line" />
-          </span>
-        </button>
-
-        {/* A flat 600px let this banner add more height than the viewport had,
-            so opening it pushed the table below the fold and the whole page
-            had to scroll -- which is what everything on it then felt like it
-            was fighting. The cap is now the room actually left (see
-            --wdh-max); past that the banner scrolls inside itself and the
-            page does not grow. */}
-        <div className="smc-wdh-body-wrap" style={{ maxHeight: wdhOpen ? 'var(--wdh-max)' : 0 }}>
-          <div className="smc-wdh-body">
-            {STEPS.map((s, i) => {
-              const isLast = i === STEPS.length - 1;
-              return (
-                <Fragment key={s.n}>
-                  <div className="smc-step" data-n={i}>
-                    <div className="smc-step-head">
-                      <div className="smc-step-num">{s.n}</div>
-                      <span className="smc-step-name">{s.name}</span>
-                    </div>
-                    <p className="smc-step-desc">{s.desc}</p>
-                  </div>
-                  {!isLast && (
-                    <div className="smc-step-arrow"><i className="ri-arrow-right-s-line" /></div>
-                  )}
-                </Fragment>
-              );
-            })}
+          <div className="bref-box__body">
+            {STEPS.map(s => (
+              <div className="bref-item" key={s.n}>
+                <div className="bref-item__top">
+                  <div className="bref-item__ico"><i className={s.icon} style={{ fontSize: 12 }} /></div>
+                  <span className="bref-item__num">Step {String(s.n).padStart(2, '0')}</span>
+                </div>
+                <div className="bref-item__title">{s.name}</div>
+                <div className="bref-item__desc">{s.desc}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      <div className="smc-table-card" ref={tableCardRef}>
+      <div className="smc-table-card dt-root hr-dt" data-accent="violet" ref={tableCardRef}>
 
         <div className="smc-toolbar">
-          <div className="smc-pill-group">
-            <button className={`smc-pill ${tab === 'all' ? 'on' : 'off'}`} onClick={() => switchTab('all')}>
-              <i className="ri-list-check-2" /> All Customers
-              <span className="smc-pill-count">{tabCounts.all}</span>
-            </button>
-            <button className={`smc-pill ${tab === 'fresh' ? 'on' : 'off'}`} onClick={() => switchTab('fresh')}>
-              <i className="ri-group-line" /> Fresh Customers
-              <span className="smc-pill-count">{tabCounts.fresh}</span>
-            </button>
-            <button className={`smc-pill ${tab === 'recurring' ? 'on' : 'off'}`} onClick={() => switchTab('recurring')}>
-              <i className="ri-refresh-line" /> Recurring Customers
-              <span className="smc-pill-count">{tabCounts.recurring}</span>
-            </button>
+          <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+            <div className="dt-tabs" role="tablist">
+              <button type="button" role="tab" aria-selected={tab === 'all'} className={`dt-tab ${tab === 'all' ? 'on' : 'off'}`} onClick={() => switchTab('all')}>
+                <i className="ri-list-check-2" /> All Customers
+                <span className="dt-tab-count">{tabCounts.all}</span>
+              </button>
+              <button type="button" role="tab" aria-selected={tab === 'fresh'} className={`dt-tab ${tab === 'fresh' ? 'on' : 'off'}`} onClick={() => switchTab('fresh')}>
+                <i className="ri-group-line" /> Fresh Customers
+                <span className="dt-tab-count">{tabCounts.fresh}</span>
+              </button>
+              <button type="button" role="tab" aria-selected={tab === 'recurring'} className={`dt-tab ${tab === 'recurring' ? 'on' : 'off'}`} onClick={() => switchTab('recurring')}>
+                <i className="ri-refresh-line" /> Recurring Customers
+                <span className="dt-tab-count">{tabCounts.recurring}</span>
+              </button>
+            </div>
           </div>
           {/* Filter — independent of the tabs above (a customer is Fresh OR
               Recurring, and separately Domestic OR International), so it sits
@@ -724,15 +713,15 @@ export default function SalesCustomers() {
               empty one. */}
           <button
             type="button"
-            className={`smc-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
+            className={`dt-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
             onClick={() => setFilterOpen(true)}
           >
             <i className="ri-equalizer-line" />
             Filter
-            {activeFilterCount > 0 && <span className="smc-filter-badge">{activeFilterCount}</span>}
+            {activeFilterCount > 0 && <span className="dt-filter-badge">{activeFilterCount}</span>}
           </button>
-          <div className="smc-search ui-search-abs">
-            <i className="ri-search-line smc-search-icon" />
+          <div className="dt-search">
+            <i className="ri-search-line dt-search-icon" />
             {/* Chrome was dropping the customer's email in here after Add
                 Customer was saved (QA #8) — intermittently, which is what
                 autofill looks like. Nothing in this page ever writes to `q`;
@@ -756,7 +745,11 @@ export default function SalesCustomers() {
               value={q}
               onChange={(e) => onSearch(e.target.value)}
             />
-            <SearchClear show={q} onClear={() => { setQ(''); }} />
+            {q && (
+              <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => setQ('')}>
+                <i className="ri-close-line" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -773,7 +766,7 @@ export default function SalesCustomers() {
               data={visibleCustomers}
               isGlobalFilter={false}
               customPageSize={pageSize}
-              tableClass="table align-middle table-nowrap mb-0"
+              tableClass="table align-middle table-nowrap mb-0 dt-table"
               theadClass="table-light"
               divClass="table-responsive"
               SearchPlaceholder="Search customers..."
@@ -915,9 +908,9 @@ export default function SalesCustomers() {
   );
 }
 
-const STEPS: { n: number; name: string; desc: string }[] = [
-  { n: 1, name: 'Create Customer',  desc: 'Add basic company, contact, and legal details to create the customer profile.' },
-  { n: 2, name: 'Customer KYC',     desc: 'Check documents, identity, GST scrutiny & compliance to validate customer authenticity.' },
-  { n: 3, name: 'Trade Document',   desc: 'Execute agreements digitally to make the customer legally approved for trade.' },
-  { n: 4, name: 'Product Mapping',  desc: 'Link customer with products, pricing, and tax details for sales use.' },
+const STEPS: { n: number; name: string; desc: string; icon: string }[] = [
+  { n: 1, name: 'Create Customer',  desc: 'Add basic company, contact, and legal details to create the customer profile.', icon: 'ri-user-add-line' },
+  { n: 2, name: 'Customer KYC',     desc: 'Check documents, identity, GST scrutiny & compliance to validate customer authenticity.', icon: 'ri-shield-check-line' },
+  { n: 3, name: 'Trade Document',   desc: 'Execute agreements digitally to make the customer legally approved for trade.', icon: 'ri-file-text-line' },
+  { n: 4, name: 'Product Mapping',  desc: 'Link customer with products, pricing, and tax details for sales use.', icon: 'ri-links-line' },
 ];

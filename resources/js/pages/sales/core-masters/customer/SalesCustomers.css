@@ -220,7 +220,10 @@
      .page-content leaves around the whole page. This said "6px, as on the
      Supplier list"; the Supplier list (.sup-fig) is 8px, so the comment had
      outlived the value and these two pages were the only ones at 6. */
-  display: flex; flex-direction: column; gap: 8px;
+  /* No gap: with the HRMS header (.frm-cstrip.hr-cstrip) as a direct child,
+     app.css gives every strip here an 8px margin-bottom, which is the spacing.
+     A gap on top of it doubled each distance to 16px. */
+  display: flex; flex-direction: column;
   color: var(--vz-body-color);
 }
 .smc-root *, .smc-root *::before, .smc-root *::after { box-sizing: border-box; }
@@ -656,23 +659,13 @@
   margin-bottom: 0 !important;
 }
 
-.smc-table-wrap .table thead.table-light tr {
-  background: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
-}
-
+/* Header colours, type and hairlines come from the shared Employee table header
+   (.dt-root.hr-dt .dt-table thead th); only geometry is set here. */
 .smc-table-wrap .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
 
-  background: #6d28d9 !important;
   position: sticky; top: 0; z-index: 3;
-  color: #ffffff !important;
-  /* 12px → 11px, and the side padding halved (14 → 7). With 13 columns the
-     table was overflowing on smaller screens; padding was the cheapest width to
-     give back, since it's pure gap between columns. */
-  font-size: 9.5px !important;
-  font-weight: 800 !important;
-  letter-spacing: .07em !important;
   padding: 9px 9px !important;
   line-height: 1.3 !important;
   border: 0 !important;
@@ -680,7 +673,7 @@
   text-transform: uppercase;
   vertical-align: middle !important;
 }
-.smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.85; color: rgba(255,255,255,0.85); }
+.smc-table-wrap .table thead th i { font-size: 12px; }
 
 
 /* Responsive compression — copied from the Supplier list (supplier-management
@@ -894,15 +887,6 @@
   background: var(--vz-card-bg) !important;
   border-color: var(--vz-border-color) !important;
 }
-[data-bs-theme="dark"] .smc-table-wrap .table thead.table-light tr {
-  background: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
-}
-[data-bs-theme="dark"] .smc-table-wrap .table thead.table-light th {
-  color: #ffffff !important;
-  border-bottom: 0 !important;
-  background: #4c1d95 !important;
-}
-[data-bs-theme="dark"] .smc-table-wrap .table thead th i { color: rgba(255,255,255,0.85) !important; opacity: 0.85; }
 
 [data-bs-theme="dark"] .smc-table-wrap .table tbody tr { background: transparent; }
 [data-bs-theme="dark"] .smc-table-wrap .table tbody tr:nth-child(even) { background: rgba(167,139,250,0.05); }
@@ -1715,3 +1699,72 @@
 [data-bs-theme="dark"] .smc-filterchip-more { background: rgba(124,58,237,.12); border-color: rgba(124,58,237,.35); color: #c4b5fd; }
 [data-bs-theme="dark"] .smc-filterpop-lbl { color: #c4b5fd; }
 [data-bs-theme="dark"] .smc-filterpop-x { background: rgba(255,255,255,.08); color: #c4b5fd; }
+
+/* ── Aligned with the HRMS Employee list (same as Quotations V/S PI) ─────────── */
+.smc-root .frm-cstrip .frm-cstrip-title { font-size: 17px; font-weight: 700; }
+/* Left edges: header icon, banner icon and first tab all start 19px in
+   (tab = 1 card border + 14 toolbar pad + 1 rail border + 3 rail pad). */
+.smc-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
+.smc-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
+/* Right edges: header button, banner toggle and search all end 15px in. */
+.smc-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
+.smc-root .smc-toolbar { padding: 14px; gap: 14px; }
+/* Tabs 38px; everything else in the toolbar stands as tall as the rail (46px). */
+.smc-root .dt-tabrail .dt-tab { height: 38px; }
+.smc-root .smc-toolbar .dt-filter-btn { height: 46px; flex-shrink: 0; }
+.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search {
+  height: 46px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
+}
+/* One type size and weight for every data cell (HRMS body text: 11.5 / 500).
+   Badges with a fixed design keep their own sizing. */
+.smc-table-wrap .table tbody td:not(:last-child),
+.smc-table-wrap .table tbody td:not(:last-child) *:not(i):not(svg):not(svg *) {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+}
+.smc-root .smc-table-wrap .table tbody td:not(:last-child) .dt-serial.dt-serial {
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+.smc-root .smc-table-wrap .table tbody td:not(:last-child) .dt-id-chip.dt-id-chip {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: .02em;
+}
+.smc-root .smc-table-wrap .table tbody td:not(:last-child) .seg-reg-badge.seg-reg-badge { font-size: 10px !important; font-weight: 600 !important; }
+.smc-root .smc-table-wrap .table tbody td:not(:last-child) .smc-seg-more.smc-seg-more { font-size: 10px !important; font-weight: 800 !important; }
+.smc-root .smc-table-wrap .table tbody td:not(:last-child) .smc-cons.smc-cons { font-size: 11px !important; font-weight: 800 !important; }/* Add Customer = the Create Quotation button exactly (Supplier action button at
+   the toolbar's 46px). app.css restyles every button inside an HRMS header strip
+   with !important (42px pill, 13px/600), so the button's own values are restated. */
+.smc-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn {
+  height: 46px !important;
+  padding: 0 18px !important;
+  border-radius: 12px !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+}/* The search input stays type="search" (it keeps Chrome's autofill off), so
+   hide the browser's own clear ✕ — the dt-search-clear button is the one. */
+.smc-toolbar .dt-search input[type="search"]::-webkit-search-cancel-button,
+.smc-toolbar .dt-search input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}/* Segment "+N" popover (and the applied-filters popover, same classes): the
+   table's type. It is portalled to <body>, so the family is stated or it falls
+   back to the theme's Rubik. */
+.smc-seg-pop { font-family: var(--font-sans); }
+.smc-seg-pop .smc-seg-pop-title { font-size: 9.5px; font-weight: 800; letter-spacing: .07em; }
+.smc-seg-pop .smc-seg { font-size: 11.5px; font-weight: 500; }/* Add Customer takes the Add Employee button's colours (app.css
+   .hr-cstrip>.d-flex .btn-label); shape and size stay the Create Quotation one. */
+.smc-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 50%, #8b5cf6 100%);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, .22), 0 1px 3px rgba(91, 33, 182, .16), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+.smc-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn:hover {
+  color: #fff;
+  background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 55%, #7c3aed 100%);
+  box-shadow: 0 8px 22px rgba(124, 58, 237, .28), 0 2px 5px rgba(91, 33, 182, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
+}

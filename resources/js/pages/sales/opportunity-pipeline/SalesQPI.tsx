@@ -1,7 +1,9 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { segmentLabel } from '../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import '../../../components/ui/DataTable.css';
+import '../../p2p/p2p-master-management/supplier-management/supplier-management.css';
 import api from '../../../api';
 import { formatDmy } from '../../../utils/formatDmy';
 import { formatProductCode } from '../../../utils/formatProductCode';
@@ -112,8 +114,8 @@ function renderCreatorCell(
 
   return (
     <div className="qpi-creator-cell">
-      <span className={`qpi-creator-pill qpi-creator-${tone.kind}`}
-            style={{ background: tone.bg, color: tone.fg }}>
+      <span className={`rounded-pill fw-semibold d-inline-flex align-items-center gap-1 qpi-creator-pill qpi-creator-${tone.kind}`}
+            style={{ background: tone.bg, color: tone.fg, fontSize: 11.5, padding: '4px 10px', border: 'none' }}>
         {primary}
       </span>
       {subLabel && <span className="qpi-creator-sub">{subLabel}</span>}
@@ -455,10 +457,10 @@ const IconDownloadSm = () => (
 );
 
 const STEPS = [
-  { n:1, title:'Create Quotation',          desc:'Prepare quotation using opportunity, customer, product, pricing, currency, and bank details.', tag:'FOUNDATION STEP' },
-  { n:2, title:'Share & Track Response',    desc:'Send quotation to customer and track response status.',                                          tag:'SALES TRACKING' },
-  { n:3, title:'Convert to Proforma Invoice', desc:'Convert accepted quotation into PI with shipment, payment, and document details.',        tag:'CONVERSION STEP' },
-  { n:4, title:'Sales Readiness',           desc:'Prepare quotation and PI records for CLM, order confirmation, and export execution.',        tag:'FINAL EXECUTION' },
+  { n:1, title:'Create Quotation',          desc:'Prepare quotation using opportunity, customer, product, pricing, currency, and bank details.', tag:'FOUNDATION STEP', icon:'ri-file-add-line' },
+  { n:2, title:'Share & Track Response',    desc:'Send quotation to customer and track response status.',                                          tag:'SALES TRACKING',  icon:'ri-mail-send-line' },
+  { n:3, title:'Convert to Proforma Invoice', desc:'Convert accepted quotation into PI with shipment, payment, and document details.',        tag:'CONVERSION STEP', icon:'ri-exchange-line' },
+  { n:4, title:'Sales Readiness',           desc:'Prepare quotation and PI records for CLM, order confirmation, and export execution.',        tag:'FINAL EXECUTION', icon:'ri-checkbox-circle-line' },
 ];
 
 export default function SalesQPI() {
@@ -561,10 +563,6 @@ export default function SalesQPI() {
       .finally(() => setLoadingPi(false));
   };
   useEffect(() => { reloadPis(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  /* Load the Create Quotation / PI masters in the background while the user
-   * reads the list, same as Stage 5 does. Without it the bundle only started
-   * on the click, so the form shimmered for the whole load (QA #8). Same API,
-   * same 5-minute cache; the modal reuses the in-flight request if clicked early. */
   useEffect(() => { prewarmQpiMasters(); }, []);
 
   const piWithShipment = useMemo(
@@ -627,11 +625,6 @@ export default function SalesQPI() {
         const cardH = Math.max(0, window.innerHeight - cardTop - 16);
         setFillH(prev => (prev === cardH ? prev : cardH));
       }
-      const headRow = host.querySelector('thead tr') as HTMLElement | null;
-      if (headRow) {
-        const bw = headRow.getBoundingClientRect().width;
-        if (bw) host.style.setProperty('--qpi-band-w', `${bw}px`);
-      }
       if (rppManualRef.current) return;
       const top    = host.getBoundingClientRect().top;
       const theadH = (host.querySelector('thead') as HTMLElement | null)?.offsetHeight || 44;
@@ -646,7 +639,7 @@ export default function SalesQPI() {
     const t = window.setTimeout(fit, 130);
     window.addEventListener('resize', fit);
     let ro: ResizeObserver | undefined;
-    const banner = document.querySelector('.qpi-wdh');
+    const banner = document.querySelector('.qpi-bref');
     if (banner && typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => fit());
       ro.observe(banner);
@@ -978,7 +971,6 @@ export default function SalesQPI() {
     if (!id) return null;
     const sig = sigByRow[`${kind}:${id}`];
     const st = sig?.status;
-    const notSent    = st !== 'inprogress' && st !== 'completed';
     const inProgress = st === 'inprogress';
     const signed     = st === 'completed';
     const declined   = st === 'declined' || st === 'recalled';
@@ -1053,11 +1045,11 @@ export default function SalesQPI() {
   const quotationColumns = useMemo<any[]>(() => [
     {
       header: 'Sr No', id: '__sr', meta: { align: 'center' },
-      cell: (info: any) => <span className="qpi-srno">{info.row.index + 1}</span>,
+      cell: (info: any) => <span className="dt-serial">{info.row.index + 1}</span>,
     },
     {
       header: 'Quotation No', accessorKey: 'qtNo',
-      cell: (info: any) => <span className="qpi-link">{info.getValue()}</span>,
+      cell: (info: any) => <span className="dt-id-chip">{info.getValue()}</span>,
     },
     {
       header: 'Quotation Date', accessorKey: 'qtDate',
@@ -1065,7 +1057,7 @@ export default function SalesQPI() {
     },
     {
       header: 'Opp ID', accessorKey: 'oppId',
-      cell: (info: any) => info.getValue() ? <span className="qpi-link">{info.getValue()}</span> : <span className="qpi-em">—</span>,
+      cell: (info: any) => info.getValue() ? <span className="dt-id-chip">{info.getValue()}</span> : <span className="qpi-em">—</span>,
     },
     {
       header: 'Opp Date', accessorKey: 'oppDate',
@@ -1248,9 +1240,9 @@ export default function SalesQPI() {
   const piColumnsBase = (withShipment: boolean): any[] => [
     {
       header: 'Sr No', id: '__sr', meta: { align: 'center' },
-      cell: (info: any) => <span className="qpi-srno">{info.row.index + 1}</span>,
+      cell: (info: any) => <span className="dt-serial">{info.row.index + 1}</span>,
     },
-    { header: 'PI No', accessorKey: 'piNo',  cell: (info: any) => <span className="qpi-link">{info.getValue()}</span> },
+    { header: 'PI No', accessorKey: 'piNo',  cell: (info: any) => <span className="dt-id-chip">{info.getValue()}</span> },
     { header: 'PI Date', accessorKey: 'piDate', cell: (info: any) => <span className="qpi-date">{info.getValue() || '—'}</span> },
     ...(withShipment ? [
       { header: 'SHP ID', accessorKey: 'btId',   cell: (info: any) => info.getValue() ? <span className="qpi-bt-badge">{info.getValue()}</span> : <span className="qpi-em">—</span> },
@@ -1259,7 +1251,7 @@ export default function SalesQPI() {
     { header: 'Convert From (Quotation No)', accessorKey: 'convertFrom',
       cell: (info: any) => info.getValue() ? <span className="qpi-qt-badge">{info.getValue()}</span> : <span className="qpi-em">—</span> },
     { header: 'Opp ID', accessorKey: 'oppId',
-      cell: (info: any) => info.getValue() ? <span className="qpi-link">{info.getValue()}</span> : <span className="qpi-em">—</span> },
+      cell: (info: any) => info.getValue() ? <span className="dt-id-chip">{info.getValue()}</span> : <span className="qpi-em">—</span> },
     { header: 'Opp Date', accessorKey: 'oppDate', cell: (info: any) => <span className="qpi-date">{info.getValue() || '—'}</span> },
     { header: 'Customer',  accessorKey: 'customer',  cell: (info: any) => <span className="qpi-strong">{info.getValue() || '—'}</span> },
     { header: 'Consignee', accessorKey: 'consignee', cell: (info: any) => info.getValue()
@@ -1407,81 +1399,84 @@ export default function SalesQPI() {
     <div className="qpi-root">
       <style>{SCOPED_CSS}</style>
 
-      <div className="qpi-header">
-        <span className="qpi-accent" />
-        <span className="qpi-glow" />
-        <div className="qpi-header-left">
-          <div className="qpi-avatar-wrap">
-            <div className="qpi-header-icon"><IconUsers /></div>
-            <span className="qpi-online-dot" />
-          </div>
-          <div>
-            <div className="qpi-header-title">Quotations V/S Proforma Invoice</div>
-            <div className="qpi-header-sub">Manage quotation creation, customer approval and PI conversion</div>
+      <div className="frm-cstrip hr-cstrip">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-file-list-3-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Quotations V/S Proforma Invoice</div>
+            <div className="frm-cstrip-sub">Manage quotation creation, customer approval and PI conversion</div>
           </div>
         </div>
-        <div className="qpi-tab-switch">
-          <button className={`qpi-tab ${tab === 'quotation' ? 'active' : ''}`} onClick={() => switchTab('quotation')}>
-            <IconFile /> Quotation <span className="qpi-tab-count">{quotations.length}</span>
-          </button>
-          <button className={`qpi-tab ${tab === 'pi' ? 'active' : ''}`} onClick={() => switchTab('pi')}>
-            <IconMonitor /> Proforma Invoice <span className="qpi-tab-count">{pis.length}</span>
-          </button>
+        <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+          <div className="dt-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={tab === 'quotation'} className={`dt-tab ${tab === 'quotation' ? 'on' : 'off'}`} onClick={() => switchTab('quotation')}>
+              <i className="ri-file-text-line" /> Quotation <span className="dt-tab-count">{quotations.length}</span>
+            </button>
+            <button type="button" role="tab" aria-selected={tab === 'pi'} className={`dt-tab ${tab === 'pi' ? 'on' : 'off'}`} onClick={() => switchTab('pi')}>
+              <i className="ri-computer-line" /> Proforma Invoice <span className="dt-tab-count">{pis.length}</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="qpi-wdh">
-        <div className="qpi-wdh-header" onClick={() => setWdhOpen(o => !o)} role="button">
-          <div className="qpi-wdh-title">
-            <div className="qpi-wdh-icon"><IconUsers /></div>
-            <span>Quotations V/S Proforma Invoice — What We Are Doing Here:</span>
+      <div className="sup-fig">
+        <div className={`bref-box qpi-bref ${wdhOpen ? '' : 'is-collapsed'}`}>
+          <div className="bref-box__header" onClick={() => setWdhOpen(o => !o)} role="button">
+            <div className="bref-box__header-ico"><i className="ri-file-list-3-line" style={{ fontSize: 15 }} /></div>
+            <div className="bref-box__header-mid">
+              <div className="bref-box__header-row">
+                <div className="bref-box__header-label">Quotations V/S Proforma Invoice</div>
+                <div className="bref-box__header-sep" />
+                <div className="bref-box__header-title">What We Are Doing Here</div>
+              </div>
+              <div className="bref-box__header-sub">Creating quotations, tracking customer response, and converting them into proforma invoices.</div>
+            </div>
+            <div className="bref-box__header-right">
+              <div className="bref-box__toggle">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              </div>
+            </div>
           </div>
-          <button className="qpi-wdh-toggle" onClick={(e) => { e.stopPropagation(); setWdhOpen(o => !o); }}>
-            {wdhOpen ? <IconChevronUpThin /> : <IconChevronDownThin />}
-          </button>
-        </div>
-        {wdhOpen && (
-          <div className="qpi-wdh-body">
-            {STEPS.map((s, i) => (
-              <Fragment key={s.n}>
-                <div className="qpi-wdh-step">
-                  <div className="qpi-wdh-step-head">
-                    <div className="qpi-wdh-step-num">{s.n}</div>
-                    <span className="qpi-wdh-step-title">{s.title}</span>
-                  </div>
-                  <p className="qpi-wdh-step-desc">{s.desc}</p>
-                  <span className="qpi-wdh-step-tag"><span className="qpi-wdh-step-dot" />{s.tag}</span>
+          <div className="bref-box__body">
+            {STEPS.map(s => (
+              <div className="bref-item" key={s.n}>
+                <div className="bref-item__top">
+                  <div className="bref-item__ico"><i className={s.icon} style={{ fontSize: 12 }} /></div>
+                  <span className="bref-item__num">Step {String(s.n).padStart(2, '0')}</span>
                 </div>
-                {i < STEPS.length - 1 && (
-                  <div className="qpi-wdh-arrow"><div className="qpi-wdh-arrow-dot"><IconChevronRight /></div></div>
-                )}
-              </Fragment>
+                <div className="bref-item__title">{s.title}</div>
+                <div className="bref-item__desc">{s.desc}</div>
+              </div>
             ))}
           </div>
-        )}
+        </div>
       </div>
 
-      <div className="qpi-card" ref={cardRef} style={fillH ? { minHeight: fillH } : undefined}>
+      <div className="qpi-card dt-root hr-dt" data-accent="violet" ref={cardRef} style={fillH ? { minHeight: fillH } : undefined}>
         <div className="qpi-tablebar">
-          {tab === 'pi' ? (
-            <div className="qpi-pill-group">
-              <button className={`qpi-pi-subtab ${piSub === 'with' ? 'on' : 'off'}`} onClick={() => switchPiSub('with')}>
-                <IconShip /> With Shipment
-                <span className="qpi-pi-subtab-count">{piWithShipment.length}</span>
-              </button>
-              <button className={`qpi-pi-subtab ${piSub === 'without' ? 'on' : 'off'}`} onClick={() => switchPiSub('without')}>
-                <IconFileSm /> Without Shipment
-                <span className="qpi-pi-subtab-count">{piWithoutShipment.length}</span>
-              </button>
+          <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+            <div className="dt-tabs" role="tablist">
+              {tab === 'pi' ? (
+                <>
+                  <button type="button" role="tab" aria-selected={piSub === 'with'} className={`dt-tab ${piSub === 'with' ? 'on' : 'off'}`} onClick={() => switchPiSub('with')}>
+                    <i className="ri-ship-line" /> With Shipment
+                    <span className="dt-tab-count">{piWithShipment.length}</span>
+                  </button>
+                  <button type="button" role="tab" aria-selected={piSub === 'without'} className={`dt-tab ${piSub === 'without' ? 'on' : 'off'}`} onClick={() => switchPiSub('without')}>
+                    <i className="ri-file-line" /> Without Shipment
+                    <span className="dt-tab-count">{piWithoutShipment.length}</span>
+                  </button>
+                </>
+              ) : (
+                <button type="button" role="tab" aria-selected className="dt-tab on">
+                  <i className="ri-file-text-line" /> Quotation List
+                </button>
+              )}
             </div>
-          ) : (
-            <div className="qpi-listpill">
-              <span className="qpi-listpill-ico"><IconFile /></span>
-              Quotation List
-            </div>
-          )}
-          <div className="qpi-search ui-search-abs">
-            <IconSearch />
+          </div>
+          <div className="dt-search">
+            <i className="ri-search-line dt-search-icon" />
             <input
               type="text"
               autoComplete="off"
@@ -1489,7 +1484,11 @@ export default function SalesQPI() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
-            <SearchClear show={q} onClear={() => { setQ(''); }} />
+            {q && (
+              <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => setQ('')}>
+                <i className="ri-close-line" />
+              </button>
+            )}
           </div>
 
           <div className={`qpi-doctype-filter ${docTypeFilter !== 'all' ? 'active' : ''}`}>
@@ -1502,18 +1501,24 @@ export default function SalesQPI() {
                 { value: 'Domestic', label: 'Domestic' },
               ]}
               onChange={(v) => setDocTypeFilter((v || 'all') as 'all' | 'International' | 'Domestic')}
+              menuClassName="qpi-doctype-menu"
             />
           </div>
 
-          {tab === 'quotation' ? (
-            <button className="qpi-create-btn" onClick={() => { setPiSourceQuotation(null); setCreateQtOpen(true); }}>
-              <IconPlus /> Create Quotation
+          <span className="sup-fig" style={{ display: 'contents' }}>
+            <button
+              type="button"
+              className="cstrip__action-btn flex-shrink-0"
+              onClick={() => {
+                setPiSourceQuotation(null);
+                if (tab === 'quotation') setCreateQtOpen(true); else setCreatePiOpen(true);
+              }}
+            >
+              <span className="cstrip__action-btn-sheen" />
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              {tab === 'quotation' ? 'Create Quotation' : 'Create PI'}
             </button>
-          ) : (
-            <button className="qpi-create-btn" onClick={() => { setPiSourceQuotation(null); setCreatePiOpen(true); }}>
-              <IconPlus /> Create PI
-            </button>
-          )}
+          </span>
         </div>
 
         <div
@@ -1528,7 +1533,7 @@ export default function SalesQPI() {
               data={pageRows as Quotation[]}
               isGlobalFilter={false}
               customPageSize={rpp}
-              tableClass="table align-middle table-nowrap mb-0"
+              tableClass="table align-middle table-nowrap mb-0 dt-table"
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search quotations..."
@@ -1545,7 +1550,7 @@ export default function SalesQPI() {
               data={pageRows as PI[]}
               isGlobalFilter={false}
               customPageSize={rpp}
-              tableClass="table align-middle table-nowrap mb-0"
+              tableClass="table align-middle table-nowrap mb-0 dt-table"
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
@@ -1562,7 +1567,7 @@ export default function SalesQPI() {
               data={pageRows as PI[]}
               isGlobalFilter={false}
               customPageSize={rpp}
-              tableClass="table align-middle table-nowrap mb-0"
+              tableClass="table align-middle table-nowrap mb-0 dt-table"
               theadClass="table-light"
               divClass="table-responsive table-card"
               SearchPlaceholder="Search PIs..."
@@ -1582,7 +1587,7 @@ export default function SalesQPI() {
           )}
         </div>
 
-        {!(tab === 'quotation' ? loadingQt : loadingPi) && totalRows > 0 && (
+        {!(tab === 'quotation' ? loadingQt : loadingPi) && (
           <WorklistPager
             total={totalRows}
             page={safePage}
@@ -3791,7 +3796,6 @@ function ProductsStep(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadProductsPending, allowedProductIds, productOptions, productsRaw, products, customerSegmentKey]);
 
-  const noMoreProducts = !loadingProducts && !loadingLeadProducts && !leadProductsPending && visibleProductOptions.length === 0;
   const anyProductsLoading = loadingProducts || loadingLeadProducts || leadProductsPending;
   const showAddProductRow  = !anyProductsLoading && visibleProductOptions.length > 0;
 
@@ -4085,12 +4089,6 @@ function SummaryItem(props: { label: string; value: string }) {
 }
 
 
-const IconUsers = () => (
-  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-    <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-  </svg>
-);
 const IconBellSm = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -4102,49 +4100,9 @@ const IconFile = () => (
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
   </svg>
 );
-const IconFileSm = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
-  </svg>
-);
-const IconMonitor = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-    <rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" />
-  </svg>
-);
-const IconShip = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 17l9-5 9 5" /><path d="M5 21l1.5-4h11L19 21" /><path d="M12 7v5" /><path d="M9 7h6" />
-  </svg>
-);
-const IconChevronUpThin = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5">
-    <polyline points="7 14 12 9 17 14" />
-  </svg>
-);
-const IconChevronDownThin = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5">
-    <polyline points="7 10 12 15 17 10" />
-  </svg>
-);
-const IconChevronRight = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="9 18 15 12 9 6" />
-  </svg>
-);
 const IconPlus = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-  </svg>
-);
-const IconSearch = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round">
-    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-  </svg>
-);
-const IconFilter = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
   </svg>
 );
 const IconMail = () => (
@@ -4214,76 +4172,40 @@ const SCOPED_CSS = `
   padding: 0;
   margin: 0;
   color: var(--vz-body-color);
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column;
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
-
-.qpi-header {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-  padding: 12px 18px; min-height: 70px;
-  border: 1px solid #c4b5fd; border-radius: 16px;
-  background:
-    linear-gradient(110deg, #faf7ff 0%, #f4eeff 45%, #efe8ff 75%, #ece4ff 100%) padding-box,
-    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
-  box-shadow:
-    0 1px 0 rgba(255,255,255,0.70) inset,
-    0 4px 18px rgba(124,58,237,0.16),
-    0 1px 4px rgba(99,102,241,0.10);
-  font-family: var(--font-sans);
+.qpi-root .frm-cstrip .frm-cstrip-title { font-size: 17px; font-weight: 700; }
+.qpi-root .dt-tabrail .dt-tab { height: 38px; }
+.qpi-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
+.qpi-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
+.master-select-menu.qpi-doctype-menu { width: 186px !important; min-width: 186px !important; max-width: 186px !important; }
+.qpi-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
+.qpi-root .qpi-tablebar .dt-search,
+.qpi-root .qpi-tablebar .qpi-doctype-filter,
+.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle { height: 46px; }
+.qpi-root .qpi-tablebar .cstrip__action-btn { height: 46px; padding-top: 0; padding-bottom: 0; }
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
+  flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
-.qpi-header::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
-  background-image:
-    radial-gradient(ellipse at 12% 50%, rgba(255,255,255,0.40) 0%, transparent 55%),
-    radial-gradient(ellipse at 88% 50%, rgba(167,139,250,0.20) 0%, transparent 55%);
+.qpi-table-host .table tbody td:not(:last-child),
+.qpi-table-host .table tbody td:not(:last-child) *:not(i):not(svg):not(svg *) {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
 }
-.qpi-header::after {
-  content: ''; position: absolute; top: 0; left: 14px; right: 14px; height: 1.5px;
-  border-radius: 2px; pointer-events: none; z-index: 3; opacity: 0.9; filter: blur(0.4px);
-  background: linear-gradient(90deg,
-    rgba(255,255,255,0) 0%, rgba(147,197,253,0.30) 14%, rgba(196,181,253,0.55) 30%,
-    rgba(253,242,248,0.95) 50%, rgba(232,193,255,0.80) 66%, rgba(168,85,247,0.95) 86%,
-    rgba(124,58,237,0.92) 100%);
+.qpi-root .qpi-table-host .table tbody td:not(:last-child) .qpi-creator-pill.fw-semibold {
+  font-weight: 600 !important;
 }
-.qpi-accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6); border-radius: 16px 0 0 16px; }
-.qpi-glow   { position: absolute; right: -20px; top: -20px; width: 120px; height: 120px; border-radius: 50%; background: rgba(167,139,250,.15); pointer-events: none; }
-.qpi-header-left { display: flex; align-items: center; gap: 12px; z-index: 1; padding-left: 6px; }
-.qpi-avatar-wrap { position: relative; flex-shrink: 0; }
-.qpi-header-icon {
-  width: 46px; height: 46px; border-radius: 12px;
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  display: flex; align-items: center; justify-content: center; color: #fff;
-  box-shadow: 0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(255,255,255,0.50);
+.qpi-root .qpi-table-host .table tbody td:not(:last-child) .dt-serial.dt-serial {
+  font-size: 11px !important;
+  font-weight: 800 !important;
 }
-.qpi-online-dot { position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg,#4ade80,#22c55e); border: 2px solid #f3e8ff; }
-.qpi-header-title { font-size: 18px; font-weight: 800; color: #2e1065; letter-spacing: -.3px; line-height: 1.2; }
-.qpi-header-sub   { font-size: 12px; color: #6b7280; margin-top: 4px; font-weight: 400; line-height: 1.5; opacity: .85; }
-
-.qpi-tab-switch {
-  display: flex; gap: 4px; padding: 4px;
-  background: #ffffff;
-  border: 1px solid rgba(124,58,237,.2);
-  border-radius: 10px;
-  position: relative; z-index: 2;
+.qpi-root .qpi-table-host .table tbody td:not(:last-child) .dt-id-chip.dt-id-chip {
+  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: .02em;
 }
-.qpi-tab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 7px; border: none;
-  background: transparent; color: #7c3aed;
-  font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
-  white-space: nowrap;
-  transition: all .15s;
-}
-.qpi-tab:hover { background: rgba(124,58,237,.08); }
-.qpi-tab.active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.4); }
-.qpi-tab-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-  background: rgba(124,58,237,.14); color: #7c3aed;
-  font-size: 10.5px; font-weight: 800; line-height: 1;
-}
-.qpi-tab.active .qpi-tab-count { background: rgba(255,255,255,.25); color: #fff; }
 .qpi-sig-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
 .qpi-sig-none   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 .qpi-sig-sent   { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
@@ -4293,83 +4215,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-sig-none   { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.34); }
 [data-bs-theme="dark"] .qpi-sig-sent   { background: rgba(234,179,8,.16);   color: #fde68a; border-color: rgba(234,179,8,.40); }
 [data-bs-theme="dark"] .qpi-sig-signed { background: rgba(34,197,94,.16);    color: #86efac; border-color: rgba(34,197,94,.40); }
-
-.qpi-wdh {
-  position: relative;
-  background: linear-gradient(135deg, #faf5ff 0%, #f3eaff 45%, #ede1ff 100%);
-  border: 1px solid #d6c5ff; border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(124,58,237,.10), 0 1px 3px rgba(124,58,237,.06);
-}
-.qpi-wdh-header { display: flex; align-items: center; justify-content: space-between; padding: 7px 18px; cursor: pointer; user-select: none; transition: background .2s ease; }
-.qpi-wdh-header:hover { background: rgba(124,58,237,.05); }
-.qpi-wdh-title { display: flex; align-items: center; gap: 12px; font-size: 15px; font-weight: 700; color: #3b0764; line-height: 1.2; }
-.qpi-wdh-icon {
-  width: 40px; height: 40px; border-radius: 12px;
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  box-shadow: 0 4px 10px rgba(124,58,237,.25);
-  display: flex; align-items: center; justify-content: center; color: #fff;
-  flex-shrink: 0;
-}
-.qpi-wdh-toggle {
-  width: 32px; height: 32px; border-radius: 50%; border: 0;
-  background: rgba(124,58,237,.10);
-  color: #6d28d9;
-  display: flex; align-items: center; justify-content: center; cursor: pointer;
-  flex-shrink: 0;
-  transition: background .2s ease;
-}
-.qpi-wdh-toggle:hover { background: rgba(124,58,237,.18); }
-
-.qpi-wdh-body {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
-  align-items: stretch;
-  gap: 8px; padding: 14px 18px 18px;
-}
-.qpi-wdh-step {
-  background: #fff;
-  border: 1px solid rgba(124,58,237,.18);
-  border-left: 4px solid #7c3aed;
-  border-radius: 12px;
-  padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 6px;
-  min-height: 110px;
-  box-shadow: 0 2px 8px rgba(18,38,63,.04);
-  cursor: default;
-  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
-}
-.qpi-wdh-step:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 22px rgba(124,58,237,.18), 0 2px 6px rgba(124,58,237,.10);
-}
-.qpi-wdh-step-head { display: flex; align-items: center; gap: 8px; }
-.qpi-wdh-step-num {
-  width: 24px; height: 24px; border-radius: 50%;
-  background: linear-gradient(135deg, #7c3aed, #a78bfa); color: #fff;
-  font-size: 12px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 3px 8px rgba(124,58,237,.30);
-}
-.qpi-wdh-step-title { font-size: 14px; font-weight: 700; color: #6d28d9; line-height: 1.2; }
-.qpi-wdh-step-desc { font-size: 12px; color: var(--vz-secondary-color, #6b7280); line-height: 1.45; margin: 0; flex: 1; }
-.qpi-wdh-step-tag {
-  display: inline-flex; align-items: center; gap: 5px;
-  font-size: 9.5px; font-weight: 800; color: #7c3aed;
-  letter-spacing: .04em; text-transform: uppercase;
-  margin-top: auto;
-}
-.qpi-wdh-step-dot { width: 6px; height: 6px; border-radius: 50%; background: #7c3aed; }
-
-.qpi-wdh-arrow { display: flex; align-items: center; justify-content: center; }
-.qpi-wdh-arrow-dot {
-  width: 28px; height: 28px; border-radius: 50%;
-  background: #fff; border: 1px solid rgba(124,58,237,.22);
-  display: flex; align-items: center; justify-content: center;
-  color: #7c3aed;
-  box-shadow: 0 1px 4px rgba(124,58,237,.12);
-}
 
 .qpi-card {
   position: relative;
@@ -4382,117 +4227,12 @@ const SCOPED_CSS = `
   flex-direction: column;
 }
 .qpi-tablebar {
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 14px 18px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px;
   background: linear-gradient(135deg, rgba(124,58,237,0.04), rgba(167,139,250,0.02));
   border-bottom: 1px solid rgba(124,58,237,0.15);
   position: relative; z-index: 1;
 }
-.qpi-listpill {
-  display: inline-flex; align-items: center; gap: 9px;
-  padding: 6px 14px 6px 7px; border-radius: 10px;
-  background: #fff;
-  border: 1px solid rgba(124,58,237,.2);
-  color: #3b0764; font-size: 12.5px; font-weight: 800;
-  white-space: nowrap; flex-shrink: 0;
-  box-shadow: 0 2px 6px rgba(124,58,237,.08);
-}
-.qpi-listpill-ico {
-  width: 30px; height: 30px; border-radius: 8px;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  display: inline-flex; align-items: center; justify-content: center;
-  color: #fff; flex-shrink: 0;
-}
-.qpi-listpill-ico svg { width: 15px; height: 15px; }
-[data-bs-theme="dark"] .qpi-listpill,
-[data-layout-mode="dark"] .qpi-listpill {
-  background: rgba(124,58,237,.10);
-  border-color: rgba(167,139,250,.30);
-  color: #e9e3ff;
-}
-
-.qpi-tabs-bar {
-  padding: 12px 18px;
-  border-bottom: 1px solid rgba(124,58,237,.15);
-  display: flex; align-items: center; gap: 12px;
-  background: linear-gradient(135deg, rgba(124,58,237,.04), rgba(167,139,250,.02));
-}
-
-.qpi-pill-group {
-  display: inline-flex; align-items: center; gap: 8px;
-  background: rgba(255, 255, 255, .55);
-  border: 1px solid rgba(139, 92, 246, .22);
-  border-radius: 11px;
-  padding: 4px;
-  flex-shrink: 0;
-}
-.qpi-pi-subtab {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 0 14px; height: 34px;
-  border-radius: 8px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
-  cursor: pointer;
-  letter-spacing: 0; white-space: nowrap;
-  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
-}
-.qpi-pi-subtab.off {
-  background: linear-gradient(135deg, #f5f1fe, #ede9fe);
-  border: 1px solid rgba(139,92,246,.2);
-  color: #6d28d9;
-}
-.qpi-pi-subtab.off:hover {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  border-color: rgba(139,92,246,.35);
-  color: #5b21b6;
-}
-.qpi-pi-subtab.on {
-  position: relative; overflow: hidden; border: 0;
-  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%);
-  color: #fff;
-  box-shadow: 0 5px 14px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset;
-  text-shadow: 0 1px 2px rgba(76,29,149,.4);
-}
-.qpi-pi-subtab svg { width: 14px; height: 14px; }
-.qpi-pi-subtab-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 18px; padding: 0 7px;
-  border-radius: 999px;
-  font-size: 10px; font-weight: 800; line-height: 1;
-}
-.qpi-pi-subtab.off .qpi-pi-subtab-count { color: #7c3aed; background: #fff; border: 1px solid #ddd0f7; }
-.qpi-pi-subtab.on  .qpi-pi-subtab-count { color: #fff; background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.4); }
-
-.qpi-pi-subtabs { display: contents; }
-
-.qpi-search {
-  position: relative;
-  flex: 1; min-width: 240px;
-  display: flex; align-items: center;
-  background: rgba(255,255,255,.85);
-  border: 1px solid rgba(124,58,237,.20);
-  border-radius: 10px;
-  padding: 0 14px 0 38px;
-  height: 42px;
-  box-shadow: 0 1px 3px rgba(124,58,237,.06);
-  transition: border-color .15s, box-shadow .15s;
-}
-.qpi-search:focus-within {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 3px rgba(124,58,237,.15);
-}
-.qpi-search svg {
-  position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
-  width: 16px; height: 16px;
-  color: var(--vz-secondary-color, #878a99);
-}
-.qpi-search input {
-  flex: 1; height: 100%; border: 0; outline: 0;
-  background: transparent;
-  font-family: inherit; font-size: 13px;
-  color: var(--vz-body-color, #212529);
-  font-weight: 500;
-}
-.qpi-search input::placeholder { color: var(--vz-secondary-color, #878a99); }
 
 .qpi-doctype-filter {
   display: flex; align-items: center;
@@ -4509,25 +4249,6 @@ const SCOPED_CSS = `
 .qpi-doctype-filter .master-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qpi-doctype-filter.active .master-select-toggle { border-color: #7c3aed; background: rgba(124,58,237,.06); }
 [data-bs-theme="dark"] .qpi-doctype-filter.active .master-select-toggle { background: rgba(124,58,237,.22); }
-
-.qpi-create-btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 0 22px; height: 42px;
-  border: 0; border-radius: 15px;
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  color: #fff;
-  font-family: inherit; font-size: 13px; font-weight: 600;
-  cursor: pointer; white-space: nowrap; flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(124,58,237,.30);
-  transition: transform .15s, box-shadow .15s, background .18s;
-}
-.qpi-create-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(124,58,237,.40);
-}
-.qpi-create-btn:active { transform: translateY(0); }
-.qpi-create-btn svg { width: 16px; height: 16px; }
-
 
 .qpi-table-host { padding: 14px 14px 1px; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .qpi-table-host > .table-card { margin-bottom: 0 !important; }
@@ -4560,18 +4281,9 @@ const SCOPED_CSS = `
   color: var(--vz-body-color, #212529);
   margin-bottom: 0 !important;
 }
-.qpi-table-host .table thead.table-light tr {
-  background: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
-}
 .qpi-table-host .table thead.table-light th {
   --bs-table-bg: transparent !important;
   --bs-table-accent-bg: transparent !important;
-  background: transparent !important;
-  color: #fff !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: .03em !important;
-  text-transform: uppercase;
   padding: 11px 14px !important;
   border-bottom: 0 !important;
   white-space: nowrap;
@@ -4619,14 +4331,8 @@ const SCOPED_CSS = `
 .qpi-table-host .table tbody td:last-child {
   position: sticky; right: 0;
 }
-.qpi-table-host .table thead.table-light th:last-child {
-  background-color: transparent !important;
-  background-image: linear-gradient(110deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%) !important;
-  background-size: var(--qpi-band-w, 480%) 100% !important;
-  background-position: right center !important;
-  background-repeat: no-repeat !important;
-  z-index: 4;
-}
+.qpi-table-host .table thead.table-light th:last-child { z-index: 4; }
+.qpi-table-host .table.dt-table tbody td { overflow: visible; text-overflow: clip; }
 .qpi-table-host .table tbody td:last-child {
   background: #fff !important;
   z-index: 2;
@@ -4652,61 +4358,6 @@ const SCOPED_CSS = `
 }
 
 .qpi-table-host > .row { display: none !important; }
-
-.qpi-pag {
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 10px;
-  padding: 10px 18px;
-  border-top: 1px solid rgba(124,58,237,.15);
-  background: linear-gradient(135deg, rgba(124,58,237,.04), rgba(167,139,250,.02));
-}
-.qpi-pag-info {
-  font-size: 12px; font-weight: 600; color: #6d28d9;
-  background: #fff; border: 1px solid rgba(124,58,237,.25);
-  padding: 4px 12px; border-radius: 20px;
-  font-variant-numeric: tabular-nums;
-}
-.qpi-pag-info b { color: #3b0764; font-weight: 800; }
-.qpi-pag-btns { display: inline-flex; align-items: center; gap: 6px; }
-.qpi-pag-btn {
-  min-width: 30px; height: 30px; padding: 0 8px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(124,58,237,.25);
-  background: #fff;
-  color: #6d28d9;
-  font-size: 12.5px; font-weight: 700; cursor: pointer;
-  font-family: inherit;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background .15s, border-color .15s, color .15s, box-shadow .2s;
-}
-.qpi-pag-btn:hover:not(:disabled):not(.on) {
-  background: rgba(124,58,237,.08);
-  border-color: rgba(124,58,237,.45);
-  color: #5b21b6;
-}
-.qpi-pag-btn.on {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 3px 10px rgba(124,58,237,.30);
-  cursor: default;
-}
-.qpi-pag-btn:disabled { opacity: .45; cursor: not-allowed; }
-.qpi-pag-arrow { color: #7c3aed; }
-[data-bs-theme="dark"] .qpi-pag,
-[data-layout-mode="dark"] .qpi-pag {
-  border-top-color: rgba(167,139,250,.20);
-  background: rgba(124,58,237,.06);
-}
-[data-bs-theme="dark"] .qpi-pag-info,
-[data-layout-mode="dark"] .qpi-pag-info {
-  background: rgba(124,58,237,.12); border-color: rgba(167,139,250,.30); color: #c4b5fd;
-}
-[data-bs-theme="dark"] .qpi-pag-info b { color: #e9e3ff; }
-[data-bs-theme="dark"] .qpi-pag-btn,
-[data-layout-mode="dark"] .qpi-pag-btn {
-  background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); color: #c4b5fd;
-}
 .qpi-table-host > .row > [class^="col-"] { padding: 0; width: auto; flex: 0 0 auto; }
 .qpi-table-host .text-muted {
   display: inline-flex; align-items: center; gap: 4px;
@@ -4783,73 +4434,22 @@ const SCOPED_CSS = `
   text-align: center !important;
   padding: 56px 12px !important;
   color: #9ca3af;
-  font-size: 13px; font-style: normal;
+  font-size: 12.5px; font-weight: 600; font-style: normal;
 }
 .qpi-table-host--empty > .qpi-empty {
   flex: 1 1 auto;
   display: flex; align-items: center; justify-content: center;
 }
 
-.qpi-srno { color: var(--vz-body-color, #495057); font-weight: 600; font-size: 13px; }
-
-.qpi-link {
-  display: inline-flex; align-items: center;
-  padding: 4px 10px; border-radius: 999px;
-  background: #ece6ff; color: #5a3fd1;
-  font-family: var(--vz-font-monospace, 'JetBrains Mono', ui-monospace, monospace);
-  font-weight: 700; font-size: 11.5px;
-  letter-spacing: .02em;
-  text-decoration: none; cursor: pointer;
-  transition: background .12s, color .12s;
-}
-.qpi-link:hover {
-  background: #ddd0ff; color: #4a32b2;
-  text-decoration: none;
-}
-
-.qpi-strong { color: #0f1729; font-weight: 600; font-size: 13px; text-transform: capitalize; }
+.qpi-strong { color: #0f1729; font-weight: 600; font-size: 11.5px; text-transform: capitalize; }
 .qpi-cap { text-transform: capitalize; }
-
-.qpi-branch-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.qpi-branch-name {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #1e293b;
-  text-transform: capitalize;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.qpi-branch-main {
-  display: inline-block;
-  padding: 2px 6px;
-  background: #ede9fe;
-  color: #6d28d9;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.8px;
-  border-radius: 5px;
-  border: 1px solid #ddd6fe;
-  line-height: 1.2;
-}
-[data-bs-theme="dark"] .qpi-branch-name { color: #e2e8f0; }
-[data-bs-theme="dark"] .qpi-branch-main {
-  background: rgba(167,139,250,.18);
-  color: #c4b5fd;
-  border-color: rgba(167,139,250,.30);
-}
 
 .qpi-date {
   font-variant-numeric: tabular-nums;
   letter-spacing: .01em;
   color: var(--vz-secondary-color, #878a99);
   font-weight: 500;
-  font-size: 13px;
+  font-size: 11.5px;
 }
 
 .qpi-currency {
@@ -4858,13 +4458,12 @@ const SCOPED_CSS = `
   background: #ece6ff; color: #5a3fd1;
   font-size: 11px; font-weight: 600;
   letter-spacing: .02em;
-  font-family: var(--vz-font-monospace, 'JetBrains Mono', ui-monospace, monospace);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
   white-space: nowrap;
 }
 
-.qpi-sm { color: var(--vz-body-color, #495057); font-weight: 500; font-size: 13px; }
+.qpi-sm { color: var(--vz-body-color, #495057); font-weight: 500; font-size: 11.5px; }
 .qpi-em { color: #cbd5e1; font-weight: 400; }
-.qpi-em-center { text-align: center; color: #cbd5e1; font-weight: 400; }
 
 .qpi-creator-cell {
   display: flex;
@@ -4873,11 +4472,6 @@ const SCOPED_CSS = `
   gap: 3px;
 }
 .qpi-creator-pill {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 700;
   line-height: 1.3;
   white-space: nowrap;
 }
@@ -4905,11 +4499,6 @@ const SCOPED_CSS = `
   border: 1.5px solid #ddd6fe; background: #faf5ff;
   color: #6d28d9; font-size: 11px; font-weight: 700;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
-}
-
-.qpi-actions {
-  display: inline-flex; align-items: center; justify-content: center;
-  gap: 6px; flex-wrap: nowrap;
 }
 
 .qpi-convert-btn {
@@ -4987,17 +4576,6 @@ const SCOPED_CSS = `
 }
 @keyframes qpi-send-spin-rot { to { transform: rotate(360deg); } }
 
-.qpi-signed-btn {
-  background: linear-gradient(135deg, #16a34a, #15803d);
-  box-shadow: 0 3px 10px rgba(22,163,74,.28);
-}
-.qpi-signed-btn:hover:not(:disabled) {
-  box-shadow: 0 4px 14px rgba(22,163,74,.42);
-}
-.qpi-signed-btn:focus-visible {
-  box-shadow: 0 0 0 3px rgba(22,163,74,.28), 0 3px 10px rgba(22,163,74,.28);
-}
-
 .qpi-act {
   width: 30px; height: 30px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -5059,7 +4637,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; gap: 10px;
   padding: 9px 12px; border-radius: 7px;
   background: transparent; border: none; cursor: pointer;
-  font-family: inherit; font-size: 13px; font-weight: 600;
+  font-family: var(--font-sans); font-size: 12.5px; font-weight: 500;
   color: #1e293b;
   text-align: left;
   transition: background .12s, color .12s;
@@ -5101,24 +4679,6 @@ const SCOPED_CSS = `
   color: #e0f2fe;
 }
 [data-bs-theme="dark"] .qpi-moremenu-item svg { color: #38bdf8; }
-
-.qpi-pagination {
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 10px;
-  padding: 12px 16px;
-}
-.qpi-pag-info {
-  display: inline-flex; align-items: center;
-  font-size: 13px; font-weight: 500;
-  color: var(--vz-secondary-color, #878a99);
-  font-variant-numeric: tabular-nums;
-}
-.qpi-pag-info strong {
-  color: var(--vz-body-color, #212529);
-  font-weight: 700;
-  margin: 0 2px;
-}
-.qpi-pag-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 .qpi-modal-backdrop {
   position: fixed; inset: 0; z-index: 9999;
@@ -5504,7 +5064,6 @@ const SCOPED_CSS = `
   background: #fff;
   border-top: 1px solid #e2e8f0;
 }
-.qpi-modal-req { font-size: 11px; color: #ef4444; font-weight: 600; }
 .qpi-modal-foot-actions { display: flex; align-items: center; gap: 8px; }
 .qpi-btn-cancel {
   padding: 6px 16px; border-radius: 7px;
@@ -5587,54 +5146,6 @@ const SCOPED_CSS = `
   color: var(--vz-body-color);
 }
 
-[data-bs-theme="dark"] .qpi-header {
-  border: 1px solid rgba(139,92,246,0.22);
-  background: linear-gradient(110deg, #181426 0%, #1e1838 100%);
-  box-shadow: 0 6px 20px rgba(0,0,0,0.40);
-}
-[data-bs-theme="dark"] .qpi-header::before { background-image: none; }
-[data-bs-theme="dark"] .qpi-header::after  { background: none; }
-[data-bs-theme="dark"] .qpi-header-title { color: #f5f3ff; }
-[data-bs-theme="dark"] .qpi-header-sub   { color: #ede9fe; opacity: 0.92; }
-[data-bs-theme="dark"] .qpi-header-icon  {
-  background: linear-gradient(135deg, #a78bfa, #7c3aed);
-  box-shadow: 0 4px 14px rgba(124,58,237,0.50), 0 0 0 3px rgba(167,139,250,0.18);
-}
-[data-bs-theme="dark"] .qpi-online-dot   { border-color: #1a1530; }
-[data-bs-theme="dark"] .qpi-tab-switch {
-  background: #221b36;
-  border-color: rgba(167,139,250,.25);
-}
-[data-bs-theme="dark"] .qpi-tab        { color: #ede9fe; }
-[data-bs-theme="dark"] .qpi-tab:hover  { background: rgba(167,139,250,.12); }
-[data-bs-theme="dark"] .qpi-tab-count { background: rgba(167,139,250,.22); color: #e9d5ff; }
-[data-bs-theme="dark"] .qpi-tab.active .qpi-tab-count { background: rgba(255,255,255,.28); color: #fff; }
-
-[data-bs-theme="dark"] .qpi-wdh {
-  background: linear-gradient(110deg, #181426 0%, #1e1838 100%);
-  border-color: rgba(167,139,250,.22);
-  box-shadow: 0 2px 8px rgba(0,0,0,.45);
-}
-[data-bs-theme="dark"] .qpi-wdh-title  { color: #e9d5ff; }
-[data-bs-theme="dark"] .qpi-wdh-toggle {
-  background: rgba(255,255,255,.06);
-  border-color: rgba(167,139,250,.35);
-  color: #c4b5fd;
-}
-[data-bs-theme="dark"] .qpi-wdh-step {
-  background: #1a1530;
-  border-color: rgba(167,139,250,.25);
-  border-left-color: #a78bfa;
-}
-[data-bs-theme="dark"] .qpi-wdh-step-title { color: #e9d5ff; }
-[data-bs-theme="dark"] .qpi-wdh-step-desc  { color: #9aa0b4; }
-[data-bs-theme="dark"] .qpi-wdh-step-tag   { color: #c4b5fd; }
-[data-bs-theme="dark"] .qpi-wdh-arrow-dot  {
-  background: rgba(255,255,255,.06);
-  border-color: rgba(167,139,250,.30);
-  color: #c4b5fd;
-}
-
 [data-bs-theme="dark"] .qpi-card {
   background: var(--vz-card-bg);
   border-color: var(--vz-border-color);
@@ -5644,47 +5155,11 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, rgba(124,58,237,.10), rgba(167,139,250,.05));
   border-bottom-color: rgba(167,139,250,.20);
 }
-[data-bs-theme="dark"] .qpi-tabs-bar {
-  background: linear-gradient(135deg, rgba(124,58,237,.10), rgba(167,139,250,.05));
-  border-bottom-color: rgba(167,139,250,.20);
-}
-[data-bs-theme="dark"] .qpi-pill-group,
-[data-layout-mode="dark"] .qpi-pill-group {
-  background: rgba(255,255,255,.05);
-  border-color: rgba(167,139,250,.22);
-}
-[data-bs-theme="dark"] .qpi-pi-subtab.off,
-[data-layout-mode="dark"] .qpi-pi-subtab.off {
-  background: rgba(124,58,237,.14); border-color: rgba(167,139,250,.28); color: #c4b5fd;
-}
-[data-bs-theme="dark"] .qpi-pi-subtab.off:hover,
-[data-layout-mode="dark"] .qpi-pi-subtab.off:hover { background: rgba(167,139,250,.22); color: #ede9fe; }
-[data-bs-theme="dark"] .qpi-pi-subtab.off .qpi-pi-subtab-count,
-[data-layout-mode="dark"] .qpi-pi-subtab.off .qpi-pi-subtab-count {
-  color: #c4b5fd; background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.30);
-}
-[data-bs-theme="dark"] .qpi-search {
-  background: rgba(255,255,255,.03);
-  border-color: rgba(167,139,250,.30);
-}
-[data-bs-theme="dark"] .qpi-search input { color: var(--vz-body-color); }
-[data-bs-theme="dark"] .qpi-search input::placeholder,
-[data-bs-theme="dark"] .qpi-search svg { color: var(--vz-secondary-color); }
 
 [data-bs-theme="dark"] .qpi-table-host .table-responsive { scrollbar-color: rgba(255,255,255,.12) transparent; }
 [data-bs-theme="dark"] .qpi-table-host .table-responsive::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); }
 [data-bs-theme="dark"] .qpi-table-host .table-responsive::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.20); }
 [data-bs-theme="dark"] .qpi-table-host .table { color: var(--vz-body-color); }
-[data-bs-theme="dark"] .qpi-table-host .table thead.table-light tr {
-  background: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
-}
-[data-bs-theme="dark"] .qpi-table-host .table thead.table-light th {
-  color: #fff !important;
-  border-bottom: 0 !important;
-}
-[data-bs-theme="dark"] .qpi-table-host .table thead.table-light th:last-child {
-  background-image: linear-gradient(110deg, #5b21b6 0%, #4c1d95 55%, #3b1675 100%) !important;
-}
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:hover td {
   background: rgba(134,92,226,.08) !important;
 }
@@ -5713,22 +5188,11 @@ const SCOPED_CSS = `
   background: rgba(255,255,255,.03); color: #6b6481;
   border-color: rgba(167,139,250,.18);
 }
-
-[data-bs-theme="dark"] .qpi-srno                 { color: rgba(255,255,255,.88); }
 [data-bs-theme="dark"] .qpi-strong               { color: #ffffff; }
 [data-bs-theme="dark"] .qpi-sm                   { color: rgba(255,255,255,.85); }
 [data-bs-theme="dark"] .qpi-date                 { color: rgba(255,255,255,.78); }
-[data-bs-theme="dark"] .qpi-em,
-[data-bs-theme="dark"] .qpi-em-center            { color: rgba(255,255,255,.35); }
+[data-bs-theme="dark"] .qpi-em            { color: rgba(255,255,255,.35); }
 [data-bs-theme="dark"] .qpi-empty                { color: rgba(255,255,255,.45); }
-[data-bs-theme="dark"] .qpi-link {
-  background: rgba(124,92,252,.22);
-  color: #c8b8ff;
-}
-[data-bs-theme="dark"] .qpi-link:hover {
-  background: rgba(124,92,252,.32);
-  color: #ffffff;
-}
 [data-bs-theme="dark"] .qpi-currency {
   background: rgba(124,92,252,.22);
   color: #c8b8ff;
@@ -5777,26 +5241,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-convert-btn-done:disabled {
   background: linear-gradient(135deg, #15803d, #166534);
   box-shadow: 0 3px 10px rgba(0,0,0,.40);
-}
-
-[data-bs-theme="dark"] .qpi-pag-info        { color: rgba(255,255,255,.70); }
-[data-bs-theme="dark"] .qpi-pag-info strong { color: #ffffff; }
-[data-bs-theme="dark"] .qpi-pag-btn {
-  background: var(--vz-secondary-bg);
-  border-color: var(--vz-border-color);
-  color: rgba(255,255,255,.70);
-}
-[data-bs-theme="dark"] .qpi-pag-btn:hover:not(:disabled):not(.is-active) {
-  border-color: #a78bfa; color: #c4b5fd;
-}
-[data-bs-theme="dark"] .qpi-pag-btn:focus-visible {
-  box-shadow: 0 0 0 3px rgba(124,92,252,.22);
-}
-[data-bs-theme="dark"] .qpi-pag-btn:disabled { opacity: .45; }
-[data-bs-theme="dark"] .qpi-pag-btn.is-active {
-  background: linear-gradient(135deg, #7c5cfc, #a78bfa);
-  border-color: transparent;
-  color: #fff;
 }
 
 [data-bs-theme="dark"] .qpi-modal {
@@ -5911,7 +5355,6 @@ const SCOPED_CSS = `
   background: #1a1530;
   border-top-color: rgba(167,139,250,.20);
 }
-[data-bs-theme="dark"] .qpi-modal-req { color: #fca5a5; }
 [data-bs-theme="dark"] .qpi-btn-cancel {
   background: rgba(255,255,255,.05);
   border-color: rgba(167,139,250,.40);
@@ -5934,31 +5377,14 @@ const SCOPED_CSS = `
 }
 
 @media (max-width: 1100px) {
-  .qpi-wdh-body { grid-template-columns: 1fr; }
-  .qpi-wdh-arrow { display: none; }
   .qpi-form-grid { grid-template-columns: repeat(2, 1fr); }
   .qpi-order-summary { grid-template-columns: repeat(2, 1fr); }
   .qpi-totals-row { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 900px) {
-  .qpi-header { padding: 12px 14px; }
-  .qpi-tab-switch { width: 100%; justify-content: flex-start; }
-  .qpi-tab { flex: 1; justify-content: center; }
-  .qpi-wdh-step { min-height: 0; }
-  .qpi-wdh-body { padding: 6px 12px 10px; gap: 10px; }
-}
-
 @media (max-width: 680px) {
-  .qpi-header-title { font-size: 13.5px; }
-  .qpi-header-sub   { font-size: 10.5px; }
 
   .qpi-tablebar { padding: 10px 12px; gap: 10px; flex-wrap: wrap; }
-  .qpi-search { flex: 1 1 100%; min-width: 0; }
-  .qpi-create-btn { flex: 1 1 100%; justify-content: center; }
-  .qpi-tabs-bar { padding: 10px 12px; }
-  .qpi-pill-group { width: 100%; }
-  .qpi-pi-subtab { flex: 1; justify-content: center; }
 
   .qpi-table-host { padding: 0; }
   .qpi-table-host .table-responsive { overflow-x: auto; }
@@ -5975,14 +5401,6 @@ const SCOPED_CSS = `
 }
 
 @media (max-width: 520px) {
-  .qpi-root { gap: 10px; }
-  .qpi-header { padding: 10px 12px; gap: 10px; }
-  .qpi-header-icon { width: 36px; height: 36px; }
-  .qpi-header-title { font-size: 13px; }
-
-  .qpi-wdh-header { padding: 8px 10px; }
-  .qpi-wdh-body   { padding: 4px 10px 10px; }
-  .qpi-wdh-step   { padding: 9px 10px; }
 
   .qpi-table-host > .row { padding: 10px 12px; }
   .qpi-table-host > .row > .col-sm { width: 100%; text-align: center; }
@@ -6016,7 +5434,6 @@ const SCOPED_CSS = `
   .qpi-modal-pill { padding: 3px 8px; }
   .qpi-modal-pill-label { font-size: 9px; }
   .qpi-modal-pill-value { font-size: 10.5px; }
-  .qpi-actions { gap: 4px; }
   .qpi-act { width: 28px; height: 28px; }
   .qpi-convert-btn { padding: 6px 8px; }
 }

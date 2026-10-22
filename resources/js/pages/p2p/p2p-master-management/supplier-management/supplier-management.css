@@ -245,7 +245,28 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 .sup-fig .sl-refine-tick svg{width:8px;height:8px;}
 .sup-fig .sl-refine-tile.is-on .sl-refine-tick{opacity:1;transform:none;}
 
-.sup-fig .sl-refine-tile.is-empty{opacity:.38;}
+/* A zero-count option is NOT disabled (QA #41).
+   It stays clickable, and filtering by it is a fair way to confirm nothing
+   matches. At opacity .38 the whole tile faded together — label, icon and
+   border — so the panel read as frozen and the options as dead.
+   Opacity dims a subtree uniformly and a child cannot climb back out of it,
+   so the de-emphasis is applied per part instead: the label keeps its
+   contrast, and the COUNT carries the "none" signal, which is what a count
+   is for. */
+.sup-fig .sl-refine-tile.is-empty{
+  opacity:1;
+  background:rgba(255,255,255,.035);
+  border-color:rgba(196,181,253,.10);
+}
+.sup-fig .sl-refine-tile.is-empty .sl-refine-tile-lbl{color:rgba(245,243,255,.72);}
+.sup-fig .sl-refine-tile.is-empty .sl-refine-tile-n{color:rgba(233,213,255,.42);}
+.sup-fig .sl-refine-tile.is-empty .sl-refine-tile-ico{opacity:.55;}
+/* Hover answers, so it reads as something you may press. */
+.sup-fig .sl-refine-tile.is-empty:hover{
+  background:rgba(255,255,255,.11);
+  border-color:rgba(196,181,253,.32);
+}
+.sup-fig .sl-refine-tile.is-empty:hover .sl-refine-tile-lbl{color:#f5f3ff;}
 
 .sup-fig .sl-refine-tile--star  .sl-refine-tile-ico{background:rgba(167,139,250,.24);color:#ddd6fe;}
 .sup-fig .sl-refine-tile--medal .sl-refine-tile-ico{background:rgba(251,191,36,.2);color:#fcd34d;}

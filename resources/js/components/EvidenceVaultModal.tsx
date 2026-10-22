@@ -8,6 +8,10 @@ import ProgressDial from './ui/ProgressDial';
 import Tooltip from './ui/Tooltip';
 import '../../css/recruitment.css';
 import './ui/DataTable.css';   // .dt-tabrail / .dt-tab — the shared tab rail
+import HeaderFooterPanel, {
+  DEFAULT_HEADER, DEFAULT_FOOTER,
+  type HeaderConfig, type FooterConfig,
+} from '../pages/hrms/doc-templates/HeaderFooterPanel';
 
 type DocStatus = 'Verified' | 'Uploaded' | 'Signed' | 'Sent' | 'Pending' | 'Not Generated' | 'Optional' | 'Generated' | 'Completed';
 
@@ -99,6 +103,14 @@ type VaultRun = {
   audit_log?: VaultAudit[];
 };
 
+/** What the preview needs — a run fetched whole, with its stored document. */
+type PreviewRun = VaultRun & {
+  updated_at?: string | null;
+  content_html?: string | null;
+  header_config?: Partial<HeaderConfig> | null;
+  footer_config?: Partial<FooterConfig> | null;
+};
+
 export default function EvidenceVaultModal({ employee, onClose, extraChips = [], initialTab = 'employee' }: {
   /** Null closes the modal. */
   employee: EvidenceVaultEmployee | null;
@@ -113,6 +125,20 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   // click (multiple concurrent downloads were hanging the UI).
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<'view' | 'download' | null>(null);
+  /**
+   * The document on screen — the stored HTML, header and footer, exactly as
+   * the onboarding hub shows it. Not the rendered PDF: that is a download, and
+   * an iframe of it is a viewer inside a viewer.
+   *
+   * Fetched on demand rather than carried in the vault list, because the list
+   * returns many runs and the content of each is the largest thing on the row.
+   *
+   * Declared HERE, with the other state. It sat beside viewRun further down,
+   * which is past `if (!employee) return null` — so on a render with no
+   * employee this hook never ran, the hook count changed between renders and
+   * React threw "Rendered more hooks than during the previous render".
+   */
+  const [preview, setPreview] = useState<PreviewRun | null>(null);
 
   const [empDocs, setEmpDocs]               = useState<EmpDocApiRow[]>([]);
   const [orgTemplates, setOrgTemplates]     = useState<VaultTemplate[]>([]);
@@ -136,11 +162,34 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   /* Organizational Document tracking (QA spec): the status sub-tab, and which
      run's routing/history panel is expanded. */
   const [orgSub, setOrgSub]       = useState<'pending' | 'complete'>('pending');
-  /* Which run's Audit Trail popup is open. */
+  /* Which run's Track popup is open. */
   const [sigView, setSigView] = useState<VaultRun | null>(null);
   /* Group headings fold away; keyed by heading, open unless listed. */
   const [shutGroups, setShutGroups] = useState<Record<string, boolean>>({});
-  const toggleGroup = (k: string) => setShutGroups(p => ({ ...p, [k]: !p[k] }));
+  /**
+   * Groups start CLOSED, and open when asked.
+   *
+   * A vault with ten categories opened as ten expanded tables, so finding one
+   * document meant scrolling past every other. Headings with counts fit on one
+   * screen; the reader opens the one they came for.
+   *
+   * The exception is a single group: collapsing the only thing in the tab
+   * leaves a heading and nothing else, which reads as "no documents" rather
+   * than "one group, closed".
+   *
+   * `undefined` means "never touched", so an explicit open or close always
+   * wins over the default.
+   */
+  const groupShut = (k: string, total: number) => {
+    /* Searching opens everything. A filtered group that is still collapsed
+       hides the one row the search just found, and the search reads as broken
+       when it worked perfectly. */
+    if (search.trim()) return false;
+
+    return shutGroups[k] ?? (total > 1);
+  };
+  const toggleGroup = (k: string, total: number) =>
+    setShutGroups(p => ({ ...p, [k]: !(p[k] ?? (total > 1)) }));
   /* Filters both tabs' lists by document name or code. */
   const [search, setSearch] = useState('');
 
@@ -571,6 +620,41 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     } finally { setBusyKey(null); setBusyAction(null); }
   };
 
+  /**
+   * Open the document itself, rather than saving it (QA #29).
+   *
+   * Organizational rows offered Track and Download only, so the one thing an
+   * approver actually wants — to read the document before acting on it — meant
+   * downloading a file to disk first. Employee rows have had an eye for this
+   * all along.
+   *
+   * Same endpoint as the download: it renders from the run's stored config, so
+   * it answers for a rejected or in-flight run too, not just a completed one.
+   */
+  const closePreview = () => setPreview(null);
+
+  const viewRun = async (r: VaultRun) => {
+    if (busyKey) return;
+    setBusyKey(`view-${r.id}`); setBusyAction('view');
+    try {
+      const { data } = await api.get(`/hr-document-signatures/${r.id}`);
+      setPreview({ ...(data || {}), id: r.id, code: data?.code ?? r.code, template: data?.template ?? r.template });
+    } catch (err: any) {
+      toast.error('Could not open', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally { setBusyKey(null); setBusyAction(null); }
+  };
+
+  /** Latest signature, else the row's own timestamps — the onboarding hub's rule. */
+  const previewStamp = (r: PreviewRun): string => {
+    const acted = (r.signers || []).map(s => s.acted_at).filter(Boolean) as string[];
+    const iso = acted.length ? acted.slice().sort()[acted.length - 1] : (r.updated_at || r.created_at || null);
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return `${String(d.getDate()).padStart(2, '0')} ${d.toLocaleDateString('en-GB', { month: 'short' })} ${d.getFullYear()}, `
+      + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
   const runPillCls = (s: VaultRun['status']) =>
     s === 'Completed' ? 'completed' : s === 'In Progress' || s === 'Pending' ? 'sent' : 'pending';
   /** Every step this document has been through, in one lifecycle: sent, each
@@ -604,9 +688,16 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
           at: s.acted_at || s.consent_at, state: 'Done', sig: s.signature_url,
         });
       } else if (st === 'Rejected') {
+        /* Labelled "Reason:", because every other step's desc is a role or a
+           status — an unlabelled sentence here read as one of those, and the
+           one thing the reader opened Track to find looked like a job title. */
+        const reason = (s.note || '').trim();
         steps.push({
           icon: 'ri-close-circle-fill', title: `Rejected by ${who}`,
-          desc: s.note || 'No reason given', at: s.acted_at, state: 'Rejected',
+          desc: reason
+            ? `Reason: ${reason}`
+            : `${role ? `${role} — ` : ''}rejected without a reason`,
+          at: s.acted_at, state: 'Rejected',
         });
       } else {
         const isCur = !done && i === cur;
@@ -733,13 +824,13 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
               <span className="ev-group-icon" style={{ background: '#eef2ff', color: '#4338ca' }}><i className={catIcon(g.category)} /></span>
               <div className="ev-group-title">{g.category}</div>
               <span className="ev-group-count">{g.rows.length} docs</span>
-              <button type="button" className="ev-group-toggle" aria-expanded={!shutGroups[g.category]}
-                aria-label={shutGroups[g.category] ? 'Expand group' : 'Collapse group'}
-                onClick={() => toggleGroup(g.category)}>
-                <i className={shutGroups[g.category] ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} />
+              <button type="button" className="ev-group-toggle" aria-expanded={!groupShut(g.category, groupsSub.length)}
+                aria-label={groupShut(g.category, groupsSub.length) ? 'Expand group' : 'Collapse group'}
+                onClick={() => toggleGroup(g.category, groupsSub.length)}>
+                <i className={groupShut(g.category, groupsSub.length) ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} />
               </button>
             </div>
-            {!shutGroups[g.category] && (
+            {!groupShut(g.category, groupsSub.length) && (
             <div className="ev-table-wrap">
             <table className="ev-table">
               <thead>
@@ -748,7 +839,12 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                   <th style={{ width: 130, textAlign: 'center' }}>Document Code</th>
                   <th style={{ width: 230 }}>Document Name</th>
                   <th style={{ width: 80, textAlign: 'center' }}>Version</th>
-                  <th style={{ minWidth: 140, textAlign: 'center' }}>Signing Status</th>
+                  {/* Two columns, not one. "Signing Status" carried both the
+                      routing chain AND the state chip, so a rejected document
+                      showed a chip where a sent one showed avatars and the
+                      column meant something different on every row. */}
+                  <th style={{ minWidth: 120, textAlign: 'center' }}>Signers</th>
+                  <th style={{ width: 120, textAlign: 'center' }}>Status</th>
                   <th style={{ width: 110 }}>Generated On</th>
                   <th style={{ width: 190, textAlign: 'center' }}>Action</th>
                 </tr>
@@ -760,15 +856,15 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                      cancelled one), so its action is Send for Signature. */
                   if (row.kind === 'promo') {
                     const { tpl: t, run } = row;
-                    const st = run?.status === 'Rejected' ? { label: 'Rejected', cls: 'pending' }
-                             : run?.status === 'Cancelled' ? { label: 'Cancelled', cls: 'not-sent' }
+                    const st = run?.status === 'Rejected' ? { label: 'Rejected', cls: 'rejected' }
+                             : run?.status === 'Cancelled' ? { label: 'Cancelled', cls: 'cancelled' }
                              : { label: 'Not Sent', cls: 'not-sent' };
                     const rejectedBy = run?.status === 'Rejected'
                       ? (run.signers ?? []).find(s => s.status === 'Rejected') ?? null : null;
                     return (
                       <tr key={`promo-${t.id}`}>
                         <td style={{ textAlign: 'center', color: 'var(--vz-secondary-color)' }}>{sr}</td>
-                        <td style={{ textAlign: 'center', fontWeight: 650, color: '#4338ca', whiteSpace: 'nowrap' }}>{t.code || '—'}</td>
+                        <td className="ev-code" style={{ textAlign: 'center' }}>{t.code || '—'}</td>
                         <td>
                           <Tooltip label={t.name || ''}>
                             <span className="ev-td-name ev-td-name--trunc">{t.name}</span>
@@ -776,19 +872,47 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           {t.version
-                            ? <span style={{ fontSize: 10.5, fontWeight: 700, color: '#4338ca', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 6, padding: '2px 7px' }} title={`Template version ${t.version}`}>{t.version}</span>
+                            ? <span className="ev-ver" title={`Template version ${t.version}`}>{t.version}</span>
                             : <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>}
                         </td>
+                        {/* Nothing has been routed yet, or the routing is over. */}
+                        <td style={{ textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
+                          {run ? renderChain(run) : '—'}
+                        </td>
                         <td style={{ textAlign: 'center' }}>
-                          <span className={`ev-doc-status ev-doc-status--${st.cls}`} title={rejectedBy?.note || undefined}>{st.label}</span>
+                          {/* The chip alone. The reason lives in Track, which is
+                              one click away and has room for the whole sentence
+                              plus who said it and when — a row does not. */}
+                          <span className={`ev-doc-status ev-doc-status--${st.cls}`}
+                            title={rejectedBy?.note?.trim() || undefined}>{st.label}</span>
                         </td>
                         <td style={{ color: 'var(--vz-secondary-color)', whiteSpace: 'nowrap' }}>—</td>
                         <td className="ev-td-actions ev-td-actions--center">
-                          <button type="button" className="ev-doc-btn ev-doc-btn--download"
+                          {/* A rejected or cancelled run still HAPPENED — it was
+                              sent, somebody read it and said no. Offering only
+                              Re-send threw that away: who refused it and why
+                              were a click that did not exist. */}
+                          {run && (
+                            <>
+                              <button type="button" className="ev-doc-btn ev-doc-btn--soft"
+                                onClick={() => setSigView(run)}
+                                title="Who it went to, who refused it, and when">
+                                <i className="ri-file-history-line" />Track
+                              </button>
+                              <button type="button" className="ev-doc-btn ev-doc-btn--open"
+                                disabled={busyKey === `view-${run.id}`} onClick={() => viewRun(run)}
+                                title="Open the document">
+                                {busyKey === `view-${run.id}`
+                                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />View</>
+                                  : <><i className="ri-eye-line" />View</>}
+                              </button>
+                            </>
+                          )}
+                          <button type="button" className="ev-doc-btn ev-doc-btn--send"
                             disabled={sendingTplId != null} onClick={() => sendPromoDoc(t.id, t.name)}>
                             {sendingTplId === t.id
                               ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Sending…</>
-                              : <><i className="ri-quill-pen-line" />{run ? 'Re-send' : 'Send for Signature'}</>}
+                              : <><i className="ri-send-plane-line" />{run ? 'Re-send' : 'Send'}</>}
                           </button>
                         </td>
                       </tr>
@@ -799,7 +923,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                   return (
                     <tr key={r.id}>
                       <td style={{ textAlign: 'center', color: 'var(--vz-secondary-color)' }}>{sr}</td>
-                      <td style={{ textAlign: 'center', fontWeight: 650, color: '#4338ca', whiteSpace: 'nowrap' }}>{r.code || '—'}</td>
+                      <td className="ev-code" style={{ textAlign: 'center' }}>{r.code || '—'}</td>
                       <td>
                         <Tooltip label={docName}>
                           <span className="ev-td-name ev-td-name--trunc">{docName}</span>
@@ -815,7 +939,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                           if (!sent) return <span style={{ color: 'var(--vz-secondary-color)' }}>—</span>;
                           const moved = cur && cur !== sent;
                           return (
-                            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#4338ca', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 6, padding: '2px 7px' }}
+                            <span className="ev-ver"
                               title={moved ? `Sent on ${sent}; template is now ${cur}` : `Sent on ${sent}`}>
                               {sent}{moved ? '*' : ''}
                             </span>
@@ -823,17 +947,46 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                         })()}
                       </td>
                       <td style={{ textAlign: 'center' }}>{renderChain(r)}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        {/* "Pending" is the column in the database, not a thing
+                            a reader understands: the document HAS been sent and
+                            is out with its signers. Say that. */}
+                        <span className={`ev-doc-status ev-doc-status--${runPillCls(r.status)}`}>
+                          {r.status === 'Pending' || r.status === 'In Progress' ? 'Awaiting Sign' : r.status}
+                        </span>
+                      </td>
                       <td style={{ color: 'var(--vz-secondary-color)', whiteSpace: 'nowrap' }}>{fmtDate(r.created_at) || '—'}</td>
-                      {/* One button (Track) centres; two (Audit Trail + Download) stay right. */}
+                      {/* One button (Track) centres; two (Track + Download) stay right. */}
                       <td className={`ev-td-actions${r.status === 'Completed' ? '' : ' ev-td-actions--center'}`}>
                         {/* Pending rows: the only thing to do is watch where it
                             is, so Track stands alone. Completed: add the
                             signed-PDF download. */}
-                        <button type="button" className="ev-doc-btn ev-doc-btn--view"
+                        <button type="button" className="ev-doc-btn ev-doc-btn--soft"
                           onClick={() => setSigView(r)}
                           title="Who signed, when, and every step in between">
-                          <i className="ri-file-history-line" />{r.status === 'Completed' ? 'Audit Trail' : 'Track'}
+                          {/* "Track" on every row. A completed document said
+                              "Audit Trail" and a pending one "Track" — two
+                              names for one button, so the column read as two
+                              different actions depending on the row. */}
+                          <i className="ri-file-history-line" />Track
                         </button>
+                        {/* Read it without saving it first. Employee rows have
+                            had this eye since the start; these had Download or
+                            nothing, which is a poor way to check a document
+                            before approving it. */}
+                        <button type="button" className="ev-doc-btn ev-doc-btn--open"
+                          disabled={busyKey === `view-${r.id}`} onClick={() => viewRun(r)}
+                          title="Open the document">
+                          {busyKey === `view-${r.id}`
+                            ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />View</>
+                            : <><i className="ri-eye-line" />View</>}
+                        </button>
+                        {(r.status === 'Pending' || r.status === 'In Progress') && (
+                          <span className="ev-doc-btn ev-doc-btn--await" aria-disabled="true"
+                            title="Out with the signers — nothing to do here yet">
+                            <i className="ri-time-line" />Awaiting Sign
+                          </span>
+                        )}
                         {r.status === 'Completed' && (
                           <button type="button" className="ev-doc-btn ev-doc-btn--download"
                             disabled={busyKey === `run-${r.id}`} onClick={() => downloadRun(r)}>
@@ -987,13 +1140,13 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                 </span>
                 <div className="ev-group-title">{g.title}</div>
                 <span className="ev-group-count">{g.docs.length} docs</span>
-                <button type="button" className="ev-group-toggle" aria-expanded={!shutGroups[g.title]}
-                  aria-label={shutGroups[g.title] ? 'Expand group' : 'Collapse group'}
-                  onClick={() => toggleGroup(g.title)}>
-                  <i className={shutGroups[g.title] ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} />
+                <button type="button" className="ev-group-toggle" aria-expanded={!groupShut(g.title, groups.length)}
+                  aria-label={groupShut(g.title, groups.length) ? 'Expand group' : 'Collapse group'}
+                  onClick={() => toggleGroup(g.title, groups.length)}>
+                  <i className={groupShut(g.title, groups.length) ? 'ri-arrow-down-s-line' : 'ri-arrow-up-s-line'} />
                 </button>
               </div>
-              {!shutGroups[g.title] && (
+              {!groupShut(g.title, groups.length) && (
               <div className="ev-table-wrap">
               <table className="ev-table">
                 <thead>
@@ -1016,9 +1169,13 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                             <span className="ev-doc-icon" style={{ background: d.iconBg, color: d.iconFg, flexShrink: 0 }}>
                               <i className={d.icon} />
                             </span>
+                            {/* minWidth:0 lets the flex child shrink; without it
+                                the text sets the floor and nothing ellipsises.
+                                The full name rides on the title, since a
+                                truncated one is useless on its own. */}
                             <div style={{ minWidth: 0 }}>
-                              <div className="ev-td-name">{d.name}</div>
-                              <div className="ev-td-sub">{d.sub}</div>
+                              <div className="ev-td-name ev-td-name--trunc" title={d.name}>{d.name}</div>
+                              <div className="ev-td-sub ev-td-name--trunc" title={d.sub}>{d.sub}</div>
                             </div>
                           </div>
                         </td>
@@ -1070,7 +1227,78 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
       </ModalBody>
     </Modal>
 
-    {/* Audit Trail — the whole e-signature lifecycle in one timeline, stacked
+    {/* The document itself, in the vault rather than a new tab.
+        Deliberately the SAME popup the Onboarding Hub shows — same green head,
+        same HeaderFooterPanel rendering the stored header, body and footer,
+        same Close / Download PDF foot. A second design for the same document
+        would be a second thing to keep in step.
+
+        ev-sig-content rather than the hub's vault-preview-modal: that class
+        lives in a page-scoped stylesheet the vault does not load, so the green
+        head's rounded top would sit on square corners everywhere else the
+        vault opens. This one is already here and does the same job. */}
+    {preview && (
+      <Modal isOpen toggle={closePreview} size="lg" centered zIndex={1075}
+        contentClassName="border-0 ev-sig-content ev-prev-content" backdrop="static">
+        <ModalBody className="p-0">
+          {/* The vault's own head — .ev-head and friends, the same classes the
+              Evidence Vault title bar uses. The hub's green was right there and
+              wrong here: a document opened from a violet vault should not
+              arrive in another product's colour. */}
+          <div className="ev-head">
+            <span className="ev-head-icon"><i className="ri-file-shield-2-line" /></span>
+            <div className="ev-head-text">
+              <div className="ev-head-title ev-td-name--trunc"
+                title={preview.template?.name || preview.code || 'Document'}>
+                {preview.template?.name || preview.code || 'Document'}
+              </div>
+              <div className="ev-head-sub">
+                {preview.status === 'Completed' ? 'Signed copy' : preview.status}
+                {previewStamp(preview) ? ` · ${previewStamp(preview)}` : ''}
+              </div>
+              {(preview.code || preview.template_version) && (
+                <div className="ev-head-meta">
+                  {preview.code && <span className="rec-id-pill">{preview.code}</span>}
+                  {preview.template_version && <span className="rec-id-pill">v{preview.template_version}</span>}
+                </div>
+              )}
+            </div>
+            <button type="button" className="ev-close" onClick={closePreview} aria-label="Close">
+              <i className="ri-close-line" />
+            </button>
+          </div>
+
+          <div style={{ padding: 16, background: 'var(--vz-secondary-bg, #f9fafb)', maxHeight: '70vh', overflowY: 'auto' }}>
+            <HeaderFooterPanel
+              header={{ ...DEFAULT_HEADER, ...(preview.header_config || {}) } as HeaderConfig} setHeader={() => {}}
+              footer={{ ...DEFAULT_FOOTER, ...(preview.footer_config || {}) } as FooterConfig} setFooter={() => {}}
+              readOnly
+            >
+              <div className="tpl-readonly-preview"
+                style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 260 }}
+                dangerouslySetInnerHTML={{ __html: preview.content_html || '<p style="color:#9ca3af;font-style:italic;">(no stored content for this run)</p>' }}
+              />
+            </HeaderFooterPanel>
+          </div>
+
+          <div className="tpl-prev-foot" style={{ padding: 12, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-card-bg, #fff)', display: 'flex', justifyContent: 'flex-end', gap: 8, borderRadius: '0 0 6px 6px' }}>
+            {/* The vault's row buttons, so the foot matches the table the
+                document was opened from. */}
+            <button type="button" className="ev-doc-btn ev-doc-btn--soft" onClick={closePreview}>
+              <i className="ri-close-line" />Close
+            </button>
+            <button type="button" className="ev-doc-btn ev-doc-btn--download"
+              disabled={busyKey === `run-${preview.id}`} onClick={() => downloadRun(preview)}>
+              {busyKey === `run-${preview.id}`
+                ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
+                : <><i className="ri-download-line" />Download PDF</>}
+            </button>
+          </div>
+        </ModalBody>
+      </Modal>
+    )}
+
+    {/* Track — the whole e-signature lifecycle in one timeline, stacked
         above the vault (zIndex beats its 1050). */}
     {sigView && (() => {
       const r = sigView;
@@ -1094,7 +1322,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
               <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.8)' }}>
                 {r.code ? `${r.code} · ` : ''}Signing Workflow
               </div>
-              <div style={{ fontWeight: 700, fontSize: 19, lineHeight: 1.2, marginTop: 2 }}>Audit Trail</div>
+              <div style={{ fontWeight: 700, fontSize: 19, lineHeight: 1.2, marginTop: 2 }}>Track</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,.85)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {r.template?.name || 'Document'} · e-Signature lifecycle
                 <span style={{ padding: '2px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700, background: 'rgba(255,255,255,.22)' }}>{r.status}</span>

@@ -739,6 +739,343 @@ function secondaryBtn(busy: boolean): React.CSSProperties {
 }
 
 // ── Step 1: Select Employees ────────────────────────────────────────────────
+/* ───────────────────────────────────────────────────────────────────────
+ * PARKED: Step 1 redesign — filter sidebar beside the list.
+ *
+ * Reverted on request, kept here rather than deleted. The diff below is the
+ * whole change and applies cleanly to the code as it stands: a left panel
+ * carrying search, a pinned Category (IT / Non-IT / Legal, set by the
+ * template), Department and Designation selects that disable themselves
+ * when the template leaves only one value, quick-filter chips, and a tip —
+ * with the table beside it instead of under it, and the card filling the
+ * window to 8px above the footer.
+ *
+ * To restore: save the block below to a .diff with the leading "// "
+ * stripped, then `git apply` it.
+ *
+ * Line comments, not a block: the diff carries CSS comments, and the closing
+ * marker inside one of those would end this comment early.
+ * ─────────────────────────────────────────────────────────────────────── */
+// diff --git a/resources/js/pages/hrms/doc-templates/GenerateDocument.tsx b/resources/js/pages/hrms/doc-templates/GenerateDocument.tsx
+// index 61077077..0951aae1 100644
+// --- a/resources/js/pages/hrms/doc-templates/GenerateDocument.tsx
+// +++ b/resources/js/pages/hrms/doc-templates/GenerateDocument.tsx
+// @@ -749,18 +749,41 @@ function Step1(props: {
+//    alreadySent: Map<number, { id: number; status: string; code: string | null }>;
+//  }) {
+//    const [search, setSearch] = useState('');
+// +  const [dept, setDept]     = useState('');
+// +  const [desig, setDesig]   = useState('');
+// +
+// +  /* Options come from the people actually on this list, not from the masters.
+// +     A department with nobody eligible is a dead end — offering it means the
+// +     only thing it can do is empty the table. */
+// +  const deptOptions = useMemo(() => {
+// +    const seen = new Set<string>();
+// +    props.employees.forEach(e => { const n = e.department?.name; if (n) seen.add(n); });
+// +    return Array.from(seen).sort();
+// +  }, [props.employees]);
+// +
+// +  const desigOptions = useMemo(() => {
+// +    const seen = new Set<string>();
+// +    props.employees.forEach(e => { const n = e.designation?.name; if (n) seen.add(n); });
+// +    return Array.from(seen).sort();
+// +  }, [props.employees]);
+//
+//    const filtered = useMemo(() => {
+//      const needle = search.trim().toLowerCase();
+// -    if (!needle) return props.employees;
+//      return props.employees.filter(e => {
+// +      if (dept  && (e.department?.name  || '') !== dept)  return false;
+// +      if (desig && (e.designation?.name || '') !== desig) return false;
+// +      if (!needle) return true;
+//        const name = `${e.first_name ?? ''} ${e.last_name ?? ''}`.toLowerCase();
+//        return name.includes(needle)
+//          || (e.emp_code || '').toLowerCase().includes(needle)
+//          || (e.email || '').toLowerCase().includes(needle)
+//          || (e.department?.name || '').toLowerCase().includes(needle);
+//      });
+// -  }, [props.employees, search]);
+// +  }, [props.employees, search, dept, desig]);
+// +
+// +  /* Any filter change resets to page 1. Landing on page 3 of a list that is
+// +     now one page long shows an empty table and reads as "no results". */
+// +  useEffect(() => { setPage(1); }, [search, dept, desig]);
+//
+//    // 5-per-page pagination over the (search-filtered) employee list.
+//    const PER_PAGE = 5;
+// @@ -788,32 +811,113 @@ function Step1(props: {
+//      props.setSelectedIds(next);
+//    };
+//
+// +  const anyFilter = !!(search.trim() || dept || desig);
+// +
+//    return (
+// -    <div>
+// -      <StepHead icon="ri-team-line" title="Select Employees" sub={STEPS[0].sub}
+// -        right={
+// -          <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
+// -            {props.selectedIds.size} selected
+// -          </span>
+// -        } />
+// +    /* Two columns: the filters live beside the list, not above it.
+// +       Stacked, every control pushed the table further down and the thing being
+// +       filtered was off-screen while you filtered it. */
+// +    <div className="gd-step1">
+// +      <aside className="gd-side">
+// +        <div className="gd-side-head">
+// +          <span className="gd-side-ico"><i className="ri-team-line" /></span>
+// +          <div>
+// +            <div className="gd-side-title">Select Employees</div>
+// +            <div className="gd-side-sub">{STEPS[0].sub}</div>
+// +          </div>
+// +        </div>
+//
+// -      {/* Scope hint — the list is filtered to the template's designation level
+// -          (and IT/Non-IT/Legal category it was authored under) so only eligible
+// -          recipients appear. */}
+// -      {(props.roleType || props.category) && (
+// -        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }} className="gd-scope-hint">
+// -          <i className="ri-filter-3-line me-1" style={{ color: '#8b5cf6' }} />
+// -          Showing {props.category ? <><strong style={{ color: '#4338ca' }}>{props.category}</strong> employees</> : 'employees'}
+// -          {props.roleType ? <> at the <strong style={{ color: '#4338ca' }}>{props.roleType}</strong> level</> : null}.
+// +        <div className="ui-search-abs gd-side-field" style={{ position: 'relative' }}>
+// +          <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+// +          <Input autoComplete="off" type="text" placeholder="Search by name, code, email…" value={search}
+// +            onChange={e => setSearch(e.target.value)} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
+// +          <SearchClear show={search} onClear={() => setSearch('')} />
+//          </div>
+// -      )}
+//
+// -      <div className="ui-search-abs" style={{ position: 'relative', marginBottom: 12, maxWidth: 360 }}>
+// -        <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+// -        <Input autoComplete="off" type="text" placeholder="Search by name, code, email…" value={search}
+// -          onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
+// -          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
+// -      </div>
+// +        {/* The template's own scope, shown as a pinned field rather than left
+// +            implicit in a tip. IT / Non-IT / Legal is decided when the template
+// +            is authored and cannot be changed from here, so it is disabled on
+// +            purpose — it is a statement of what you are looking at, in the same
+// +            shape as the filters beside it so the eye reads them together. */}
+// +        {props.category && (
+// +          <div className="gd-side-field">
+// +            <label className="gd-side-lbl"><i className="ri-folder-shield-line" /> Category</label>
+// +            <Input type="select" value="" disabled style={{ height: 36 }}>
+// +              <option value="">{props.category}</option>
+// +            </Input>
+// +            <span className="gd-side-note">Set by the template — not changeable here.</span>
+// +          </div>
+// +        )}
+// +
+// +        {/* Disabled when there is nothing to choose. The template already
+// +            scopes the list by designation, so on most templates that select
+// +            holds exactly one value — an open dropdown whose only option is the
+// +            one already applied invites a click that can change nothing. */}
+// +        <div className="gd-side-field">
+// +          <label className="gd-side-lbl"><i className="ri-building-line" /> Department</label>
+// +          <Input type="select" value={dept} onChange={e => setDept(e.target.value)}
+// +            disabled={deptOptions.length < 2} style={{ height: 36 }}>
+// +            <option value="">{deptOptions.length === 1 ? deptOptions[0] : 'All Departments'}</option>
+// +            {deptOptions.length > 1 && deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+// +          </Input>
+// +        </div>
+// +
+// +        <div className="gd-side-field">
+// +          <label className="gd-side-lbl"><i className="ri-user-star-line" /> Designation</label>
+// +          <Input type="select" value={desig} onChange={e => setDesig(e.target.value)}
+// +            disabled={desigOptions.length < 2} style={{ height: 36 }}>
+// +            <option value="">{desigOptions.length === 1 ? desigOptions[0] : 'All Designations'}</option>
+// +            {desigOptions.length > 1 && desigOptions.map(d => <option key={d} value={d}>{d}</option>)}
+// +          </Input>
+// +          {desigOptions.length < 2 && props.roleType && (
+// +            <span className="gd-side-note">Set by the template — not changeable here.</span>
+// +          )}
+// +        </div>
+// +
+// +        {desigOptions.length > 1 && (
+// +          <div className="gd-side-field">
+// +            <label className="gd-side-lbl"><i className="ri-filter-3-line" /> Quick Filters</label>
+// +            <div className="gd-chips">
+// +              {desigOptions.slice(0, 6).map(d => (
+// +                <button key={d} type="button"
+// +                  className={'gd-chip' + (desig === d ? ' is-on' : '')}
+// +                  onClick={() => setDesig(desig === d ? '' : d)}>
+// +                  {desig === d && <i className="ri-check-line" />}{d}
+// +                </button>
+// +              ))}
+// +            </div>
+// +          </div>
+// +        )}
+// +
+// +        {/* The scope the template itself imposes — not a filter anyone can
+// +            change here, so it reads as a statement rather than a control. */}
+// +        {(props.roleType || props.category) && (
+// +          <div className="gd-tip">
+// +            <i className="ri-lightbulb-line" />
+// +            <div>
+// +              <b>Tip</b>
+// +              <p>
+// +                Use the filters or search to find the right employees. You can
+// +                select several at once.
+// +              </p>
+// +            </div>
+// +          </div>
+// +        )}
+// +      </aside>
+// +
+// +      <div className="gd-main">
+// +        <div className="gd-main-head">
+// +          <span className="gd-count-badge">
+// +            <i className={props.selectedIds.size ? 'ri-checkbox-circle-fill' : 'ri-checkbox-blank-circle-line'} />
+// +            {props.selectedIds.size} employee{props.selectedIds.size === 1 ? '' : 's'} selected
+// +          </span>
+// +          {anyFilter && (
+// +            <button type="button" className="gd-clear-filters"
+// +              onClick={() => { setSearch(''); setDept(''); setDesig(''); }}>
+// +              <i className="ri-close-circle-line" />Clear filters
+// +            </button>
+// +          )}
+// +        </div>
+//
+//        <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }} className="gd-table-wrap">
+//          <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: '52px 32px 2fr 104px 1.4fr 124px 0.9fr 0.9fr', gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
+// @@ -902,6 +1006,7 @@ function Step1(props: {
+//            </div>
+//          )}
+//        </div>
+// +      </div>
+//      </div>
+//    );
+//  }
+// @@ -1391,7 +1496,125 @@ function initialsOf(name: string): string {
+//  function ScopedStyles() {
+//    return (
+//      <style>{`
+// -      .gd-page .card { box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06); }
+// +      /* ── Step 1 · filters beside the list ─────────────────────────────── */
+// +      .gd-page .gd-step1 { display: grid; grid-template-columns: 262px minmax(0, 1fr); gap: 18px; align-items: start; }
+// +
+// +      .gd-page .gd-side {
+// +        background: #fff; border: 1px solid #e9eaf2; border-radius: 14px;
+// +        padding: 16px; display: flex; flex-direction: column; gap: 16px;
+// +        position: sticky; top: 8px;
+// +      }
+// +      .gd-page .gd-side-head { display: flex; align-items: center; gap: 10px; }
+// +      .gd-page .gd-side-ico {
+// +        width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+// +        display: inline-flex; align-items: center; justify-content: center;
+// +        background: #eef2ff; color: #4338ca; font-size: 18px;
+// +      }
+// +      .gd-page .gd-side-title { font-size: 14.5px; font-weight: 800; color: #1f2937; line-height: 1.2; }
+// +      .gd-page .gd-side-sub   { font-size: 11px; color: #6b7280; margin-top: 2px; line-height: 1.3; }
+// +
+// +      .gd-page .gd-side-field { display: flex; flex-direction: column; gap: 6px; }
+// +      .gd-page .gd-side-lbl {
+// +        display: flex; align-items: center; gap: 6px; margin: 0;
+// +        font-size: 11.5px; font-weight: 700; color: #374151;
+// +      }
+// +      .gd-page .gd-side-lbl i { color: #8b5cf6; font-size: 13px; }
+// +
+// +      /* A disabled select should look settled, not broken — it is showing the
+// +         one value that applies, which is information, not a dead control. */
+// +      .gd-page .gd-side-field select:disabled {
+// +        background: #f8f9fc; color: #4b5563; cursor: default; opacity: 1;
+// +      }
+// +      [data-bs-theme="dark"] .gd-page .gd-side-field select:disabled {
+// +        background: rgba(255,255,255,.05); color: rgba(255,255,255,.65);
+// +      }
+// +
+// +      .gd-page .gd-side-note { font-size: 10.5px; color: #9ca3af; line-height: 1.3; }
+// +      [data-bs-theme="dark"] .gd-page .gd-side-note { color: rgba(255,255,255,.48); }
+// +
+// +      .gd-page .gd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+// +      .gd-page .gd-chip {
+// +        display: inline-flex; align-items: center; gap: 4px;
+// +        padding: 5px 11px; border-radius: 999px; cursor: pointer;
+// +        font-size: 11.5px; font-weight: 650;
+// +        background: #fff; color: #4b5563; border: 1px solid #e5e7eb;
+// +        transition: background .15s, color .15s, border-color .15s;
+// +      }
+// +      .gd-page .gd-chip:hover { border-color: #c7d2fe; color: #4338ca; }
+// +      .gd-page .gd-chip.is-on {
+// +        background: linear-gradient(135deg, #6366f1, #4f46e5);
+// +        border-color: transparent; color: #fff;
+// +        box-shadow: 0 4px 10px -3px rgba(79, 70, 229, .5);
+// +      }
+// +
+// +      .gd-page .gd-tip {
+// +        display: flex; gap: 9px; padding: 11px 12px; border-radius: 11px;
+// +        background: #eef4ff; border: 1px solid #dbe6fe;
+// +      }
+// +      .gd-page .gd-tip > i { color: #f59e0b; font-size: 15px; line-height: 1.3; }
+// +      .gd-page .gd-tip b { display: block; font-size: 11.5px; font-weight: 800; color: #1e3a8a; }
+// +      .gd-page .gd-tip p { margin: 3px 0 0; font-size: 11px; line-height: 1.45; color: #475569; }
+// +
+// +      .gd-page .gd-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+// +      .gd-page .gd-main-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+// +
+// +      .gd-page .gd-count-badge {
+// +        display: inline-flex; align-items: center; gap: 6px;
+// +        padding: 6px 13px; border-radius: 999px;
+// +        font-size: 12px; font-weight: 700; color: #4338ca;
+// +        background: #eef2ff; border: 1px solid #e0e7ff;
+// +      }
+// +      .gd-page .gd-count-badge i { font-size: 14px; }
+// +
+// +      .gd-page .gd-clear-filters {
+// +        display: inline-flex; align-items: center; gap: 5px;
+// +        background: none; border: 0; padding: 4px 6px; cursor: pointer;
+// +        font-size: 11.5px; font-weight: 650; color: #6b7280;
+// +      }
+// +      .gd-page .gd-clear-filters:hover { color: #4338ca; }
+// +
+// +      /* The sidebar above the list on a narrow screen — side by side at 262px
+// +         each would squeeze the table past readable. */
+// +      @media (max-width: 900px) {
+// +        .gd-page .gd-step1 { grid-template-columns: minmax(0, 1fr); }
+// +        .gd-page .gd-side { position: static; }
+// +      }
+// +
+// +      [data-bs-theme="dark"] .gd-page .gd-side {
+// +        background: var(--vz-card-bg); border-color: var(--vz-border-color);
+// +      }
+// +      [data-bs-theme="dark"] .gd-page .gd-side-ico { background: rgba(99,102,241,.18); color: #a5b4fc; }
+// +      [data-bs-theme="dark"] .gd-page .gd-side-title { color: #fff; }
+// +      [data-bs-theme="dark"] .gd-page .gd-side-sub,
+// +      [data-bs-theme="dark"] .gd-page .gd-side-lbl { color: rgba(255,255,255,.72); }
+// +      [data-bs-theme="dark"] .gd-page .gd-chip {
+// +        background: rgba(255,255,255,.06); color: rgba(255,255,255,.75); border-color: rgba(255,255,255,.14);
+// +      }
+// +      [data-bs-theme="dark"] .gd-page .gd-tip {
+// +        background: rgba(99,102,241,.12); border-color: rgba(99,102,241,.30);
+// +      }
+// +      [data-bs-theme="dark"] .gd-page .gd-tip b { color: #c7d2fe; }
+// +      [data-bs-theme="dark"] .gd-page .gd-tip p { color: rgba(255,255,255,.70); }
+// +      [data-bs-theme="dark"] .gd-page .gd-count-badge {
+// +        background: rgba(99,102,241,.18); color: #c7d2fe; border-color: rgba(99,102,241,.35);
+// +      }
+// +
+// +      /* Fill the window, stopping 8px above the page footer.
+// +         The card was only as tall as its rows, so a two-row table left a band
+// +         of empty page between it and the footer — and the sidebar, which is
+// +         the taller column, decided the height instead of the content. */
+// +      .gd-page .card {
+// +        box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06);
+// +        display: flex; flex-direction: column;
+// +        min-height: calc(100dvh - 268px);
+// +        margin-bottom: 8px;
+// +      }
+// +      .gd-page .gd-body { flex: 1 1 auto; min-height: 0; }
+// +      .gd-page .gd-step1 { height: 100%; }
+// +      .gd-page .gd-main { min-height: 100%; }
+// +
+// +      /* A short window has nothing to fill, and forcing it only adds a scroll. */
+// +      @media (max-height: 640px) { .gd-page .card { min-height: 0; } }
+//        .gd-page .gd-row { transition: background 140ms ease; }
+//        .gd-page .gd-row:hover { background: #eef2ff !important; }
+//        .gd-page .gd-success-row { transition: transform 160ms ease, box-shadow 160ms ease; }
+
 function Step1(props: {
   employees: EmployeeRow[];
   roleType?: string;
