@@ -5,7 +5,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import api from '../../../api';
 import { type CtcContract, inits, PER_PAGE } from './clmOpsData';
 import ClmCtcForm from './ClmCtcForm';
-import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { useOpsTheme, OPS_SEARCH_CSS, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -52,10 +52,60 @@ const STAGE_CARDS = [
 // 2026"; swap the spaces for hyphens (QA #41). "—" / empty pass through.
 const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
 
+/**
+ * The initials beside a name in Our Organisation, Counterparties and Created By.
+ *
+ * One mark for all three. They used to be three: a 24px rounded square on a
+ * per-organisation gradient, a 24px rounded square on a fixed violet gradient,
+ * and a 22px circle in pale lilac with a border — three shapes, two sizes and
+ * three colour treatments stacked down one row.
+ *
+ * Tinted rather than saturated, and with no drop shadow: ten of these down a
+ * page is a lot of ink for something that only has to separate one name from
+ * the next.
+ */
+function Mark({ text, dark }: { text: string; dark: boolean }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 22, height: 22, borderRadius: 7, flexShrink: 0,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 9, fontWeight: 700, letterSpacing: '.01em',
+        color: dark ? '#c4b5fd' : '#6D28D9',
+        background: dark ? 'rgba(124,58,237,.18)' : '#F1EBFE',
+        border: `1px solid ${dark ? 'rgba(167,139,250,.28)' : '#E2D6FB'}`,
+      }}
+    >{inits(text)}</span>
+  );
+}
+
 export default function ClmCaseToCasePage() {
   const toast = useToast();
   const t = useOpsTheme('violet');
-  const TH = { padding: '7px 10px', fontSize: 7.5, fontWeight: 800, letterSpacing: '.11em', textTransform: 'uppercase', color: '#fff', whiteSpace: 'nowrap', background: t.dark ? '#5B21B6' : '#6D28D9', borderBottom: 'none', textAlign: 'center' } as React.CSSProperties;
+  // The header band, taken from the employee list rather than invented here.
+  // This used to be a solid #6D28D9 strip with 7.5px white caps, which read as
+  // a heavy dark bar over light rows and was two sizes below every other header
+  // in the product. HRMS renders the same band as a light tint of its accent
+  // with muted caps — DataTable.css `.hr-dt .dt-table thead th` — so these are
+  // that rule's colour-mix()es resolved against the violet palette CTC shares
+  // with it: fill #faf5ff→50%#fff over #faf5ff→40%#ede9fe, text #5b21b6→55%
+  // #64748b, and the two inset hairlines off #ddd6fe. Type is the base rule's
+  // 9.5px/800 at .07em on 9px.
+  // One deliberate difference: HRMS wraps its headers (`white-space: normal`)
+  // because its columns are label-width; this table is a fixed 1380px grid of
+  // short captions, so nowrap keeps the band one line instead of ragging it.
+  const TH = {
+    padding: '9px 10px',           // 9px vertical as HRMS; 10px side to stay on TD's rhythm
+    fontSize: 9.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase',
+    lineHeight: 1.3, whiteSpace: 'nowrap', verticalAlign: 'middle', border: 0,
+    textAlign: 'center',
+    ...(t.dark
+      ? { background: 'linear-gradient(180deg, rgba(124,58,237,.14), rgba(124,58,237,.08))', color: '#c4b5fd',
+          boxShadow: 'inset 0 1px 0 rgba(124,58,237,.16), inset 0 -1.5px 0 rgba(124,58,237,.28)' }
+      : { background: 'linear-gradient(180deg, #fdfaff, #f2eefe)', color: '#5f46a3',
+          boxShadow: 'inset 0 1px 0 #f0edff, inset 0 -1.5px 0 #e7e2fe' }),
+  } as React.CSSProperties;
   const TD = { padding: '7px 10px', verticalAlign: 'middle', borderBottom: `1px solid ${t.cellBorder}`, textAlign: 'center' } as React.CSSProperties;
   const TDL = { ...TD, textAlign: 'left' } as React.CSSProperties;
   // Status/approval pills read as glaring light chips on the dark table — swap to
@@ -259,7 +309,7 @@ export default function ClmCaseToCasePage() {
 
   return (
     <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-sans)' }}>
-      <style>{CTC_CSS}</style>
+      <style>{CTC_CSS + OPS_SEARCH_CSS}</style>
 
       {/* Whole-page lock while a contract OR completion certificate is
           downloading — the PDF / Zoho certificate can take a while to generate
@@ -285,8 +335,8 @@ export default function ClmCaseToCasePage() {
               <span style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #EDE9FE', boxShadow: '0 0 5px rgba(34,197,94,.45)' }} />
             </div>
             <div>
-              <div className="ctc-header-title" style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.4px', lineHeight: 1.15 }}>Case to Case Contracts Management</div>
-              <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .9, marginTop: 3 }}>Manage one-time operational agreements and contract approval workflows.</div>
+              <div className="ctc-header-title" style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.3px', lineHeight: 1.15 }}>Case to Case Contracts Management</div>
+              <div className="ctc-header-sub" style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .9, marginTop: 3 }}>Manage one-time operational agreements and contract approval workflows.</div>
             </div>
           </div>
           <button onClick={() => { setEditing(null); setFormOpen(true); }} disabled={lifecycleBusy !== null} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', border: 'none', borderRadius: 10, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null ? .6 : 1, zIndex: 1, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 4px 14px rgba(91,33,182,.44),inset 0 1px 0 rgba(255,255,255,.18)' }}>
@@ -338,7 +388,7 @@ export default function ClmCaseToCasePage() {
 
       {/* CARD 3 — CONTRACTS LIST */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
-        <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
+        <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
           {/* Tab rail — mirrors the Customer page's .smc-pill-group: a
               translucent rail with a violet hairline and gap-separated pills.
               On small screens it wraps to full width so the tabs never overflow
@@ -370,11 +420,14 @@ export default function ClmCaseToCasePage() {
               );
             })}
           </div>
+          {/* The spacer keeps flex:1 so the search stays against the right
+              edge, as it does on the employee list. The search is sized by
+              its own basis — now the shared 500px from .ops-search — rather
+              than by a fixed input, which is what used to hold it at 313px. */}
           <div className="ctc-hspacer" style={{ flex: 1 }} />
-          <div className="ctc-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, boxSizing: 'border-box', padding: '0 14px', borderRadius: 11, background: t.searchBg, border: `1.5px solid ${t.searchBorder}`, flexShrink: 0 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input autoComplete="off" value={search} disabled={lifecycleBusy !== null} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…"
-              style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.searchText, background: 'transparent', width: 230 }} />
+          <div className="ops-search ops-search--violet ctc-searchbox">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <input autoComplete="off" value={search} disabled={lifecycleBusy !== null} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…" />
               <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
@@ -385,10 +438,20 @@ export default function ClmCaseToCasePage() {
                 container so it never inherits the table's 1380px min-width and
                 stays pinned to the visible card width when the table scrolls. */}
             <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1380 }}>
+              {/* 1560, not 1380. The eleven fixed columns come to 1378 on their own, so
+    the old floor left Agreement Title two pixels and let the row spill past
+    the card instead of scrolling. 1560 keeps the title usable at ~180. */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1560 }}>
                 <thead><tr>
                   {['SR NO', 'CTC ID', 'CTC DATE', 'AGREEMENT TITLE', 'OUR ORGANISATION', 'COUNTERPARTIES', 'CREATED BY', 'INTERNAL APPROVAL', 'EFF. DATE', 'EXPIRY DATE', 'CP SIGNED DATE', 'ACTION'].map((h, i) => (
-                    <th key={h} style={{ ...TH, textAlign: i === 3 || i === 4 || i === 5 || i === 6 ? 'left' : 'center', width: [52, 124, 110, undefined, 155, 165, 136, 122, 100, 100, 122, 150][i] }}>{h}</th>
+                    <th key={h} style={{ ...TH, /* Only the title ranges left — it is the row's subject, as Employee
+                       is on the employee list. Everything else centres, so each
+                       column's content sits on one axis and the gaps between them
+                       stop depending on how long a name happens to be. */
+                    textAlign: i === 3 ? 'left' : 'center', /* ACTION is 192: six 26px buttons with 3px between them is 171, and
+                       the cell's own 10px either side makes 191. At 150 the sixth
+                       button had nowhere to sit and hung off the right edge. */
+                    width: [52, 124, 110, undefined, 155, 185, 136, 122, 100, 100, 122, 192][i] }}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
@@ -412,17 +475,17 @@ export default function ClmCaseToCasePage() {
                         onMouseEnter={() => setHoverId(c.id)}
                         onMouseLeave={() => setHoverId(h => (h === c.id ? null : h))}>
                         <td style={{ ...TD, width: 52 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#6D28D9,#5B21B6)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(109,40,217,.3)' }}><span style={{ fontSize: 9, fontWeight: 900, color: '#fff' }}>{String(n).padStart(2, '0')}</span></div></td>
-                        <td style={{ ...TD, width: 124 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,rgba(109,40,217,.1),rgba(124,58,237,.06))', padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(124,58,237,.28)', whiteSpace: 'nowrap', letterSpacing: '.02em' }}>{c.id}</span></td>
-                        <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
-                        <td style={TDL}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 700, color: t.textStrong, letterSpacing: '-.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
-                        <td style={{ ...TDL, width: 155 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: `linear-gradient(135deg,${orgGrad(c.org)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.2)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.org)}</span></div><Tooltip label={c.org}><span style={{ fontSize: 12, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 105 }}>{c.org}</span></Tooltip></div></td>
-                        <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: 'linear-gradient(135deg,#6D28D9,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.18)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.cp[0])}</span></div><Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>{extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}</div></td>
-                        <td style={{ ...TDL, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#C4B5FD,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #DDD6FE' }}><span style={{ fontSize: 8, fontWeight: 900, color: '#4C1D95' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 10.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
-                        <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 20, background: apb.bg, border: `1px solid ${apb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: ap.dot, flexShrink: 0, boxShadow: `0 0 5px ${ap.dot}60` }} /><span style={{ fontSize: 9.5, fontWeight: 700, color: apb.text }}>{ap.label}</span></span></td>
-                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
-                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.endDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
+                        <td style={{ ...TD, width: 124 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 600, color: t.dark ? '#c4b5fd' : '#5B21B6', background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,rgba(109,40,217,.1),rgba(124,58,237,.06))', padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(124,58,237,.28)', whiteSpace: 'nowrap', letterSpacing: '.02em' }}>{c.id}</span></td>
+                        <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
+                        <td style={TDL}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
+                        <td style={{ ...TD, width: 155 }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Mark text={c.org} dark={t.dark} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 108 }}>{c.org}</span></Tooltip></div></td>
+                        <td style={{ ...TD, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><Mark text={c.cp[0]} dark={t.dark} /><Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 108 }}>{c.cp[0]}</span></Tooltip>{extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}</div></td>
+                        <td style={{ ...TD, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><Mark text={c.createdBy} dark={t.dark} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                        <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, background: apb.bg, border: `1px solid ${apb.border}`, whiteSpace: 'nowrap' }}><span style={{ fontSize: 9.5, fontWeight: 700, color: apb.text }}>{ap.label}</span></span></td>
+                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
+                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.endDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
                         <td style={{ ...TD, width: 122 }}>{cpS === '—' ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#C4B5FD' }}>—</span> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>{dashDate(cpS)}</span>}</td>
-                        <td style={{ ...TD, width: 150 }}>
+                        <td style={{ ...TD, width: 192 }}>
                           {(() => {
                             // Freeze the whole row's actions while a version /
                             // timeline load is in flight (QA #40); the clicked
@@ -559,20 +622,21 @@ const CTC_CSS = `
   /* Drop the extra indent so the title block lines up flush with the full-width
      Create button below it, and let the title sit at a calmer size. */
   .ctc-header-titlewrap { padding-left: 6px !important; }
-  .ctc-header-title { font-size: 15px !important; }
+  .ctc-header-title { font-size: 16px !important; }
   .ctc-header-strip > button { width: 100%; justify-content: center; }
   .ctc-stagegrid { grid-template-columns: repeat(2, 1fr) !important; }
   .ctc-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
   .ctc-tabrail > button { flex: 1 1 calc(50% - 4px); justify-content: center; }
   .ctc-hspacer { display: none; }
-  .ctc-searchbox { width: 100%; }
+  .ctc-searchbox { width: 100%; max-width: none; }
   .ctc-searchbox input { width: 100% !important; }
 }
 /* Phones: two-per-row squeezes the long "Rejected / Unapproved" tab and clips
    it. Give each tab its OWN full-width row so the label + count always fit and
    the pills read as a clean, uniform, easy-to-tap filter list. */
 @media (max-width: 560px) {
-  .ctc-toolbar { padding: 12px !important; gap: 8px !important; }
+  /* Only the gap here now: the base padding is already 8 on every side. */
+  .ctc-toolbar { gap: 8px !important; }
   .ctc-tabrail { width: 100%; gap: 6px; }
   .ctc-tabrail > button { flex: 1 1 100% !important; justify-content: flex-start; height: 40px; }
   /* Push the count badge to the far right so every row lines up. */

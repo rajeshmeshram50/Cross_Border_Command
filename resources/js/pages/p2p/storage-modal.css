@@ -455,11 +455,13 @@
 /* The trigger's own copy of the tile, a size down. */
 .smod-wh-ico.is-sm svg { width: 15px; height: 15px; }
 
-/* Fixed, laid over the dialog rather than inside it: an inline panel grew
-   the dialog as it opened and moved the footer under the cursor. */
+/* In the flow, under the trigger. Opening it does make the dialog taller,
+   which the design avoids by floating the list — but floating it meant
+   portalling it out of the dialog, and out there it fell behind the dialog's
+   own 80%-black dimmer and could not be seen at all. */
 .smod-wh-panel {
-  position: fixed; z-index: 4001;
-  padding: 8px;
+  margin-top: 8px; padding: 8px;
+  max-height: 290px;
   display: flex; flex-direction: column; gap: 6px;
   overflow-y: auto; overscroll-behavior: contain;
   border: 1px solid #cfeaf1; border-radius: 14px; background: #fff;

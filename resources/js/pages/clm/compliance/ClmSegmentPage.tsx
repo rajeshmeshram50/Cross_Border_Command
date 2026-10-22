@@ -174,8 +174,12 @@ export default function ClmSegmentPage() {
         .clm-root .clm-tabs-bar .seg-toolbar {
           margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
         }
+        /* 500px — the width every other CLM list search uses. This bar was
+           300px, which next to the Authority or KYC search on the same module
+           read as a different control. The filter select beside it simply sits
+           200px further left; the tab rail ends well clear of it. */
         .clm-root .clm-tabs-bar .seg-search {
-          flex: 0 0 auto; width: 300px; max-width: 100%;
+          flex: 0 0 auto; width: 500px; max-width: 100%;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
         .clm-root .seg-filter-ms { flex: 0 0 auto; }
@@ -201,7 +205,7 @@ export default function ClmSegmentPage() {
         [data-bs-theme="dark"] .seg-filter-menu .master-select-item { color: #e2e8f0 !important; }
         [data-bs-theme="dark"] .seg-filter-menu .master-select-item:hover, [data-bs-theme="dark"] .seg-filter-menu .master-select-item:focus { background: rgba(6,182,212,.16) !important; color: #a5f3fc !important; }
         [data-bs-theme="dark"] .seg-filter-menu .master-select-item.active { background: rgba(6,182,212,.22) !important; color: #67e8f9 !important; }
-        @media (max-width: 1280px) { .clm-root .clm-tabs-bar .seg-search { width: 220px; } }
+        @media (max-width: 1280px) { .clm-root .clm-tabs-bar .seg-search { width: 360px; } }
         @media (max-width: 760px)  {
           .clm-root .clm-tabs-bar .seg-toolbar { width: 100%; margin-left: 0; }
           .clm-root .clm-tabs-bar .seg-search { width: 100%; }

@@ -10,7 +10,7 @@ import { useTyping } from '../../../hooks/useTyping';
 import { TypingIndicator } from '../../../components/TypingIndicator';
 import api from '../../../api';
 import { type AtaContract, inits, pad2, PER_PAGE } from './clmOpsData';
-import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import { useOpsTheme, OPS_SEARCH_CSS, type OpsTokens } from './useOpsTheme';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -242,7 +242,7 @@ export default function ClmAgreementsToApprovePage() {
 
   return (
     <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'var(--font-sans)' }}>
-      <style>{ATA_CSS}</style>
+      <style>{ATA_CSS + OPS_SEARCH_CSS}</style>
 
       {/* HEADER STRIP */}
       <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '0 18px', minHeight: 64, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 14, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
@@ -257,13 +257,13 @@ export default function ClmAgreementsToApprovePage() {
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <div style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.15 }}>Agreements To Approve</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.15 }}>Agreements To Approve</div>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
                 <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
               </span>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, maxWidth: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval — accept, reject, or request clarification before sending to counterparties.</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, maxWidth: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval — accept, reject, or request clarification before sending to counterparties.</div>
           </div>
         </div>
       </div>
@@ -319,10 +319,9 @@ export default function ClmAgreementsToApprovePage() {
             })}
           </div>
           <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, boxSizing: 'border-box', padding: '0 14px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}`, flex: '0 1 520px', minWidth: 220 }}>
+          <div className="ops-search ops-search--cyan">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title, created by, approver…"
-              style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.text, background: 'transparent', flex: 1, minWidth: 0 }} />
+            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title, created by, approver…" />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>

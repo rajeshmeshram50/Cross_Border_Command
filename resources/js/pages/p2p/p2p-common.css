@@ -1964,3 +1964,39 @@
 
 [data-bs-theme="dark"] .spim-st--live { color: #7dd3e8; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); }
 [data-bs-theme="dark"] .spim-st--warn { color: #fcd34d; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.32); }
+
+/* ── The SPI type cards in dark ──────────────────────────────────────────────
+ * The cards were written light-only, so in dark they stayed white sheets on a
+ * dark dialog and the disabled one went pale grey. Same tokens the rest of
+ * this dialog already uses: #13242e for a card, #e2e8f0 for a title,
+ * #8ba3b5 for the line under it.
+ * ───────────────────────────────────────────────────────────────────────────*/
+[data-bs-theme="dark"] .spich-card { background: #13242e; border-color: rgba(148,163,184,.18); }
+[data-bs-theme="dark"] .spich-card:hover:not(:disabled) { border-color: rgba(34,211,238,.45); box-shadow: 0 8px 20px -12px rgba(0,0,0,.6); }
+[data-bs-theme="dark"] .spich-card.is-on {
+  border-color: #22d3ee;
+  background: linear-gradient(180deg, rgba(34,211,238,.12), #13242e 70%);
+  box-shadow: 0 0 0 3px rgba(34,211,238,.18), 0 10px 22px -12px rgba(0,0,0,.6);
+}
+[data-bs-theme="dark"] .spich-card--without.is-on {
+  border-color: #f59e0b;
+  background: linear-gradient(180deg, rgba(245,158,11,.14), #13242e 70%);
+  box-shadow: 0 0 0 3px rgba(245,158,11,.18), 0 10px 22px -12px rgba(0,0,0,.6);
+}
+/* Dimming works by lowering contrast, so in dark it has to lose light, not
+   gain grey — the light rule's opacity alone left it reading as a pale tile. */
+[data-bs-theme="dark"] .spich-card.is-off { background: #101c24; border-color: rgba(148,163,184,.12); opacity: .62; }
+
+[data-bs-theme="dark"] .spich-c2__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .spich-c2__d { color: #8ba3b5; }
+[data-bs-theme="dark"] .spich-c2__pt { color: #cbd5e1; }
+[data-bs-theme="dark"] .spich-c2__pts { border-top-color: rgba(148,163,184,.22); }
+[data-bs-theme="dark"] .spich-c2__ck { color: #67e8f9; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .spich-card--without .spich-c2__ck { color: #fcd34d; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.32); }
+
+[data-bs-theme="dark"] .spich-card__badge--ok { color: #67e8f9; background: rgba(34,211,238,.16); }
+[data-bs-theme="dark"] .spich-card__badge--warn { color: #fcd34d; background: rgba(245,158,11,.16); }
+
+[data-bs-theme="dark"] .spich-card__rad { background: transparent; border-color: rgba(148,163,184,.35); }
+
+[data-bs-theme="dark"] .spich-sub { background: rgba(34,211,238,.05); border-color: rgba(34,211,238,.2); }

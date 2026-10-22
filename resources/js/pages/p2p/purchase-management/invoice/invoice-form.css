@@ -8901,6 +8901,12 @@
   font-family: var(--font-sans); font-size: 11px; padding: 2px 9px;
 }
 .s4-root .s4zt-dest__chain .s4sl-code--w { background: #f4f8fa; color: #334e5c; border-color: #e3edf1; }
+/* The chip's own dark rule is `[dark] .s4-root .s4sl-code--w` — the same
+   specificity as the line above, and declared earlier, so in dark mode the
+   line above won and the warehouse chip stayed near-white while the three
+   beside it went teal, violet and green. Scoped to the chain, as its light
+   twin is, so it outranks it by order. */
+[data-bs-theme="dark"] .s4-root .s4zt-dest__chain .s4sl-code--w { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.3); }
 .s4-root .s4zt-dest__st { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700; color: #5b7585; background: #f4f8fa; border: 1px solid #e3edf1; border-radius: 999px; padding: 4px 11px; }
 @media (max-width: 1000px) { .s4-root .s4zt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 [data-bs-theme="dark"] .s4-root .s4zt-f { background: rgba(255,255,255,.03); border-color: rgba(34,211,238,.16); }
@@ -9005,3 +9011,30 @@
 [data-bs-theme="dark"] .s4-root .s4zt-top__id { color: #e4f3f8; }
 [data-bs-theme="dark"] .s4-root .s4zt-top__k { color: #8fa6b4; }
 [data-bs-theme="dark"] .s4-root .s4zt-bar { background: rgba(34,211,238,.07); border-color: rgba(34,211,238,.22); }
+
+/* ── Light-only decoration, finished off for dark ────────────────────────────
+ * Two things on these screens were drawn as near-white and never given a dark
+ * rule, so against a dark card they stopped being a hint and became the
+ * brightest thing on the screen.
+ * ───────────────────────────────────────────────────────────────────────────*/
+
+/* The corner glow on the storage-zone cards is `radial-gradient(var(--soft))`,
+   and --soft is a 50-level tint — #ecfeff, #fffbeb. Almost white. In dark the
+   card needs the same hint at a tenth of the strength, so the token changes
+   rather than the gradient. */
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt { --soft: rgba(34,211,238,.16); }
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt--norack { --soft: rgba(245,158,11,.14); }
+
+/* The locked half of the Zebra scan task. Its hatching already had a dark
+   rule; the three things sitting on the hatching did not, so a pale grey
+   lock tile, badge and panel stayed behind on a dark background. */
+[data-bs-theme="dark"] .s4-root .s4zt-leg__lock {
+  background: rgba(255,255,255,.04);
+  border-color: var(--s4d-line);
+  color: #7f97a5;
+}
+[data-bs-theme="dark"] .s4-root .s4zt-leg.is-locked .s4zt-leg__ic { background: rgba(255,255,255,.07); color: #7f97a5; }
+[data-bs-theme="dark"] .s4-root .s4zt-leg.is-locked .s4zt-leg__badge { background: rgba(255,255,255,.06); color: #7f97a5; border-color: var(--s4d-line); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg.is-locked .s4zt-leg__t { color: #7f97a5; }
+/* The 3px cap across the top of every leg was a fixed #e2e8f0. */
+[data-bs-theme="dark"] .s4-root .s4zt-leg::before { background: var(--s4d-line); }
