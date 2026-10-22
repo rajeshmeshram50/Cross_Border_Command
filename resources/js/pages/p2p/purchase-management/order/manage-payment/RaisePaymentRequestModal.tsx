@@ -220,7 +220,7 @@ export default function RaisePaymentRequestModal({
             title="PO Payment Details Summary"
             sub="How this PO’s value is made up and where it stands today · read-only"
           >
-            <PoSummaryCards total={row.total} paid={row.paid} balance={row.balance} net={row.net} complete={complete} split={rowBreakdown(row)} />
+            <PoSummaryCards total={row.total} paid={row.paid} balance={row.balance} net={row.net} complete={complete} split={rowBreakdown(row)} ccy={row.currency} />
           </Box>
 
           <Box
