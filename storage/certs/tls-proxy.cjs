@@ -69,11 +69,32 @@ const needsDeviceCert = (url) => {
    `rejectUnauthorized:false` still lets cert-less clients (the laptop) in — we
    only REFUSE when a scanner path is hit without a valid device cert. So the
    scanner URL is useless on a phone that has not installed the cert. */
+/** Every CA public cert sitting next to this file, so any environment's device is accepted. */
+function deviceCAs() {
+  const files = fs.readdirSync(HERE)
+    .filter((f) => /^device-ca.*.pem$/.test(f) && !f.includes('-key'))
+    .sort();
+
+  if (files.length === 0) throw new Error('No device-ca*.pem in ' + HERE);
+  console.log('device CAs: ' + files.join(', '));
+
+  return files.map((f) => fs.readFileSync(path.join(HERE, f)));
+}
+
 const secure = https.createServer(
   {
     cert: fs.readFileSync(path.join(HERE, 'cbc.pem')),
     key: fs.readFileSync(path.join(HERE, 'cbc-key.pem')),
-    ca: [fs.readFileSync(path.join(HERE, 'device-ca.pem'))],
+    /* EVERY device-ca*.pem in this folder, not just the dev one.
+       One handheld carries one certificate, and which CA signed it depends on
+       where it was enrolled — the production one is signed by CBC Device CA
+       Prod. Trusting only the dev CA meant a device set up for production was
+       unidentifiable here, so it fell through to the token and, with no token,
+       to "This device is not authorised to scan". Dropping device-ca-prod.pem
+       in beside this file is enough; nothing on the device changes.
+       These are CA PUBLIC certificates. The *-key.pem files are the secrets
+       and are deliberately not read here. */
+    ca: deviceCAs(),
     // Standing in for the cert? Then do not ask for one — the asking is what
     // stalls, and a picker Chrome cannot show is worse than no question.
     requestCert: !DEV_CN,

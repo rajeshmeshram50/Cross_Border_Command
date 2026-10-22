@@ -159,6 +159,12 @@ const SHORT: Record<string, string> = {
   unknown_box:      'Box not found',
   unknown_location: 'Location not found',
   no_task:          'No put-away for this box',
+  /* The device is enrolled and the label is genuine — it is the pairing that
+     is wrong. "Box not found" used to be shown here, which reads as a bad
+     label and sends the operator to reprint a perfectly good one. */
+  device_wrong_client: 'Not this organisation',
+  device_wrong_branch: 'Wrong branch for this device',
+  box_not_packed:      'Box not packed to an invoice',
   already_scanned:  'Already scanned',
   unreadable:       'Not a Cross Border label',
   bad_signature:    'Label failed its check',
