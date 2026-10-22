@@ -273,20 +273,51 @@ function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
   );
 }
 
-function BoxQr({ text, size = 76 }: { text: string; size?: number }) {
+/**
+ * A box or location code as a QR.
+ *
+ * `bare` is for the codes that sit inside a frame of their own — the two in
+ * the confirm step's heroes sit on a white tile. Without it the canvas wears
+ * `.s4s-stk__qr`, which belongs to the sticker preview and brings a 1px
+ * border and 6px of padding: inside a border-box those eat into the 92px the
+ * hero asks for, so the code came out smaller than the design's with a wider
+ * white margin round it, and the inline canvas left the tile taller than it
+ * was wide.
+ */
+function BoxQr({ text, size = 76, bare = false }: { text: string; size?: number; bare?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
     setFailed(false);
+    /* Drawn at the screen's real pixel density and scaled back down in CSS.
+       A 92px canvas on a 125% display was being stretched to 115 device
+       pixels, which smears the module edges — the one thing a QR cannot
+       afford. The design draws an SVG, which never has the problem. */
+    /* Rounded UP, not to nearest: Windows at 125% reports 1.25, and rounding
+       that to 1 gave back the blur this is here to remove. */
+    const dpr = Math.min(3, Math.max(1, Math.ceil(window.devicePixelRatio || 1)));
     QRCode.toCanvas(c, text, {
-      width: size, margin: 0, errorCorrectionLevel: 'M',
-      color: { dark: '#0c4a6e', light: '#ffffff' },
+      width: size * dpr,
+      /* Two modules of white around the code, as the design has it. Without a
+         quiet zone a scanner has to find the edge against whatever is behind
+         it, and the code filled its white tile corner to corner. */
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#0c2c3a', light: '#ffffff' },
+    }).then(() => {
+      c.style.width = `${size}px`;
+      c.style.height = `${size}px`;
     }).catch(() => setFailed(true));
   }, [text, size]);
   if (failed) return <span className="s4s-stk__qrfail">No code</span>;
-  return <canvas className="s4s-stk__qr" ref={ref} width={size} height={size} />;
+  return (
+    <canvas
+      className={bare ? 's4-qrc' : 's4s-stk__qr'} ref={ref}
+      width={size} height={size} style={{ width: size, height: size }}
+    />
+  );
 }
 
 interface BoxProduct {
@@ -1530,8 +1561,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       spot={findSpot(loc.data, spot)}
                       warehouse={warehouse}
                       assigned={placedAt !== null}
-                      qr={<BoxQr text={String(box.id)} size={92} />}
-                      locQr={<BoxQr text={`${warehouse ?? ''}/${spot ?? ''}`} size={80} />}
+                      /* The code, not the row id: a scanner reading this should
+                         get PUT-B-001 — the thing printed beside it and on the
+                         sticker — not an internal number. */
+                      qr={<BoxQr text={box.code} size={92} bare />}
+                      locQr={<BoxQr text={`${warehouse ?? ''}/${spot ?? ''}`} size={80} bare />}
                       onSticker={() => setQrOpen(true)}
                       onChange={() => setLcStep(1)}
                       scan={scanTask}
@@ -1820,7 +1854,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           sku={products[0]?.hsn ? `HSN ${products[0].hsn}` : '—'}
           qty={box.qty}
           date={packedOnOf(rawBox) ?? '—'}
-          qr={<BoxQr text={String(box.id)} size={96} />}
+          qr={<BoxQr text={box.code} size={96} />}
           onClose={() => setQrOpen(false)}
           onPdf={() => { void stickerPdf(box.id, box.code); }}
           onPrint={() => { void stickerPrint(box.id); }}

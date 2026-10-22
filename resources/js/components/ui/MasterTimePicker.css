@@ -30,14 +30,14 @@
   transition: border-color .18s ease, box-shadow .18s ease;
 }
 .master-timepicker-toggle:hover:not([aria-disabled="true"]) {
-  border-color: rgba(99, 102, 241, .55);
-  box-shadow: 0 2px 6px rgba(99, 102, 241, .08);
+  border-color: rgba(8,145,178, .55);
+  box-shadow: 0 2px 6px rgba(8,145,178, .08);
 }
 .master-timepicker-toggle.open {
-  border-color: #6366f1;
+  border-color: #0891b2;
   box-shadow:
-    0 0 0 3px rgba(99, 102, 241, .15),
-    0 4px 12px rgba(99, 102, 241, .12);
+    0 0 0 3px rgba(8,145,178, .15),
+    0 4px 12px rgba(8,145,178, .12);
 }
 .master-timepicker-wrap.invalid .master-timepicker-toggle {
   border-color: #f06548;
@@ -80,7 +80,7 @@
   transition: color .18s ease, opacity .18s ease;
 }
 .master-timepicker-toggle.open .master-timepicker-icon {
-  color: #6366f1;
+  color: #0891b2;
   opacity: 1;
 }
 
@@ -111,18 +111,18 @@
   border-radius: 12px;
   box-shadow:
     0 12px 36px rgba(15, 23, 42, .18),
-    0 4px 12px rgba(99, 102, 241, .10);
+    0 4px 12px rgba(8,145,178, .10);
   padding: 8px;
   font-size: 13px;
   color: #1e293b;
 }
 [data-bs-theme="dark"] .master-timepicker-popup {
-  background: #14102a;
-  border-color: rgba(167, 139, 250, .25);
-  color: #ede9fe;
+  background: #0c1c24;
+  border-color: rgba(34,211,238, .25);
+  color: #cffafe;
   box-shadow:
     0 12px 36px rgba(0, 0, 0, .60),
-    0 4px 12px rgba(124, 58, 237, .25);
+    0 4px 12px rgba(8,145,178, .25);
 }
 
 .master-timepicker-cols {
@@ -145,7 +145,7 @@
   text-transform: uppercase;
   background: transparent;
 }
-[data-bs-theme="dark"] .master-timepicker-col-head { color: #a78bfa; }
+[data-bs-theme="dark"] .master-timepicker-col-head { color: #7dd3e8; }
 .master-timepicker-col-list {
   /* Shorter list keeps the whole popup compact so it fits BELOW the field
      more often (less flipping above and covering the form). Still scrolls. */
@@ -161,11 +161,11 @@
   gap: 2px;
   padding: 0 2px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(99, 102, 241, .25) transparent;
+  scrollbar-color: rgba(8,145,178, .25) transparent;
 }
 .master-timepicker-col-list::-webkit-scrollbar { width: 4px; }
 .master-timepicker-col-list::-webkit-scrollbar-thumb {
-  background: rgba(99, 102, 241, .25);
+  background: rgba(8,145,178, .25);
   border-radius: 999px;
 }
 
@@ -184,13 +184,13 @@
   letter-spacing: .04em;
 }
 .master-timepicker-item:hover {
-  background: rgba(124, 58, 237, .10);
-  color: #7c3aed;
+  background: rgba(8,145,178, .10);
+  color: #0891b2;
 }
 .master-timepicker-item.selected {
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
   color: #fff;
-  box-shadow: 0 2px 6px rgba(124, 58, 237, .35);
+  box-shadow: 0 2px 6px rgba(8,145,178, .35);
 }
 /* Past (before minTime) slots — greyed, unclickable, no hover highlight. */
 .master-timepicker-item.is-past,
@@ -200,15 +200,15 @@
   pointer-events: none;
   text-decoration: line-through;
 }
-[data-bs-theme="dark"] .master-timepicker-item { color: #ede9fe; }
+[data-bs-theme="dark"] .master-timepicker-item { color: #cffafe; }
 [data-bs-theme="dark"] .master-timepicker-item:hover {
-  background: rgba(167, 139, 250, .15);
-  color: #c4b5fd;
+  background: rgba(34,211,238, .15);
+  color: #7dd3e8;
 }
 [data-bs-theme="dark"] .master-timepicker-item.selected {
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, .55);
+  box-shadow: 0 2px 8px rgba(8,145,178, .55);
 }
 
 /* ── Footer ── */
@@ -221,7 +221,7 @@
   padding-top: 6px;
   border-top: 1px solid #e2e8f0;
 }
-[data-bs-theme="dark"] .master-timepicker-foot { border-top-color: rgba(167, 139, 250, .25); }
+[data-bs-theme="dark"] .master-timepicker-foot { border-top-color: rgba(34,211,238, .25); }
 
 .master-timepicker-foot-btn {
   padding: 5px 12px;
@@ -236,33 +236,33 @@
   transition: background .15s, border-color .15s, color .15s, transform .15s;
 }
 .master-timepicker-foot-btn:hover {
-  background: #f5f3ff;
-  border-color: rgba(124, 58, 237, .45);
+  background: #ecfeff;
+  border-color: rgba(8,145,178, .45);
 }
 .master-timepicker-foot-btn.primary {
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
   color: #fff;
   border-color: transparent;
 }
 .master-timepicker-foot-btn.primary:hover {
-  background: linear-gradient(135deg, #6d28d9, #4c1d95);
+  background: linear-gradient(135deg, #0891b2, #0e7490);
   transform: translateY(-1px);
 }
 [data-bs-theme="dark"] .master-timepicker-foot-btn {
-  background: #1f1845;
-  border-color: rgba(167, 139, 250, .30);
-  color: #ede9fe;
+  background: #11242e;
+  border-color: rgba(34,211,238, .30);
+  color: #cffafe;
 }
 [data-bs-theme="dark"] .master-timepicker-foot-btn:hover {
-  background: #2a2150;
-  border-color: rgba(167, 139, 250, .55);
+  background: #13303c;
+  border-color: rgba(34,211,238, .55);
 }
 [data-bs-theme="dark"] .master-timepicker-foot-btn.primary {
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
   border-color: transparent;
 }
 [data-bs-theme="dark"] .master-timepicker-foot-btn.primary:hover {
-  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
 }
 
 /* ── Teal accent (Meeting modal) — recolours the violet bits to match the

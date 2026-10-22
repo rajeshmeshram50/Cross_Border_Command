@@ -26,7 +26,206 @@ import { createPortal } from 'react-dom';
  * The CSS-only path is still fine for simple cases inside non-overflow
  * containers — both can coexist.
  */
-type Position = 'top' | 'bottom' | 'left' | 'right';
+export type Position = 'top' | 'bottom' | 'left' | 'right';
+
+/**
+ * Where the pill sits, given the trigger's rect and the pill's own measured
+ * size. Exported because the app-wide native-title bridge
+ * (components/NativeTitleTooltips.tsx) positions the same pill against
+ * elements it does not own, and two copies of this would drift apart.
+ */
+export function placeTip(trig: DOMRect, tip: DOMRect, position: Position, offset: number) {
+  let top = 0;
+  let left = 0;
+  if (position === 'top') {
+    top = trig.top - tip.height - offset;
+    left = trig.left + trig.width / 2 - tip.width / 2;
+  } else if (position === 'bottom') {
+    top = trig.bottom + offset;
+    left = trig.left + trig.width / 2 - tip.width / 2;
+  } else if (position === 'left') {
+    top = trig.top + trig.height / 2 - tip.height / 2;
+    left = trig.left - tip.width - offset;
+  } else {
+    top = trig.top + trig.height / 2 - tip.height / 2;
+    left = trig.right + offset;
+  }
+  // Clamp to viewport so the tooltip never falls off the edge.
+  const margin = 6;
+  left = Math.max(margin, Math.min(left, window.innerWidth - tip.width - margin));
+  top = Math.max(margin, Math.min(top, window.innerHeight - tip.height - margin));
+  return { top, left };
+}
+
+/**
+ * The pill itself — everything this component looks like, and nothing about
+ * what triggers it. `Tooltip` below renders it for a React child; the
+ * native-title bridge renders the same one for any element on the page, so
+ * every tooltip in the app is literally this markup.
+ */
+export function TooltipPill({
+  label, position, coords, scrollable, maxWidth, zIndex, themed, innerRef, onMouseEnter, onMouseLeave,
+}: {
+  label: React.ReactNode;
+  position: Position;
+  coords: { top: number; left: number } | null;
+  scrollable: boolean;
+  maxWidth?: number;
+  zIndex: number;
+  themed: boolean;
+  innerRef: React.MutableRefObject<HTMLDivElement | null>;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}) {
+  // Theme-aware palette. Default (themed=false) stays the always-dark pill.
+  // When themed, follow the live app theme — read from the <html> attribute
+  // the ThemeContext maintains (data-bs-theme / data-theme), so the tooltip
+  // matches whatever is active even though it's portalled to <body>.
+  const isDark = !themed
+    ? true
+    : (typeof document !== 'undefined'
+        && (document.documentElement.getAttribute('data-bs-theme') === 'dark'
+          || document.documentElement.getAttribute('data-theme') === 'dark'));
+  const palette = isDark
+    ? {
+        background: 'linear-gradient(180deg, #2a3444 0%, #1f2937 100%)',
+        color: '#fff',
+        border: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '0 12px 26px -6px rgba(15,23,42,0.45), 0 4px 10px rgba(15,23,42,0.22), 0 0 0 1px rgba(0,0,0,0.10)',
+        arrow: '#1f2937',
+        sheen: 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0))',
+      }
+    : {
+        background: 'linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%)',
+        color: '#1f2937',
+        border: '1px solid #e5e7eb',
+        boxShadow: '0 12px 26px -6px rgba(15,23,42,0.18), 0 4px 10px rgba(15,23,42,0.10), 0 0 0 1px rgba(15,23,42,0.04)',
+        arrow: '#f3f4f6',
+        sheen: 'linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0))',
+      };
+
+  // Arrow positioning per side — sits flush against the tooltip body.
+  const arrowStyle: React.CSSProperties = (() => {
+    const C = palette.arrow;
+    if (position === 'top') {
+      return { top: '100%', left: '50%', marginLeft: -5, borderWidth: '5px 5px 0 5px', borderColor: `${C} transparent transparent transparent` };
+    }
+    if (position === 'bottom') {
+      return { bottom: '100%', left: '50%', marginLeft: -5, borderWidth: '0 5px 5px 5px', borderColor: `transparent transparent ${C} transparent` };
+    }
+    if (position === 'left') {
+      return { left: '100%', top: '50%', marginTop: -5, borderWidth: '5px 0 5px 5px', borderColor: `transparent transparent transparent ${C}` };
+    }
+    return { right: '100%', top: '50%', marginTop: -5, borderWidth: '5px 5px 5px 0', borderColor: `transparent ${C} transparent transparent` };
+  })();
+
+  return createPortal(
+    <div
+      ref={innerRef}
+      role="tooltip"
+      /* Measured once it is on screen: taller than the cap means it has to
+         scroll, which in turn means it has to accept the pointer. */
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      // Haptic-style entrance: combine soft scale-in (0.86 → 1) with
+      // a directional slide so the tooltip *pops* toward its target
+      // edge — feels like a gentle tap response rather than a flat
+      // fade. Spring easing (cubic-bezier 0.34, 1.56, 0.64, 1)
+      // adds the slight overshoot that reads as a physical bounce.
+      // The transform-origin is set per-side so the scale grows out
+      // of the edge nearest the trigger element.
+      data-tooltip-pos={position}
+      style={{
+        position: 'fixed',
+        top: coords?.top ?? -9999,
+        left: coords?.left ?? -9999,
+        background: palette.background,
+        color: palette.color,
+        fontSize: 12,
+        fontWeight: 600,
+        letterSpacing: '0.015em',
+        lineHeight: 1.35,
+        padding: '7px 14px',
+        borderRadius: 9,
+        border: palette.border,
+        boxShadow: palette.boxShadow,
+        // Inner highlight — a subtle white sheen at the top so the
+        // pill reads as a glossy surface, not a flat rectangle.
+        backgroundClip: 'padding-box',
+        /* Wrap long content by default — without this, a 200-char
+         * tooltip label (e.g. a customer's pasted-junk Contact
+         * Person field) blows past the right edge of the screen
+         * and the viewport clamp can't help because the tooltip
+         * itself is wider than the viewport. A generous default
+         * cap (360px) keeps short labels on one line while long
+         * ones wrap cleanly. wordBreak + overflowWrap handle the
+         * pathological "Gggggggggg…" no-space case. The caller
+         * can still pass an explicit `maxWidth` to override. */
+        whiteSpace: 'normal',
+        wordBreak: 'break-word',
+        overflowWrap: 'anywhere',
+        maxWidth: maxWidth ?? `min(360px, calc(100vw - 16px))`,
+        /* And a height cap, for the same reason as the width one. Without
+           it a 2,000-character product description rendered as a column
+           taller than the screen, covering the table it came from. Past
+           the cap it scrolls. */
+        maxHeight: 'min(40vh, 320px)',
+        overflowY: scrollable ? 'auto' : 'hidden',
+        zIndex,
+        /* Only a scrolling tip takes the pointer; every other tooltip stays
+           click-through, so it can never swallow a click on what is under
+           it. */
+        pointerEvents: scrollable ? 'auto' : 'none',
+        animation: 'cbcTooltipSpring 0.12s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transformOrigin:
+          position === 'top'    ? 'center bottom' :
+          position === 'bottom' ? 'center top' :
+          position === 'left'   ? 'right center' :
+                                  'left center',
+      }}
+    >
+      {/* Glossy inner highlight — tiny gradient strip on the top
+          edge gives the pill a subtle "lit from above" look. */}
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
+          borderRadius: '9px 9px 0 0',
+          background: palette.sheen,
+          pointerEvents: 'none',
+        }}
+      />
+      <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute',
+          width: 0,
+          height: 0,
+          borderStyle: 'solid',
+          filter: 'drop-shadow(0 1px 1px rgba(15,23,42,0.20))',
+          ...arrowStyle,
+        }}
+      />
+      {/* Inline keyframes — keeps the component fully self-contained
+          so a fresh project drop-in doesn't need extra CSS. The
+          from-state offsets are per-side so the pop direction
+          feels physically anchored to the trigger. */}
+      <style>{`
+        @keyframes cbcTooltipSpring {
+          0%   { opacity: 0; transform: scale(0.86) translateY(var(--cbc-tt-from-y, 0)) translateX(var(--cbc-tt-from-x, 0)); }
+          60%  { opacity: 1; transform: scale(1.04) translateY(0) translateX(0); }
+          100% { opacity: 1; transform: scale(1) translateY(0) translateX(0); }
+        }
+        [role="tooltip"][data-tooltip-pos="top"]    { --cbc-tt-from-y: 6px; }
+        [role="tooltip"][data-tooltip-pos="bottom"] { --cbc-tt-from-y: -6px; }
+        [role="tooltip"][data-tooltip-pos="left"]   { --cbc-tt-from-x: 6px; }
+        [role="tooltip"][data-tooltip-pos="right"]  { --cbc-tt-from-x: -6px; }
+      `}</style>
+    </div>,
+    document.body,
+  );
+}
 
 interface TooltipProps {
   label: React.ReactNode;
@@ -88,26 +287,7 @@ export default function Tooltip({
     const trig = triggerRef.current?.getBoundingClientRect();
     const tip = tipRef.current?.getBoundingClientRect();
     if (!trig || !tip) return;
-    let top = 0;
-    let left = 0;
-    if (position === 'top') {
-      top = trig.top - tip.height - offset;
-      left = trig.left + trig.width / 2 - tip.width / 2;
-    } else if (position === 'bottom') {
-      top = trig.bottom + offset;
-      left = trig.left + trig.width / 2 - tip.width / 2;
-    } else if (position === 'left') {
-      top = trig.top + trig.height / 2 - tip.height / 2;
-      left = trig.left - tip.width - offset;
-    } else {
-      top = trig.top + trig.height / 2 - tip.height / 2;
-      left = trig.right + offset;
-    }
-    // Clamp to viewport so the tooltip never falls off the edge.
-    const margin = 6;
-    left = Math.max(margin, Math.min(left, window.innerWidth - tip.width - margin));
-    top = Math.max(margin, Math.min(top, window.innerHeight - tip.height - margin));
-    setCoords({ top, left });
+    setCoords(placeTip(trig, tip, position, offset));
   };
 
   /* useLayoutEffect, not useEffect: the tooltip renders at -9999 until
@@ -266,156 +446,22 @@ export default function Tooltip({
   ) : null;
   const trigger = disabledTrigger ?? childWithProps;
 
-  // Theme-aware palette. Default (themed=false) stays the always-dark pill.
-  // When themed, follow the live app theme — read from the <html> attribute
-  // the ThemeContext maintains (data-bs-theme / data-theme), so the tooltip
-  // matches whatever is active even though it's portalled to <body>.
-  const isDark = !themed
-    ? true
-    : (typeof document !== 'undefined'
-        && (document.documentElement.getAttribute('data-bs-theme') === 'dark'
-          || document.documentElement.getAttribute('data-theme') === 'dark'));
-  const palette = isDark
-    ? {
-        background: 'linear-gradient(180deg, #2a3444 0%, #1f2937 100%)',
-        color: '#fff',
-        border: '1px solid rgba(255,255,255,0.06)',
-        boxShadow: '0 12px 26px -6px rgba(15,23,42,0.45), 0 4px 10px rgba(15,23,42,0.22), 0 0 0 1px rgba(0,0,0,0.10)',
-        arrow: '#1f2937',
-        sheen: 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0))',
-      }
-    : {
-        background: 'linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%)',
-        color: '#1f2937',
-        border: '1px solid #e5e7eb',
-        boxShadow: '0 12px 26px -6px rgba(15,23,42,0.18), 0 4px 10px rgba(15,23,42,0.10), 0 0 0 1px rgba(15,23,42,0.04)',
-        arrow: '#f3f4f6',
-        sheen: 'linear-gradient(180deg, rgba(255,255,255,0.65), rgba(255,255,255,0))',
-      };
-
-  // Arrow positioning per side — sits flush against the tooltip body.
-  const arrowStyle: React.CSSProperties = (() => {
-    const C = palette.arrow;
-    if (position === 'top') {
-      return { top: '100%', left: '50%', marginLeft: -5, borderWidth: '5px 5px 0 5px', borderColor: `${C} transparent transparent transparent` };
-    }
-    if (position === 'bottom') {
-      return { bottom: '100%', left: '50%', marginLeft: -5, borderWidth: '0 5px 5px 5px', borderColor: `transparent transparent ${C} transparent` };
-    }
-    if (position === 'left') {
-      return { left: '100%', top: '50%', marginTop: -5, borderWidth: '5px 0 5px 5px', borderColor: `transparent transparent transparent ${C}` };
-    }
-    return { right: '100%', top: '50%', marginTop: -5, borderWidth: '5px 5px 5px 0', borderColor: `transparent ${C} transparent transparent` };
-  })();
-
   return (
     <>
       {trigger}
-      {open && createPortal(
-        <div
-          ref={tipRef}
-          role="tooltip"
-          /* Measured once it is on screen: taller than the cap means it has to
-             scroll, which in turn means it has to accept the pointer. */
+      {open && (
+        <TooltipPill
+          label={label}
+          position={position}
+          coords={coords}
+          scrollable={scrollable}
+          maxWidth={maxWidth}
+          zIndex={zIndex}
+          themed={themed}
+          innerRef={tipRef}
           onMouseEnter={keepOpen}
           onMouseLeave={() => setOpen(false)}
-          // Haptic-style entrance: combine soft scale-in (0.86 → 1) with
-          // a directional slide so the tooltip *pops* toward its target
-          // edge — feels like a gentle tap response rather than a flat
-          // fade. Spring easing (cubic-bezier 0.34, 1.56, 0.64, 1)
-          // adds the slight overshoot that reads as a physical bounce.
-          // The transform-origin is set per-side so the scale grows out
-          // of the edge nearest the trigger element.
-          data-tooltip-pos={position}
-          style={{
-            position: 'fixed',
-            top: coords?.top ?? -9999,
-            left: coords?.left ?? -9999,
-            background: palette.background,
-            color: palette.color,
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: '0.015em',
-            lineHeight: 1.35,
-            padding: '7px 14px',
-            borderRadius: 9,
-            border: palette.border,
-            boxShadow: palette.boxShadow,
-            // Inner highlight — a subtle white sheen at the top so the
-            // pill reads as a glossy surface, not a flat rectangle.
-            backgroundClip: 'padding-box',
-            /* Wrap long content by default — without this, a 200-char
-             * tooltip label (e.g. a customer's pasted-junk Contact
-             * Person field) blows past the right edge of the screen
-             * and the viewport clamp can't help because the tooltip
-             * itself is wider than the viewport. A generous default
-             * cap (360px) keeps short labels on one line while long
-             * ones wrap cleanly. wordBreak + overflowWrap handle the
-             * pathological "Gggggggggg…" no-space case. The caller
-             * can still pass an explicit `maxWidth` to override. */
-            whiteSpace: 'normal',
-            wordBreak: 'break-word',
-            overflowWrap: 'anywhere',
-            maxWidth: maxWidth ?? `min(360px, calc(100vw - 16px))`,
-            /* And a height cap, for the same reason as the width one. Without
-               it a 2,000-character product description rendered as a column
-               taller than the screen, covering the table it came from. Past
-               the cap it scrolls. */
-            maxHeight: 'min(40vh, 320px)',
-            overflowY: scrollable ? 'auto' : 'hidden',
-            zIndex,
-            /* Only a scrolling tip takes the pointer; every other tooltip stays
-               click-through, so it can never swallow a click on what is under
-               it. */
-            pointerEvents: scrollable ? 'auto' : 'none',
-            animation: 'cbcTooltipSpring 0.12s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            transformOrigin:
-              position === 'top'    ? 'center bottom' :
-              position === 'bottom' ? 'center top' :
-              position === 'left'   ? 'right center' :
-                                      'left center',
-          }}
-        >
-          {/* Glossy inner highlight — tiny gradient strip on the top
-              edge gives the pill a subtle "lit from above" look. */}
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute', top: 0, left: 0, right: 0, height: '50%',
-              borderRadius: '9px 9px 0 0',
-              background: palette.sheen,
-              pointerEvents: 'none',
-            }}
-          />
-          <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute',
-              width: 0,
-              height: 0,
-              borderStyle: 'solid',
-              filter: 'drop-shadow(0 1px 1px rgba(15,23,42,0.20))',
-              ...arrowStyle,
-            }}
-          />
-          {/* Inline keyframes — keeps the component fully self-contained
-              so a fresh project drop-in doesn't need extra CSS. The
-              from-state offsets are per-side so the pop direction
-              feels physically anchored to the trigger. */}
-          <style>{`
-            @keyframes cbcTooltipSpring {
-              0%   { opacity: 0; transform: scale(0.86) translateY(var(--cbc-tt-from-y, 0)) translateX(var(--cbc-tt-from-x, 0)); }
-              60%  { opacity: 1; transform: scale(1.04) translateY(0) translateX(0); }
-              100% { opacity: 1; transform: scale(1) translateY(0) translateX(0); }
-            }
-            [role="tooltip"][data-tooltip-pos="top"]    { --cbc-tt-from-y: 6px; }
-            [role="tooltip"][data-tooltip-pos="bottom"] { --cbc-tt-from-y: -6px; }
-            [role="tooltip"][data-tooltip-pos="left"]   { --cbc-tt-from-x: 6px; }
-            [role="tooltip"][data-tooltip-pos="right"]  { --cbc-tt-from-x: -6px; }
-          `}</style>
-        </div>,
-        document.body,
+        />
       )}
     </>
   );

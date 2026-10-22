@@ -1174,10 +1174,12 @@
 .invf-packed .invf-packed-table td { text-align: center; vertical-align: middle; }
 .invf-packed .invf-packed-table th.invf-c-prod,
 .invf-packed .invf-packed-table td.invf-c-prod { text-align: left; }
-/* Top-aligned only where there is a stack to align to: a mixed carton's
-   single-value cells should start level with its FIRST product, not float in
-   the middle of three. */
-.invf-packed .invf-packed-table tr.has-stack td { vertical-align: top; padding-top: 12px; }
+/* A mixed carton's single-value cells stay CENTRED against its stack, the way
+   the design has them. Pinning them to the first product read as the figures
+   belonging to that product rather than to the box, and left the rest of the
+   row empty under them — a three-product carton showed its weight and its
+   pills in the top third and nothing below. 33 is the whole box. */
+.invf-packed .invf-packed-table tr.has-stack td { vertical-align: middle; }
 .invf-pb-row:hover { background: rgba(6,182,212,.04); }
 .invf-pb-row.is-open { background: rgba(6,182,212,.07); box-shadow: inset 3px 0 0 #0891b2; }
 /* In dark mode a 7% teal wash lifts the row's background without touching its
@@ -1197,7 +1199,8 @@
 }
 .invf-pb-scn { margin-top: 4px; font-size: 11px; font-weight: 700; color: #0c4a6e; white-space: nowrap; }
 /* Each product in the carton: name, then its identifiers a size down. */
-.invf-pb-prod + .invf-pb-prod { margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(6,182,212,.22); }
+.invf-pb-prod + .invf-pb-prod { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dbeef4; }
+[data-bs-theme="dark"] .invf-pb-prod + .invf-pb-prod { border-top-color: rgba(34,211,238,.22); }
 /* Name and the product's share of a mixed carton on one line. */
 .invf-pb-nameline { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .invf-pb-share { font-size: 11px; font-weight: 800; color: #0891b2; white-space: nowrap; }
@@ -1288,9 +1291,140 @@
 }
 .invf-pb-sticker:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.42); }
 .invf-pb-sticker:active { transform: translateY(0); }
-/* Units packed — a third count beside Boxes and Products. */
-.vti-stat-pill.units { background: rgba(255,251,235,.95); border: 1.5px solid rgba(245,158,11,.30); color: #b45309; }
-.vti-stat-pill.units .vti-stat-dot { background: #f59e0b; }
+/* ── Packed Boxes & Products Details — matched to the design ──────────────
+ * The table was wearing the generic .vti-table chrome: a grey header band on
+ * a card whose own head is cyan, and type a size and a letter-spacing off
+ * everywhere. The design gives this table its own shell, so it gets one here.
+ * ─────────────────────────────────────────────────────────────────────────*/
+.invf-packed .invf-packed-table { font-size: 11px; }
+.invf-packed .invf-packed-table thead tr {
+  background: linear-gradient(180deg, #e9f9fc, #f2fcfd);
+  border-bottom: 1px solid #e3f1f5;
+}
+.invf-packed .invf-packed-table th {
+  padding: 9px 8px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .05em; color: #6b8a97;
+}
+.invf-packed .invf-packed-table td { padding: 7px 8px; border-bottom: 1px solid #eff5f8; }
+.invf-packed .invf-packed-table th:first-child,
+.invf-packed .invf-packed-table td:first-child { padding-left: 14px; }
+.invf-packed .invf-packed-table th:last-child,
+.invf-packed .invf-packed-table td:last-child { padding-right: 14px; }
+/* The card's own bottom edge closes the table; a line under the last row
+   drew a second one a pixel above it. */
+.invf-packed .invf-packed-table tbody tr:last-child td { border-bottom: none; }
+.invf-packed .invf-pb-row:hover { background: #f6fdfe; }
+[data-bs-theme="dark"] .invf-packed .invf-packed-table thead tr {
+  background: linear-gradient(180deg, rgba(34,211,238,.10), rgba(34,211,238,.04));
+  border-bottom-color: rgba(34,211,238,.2);
+}
+[data-bs-theme="dark"] .invf-packed .invf-packed-table th { color: #a5e9f5; }
+[data-bs-theme="dark"] .invf-packed .invf-packed-table td { border-bottom-color: rgba(148,163,184,.13); }
+[data-bs-theme="dark"] .invf-packed .invf-pb-row:hover { background: rgba(34,211,238,.06); }
+
+/* Sr No is a plain figure in the design, not a code — the monospace made it
+   read as an id, which is the column beside it. */
+.invf-packed .invf-sr { font-family: inherit; font-size: 12px; font-weight: 800; color: #7c93a3; }
+
+/* The two chips in this table are NOT the same chip: the box id is the row's
+   own identifier and the product code is a reference inside it, so the design
+   gives the id a flat fill and a deeper radius, and the code a soft gradient. */
+.invf-packed .invf-c-box .vti-code {
+  font-size: 10px; font-weight: 800; color: #0e7490;
+  background: #f0fdff; border: 1.5px solid #c4eef5; border-radius: 7px; padding: 3px 7px;
+}
+.invf-packed .invf-pb-meta .vti-code {
+  font-size: 10px; font-weight: 800; color: #0c4a6e;
+  background: linear-gradient(135deg, #eafcff, #d9f4fb);
+  border: 1px solid #bfe9f3; border-radius: 5px; padding: 2px 7px;
+}
+[data-bs-theme="dark"] .invf-packed .invf-c-box .vti-code,
+[data-bs-theme="dark"] .invf-packed .invf-pb-meta .vti-code {
+  color: #7dd3e8; background: rgba(34,211,238,.10); border-color: rgba(34,211,238,.26);
+}
+/* The id is still the way back into the box, so its hover has to outrank the
+   fill above rather than sit under it. */
+.invf-packed .invf-c-box .vti-code.invf-boxid-btn:hover {
+  color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2);
+  border-color: transparent; box-shadow: 0 3px 10px rgba(8,145,178,.3);
+}
+[data-bs-theme="dark"] .invf-packed .invf-c-box .vti-code.invf-boxid-btn:hover { color: #042f3b; }
+.invf-packed .invf-pb-sub { margin-top: 4px; font-size: 10px; font-weight: 700; color: #475569; }
+[data-bs-theme="dark"] .invf-packed .invf-pb-sub { color: #8fa6b4; }
+
+/* Scenario: the badge a touch larger and in the design's own cyan, the line
+   under it in slate rather than the badge's colour — they are a label and a
+   sentence, not one phrase. */
+.invf-packed .invf-scn-no {
+  font-size: 9px; letter-spacing: .06em; padding: 3px 8px;
+  color: #0e7490; background: #e0fbff; border: 1px solid #bdf0f7;
+}
+.invf-packed .invf-pb-scn { color: #1e293b; }
+[data-bs-theme="dark"] .invf-packed .invf-pb-scn { color: #cbd5e1; }
+
+/* Product cell. */
+.invf-packed .vti-prod-name { font-size: 12px; font-weight: 800; color: #0c4a6e; letter-spacing: 0; }
+[data-bs-theme="dark"] .invf-packed .vti-prod-name { color: #a5e9f5; }
+.invf-packed .invf-pb-nameline { gap: 4px; }
+.invf-packed .invf-pb-share { font-size: 10.5px; }
+.invf-packed .invf-pb-meta { gap: 8px; font-size: 10px; font-weight: 600; color: #7f97a5; }
+.invf-packed .invf-pb-hsn,
+.invf-packed .invf-pb-gst { font-size: 10px; font-weight: 600; color: #7f97a5; }
+.invf-packed .invf-pb-hsn b,
+.invf-packed .invf-pb-gst b { font-weight: 800; color: #42627a; letter-spacing: .01em; }
+[data-bs-theme="dark"] .invf-packed .invf-pb-hsn,
+[data-bs-theme="dark"] .invf-packed .invf-pb-gst { color: #7f97a5; }
+[data-bs-theme="dark"] .invf-packed .invf-pb-hsn b,
+[data-bs-theme="dark"] .invf-packed .invf-pb-gst b { color: #b6c9d6; }
+.invf-packed .invf-pb-dot {
+  width: 3px; height: 3px; border-radius: 50%; background: #c3d4dd; flex-shrink: 0; font-size: 0;
+}
+[data-bs-theme="dark"] .invf-packed .invf-pb-dot { background: rgba(148,163,184,.45); }
+
+/* Box Qty is a fixed square in the design, so 75 and 101 line up down the
+   column; it was a pill that grew with its number. */
+.invf-packed .invf-pb-qty {
+  width: 34px; height: 34px; min-width: 0; padding: 0; border-radius: 10px;
+  font-size: 13px; font-weight: 800;
+  background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 40%, #0891b2 75%, #0e7490 100%);
+  box-shadow: 0 4px 10px -2px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+/* Measurements: the figure heavier and darker, the unit a notch quieter. */
+.invf-packed .invf-pb-num { font-size: 11px; font-weight: 800; color: #1e293b; }
+.invf-packed .invf-pb-num em { font-size: 10px; font-weight: 700; color: #64748b; }
+.invf-packed .invf-pb-none { color: #9fb2c0; font-weight: 700; }
+
+/* Remark and condition pills. */
+.invf-packed .invf-pb-pill {
+  padding: 3px 10px; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; border-radius: 999px;
+}
+.invf-packed .invf-pb-pill.is-ok   { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.invf-packed .invf-pb-pill.is-warn { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+.invf-packed .invf-pb-pill.is-bad  { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+/* The design's borders are solid tints, which glow against a dark table —
+   dark keeps the translucent edge the pills already had. */
+[data-bs-theme="dark"] .invf-packed .invf-pb-pill.is-ok   { border-color: rgba(34,197,94,.30); }
+[data-bs-theme="dark"] .invf-packed .invf-pb-pill.is-warn { border-color: rgba(245,158,11,.32); }
+[data-bs-theme="dark"] .invf-packed .invf-pb-pill.is-bad  { border-color: rgba(239,68,68,.30); }
+
+/* Actions. Both buttons are 32 high in the design and share one gradient, so
+   the pencil and the Sticker button read as one control group. */
+.invf-packed .vti-packed-acts { gap: 6px; justify-content: center; }
+.invf-packed .vti-btn-single--edit {
+  width: 32px; height: 32px; border-radius: 9px;
+  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 60%, #0e7490 100%);
+  box-shadow: 0 4px 12px -3px rgba(8,145,178,.65), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.invf-packed .invf-pb-sticker {
+  height: 32px; padding: 0 10px; gap: 4px; border-radius: 9px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .1px;
+  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  box-shadow: 0 4px 12px -3px rgba(8,145,178,.6), inset 0 1px 0 rgba(255,255,255,.3);
+}
+/* The id inside the button is the same id as the chip on the row, so it is
+   set the same way. */
+.invf-pb-stkid { font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace; font-weight: 800; letter-spacing: .02em; }
 
 /* The scenario badge had no dark rule, so it kept #f0fdff — a solid white
    pill in a dark table, and the brightest thing in the row. */
@@ -1355,14 +1489,10 @@
 .invf-packed .invf-packed-table th:first-child,
 .invf-packed .invf-packed-table th:nth-child(2) { text-align: center; }
 
-/* The per-product block, bracketed left and right by a dashed rule and laid
-   on a faint tint — the PO list marks its mapped SPI/GRN/QA group the same
-   way. It is what says which columns repeat down a carton and which belong to
-   the carton as a whole, without a second header row to explain it. */
-.invf-packed-table th.invf-c-prod,
-.invf-packed-table td.invf-c-prod { border-left: 1.5px dashed #cdeef3; }
-.invf-packed-table th.invf-c-end,
-.invf-packed-table td.invf-c-end { border-right: 1.5px dashed #cdeef3; }
+/* The dashed rails that used to bracket the per-product block are gone with
+   the block: the table stopped repeating a carton's columns down several rows
+   long ago, so a rail saying "these columns repeat" marked nothing. The design
+   carries exactly one dashed line in this table, between stacked products. */
 /* Two shades inside the bracket, the way the PO list gives its SPI, GRN and
    QA columns one each: what the product IS on a cool tint, and how much of it
    is in the box on a warm one. The split is where the eye jumps anyway —
@@ -1375,10 +1505,6 @@
 .invf-packed-table tbody.invf-grp td.invf-c-id { background: #fafdff; }
 .invf-packed-table tbody.invf-grp td.invf-c-qty { background: #fafefb; }
 
-[data-bs-theme="dark"] .invf-packed-table th.invf-c-prod,
-[data-bs-theme="dark"] .invf-packed-table td.invf-c-prod { border-left-color: rgba(34, 211, 238, .26); }
-[data-bs-theme="dark"] .invf-packed-table th.invf-c-end,
-[data-bs-theme="dark"] .invf-packed-table td.invf-c-end { border-right-color: rgba(34, 211, 238, .26); }
 [data-bs-theme="dark"] .invf-packed-table tbody.invf-grp td.invf-c-id { background: rgba(34, 211, 238, .045); }
 [data-bs-theme="dark"] .invf-packed-table tbody.invf-grp td.invf-c-qty { background: rgba(16, 185, 129, .045); }
 
@@ -2676,6 +2802,15 @@
    The footer needs nothing: its cells already set their own background, which
    is why the totals row stuck cleanly from the start. */
 .cpd-scroll--rows .cpd-tbl thead th:not(.cpd-stick):not(.cpd-edh) { background: #0b7c9b; }
+
+/* The editable columns were the exception that was still leaking. They mark
+   themselves with `rgba(255,255,255,.16)` — a lightening of whatever is
+   behind them, which on this table is nothing at all, so the rows scrolled
+   straight through the three lightest columns while the rest of the header
+   held. Same colour, mixed down to an opaque one: .16 white over #0b7c9b is
+   exactly #3291ab, so the header looks the same and stops being see-through.
+   The underline that marks them as editable stays. */
+.cpd-scroll--rows .cpd-tbl thead th.cpd-edh { background: #3291ab; }
 
 [data-bs-theme="dark"] .cpd-scroll--rows { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
 [data-bs-theme="dark"] .cpd-scroll--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
@@ -4130,6 +4265,14 @@
    prototype. The step is one flex column on the same 8px the wizard body
    uses between its blocks, and the per-block margins are dropped so there is
    a single source for the spacing. */
+/* The design is set in DM Sans from end to end, and every control in here
+   says `font-family: inherit` — so with nothing declaring it, the whole stage
+   was inheriting the app's theme face instead. That is why a button could
+   match the design on height, padding, radius, weight, size and colour and
+   still not look like it: the letters were drawn by a different typeface.
+   `.s4lg` is listed because the Scan Logs pop-over portals to <body>. */
+.s4-root,
+.s4lg { font-family: 'DM Sans', system-ui, sans-serif; }
 .s4-root { display: flex; flex-direction: column; gap: 8px; flex: 1 0 auto; }
 /* Only the panels may flex. The summary strip and the two tab rows are fixed
    bands, and leaving them shrinkable meant that once the panels hit their floor
@@ -6655,6 +6798,24 @@
 /* Selected is a ring, not a fill: the card's own head is already teal, so a
    tinted body would leave nothing to distinguish it. */
 .s4-root .s4pkc.is-active { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.18), 0 8px 20px -10px rgba(8,145,178,.5); }
+/* A finished card goes green all the way out to its edge. Only the head, the
+   figures panel and the text were turning; the card kept its teal border, its
+   white body and its teal shadow, so the green read as something sitting on a
+   teal card rather than as the card's own state. */
+.s4-root .s4pkc.is-placed {
+  border-color: #6ee7b7;
+  background: linear-gradient(180deg, #f0fdf6 0%, #ecfdf5 100%);
+  box-shadow: 0 1px 2px rgba(15,23,42,.05), 0 14px 28px -20px rgba(5,150,105,.6);
+}
+.s4-root .s4pkc.is-placed:hover { border-color: #34d399; box-shadow: 0 2px 4px rgba(15,23,42,.05), 0 18px 32px -18px rgba(5,150,105,.7); }
+/* Selected keeps its ring, in the card's colour rather than the teal one. */
+.s4-root .s4pkc.is-placed.is-active {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16,185,129,.25), 0 18px 32px -18px rgba(5,150,105,.75);
+}
+[data-bs-theme="dark"] .s4-root .s4pkc.is-placed { background: #0f3129; border-color: rgba(16,185,129,.3); box-shadow: none; }
+[data-bs-theme="dark"] .s4-root .s4pkc.is-placed:hover { border-color: rgba(16,185,129,.5); box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+[data-bs-theme="dark"] .s4-root .s4pkc.is-placed.is-active { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.22); }
 .s4-root .s4pkc.is-placed .s4pkc__hd { background: linear-gradient(110deg, #065f46 0%, #047857 35%, #059669 70%, #34d399 100%); }
 /* Four stops, not three: the head brightens to #22d3ee at its right end. Dev
    stopped at #0891b2, so the gradient flattened out halfway and the card read
@@ -6673,31 +6834,40 @@
 }
 .s4-root .s4pkc__hd > * { position: relative; z-index: 1; }
 .s4-root .s4pkc__ico {
-  width: 24px; height: 24px; flex-shrink: 0; border-radius: 8px;
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   color: #fff; background: rgba(255,255,255,.18); box-shadow: inset 0 0 0 1px rgba(255,255,255,.3);
 }
 .s4-root .s4pkc__id {
   font-family: 'Geist Mono', ui-monospace, Menlo, Consolas, monospace;
-  font-size: 12.5px; font-weight: 800; letter-spacing: .04em; color: #fff; white-space: nowrap;
+  font-size: 13px; font-weight: 800; letter-spacing: .06em; color: #fff; white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
 }
+/* Glass on the head, not a white block on it. A near-solid white button was
+   the loudest thing on the card — louder than the box id it belongs to, and
+   louder than the status that is the point of the row. */
 .s4-root .s4pkc__stk {
-  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
-  padding: 4px 9px; border-radius: 7px; cursor: pointer;
-  border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.92);
-  font-family: inherit; font-size: 9.5px; font-weight: 800; color: #0e7490;
-  transition: background .14s;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex-shrink: 0;
+  height: 28px; padding: 0 10px; border-radius: 9px; cursor: pointer;
+  border: 1px solid rgba(255,255,255,.45); background: rgba(255,255,255,.16);
+  backdrop-filter: blur(4px);
+  font-family: inherit; font-size: 10px; font-weight: 800; color: #fff;
 }
-.s4-root .s4pkc__stk:hover { background: #fff; }
+/* The design holds it still on hover — it is one of three controls on a head
+   that is itself a button, and a lift on the inner one fights the card's. */
+.s4-root .s4pkc__stk:hover { background: rgba(255,255,255,.26); }
 .s4-root .s4pkc__st {
   margin-left: auto; flex-shrink: 0;
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 9px; border-radius: 999px;
-  font-size: 9px; font-weight: 800; color: #b45309; background: #fffbeb; border: 1px solid #fde68a;
+  font-size: 9px; font-weight: 800; color: #b45309; background: #fff; border: 1px solid #fff;
+  box-shadow: 0 2px 6px -2px rgba(0,0,0,.2);
   white-space: nowrap;
 }
 .s4-root .s4pkc__st i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
-.s4-root .s4pkc__st.is-done { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+/* White on the coloured head, whichever state it is in — a pale-green pill on
+   a dark-green band all but disappeared. */
+.s4-root .s4pkc__st.is-done { color: #047857; background: #fff; border-color: #fff; }
 /* 12px sides, matching the design's per-part margins (scn 10/12/0, grid
    8/12/0, foot 10/12/12) folded into one padding. */
 .s4-root .s4pkc__bd { padding: 10px 12px 12px; }
@@ -8153,6 +8323,9 @@
   box-shadow: 0 12px 24px -18px rgba(5,150,105,.9);
 }
 .s4-root .s4c3-qr { flex-shrink: 0; padding: 6px; border-radius: 12px; background: #fff; line-height: 0; box-shadow: 0 6px 14px -8px rgba(0,0,0,.35); }
+/* An unframed code. The white tile above is the frame; block so the canvas
+   does not sit on a text baseline and leave a gap under itself. */
+.s4-root .s4-qrc { display: block; border: 0; padding: 0; background: transparent; }
 .s4-root .s4c3-qr--loc { display: flex; flex-direction: column; align-items: center; gap: 3px; line-height: 1; }
 .s4-root .s4c3-qr--loc span { font-size: 11px; font-weight: 800; color: #047857; letter-spacing: .02em; }
 .s4-root .s4c3-hero__tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -8166,8 +8339,15 @@
   display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; color: #fff;
   background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); border-radius: 999px; padding: 3px 9px;
 }
+/* 40px, not the 26px this rule used to carry and the design's stylesheet
+   still declares. The prototype runs a button normaliser over the whole page
+   that forces every visible button with a natural height between 22 and 52px
+   to exactly 40 — so `height: 26px !important` here never reaches the screen
+   and the button renders at 40. Measured off the design: 40px against our 26.
+   See the note below about the rest of this stage's buttons. */
 .s4-root .s4c3-stk {
-  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px;
+  display: inline-flex; align-items: center; gap: 5px; height: 40px; padding: 0 10px;
+  box-sizing: border-box;
   border-radius: 8px; border: none; background: #fff; color: #0e7490;
   font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
 }

@@ -5,7 +5,7 @@ import { useToast } from '../../../../../contexts/ToastContext';
 import { IcoPencil, IcoPlus } from '../../../icons';
 const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
-import { formatProductCode, lineTotals, openQtyOf, tableTotals, type ProductLine, type TaxMode } from '../invoice-products';
+import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, type ProductLine, type TaxMode } from '../invoice-products';
 import { spiApi } from '../spi-api';
 
 const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -307,9 +307,15 @@ const Row = memo(function Row({
 });
 
 function ProdCell({ name, code, hsn, gst }: { name: string; code: string; hsn: string; gst: number }) {
+  /* Cut long names rather than let them set the column's width. The cell
+     wraps on spaces, which is no help at all for the names that cause the
+     trouble — the ones written as a single unbroken run. */
+  const short = truncate(name, MATCH_NAME_MAX);
   return (
     <div className="cpd-prod">
-      <div className="cpd-prod__nm">{name}</div>
+      <Tooltip label={name} disabled={short === name}>
+        <div className="cpd-prod__nm">{short}</div>
+      </Tooltip>
       <div className="cpd-prod__meta">
         <span className="cpd-code">{code}</span>
         <span className="cpd-kv">HSN <b>{hsn}</b></span>

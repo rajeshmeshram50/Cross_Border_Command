@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
+import Tooltip from '../../../../components/ui/Tooltip';
 import '../../p2p-detail.css';
 import '../order/create-po/create-po.css';
 import './invoice-form.css';
 import { HeadPill } from '../order/create-po/CreatePoForm';
+import { WizSpinner } from '../order/create-po/form-fields';
 import {
   IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoLock, IcoUser, IcoWarehouse, IcoX,
 } from '../../icons';
@@ -427,12 +429,19 @@ export default function InvoiceForm({
 
           <div className="spi-dt-steps cpf-steps4">
             {STAGES.map((s, i) => (
-              <div
+              /* The shared pill, not the browser's own tooltip. `title` drew
+                 the OS one — a plain white box in a different font, after the
+                 browser's own delay — so this was the one control on the page
+                 whose hover did not look like the rest of the app. */
+              <Tooltip
                 key={s.title}
+                label={i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
+                position="bottom"
+              >
+              <div
                 className={`spi-dt-step spi-dt-step--nav ${i === stage ? 'is-active' : ''} ${i < stage ? 'is-done' : ''}`}
                 role="button"
                 tabIndex={0}
-                title={i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
                 onClick={() => goTo(i)}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo(i); } }}
               >
@@ -446,6 +455,7 @@ export default function InvoiceForm({
                 <div className="spi-dt-step-desc">{s.desc}</div>
                 <span className="spi-dt-step-ghost">{pad2(i + 1)}</span>
               </div>
+              </Tooltip>
             ))}
           </div>
         </div>
@@ -521,7 +531,9 @@ export default function InvoiceForm({
             </div>
           </div>
           <div className="spi-dt-foot-r">
-            <button type="button" className="spi-dt-btn-ghost" onClick={goBack}>
+            {/* Leaving the step mid-save would walk away from a request that
+                is still going to land, so Back waits with everything else. */}
+            <button type="button" className="spi-dt-btn-ghost" onClick={goBack} disabled={saving}>
               <IcoChevronL /> {stage === 0 ? 'Change Selection' : 'Back'}
             </button>
             <button
@@ -529,12 +541,16 @@ export default function InvoiceForm({
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
               disabled={nextBlocked}
+              aria-busy={saving}
             >
-              {isLast && <IcoCheck />}
+              {/* "Saving…" on its own is a word change on a button that has
+                  just gone grey — easy to miss, and on a quick save easy to
+                  doubt it happened. The button turns instead. */}
+              {saving ? <WizSpinner /> : isLast ? <IcoCheck /> : null}
               {viewOnly ? (isLast ? 'Close' : 'Next')
                 : isLast ? (editing ? 'Update Invoice' : 'Map Invoice')
                 : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
-              {!isLast && <IcoChevronR />}
+              {!isLast && !saving && <IcoChevronR />}
             </button>
           </div>
         </div>
