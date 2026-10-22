@@ -58,7 +58,10 @@ export function MasterMultiSelect({
   emptyText,
   renderBadges,
   onOpen,
+  menuClassName,
 }: {
+  /* Extra class on the portalled menu, so a caller can style just its own list. */
+  menuClassName?: string;
   name?: string;
   value: string[];
   options: { value: string; label: string }[];
@@ -275,7 +278,7 @@ export function MasterMultiSelect({
           <i className="ri-arrow-down-s-line master-select-chev" />
         </DropdownToggle>
         <DropdownMenu
-          className="master-select-menu"
+          className={`master-select-menu${menuClassName ? ` ${menuClassName}` : ''}`}
           container="body"
           strategy="fixed"
           /* Pin the portalled menu to the viewport so it can never drift

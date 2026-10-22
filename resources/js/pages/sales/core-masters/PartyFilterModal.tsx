@@ -187,9 +187,11 @@ type Props = {
   typeLabel: string;
   /** Accent ramp — must match the host page, or the modal reads as foreign. */
   theme: 'purple' | 'emerald';
+  /** Extra class on the backdrop, so one host page can restyle its own copy. */
+  className?: string;
 };
 
-export default function PartyFilterModal({ open, onClose, onApply, initial, rows, facets, title, typeLabel, theme }: Props) {
+export default function PartyFilterModal({ open, onClose, onApply, initial, rows, facets, title, typeLabel, theme, className }: Props) {
   const toast = useToast();
   const labelFor = (k: FacetKey): string => (k === 'type' ? typeLabel : LABELS[k]);
 
@@ -342,7 +344,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
      * drive dismissal. Same call as the Lead filter.
      * lfm-purple / lfm-emerald re-theme the shared sheet's accent ramp to the
      * host page; the Lead filter keeps the default cyan. */
-    <div className={`lfm-backdrop lfm-${theme}`}>
+    <div className={`lfm-backdrop lfm-${theme}${className ? ` ${className}` : ''}`}>
       <style>{LFM_CSS}</style>
       <div className="lfm-modal">
         <div className="lfm-head">

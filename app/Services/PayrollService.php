@@ -201,7 +201,24 @@ class PayrollService
      * Returns the number of payslips updated. Call this after saving a salary
      * structure / approving leave so HR doesn't have to manually re-run.
      */
-    public function recomputeEmployeePayslips(int $employeeId): int
+    /**
+     * Re-price an employee's unapproved payslips.
+     *
+     * $effectiveFrom narrows it to the periods a change can actually reach.
+     * A salary revision effective 02 Sep cannot alter August's payslip:
+     * activeStructure() resolves the version in force at the PERIOD end, so
+     * for an earlier period it picks the same old structure, recomputes, and
+     * writes back the identical numbers. Full cost, no effect.
+     *
+     * That mattered more than it sounds. This runs inside the save request, so
+     * every revision made the user wait while periods that could not change
+     * were recalculated to prove it — on a server where each payslip costs
+     * dozens of round trips, that is most of the wait.
+     *
+     * Null recomputes everything, which is what an attendance or leave edit
+     * needs: those change a specific period, and the caller passes its start.
+     */
+    public function recomputeEmployeePayslips(int $employeeId, $effectiveFrom = null): int
     {
         // Called straight after a salary structure / attendance edit — reread the
         // master data rather than serving a memo built before that edit.
@@ -214,6 +231,13 @@ class PayrollService
 
         $payslips = Payslip::where('employee_id', $employeeId)
             ->whereHas('run', fn($q) => $q->whereIn('status', ['draft', 'generated']))
+            /* period_end, not period_start: a revision dated mid-month still
+               changes that month's payslip, because the period it falls inside
+               has not finished yet. Filtering on the start would drop it. */
+            ->when($effectiveFrom, fn($q) => $q->whereHas(
+                'run.period',
+                fn($pq) => $pq->whereDate('period_end', '>=', $effectiveFrom)
+            ))
             ->with(['run.period'])
             ->get();
 
