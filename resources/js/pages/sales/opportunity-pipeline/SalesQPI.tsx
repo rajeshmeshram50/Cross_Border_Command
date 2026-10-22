@@ -561,6 +561,11 @@ export default function SalesQPI() {
       .finally(() => setLoadingPi(false));
   };
   useEffect(() => { reloadPis(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  /* Load the Create Quotation / PI masters in the background while the user
+   * reads the list, same as Stage 5 does. Without it the bundle only started
+   * on the click, so the form shimmered for the whole load (QA #8). Same API,
+   * same 5-minute cache; the modal reuses the in-flight request if clicked early. */
+  useEffect(() => { prewarmQpiMasters(); }, []);
 
   const piWithShipment = useMemo(
     () => pis.filter(r => r.hasShipment === true),
