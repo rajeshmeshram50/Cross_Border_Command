@@ -37,8 +37,8 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
     text:          isDark ? '#e2e8f0' : '#334155',
     textMuted:     isDark ? '#94a3b8' : '#6b7280',
     border:        isDark ? 'rgba(148,163,184,.20)' : '#e5e7eb',
-    choiceBg:      isDark ? 'rgba(13,148,136,.14)' : '#f0fdfa',
-    choiceBorder:  isDark ? 'rgba(13,148,136,.35)' : '#ccfbf1',
+    choiceBg:      isDark ? 'rgba(5,150,105,.14)' : '#ecfdf5',
+    choiceBorder:  isDark ? 'rgba(52,211,153,.30)' : '#a7f3d0',
     btnBg:         isDark ? '#1b2233' : '#ffffff',
     label:         isDark ? '#cbd5e1' : '#334155',
   };
@@ -333,29 +333,29 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
 
       {chooseOpen && createPortal(
         <div onMouseDown={() => setChooseOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: pk.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
-            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#0e9f86,#14b8a6)', color: '#fff' }}>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>Add or Map Consignee</div>
-              <div style={{ fontSize: 12.5, opacity: .9, marginTop: 2 }}>Create a brand-new consignee, or map an existing one to <strong>{customer.id}</strong>.</div>
+          <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: pk.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.4)', fontFamily: 'var(--font-sans)' }}>
+            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #059669 100%)', color: '#fff' }}>
+              <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-.2px' }}>Add or Map Consignee</div>
+              <div style={{ fontSize: 12, fontWeight: 500, opacity: .85, marginTop: 3 }}>Create a brand-new consignee, or map an existing one to <strong style={{ fontWeight: 700 }}>{customer.id}</strong>.</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 18 }}>
-              <button type="button" onClick={() => { setChooseOpen(false); setEditing(null); setAddOpen(true); }} style={{ textAlign: 'left', border: `1.5px solid ${pk.choiceBorder}`, borderRadius: 12, padding: 14, background: pk.choiceBg, cursor: 'pointer' }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#0d9488,#0f766e)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(13,148,136,.35)' }}>
+              <button type="button" onClick={() => { setChooseOpen(false); setEditing(null); setAddOpen(true); }} style={{ textAlign: 'left', border: `1.5px solid ${pk.choiceBorder}`, borderRadius: 12, padding: 14, background: pk.choiceBg, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(5,150,105,.35)' }}>
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 </div>
-                <div style={{ fontWeight: 800, color: isDark ? '#5eead4' : '#0f766e', marginTop: 8 }}>Add New</div>
-                <div style={{ fontSize: 11.5, color: pk.textMuted, marginTop: 2 }}>Create a new consignee under this customer.</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: isDark ? '#6ee7b7' : '#047857', marginTop: 8 }}>Add New</div>
+                <div style={{ fontSize: 11.5, fontWeight: 500, color: pk.textMuted, marginTop: 2 }}>Create a new consignee under this customer.</div>
               </button>
-              <button type="button" onClick={openMapFlow} style={{ textAlign: 'left', border: `1.5px solid ${pk.choiceBorder}`, borderRadius: 12, padding: 14, background: pk.choiceBg, cursor: 'pointer' }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#0d9488,#0f766e)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(13,148,136,.35)' }}>
+              <button type="button" onClick={openMapFlow} style={{ textAlign: 'left', border: `1.5px solid ${pk.choiceBorder}`, borderRadius: 12, padding: 14, background: pk.choiceBg, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(5,150,105,.35)' }}>
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                 </div>
-                <div style={{ fontWeight: 800, color: isDark ? '#5eead4' : '#0f766e', marginTop: 8 }}>Map Existing</div>
-                <div style={{ fontSize: 11.5, color: pk.textMuted, marginTop: 2 }}>Link an existing consignee to this customer.</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: isDark ? '#6ee7b7' : '#047857', marginTop: 8 }}>Map Existing</div>
+                <div style={{ fontSize: 11.5, fontWeight: 500, color: pk.textMuted, marginTop: 2 }}>Link an existing consignee to this customer.</div>
               </button>
             </div>
             <div style={{ padding: '0 18px 16px', textAlign: 'right' }}>
-              <button type="button" onClick={() => setChooseOpen(false)} style={{ border: `1px solid ${pk.border}`, background: pk.btnBg, color: pk.text, borderRadius: 9, padding: '8px 16px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={() => setChooseOpen(false)} style={{ border: `1px solid ${pk.border}`, background: pk.btnBg, color: pk.text, borderRadius: 9, padding: '8px 16px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
         </div>,
@@ -364,10 +364,10 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
 
       {mapOpen && createPortal(
         <div onMouseDown={() => !mapping && setMapOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: pk.card, borderRadius: 16, overflow: 'visible', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
-            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#0e9f86,#14b8a6)', color: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>Map Existing Consignee</div>
-              <div style={{ fontSize: 12.5, opacity: .92, marginTop: 2 }}>Link a consignee to <strong>{customer.company}</strong> ({customer.id}). Its segments update with this customer's.</div>
+          <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: pk.card, borderRadius: 16, overflow: 'visible', boxShadow: '0 24px 60px rgba(0,0,0,.4)', fontFamily: 'var(--font-sans)' }}>
+            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #059669 100%)', color: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-.2px' }}>Map Existing Consignee</div>
+              <div style={{ fontSize: 12, fontWeight: 500, opacity: .85, marginTop: 3 }}>Link a consignee to <strong>{customer.company}</strong> ({customer.id}). Its segments update with this customer's.</div>
             </div>
             <div style={{ padding: 18 }}>
               <label style={{ fontSize: 11.5, fontWeight: 700, color: pk.label, textTransform: 'uppercase', letterSpacing: .4, display: 'block', marginBottom: 6 }}>Consignee</label>
@@ -393,8 +393,32 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
               )}
             </div>
             <div style={{ padding: '0 18px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" onClick={() => setMapOpen(false)} disabled={mapping} style={{ border: `1px solid ${pk.border}`, background: pk.btnBg, color: pk.text, borderRadius: 9, padding: '8px 16px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button type="button" onClick={doMap} disabled={!mapSelectId || mapping} style={{ border: 'none', background: mapSelectId && !mapping ? 'linear-gradient(135deg,#0d9488,#065f46)' : (isDark ? 'rgba(13,148,136,.28)' : '#cdeee8'), color: mapSelectId && !mapping ? '#fff' : (isDark ? '#5eead4' : '#0f766e'), borderRadius: 9, padding: '8px 18px', fontWeight: 700, cursor: mapSelectId && !mapping ? 'pointer' : 'not-allowed' }}>{mapping ? 'Mapping…' : 'Map Consignee'}</button>
+              <button type="button" onClick={() => setMapOpen(false)} disabled={mapping} style={{ border: `1px solid ${pk.border}`, background: pk.btnBg, color: pk.text, borderRadius: 9, padding: '8px 16px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button
+                type="button"
+                onClick={doMap}
+                disabled={!mapSelectId || mapping}
+                style={{
+                  border: 'none', borderRadius: 9, padding: '8px 18px',
+                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
+                  ...(mapSelectId
+                    ? {
+                        background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                        color: '#fff',
+                        boxShadow: '0 4px 10px rgba(5,150,105,.30)',
+                        opacity: mapping ? 0.7 : 1,
+                        cursor: mapping ? 'wait' : 'pointer',
+                      }
+                    : {
+                        background: isDark ? 'rgba(255,255,255,.08)' : '#e5e7eb',
+                        color: isDark ? '#64748b' : '#9ca3af',
+                        boxShadow: 'none',
+                        cursor: 'not-allowed',
+                      }),
+                }}
+              >
+                {mapping ? 'Mapping…' : 'Map Consignee'}
+              </button>
             </div>
           </div>
         </div>,
