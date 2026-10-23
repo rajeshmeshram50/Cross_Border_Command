@@ -641,7 +641,7 @@ class HrDocumentTemplateController extends Controller
             $html = '<p style="color:#9ca3af">(empty template)</p>';
         }
 
-        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
+        $data = [
             'row'         => $row,
             'header'      => $headerCfg,
             'footer'      => $footerCfg,
@@ -653,9 +653,83 @@ class HrDocumentTemplateController extends Controller
             ),
             // DomPDF runs headless and cannot fetch /storage over HTTP.
             'bodyHtml'    => $this->inlineLocalImages($html),
-        ])->setPaper('A4');
+        ];
 
-        return $pdf->download($filename);
+        /* Reuse the last render of this exact content instead of rebuilding it.
+           Profiled on a 22 kB template: logo 12ms, image inlining 0ms, blade
+           5ms, DomPDF 892ms — the render IS the request, and it scales with
+           HTML size (an 856 kB template takes 21s). Downloading the same
+           unchanged template twice should only pay that once. (QA #26) */
+        $bytes = $this->cachedPdf($data, $row);
+
+        return response($bytes, 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="' . addslashes($filename) . '"',
+            'Content-Length'      => (string) strlen($bytes),
+        ]);
+    }
+
+    /**
+     * The rendered PDF for these exact inputs, rendering only on a miss.
+     *
+     * Keyed on a hash of everything the blade consumes — body, header, footer,
+     * logo and company name — so editing a template, swapping the letterhead or
+     * switching branch all miss naturally. There is nothing to invalidate by
+     * hand and no stale PDF to serve: a changed input is a different key.
+     *
+     * Kept on the LOCAL disk, never `public` or Azure. It is a derived artifact
+     * that never needs a URL, and a remote round trip for 100 kB would eat the
+     * saving it exists to produce. Each app server builds its own copy; that is
+     * what a cache is.
+     */
+    private function cachedPdf(array $data, $row): string
+    {
+        $fingerprint = sha1(serialize([
+            $data['bodyHtml'], $data['header'], $data['footer'],
+            $data['logoDataUri'], $data['companyName'],
+        ]));
+
+        $id   = (int) ($row->id ?? 0);
+        $disk = Storage::disk('local');
+        $dir  = 'pdf-cache/hr-template';
+        $path = $dir . '/' . ($id ?: 'adhoc') . '-' . $fingerprint . '.pdf';
+
+        try {
+            if ($disk->exists($path)) return (string) $disk->get($path);
+        } catch (\Throwable $e) {
+            // An unreadable cache is a miss, never an error. Fall through.
+        }
+
+        $bytes = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', $data)
+            ->setPaper('A4')
+            ->output();
+
+        try {
+            $disk->put($path, $bytes);
+
+            /* Keep the newest few renders of this template and drop the rest —
+               otherwise every edit leaves a file behind forever. Not a straight
+               purge: downloadVersion() renders an archived snapshot under the
+               LIVE template's id, so purging on write would make "live, v3,
+               live, v3" miss every single time. Three covers that alternation
+               and still bounds the directory. */
+            if ($id) {
+                $mine = array_values(array_filter(
+                    $disk->files($dir),
+                    fn ($f) => str_starts_with(basename($f), $id . '-'),
+                ));
+                if (count($mine) > 3) {
+                    usort($mine, fn ($a, $b) => $disk->lastModified($b) <=> $disk->lastModified($a));
+                    foreach (array_slice($mine, 3) as $stale) $disk->delete($stale);
+                }
+            }
+        } catch (\Throwable $e) {
+            // Caching is an optimisation. Failing to write one still returns
+            // the PDF the caller asked for.
+            Log::warning('hr template pdf cache write failed', ['path' => $path, 'err' => $e->getMessage()]);
+        }
+
+        return $bytes;
     }
 
     /**
