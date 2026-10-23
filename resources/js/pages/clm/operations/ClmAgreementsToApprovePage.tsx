@@ -255,10 +255,11 @@ export default function ClmAgreementsToApprovePage() {
       <style>{ATA_CSS + OPS_SEARCH_CSS}</style>
 
       {/* HEADER STRIP */}
-      <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '0 18px', minHeight: 64, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 14, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
-        <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)', borderRadius: '14px 0 0 14px' }} />
-        {!t.dark && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.52),transparent)', pointerEvents: 'none', borderRadius: '14px 14px 0 0' }} />}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, zIndex: 1, paddingLeft: 10 }}>
+      {/* Strip sized like Supplier Management's — see ClmAgreementsSentPage. */}
+      <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '0 20px', minHeight: 58, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 16, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
+        <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)', borderRadius: '16px 0 0 16px' }} />
+        {!t.dark && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.52),transparent)', pointerEvents: 'none', borderRadius: '16px 16px 0 0' }} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13, zIndex: 1, paddingLeft: 10 }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <div style={{ width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#0891b2,#0e7490)', boxShadow: '0 0 0 3px rgba(6,182,212,.25),0 4px 12px rgba(8,145,178,.4)' }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg>
@@ -269,13 +270,13 @@ export default function ClmAgreementsToApprovePage() {
               edge rather than at a made-up width. */}
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.15 }}>Agreements To Approve</div>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.2 }}>Agreements To Approve</div>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
                 <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
               </span>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval — accept, reject, or request clarification before sending to counterparties.</div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .85, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval — accept, reject, or request clarification before sending to counterparties.</div>
           </div>
         </div>
       </div>

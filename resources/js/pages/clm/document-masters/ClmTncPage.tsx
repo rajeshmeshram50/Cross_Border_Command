@@ -298,7 +298,10 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
         <div className="clm-total">
           <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
           <div className="clm-total-lbl">Total Global T&C</div>
-          <div className="clm-total-num">{rows.length}</div>
+          {/* `written`, not `rows`: the table lists the categories that HAVE a
+              global T&C, while rows is every category. The badge read 6 over a
+              list of 4. */}
+          <div className="clm-total-num">{written.length}</div>
         </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -318,7 +321,12 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
       </div>
 
       <div className="clm-tab-body has-data">
-        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`}>
+        {/* The stretch (.clm-table-fill) is only for the EMPTY state here. On
+            the paged panes it exists to push the pager to the bottom of a
+            part-full card; this pane has no pager, so with rows present a
+            stretched wrap would just leave a band of nothing under the last
+            row (QA #30). With rows it is content height. */}
+        <div className={`clm-table-wrap ${isEmpty ? 'clm-table-fill clm-fill-empty' : ''}`}>
           <table className="clm-table">
             <thead><tr>
               <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>

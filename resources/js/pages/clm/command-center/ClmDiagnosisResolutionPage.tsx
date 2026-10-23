@@ -533,7 +533,7 @@ const SCOPED_CSS = `
 
 .dr-list-card { background:#fff; border:1px solid #cffafe; border-radius:13px; overflow:hidden; box-shadow:0 1px 4px rgba(6,182,212,.06); }
 .dr-list-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:linear-gradient(110deg,#f0fdff,#e8fbfd); border-bottom:1px solid #a5f3fc; }
-.dr-search { position:relative; display:flex; align-items:center; flex:1; max-width:420px; }
+.dr-search { position:relative; display:flex; align-items:center; flex:0 0 500px; max-width:100%; }
 .dr-search svg { position:absolute; left:14px; width:16px; height:16px; stroke:#22d3ee; }
 /* 40px — the tab height, as every CLM search. The padding-built box came out
    at 35px on radius 9 with a 12px input. */

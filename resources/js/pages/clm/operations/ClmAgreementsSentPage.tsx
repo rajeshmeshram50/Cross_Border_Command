@@ -229,10 +229,12 @@ export default function ClmAgreementsSentPage() {
           <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Please wait — don't leave this page.</div>
         </div>, document.body)}
 
-      <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 14, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
-        <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)', borderRadius: '14px 0 0 14px' }} />
-        {!t.dark && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.52),transparent)', pointerEvents: 'none', borderRadius: '14px 14px 0 0' }} />}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, zIndex: 1, paddingLeft: 10 }}>
+      {/* Strip sized like Supplier Management's — .s360m .cstrip in
+          shipment-360.css: 58px tall on 20px of side padding, 16px radius. */}
+      <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 58, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 16, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
+        <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)', borderRadius: '16px 0 0 16px' }} />
+        {!t.dark && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.52),transparent)', pointerEvents: 'none', borderRadius: '16px 16px 0 0' }} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13, zIndex: 1, paddingLeft: 10 }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <div style={{ width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#0891b2,#0e7490)', boxShadow: '0 0 0 3px rgba(6,182,212,.25),0 4px 12px rgba(8,145,178,.4)' }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" fill="rgba(255,255,255,.2)" stroke="#fff" strokeWidth="2" /></svg>
@@ -244,7 +246,7 @@ export default function ClmAgreementsSentPage() {
               instead of being cut. */}
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.15 }}>Agreements We Sent</div>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.2 }}>Agreements We Sent</div>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
                 <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
@@ -256,7 +258,7 @@ export default function ClmAgreementsSentPage() {
                 of the module — with the whole right-hand half of the band empty.
                 nowrap + ellipsis instead, so a narrow viewport cuts the sentence
                 rather than growing the band. */}
-            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Track agreements created by us and sent to counterparties for approval, clarification, negotiation, and signing.</div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .85, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Track agreements created by us and sent to counterparties for approval, clarification, negotiation, and signing.</div>
           </div>
         </div>
       </div>

@@ -345,19 +345,24 @@ export default function ClmCaseToCasePage() {
 
       {/* CARD 1 — HEADER STRIP */}
       <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 22%,#DDD6FE 50%,#C4B5FD 78%,#A78BFA 100%)', borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.2)'}`, boxShadow: '0 2px 12px rgba(109,40,217,.1)', overflow: 'hidden' }}>
-        <div className="ctc-header-strip" style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64 }}>
+        <div className="ctc-header-strip" style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 58 }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: t.dark ? 'linear-gradient(180deg,rgba(255,255,255,.04),transparent)' : 'linear-gradient(180deg,rgba(255,255,255,.55),transparent)', pointerEvents: 'none' }} />
-          <div className="ctc-header-titlewrap" style={{ display: 'flex', alignItems: 'center', gap: 14, zIndex: 1, paddingLeft: 10 }}>
+          <div className="ctc-header-titlewrap" style={{ display: 'flex', alignItems: 'center', gap: 13, zIndex: 1, paddingLeft: 10 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 0 0 3px rgba(124,58,237,.22),0 4px 12px rgba(91,33,182,.42)' }}>
-                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
+              <div style={{ width: 38, height: 38, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 0 0 3px rgba(124,58,237,.22),0 4px 12px rgba(91,33,182,.42)' }}>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
               </div>
               <span style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #EDE9FE', boxShadow: '0 0 5px rgba(34,197,94,.45)' }} />
             </div>
             <div>
-              <div className="ctc-header-title" style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.3px', lineHeight: 1.15 }}>Case to Case Contracts Management</div>
-              <div className="ctc-header-sub" style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .9, marginTop: 3 }}>Manage one-time operational agreements and contract approval workflows.</div>
+              {/* Supplier Management's strip, to the number — .s360m .cstrip__title
+                  / __sub in shipment-360.css: 14.5px/800 at -.4px over 10px/500.
+                  This header is written inline rather than using
+                  .clm-head-strip, so it does not follow clmShared and has to be
+                  set here. Colour stays this page's violet. */}
+              <div className="ctc-header-title" style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.4px', lineHeight: 1.2 }}>Case to Case Contracts Management</div>
+              <div className="ctc-header-sub" style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .85, marginTop: 2, lineHeight: 1.3 }}>Manage one-time operational agreements and contract approval workflows.</div>
             </div>
           </div>
           <button onClick={() => { setEditing(null); setFormOpen(true); }} disabled={lifecycleBusy !== null} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', border: 'none', borderRadius: 10, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null ? .6 : 1, zIndex: 1, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 4px 14px rgba(91,33,182,.44),inset 0 1px 0 rgba(255,255,255,.18)' }}>

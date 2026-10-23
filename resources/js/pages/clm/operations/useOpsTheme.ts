@@ -58,7 +58,12 @@ export const OPS_SEARCH_CSS = `
   border: 1.5px solid var(--ops-edge);
   border-radius: 11px;
   background: var(--ops-fill);
-  flex: 0 1 500px; max-width: 500px; min-width: 220px;
+  /* FIXED, not shrinkable (QA #107). Typing filters the list, which changes
+     the counts in the tabs beside it; the rail then measures narrower and a
+     shrinkable search grew back toward its basis as you typed. flex-basis is
+     a starting width, not a promise - only a 0 shrink factor keeps the box
+     still. The spacer beside it absorbs the difference. */
+  flex: 0 0 500px; max-width: 500px; min-width: 0;
   box-shadow: none;
   /* Only the focus chrome eases — never the width. As a flex item this bar
      resizes when the page gains a scrollbar on data load, and animating that
