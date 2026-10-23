@@ -1019,6 +1019,22 @@ class HrDocumentSignatureController extends Controller
      */
     public function storeSignedPdf(HrDocumentSignature $row, ?string $bytes = null): ?string
     {
+        /* Nothing to store into — so do not pay to find that out.
+         *
+         * Without the signed_pdf_path migration this ran the render, UPLOADED
+         * ~1.2MB to Azure Blob, and only then failed writing the column, where
+         * the catch below logged it. Every download paid for an upload that was
+         * discarded: QA measured the download going from 26s to 43s, a
+         * regression this guard removes. Checked once per process, and the
+         * answer cannot change under a running request — a migration starts a
+         * new one. */
+        static $hasColumn = null;
+        if ($hasColumn === null) {
+            try { $hasColumn = \Illuminate\Support\Facades\Schema::hasColumn('hr_document_signatures', 'signed_pdf_path'); }
+            catch (\Throwable $e) { $hasColumn = false; }
+        }
+        if (!$hasColumn) return null;
+
         try {
             $bytes ??= $this->renderSignedPdfBytes($row);
             /* A relative, disk-agnostic key — never a URL and never an
