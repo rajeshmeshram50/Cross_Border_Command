@@ -2604,7 +2604,20 @@ class EmployeeController extends Controller
             }
         });
 
-        $row->load(self::fullWith());
+        /* Only the relation anything below actually reads.
+         *
+         * This was load(self::fullWith()) — the whole relation set, a SECOND
+         * time, after resolveRow() already loaded it at the top. It is where
+         * the duplicates in a Stage 4 profile come from: master_countries x8,
+         * designations x6, branches x5, users x6, employee_documents x4, the
+         * payslip and exit lookups twice over — 28 of 81 queries duplicated.
+         *
+         * And none of it survives. The response ends with
+         *     (clone $row)->setRelations([])->setAppends([])
+         * so ~25 queries ran and were then thrown away. The welcome-mail block
+         * below is the only reader, and it wants $row->user. loadMissing, so
+         * an already-loaded user costs nothing. (QA #1) */
+        $row->loadMissing('user');
 
         // The login email moved and the change is committed — now tell both
         // addresses. Outside the transaction on purpose: an email cannot be
