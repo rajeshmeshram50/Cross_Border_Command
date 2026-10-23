@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import '../../../css/recruitment.css';
@@ -405,6 +406,20 @@ export default function HrLeavePlans() {
   const [catalog, setCatalog] = useState<CatalogType[]>([]);
   const [loading, setLoading] = useState(true);
 
+  /* Server-side paging for the plan list. 10 is the default the other HR
+     tables use; the footer's selector can raise it and the backend caps at 100.
+     Held in refs as well as state because loadPlans is a stable useCallback([])
+     — reading the values through refs keeps it stable, so the many places that
+     call loadPlans() after a save do not each need the page in their deps. */
+  const [planPage, setPlanPage] = useState(1);
+  const [planPerPage, setPlanPerPage] = useState(10);
+  const [planTotal, setPlanTotal] = useState(0);
+  const planPageRef = useRef(1);
+  const planPerPageRef = useRef(10);
+  const planSearchRef = useRef('');
+  useEffect(() => { planPageRef.current = planPage; }, [planPage]);
+  useEffect(() => { planPerPageRef.current = planPerPage; }, [planPerPage]);
+
   const loadPlans = useCallback(async () => {
     // Drive the body shimmer for the FULL reload lifecycle (list + per-plan
     // detail fetches) so every dataset refresh — including the one right after
@@ -416,9 +431,12 @@ export default function HrLeavePlans() {
          per plan — 1+N round trips, each re-running the same heavy eager load
          for a single row, which is what made this screen take ~12s with a
          realistic number of plans. (QA #8) */
-      const detailed = await leavePlansApi.list(true);
+      const { rows: detailed, total } = await leavePlansApi.page(
+        planPageRef.current, planPerPageRef.current, true, planSearchRef.current,
+      );
       const mapped = detailed.map(apiPlanToFrontend);
       setPlans(mapped);
+      setPlanTotal(total);
       const seeded: Record<string, LeaveTypeConfig> = {};
       detailed.forEach(p => {
         (p.leave_types ?? []).forEach(t => {
@@ -608,11 +626,27 @@ export default function HrLeavePlans() {
     setEditingPlanId(null);
   };
 
-  const filteredPlans = useMemo(() => {
-    const q = planSearch.trim().toLowerCase();
-    if (!q) return plans;
-    return plans.filter(p => p.name.toLowerCase().includes(q));
-  }, [plans, planSearch]);
+  /* The server already applied the search and the page, so `plans` IS the list
+     to render. Filtering again here would be wrong as well as redundant: the
+     browser holds one page, so a local filter would hide matches sitting on
+     page 2 and report a count the footer disagrees with. (QA #8) */
+  const filteredPlans = plans;
+
+  /* Debounced: a search re-queries, so firing per keystroke would put a
+     request on the wire for every letter. Resets to page 1 — staying on page 3
+     while narrowing to two matches asks for a page that does not exist. */
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const next = planSearch.trim();
+      if (next === planSearchRef.current) return;
+      planSearchRef.current = next;
+      planPageRef.current = 1;
+      setPlanPage(1);
+      loadPlans();
+    }, 350);
+    return () => window.clearTimeout(t);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [planSearch]);
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? plans[0];
 
@@ -780,6 +814,23 @@ export default function HrLeavePlans() {
                       </button>
                     ))}
                   </div>
+                  {/* Server-side pager — the list above is one page, not the
+                      whole set. Hidden when everything fits, so a short list
+                      does not carry a "1 / 1" and two dead arrows. (QA #8) */}
+                  <WorklistPager
+                    total={planTotal}
+                    page={planPage}
+                    pageSize={planPerPage}
+                    hideNavWhenSinglePage
+                    onPage={(p) => { planPageRef.current = p; setPlanPage(p); loadPlans(); }}
+                    onPageSize={(n) => {
+                      planPerPageRef.current = n;
+                      planPageRef.current = 1;
+                      setPlanPerPage(n);
+                      setPlanPage(1);
+                      loadPlans();
+                    }}
+                  />
                   {canAdd && (
                     <button
                       type="button"
