@@ -10,7 +10,7 @@
 export const LEAD_ACK_CSS = `
 .lam-root {
   font-family: var(--font-sans);
-  background: linear-gradient(180deg, #faf7ff 0%, #f5f3ff 100%);
+  background: transparent;
   /* Sit flush at the container gutter (no horizontal break-out / own side
      padding) so the left/right margin matches the Customer & Consignee pages.
      Top break-out is kept so the fixed-height table layout still fills. */
@@ -22,7 +22,8 @@ export const LEAD_ACK_CSS = `
      no page scroll. */
   height: calc(100vh - 130px);
   overflow: hidden;
-  display: flex; flex-direction: column; gap: 16px;
+  /* 8px between the header strip and the table card — the Customers list spacing. */
+  display: flex; flex-direction: column; gap: 8px;
   color: #111827;
   font-size: 13.5px;
 }
@@ -48,63 +49,14 @@ export const LEAD_ACK_CSS = `
    and matching dark-violet title. Brings the page identity back to
    the Sales-module palette while keeping the layout flat (no large
    gradient hero card, no orbs). */
-.lam-hero {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 13px; flex-wrap: wrap;
-  /* Glassy violet banner — the prototype hero gradient + a white top-sheen
-     (inset) and left accent bar so it reads as glass. */
-  background: linear-gradient(100deg, #f5f3ff 0%, #ede9fe 55%, #ddd6fe 100%);
-  border: 1px solid #c4b5fd;
-  border-radius: 16px;
-  /* Match the My-Workplace banner footprint: compact 58px strip, padding
-     0 20px with content vertically centred. */
-  min-height: 58px;
-  padding: 0 20px;
-  box-shadow: 0 2px 0 rgba(255,255,255,.7) inset, 0 2px 10px rgba(139,92,246,.10), 0 1px 4px rgba(0,0,0,.04);
-}
-/* Decorative corner orb — the faint violet circle the figma tucks into the
-   banner's top-right; clipped by overflow:hidden so it reads as a soft
-   half-circle glow behind the action button. */
-.lam-hero::before {
-  content: ''; position: absolute; right: -10px; top: -10px;
-  width: 80px; height: 80px; border-radius: 50%;
-  background: rgba(139, 92, 246, .07);
-  pointer-events: none;
-}
-[data-bs-theme="dark"] .lam-hero::before { background: rgba(167, 139, 250, .10); }
-/* Top sheen. */
-.lam-hero::after {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(255,255,255,.5), transparent);
-  border-radius: 16px 16px 0 0;
-}
-.lam-hero > * { position: relative; z-index: 1; }
-/* Left accent strip — same 4px violet gradient bar the Customer & Consignee
-   hero strips carry, so all three top containers read as one design family.
-   Declared after the .lam-hero > * rule so its absolute position + z-index win. */
-.lam-hero__accent {
-  position: absolute; left: 0; top: 0; bottom: 0;
-  width: 4px;
-  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
-  border-radius: 16px 0 0 16px;
-  z-index: 2;
-}
-.lam-hero-icon {
-  width: 38px; height: 38px; border-radius: 12px;
-  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%);
-  display: inline-flex; align-items: center; justify-content: center;
-  color: #ffffff; font-size: 18px; flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(124,58,237,0.30);
-}
-.lam-hero-text { flex: 1 1 240px; min-width: 0; }
-.lam-hero-title { font-size: 14.5px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.2; color: #4c1d95; }
-.lam-hero-sub   { font-size: 10.5px; color: #6d28d9; margin-top: 1px; font-weight: 500; line-height: 1.4; opacity: 0.85; }
+/* ─── Header — the Supplier list header (.sup-fig .cstrip). Edges as on the
+   Customers list: icon and first tab start 19px in, button and search end 15px in. */
+.lam-root .sup-fig { flex-shrink: 0; }
+.lam-root .sup-fig .cstrip { padding-left: 18px; padding-right: 14px; }
+.lam-root .sup-fig .cstrip__left { padding-left: 0; }
+/* Add button = the Supplier header's own, held at 40px like the toolbar below. */
+.lam-root .sup-fig .cstrip__action-btn { height: 40px; padding-top: 0; padding-bottom: 0; }
 
-.lam-hero-actions {
-  display: inline-flex; align-items: center; gap: 10px;
-  flex-shrink: 0; flex-wrap: wrap;
-}
 .lam-back-btn {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 9px 16px; border-radius: 999px;
@@ -122,25 +74,6 @@ export const LEAD_ACK_CSS = `
   color: #1a1530;
   transform: translateX(-2px);
 }
-.lam-add-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: 10px; border: none; min-height: 34px;
-  /* Glossy violet CTA — the project's brand gradient + inner white
-     highlight & soft violet glow. Sized to the My-Workplace toolbar button. */
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  color: #fff; font-family: inherit; font-size: 12px; font-weight: 700;
-  cursor: pointer; flex-shrink: 0; white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(0,0,0,.15);
-  box-shadow: 0 4px 16px rgba(139,92,246,.45), 0 2px 6px rgba(124,58,237,.25), 0 1px 0 rgba(255,255,255,.22) inset;
-  transition: transform .18s ease, box-shadow .22s ease, background .18s ease;
-}
-.lam-add-btn i { font-size: 15px; }
-.lam-add-btn:hover {
-  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 55%, #7c3aed 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(139,92,246,.55), 0 3px 8px rgba(124,58,237,.30), 0 1px 0 rgba(255,255,255,.22) inset;
-}
-
 /* ─── KPI grid ─── */
 .lam-kpi-grid {
   display: grid;
@@ -189,114 +122,23 @@ export const LEAD_ACK_CSS = `
 /* ─── Tabs + search row — segmented pill container with all three
    tabs inside. Active tab paints as a violet gradient pill within
    the white shell; inactive tabs stay flat with a soft count chip. */
-.lam-tabs-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-/* Figma tabs: standalone pills (no shared shell) — inactive read as light
-   outlined pills, the active tab is a solid violet gradient pill. */
-/* Figma tabs: a single segmented pill container (soft violet shell) with
-   the tabs inside it — inactive read as flat grey text, the active tab is a
-   solid violet gradient pill within the shell. */
-.lam-tabs {
-  /* Mirrors the Customer .smc-pill-group — glassy white shell with a violet
-     border, so the Lead Ack tabs read identically to the Customer tabs. */
-  /* No fixed height — 34px tab + 4px padding either side resolves to the
-     same 42px as the search bar, so the two line up flush. It was pinned to
-     50px, which is why the search beside it could never match whatever
-     height it chose for itself. */
-  display: inline-flex; align-items: center; gap: 2px;
-  background: rgba(255, 255, 255, .5);
-  border: 1.5px solid #c4b5fd;
-  border-radius: 11px;
-  padding: 4px;
-  flex-shrink: 0;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(109, 40, 217, .1);
-  overflow-x: auto;
-  scrollbar-width: none;
+/* ─── Toolbar — the Customers list toolbar band: list tab rail (40px / 12.5px)
+   and a 40px search that takes the free width. ─── */
+.lam-toolbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 14px;
+  background: linear-gradient(110deg, #faf5ff 0%, #f3e8ff 35%, #ede9fe 70%, #ddd6fe 100%);
+  border-bottom: 1px solid #e2d4fa;
+  position: relative; z-index: 1; flex-shrink: 0;
 }
-.lam-tabs::-webkit-scrollbar { display: none; }
-.lam-tab {
-  /* Mirrors the Customer .smc-pill. */
-  flex: 0 0 auto;
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 16px; height: 34px;
-  background: transparent;
-  border: 0;
-  border-radius: 9px;
-  color: #6d28d9;
-  box-shadow: none;
-  font-family: inherit; font-size: 12.5px; font-weight: 600;
-  cursor: pointer; white-space: nowrap;
-  transition: all .18s ease;
-}
-.lam-tab-icon { font-size: 14px; opacity: 0.85; }
-.lam-tab:hover:not(.is-active) { color: #5b21b6; background: rgba(124,58,237,.08); }
-.lam-tab.is-active {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  border-color: transparent;
-  color: #fff;
-  box-shadow: 0 3px 10px rgba(124,58,237,0.30);
-}
-/* Selected tab stays the solid violet pill on hover (same as the Customer
-   tabs — no fade-out). */
-.lam-tab.is-active:hover {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  color: #fff;
-  box-shadow: 0 3px 10px rgba(124,58,237,0.30);
-}
-.lam-tab.is-active .lam-tab-icon { opacity: 1; }
-.lam-tab-count {
-  background: #f1f5f9; color: #475569;
-  font-size: 10.5px; font-weight: 800;
-  padding: 1px 8px; border-radius: 999px;
-  min-width: 22px; text-align: center;
-  transition: all .18s ease;
-}
-.lam-tab.is-active .lam-tab-count {
-  background: rgba(15,23,42,0.45);
-  color: #fff;
-}
-
-/* ─── Search bar — the Customers toolbar recipe (.smc-toolbar .smc-search),
-   which is the reference every list toolbar is being aligned to.
-   It had its own neutral recipe: no fixed height (so it sized itself from
-   padding and never matched the tab rail beside it), an 8px radius against
-   the rail's 12px, a 1px theme-token border against the rail's violet
-   hairline, and the icon in the flex flow rather than pinned. Those are the
-   four things that made it read as a different control.
-   42px is the house toolbar height, and is what the tab rail resolves to as
-   well: 34px tab + 4px padding either side. */
-.lam-search {
-  position: relative;
-  display: flex; align-items: center; gap: 8px;
-  background: rgba(255,255,255,0.8);
-  border: 1.5px solid rgba(139,92,246,0.28);
-  border-radius: 11px;
-  padding: 0 14px 0 38px;
-  height: 42px;
-  flex: 1 1 320px; min-width: 220px;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.95) inset;
-  transition: border-color .16s, box-shadow .16s;
-}
-.lam-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,0.18); }
-.lam-search-icon {
-  position: absolute; left: 14px;
-  color: var(--vz-secondary-color, #6b7280);
-  font-size: 16px; flex-shrink: 0;
-}
-.lam-search input {
-  flex: 1; border: none; background: transparent; outline: none;
-  font-family: inherit; font-size: 13px; font-weight: 500;
-  color: var(--vz-body-color, #1e293b); width: 100%;
-}
-.lam-search input::placeholder { color: var(--vz-secondary-color, #94a3b8); font-weight: 400; }
-.lam-search-clear {
-  background: transparent; border: none; cursor: pointer;
-  color: #94a3b8; padding: 0; width: 20px; height: 20px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 50%;
-  transition: all .15s;
-}
-.lam-search-clear:hover { background: #f1f5f9; color: #475569; }
+.lam-toolbar .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+/* The search stretches to the tab rail's full height (40px tabs + the rail's padding
+   and border), so the two controls are exactly the same height side by side. */
+.lam-toolbar { align-items: stretch; }
+/* Full width: the selector out-ranks DataTable's hr-dt cap (max-width 594px), as the
+   Customers list toolbar does. */
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search { height: auto; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0; }
+[data-bs-theme="dark"] .lam-toolbar { background: rgba(124,58,237,.08); border-bottom-color: rgba(167,139,250,.18); }
 
 /* ─── Table card ─── */
 .lam-table-card {
@@ -333,26 +175,16 @@ export const LEAD_ACK_CSS = `
 .lam-table thead {
   position: sticky; top: 0; z-index: 5;
 }
-.lam-table thead tr {
-  background: linear-gradient(90deg, #5b21b6 0%, #6d28d9 25%, #7c3aed 55%, #8b5cf6 80%, #a78bfa 100%);
-  box-shadow: 0 2px 10px rgba(124,58,237,0.30);
-}
-.lam-table thead th { text-shadow: 0 1px 3px rgba(0,0,0,0.20); }
-.lam-table thead th {
-  padding: 13px 14px; text-align: left; white-space: nowrap;
-  background: transparent;
-  border-bottom: none;
-  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #ffffff;
-}
+/* Header band from DataTable (.dt-root.hr-dt .dt-table thead th); side padding
+   kept at the cells' 14px so each label sits over its column. */
+.lam-table thead th { white-space: nowrap; padding-left: 14px; padding-right: 14px; }
 .lam-table thead th:first-child { padding-left: 18px; }
 .lam-table tbody tr { transition: background .12s ease; }
 .lam-table tbody tr:nth-child(even) td { background: #faf7ff; }
 .lam-table tbody tr:hover td { background: #ede9fe !important; }
 .lam-table tbody td {
   padding: 5px 14px;
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: #334155;
   border-bottom: 1px solid #f5f3ff;
   vertical-align: middle;
@@ -362,7 +194,7 @@ export const LEAD_ACK_CSS = `
 }
 .lam-table tbody td:first-child { padding-left: 18px; }
 .lam-table tbody tr:last-child td { border-bottom: none; }
-.lam-td-reason { font-weight: 500; color: #1f2937; line-height: 1.55; white-space: normal; }
+.lam-td-reason { font-size: 11.5px; font-weight: 500; color: #1f2937; line-height: 1.55; white-space: normal; }
 .lam-reason-trunc {
   display: inline-block; max-width: 100%;
   cursor: help;
@@ -411,70 +243,10 @@ export const LEAD_ACK_CSS = `
 }
 
 .lam-td-sr { font-weight: 700; color: #1e293b; }
-/* Rounded-square Sr-No badge — outlined violet chip matching the Figma. */
-.lam-sr-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 28px; height: 24px; padding: 0 7px; border-radius: 7px;
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #7c3aed;
-  border: 1px solid #c4b5fd;
-  font-size: 11.5px; font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
+/* Status and DQ Status pills: the Customers list .smc-wa (see the end of this sheet). */
 
-/* Status badges — flat pill, no dot. Matches the project-wide
-   master pages where the dot indicator was dropped per UX request. */
-.lam-badge {
-  display: inline-block;
-  border-radius: 999px; padding: 3px 12px;
-  font-size: 11.5px; font-weight: 700;
-  line-height: 1.3; white-space: nowrap;
-}
-.lam-active   { background: #dcfce7; color: #15803d; }
-.lam-inactive { background: #fee2e2; color: #b91c1c; }
-.lam-positive { background: #dbeafe; color: #1e40af; }
-.lam-negative { background: #fee2e2; color: #b91c1c; }
-.lam-badge.lam-positive,
-.lam-badge.lam-negative { display: inline-flex; align-items: center; gap: 4px; }
-.lam-badge i { font-size: 12px; }
-
-/* Action buttons — project-standard recipe (mirrors MasterPage's
-   ActionBtn). Neutral 30×30 chip using theme tokens; on hover the
-   border + text + bg tint to the action color (primary/danger/info).
-   Theme tokens auto-adapt to dark mode so we don't need a separate
-   override block. */
+/* Action buttons: the Customers list .smc-act classes (see the end of this sheet). */
 .lam-actions { display: inline-flex; gap: 4px; justify-content: center; }
-.lam-ab {
-  width: 26px; height: 26px; border-radius: 7px;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font-size: 12.5px; padding: 0;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
-}
-/* Coloured tiles by default (Figma) — blue edit, red delete. */
-.lam-edit {
-  background: rgba(37,99,235,0.10);
-  border-color: rgba(37,99,235,0.22);
-  color: #2563eb;
-}
-.lam-edit:hover:not([aria-disabled="true"]) {
-  background: rgba(37,99,235,0.18); border-color: #2563eb; transform: translateY(-1px);
-}
-.lam-archive {
-  background: rgba(220,38,38,0.10);
-  border-color: rgba(220,38,38,0.22);
-  color: #dc2626;
-}
-.lam-archive:hover:not([aria-disabled="true"]) {
-  background: rgba(220,38,38,0.18); border-color: #dc2626; transform: translateY(-1px);
-}
-.lam-ab[aria-disabled="true"] {
-  opacity: 0.55; cursor: not-allowed;
-}
-.lam-ab-muted {
-  opacity: 0.55;
-}
-.lam-ab-muted:hover { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
 
 /* ─── Pagination — the footer markup + styling come from the global
    worklist band (.tc-wl-* in app.css), the same one TableContainerReactTable
@@ -815,18 +587,6 @@ export const LEAD_ACK_CSS = `
 [data-bs-theme="dark"] .lam-no-access-title { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-no-access-sub   { color: #9aa0b4; }
 
-[data-bs-theme="dark"] .lam-hero {
-  background:
-    radial-gradient(ellipse at top right, rgba(167,139,250,0.12), transparent 60%),
-    radial-gradient(ellipse at bottom left, rgba(124,58,237,0.10), transparent 60%),
-    linear-gradient(135deg, #2a2150 0%, #241c44 50%, #1d1638 100%);
-  border-color: rgba(167,139,250,0.22);
-  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
-}
-[data-bs-theme="dark"] .lam-hero::after { background: linear-gradient(180deg, rgba(255,255,255,.06), transparent); }
-[data-bs-theme="dark"] .lam-hero-icon { background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 55%, #5b21b6 100%); }
-[data-bs-theme="dark"] .lam-hero-title { color: #ede9fe; }
-[data-bs-theme="dark"] .lam-hero-sub   { color: #c4b5fd; opacity: 1; }
 [data-bs-theme="dark"] .lam-back-btn {
   background: rgba(255,255,255,.04);
   border-color: rgba(167,139,250,.28);
@@ -849,58 +609,14 @@ export const LEAD_ACK_CSS = `
 [data-bs-theme="dark"] .lam-kpi-label { color: #9aa0b4; }
 [data-bs-theme="dark"] .lam-kpi-value { color: #ede9fe; }
 
-[data-bs-theme="dark"] .lam-tabs {
-  background: rgba(124,58,237,.12);
-  border: 1px solid rgba(167,139,250,.25);
-  box-shadow: none;
-}
-[data-bs-theme="dark"] .lam-tab {
-  background: transparent;
-  border: none;
-  color: #9aa0b4;
-  box-shadow: none;
-}
-[data-bs-theme="dark"] .lam-tab:hover:not(.is-active) { color: #ede9fe; background: rgba(167,139,250,.14); }
-[data-bs-theme="dark"] .lam-tab.is-active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); border-color: transparent; color: #fff; }
-[data-bs-theme="dark"] .lam-tab.is-active:hover {
-  background: linear-gradient(100deg, rgba(167,139,250,.22) 0%, rgba(124,58,237,.20) 100%);
-  color: #ede9fe;
-  box-shadow: 0 2px 10px rgba(0,0,0,.30), 0 1px 0 rgba(255,255,255,.08) inset;
-}
-[data-bs-theme="dark"] .lam-tab-count { background: rgba(255,255,255,.06); color: #c4b5fd; }
-[data-bs-theme="dark"] .lam-tab.is-active .lam-tab-count { background: rgba(0,0,0,.32); color: #fff; }
-
-[data-bs-theme="dark"] .lam-search {
-  background: #1a1530;
-  border-color: rgba(167,139,250,0.25);
-  /* Replaces the light recipe's inset white highlight, which would otherwise
-     carry over and draw a lit top edge across a dark field. */
-  box-shadow: 0 1px 3px rgba(0,0,0,0.20);
-}
-[data-bs-theme="dark"] .lam-search:hover { border-color: rgba(167,139,250,0.40); }
-[data-bs-theme="dark"] .lam-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
-[data-bs-theme="dark"] .lam-search input { color: #e6e8ec; }
-[data-bs-theme="dark"] .lam-search input::placeholder { color: #b0b4bd; opacity: 1; }
-[data-bs-theme="dark"] .lam-search-icon { color: #b0b4bd; }
-[data-bs-theme="dark"] .lam-search-clear:hover { background: rgba(255,255,255,0.06); color: #ede9fe; }
-
 [data-bs-theme="dark"] .lam-table-card {
   background: #1a1530; border-color: rgba(167,139,250,.25);
   box-shadow: 0 8px 32px rgba(0,0,0,.45);
-}
-[data-bs-theme="dark"] .lam-table thead tr {
-  background: linear-gradient(90deg, #7c3aed 0%, #6d28d9 60%, #5b21b6 100%);
-}
-[data-bs-theme="dark"] .lam-table thead th {
-  background: transparent;
-  color: #f5f3ff;
-  border-bottom-color: transparent;
 }
 [data-bs-theme="dark"] .lam-table tbody td { color: #cbd5e1; border-bottom-color: rgba(167,139,250,.10); }
 [data-bs-theme="dark"] .lam-table tbody tr:nth-child(even) td { background: rgba(15,23,42,0.50); }
 [data-bs-theme="dark"] .lam-table tbody tr:hover td { background: rgba(124,58,237,.10) !important; }
 [data-bs-theme="dark"] .lam-td-sr     { color: #ede9fe; }
-[data-bs-theme="dark"] .lam-sr-badge  { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lam-td-reason { color: #ede9fe; }
 [data-bs-theme="dark"] .lam-empty { color: #64748b; }
 [data-bs-theme="dark"] .lam-empty-icon { background: rgba(124,58,237,.16); color: #a78bfa; }
@@ -909,13 +625,6 @@ export const LEAD_ACK_CSS = `
   background-size: 400% 100%;
 }
 
-/* Dark-mode status pills — softer tints so they don't burn out on
-   the deep purple table. Action buttons (.lam-ab) already auto-adapt
-   via the vz-* CSS variables; no override needed. */
-[data-bs-theme="dark"] .lam-active   { background: rgba(34,197,94,.20);  color: #86efac; }
-[data-bs-theme="dark"] .lam-inactive { background: rgba(239,68,68,.20);  color: #fca5a5; }
-[data-bs-theme="dark"] .lam-positive { background: rgba(59,130,246,.22); color: #93c5fd; }
-[data-bs-theme="dark"] .lam-negative { background: rgba(239,68,68,.20);  color: #fca5a5; }
 
 /* Footer dark-mode styling comes from the global .tc-wl-* dark rules in
    app.css (shared with the Customers module) — no local overrides needed. */
@@ -992,19 +701,11 @@ export const LEAD_ACK_CSS = `
 @media (max-width: 860px) {
   /* Hero: icon + text on one row, the action button wraps to its own row
      below and stays auto-width (right-aligned) rather than stretching. */
-  .lam-hero { min-height: 0; padding: 14px 18px; }
-  .lam-hero-actions { width: 100%; justify-content: flex-end; }
-  .lam-tabs-row { flex-direction: column; align-items: stretch; }
-  .lam-tabs { width: 100%; overflow-x: auto; }
-  .lam-search { max-width: 100%; }
+  .lam-toolbar .dt-tabrail { max-width: 100%; overflow-x: auto; }
+  .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search { flex: 1 1 100%; min-width: 0; }
 }
 @media (max-width: 720px) {
   .lam-root { padding: 12px 12px 18px; font-size: 13px; }
-  .lam-hero { padding: 14px 16px; gap: 12px; }
-  .lam-hero-title { font-size: 16px; }
-  .lam-hero-sub   { font-size: 11.5px; }
-  .lam-hero-icon  { width: 42px; height: 42px; font-size: 20px; }
-  .lam-hero-text  { flex: 1 1 100%; }
 }
 @media (max-width: 520px) {
   .lam-overlay { padding: 12px; }
@@ -1031,14 +732,65 @@ export const LEAD_ACK_CSS = `
 }
 @media (max-width: 400px) {
   .lam-root { padding: 10px 8px 14px; font-size: 12.5px; }
-  .lam-hero { padding: 12px 12px; gap: 10px; }
-  .lam-hero-title { font-size: 14.5px; }
-  .lam-hero-sub   { font-size: 10.5px; }
-  .lam-hero-icon  { width: 38px; height: 38px; font-size: 18px; }
-  .lam-hero-actions { flex-direction: column; gap: 8px; }
-  .lam-back-btn,
-  .lam-add-btn { width: 100%; }
-  .lam-tab { padding: 6px 10px; font-size: 11.5px; gap: 5px; }
-  .lam-tab-icon { font-size: 12px; }
+  .lam-back-btn { width: 100%; }
 }
+
+/* Search = the tab rail's track: the same 1px border, 3px padding and tint as
+   .dt-tabs (so both stand 48px), with the 40px field drawn inside it by ::before
+   — the icon, input and clear button all sit inside that field. */
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search {
+  position: relative;
+  min-height: 48px;
+  padding: 3px 14px 3px 38px;
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  border-radius: 11px;
+  box-shadow: none;
+}
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search::before {
+  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
+  border-radius: 8px;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
+  transition: border-color .16s, box-shadow .16s;
+}
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search > * { position: relative; z-index: 1; }
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search .dt-search-icon { position: absolute; }
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.lam-root .lam-table-card .lam-toolbar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
+[data-bs-theme="dark"] .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .lam-root .lam-table-card .lam-toolbar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
+
+
+/* ─── Status pill + action buttons — the Customers list's own classes
+   (.smc-wa / .smc-act from SalesCustomers.css, which this page doesn't load,
+   so the rules are restated here). Mark-inactive adds a red .smc-act-del. ─── */
+.lam-table .smc-wa {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+}
+.lam-table .smc-wa.yes { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+.lam-table .smc-wa.no  { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
+[data-bs-theme="dark"] .lam-table .smc-wa.yes { background: rgba(34,197,94,0.18); color: #86efac; border-color: rgba(34,197,94,.40); }
+.lam-table .smc-wa--icon { gap: 4px; }
+.lam-table .smc-wa--icon i { font-size: 12px; }
+[data-bs-theme="dark"] .lam-table .smc-wa.no  { background: rgba(239,68,68,0.18); color: #fca5a5; border-color: rgba(239,68,68,.40); }
+.lam-table .smc-act {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; padding: 0;
+  transition: all .18s cubic-bezier(.22,1,.36,1);
+  border: 1.5px solid;
+}
+.lam-table .smc-act-edit { border-color: #93c5fd; background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1d4ed8; }
+.lam-table .smc-act-edit:hover { background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; border-color: transparent; box-shadow: 0 4px 14px rgba(29,78,216,.4); transform: translateY(-2px) scale(1.08); }
+.lam-table .smc-act-del { border-color: #fca5a5; background: linear-gradient(135deg, #fef2f2, #fee2e2); color: #dc2626; }
+.lam-table .smc-act-del:hover:not([aria-disabled="true"]) { background: linear-gradient(135deg, #f87171, #dc2626); color: #fff; border-color: transparent; box-shadow: 0 4px 14px rgba(220,38,38,.4); transform: translateY(-2px) scale(1.08); }
+/* Already inactive: nothing to do, so the button reads as off. */
+.lam-table .smc-act-del[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+[data-bs-theme="dark"] .lam-table .smc-act-edit { background: rgba(59,130,246,.10); border-color: rgba(96,165,250,.35); color: #93c5fd; }
+[data-bs-theme="dark"] .lam-table .smc-act-del  { background: rgba(239,68,68,.10); border-color: rgba(248,113,113,.35); color: #fca5a5; }
+/* 8px between the buttons, as in the Customers actions column (gap-2). */
+.lam-table .lam-actions { gap: 8px; }
 `;

@@ -3,6 +3,8 @@ import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import Tooltip from '../../../../components/ui/Tooltip';
+import '../../../../components/ui/DataTable.css';
+import '../../../p2p/p2p-master-management/supplier-management/supplier-management.css';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { LEAD_ACK_CSS as SCOPED_CSS } from './leadAckStyles';
 import LeadAckReasonModal, { LEAD_ACK_TYPE_LABELS, type OppType, type LeadAckReason as Reason } from './LeadAckReasonModal';
@@ -81,11 +83,17 @@ export default function SalesLeadAckMaster() {
       if (!autoFitRef.current) return;
       const el = scrollRef.current;
       if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const THEAD = 46, ROW = 46, FOOTER = 60;   // header + row + pager (px)
-      const avail = window.innerHeight - top - THEAD - FOOTER;
+      /* Measured, not estimated (same fix as the Customers / Consignee lists):
+         the scroll box is flex-sized to the card, so its height minus the header
+         row is exactly the space the rows get; the row height is the real one.
+         The old fixed 46/46/60px guesses could round a fitting last row away. */
+      const theadH = (el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 46;
+      const rowEl  = el.querySelector('tbody tr:not(.lam-skel-row)') as HTMLElement | null;
+      const rowH   = rowEl?.getBoundingClientRect().height || 46;
+      const avail  = el.clientHeight - theadH;
       if (avail <= 0) return;
-      const fit = Math.max(4, Math.floor(avail / ROW));
+      // +2: sub-pixel row heights must not cost a whole row.
+      const fit = Math.max(4, Math.floor((avail + 2) / rowH));
       setRpp(prev => (prev === fit ? prev : fit));
     };
     recompute();
@@ -95,7 +103,7 @@ export default function SalesLeadAckMaster() {
     window.addEventListener('resize', onResize);
     return () => { cancelAnimationFrame(raf); clearTimeout(t); window.removeEventListener('resize', onResize); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, loading, q]);
+  }, [tab, loading, q, rpp]);
 
   // Add / Edit Reason popup — shared with Sales Matrix Stage 2 (LeadAckReasonModal).
   const [modalOpen, setModalOpen]   = useState(false);
@@ -233,69 +241,73 @@ export default function SalesLeadAckMaster() {
     <div className="lam-root">
       <style>{SCOPED_CSS}</style>
 
-      {/* ── Hero strip — clean white card with dark icon tile +
-              dark title (mirrors the HR Employee page recipe used
-              across the project, instead of the violet gradient
-              hero used elsewhere on Sales). ── */}
-      <div className="lam-hero">
-        <span className="lam-hero__accent" />
-        <div className="lam-hero-icon">
-          <i className="ri-checkbox-circle-line" />
-        </div>
-        <div className="lam-hero-text">
-          <div className="lam-hero-title">Lead Acknowledgement</div>
-          <div className="lam-hero-sub">Manage qualification reasons for the sales pipeline</div>
-        </div>
-        <div className="lam-hero-actions">
+      {/* ── Header strip — the Supplier list's header (.sup-fig .cstrip), same as
+              the Customers / Consignee / Quotations V/S PI lists. ── */}
+      <div className="sup-fig">
+        <div className="cstrip">
+          <span className="cstrip__accent" />
+          <span className="cstrip__glow" />
+          <span className="cstrip__sheen" />
+          <div className="cstrip__left">
+            <div className="cstrip__avatar-wrap">
+              <div className="cstrip__avatar"><i className="ri-checkbox-circle-line" style={{ fontSize: 17, color: '#fff' }} /></div>
+              <span className="cstrip__online-dot" />
+            </div>
+            <div className="min-w-0">
+              <div className="cstrip__title">Lead Acknowledgement</div>
+              <div className="cstrip__sub">Manage qualification reasons for the sales pipeline</div>
+            </div>
+          </div>
           {canAdd && (
-            <button type="button" className="lam-add-btn" onClick={openAdd}>
-              <i className="ri-add-line" />
-              Add New Reason
-            </button>
+            <div className="cstrip__right">
+              <button type="button" className="cstrip__action-btn" onClick={openAdd}>
+                <span className="cstrip__action-btn-sheen" />
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                Add New Reason
+              </button>
+            </div>
           )}
         </div>
       </div>
 
-      {/* ── Tabs + Search row — tabs sit inside a single segmented
-              pill container so the row reads as one control with the
-              active tab "selected" inside, matching the rest of the
-              sales surfaces. ── */}
-      <div className="lam-tabs-row">
-        <div className="lam-tabs" role="tablist">
-          {TAB_KEYS.map(t => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              className={`lam-tab ${tab === t ? 'is-active' : ''}`}
-              onClick={() => switchTab(t)}
-            >
-              <span className="lam-tab-label">{TAB_LABELS[t]}</span>
-            </button>
-          ))}
+      {/* ── Table card — the Customers list card (dt-root hr-dt): toolbar with the
+              list tab rail + search, the list header band, and the worklist pager. ── */}
+      <div className="lam-table-card dt-root hr-dt" data-accent="violet">
+        <div className="lam-toolbar">
+          <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+            <div className="dt-tabs" role="tablist">
+              {TAB_KEYS.map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === t}
+                  className={`dt-tab ${tab === t ? 'on' : 'off'}`}
+                  onClick={() => switchTab(t)}
+                >
+                  {TAB_LABELS[t]} <span className="dt-tab-count">{(data[t] || []).length}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="dt-search">
+            <i className="ri-search-line dt-search-icon" />
+            <input
+              type="text"
+              autoComplete="off"
+              placeholder="Search by reason…"
+              value={q}
+              onChange={e => { setQ(e.target.value); setPage(1); }}
+            />
+            {q && (
+              <button type="button" className="dt-search-clear" onClick={() => { setQ(''); setPage(1); }} aria-label="Clear search">
+                <i className="ri-close-line" />
+              </button>
+            )}
+          </div>
         </div>
-        <div className="lam-search">
-          <i className="ri-search-line lam-search-icon" />
-          <input
-            type="text"
-            autoComplete="off"
-            placeholder="Search by reason…"
-            value={q}
-            onChange={e => { setQ(e.target.value); setPage(1); }}
-          />
-          {q && (
-            <button type="button" className="lam-search-clear" onClick={() => { setQ(''); setPage(1); }} aria-label="Clear search">
-              <i className="ri-close-line" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── Table card ── */}
-      <div className="lam-table-card">
         <div className="lam-table-wrap" ref={scrollRef}>
-          <table className="lam-table" style={{ tableLayout: 'fixed', minWidth: 560 }}>
+          <table className="lam-table dt-table" style={{ tableLayout: 'fixed', minWidth: 560 }}>
             <thead>
               <tr>
                 {/* Column widths mirror the IDIMS figma: a narrow Sr No, a
@@ -335,26 +347,29 @@ export default function SalesLeadAckMaster() {
               )}
               {!loading && rows.map((r, i) => (
                 <tr key={r.id}>
-                  <td className="lam-td-sr"><span className="lam-sr-badge">{startIdx + i + 1}</span></td>
+                  <td className="lam-td-sr"><span className="dt-serial">{startIdx + i + 1}</span></td>
                   <td className="lam-td-reason"><ReasonCell text={r.reason} /></td>
                   {tab === 'disqualified' && (
                     <td style={{ textAlign: 'center' }}>
+                      {/* Same pill as Status (.smc-wa): Positive green, Negative red. */}
                       {r.dq_status === 'positive'
-                        ? <span className="lam-badge lam-positive"><i className="ri-arrow-up-line" />Positive</span>
-                        : <span className="lam-badge lam-negative"><i className="ri-arrow-down-line" />Negative</span>}
+                        ? <span className="smc-wa yes smc-wa--icon"><i className="ri-arrow-up-line" />Positive</span>
+                        : <span className="smc-wa no smc-wa--icon"><i className="ri-arrow-down-line" />Negative</span>}
                     </td>
                   )}
                   <td style={{ textAlign: 'center', paddingLeft: 70 }}>
+                    {/* Same pill as the Customers list WhatsApp Yes / No (.smc-wa). */}
                     {r.status === 'active'
-                      ? <span className="lam-badge lam-active">Active</span>
-                      : <span className="lam-badge lam-inactive">Inactive</span>}
+                      ? <span className="smc-wa yes">Active</span>
+                      : <span className="smc-wa no">Inactive</span>}
                   </td>
                   <td style={{ textAlign: 'center', paddingLeft: 50 }}>
+                    {/* Same buttons as the Customers list actions (.smc-act), with its edit icon. */}
                     <div className="lam-actions">
                       {canEdit && (
                         <Tooltip label="Edit reason" themed>
-                          <button type="button" aria-label="Edit" className="lam-ab lam-edit" onClick={() => openEdit(r)}>
-                            <i className="ri-pencil-line" />
+                          <button type="button" aria-label="Edit" className="smc-act smc-act-edit" onClick={() => openEdit(r)}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                           </button>
                         </Tooltip>
                       )}
@@ -364,10 +379,10 @@ export default function SalesLeadAckMaster() {
                             type="button"
                             aria-label={r.status === 'inactive' ? 'Already inactive' : 'Mark inactive'}
                             aria-disabled={r.status === 'inactive'}
-                            className={`lam-ab lam-archive ${r.status === 'inactive' ? 'lam-ab-muted' : ''}`}
+                            className="smc-act smc-act-del"
                             onClick={() => requestInactivate(r)}
                           >
-                            <i className="ri-delete-bin-6-line" />
+                            <i className="ri-delete-bin-6-line fs-14" />
                           </button>
                         </Tooltip>
                       )}
