@@ -4253,7 +4253,8 @@ const SCOPED_CSS = `
 .acm-doc-sub-card { max-width: 920px; border-radius: 18px; background: #fff !important; box-shadow: 0 24px 60px -16px rgba(15,15,30,.32), 0 8px 24px rgba(15,15,30,.14); }
 .acm-doc-sub-header {
   background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 35%, #7c3aed 70%, #8b5cf6 100%) !important;
-  border-bottom: none; padding: 16px 26px; justify-content: center; position: relative;
+  /* Title on the left (like the Consignee popups); right padding keeps it clear of the close button. */
+  border-bottom: none; padding: 16px 64px 16px 22px; justify-content: flex-start; position: relative;
 }
 .acm-doc-sub-title { color: #fff; font-size: 17px; font-weight: 800; letter-spacing: -.2px; }
 .acm-doc-sub-header .acm-sub-close {
@@ -4265,7 +4266,7 @@ const SCOPED_CSS = `
 }
 .acm-doc-sub-header .acm-sub-close:hover { background: rgba(255,255,255,0.28) !important; transform: translateY(-50%) rotate(90deg); }
 .acm-doc-sub-card .acm-sub-body { background: #fff !important; padding: 18px 26px 8px; }
-.acm-doc-sub-footer { background: #fff !important; border-top: none; padding: 6px 22px 22px; }
+.acm-doc-sub-footer { background: #fff !important; border-top: none; padding: 6px 22px 22px; justify-content: flex-end; }
 .acm-doc-sub-footer .acm-btn-mini-cancel {
   background: #fff; border: 1.5px solid #c4b5fd; color: #7c3aed;
   padding: 9px 22px; border-radius: 9px; font-weight: 700; font-size: 12px; cursor: pointer;
