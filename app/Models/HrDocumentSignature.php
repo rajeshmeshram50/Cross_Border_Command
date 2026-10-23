@@ -15,6 +15,7 @@ class HrDocumentSignature extends Model
         'content_html', 'header_config', 'footer_config',
         'signers', 'current_index',
         'status', 'audit_log',
+        'signed_pdf_path', 'signed_pdf_at',
         'created_by',
     ];
 
@@ -24,6 +25,7 @@ class HrDocumentSignature extends Model
         'signers'       => 'array',
         'audit_log'     => 'array',
         'current_index' => 'integer',
+        'signed_pdf_at' => 'datetime',
     ];
 
     /**
