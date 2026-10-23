@@ -204,9 +204,6 @@ export const LEAD_ACK_CSS = `
   color: #94a3b8; font-style: italic; font-size: 13px;
   vertical-align: middle;
 }
-/* Empty state: the table stretches to the scroll area and the empty row takes
-   the spare height, so the message sits in the middle of the table (same as the
-   Productivity Tracker / My Workplace). */
 .lam-table:has(.lam-empty) { height: 100%; }
 .lam-table:has(.lam-empty) tbody tr:has(.lam-empty) { height: 100%; }
 .lam-table:has(.lam-empty) tbody tr:has(.lam-empty) td { background: transparent; border-bottom: 0; }

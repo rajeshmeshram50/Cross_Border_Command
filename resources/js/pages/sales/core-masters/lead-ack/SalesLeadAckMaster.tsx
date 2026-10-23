@@ -341,8 +341,6 @@ export default function SalesLeadAckMaster() {
               ))}
               {!loading && rows.length === 0 && (
                 <tr><td colSpan={tab === 'disqualified' ? 5 : 4} className="lam-empty">
-                  {/* A search that matches nothing says so; "No reasons found" is only
-                      for a tab that is genuinely empty (QA #11). */}
                   <i className={`${q.trim() ? 'ri-search-line' : 'ri-inbox-line'} lam-empty-icon`} />
                   {q.trim() ? 'No results found' : 'No reasons found'}
                 </td></tr>
