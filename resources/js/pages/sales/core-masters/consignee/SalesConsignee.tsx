@@ -211,6 +211,9 @@ export default function SalesConsignee() {
   // "Map Customer" flow inside the Mapped Customers modal.
   const [custMapOpen, setCustMapOpen] = useState(false);
   const [allCustomers, setAllCustomers] = useState<any[]>([]);
+  // True while /customers is in flight, so the dropdown shows a loader instead
+  // of "No other customers available" before the list has arrived.
+  const [custListLoading, setCustListLoading] = useState(false);
   const [custMapId, setCustMapId] = useState('');
   const [custMapping, setCustMapping] = useState(false);
 
@@ -229,10 +232,12 @@ export default function SalesConsignee() {
   const openCustMap = async () => {
     setCustMapId('');
     setCustMapOpen(true);
+    setCustListLoading(true);
     try {
       const r = await api.get('/customers', { params: { tab: 'all' } });
       setAllCustomers(Array.isArray(r.data?.data) ? r.data.data : []);
     } catch { setAllCustomers([]); }
+    finally { setCustListLoading(false); }
   };
 
   const doMapCustomer = async () => {
@@ -1007,20 +1012,29 @@ export default function SalesConsignee() {
               return (
                 <div onMouseDown={() => !custMapping && setCustMapOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1099, background: 'rgba(46,16,101,.55)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
                   <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 470, background: mc.card, borderRadius: 16, overflow: 'visible', boxShadow: '0 26px 64px rgba(0,0,0,.45)' }}>
-                    <div style={{ padding: '17px 20px', background: 'linear-gradient(135deg,#4c1d95,#6d28d9 55%,#7c3aed)', color: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
-                      <div style={{ fontSize: 15.5, fontWeight: 800 }}>Map Customer</div>
-                      <div style={{ fontSize: 12.5, opacity: .92, marginTop: 2 }}>Link a customer to <strong>{mappedTarget.id}</strong> · {mappedTarget.company}. Its segments update accordingly.</div>
+                    <div className="smcg-mapped-head smcg-map-head">
+                      <div style={{ minWidth: 0 }}>
+                      <div className="smcg-mapped-head-title">Map Customer</div>
+                      <div className="smcg-map-head-sub">Link a customer to <strong>{mappedTarget.id}</strong> · {mappedTarget.company}. Its segments update accordingly.</div>
+                      </div>
                     </div>
                     <div style={{ padding: 18 }}>
-                      <label style={{ fontSize: 11.5, fontWeight: 700, color: mc.textStrong, textTransform: 'uppercase', letterSpacing: .4, display: 'block', marginBottom: 6 }}>Customer</label>
-                      <MasterSelect value={custMapId} onChange={(v) => setCustMapId(v)} placeholder="Select a customer to map…" options={options} />
-                      {options.length === 0 && (
+                      <label className="smcg-map-label">Customer<span className="smcg-map-req">*</span></label>
+                      <MasterSelect
+                        value={custMapId}
+                        onChange={(v) => setCustMapId(v)}
+                        placeholder={custListLoading ? 'Loading customers…' : 'Select a customer to map…'}
+                        options={options}
+                        loading={custListLoading}
+                        disabled={custListLoading}
+                      />
+                      {!custListLoading && options.length === 0 && (
                         <div style={{ fontSize: 12, color: mc.textMuted, marginTop: 8 }}>No other customers available to map.</div>
                       )}
                     </div>
                     <div style={{ padding: '0 18px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                      <button type="button" onClick={() => setCustMapOpen(false)} disabled={custMapping} style={{ border: `1px solid ${mc.border}`, background: mc.card, color: mc.textStrong, borderRadius: 9, padding: '8px 16px', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}>Cancel</button>
-                      <button type="button" onClick={doMapCustomer} disabled={!custMapId || custMapping} style={{ border: 'none', background: custMapId && !custMapping ? 'linear-gradient(135deg,#6d28d9,#7c3aed)' : (isDark ? 'rgba(124,58,237,.3)' : '#ddd6fe'), color: '#fff', borderRadius: 9, padding: '8px 18px', fontWeight: 700, fontSize: 12.5, cursor: custMapId && !custMapping ? 'pointer' : 'not-allowed' }}>{custMapping ? 'Mapping…' : 'Map Customer'}</button>
+                      <button type="button" className="smcg-map-btn-cancel" onClick={() => setCustMapOpen(false)} disabled={custMapping}>Cancel</button>
+                      <button type="button" className="smcg-map-btn-primary" onClick={doMapCustomer} disabled={!custMapId || custMapping}>{custMapping ? 'Mapping…' : 'Map Customer'}</button>
                     </div>
                   </div>
                 </div>

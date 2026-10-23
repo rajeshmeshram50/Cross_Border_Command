@@ -1835,3 +1835,31 @@
   --tcwl-border-dark: rgba(167,139,250,.35);
   --tcwl-band-dark: none;
 }
+
+/* Map Customer popup — Customer form header (shares .smcg-mapped-head), form
+   field label, and the Customer form's footer buttons (Previous / Next). */
+.smcg-map-head { border-top-left-radius: 16px; border-top-right-radius: 16px; padding: 15px 20px; }
+.smcg-map-head-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; line-height: 1.45; }
+.smcg-map-label { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; font-size: 11px; font-weight: 500; color: #3b0764; }
+.smcg-map-req { color: #f06548; font-weight: 600; }
+.smcg-map-btn-cancel,
+.smcg-map-btn-primary {
+  height: 40px; padding: 0 18px; border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
+}
+.smcg-map-btn-cancel { border: 1.5px solid #ddd6fe; background: #fff; color: #7c3aed; }
+.smcg-map-btn-cancel:hover:not(:disabled) { background: #f5f1fe; border-color: #7c3aed; }
+.smcg-map-btn-primary {
+  border: none; color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  box-shadow: 0 6px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.2) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.smcg-map-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.6), 0 1px 0 rgba(255,255,255,.2) inset; }
+.smcg-map-btn-primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.smcg-map-btn-cancel:disabled { opacity: .6; cursor: not-allowed; }
+[data-bs-theme="dark"] .smcg-map-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-map-btn-cancel { background: transparent; border-color: rgba(167,139,250,.35); color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-map-btn-cancel:hover:not(:disabled) { background: rgba(167,139,250,.12); }
