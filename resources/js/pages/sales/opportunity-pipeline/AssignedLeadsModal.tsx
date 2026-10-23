@@ -23,7 +23,7 @@ import LeadsKpiModal, { type KpiFilter } from './LeadsKpiModal';
  *
  * The department / role chips colour-cycle from a small palette keyed by
  * a deterministic hash of the label so the same string always picks the
- * same colour across rows. Total Leads is shown as a bold amber pill.
+ * same colour across rows. Total Leads is shown as a bold cyan pill.
  * ───────────────────────────────────────────────────────────────────────── */
 
 type Row = {
@@ -135,15 +135,21 @@ export default function AssignedLeadsModal() {
 
       {/* ── Header card (standalone container) ─────────────────────── */}
       <div className="ldp-header-card">
+        <span className="ldp-banner-accent" />
+        <span className="ldp-banner-glow" />
+        <span className="ldp-banner-sheen" />
         <div className="ldp-header">
           <div className="ldp-header-left">
-            <div className="ldp-header-icon">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
+            <div className="ldp-header-icon-wrap">
+              <div className="ldp-header-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </div>
+              <span className="ldp-header-dot" />
             </div>
             <div>
               <div className="ldp-header-title">Lead Distribution</div>
@@ -196,7 +202,7 @@ export default function AssignedLeadsModal() {
             value={summary?.total_leads ?? 0}
             loading={loading}
             sub="All leads"
-            tone="amber"
+            tone="cyan"
             onClick={() => setKpiModal({ title: 'Total Leads', filter: {} })}
             icon={
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -256,10 +262,7 @@ export default function AssignedLeadsModal() {
                 <tr key={`sk-${i}`} className="ldp-skel-row">
                   <td className="ldp-td-num"><span className="ldp-skel ldp-skel-sr" /></td>
                   <td>
-                    <div className="ldp-person">
-                      <span className="ldp-skel ldp-skel-avatar" />
-                      <span className="ldp-skel ldp-skel-line" style={{ width: '70%' }} />
-                    </div>
+                    <span className="ldp-skel ldp-skel-line" style={{ width: '70%' }} />
                   </td>
                   <td><span className="ldp-skel ldp-skel-chip" /></td>
                   <td><span className="ldp-skel ldp-skel-line" style={{ width: '75%' }} /></td>
@@ -284,13 +287,6 @@ export default function AssignedLeadsModal() {
                     <span className="ldp-sr-badge">{startIdx + i + 1}</span>
                   </td>
                   <td>
-                    <div className="ldp-person">
-                      <div
-                        className="ldp-avatar"
-                        style={{ background: avatarColor(r.salesperson_name) }}
-                      >
-                        {initials(r.salesperson_name)}
-                      </div>
                       <div className="ldp-person-name">
                         {r.salesperson_name}
                         {r.is_active === false && (
@@ -302,7 +298,6 @@ export default function AssignedLeadsModal() {
                           </span>
                         )}
                       </div>
-                    </div>
                   </td>
                   <td>
                     {r.department
@@ -417,7 +412,7 @@ function StatCard(props: {
   label: string;
   value: number;
   sub: string;
-  tone: 'amber' | 'green' | 'red' | 'slate';
+  tone: 'cyan' | 'green' | 'red' | 'slate';
   icon: React.ReactNode;
   /* While true the card prints a shimmer bar instead of `value`. A zero that
    * only means "not fetched yet" is a wrong answer, not a neutral one — see
@@ -455,128 +450,110 @@ function StatCard(props: {
   );
 }
 
-/* ─── Helpers ─────────────────────────────────────────────────────── */
-
-const initials = (name: string): string =>
-  (name || '?')
-    .split(' ')
-    .filter(Boolean)
-    .map(w => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-
-/* Stable hash → palette index. Same input always picks the same colour
- * across rows so a user instantly recognises e.g. "Digital Marketing"
- * across the table. Borrowed pattern from the legacy prototype. */
-const hashStr = (s: string): number => {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-};
-
-const AVATAR_PALETTE = [
-  'linear-gradient(135deg, #10b981, #047857)',  // emerald
-  'linear-gradient(135deg, #8b5cf6, #6d28d9)',  // violet
-  'linear-gradient(135deg, #f59e0b, #d97706)',  // amber
-  'linear-gradient(135deg, #06b6d4, #0e7490)',  // cyan
-  'linear-gradient(135deg, #ef4444, #b91c1c)',  // red
-  'linear-gradient(135deg, #3b82f6, #1d4ed8)',  // blue
-  'linear-gradient(135deg, #ec4899, #be185d)',  // pink
-];
-
-const avatarColor = (name: string): string =>
-  AVATAR_PALETTE[hashStr(name) % AVATAR_PALETTE.length];
-
 const LDP_CSS = `
-/* Page wrapper — fills the in-app content area edge-to-edge. */
+/* Lead Distribution — the My Workplace (Lead Worksheet) look: its cyan banner,
+   toolbar button, table header, row tint and pager, so the two pages read as one. */
 .ldp-page {
   animation: ldp-fade .18s ease-out;
   box-sizing: border-box;
-  /* Counter the parent layout's gutters so the shell hugs the side rails,
-     then re-inset with even padding so the header card clears the navbar
-     (top) and sits with equal spacing on the left / right / bottom —
-     mirrors the My Workplace worksheet (.lwp-root margin + padding). */
   margin: -1rem -0.75rem;
   padding: 12px 14px;
-  /* Fixed available height (viewport minus the app header + horizontal menu)
-     so the shell fills the screen, the table scrolls INSIDE it, and the
-     header card + KPI cards + pagination stay pinned — mirrors the My
-     Workplace worksheet layout (.lwp-root). */
   height: calc(100vh - 130px);
   overflow: hidden;
   display: flex; flex-direction: column;
+  background: linear-gradient(160deg, #f0fdfe 0%, #e8fafb 30%, #f5feff 60%, #ffffff 100%);
 }
 @keyframes ldp-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .ldp-shell {
   width: 100%;
-  background: #fff7ed;
+  background: #f5feff;
   border-radius: 14px;
-  border: 1px solid #fde68a;
-  box-shadow: 0 6px 22px rgba(217,119,6,.10);
+  border: 1px solid #cef3f9;
+  box-shadow: 0 4px 16px rgba(8,145,178,.08);
   overflow: hidden;
-  /* Fill the remaining page height; KPI cards stay fixed, the table scrolls,
-     the pagination stays pinned at the bottom. */
   display: flex; flex-direction: column; flex: 1; min-height: 0;
 }
 
-/* ── Header card (its own standalone container above the shell) ─── */
+/* ── Header — the My Workplace banner (.lwp-banner) ── */
 .ldp-header-card {
-  width: 100%;
-  flex-shrink: 0;
-  margin-bottom: 12px;
-  border-radius: 14px;
-  border: 1px solid #fde68a;
-  box-shadow: 0 6px 22px rgba(217,119,6,.10);
-  overflow: hidden;
-  background: #fffbeb;
+  position: relative; overflow: hidden;
+  width: 100%; flex-shrink: 0;
+  margin-bottom: 8px;
+  border: 1px solid #cef3f9; border-radius: 16px;
+  background: linear-gradient(110deg, #f0fdff 0%, #e6fafe 25%, #d0f5fb 55%, #bef0f8 85%, #a8eaf5 100%);
+  box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 4px 16px rgba(8,145,178,.1), 0 1px 4px rgba(0,0,0,.04);
 }
-
-/* ── Header ─────────────────────────────────────────────────────── */
+.ldp-banner-accent {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 4px; z-index: 2;
+  background: linear-gradient(180deg, #06b6d4, #0891b2, #0e7490);
+  border-radius: 16px 0 0 16px;
+}
+.ldp-banner-glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(190,240,248,.35) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 50%, rgba(168,234,245,.2) 0%, transparent 55%);
+}
+.ldp-banner-sheen {
+  position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.5), transparent);
+}
 .ldp-header {
+  position: relative; z-index: 1;
   display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; padding: 12px 14px;
-  background: linear-gradient(135deg, #fef9c3 0%, #fef3c7 50%, #fde68a 100%);
+  gap: 12px; min-height: 58px; padding: 0 14px 0 18px;
 }
-.ldp-header-left { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.ldp-header-left { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.ldp-header-icon-wrap { position: relative; flex-shrink: 0; }
 .ldp-header-icon {
-  width: 34px; height: 34px; border-radius: 10px;
-  background: linear-gradient(135deg, #f59e0b, #ea580c); color: #fff;
+  width: 38px; height: 38px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 12px rgba(234,88,12,.30);
-  flex-shrink: 0;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(8,145,178,.25), 0 4px 14px rgba(14,116,144,.45);
 }
-.ldp-header-icon svg { width: 16px; height: 16px; }
-.ldp-header-title { font-size: 14.5px; font-weight: 800; color: #1f2937; letter-spacing: -.2px; }
-.ldp-header-sub   { font-size: 10.5px; color: #57534e; margin-top: 2px; }
+.ldp-header-icon svg { width: 17px; height: 17px; }
+.ldp-header-dot {
+  position: absolute; bottom: -1px; right: -1px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: linear-gradient(135deg, #4ade80, #22c55e);
+  border: 2px solid #cffafe;
+  box-shadow: 0 2px 4px rgba(34,197,94,.4);
+}
+.ldp-header-title { font-size: 14.5px; font-weight: 700; color: #0c4a6e; letter-spacing: -.3px; line-height: 1.2; }
+.ldp-header-sub   { font-size: 10px; font-weight: 500; color: #0e7490; opacity: .85; margin-top: 2px; }
 
-.ldp-header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.ldp-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .ldp-header-pill {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 6px 14px; border-radius: 999px;
-  background: #ffffff; border: 1px solid #fde68a;
-  font-size: 11px; font-weight: 700; color: #92400e;
-  box-shadow: 0 1px 2px rgba(217,119,6,.06);
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  font-size: 11px; font-weight: 700; color: #0e7490;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
-.ldp-header-pill-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
-}
+.ldp-header-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #06b6d4; }
+/* Back = the My Workplace toolbar button (.lwp-bact): cyan gradient, 40px, 11.5 / 700. */
 .ldp-back-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 18px; border-radius: 9px; border: none;
-  background: linear-gradient(135deg, #f59e0b, #ea580c); color: #fff;
-  font-size: 11.5px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 4px 12px rgba(234,88,12,.32);
-  transition: filter .15s, transform .12s, box-shadow .15s;
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; padding: 0 18px; border-radius: 12px; border: none;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
+  color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+  white-space: nowrap; cursor: pointer;
+  text-shadow: 0 1px 2px rgba(0,0,0,.15);
+  box-shadow: 0 4px 16px rgba(6,182,212,.45), 0 2px 6px rgba(8,145,178,.25), 0 1px 0 rgba(255,255,255,.22) inset;
+  transition: all .22s;
 }
-.ldp-back-btn:hover  {
-  filter: brightness(1.07); transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(234,88,12,.38);
+.ldp-back-btn:hover {
+  background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 55%, #0891b2 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(6,182,212,.55), 0 3px 8px rgba(8,145,178,.3), 0 1px 0 rgba(255,255,255,.22) inset;
 }
 .ldp-back-btn:active { transform: translateY(0); }
 
-/* ── Stats row — Admin Dashboard KPI card style ─────────────────── */
+/* ── KPI cards ── */
 .ldp-stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
   padding: 12px 18px 4px;
@@ -585,10 +562,8 @@ const LDP_CSS = `
 .ldp-stat {
   position: relative;
   background: #ffffff;
-  /* Tone-tinted border (Figma look) — falls back to neutral. */
   border: 1.5px solid var(--ldp-tone-border, #e9ebec);
   border-radius: 12px;
-  /* Extra left padding clears the 3px accent strip on that edge. */
   padding: 12px 14px 10px 16px;
   box-shadow: 0 2px 14px rgba(0,0,0,0.05);
   overflow: hidden;
@@ -597,42 +572,32 @@ const LDP_CSS = `
 }
 .ldp-stat:hover {
   transform: translateY(-3px);
-  box-shadow:
-    0 12px 24px -8px rgba(15, 23, 42, 0.16),
-    0 6px 14px var(--ldp-tone-shadow, rgba(15, 23, 42, 0.08));
+  box-shadow: 0 12px 24px -8px rgba(15, 23, 42, 0.16), 0 6px 14px var(--ldp-tone-shadow, rgba(15, 23, 42, 0.08));
 }
 .ldp-stat-clickable { cursor: pointer; }
-.ldp-stat-clickable:focus-visible {
-  outline: 2px solid var(--ldp-tone-accent, #f59e0b); outline-offset: 2px;
-}
-
-/* Per-tone palette — Figma KPI colours. Each tone sets the accent
-   (stripe + icon glyph), a soft icon-tile background, the tinted card
-   border, the value colour, and the sub-line colour. */
+.ldp-stat-clickable:focus-visible { outline: 2px solid var(--ldp-tone-accent, #0891b2); outline-offset: 2px; }
+/* KPI tones — all in the page's cyan family (sky / cyan / deep cyan / bright cyan). */
 .ldp-stat-slate {
-  --ldp-tone-accent: #6366f1; --ldp-tone-border: #c7d2fe; --ldp-tone-icon-bg: #eef2ff;
-  --ldp-tone-value: #1e293b;  --ldp-tone-sub: #6366f1;    --ldp-tone-shadow: rgba(99,102,241,.16);
+  --ldp-tone-accent: #0284c7; --ldp-tone-border: #bae6fd; --ldp-tone-icon-bg: #e0f2fe;
+  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0369a1;    --ldp-tone-shadow: rgba(2,132,199,.16);
 }
-.ldp-stat-amber {
-  --ldp-tone-accent: #d97706; --ldp-tone-border: #fcd34d; --ldp-tone-icon-bg: #fef3c7;
-  --ldp-tone-value: #1e293b;  --ldp-tone-sub: #b45309;    --ldp-tone-shadow: rgba(217,119,6,.16);
+.ldp-stat-cyan {
+  --ldp-tone-accent: #0891b2; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #cffafe;
+  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0e7490;    --ldp-tone-shadow: rgba(8,145,178,.16);
 }
 .ldp-stat-green {
-  --ldp-tone-accent: #059669; --ldp-tone-border: #a7f3d0; --ldp-tone-icon-bg: #d1fae5;
-  --ldp-tone-value: #047857;  --ldp-tone-sub: #059669;    --ldp-tone-shadow: rgba(5,150,105,.16);
+  --ldp-tone-accent: #0e7490; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #cffafe;
+  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0e7490;    --ldp-tone-shadow: rgba(14,116,144,.16);
 }
 .ldp-stat-red {
-  --ldp-tone-accent: #dc2626; --ldp-tone-border: #fecaca; --ldp-tone-icon-bg: #fee2e2;
-  --ldp-tone-value: #dc2626;  --ldp-tone-sub: #dc2626;    --ldp-tone-shadow: rgba(220,38,38,.16);
+  --ldp-tone-accent: #06b6d4; --ldp-tone-border: #a5f3fc; --ldp-tone-icon-bg: #ecfeff;
+  --ldp-tone-value: #0c4a6e;  --ldp-tone-sub: #0891b2;    --ldp-tone-shadow: rgba(6,182,212,.16);
 }
-/* Accent strip — vertical bar on the left edge (was a top bar). */
 .ldp-stat-stripe {
   position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
   background: var(--ldp-tone-accent, #6366f1);
 }
-.ldp-stat-body {
-  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
-}
+.ldp-stat-body { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .ldp-stat-text { flex: 1; min-width: 0; }
 .ldp-stat-label {
   font-size: 10px; font-weight: 700;
@@ -642,7 +607,7 @@ const LDP_CSS = `
 }
 .ldp-stat-value {
   font-size: clamp(16px, 1.4vw, 22px);
-  font-weight: 800;
+  font-weight: 600;
   color: var(--ldp-tone-value, #1e293b);
   line-height: 1.1;
   word-break: break-word;
@@ -660,344 +625,262 @@ const LDP_CSS = `
   width: 34px; height: 34px; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  /* Soft tinted tile + tone-coloured glyph (Figma) — not a solid fill. */
   background: var(--ldp-tone-icon-bg, #f1f5f9);
   color: var(--ldp-tone-accent, #475569);
   transition: transform .18s ease, box-shadow .18s ease;
 }
-.ldp-stat:hover .ldp-stat-icon {
-  transform: scale(1.06);
-  box-shadow: 0 6px 14px var(--ldp-tone-shadow, rgba(0,0,0,0.12));
-}
+.ldp-stat:hover .ldp-stat-icon { transform: scale(1.06); box-shadow: 0 6px 14px var(--ldp-tone-shadow, rgba(0,0,0,0.12)); }
 .ldp-stat-icon svg { width: 16px; height: 16px; color: inherit; }
 
-/* ── Table ──────────────────────────────────────────────────────── */
+/* ── Table — the My Workplace table card (.lwp-table-card / .lwp-table) ── */
 .ldp-table-wrap {
   margin: 14px 18px 18px;
-  background: #fff; border: 1px solid #fde68a; border-radius: 10px;
+  background: #fff; border: 1.5px solid #a5f3fc; border-radius: 14px;
+  box-shadow: 0 4px 20px rgba(8,145,178,.1), 0 1px 4px rgba(0,0,0,.04);
   overflow: hidden;
-  /* Fill remaining shell height; the inner scroll handles overflow so the
-     pagination footer stays pinned inside this card. */
   display: flex; flex-direction: column; flex: 1; min-height: 0;
 }
-/* Scroll area — the wide/tall table scrolls here (x + y); the sticky header
-   stays pinned during vertical scroll. */
-.ldp-table-scroll { overflow: auto; flex: 1; min-height: 0; }
+.ldp-table-scroll {
+  overflow: auto; flex: 1; min-height: 0;
+  scrollbar-width: thin; scrollbar-color: #a5f3fc transparent;
+}
 .ldp-table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 1050px; }
 .ldp-table thead { position: sticky; top: 0; z-index: 5; }
 .ldp-table thead tr {
-  background: linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%);
+  background: linear-gradient(90deg, #155e75 0%, #0e7490 25%, #0891b2 55%, #06b6d4 80%, #22d3ee 100%);
+  box-shadow: 0 2px 10px rgba(8,145,178,.3);
 }
 .ldp-table thead th {
-  color: #fff7ed; font-size: 9.5px; font-weight: 800;
-  letter-spacing: .08em;
+  color: #fff; font-size: 9.5px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase;
   text-align: left; padding: 10px 13px; white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0,0,0,.2);
 }
 .ldp-th-num    { text-align: center !important; }
 .ldp-th-action { text-align: center !important; width: 120px; }
-
-.ldp-table tbody tr {
-  border-bottom: 1px solid #fef3c7; transition: background .12s;
-}
-.ldp-table tbody tr:nth-child(even) { background: #fffbeb; }
+.ldp-table tbody tr { border-bottom: 1px solid #ecfeff; transition: background .12s; }
+.ldp-table tbody tr:nth-child(even) { background: #f7fffe; }
 .ldp-table tbody tr:last-child      { border-bottom: none; }
-.ldp-table tbody tr:hover           { background: #fef3c7; }
-.ldp-table tbody td {
-  padding: 9px 13px; color: #1f2937; vertical-align: middle;
-}
+.ldp-table tbody tr:hover           { background: #ecfeff; }
+.ldp-table tbody td { padding: 9px 13px; color: #475569; vertical-align: middle; }
 .ldp-td-num    { text-align: center; }
 .ldp-td-action { text-align: center; }
-.ldp-text  { color: #44403c; font-size: 11px; }
-.ldp-muted { color: #d6d3d1; font-style: italic; }
+.ldp-text  { color: #475569; font-size: 11px; }
+.ldp-muted { color: #cbd5e1; font-style: italic; }
 
-.ldp-person { display: flex; align-items: center; gap: 10px; }
-.ldp-avatar {
-  width: 28px; height: 28px; border-radius: 50%;
-  color: #fff; font-size: 10.5px; font-weight: 800;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 3px 8px rgba(0,0,0,.10);
-}
-.ldp-person-name { font-size: 11.5px; font-weight: 700; color: #1f2937; }
+.ldp-person-name { font-size: 11.5px; font-weight: 500; color: #0f172a; }
 
 .ldp-chip {
   display: inline-block; padding: 3px 12px; border-radius: 999px;
   font-size: 10.5px; font-weight: 700; border: 1.5px solid;
   white-space: nowrap;
 }
-/* Column-specific chip palettes — each column reads as one tonal
-   family across rows (amber / rose / peach) instead of the old
-   per-row hash that made adjacent rows look mismatched. */
-.ldp-chip-dept {
-  background: #fef3c7; color: #92400e; border-color: #fde68a;
-}
-/* Slate, deliberately outside the amber/rose/peach families above — this
-   one is a status, not a category, and should not read as another tag. */
-.ldp-chip-inactive {
-  background: #e5e7eb; color: #4b5563; border-color: #d1d5db;
-  margin-left: 6px; vertical-align: middle;
-}
-.ldp-chip-primary {
-  background: #ffe4e6; color: #9f1239; border-color: #fecdd3;
-}
-.ldp-chip-ancillary {
-  background: #fce7f3; color: #9d174d; border-color: #fbcfe8;
-}
-/* Legacy classes — retained for any callers outside this file. */
-.ldp-chip-green {
-  background: #dcfce7; color: #166534; border-color: #bbf7d0;
-}
-.ldp-chip-outline {
-  background: #fff; color: #b45309; border-color: #fde68a;
-}
+.ldp-chip-dept      { background: #ecfeff; color: #0e7490; border-color: #a5f3fc; }
+.ldp-chip-inactive  { background: #e5e7eb; color: #4b5563; border-color: #d1d5db; margin-left: 6px; vertical-align: middle; }
+.ldp-chip-primary   { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+.ldp-chip-ancillary { background: #ccfbf1; color: #0f766e; border-color: #99f6e4; }
+.ldp-chip-green     { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.ldp-chip-outline   { background: #fff; color: #0e7490; border-color: #a5f3fc; }
 
-/* Total Leads badge — outlined amber pill (white surface, amber
-   border, amber text). Matches the page's amber tonal family so it
-   reads as part of the same accent set as the header/back button
-   without competing with the red Unassigned KPI for attention. */
 .ldp-total {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 30px; padding: 3px 12px;
-  background: #ffffff; color: #b45309;
-  border: 1.5px solid #fbbf24;
+  background: #ffffff; color: #0e7490;
+  border: 1.5px solid #67e8f9;
   border-radius: 999px;
   font-size: 11px; font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
-
-/* SR NO badge — small outlined circle so the row index reads as a
-   discrete chip instead of a loose number. Same outline recipe as
-   the Total Leads pill (white surface, amber stroke) so the two
-   numeric columns feel related. */
+/* Sr No = the Customers list badge (.dt-serial): filled rounded square, white
+   number — in this page's cyan. */
 .ldp-sr-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px;
-  background: #ffffff; color: #b45309;
-  border: 1.5px solid #fde68a;
-  border-radius: 50%;
-  font-size: 10.5px; font-weight: 800;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: linear-gradient(135deg, #0891b2, #155e75);
+  color: #fff;
+  font-size: 11px; font-weight: 800;
   font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(8,145,178,.30);
 }
-
 .ldp-view-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 12px; border-radius: 7px;
-  background: #ffffff; border: 1.5px solid #fed7aa; color: #ea580c;
-  font-size: 10.5px; font-weight: 700; cursor: pointer;
+  padding: 5px 12px; border-radius: 8px;
+  background: #ffffff; border: 1.5px solid #a5f3fc; color: #0891b2;
+  font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
   transition: background .15s, color .15s, border-color .15s, transform .12s, box-shadow .15s;
   white-space: nowrap;
 }
 .ldp-view-btn:hover {
-  background: #fff7ed; border-color: #fdba74; color: #c2410c;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
+  border-color: transparent; color: #fff;
   transform: translateY(-1px);
-  box-shadow: 0 4px 10px rgba(234,88,12,.15);
+  box-shadow: 0 4px 12px rgba(8,145,178,.35);
 }
 .ldp-view-btn:active { transform: translateY(0); }
 
-.ldp-status {
-  text-align: center; padding: 24px 14px;
-  color: #a8a29e; font-style: italic; font-size: 11px;
-}
+/* Cell type = the Customers list (.smc-table-wrap): 11.5 / 500 for every data cell;
+   badges keep their own sizes (chips at the Leads Details lead-type badge weight). */
+.ldp-table tbody td,
+.ldp-table tbody td *:not(i):not(svg):not(svg *) { font-size: 11.5px !important; font-weight: 500 !important; }
+.ldp-table tbody td .ldp-sr-badge.ldp-sr-badge { font-size: 11px !important; font-weight: 800 !important; }
+.ldp-table tbody td .ldp-chip.ldp-chip { font-size: 10px !important; font-weight: 600 !important; }
+.ldp-table tbody td .ldp-total.ldp-total { font-size: 11px !important; font-weight: 800 !important; }
+.ldp-table tbody td .ldp-view-btn.ldp-view-btn,
+.ldp-table tbody td .ldp-view-btn.ldp-view-btn * { font-size: 10.5px !important; font-weight: 700 !important; }
+.ldp-status { text-align: center; padding: 24px 14px; color: #94a3b8; font-style: italic; font-size: 11px; }
 
-/* ── Loading shimmer — skeleton rows shown while the roster loads ── */
+/* ── Loading shimmer ── */
 .ldp-skel-row td { padding: 9px 13px; }
 .ldp-skel {
   display: inline-block; vertical-align: middle;
   border-radius: 6px;
-  background: linear-gradient(100deg, #fdf6e8 30%, #fce9c4 50%, #fdf6e8 70%);
+  background: linear-gradient(100deg, #ecfeff 30%, #cffafe 50%, #ecfeff 70%);
   background-size: 200% 100%;
   animation: ldp-shimmer 1.2s ease-in-out infinite;
 }
 .ldp-skel-line   { height: 11px; width: 100%; }
 .ldp-skel-sr     { width: 24px; height: 24px; border-radius: 50%; }
-.ldp-skel-avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; }
 .ldp-skel-chip   { width: 64px; height: 20px; border-radius: 999px; }
-/* KPI value placeholder — sized to the digits it stands in for so the card
-   keeps its exact height and the number doesn't nudge the layout on arrival. */
 .ldp-skel-kpi    { width: 52px; height: 20px; border-radius: 6px; }
-/* Header-pill placeholder — a short bar in place of the count, keeping the
-   pill's own width close to what the real figure will need. */
 .ldp-skel-num    { width: 22px; height: 10px; border-radius: 4px; margin-right: 2px; }
 .ldp-skel-pill   { width: 36px; height: 22px; border-radius: 999px; }
 .ldp-skel-btn    { width: 86px; height: 26px; border-radius: 7px; }
-@keyframes ldp-shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-[data-bs-theme="dark"] .ldp-skel {
-  background: linear-gradient(100deg, #2a1d10 30%, #3d2c16 50%, #2a1d10 70%);
-  background-size: 200% 100%;
-}
+@keyframes ldp-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
-/* ── Pagination footer ──────────────────────────────────────────── */
+/* ── Pager — the My Workplace pager (.lwp-pagination) ── */
 .ldp-pagination {
   flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; padding: 10px 14px;
-  background: #fffbeb; border-top: 1px solid #fde68a;
-  font-size: 11px; color: #57534e;
+  gap: 8px; padding: 10px 16px;
+  background: linear-gradient(90deg, #ecfeff 0%, #cffafe 40%, #ecfeff 100%);
+  border-top: 2px solid #a5f3fc;
   flex-wrap: wrap;
 }
 .ldp-pagination-info {
-  font-weight: 600; color: #92400e;
-  background: #fff; border: 1.5px solid #fde68a;
-  padding: 4px 13px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 500; color: #0e7490;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  padding: 5px 14px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
-.ldp-pagination-controls {
-  display: flex; align-items: center; gap: 14px;
-}
+.ldp-pagination-controls { display: flex; align-items: center; gap: 8px; }
 .ldp-rows-per-page {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; color: #57534e; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: #0e7490; font-weight: 500;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  padding: 4px 12px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
 .ldp-rows-per-page select {
-  border: 1.5px solid #fde68a; border-radius: 999px;
-  /* Amber-gradient pill to match the page-indicator / info pills. */
-  background-color: transparent;
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2392400e' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"),
-    linear-gradient(135deg, #fef9c3, #fef3c7);
-  background-repeat: no-repeat, no-repeat;
-  background-position: right 9px center, center;
-  background-size: 12px, 100% 100%;
-  color: #78350f;
-  padding: 4px 26px 4px 13px; font-size: 11px; font-weight: 800;
-  cursor: pointer; outline: none;
-  appearance: none;
+  border: none; background: transparent; font-family: inherit;
+  font-size: 11.5px; color: #0891b2; font-weight: 700; cursor: pointer; outline: none;
 }
-.ldp-rows-per-page select:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
 .ldp-page-indicator {
-  font-size: 11px; font-weight: 700; color: #78350f;
+  font-size: 11.5px; font-weight: 800; color: #fff;
   min-width: 36px; text-align: center;
-  background: linear-gradient(135deg, #fef9c3, #fef3c7);
-  border: 1.5px solid #fde68a;
-  padding: 4px 12px; border-radius: 999px;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  border: none; padding: 5px 18px; border-radius: 20px;
+  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+  white-space: nowrap;
 }
 .ldp-page-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 27px; height: 27px; border-radius: 50%;
-  background: #fff; border: 1.5px solid #fde68a; color: #b45309;
+  width: 32px; height: 32px; border-radius: 50%;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc; color: #0891b2;
   cursor: pointer;
-  transition: background .15s, color .15s, border-color .15s, transform .12s;
+  transition: all .18s;
 }
 .ldp-page-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #fde68a, #fcd34d);
-  color: #92400e; transform: translateY(-1px);
+  background: #fff; border-color: #0891b2;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(8,145,178,.25);
 }
 .ldp-page-btn:active:not(:disabled) { transform: translateY(0); }
-.ldp-page-btn:disabled {
-  opacity: .45; cursor: not-allowed;
-}
+.ldp-page-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* ── Dark mode adaptation ───────────────────────────────────────── */
-[data-bs-theme="dark"] .ldp-shell { background: #1c1410; }
+/* ── Dark mode — the My Workplace dark cyan ── */
+[data-bs-theme="dark"] .ldp-page { background: transparent; }
+[data-bs-theme="dark"] .ldp-shell { background: #0c1f2e; border-color: rgba(34,211,238,.18); }
 [data-bs-theme="dark"] .ldp-header-card {
-  background: #1c1410; border-color: #422006;
+  background:
+    radial-gradient(ellipse at top right, rgba(34,211,238,0.10), transparent 60%),
+    radial-gradient(ellipse at bottom left, rgba(14,165,233,0.08), transparent 60%),
+    linear-gradient(135deg, #0e2940 0%, #102a3a 50%, #0c1f2e 100%);
+  border-color: rgba(34,211,238,0.18);
+  box-shadow: 0 2px 0 rgba(255,255,255,.04) inset, 0 4px 16px rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.25);
 }
-[data-bs-theme="dark"] .ldp-header {
-  background: linear-gradient(135deg, #422006 0%, #78350f 60%, #92400e 100%);
+[data-bs-theme="dark"] .ldp-banner-sheen { background: linear-gradient(180deg, rgba(255,255,255,.05), transparent); }
+[data-bs-theme="dark"] .ldp-banner-glow {
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(34,211,238,.10) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 50%, rgba(14,165,233,.08) 0%, transparent 55%);
 }
-[data-bs-theme="dark"] .ldp-header-title { color: #fef3c7; }
-[data-bs-theme="dark"] .ldp-header-sub   { color: #fcd34d; }
-[data-bs-theme="dark"] .ldp-header-pill  { background: rgba(0,0,0,.30); color: #fcd34d; border-color: #b45309; }
-[data-bs-theme="dark"] .ldp-stat { background: #1f1611; color: #fef3c7; }
-[data-bs-theme="dark"] .ldp-stat-label { color: #d6d3d1; }
-/* Retune each tone for the dark surface — brighter accents, translucent
-   tiles/borders so the cards read against #1f1611 without glare. */
+[data-bs-theme="dark"] .ldp-header-title { color: #f0f9ff; }
+[data-bs-theme="dark"] .ldp-header-sub   { color: #67e8f9; }
+[data-bs-theme="dark"] .ldp-header-pill  { background: rgba(34,211,238,.10); color: #67e8f9; border-color: rgba(103,232,249,.35); box-shadow: none; }
+[data-bs-theme="dark"] .ldp-stat { background: #0f2233; color: #e0f2fe; }
+[data-bs-theme="dark"] .ldp-stat-label { color: #94a3b8; }
 [data-bs-theme="dark"] .ldp-stat-slate {
-  --ldp-tone-accent: #a5b4fc; --ldp-tone-border: rgba(99,102,241,.40); --ldp-tone-icon-bg: rgba(99,102,241,.18);
-  --ldp-tone-value: #e0e7ff;  --ldp-tone-sub: #a5b4fc;
+  --ldp-tone-accent: #7dd3fc; --ldp-tone-border: rgba(56,189,248,.40); --ldp-tone-icon-bg: rgba(56,189,248,.16);
+  --ldp-tone-value: #e0f2fe;  --ldp-tone-sub: #7dd3fc;
 }
-[data-bs-theme="dark"] .ldp-stat-amber {
-  --ldp-tone-accent: #fbbf24; --ldp-tone-border: rgba(217,119,6,.45); --ldp-tone-icon-bg: rgba(217,119,6,.18);
-  --ldp-tone-value: #fde68a;  --ldp-tone-sub: #fbbf24;
+[data-bs-theme="dark"] .ldp-stat-cyan {
+  --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
+  --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
 }
 [data-bs-theme="dark"] .ldp-stat-green {
-  --ldp-tone-accent: #34d399; --ldp-tone-border: rgba(16,185,129,.40); --ldp-tone-icon-bg: rgba(16,185,129,.18);
-  --ldp-tone-value: #6ee7b7;  --ldp-tone-sub: #34d399;
+  --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
+  --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
 }
 [data-bs-theme="dark"] .ldp-stat-red {
-  --ldp-tone-accent: #f87171; --ldp-tone-border: rgba(239,68,68,.40); --ldp-tone-icon-bg: rgba(239,68,68,.18);
-  --ldp-tone-value: #fca5a5;  --ldp-tone-sub: #f87171;
+  --ldp-tone-accent: #67e8f9; --ldp-tone-border: rgba(34,211,238,.40); --ldp-tone-icon-bg: rgba(34,211,238,.16);
+  --ldp-tone-value: #cffafe;  --ldp-tone-sub: #67e8f9;
 }
-[data-bs-theme="dark"] .ldp-table-wrap { background: #1f1611; border-color: #422006; }
-[data-bs-theme="dark"] .ldp-table tbody tr { border-color: #422006; }
-[data-bs-theme="dark"] .ldp-table tbody tr:nth-child(even) { background: #28190e; }
-[data-bs-theme="dark"] .ldp-table tbody tr:hover { background: #422006; }
-[data-bs-theme="dark"] .ldp-table tbody td { color: #fef3c7; }
-[data-bs-theme="dark"] .ldp-person-name   { color: #fef3c7; }
-[data-bs-theme="dark"] .ldp-text          { color: #fde68a; }
-[data-bs-theme="dark"] .ldp-chip-outline  { background: #1f1611; }
-[data-bs-theme="dark"] .ldp-chip-dept {
-  background: rgba(146, 64, 14, .25); color: #fcd34d; border-color: rgba(253, 230, 138, .35);
-}
-[data-bs-theme="dark"] .ldp-chip-inactive {
-  background: rgba(75, 85, 99, .35); color: #d1d5db; border-color: rgba(209, 213, 219, .3);
-}
-[data-bs-theme="dark"] .ldp-chip-primary {
-  background: rgba(159, 18, 57, .25); color: #fda4af; border-color: rgba(254, 205, 211, .35);
-}
-[data-bs-theme="dark"] .ldp-chip-ancillary {
-  background: rgba(157, 23, 77, .25); color: #f9a8d4; border-color: rgba(251, 207, 232, .35);
-}
-[data-bs-theme="dark"] .ldp-view-btn      { background: #1f1611; border-color: #7c2d12; color: #fdba74; }
-[data-bs-theme="dark"] .ldp-view-btn:hover{ background: #28190e; border-color: #c2410c; color: #fed7aa; }
-[data-bs-theme="dark"] .ldp-total {
-  background: #1f1611; color: #fcd34d; border-color: #b45309;
-}
-[data-bs-theme="dark"] .ldp-sr-badge {
-  background: #1f1611; color: #fcd34d; border-color: #422006;
-}
-[data-bs-theme="dark"] .ldp-pagination    { background: #28190e; border-color: #422006; color: #d6d3d1; }
-[data-bs-theme="dark"] .ldp-pagination-info { background: #1f1611; color: #fde68a; border-color: #422006; }
-[data-bs-theme="dark"] .ldp-rows-per-page { color: #d6d3d1; }
-[data-bs-theme="dark"] .ldp-rows-per-page select {
-  color: #fef3c7; border-color: #422006;
-  background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23fcd34d' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"),
-    linear-gradient(135deg, #28190e, #1f1611);
-}
-[data-bs-theme="dark"] .ldp-page-indicator {
-  color: #fcd34d; background: linear-gradient(135deg, #28190e, #1f1611); border-color: #422006;
-}
-[data-bs-theme="dark"] .ldp-page-btn { background: #1f1611; border-color: #422006; color: #fcd34d; }
+[data-bs-theme="dark"] .ldp-table-wrap { background: #0f2233; border-color: rgba(34,211,238,.25); box-shadow: 0 4px 20px rgba(0,0,0,.35); }
+[data-bs-theme="dark"] .ldp-table tbody tr { border-color: rgba(34,211,238,.10); }
+[data-bs-theme="dark"] .ldp-table tbody tr:nth-child(even) { background: rgba(8,145,178,.06); }
+[data-bs-theme="dark"] .ldp-table tbody tr:hover { background: rgba(8,145,178,.14); }
+[data-bs-theme="dark"] .ldp-table tbody td { color: #cbd5e1; }
+[data-bs-theme="dark"] .ldp-person-name   { color: #f0f9ff; }
+[data-bs-theme="dark"] .ldp-text          { color: #cbd5e1; }
+[data-bs-theme="dark"] .ldp-chip-outline  { background: transparent; }
+[data-bs-theme="dark"] .ldp-chip-dept      { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(103,232,249,.35); }
+[data-bs-theme="dark"] .ldp-chip-inactive  { background: rgba(75,85,99,.35); color: #d1d5db; border-color: rgba(209,213,219,.3); }
+[data-bs-theme="dark"] .ldp-chip-primary   { background: rgba(3,105,161,.25); color: #7dd3fc; border-color: rgba(125,211,252,.35); }
+[data-bs-theme="dark"] .ldp-chip-ancillary { background: rgba(15,118,110,.25); color: #5eead4; border-color: rgba(94,234,212,.35); }
+[data-bs-theme="dark"] .ldp-view-btn      { background: transparent; border-color: rgba(103,232,249,.35); color: #67e8f9; }
+[data-bs-theme="dark"] .ldp-total         { background: transparent; color: #67e8f9; border-color: rgba(103,232,249,.35); }
+[data-bs-theme="dark"] .ldp-sr-badge      { color: #e2e8f0; }
+[data-bs-theme="dark"] .ldp-skel { background: linear-gradient(100deg, #10293a 30%, #15384d 50%, #10293a 70%); background-size: 200% 100%; }
+[data-bs-theme="dark"] .ldp-pagination { background: rgba(8,145,178,.08); border-top-color: rgba(34,211,238,.25); }
+[data-bs-theme="dark"] .ldp-pagination-info,
+[data-bs-theme="dark"] .ldp-rows-per-page { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
+[data-bs-theme="dark"] .ldp-rows-per-page select { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldp-page-btn { background: rgba(15,34,51,.8); border-color: rgba(103,232,249,.30); color: #67e8f9; }
 
 /* Tablet — 2-up stats, header pills wrap below the back button */
 @media (max-width: 1100px) {
   .ldp-stats { grid-template-columns: repeat(2, 1fr); }
-  .ldp-header { flex-wrap: wrap; }
+  .ldp-header { flex-wrap: wrap; padding-top: 10px; padding-bottom: 10px; }
   .ldp-header-right { flex-wrap: wrap; justify-content: flex-end; width: 100%; }
 }
 
-/* Phone — full-width page, single-column stats, table scrolls
-   horizontally, header collapses to a tighter stack. */
+/* Phone — full-width page, single-column stats, table scrolls horizontally. */
 @media (max-width: 640px) {
   .ldp-page { padding: 0; }
-  .ldp-header-card {
-    border-radius: 0; border-left: none; border-right: none; margin-bottom: 10px;
-  }
-  .ldp-shell {
-    width: 100%; border-radius: 0; border-left: none; border-right: none;
-  }
-  .ldp-header {
-    padding: 14px 16px; gap: 12px; flex-direction: column; align-items: flex-start;
-  }
+  .ldp-header-card { border-radius: 0; border-left: none; border-right: none; margin-bottom: 10px; }
+  .ldp-shell { width: 100%; border-radius: 0; border-left: none; border-right: none; }
+  .ldp-header { padding: 14px 16px; gap: 12px; flex-direction: column; align-items: flex-start; }
   .ldp-header-left { gap: 10px; }
-  .ldp-header-icon { width: 38px; height: 38px; }
-  .ldp-header-title { font-size: 15px; }
-  .ldp-header-sub   { font-size: 11px; }
   .ldp-header-right { flex-wrap: wrap; gap: 8px; }
   .ldp-header-right .ldp-back-btn { flex: 1; justify-content: center; }
   .ldp-header-pill { flex: 1; justify-content: center; }
   .ldp-stats { grid-template-columns: 1fr; padding: 14px 16px 4px; gap: 10px; }
   .ldp-stat-value { font-size: 24px; }
   .ldp-table-wrap { margin: 12px 16px 16px; }
-  .ldp-pagination {
-    flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px;
-  }
+  .ldp-pagination { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
   .ldp-pagination-controls { justify-content: space-between; gap: 8px; }
   .ldp-table thead th, .ldp-table tbody td { padding: 10px 12px; font-size: 11.5px; }
   .ldp-person-name { font-size: 12px; }
-  .ldp-avatar { width: 30px; height: 30px; font-size: 11px; }
 }
 `;
