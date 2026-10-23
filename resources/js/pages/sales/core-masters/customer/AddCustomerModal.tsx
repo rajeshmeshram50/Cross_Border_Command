@@ -21,6 +21,7 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import SearchClear from '../../../../components/ui/SearchClear';
 import { readCustomerMasterBundle,writeCustomerMasterBundle, bustCustomerMasterBundle,} from './customerBundleCache';
+import '../../../p2p/p2p-master-management/supplier-management/add-vendor-modal.css';
 
 type Stage = 1 | 2;
 type StageTab = 'identification' | 'address-contact';
@@ -82,9 +83,9 @@ function validateUpload(file: File, kind: FileKind = 'doc'): string | null {
 
 const KYC_PER_PAGE = 6;
 const KYC_TAB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string }> = {
-  'company-dd':   { title:'COMPANY DUE DILIGENCE', sub:'| Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',     placeholder:'Search DD document name...' },
-  'owner-kyc':    { title:'OWNER KYC DETAILS',     sub:'| Owner identity proofs, address proofs, and photographs', nameCol:'KYC Document Name', placeholder:'Search KYC document name...' },
-  'trade-licence':{ title:'TRADE LICENCE',         sub:'| Trade licence documents and regulatory approvals',     nameCol:'Document Name',         placeholder:'Search trade licence document...' },
+  'company-dd':   { title:'COMPANY DUE DILIGENCE', sub:'Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',     placeholder:'Search DD document name...' },
+  'owner-kyc':    { title:'OWNER KYC DETAILS',     sub:'Owner identity proofs, address proofs, and photographs', nameCol:'KYC Document Name', placeholder:'Search KYC document name...' },
+  'trade-licence':{ title:'TRADE LICENCE',         sub:'Trade licence documents and regulatory approvals',     nameCol:'Document Name',         placeholder:'Search trade licence document...' },
 };
 
 const newId = (prefix: string) => prefix + '_' + Math.random().toString(36).slice(2, 9);
@@ -1389,8 +1390,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
         {stage === 1 && showShimmer && (
           <div className="acm-tabs acm-tabs-shimmer">
-            <Shimmer height={36} width={180} radius={999} />
-            <Shimmer height={36} width={200} radius={999} />
+            <Shimmer height={14} width={170} radius={4} style={{ margin: '0 14px 10px' }} />
+            <Shimmer height={14} width={190} radius={4} style={{ margin: '0 14px 10px' }} />
           </div>
         )}
         {stage === 1 && !showShimmer && (
@@ -1854,7 +1855,7 @@ function GstScrutinyManagePopup(props: {
               <div className="acm-row acm-row-3">
                 <Field label="GST Number" required error={errs.gstNumber}>
                   <input
-                    className={`acm-input-ro${errs.gstNumber ? ' acm-input-error' : ''}`}
+                    className={`avm-input avm-input-ro${errs.gstNumber ? ' acm-input-error' : ''}`}
                     value={draft.gstNumber}
                     readOnly
                     title="Comes from the customer's GST Number — change it on the customer form"
@@ -1870,10 +1871,10 @@ function GstScrutinyManagePopup(props: {
               </div>
               <div className="acm-row acm-row-2">
                 <Field label="Previous Non-GST 2A Reflected Invoice">
-                  <input value={draft.prevNonGst2aInvoice} maxLength={50} onChange={e => setD('prevNonGst2aInvoice', e.target.value)} placeholder="Enter invoice reference (optional)" />
+                  <input className="avm-input" value={draft.prevNonGst2aInvoice} maxLength={50} onChange={e => setD('prevNonGst2aInvoice', e.target.value)} placeholder="Enter invoice reference (optional)" />
                 </Field>
                 <Field label="Red Flags">
-                  <input value={draft.redFlags} maxLength={300} onChange={e => setD('redFlags', e.target.value)} placeholder="Enter red flags (optional)" />
+                  <input className="avm-input" value={draft.redFlags} maxLength={300} onChange={e => setD('redFlags', e.target.value)} placeholder="Enter red flags (optional)" />
                 </Field>
               </div>
               <div className="acm-gst-form-actions">
@@ -1933,6 +1934,8 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
                 <div className="acm-step-title">{s.title}</div>
                 <div className="acm-step-sub">{s.sub}</div>
               </div>
+              {isActive && <span className="acm-step-pill acm-step-pill-active">In Progress</span>}
+              {isDone && <span className="acm-step-pill acm-step-pill-done">Completed</span>}
             </div>
             {i < steps.length - 1 && (
               <div className="acm-step-connector"><div className="acm-connector-line" data-done={s.n < maxStage ? '1' : '0'} /></div>
@@ -2042,14 +2045,14 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
 
   const contactPersonField = (
     <Field label="Contact Person Name" required error={errors.cpName} fieldKey="cpName">
-      <input className={errors.cpName ? 'acm-input-error' : ''} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" />
+      <input className={`avm-input${errors.cpName ? ' acm-input-error' : ''}`} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" />
     </Field>
   );
   const whatsappField = (
     <Field label="Whatsapp Enabled" required error={errors.cpWa} fieldKey="cpWa">
-      <div className="acm-radio-row">
-        <label className="acm-radio"><input type="radio" name="cpWa" value="yes" checked={form.cpWa === 'yes'} onChange={() => set('cpWa', 'yes')} /> YES</label>
-        <label className="acm-radio"><input type="radio" name="cpWa" value="no" checked={form.cpWa === 'no'} onChange={() => set('cpWa', 'no')} /> NO</label>
+      <div className="avm-radio-row">
+        <label className="avm-radio"><input type="radio" name="cpWa" value="yes" checked={form.cpWa === 'yes'} onChange={() => set('cpWa', 'yes')} /> YES</label>
+        <label className="avm-radio"><input type="radio" name="cpWa" value="no" checked={form.cpWa === 'no'} onChange={() => set('cpWa', 'no')} /> NO</label>
       </div>
     </Field>
   );
@@ -2061,17 +2064,17 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
           <div>
             <span className="acm-section-title">BASIC COMPANY DETAILS</span>
-            <span className="acm-section-sub">| Company identity, segment, and risk classification</span>
+            <span className="acm-section-sub">Company identity, segment, and risk classification</span>
           </div>
         </div>
         <div className="acm-section-body">
           <div className="acm-row acm-row-4">
-            <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
-            <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
+            <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={`avm-input${errors.coName ? ' acm-input-error' : ''}`} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
+            <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={`avm-input${errors.coLegal ? ' acm-input-error' : ''}`} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
             <Field label="Customer Category" required error={errors.coType} fieldKey="coType">
               <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer category" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
-            <Field label="Company Website" error={errors.coWeb} fieldKey="coWeb"><input className={errors.coWeb ? 'acm-input-error' : ''} value={form.coWeb} onChange={e => set('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
+            <Field label="Company Website" error={errors.coWeb} fieldKey="coWeb"><input className={`avm-input${errors.coWeb ? ' acm-input-error' : ''}`} value={form.coWeb} onChange={e => set('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
@@ -2126,7 +2129,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
           <div>
             <span className="acm-section-title">PRIMARY ADDRESS &amp; CONTACT PERSON</span>
-            <span className="acm-section-sub">| Registered office and primary contact at this location</span>
+            <span className="acm-section-sub">Registered office and primary contact at this location</span>
           </div>
         </div>
         <div className="acm-section-body">
@@ -2140,7 +2143,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 onChange={() => {  }}
               />
             </Field>
-            <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" maxLength={75} /></Field>
+            <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={`avm-input${errors.addr ? ' acm-input-error' : ''}`} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" maxLength={75} /></Field>
           </div>
           <div className="acm-row acm-row-3">
             <Field label="Country" required error={errors.country} fieldKey="country">
@@ -2188,7 +2191,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
             {domestic && (
               <Field label="State Code" required fieldKey="stateCode">
                 <input
-                  className="acm-input acm-input-ro"
+                  className="avm-input avm-input-ro"
                   placeholder="Auto-filled from State"
                   value={form.stateCode ?? ''}
                   readOnly
@@ -2197,13 +2200,13 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 />
               </Field>
             )}
-            <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
-            <Field label={pinLabel(form.country)} required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', pinSanitize(e.target.value, form.country))} inputMode={isDomesticCountry(form.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(form.country)} placeholder={pinPlaceholder(form.country)} /></Field>
+            <Field label="City" required error={errors.city} fieldKey="city"><input className={`avm-input${errors.city ? ' acm-input-error' : ''}`} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
+            <Field label={pinLabel(form.country)} required error={errors.pin} fieldKey="pin"><input className={`avm-input${errors.pin ? ' acm-input-error' : ''}`} value={form.pin} onChange={e => set('pin', pinSanitize(e.target.value, form.country))} inputMode={isDomesticCountry(form.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(form.country)} placeholder={pinPlaceholder(form.country)} /></Field>
             {!domestic && contactPersonField}
             {domestic && (
               <Field label="GST Number" required error={errors.coGstNumber} fieldKey="coGstNumber">
                 <input
-                  className={`acm-input ${errors.coGstNumber || gstStateMismatch || gstStatus === 'taken' ? 'acm-input-error' : ''} ${gstStatus === 'valid' && !gstStateMismatch ? 'acm-input-ok' : ''}`}
+                  className={`avm-input ${errors.coGstNumber || gstStateMismatch || gstStatus === 'taken' ? 'acm-input-error' : ''} ${gstStatus === 'valid' && !gstStateMismatch ? 'acm-input-ok' : ''}`}
                   placeholder="e.g. 27AADCI6120M1ZH"
                   maxLength={15}
                   value={form.coGstNumber ?? ''}
@@ -2237,7 +2240,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
             {domestic && contactPersonField}
             <Field label="Designation" required error={errors.cpDesig} fieldKey="cpDesig">
               <input
-                className={`acm-input ${errors.cpDesig ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errors.cpDesig ? 'acm-input-error' : ''}`}
                 placeholder="Type designation (e.g. Compliance Officer)"
                 value={form.cpDesig}
                 onChange={e => set('cpDesig', e.target.value)}
@@ -2245,14 +2248,14 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
               />
             </Field>
             <Field label="Contact No" required error={errors.cpTel} fieldKey="cpTel">{domestic ? (
-              <div className={`acm-phone-wrap${errors.cpTel ? ' acm-phone-invalid' : ''}`}>
-                <span className="acm-phone-cc">+91</span>
-                <input type="tel" inputMode="numeric" maxLength={10} value={form.cpTel} onChange={e => set('cpTel', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
+              <div className="avm-phone-in">
+                <span className="avm-phone-cc">+91</span>
+                <input className="avm-input avm-phone-field" type="tel" inputMode="numeric" maxLength={10} value={form.cpTel} onChange={e => set('cpTel', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
               </div>
             ) : (
-              <input className={errors.cpTel ? 'acm-input-error' : ''} type="tel" value={form.cpTel} onChange={e => set('cpTel', e.target.value)} placeholder="7–15 digit number" />
+              <input className={`avm-input${errors.cpTel ? ' acm-input-error' : ''}`} type="tel" value={form.cpTel} onChange={e => set('cpTel', e.target.value)} placeholder="7–15 digit number" />
             )}</Field>
-            <Field label="Email" required error={errors.cpEmail} fieldKey="cpEmail"><input className={errors.cpEmail ? 'acm-input-error' : ''} type="email" value={form.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
+            <Field label="Email" required error={errors.cpEmail} fieldKey="cpEmail"><input className={`avm-input${errors.cpEmail ? ' acm-input-error' : ''}`} type="email" value={form.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
             {!domestic && whatsappField}
           </div>
           {domestic && (
@@ -2290,7 +2293,7 @@ function Stage1AdditionalLocations({ primary, locations, onAdd, onEdit, onDel, o
           <div className="acm-section-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg></div>
           <div>
             <span className="acm-section-title">ADDRESS &amp; CONTACT DETAILS</span>
-            <span className="acm-section-sub">| All addresses with their authorized contact person</span>
+            <span className="acm-section-sub">All addresses with their authorized contact person</span>
           </div>
           <button type="button" className="acm-add-pill" onClick={onAdd}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
@@ -2853,8 +2856,8 @@ function KycFileSlot({
   };
 
   return (
-    <div className="acm-field" data-field={fieldKey}>
-      <label>{label} {required && <span className="acm-req">*</span>}</label>
+    <div className={`acm-field avm-field avm-master-select${error ? ' has-error' : ''}`} data-field={fieldKey}>
+      <span className="avm-field-label">{label}{required && <span className="avm-req">*</span>}</span>
       <input
         ref={inputRef}
         type="file"
@@ -2946,7 +2949,7 @@ function KycFileSlot({
           </button>
         </Tooltip>
       )}
-      {error && <span className="acm-field-error" title={error}>{error}</span>}
+      {error && <span className="avm-field-error" title={error}><i className="ri-error-warning-line" /> {error}</span>}
     </div>
   );
 }
@@ -3107,12 +3110,12 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
               </div>
             </Field>
             <Field label="License Number" required error={errs.license}>
-              <input className={errs.license ? 'acm-input-error' : ''} value={d.license} maxLength={25} onChange={e => set('license', e.target.value.slice(0, 25))} placeholder="Enter license number (max 25)" />
+              <input className={`avm-input${errs.license ? ' acm-input-error' : ''}`} value={d.license} maxLength={25} onChange={e => set('license', e.target.value.slice(0, 25))} placeholder="Enter license number (max 25)" />
             </Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Issuing Authority" required error={errs.authority}>
-              <input className={errs.authority ? 'acm-input-error' : ''} value={d.authority} onChange={e => set('authority', e.target.value)} placeholder="Enter issuing authority" />
+              <input className={`avm-input${errs.authority ? ' acm-input-error' : ''}`} value={d.authority} onChange={e => set('authority', e.target.value)} placeholder="Enter issuing authority" />
             </Field>
             <Field label="Issuing Date" required error={errs.issueDate}>
               <MasterDatePicker
@@ -3254,7 +3257,7 @@ function AddDocumentTypeMasterModal({ onClose, onSaved }:
           <div className="acm-row acm-row-1">
             <Field label="Document Type Name" required error={errs.title}>
               <input
-                className={errs.title ? 'acm-input-error' : ''}
+                className={`avm-input${errs.title ? ' acm-input-error' : ''}`}
                 value={title}
                 onChange={e => { setTitle(e.target.value); if (errs.title) setErrs(p => { const n = { ...p }; delete n.title; return n; }); }}
                 placeholder="e.g. GST Registration Certificate"
@@ -3486,16 +3489,16 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
         <div className="acm-sub-body">
           <div className="acm-row acm-row-4">
             <Field label="Owner Name" required error={errs.ownerName}>
-              <input className={errs.ownerName ? 'acm-input-error' : ''} value={d.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Enter owner name" />
+              <input className={`avm-input${errs.ownerName ? ' acm-input-error' : ''}`} value={d.ownerName} onChange={e => set('ownerName', e.target.value)} placeholder="Enter owner name" />
             </Field>
             <Field label="Designation" required error={errs.designation}>
               <MasterSelect value={d.designation} options={optsWith(masters.designations, d.designation)} placeholder="Select designation" invalid={!!errs.designation} onChange={v => set('designation', v)} />
             </Field>
             <Field label="Official Email" required error={errs.officialEmail}>
-              <input className={errs.officialEmail ? 'acm-input-error' : ''} type="email" value={d.officialEmail} onChange={e => set('officialEmail', e.target.value)} placeholder="name@company.com" />
+              <input className={`avm-input${errs.officialEmail ? ' acm-input-error' : ''}`} type="email" value={d.officialEmail} onChange={e => set('officialEmail', e.target.value)} placeholder="name@company.com" />
             </Field>
             <Field label="Phone Number" required error={errs.phoneNumber}>
-              <input className={errs.phoneNumber ? 'acm-input-error' : ''} type="tel" value={d.phoneNumber} onChange={e => set('phoneNumber', e.target.value)} placeholder="7–15 digit number" />
+              <input className={`avm-input${errs.phoneNumber ? ' acm-input-error' : ''}`} type="tel" value={d.phoneNumber} onChange={e => set('phoneNumber', e.target.value)} placeholder="7–15 digit number" />
             </Field>
           </div>
           <div className="acm-row acm-row-3">
@@ -3649,7 +3652,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
             <Field label="Address Type" required error={errs.type}>
               <MasterSelect value={d.type} options={optsWith(availableAddressTypes, d.type)} placeholder="Select address type" invalid={!!errs.type} onChange={v => set('type', v)} />
             </Field>
-            <Field label="Address" required error={errs.line}><input className={errs.line ? 'acm-input-error' : ''} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" maxLength={75} /></Field>
+            <Field label="Address" required error={errs.line}><input className={`avm-input${errs.line ? ' acm-input-error' : ''}`} value={d.line} onChange={e => set('line', e.target.value)} placeholder="Enter complete address" maxLength={75} /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errs.country}>
@@ -3691,14 +3694,14 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 onChange={v => set('state', v)}
               />
             </Field>
-            <Field label="City" required error={errs.city}><input className={errs.city ? 'acm-input-error' : ''} value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
-            <Field label={pinLabel(d.country)} required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', pinSanitize(e.target.value, d.country))} inputMode={isDomesticCountry(d.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(d.country)} placeholder={pinPlaceholder(d.country)} /></Field>
+            <Field label="City" required error={errs.city}><input className={`avm-input${errs.city ? ' acm-input-error' : ''}`} value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
+            <Field label={pinLabel(d.country)} required error={errs.pin}><input className={`avm-input${errs.pin ? ' acm-input-error' : ''}`} value={d.pin} onChange={e => set('pin', pinSanitize(e.target.value, d.country))} inputMode={isDomesticCountry(d.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(d.country)} placeholder={pinPlaceholder(d.country)} /></Field>
           </div>
           <div className="acm-row acm-row-4">
-            <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
+            <Field label="Contact Person Name" required error={errs.cpName}><input className={`avm-input${errs.cpName ? ' acm-input-error' : ''}`} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
             <Field label="Designation" required error={errs.cpDesignation}>
               <input
-                className={`acm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
                 placeholder="e.g. Sales Manager"
                 value={d.cpDesignation}
                 onChange={e => set('cpDesignation', e.target.value)}
@@ -3706,14 +3709,14 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               />
             </Field>
             <Field label="Contact No" required error={errs.cpContact}>{isDomesticCountry(d.country) ? (
-              <div className={`acm-phone-wrap${errs.cpContact ? ' acm-phone-invalid' : ''}`}>
-                <span className="acm-phone-cc">+91</span>
-                <input type="tel" inputMode="numeric" maxLength={10} value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
+              <div className="avm-phone-in">
+                <span className="avm-phone-cc">+91</span>
+                <input className="avm-input avm-phone-field" type="tel" inputMode="numeric" maxLength={10} value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
               </div>
             ) : (
-              <input className={errs.cpContact ? 'acm-input-error' : ''} type="tel" value={d.cpContact} onChange={e => set('cpContact', e.target.value)} placeholder="7–15 digit mobile" />
+              <input className={`avm-input${errs.cpContact ? ' acm-input-error' : ''}`} type="tel" value={d.cpContact} onChange={e => set('cpContact', e.target.value)} placeholder="7–15 digit mobile" />
             )}</Field>
-            <Field label="Email Id" required error={errs.cpEmail}><input className={errs.cpEmail ? 'acm-input-error' : ''} type="email" value={d.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
+            <Field label="Email Id" required error={errs.cpEmail}><input className={`avm-input${errs.cpEmail ? ' acm-input-error' : ''}`} type="email" value={d.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
           </div>
           <div className="acm-row acm-row-1">
             <Field label="Whatsapp Enabled?" required error={errs.cpWhatsapp}>
@@ -3783,10 +3786,10 @@ function HistoryStage1({ form, locations, customerId, segments = [] }: { form: a
 
 function Field({ label, required, children, error, fieldKey }: { label: string; required?: boolean; children: React.ReactNode; error?: string; fieldKey?: string }) {
   return (
-    <div className="acm-field" data-field={fieldKey}>
-      <label>{label} {required && <span className="acm-req">*</span>}</label>
+    <div className={`acm-field avm-field avm-master-select${error ? ' has-error' : ''}`} data-field={fieldKey}>
+      <span className="avm-field-label">{label}{required && <span className="avm-req">*</span>}</span>
       {children}
-      {error && <span className="acm-field-error" title={error}>{error}</span>}
+      {error && <span className="avm-field-error" title={error}><i className="ri-error-warning-line" /> {error}</span>}
     </div>
   );
 }
@@ -3857,16 +3860,16 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-save-lock-text { color: #c4b5fd; }
 
 .acm-close {
-  width: 34px; height: 34px; border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.25);
-  background: rgba(255,255,255,0.12);
+  width: 32px; height: 32px; border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12);
   color: #fff;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: background .15s, transform .12s;
   position: relative; z-index: 1;
 }
-.acm-close:hover { background: rgba(255,255,255,0.22); transform: rotate(90deg); }
+.acm-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
 @keyframes acmPillFade { from { opacity: 0; transform: translateY(-2px) } to { opacity: 1; transform: none } }
 .acm-loading-spinner {
   display: inline-flex; width: 12px; height: 12px;
@@ -3876,39 +3879,30 @@ const SCOPED_CSS = `
 @media (prefers-reduced-motion: reduce) { .acm-loading-spinner { animation-duration: 2.4s; } }
 @keyframes acmSpin { to { transform: rotate(360deg); } }
 
-.acm-connector-line { width: 100%; height: 3px; background: #e2e8f0; border-radius: 3px; position: relative; overflow: hidden; }
-.acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #8b5cf6, #6d28d9); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
-.acm-connector-line[data-done="1"]::after { transform: scaleX(1); }
-.acm-step-badge { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; transition: all .25s; }
-.acm-step-num { position: absolute; bottom: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; border: 2px solid #fff; line-height: 1; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
-.acm-step-title { font-size: 12px; font-weight: 800; letter-spacing: -.2px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.acm-step-sub { font-size: 9.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.acm-step-active {     background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%);
-    border: 3px solid #7c3aed;
-    box-shadow: 0 6px 22px rgba(109, 40, 217, .22), 0 1px 0 rgba(255, 255, 255, .85) inset;}
-.acm-step-active .acm-step-badge { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; box-shadow: 0 5px 14px rgba(109,40,217,.48); }
-.acm-step-active .acm-step-num { background: linear-gradient(135deg, #6d28d9, #4c1d95); color: #fff; }
-.acm-step-active .acm-step-title { color: #2e1065; }
-.acm-step-active .acm-step-sub { color: #6d28d9; }
-.acm-step-done { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid #34d399; box-shadow: 0 6px 20px rgba(16,185,129,.18), 0 1px 0 rgba(255,255,255,.85) inset; }
-.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 5px 12px rgba(22,163,74,.42); }
-.acm-step-done .acm-step-num { background: #fff; color: #16a34a; box-shadow: 0 1px 3px rgba(22,163,74,.30); }
-.acm-step-done .acm-step-title { color: #065f46; }
-.acm-step-done .acm-step-sub { color: #059669; }
-.acm-step-incomplete { background: #f8fafc; border: 2px solid #e2e8f0; box-shadow: 0 4px 14px rgba(100,116,139,.10), 0 1px 0 rgba(255,255,255,.85) inset; }
-.acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #e2e8f0, #cbd5e1); color: #64748b; }
-.acm-step-incomplete .acm-step-num { background: #94a3b8; color: #fff; }
+.acm-connector-line { width: 100%; height: 2px; background: #ddd6fe; border-radius: 2px; }
+.acm-step-badge { width: 38px; height: 38px; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #fff; background: linear-gradient(135deg, #c4b5fd, #a78bfa); box-shadow: 0 4px 12px rgba(167,139,250,.4), 0 1px 0 rgba(255,255,255,.4) inset; transition: all .25s; }
+.acm-step-num { position: absolute; right: -4px; bottom: -4px; width: 17px; height: 17px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #fff; color: #6d28d9; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(167,139,250,.55), 0 1px 3px rgba(76,29,149,.28); font-size: 9.5px; font-weight: 800; line-height: 1; }
+.acm-step-title { font-size: 13.5px; font-weight: 600; color: #1e1b4b; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acm-step-sub { font-size: 11px; font-weight: 500; color: #7c3aed; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acm-step-pill { flex-shrink: 0; padding: 4px 11px; border-radius: 99px; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; }
+.acm-step-pill-active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); box-shadow: 0 3px 8px rgba(124,58,237,.4); }
+.acm-step-pill-done { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 3px 8px rgba(22,163,74,.35); }
+.acm-step-active { border-color: #a78bfa; background: linear-gradient(135deg, #f6f2ff, #ece4fb); box-shadow: 0 10px 26px rgba(124,58,237,.2), 0 0 0 1px rgba(167,139,250,.3), 0 1px 0 rgba(255,255,255,.8) inset; }
+.acm-step-active .acm-step-badge { background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); box-shadow: 0 6px 16px rgba(124,58,237,.55), 0 1px 0 rgba(255,255,255,.4) inset; }
+.acm-step-done { border-color: #86efac; background: linear-gradient(135deg, #f0fdf4, #d6fadf); box-shadow: 0 8px 22px rgba(34,197,94,.18), 0 1px 0 rgba(255,255,255,.7) inset; }
+.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 12px rgba(22,163,74,.4); }
+.acm-step-done .acm-step-num { background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; box-shadow: 0 1px 3px rgba(22,163,74,.3); }
+.acm-step-done .acm-step-title { color: #15803d; }
+.acm-step-done .acm-step-sub { color: #4d9e6a; }
+.acm-step-incomplete { border-color: #e2e8f0; background: #f8fafc; }
+.acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #cbd5e1, #94a3b8); box-shadow: none; }
+.acm-step-incomplete .acm-step-num { color: #64748b; box-shadow: 0 0 0 1px #cbd5e1; }
 .acm-step-incomplete .acm-step-title { color: #475569; }
 .acm-step-incomplete .acm-step-sub { color: #94a3b8; }
-.acm-step-pending .acm-step-badge { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); color: #94a3b8; border: 1px solid #e2e8f0; }
-.acm-step-pending .acm-step-num { background: #e2e8f0; color: #94a3b8; }
-.acm-step-pending .acm-step-title { color: #94a3b8; font-weight: 700; }
-.acm-step-pending .acm-step-sub { color: #cbd5e1; }
 
-.acm-tab { padding: 7px 18px; border-radius: 10px; border: 1.5px solid transparent; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
-.acm-tab-on { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
-.acm-tab-off { background: #fff; color: #6d28d9; border-color: #c4b5fd; }
-.acm-tab-off:hover { background: #ede9fe; border-color: #7c3aed; }
+.acm-tab { background: none; border: none; border-bottom: 2.5px solid transparent; margin-bottom: -1.5px; padding: 8px 14px; font-family: inherit; font-size: 12px; font-weight: 700; color: #8b7bb8; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }
+.acm-tab:hover, .acm-tab-on { color: #5b21b6; }
+.acm-tab-on { border-bottom-color: #7c3aed; }
 
 .acm-kyc-stage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .acm-kyc-stage .acm-section-purple { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -3920,53 +3914,40 @@ const SCOPED_CSS = `
   .acm-kyc-stage .acm-section-body-table { flex: 0 0 auto; min-height: 0; }
   .acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 0 0 auto; min-height: 0; max-height: 44vh; }
 }
-.acm-body::-webkit-scrollbar { width: 6px; }
-.acm-body::-webkit-scrollbar-track { background: #ede9fe; border-radius: 10px; }
-.acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }
+.acm-body::-webkit-scrollbar { width: 8px; }
+.acm-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 99px; }
 
-.acm-section-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: linear-gradient(135deg,#ede9fe,#ddd6fe); color: #7c3aed; border: 1px solid #c4b5fd; }
-.acm-section-title { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #5b21b6; }
-.acm-section-sub { font-size: 11px; color: #9ca3af; font-weight: 500; display: inline-block; margin-left: 6px; }
-.acm-section-body-table { padding: 0 !important; }
+.acm-section-icon { width: 25px; height: 25px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: #f5f1fe; color: #7c3aed; border: 1px solid #e2d4fa; }
+.acm-section-title { font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: #5b21b6; }
+.acm-section-sub { font-size: 10.5px; color: #a78bfa; font-weight: 500; display: inline-block; margin-left: 8px; }
+.acm-section-sub::before { content: '|'; margin-right: 7px; color: #c4b5fd; font-weight: 600; }
+.acm-section-body-table { padding: 10px 14px 12px 18px !important; }
+/* International address row has 5 fields (no State Code / GST): 3 on top, 2 halves below, instead of a hole in slot 6. */
+.acm-row-3:has(> :nth-child(5):last-child) { grid-template-columns: repeat(6, 1fr); }
+.acm-row-3:has(> :nth-child(5):last-child) > * { grid-column: span 2; }
+.acm-row-3:has(> :nth-child(5):last-child) > :nth-child(n+4) { grid-column: span 3; }
+/* The card height is sized for the longer domestic form; the international one is a row shorter, so let the card fit it instead of leaving an empty band above the footer. */
+.acm-card:has(.acm-body > div > .acm-section .acm-row-3 > :nth-child(5):last-child) { height: auto; max-height: min(92vh, calc(100vh - 24px)); }
 .acm-section-head-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
 .acm-section-head-row > div:nth-child(2) { flex: 1; min-width: 0; }
 
-.acm-field label { font-size: 10px; font-weight: 800; letter-spacing: .09em; color: #6b7280; text-transform: uppercase; margin-bottom: 5px; }
-.acm-req { color: #ef4444; font-weight: 700; }
-.acm-field input, .acm-field select, .acm-field textarea {
-  width: 100%; padding: 9px 12px; border: 1.5px solid #e0d9f7; border-radius: 9px;
-  font-family: inherit; font-size: 12px; color: #3b0764;
-  background: #fff; outline: none; transition: border-color .18s, box-shadow .18s, background .18s;
-  appearance: auto; box-sizing: border-box;
-}
-.acm-field input:focus, .acm-field select:focus, .acm-field textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.14); }
-.acm-field input::placeholder { color: #c4b5fd; font-size: 11.5px; }
-.acm-phone-wrap { display: flex; align-items: stretch; border: 1.5px solid #e0d9f7; border-radius: 9px; background: #fff; overflow: hidden; transition: border-color .18s, box-shadow .18s; }
-.acm-phone-wrap:focus-within { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.14); }
-.acm-phone-wrap.acm-phone-invalid { border-color: #ef4444; background: #fef2f2; }
-.acm-phone-cc { display: flex; align-items: center; padding: 0 11px; background: #f5f3ff; color: #3b0764; font-size: 12px; font-weight: 700; border-right: 1.5px solid #e0d9f7; flex-shrink: 0; }
-.acm-phone-wrap input { border: none !important; border-radius: 0 !important; box-shadow: none !important; background: transparent !important; }
-[data-bs-theme="dark"] .acm-phone-wrap { background: #131c33; border-color: rgba(167,139,250,0.50); }
-[data-bs-theme="dark"] .acm-phone-cc { background: #1c2540; color: #e2e8f0; border-right-color: rgba(167,139,250,0.35); }
-.acm-field input.acm-input-error { border-color: #ef4444; background: #fef2f2; }
-.acm-field input.acm-input-error:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,.15); }
-.acm-field-error { color: #ef4444; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
-
-.acm-row .acm-field > .acm-field-error,
-.acm-row .acm-field > .acm-field-note {
-  line-height: 1.35;
-}
+/* Field chrome (label, input, placeholder, +91 addon, error, dropdown) comes from the Supplier form's
+   add-vendor-modal.css via the avm-* classes. Only the customer-specific GST states remain here. */
+.acm-field .avm-field-label { font-weight: 500; }
+.acm-field .avm-input.acm-input-error { border-color: #ef4444; }
+.acm-field .avm-input.acm-input-error:focus { box-shadow: 0 0 0 3px rgba(239,68,68,.15); }
+.acm-row .acm-field > .acm-field-note { line-height: 1.35; }
 
 .acm-field-note { display: block; color: #94a3b8; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; cursor: help; }
 [data-bs-theme="dark"] .acm-field-note { color: #94a3b8; }
 
-.acm-field input.acm-input-ok { border-color: #10b981; background: #f0fdf4; }
-.acm-field input.acm-input-ok:focus { box-shadow: 0 0 0 3.5px rgba(16,185,129,.15); }
+.acm-field .avm-input.acm-input-ok { border-color: #10b981; background: #f0fdf4; }
+.acm-field .avm-input.acm-input-ok:focus { box-shadow: 0 0 0 3.5px rgba(16,185,129,.15); }
 .acm-gst-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
 .acm-gst-ok { color: #059669; }
 .acm-gst-checking { color: #94a3b8; }
 .acm-gst-taken { color: #ef4444; }
-[data-bs-theme="dark"] .acm-field input.acm-input-ok { border-color: rgba(16,185,129,.55); background: rgba(16,185,129,.10); }
+[data-bs-theme="dark"] .acm-field .avm-input.acm-input-ok { border-color: rgba(16,185,129,.55); background: rgba(16,185,129,.10); }
 [data-bs-theme="dark"] .acm-gst-ok { color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-gst-checking { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-gst-taken { color: #fca5a5; }
@@ -4004,28 +3985,25 @@ const SCOPED_CSS = `
 @media (max-width: 900px) {
   .acm-hs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-.acm-radio-row { display: flex; align-items: center; gap: 16px; padding: 9px 0; }
-.acm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #6b7280; cursor: pointer; letter-spacing: .04em; user-select: none; }
-.acm-radio input[type="radio"] { accent-color: #7c3aed; width: 14px; height: 14px; cursor: pointer; }
 
 .acm-footer {
-  padding: 14px 22px; border-top: 1px solid rgba(167,139,250,.35);
-  background: linear-gradient(180deg, rgba(255,255,255,.6) 0%, rgba(237,233,254,.92) 100%);
+  padding: 14px 22px; border-top: 1px solid #e9e2f7;
+  background: #f5f2fc;
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0;
 }
-.acm-req-note { font-size: 11.5px; color: #6d28d9; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; }
-.acm-req-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg,#a78bfa,#7c3aed); box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
-.acm-req-star { color: #ef4444; font-weight: 700; }
-.acm-footer-actions { display: inline-flex; align-items: center; gap: 10px; }
+.acm-req-note { font-size: 12px; color: #64748b; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; }
+.acm-req-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; }
+.acm-req-star { color: #f06548; font-weight: 600; }
+.acm-footer-actions { display: inline-flex; align-items: center; gap: 8px; }
 .acm-btn-prev, .acm-btn-next {
-  padding: 9px 22px; border-radius: 10px; font-family: inherit; font-size: 12px; font-weight: 700;
-  cursor: pointer; display: inline-flex; align-items: center; gap: 7px; transition: all .22s;
-  letter-spacing: .02em;
+  height: 40px; padding: 0 18px; border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
 }
-.acm-btn-prev { border: 1.5px solid rgba(124,58,237,.3); background: rgba(255,255,255,.92); color: #5b21b6; box-shadow: 0 1px 0 rgba(255,255,255,.9) inset, 0 2px 6px rgba(124,58,237,.08); }
-.acm-btn-prev:hover { background: #fff; border-color: #7c3aed; color: #4c1d95; transform: translateY(-1px); }
-.acm-btn-next { border: none; background: linear-gradient(135deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 100%); color: #fff; box-shadow: 0 6px 18px -4px rgba(109,40,217,.55), 0 2px 4px rgba(76,29,149,.25), inset 0 1px 0 rgba(255,255,255,.28); }
-.acm-btn-next:hover { transform: translateY(-1.5px); box-shadow: 0 10px 24px -4px rgba(109,40,217,.65); }
+.acm-btn-prev { border: 1.5px solid #ddd6fe; background: #fff; color: #7c3aed; }
+.acm-btn-prev:hover { background: #f5f1fe; border-color: #7c3aed; }
+.acm-btn-next { position: relative; overflow: hidden; border: none; color: #fff; background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); box-shadow: 0 6px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.2) inset; text-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.acm-btn-next:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.6), 0 1px 0 rgba(255,255,255,.2) inset; }
 
 .acm-subtabs-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .acm-subtabs-row .dt-tabrail .dt-tab { height: 38px; }
@@ -4046,6 +4024,10 @@ const SCOPED_CSS = `
 .acm-table-wrap {
   width: 100%;
   max-width: 100%;
+  border: 1px solid #ece4fb;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(124,58,237,.06);
   overflow-x: auto;
   overflow-y: auto;
   max-height: 380px;
@@ -4161,13 +4143,13 @@ const SCOPED_CSS = `
 .acm-type-cell { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .acm-primary-tag { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #5b21b6; border: 1px solid #c4b5fd; }
 
-.acm-add-pill { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 20px; border: 1px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .18s; white-space: nowrap; box-shadow: 0 2px 6px rgba(109,40,217,.1); flex-shrink: 0; }
-.acm-add-pill:hover { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; transform: translateY(-1px); }
+.acm-add-pill { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 9px; border: none; background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); color: #fff; font-family: inherit; font-size: 11px; font-weight: 700; line-height: 1; cursor: pointer; transition: transform .14s, box-shadow .14s; white-space: nowrap; box-shadow: 0 3px 9px rgba(124,58,237,.42); flex-shrink: 0; }
+.acm-add-pill:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
 
 .acm-header-right { display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; flex-shrink: 0; }
-.acm-gst-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.18); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all .18s; white-space: nowrap; position: relative; z-index: 1; }
-.acm-gst-btn:hover:not(.is-disabled) { background: rgba(255,255,255,0.30); transform: translateY(-1px); }
-.acm-gst-btn.is-disabled { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.22); color: rgba(255,255,255,0.45); cursor: not-allowed; }
+.acm-gst-btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.15); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all .18s; white-space: nowrap; position: relative; z-index: 1; }
+.acm-gst-btn:hover:not(.is-disabled) { background: rgba(255,255,255,.25); transform: translateY(-1px); }
+.acm-gst-btn.is-disabled { opacity: .45; cursor: not-allowed; }
 .acm-gst-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #fff; color: #6d28d9; font-size: 11px; font-weight: 800; }
 .acm-gst-btn.is-disabled .acm-gst-count { background: rgba(255,255,255,0.45); color: #6d28d9; }
 
@@ -4193,9 +4175,7 @@ const SCOPED_CSS = `
 @media (max-width: 680px) {
   .acm-gst-form-card .acm-gst-form .acm-row-2 { grid-template-columns: 1fr; }
 }
-.acm-gst-form-card .acm-gst-form .acm-field label { white-space: nowrap; }
 .acm-gst-form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 18px; }
-.acm-gst-card .acm-field input.acm-input-error { background: #fff; }
 .acm-btn-ghost { padding: 8px 18px; border-radius: 9px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .acm-btn-ghost:hover:not(:disabled) { background: #ede9fe; }
 .acm-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
@@ -4516,9 +4496,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-history-icon { background: linear-gradient(135deg, #4c1d95, #2e1065); }
 [data-bs-theme="dark"] .acm-history-chevron { background: rgba(167,139,250,0.15); color: #c4b5fd; }
 
-[data-bs-theme="dark"] .acm-tab-off { background: transparent; color: #c4b5fd; border-color: rgba(167,139,250,0.45); }
-[data-bs-theme="dark"] .acm-tab-off:hover { background: rgba(167,139,250,0.10); border-color: #a78bfa; }
-[data-bs-theme="dark"] .acm-tab-on { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .acm-tab-off { color: #a89fc7; }
+[data-bs-theme="dark"] .acm-tab-on { color: #c4b5fd; border-bottom-color: #a78bfa; }
 
 [data-bs-theme="dark"] .acm-section {
   background: #1f2942;
@@ -4527,7 +4506,6 @@ const SCOPED_CSS = `
     0 6px 22px rgba(0,0,0,0.50),
     inset 0 1px 0 rgba(255,255,255,0.06);
 }
-[data-bs-theme="dark"] .acm-section-purple { border-top-color: #a78bfa; }
 [data-bs-theme="dark"] .acm-section-head {
   background: linear-gradient(110deg, rgba(124,58,237,0.22) 0%, rgba(167,139,250,0.10) 100%);
   border-bottom-color: rgba(167,139,250,0.28);
@@ -4536,19 +4514,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-section-title { color: #ffffff; }
 [data-bs-theme="dark"] .acm-section-sub { color: #d1d5db; }
 
-[data-bs-theme="dark"] .acm-field label { color: #e2e8f0; font-weight: 700; }
-.acm-root .master-select-toggle {
-  border: 1.5px solid #e0d9f7;
-  border-radius: 9px;
-  background: #fff;
-  font-size: 12px;
-  color: #3b0764;
-}
-.acm-root .master-select-wrap.show .master-select-toggle,
-.acm-root .master-select-toggle:focus-visible {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 3.5px rgba(124,58,237,.14);
-}
 [data-bs-theme="dark"] .acm-root .master-select-toggle {
   background: #131c33;
   border-color: rgba(167,139,250,0.50);
@@ -4564,49 +4529,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle:disabled { color: #94a3b8; }
 
-.acm-field input:-webkit-autofill,
-.acm-field input:-webkit-autofill:hover,
-.acm-field input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #3b0764;
-  -webkit-box-shadow: 0 0 0 1000px #fff inset;
-  caret-color: #3b0764;
-  transition: background-color 9999s ease-out 0s;
-  font-family: inherit !important;
-  font-size: 12px !important;
-}
-[data-bs-theme="dark"] .acm-field input:-webkit-autofill,
-[data-bs-theme="dark"] .acm-field input:-webkit-autofill:hover,
-[data-bs-theme="dark"] .acm-field input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #ffffff;
-  -webkit-box-shadow: 0 0 0 1000px #131c33 inset;
-  caret-color: #ffffff;
-}
-
-[data-bs-theme="dark"] .acm-field input,
-[data-bs-theme="dark"] .acm-field select,
-[data-bs-theme="dark"] .acm-field textarea {
-  background: #131c33 !important;
-  border-color: rgba(167,139,250,0.50);
-  color: #ffffff;
-}
-[data-bs-theme="dark"] .acm-field input::placeholder,
-[data-bs-theme="dark"] .acm-field textarea::placeholder { color: #94a3b8; }
-.acm-field input.acm-input-ro { background: #f5f3fb; color: #6b7280; cursor: not-allowed; }
-[data-bs-theme="dark"] .acm-field input.acm-input-ro {
-  background: #1b2440 !important; color: #94a3b8; cursor: not-allowed;
-}
-[data-bs-theme="dark"] .acm-field input:hover,
-[data-bs-theme="dark"] .acm-field select:hover,
-[data-bs-theme="dark"] .acm-field textarea:hover { border-color: rgba(167,139,250,0.75); }
-[data-bs-theme="dark"] .acm-field input:focus,
-[data-bs-theme="dark"] .acm-field select:focus,
-[data-bs-theme="dark"] .acm-field textarea:focus {
-  border-color: #a78bfa;
-  box-shadow: 0 0 0 3.5px rgba(167,139,250,0.22);
-}
-[data-bs-theme="dark"] .acm-field input.acm-input-error { background: rgba(239,68,68,0.10); border-color: #ef4444; }
-[data-bs-theme="dark"] .acm-radio { color: #e2e8f0; }
-[data-bs-theme="dark"] .acm-radio input[type="radio"] { accent-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-field .avm-input.acm-input-error { background: rgba(239,68,68,0.10); border-color: #ef4444; }
 [data-bs-theme="dark"] .acm-radio-pill { background: #131c33; border-color: rgba(167,139,250,0.40); color: #ddd6fe; }
 [data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.45); border-color: #a78bfa; color: #ffffff; }
 
@@ -4637,7 +4560,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-table tbody td[style*="color: rgb(107, 114, 128)"],
 [data-bs-theme="dark"] .acm-table tbody td[style*="color:#6b7280"] { color: #94a3b8 !important; }
 [data-bs-theme="dark"] .acm-section-body-table { background: transparent !important; }
-[data-bs-theme="dark"] .acm-table-wrap { background: transparent; scrollbar-color: #6d28d9 #11182a; }
+[data-bs-theme="dark"] .acm-table-wrap { background: transparent; border-color: rgba(167,139,250,0.25); scrollbar-color: #6d28d9 #11182a; }
 [data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-track { background: #11182a; }
 [data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-thumb { background: #6d28d9; }
 [data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
@@ -4681,7 +4604,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-btn-prev { background: rgba(167,139,250,0.08); color: #ddd6fe; border-color: rgba(167,139,250,0.45); }
 [data-bs-theme="dark"] .acm-btn-prev:hover { background: rgba(167,139,250,0.18); border-color: #a78bfa; color: #ffffff; }
 
-[data-bs-theme="dark"] .acm-field-error { color: #fca5a5; }
 
 @media (max-width: 1440px) {
   .acm-root { padding: 10px; }
@@ -4721,7 +4643,7 @@ const SCOPED_CSS = `
   .acm-history { margin: 10px 12px 0; }
   .acm-step-connector { display: none; }
   .acm-step { flex: 1 1 calc(50% - 6px); min-width: 0; }
-  .acm-tabs { padding: 0 16px; }
+  .acm-tabs { margin: 10px 16px 0; }
   .acm-body { padding: 12px 14px 14px; }
 }
 
@@ -4743,12 +4665,13 @@ const SCOPED_CSS = `
   .acm-history { margin: 10px 12px 0; }
   .acm-step-connector { display: none; }
   .acm-step { width: 100%; flex: 0 0 auto; }
-  .acm-tabs { flex-wrap: wrap; padding: 0 12px; }
-  .acm-tab { flex: 1 1 auto; min-width: 40%; font-size: 12px; padding: 8px 10px; }
+  .acm-tabs { margin: 8px 12px 0; overflow-x: auto; scrollbar-width: none; }
+  .acm-tab { flex: 0 0 auto; font-size: 11.5px; padding: 8px 10px; }
   .acm-body { padding: 12px; }
   .acm-row-4, .acm-row-3, .acm-row-2 { grid-template-columns: 1fr; }
+  .acm-row-3:has(> :nth-child(5):last-child) { grid-template-columns: 1fr; }
+  .acm-row-3:has(> :nth-child(5):last-child) > * { grid-column: auto; }
   .acm-row { gap: 10px; }
-  .acm-input { font-size: 13px; padding: 8px 10px; }
   .acm-section-head { padding: 10px 12px; gap: 8px; }
   .acm-section-title { font-size: 12.5px; }
   .acm-section-sub { display: none; }
