@@ -2013,8 +2013,9 @@ const SCOPED_CSS = `
 @keyframes lwpExportIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 .lwp-export-item {
   width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  padding: 9px 12px; border: none; background: transparent; border-radius: 8px;
-  font-family: inherit; font-size: 12.5px; font-weight: 600; color: #0f172a;
+  padding: 8px 12px; border: none; background: transparent; border-radius: 8px;
+  /* List body type (12 / 500) — the menu read heavier than the toolbar it drops from. */
+  font-family: inherit; font-size: 12px; font-weight: 500; color: #334155;
   cursor: pointer; text-align: left; transition: background .15s, color .15s;
 }
 .lwp-export-item:hover:not(:disabled) { background: #ecfeff; color: #0e7490; }
@@ -2022,7 +2023,7 @@ const SCOPED_CSS = `
 .lwp-export-count {
   min-width: 22px; height: 18px; padding: 0 6px;
   background: #f1f5f9; color: #475569;
-  border-radius: 999px; font-size: 10.5px; font-weight: 700;
+  border-radius: 999px; font-size: 10px; font-weight: 600;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .lwp-export-item:hover:not(:disabled) .lwp-export-count { background: #cffafe; color: #0e7490; }
