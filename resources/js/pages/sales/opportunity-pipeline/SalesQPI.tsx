@@ -4177,6 +4177,7 @@ const SCOPED_CSS = `
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
 .qpi-root .frm-cstrip .frm-cstrip-title { font-size: 17px; font-weight: 700; }
 .qpi-root .dt-tabrail .dt-tab { height: 38px; }
+.qpi-root .frm-cstrip.hr-cstrip > .dt-tabrail { position: relative; z-index: 1; }
 .qpi-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
 .qpi-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
 .master-select-menu.qpi-doctype-menu { width: 186px !important; min-width: 186px !important; max-width: 186px !important; }

@@ -1627,3 +1627,7 @@
   background: linear-gradient(135deg, #064e3b 0%, #065f46 55%, #059669 100%);
   box-shadow: 0 8px 22px rgba(5, 150, 105, .30), 0 2px 5px rgba(4, 120, 87, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
+/* The HRMS strip paints a full-size ::after wash over itself; the title block
+   is lifted above it (z-index 1) but this button was not, so the wash sat on
+   top and greyed its white text. */
+.smcg-root .frm-cstrip.hr-cstrip .cstrip__action-btn { position: relative; z-index: 1; }
