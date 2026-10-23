@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
@@ -49,7 +49,7 @@ const AP_CFG = {
   rejected: { label: 'Rejected', bg: '#FEF2F2', border: '#FECACA', color: '#DC2626', dot: '#EF4444' },
 } as const;
 
-const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
+const dashDate = (s: string): string => (s && s !== 'â€”' ? s.replace(/\s+/g, '-') : s);
 
 export default function ClmAgreementsSentPage() {
   const toast = useToast();
@@ -190,7 +190,7 @@ export default function ClmAgreementsSentPage() {
       const versions = (Array.isArray(r.versions) ? r.versions : []) as { v: number }[];
       const latestV = versions.length ? Math.max(...versions.map(v => Number(v.v) || 0)) : 1;
       await grab(`/clm/ctc-contracts/${c.dbId}/versions/${latestV}/download${docx ? '?format=docx' : ''}`, `${c.id}.${docx ? 'docx' : 'pdf'}`);
-      toast.success('Download started', `${c.id} · ${fmt}`);
+      toast.success('Download started', `${c.id} Â· ${fmt}`);
     } catch { toast.error('Download failed', `Could not download the ${fmt} file.`); }
     finally { setDownloadingId(null); }
   };
@@ -225,14 +225,16 @@ export default function ClmAgreementsSentPage() {
       {(downloadingId !== null || lifecycleBusy !== null) && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(8,47,73,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
           <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{downloadingId !== null ? 'Preparing your download…' : 'Loading…'}</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Please wait — don't leave this page.</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{downloadingId !== null ? 'Preparing your downloadâ€¦' : 'Loadingâ€¦'}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Please wait â€” don't leave this page.</div>
         </div>, document.body)}
 
-      <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 14, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
-        <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)', borderRadius: '14px 0 0 14px' }} />
-        {!t.dark && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.52),transparent)', pointerEvents: 'none', borderRadius: '14px 14px 0 0' }} />}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, zIndex: 1, paddingLeft: 10 }}>
+      {/* Strip sized like Supplier Management's â€” .s360m .cstrip in
+          shipment-360.css: 58px tall on 20px of side padding, 16px radius. */}
+      <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 58, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 16, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
+        <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)', borderRadius: '16px 0 0 16px' }} />
+        {!t.dark && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.52),transparent)', pointerEvents: 'none', borderRadius: '16px 16px 0 0' }} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 13, zIndex: 1, paddingLeft: 10 }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <div style={{ width: 38, height: 38, borderRadius: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#0891b2,#0e7490)', boxShadow: '0 0 0 3px rgba(6,182,212,.25),0 4px 12px rgba(8,145,178,.4)' }}>
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" fill="rgba(255,255,255,.2)" stroke="#fff" strokeWidth="2" /></svg>
@@ -244,7 +246,7 @@ export default function ClmAgreementsSentPage() {
               instead of being cut. */}
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.3px', lineHeight: 1.15 }}>Agreements We Sent</div>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.2 }}>Agreements We Sent</div>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
                 <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
                 <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
@@ -253,10 +255,10 @@ export default function ClmAgreementsSentPage() {
             {/* One line, as .clm-head-strip-sub does it on every other CLM page.
                 This carried maxWidth: 580 instead, which wrapped "and signing."
                 onto a second line and made the strip a row taller than the rest
-                of the module — with the whole right-hand half of the band empty.
+                of the module â€” with the whole right-hand half of the band empty.
                 nowrap + ellipsis instead, so a narrow viewport cuts the sentence
                 rather than growing the band. */}
-            <div style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .9, lineHeight: 1.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Track agreements created by us and sent to counterparties for approval, clarification, negotiation, and signing.</div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .85, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Track agreements created by us and sent to counterparties for approval, clarification, negotiation, and signing.</div>
           </div>
         </div>
       </div>
@@ -274,8 +276,8 @@ export default function ClmAgreementsSentPage() {
 
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '10px 12px', padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
-          {/* The employee list's rail — its `hr-dt` skin, not the base .dt-tabs
-              rule — on the teal ramp. See the longer note on Case to Case.
+          {/* The employee list's rail â€” its `hr-dt` skin, not the base .dt-tabs
+              rule â€” on the teal ramp. See the longer note on Case to Case.
               3px of padding puts the rail at 42, which is .ops-search. */}
           <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box',
             ...(t.dark
@@ -317,7 +319,7 @@ export default function ClmAgreementsSentPage() {
           <div className="aws-hspacer" style={{ flex: 1 }} />
           <div className="ops-search ops-search--cyan aws-searchbox">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search agreements…" />
+            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search agreementsâ€¦" />
               <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
@@ -371,7 +373,7 @@ export default function ClmAgreementsSentPage() {
  * response"). Three lines of type and two colour treatments per tile, where the
  * employee card has one of each.
  *
- * The chip and the caption are gone rather than restyled — both said what the
+ * The chip and the caption are gone rather than restyled â€” both said what the
  * label already said. The figure is no longer zero-padded, so a count of 1 reads
  * "1" as it does on the employee cards, not "01".
  *
@@ -388,7 +390,7 @@ function SummaryCard({ t, accent, value, label, icon }: {
     <div className="aws-card" style={{ '--bd': bd, background: t.surface } as React.CSSProperties}
       onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(6,182,212,.18)'; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 1px 4px rgba(6,182,212,.08)'; }}>
-      {/* Flush to the card's top edge — the card drops its own top border so the
+      {/* Flush to the card's top edge â€” the card drops its own top border so the
           rule IS the edge, which is what keeps it a clean 3px band. */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${c1},${c2})` }} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -405,7 +407,7 @@ function SummaryCard({ t, accent, value, label, icon }: {
  *
  * It used to take a gradient per organisation, looked up in ORG_GRAD, falling
  * back to deep violet. ORG_GRAD held three prototype names, so real data never
- * matched it and every org on this teal page drew a violet mark — the one thing
+ * matched it and every org on this teal page drew a violet mark â€” the one thing
  * in the table that belonged to no palette on it. (Its shadow was neutral black
  * at 15% too, where everything else here casts its own colour.)
  *
@@ -440,14 +442,14 @@ function ApprovalBadge({ ap }: { ap: 'approved' | 'pending' | 'rejected' }) {
   );
 }
 
-/* The header band, the same one the other eleven CLM lists use — .clm-table
+/* The header band, the same one the other eleven CLM lists use â€” .clm-table
    thead th in clmShared.ts: a light accent tint carrying 9.5px/800 uppercase in
    the accent colour, over a 1.5px accent rule.
-   It was a solid dark teal strip (#0e7490 → #22d3ee) with 8px white caps: a
+   It was a solid dark teal strip (#0e7490 â†’ #22d3ee) with 8px white caps: a
    heavy bar over light rows, and a size and a half below every other header in
    the product. Three tables on this page share these two constants, so they all
-   change together. The dark-mode values can't live here — these are module
-   constants with no access to the theme — so they are in AWS_CSS, keyed off
+   change together. The dark-mode values can't live here â€” these are module
+   constants with no access to the theme â€” so they are in AWS_CSS, keyed off
    .aws-table. */
 const TH  = { padding: '9px 14px', fontSize: 9.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: '#0e7490', whiteSpace: 'nowrap', textAlign: 'center', lineHeight: 1.3, verticalAlign: 'middle', background: 'transparent', borderBottom: '1.5px solid rgba(6,182,212,.20)' } as React.CSSProperties;
 const THL = { ...TH, textAlign: 'left' } as React.CSSProperties;
@@ -465,7 +467,7 @@ function ActionBtn({ title, color, bg, border, t, onClick, children, busy, disab
   const off = busy || disabled;
   const dim = off || softOff;
   return (
-    <Tooltip label={busy ? 'Loading…' : (disabled ? 'Please wait…' : title)}>
+    <Tooltip label={busy ? 'Loadingâ€¦' : (disabled ? 'Please waitâ€¦' : title)}>
       <button onClick={onClick} disabled={off} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${fborder}`, background: fbg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : dim ? 'not-allowed' : 'pointer', color: fcolor, opacity: busy ? 1 : dim ? .4 : .85, flexShrink: 0, transition: 'all .15s' }}
         onMouseEnter={e => { if (dim) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.13)'; }}
         onMouseLeave={e => { if (dim) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
@@ -491,7 +493,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id
   };
   return (
     <>
-      <Tooltip label={busy ? 'Downloading…' : (disabled ? 'Please wait…' : 'Download Contract')}><button ref={btnRef} onClick={toggle} disabled={off} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : disabled ? 'not-allowed' : 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: busy ? 1 : disabled ? .4 : .85, flexShrink: 0 }}>{busy ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : ICO_DL}</button></Tooltip>
+      <Tooltip label={busy ? 'Downloadingâ€¦' : (disabled ? 'Please waitâ€¦' : 'Download Contract')}><button ref={btnRef} onClick={toggle} disabled={off} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : disabled ? 'not-allowed' : 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: busy ? 1 : disabled ? .4 : .85, flexShrink: 0 }}>{busy ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : ICO_DL}</button></Tooltip>
       {open && pos && createPortal(
         <>
           <div onClick={() => setDlOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
@@ -608,7 +610,7 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
 }
 
 function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSize, dlOpen, setDlOpen, downloadingId, onDownload, t }: { searching: boolean; rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; onDownload: (c: SentRow, fmt: string) => void; t: OpsTokens }) {
-  const getRej = (id: string) => { const a = ata.find(x => x.id === id); return { by: a?.approver ?? '—', reason: a?.rejReason ?? '—' }; };
+  const getRej = (id: string) => { const a = ata.find(x => x.id === id); return { by: a?.approver ?? 'â€”', reason: a?.rejReason ?? 'â€”' }; };
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * pageSize;
@@ -650,7 +652,7 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
                           fill swallows them, so the cell led with a red smudge.
                           Stroked at 13px on no background it reads at a glance,
                           and it no longer competes with the two real avatars
-                          beside it — a chip in this column looked like a third
+                          beside it â€” a chip in this column looked like a third
                           one that had lost its letter. */}
                       <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#fca5a5' : '#DC2626'} strokeWidth="2.2" strokeLinecap="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12.5" /><line x1="12" y1="16" x2="12" y2="16" /></svg><Tooltip label={rej.reason}><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{rej.reason}</div></Tooltip></div></td>
                       <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
@@ -709,10 +711,10 @@ function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, on
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(c.approver)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
                   <td style={{ ...TD_L, maxWidth: 210 }}>
                     {round > 1 && <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 20, background: '#F5F0FF', border: '1px solid #DDD6FE', fontSize: 7.5, fontWeight: 700, color: '#7C3AED', marginBottom: 3 }}>Round {round}</span>}
-                    <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }}>{latest?.query ?? '—'}</div></Tooltip>
+                    <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }}>{latest?.query ?? 'â€”'}</div></Tooltip>
                     {hasPending
-                      ? <div style={{ fontSize: 8.5, color: '#F59E0B', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response · raised by {c.approver} on {latest?.date}</div>
-                      : <div style={{ fontSize: 8.5, color: t.dark ? '#67e8f9' : '#0891b2', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> You responded · awaiting {c.approver}'s decision</div>}
+                      ? <div style={{ fontSize: 8.5, color: '#F59E0B', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> Awaiting your response Â· raised by {c.approver} on {latest?.date}</div>
+                      : <div style={{ fontSize: 8.5, color: t.dark ? '#67e8f9' : '#0891b2', fontWeight: 600, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg> You responded Â· awaiting {c.approver}'s decision</div>}
                   </td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.expDate}</span></td>
                   <td style={TD_C}>
@@ -781,12 +783,12 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
             <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
               <div style={{ width: 44, height: 44, borderRadius: 13, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,.15)', flexShrink: 0 }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg></div>
               <div>
-                <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.62)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 3 }}>{contract.id} · {hasPending ? 'Clarification Response' : 'Clarification Conversation'}</div>
+                <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.62)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 3 }}>{contract.id} Â· {hasPending ? 'Clarification Response' : 'Clarification Conversation'}</div>
                 <div style={{ fontSize: 17, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 380, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,.72)', marginTop: 2 }}>{hasPending ? 'Review the query and provide your clarification.' : 'The full conversation for this agreement.'}</div>
               </div>
             </div>
-            <button onClick={() => { stopTyping(); onClose(); }} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
+            <button onClick={() => { stopTyping(); onClose(); }} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>âœ•</button>
           </div>
         </div>
 
@@ -812,14 +814,14 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
                   <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
                     <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 900, color: '#fff' }}>{inits(cl.by || contract.approver)}</span></div>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, marginBottom: 4 }}>{cl.by || contract.approver} · Approver · {cl.date}</div>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, marginBottom: 4 }}>{cl.by || contract.approver} Â· Approver Â· {cl.date}</div>
                       <div style={{ background: t.dark ? 'rgba(124,58,237,.12)' : '#F4F1FC', border: `1px solid ${t.dark ? 'rgba(124,58,237,.28)' : '#E7E1FA'}`, borderRadius: '4px 12px 12px 12px', padding: '10px 13px', fontSize: 12, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
                     </div>
                   </div>
                   {cl.response
                     ? <div style={{ display: 'flex', gap: 9, justifyContent: 'flex-end', alignItems: 'flex-start', marginTop: 8 }}>
                         <div style={{ maxWidth: '82%', minWidth: 0 }}>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, marginBottom: 4, textAlign: 'right' }}>You · {contract.createdBy}</div>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: t.textMuted, marginBottom: 4, textAlign: 'right' }}>You Â· {contract.createdBy}</div>
                           <div style={{ background: t.dark ? 'rgba(8,145,178,.16)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '10px 13px', fontSize: 12, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.response}</div>
                         </div>
                         <div style={{ width: 30, height: 30, borderRadius: 9, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 900, color: '#fff' }}>{inits(contract.createdBy)}</span></div>
@@ -850,7 +852,7 @@ function RespondModal({ contract, onClose, onSubmit, t }: { contract: SentRow; o
                   value={text}
                   maxLength={MAX}
                   onChange={e => { setText(e.target.value); setErr(false); notifyTyping(); }}
-                  placeholder="Type your clarification response here…"
+                  placeholder="Type your clarification response hereâ€¦"
                   onFocus={e => { e.currentTarget.style.borderColor = '#7C3AED'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(124,58,237,.12)'; }}
                   onBlur={e => { e.currentTarget.style.borderColor = err ? '#EF4444' : (t.dark ? t.border : '#E6E1F5'); e.currentTarget.style.boxShadow = 'none'; }}
                   style={{ width: '100%', height: 150, padding: '12px 14px 26px', border: `1.5px solid ${err ? '#EF4444' : (t.dark ? t.border : '#E6E1F5')}`, borderRadius: 12, fontFamily: 'inherit', fontSize: 12.5, color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', resize: 'none', outline: 'none', boxSizing: 'border-box', lineHeight: 1.55, transition: 'border-color .15s, box-shadow .15s' }}
@@ -946,7 +948,7 @@ const AWS_CSS = `
 
 /* Dark mode for the three table heads. The TH constant above is a module
    constant with no access to the theme, and an inline style beats a plain CSS
-   rule, so these carry !important — the one case where it is the mechanism
+   rule, so these carry !important â€” the one case where it is the mechanism
    rather than a patch. Values are .clm-table's dark head, which the rest of CLM
    already uses. */
 [data-bs-theme="dark"] .aws-table thead tr,
@@ -972,7 +974,7 @@ const AWS_CSS = `
 }
 /* The employee card's box: radius 14 on 11px 15px, a 1px neutral border with
    NO top border so the accent rule sits flush as the card's top edge, and the
-   two columns top-aligned rather than centred — the figure stacks under the
+   two columns top-aligned rather than centred â€” the figure stacks under the
    label on the left, the icon tile stays at the top right. */
 .aws-card {
   position:relative; overflow:hidden; border-radius:14px; padding:11px 15px;

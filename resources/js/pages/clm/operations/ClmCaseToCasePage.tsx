@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
@@ -11,8 +11,8 @@ import { Shimmer } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * CLM Operations · Without Shipment ID → Case to Case Contracts.
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+ * CLM Operations Â· Without Shipment ID â†’ Case to Case Contracts.
  *
  * Faithful violet-themed port of the `rCtc()` view from the CLM_CaseToCase
  * prototype: header strip with "Create CTC Agreement", a collapsible
@@ -20,7 +20,7 @@ import SearchClear from '../../../components/ui/SearchClear';
  * (All / Signed / In Progress / Rejected), search, and the contracts
  * table with per-row download / edit / version / timeline actions. The
  * full-screen 4-stage create form mounts via ClmCtcForm.
- * ───────────────────────────────────────────────────────────────────────── */
+ * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 type CtcTab = 'all' | 'signed' | 'inprogress' | 'rejected';
 
@@ -49,29 +49,29 @@ const STAGE_CARDS = [
 ];
 
 // Display dates as DD-Mon-YYYY (e.g. 17-Jul-2026). The API returns "17 Jul
-// 2026"; swap the spaces for hyphens (QA #41). "—" / empty pass through.
+// 2026"; swap the spaces for hyphens (QA #41). "â€”" / empty pass through.
 /* Agreement titles and organisation names are free text and some run long.
    Thirty characters, with the whole thing still on the cell's tooltip: the
    two columns are the same width now, so letting either grow to fit its
    longest row would put the pair out of step again. */
-const cut30 = (t: string): string => (t.length <= 31 ? t : `${t.slice(0, 30).trimEnd()}…`);
-const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
+const cut30 = (t: string): string => (t.length <= 31 ? t : `${t.slice(0, 30).trimEnd()}â€¦`);
+const dashDate = (s: string): string => (s && s !== 'â€”' ? s.replace(/\s+/g, '-') : s);
 
 /**
  * The initials beside a name in Our Organisation, Counterparties and Created By.
  *
  * One mark for all three. They used to be three: a 24px rounded square on a
  * per-organisation gradient, a 24px rounded square on a fixed violet gradient,
- * and a 22px circle in pale lilac with a border — three shapes, two sizes and
+ * and a 22px circle in pale lilac with a border â€” three shapes, two sizes and
  * three colour treatments stacked down one row.
  *
  * Solid, not tinted. It was briefly a pale lilac chip with a #E2D6FB hairline,
- * on the theory that ten marks down a page is a lot of ink — but at that weight
+ * on the theory that ten marks down a page is a lot of ink â€” but at that weight
  * the border all but disappears against the row and the mark read as a smudge
  * behind the name, while the SR badge and the +N pill in the same row stayed
  * solid violet. It is the only thing in its cell, so it may as well be legible.
  *
- * Built like the SR badge beside it: the same 135° violet gradient, white
+ * Built like the SR badge beside it: the same 135Â° violet gradient, white
  * initials, a top sheen and a short shadow of its own colour. 24px with 8.5px
  * initials leaves the two letters about 6px of bearing on each side.
  */
@@ -108,9 +108,9 @@ export default function ClmCaseToCasePage() {
   // This used to be a solid #6D28D9 strip with 7.5px white caps, which read as
   // a heavy dark bar over light rows and was two sizes below every other header
   // in the product. HRMS renders the same band as a light tint of its accent
-  // with muted caps — DataTable.css `.hr-dt .dt-table thead th` — so these are
+  // with muted caps â€” DataTable.css `.hr-dt .dt-table thead th` â€” so these are
   // that rule's colour-mix()es resolved against the violet palette CTC shares
-  // with it: fill #faf5ff→50%#fff over #faf5ff→40%#ede9fe, text #5b21b6→55%
+  // with it: fill #faf5ffâ†’50%#fff over #faf5ffâ†’40%#ede9fe, text #5b21b6â†’55%
   // #64748b, and the two inset hairlines off #ddd6fe. Type is the base rule's
   // 9.5px/800 at .07em on 9px.
   // One deliberate difference: HRMS wraps its headers (`white-space: normal`)
@@ -129,7 +129,7 @@ export default function ClmCaseToCasePage() {
   } as React.CSSProperties;
   const TD = { padding: '7px 10px', verticalAlign: 'middle', borderBottom: `1px solid ${t.cellBorder}`, textAlign: 'center' } as React.CSSProperties;
   const TDL = { ...TD, textAlign: 'left' } as React.CSSProperties;
-  // Status/approval pills read as glaring light chips on the dark table — swap to
+  // Status/approval pills read as glaring light chips on the dark table â€” swap to
   // translucent dark fills + lighter text in dark mode, keyed off the semantic colour.
   const badgeTok = (cfg: { bg: string; border: string; color: string }) => {
     if (!t.dark) return { bg: cfg.bg, border: cfg.border, text: cfg.color };
@@ -165,13 +165,13 @@ export default function ClmCaseToCasePage() {
   const [rows, setRows] = useState<CtcContract[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);   // row currently downloading
-  // Version-history / Agreement-Timeline fetch in flight — freezes the other
+  // Version-history / Agreement-Timeline fetch in flight â€” freezes the other
   // row actions + toolbar until it resolves (QA #40). Tracks which row/kind so
   // the clicked button shows its own spinner while the rest go disabled.
   const [lifecycleBusy, setLifecycleBusy] = useState<{ id: string; kind: 'version' | 'timeline' } | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);   // hovered table row (state-driven so the highlight survives re-renders)
   // Stretch the contracts card to fill the viewport so its footer (pagination)
-  // sits at the bottom of the card even with few rows — same dynamic behaviour
+  // sits at the bottom of the card even with few rows â€” same dynamic behaviour
   // as the CLM master tables.
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -184,7 +184,7 @@ export default function ClmCaseToCasePage() {
   };
   useEffect(() => { load(); }, []);
 
-  // Deep-link from "Agreements We Sent" → open this contract's edit form.
+  // Deep-link from "Agreements We Sent" â†’ open this contract's edit form.
   // ?edit=<dbId> is consumed once rows are loaded, then cleared so a refresh
   // or back-nav doesn't reopen the form.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -198,7 +198,7 @@ export default function ClmCaseToCasePage() {
   }, [loading, rows, searchParams, setSearchParams]);
 
   // Version-history / timeline modals need the full record (versions +
-  // signing recipients + stage), which the list rows don't carry — fetch on demand.
+  // signing recipients + stage), which the list rows don't carry â€” fetch on demand.
   type CtcDetail = { code: string; title: string; dbId: number | null; stage: number; versions: CtcVersion[]; signers: CtcSigner[]; signatureRequestId: number | null };
   const [verFor, setVerFor] = useState<CtcDetail | null>(null);
   const [tlFor, setTlFor] = useState<CtcDetail | null>(null);
@@ -220,11 +220,11 @@ export default function ClmCaseToCasePage() {
     finally { setLifecycleBusy(null); }
   };
 
-  // Download the contract — the fully-signed PDF from Zoho when available,
+  // Download the contract â€” the fully-signed PDF from Zoho when available,
   // otherwise the latest drafted version rendered to PDF.
   const downloadContract = async (c: CtcContract) => {
     if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
-    if (downloadingId) return;   // a download is already in flight — ignore extra clicks
+    if (downloadingId) return;   // a download is already in flight â€” ignore extra clicks
     setDownloadingId(c.id);
     const grab = async (url: string, name: string) => {
       const f = await api.get(url, { responseType: 'blob' });
@@ -249,7 +249,7 @@ export default function ClmCaseToCasePage() {
     finally { setDownloadingId(null); }
   };
 
-  // Download the Zoho completion certificate. Only signed agreements have one —
+  // Download the Zoho completion certificate. Only signed agreements have one â€”
   // clicking it on an unsigned row explains (via a toast) why it isn't available.
   const [certId, setCertId] = useState<string | null>(null);
   const downloadCertificate = async (c: CtcContract) => {
@@ -300,12 +300,12 @@ export default function ClmCaseToCasePage() {
       if (!el) return;
       const top = el.getBoundingClientRect().top;
       // Leave room at the bottom for the layout footer + the scroll container's
-      // padding — with only a 24px gap the card overshot the main-content scroll
+      // padding â€” with only a 24px gap the card overshot the main-content scroll
       // area and the pagination footer landed at the fold (cut off).
       const fh = Math.max(240, window.innerHeight - top - 56);
       setFillH(prev => (prev === fh ? prev : fh));
 
-      // Dynamic rows-per-page — fit as many rows as the card height allows so
+      // Dynamic rows-per-page â€” fit as many rows as the card height allows so
       // a tall screen shows more and a short one fewer (mirrors the Customer /
       // master tables). A manual "Rows per page" pick disables the auto-fit.
       if (manualSize) return;
@@ -333,31 +333,36 @@ export default function ClmCaseToCasePage() {
       <style>{CTC_CSS + OPS_SEARCH_CSS}</style>
 
       {/* Whole-page lock while a contract OR completion certificate is
-          downloading — the PDF / Zoho certificate can take a while to generate
+          downloading â€” the PDF / Zoho certificate can take a while to generate
           server-side, so block every other action (create, tab switch, other
           rows) until it finishes and can't be cut off. */}
       {(downloadingId !== null || certId !== null) && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(15,7,50,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
           <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ctcSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Preparing your download…</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Large agreements can take a moment — please don't leave this page.</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Preparing your downloadâ€¦</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Large agreements can take a moment â€” please don't leave this page.</div>
         </div>, document.body)}
 
-      {/* CARD 1 — HEADER STRIP */}
+      {/* CARD 1 â€” HEADER STRIP */}
       <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 22%,#DDD6FE 50%,#C4B5FD 78%,#A78BFA 100%)', borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.2)'}`, boxShadow: '0 2px 12px rgba(109,40,217,.1)', overflow: 'hidden' }}>
-        <div className="ctc-header-strip" style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64 }}>
+        <div className="ctc-header-strip" style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 58 }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: t.dark ? 'linear-gradient(180deg,rgba(255,255,255,.04),transparent)' : 'linear-gradient(180deg,rgba(255,255,255,.55),transparent)', pointerEvents: 'none' }} />
-          <div className="ctc-header-titlewrap" style={{ display: 'flex', alignItems: 'center', gap: 14, zIndex: 1, paddingLeft: 10 }}>
+          <div className="ctc-header-titlewrap" style={{ display: 'flex', alignItems: 'center', gap: 13, zIndex: 1, paddingLeft: 10 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 0 0 3px rgba(124,58,237,.22),0 4px 12px rgba(91,33,182,.42)' }}>
-                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
+              <div style={{ width: 38, height: 38, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 0 0 3px rgba(124,58,237,.22),0 4px 12px rgba(91,33,182,.42)' }}>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
               </div>
               <span style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #EDE9FE', boxShadow: '0 0 5px rgba(34,197,94,.45)' }} />
             </div>
             <div>
-              <div className="ctc-header-title" style={{ fontSize: 18, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.3px', lineHeight: 1.15 }}>Case to Case Contracts Management</div>
-              <div className="ctc-header-sub" style={{ fontSize: 12, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .9, marginTop: 3 }}>Manage one-time operational agreements and contract approval workflows.</div>
+              {/* Supplier Management's strip, to the number â€” .s360m .cstrip__title
+                  / __sub in shipment-360.css: 14.5px/800 at -.4px over 10px/500.
+                  This header is written inline rather than using
+                  .clm-head-strip, so it does not follow clmShared and has to be
+                  set here. Colour stays this page's violet. */}
+              <div className="ctc-header-title" style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.4px', lineHeight: 1.2 }}>Case to Case Contracts Management</div>
+              <div className="ctc-header-sub" style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .85, marginTop: 2, lineHeight: 1.3 }}>Manage one-time operational agreements and contract approval workflows.</div>
             </div>
           </div>
           <button onClick={() => { setEditing(null); setFormOpen(true); }} disabled={lifecycleBusy !== null} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', border: 'none', borderRadius: 10, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null ? .6 : 1, zIndex: 1, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 4px 14px rgba(91,33,182,.44),inset 0 1px 0 rgba(255,255,255,.18)' }}>
@@ -368,7 +373,7 @@ export default function ClmCaseToCasePage() {
         </div>
       </div>
 
-      {/* CARD 2 — WHAT WE ARE DOING HERE */}
+      {/* CARD 2 â€” WHAT WE ARE DOING HERE */}
       <div style={{ background: t.surface, borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : 'rgba(124,58,237,.18)'}`, overflow: 'hidden', boxShadow: '0 2px 10px rgba(6,182,212,.04)' }}>
         <div style={{ position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: 'linear-gradient(180deg,#C4B5FD,#7C3AED,#5B21B6)', zIndex: 10 }} />
@@ -407,10 +412,10 @@ export default function ClmCaseToCasePage() {
         </div>
       </div>
 
-      {/* CARD 3 — CONTRACTS LIST */}
+      {/* CARD 3 â€” CONTRACTS LIST */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '10px 12px', padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
-          {/* Tab rail — the employee list's .dt-tabs / .dt-tab, to the pixel, on
+          {/* Tab rail â€” the employee list's .dt-tabs / .dt-tab, to the pixel, on
               the violet ramp. Values are copied rather than imported because
               this toolbar is inline-styled and has no .dt-root above it to
               inherit the accent variables from.
@@ -418,8 +423,8 @@ export default function ClmCaseToCasePage() {
               Specifically the `hr-dt` skin (DataTable.css ~1152), NOT the base
               .dt-tabs rule: the employee list carries .hr-dt, so what is on
               screen there is a PALE recessed track with every tab lettered in
-              the accent and only the active one filled. The base rule — tinted
-              trough, white resting tabs — belongs to Customers and is a
+              the accent and only the active one filled. The base rule â€” tinted
+              trough, white resting tabs â€” belongs to Customers and is a
               different object.
 
               3px of padding: 34 (tab) + 3 x 2 + 1 x 2 (border) = 42, which is
@@ -438,7 +443,7 @@ export default function ClmCaseToCasePage() {
               const active = tab === key;
               return (
                 <button key={key} disabled={lifecycleBusy !== null} onClick={() => { setTab(key); setPage(1); }}
-                  /* 40px — the house tab height, set on Customers, Consignee
+                  /* 40px â€” the house tab height, set on Customers, Consignee
                      and QPI in f4ecf29f and carried across every CLM rail with
                      it. It was 34, which is what HRMS still uses. */
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40,
@@ -447,7 +452,7 @@ export default function ClmCaseToCasePage() {
                     border: 0, borderRadius: 8,
                     /* The app's face, not `inherit`: Velzon puts Rubik on the
                        body, and Rubik carries more ink than DM Sans at the same
-                       size — which is why this rail always read bolder than the
+                       size â€” which is why this rail always read bolder than the
                        employee list's.
                        650, not 700: HRMS's one deliberate weight exception. A
                        tab lettered in the accent on a pale track carries more
@@ -479,12 +484,12 @@ export default function ClmCaseToCasePage() {
           </div>
           {/* The spacer keeps flex:1 so the search stays against the right
               edge, as it does on the employee list. The search is sized by
-              its own basis — now the shared 500px from .ops-search — rather
+              its own basis â€” now the shared 500px from .ops-search â€” rather
               than by a fixed input, which is what used to hold it at 313px. */}
           <div className="ctc-hspacer" style={{ flex: 1 }} />
           <div className="ops-search ops-search--violet ctc-searchbox">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input autoComplete="off" value={search} disabled={lifecycleBusy !== null} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…" />
+            <input autoComplete="off" value={search} disabled={lifecycleBusy !== null} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, typeâ€¦" />
               <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
@@ -506,7 +511,7 @@ export default function ClmCaseToCasePage() {
                        the same width, but not for Our Organisation, Counterparties
                        and Created By: each of those leads with a 24px mark, and
                        centring the [mark + name (+ pill)] group as a whole put
-                       every row's mark at a different x — the longer the name, or
+                       every row's mark at a different x â€” the longer the name, or
                        the presence of a +N pill, the further left it started. The
                        column had no left edge at all. Ranged left, the marks stack
                        in one line and the names start together. */
@@ -526,12 +531,12 @@ export default function ClmCaseToCasePage() {
                     const apb = badgeTok(ap);
                     const isHover = hoverId === c.id;
                     // Drive the hover highlight from React state (not imperative
-                    // DOM writes) so a re-render — download click, popover, search —
+                    // DOM writes) so a re-render â€” download click, popover, search â€”
                     // can't reset a hovered row back to the whitish `rowAlt` stripe
                     // mid-hover (the "white flash / flicker" in dark mode).
                     const rowBg = isHover ? t.rowHover : (n % 2 === 0 ? t.rowAlt : t.tableBg);
                     const extra = c.cp.length - 1;
-                    const cpS = c.cpSignedDate !== '—' ? c.cpSignedDate : (c.status === 'signed' ? c.date : '—');
+                    const cpS = c.cpSignedDate !== 'â€”' ? c.cpSignedDate : (c.status === 'signed' ? c.date : 'â€”');
                     return (
                       <tr key={c.id} style={{ background: rowBg, transition: 'background .12s', boxShadow: isHover ? 'inset 3px 0 0 #7C3AED' : 'none' }}
                         onMouseEnter={() => setHoverId(c.id)}
@@ -544,9 +549,9 @@ export default function ClmCaseToCasePage() {
                         <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Mark text={c.cp[0]} dark={t.dark} /><Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 108 }}>{c.cp[0]}</span></Tooltip>{extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}</div></td>
                         <td style={{ ...TDL, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Mark text={c.createdBy} dark={t.dark} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                         <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, background: apb.bg, border: `1px solid ${apb.border}`, whiteSpace: 'nowrap' }}><span style={{ fontSize: 9.5, fontWeight: 700, color: apb.text }}>{ap.label}</span></span></td>
-                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
-                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.endDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
-                        <td style={{ ...TD, width: 122 }}>{cpS === '—' ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#C4B5FD' }}>—</span> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>{dashDate(cpS)}</span>}</td>
+                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.effDate === 'â€”' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
+                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.endDate === 'â€”' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
+                        <td style={{ ...TD, width: 122 }}>{cpS === 'â€”' ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#C4B5FD' }}>â€”</span> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>{dashDate(cpS)}</span>}</td>
                         <td style={{ ...TD, width: 192 }}>
                           {(() => {
                             // Freeze the whole row's actions while a version /
@@ -556,25 +561,25 @@ export default function ClmCaseToCasePage() {
                             const tlBusy  = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'timeline';
                             // Freeze every row action while a lifecycle modal
                             // loads OR a contract / certificate download is in
-                            // flight — no other action until it finishes.
+                            // flight â€” no other action until it finishes.
                             const frozen  = lifecycleBusy !== null || downloadingId !== null || certId !== null;
                             return (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" busy={downloadingId === c.id} busyLabel="Downloading…" disabled={frozen} onClick={() => downloadContract(c)}>
+                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" busy={downloadingId === c.id} busyLabel="Downloadingâ€¦" disabled={frozen} onClick={() => downloadContract(c)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                             </ActBtn>
-                            {/* Once signed, the agreement is locked → show a view (eye) icon
+                            {/* Once signed, the agreement is locked â†’ show a view (eye) icon
                                 instead of edit; opening it lands on the view-only stage. */}
                             {c.status === 'signed' ? (
                               <ActBtn t={t} tone="violet" title="View CTC" disabled={frozen} onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></ActBtn>
                             ) : (
                               <ActBtn t={t} tone="violet" title="Edit CTC" disabled={frozen} onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
                             )}
-                            <ActBtn t={t} tone="blue" title="Version History" busy={verBusy} busyLabel="Loading…" disabled={frozen && !verBusy} onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
-                            <ActBtn t={t} tone="amber" title="Agreement Timeline" busy={tlBusy} busyLabel="Loading…" disabled={frozen && !tlBusy} onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
-                            {/* Completion certificate — dimmed until signed; clicking an
+                            <ActBtn t={t} tone="blue" title="Version History" busy={verBusy} busyLabel="Loadingâ€¦" disabled={frozen && !verBusy} onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
+                            <ActBtn t={t} tone="amber" title="Agreement Timeline" busy={tlBusy} busyLabel="Loadingâ€¦" disabled={frozen && !tlBusy} onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
+                            {/* Completion certificate â€” dimmed until signed; clicking an
                                 unsigned row toasts why it's not available. */}
-                            <ActBtn t={t} tone="teal" title={c.status === 'signed' ? 'Download completion certificate' : 'Available once all parties have signed'} busy={certId === c.id} busyLabel="Downloading…" disabled={frozen && certId !== c.id} softOff={c.status !== 'signed'} onClick={() => downloadCertificate(c)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg></ActBtn>
+                            <ActBtn t={t} tone="teal" title={c.status === 'signed' ? 'Download completion certificate' : 'Available once all parties have signed'} busy={certId === c.id} busyLabel="Downloadingâ€¦" disabled={frozen && certId !== c.id} softOff={c.status !== 'signed'} onClick={() => downloadCertificate(c)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg></ActBtn>
                           </div>
                             );
                           })()}
@@ -596,7 +601,7 @@ export default function ClmCaseToCasePage() {
                 <span className="tc-wl-info">
                   {list.length === 0
                     ? 'No records'
-                    : <>Showing <span className="tc-wl-hl">{start + 1}–{Math.min(start + pageSize, list.length)}</span> of <span className="tc-wl-hl">{list.length}</span></>}
+                    : <>Showing <span className="tc-wl-hl">{start + 1}â€“{Math.min(start + pageSize, list.length)}</span> of <span className="tc-wl-hl">{list.length}</span></>}
                 </span>
                 <div className="tc-wl-right">
                   <span className="tc-wl-rows">
@@ -651,14 +656,14 @@ const ACT_TONES = {
 
 function ActBtn({ t, tone, title, onClick, children, busy, busyLabel, disabled, softOff }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode; busy?: boolean; busyLabel?: string; disabled?: boolean; softOff?: boolean }) {
   const s = t.dark ? ACT_TONES[tone].dark : ACT_TONES[tone].light;
-  // `busy`     → this button's own async op (spinner, wait cursor).
-  // `disabled` → frozen because ANOTHER action is loading (dimmed, no click).
-  // `softOff`  → dimmed like disabled BUT the click STILL fires, so the handler
+  // `busy`     â†’ this button's own async op (spinner, wait cursor).
+  // `disabled` â†’ frozen because ANOTHER action is loading (dimmed, no click).
+  // `softOff`  â†’ dimmed like disabled BUT the click STILL fires, so the handler
   //              can explain (via a toast) why the action isn't available yet.
   const off = busy || disabled;
   const dim = off || softOff;
   return (
-    <Tooltip label={busy ? (busyLabel ?? 'Loading…') : (disabled ? 'Please wait…' : title)}>
+    <Tooltip label={busy ? (busyLabel ?? 'Loadingâ€¦') : (disabled ? 'Please waitâ€¦' : title)}>
       <button onClick={onClick} aria-label={title} disabled={off} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : dim ? 'not-allowed' : 'pointer', color: s.color, opacity: busy ? 1 : dim ? .4 : .85, flexShrink: 0, transition: 'all .15s' }}
         onMouseEnter={e => { if (dim) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
         onMouseLeave={e => { if (dim) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
@@ -674,7 +679,7 @@ const CTC_CSS = `
 @keyframes ctcFade { from { opacity:0 } to { opacity:1 } }
 @keyframes ctcSpin { to { transform: rotate(360deg) } }
 
-/* ── Responsive layout (QA #42) ──
+/* â”€â”€ Responsive layout (QA #42) â”€â”€
    On narrow screens: the header title + Create button stack; the stage cards
    go 2-per-row; the tab rail goes full width with 2 tabs per row; and the
    search takes the next row at full width. The wide table already scrolls
@@ -701,7 +706,7 @@ const CTC_CSS = `
   .ctc-toolbar { gap: 8px !important; }
   .ctc-tabrail { width: 100%; gap: 6px; }
   /* The height is 40 on every width now, so this rule only has to change the
-     flow — it used to raise the phone tabs from 34 to 40 on its own. */
+     flow â€” it used to raise the phone tabs from 34 to 40 on its own. */
   .ctc-tabrail > button { flex: 1 1 100% !important; justify-content: flex-start; }
   /* Push the count badge to the far right so every row lines up. */
   .ctc-tabrail > button > span:last-child { margin-left: auto; }

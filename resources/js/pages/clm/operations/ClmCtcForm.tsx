@@ -1099,14 +1099,26 @@ function Stage1(p: {
   useEffect(() => {
     if (loadedEffDate.current === null && p.effDate) loadedEffDate.current = p.effDate;
   }, [p.effDate]);
+  /* The end date this agreement arrived with, kept for the same reason as the
+     effective one above — see endBeforeToday. */
+  const loadedEndDate = useRef<string | null>(null);
+  useEffect(() => {
+    if (loadedEndDate.current === null && p.endDate) loadedEndDate.current = p.endDate;
+  }, [p.endDate]);
 
   const todayISO = (() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   })();
-  // End date must not be in the past — a new agreement that already expired makes
-  // no sense. Only flagged when it isn't already caught by the end<eff rule.
-  const endBeforeToday = !!p.endDate && p.endDate < todayISO;
+  /* End date must not be MOVED into the past — a new agreement that has already
+     expired makes no sense. Past AND changed from what was stored, exactly as
+     the effective date below: the flat "is it before today" check sealed every
+     agreement whose term had simply ended. Opening a finished CTC read-only and
+     stepping through it ran this validation on a stored end date that was
+     correctly in the past, and the step would not advance (QA #108). An
+     untouched stored date passes; the picker's minDate still stops a new one
+     being chosen. */
+  const endBeforeToday = !!p.endDate && p.endDate < todayISO && p.endDate !== loadedEndDate.current;
   /* Effective date must not be MOVED into the past — the End Date already had a
      past-date guard, the start date never did.
      What is refused is setting a past date, not the fact of holding one. An
@@ -1149,10 +1161,17 @@ function Stage1(p: {
       setNavBusy(false);
     }));
   };
+  /* View-only: the agreement is out for approval, out for signature or signed,
+     and every field on these steps is disabled. Stepping through it is reading,
+     not filling in a form — there is nothing to save and nothing to correct, so
+     the step validations do not run (QA #108). `editLock` alone, not
+     `prevLocked`: that also covers resubmit, where the fields ARE editable
+     because a rejected draft is being corrected, and the checks must hold. */
+  const readingOnly = !!p.editLock;
   const midNext = () => {
     if (navBusy) return;   // ignore double-clicks while the step is rendering
-    if (midStep === 1) { if (!validateStep1()) return; goStep(2); }
-    else if (midStep === 2) { if (!validateStep2()) return; goStep(3); }
+    if (midStep === 1) { if (!readingOnly && !validateStep1()) return; goStep(2); }
+    else if (midStep === 2) { if (!readingOnly && !validateStep2()) return; goStep(3); }
     else p.onNext();
   };
   const midBack = () => { if (midStep > 1) setMidStep((midStep - 1) as 1 | 2 | 3); };

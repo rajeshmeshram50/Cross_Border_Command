@@ -120,10 +120,10 @@ export const CLM_CSS = `
 .clm-head-strip {
   background: linear-gradient(110deg, #e0f9fd 0%, #cef8ff 18%, #d0f4f9 45%, #baeef7 75%, #a0e8f2 100%);
   border: 1px solid rgba(6,182,212,.2);
-  border-radius: 14px;
+  border-radius: 16px;
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 18px; min-height: 64px; gap: 14px;
+  padding: 0 20px; min-height: 58px; gap: 14px;
   box-shadow: 0 2px 10px rgba(6,182,212,.10);
 }
 .clm-head-strip::before {
@@ -136,10 +136,10 @@ export const CLM_CSS = `
   pointer-events: none;
 }
 .clm-head-strip > * { position: relative; z-index: 1; }
-.clm-head-strip-left { display: flex; align-items: center; gap: 14px; padding-left: 10px; min-width: 0; }
+.clm-head-strip-left { display: flex; align-items: center; gap: 13px; padding-left: 10px; min-width: 0; }
 .clm-head-strip-ico-wrap { position: relative; flex-shrink: 0; }
 .clm-head-strip-ico {
-  width: 46px; height: 46px; border-radius: 12px;
+  width: 38px; height: 38px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490);
   color: #fff;
@@ -153,19 +153,22 @@ export const CLM_CSS = `
   box-shadow: 0 0 5px rgba(34,197,94,.45);
 }
 .clm-head-strip-text { min-width: 0; }
-/* The app's page-header type, as app.css sets it for every other module's
-   cstrip: 18px/800 at -.3px over 12px/500. CLM was alone on 16px/500 and
-   11px, which is why its headers read lighter and smaller than HRMS's next
-   to them. Colour stays CLM's own teal — this aligns the type, not the
-   module's identity. */
+/* Supplier Management's strip: .s360m .cstrip__title / __sub in
+   shipment-360.css — 14.5px at -.4px over 10px/500. CLM ran 18px over 12px,
+   so a CLM header read a size larger than the P2P one beside it. (An earlier
+   pass matched the .s360m.dvt variant, which is the 18px one — the Supplier
+   page uses the plain rule.)
+   Two deliberate departures: the weight is 700, not Supplier's 800, and the
+   colour stays CLM's own teal. This aligns the size, not the module's
+   identity. */
 .clm-head-strip-title {
-  font-size: 18px; font-weight: 800; color: #0c4a6e;
-  letter-spacing: -.3px; line-height: 1.15;
+  font-size: 14.5px; font-weight: 700; color: #0c4a6e;
+  letter-spacing: -.4px; line-height: 1.2;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .clm-head-strip-sub {
-  font-size: 12px; font-weight: 500; color: #0e7490;
-  opacity: .9; margin-top: 3px; line-height: 1.4;
+  font-size: 10px; font-weight: 500; color: #0e7490;
+  opacity: .85; margin-top: 2px; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .clm-add-btn {
@@ -453,7 +456,11 @@ export const CLM_CSS = `
   padding: 0 14px; height: 48px;
   border: 1.5px solid #cef8fd; border-radius: 11px;
   background: linear-gradient(180deg, #f6feff, #f0fdff);
-  flex: 1 1 240px; min-width: 200px;
+  /* Fixed, for the same reason as .ops-search (QA #107): a growable search
+     resizes itself as the tab counts beside it change. The page-level
+     modifiers below (.clm-search-fixed / -grow) already pin a width; this is
+     the fallback for a bar that uses neither. */
+  flex: 0 0 500px; max-width: 100%; min-width: 0;
   /* Only the focus chrome (border + glow) transitions. Width is deliberately
      NOT animated — as a flex item this bar's width changes when the page gains
      a scrollbar on data load, and animating that reflow made the search bar

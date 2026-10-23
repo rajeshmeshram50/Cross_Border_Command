@@ -97,7 +97,7 @@ const DCP_TABS_CSS = `
    order: 2 puts it after the Filter button, so it ends the row as it does on
    every other CLM page — it was written first in the markup, which left the
    Filter button as the rightmost thing on the toolbar. */
-.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 500px; min-width: 180px; max-width: 100%; order: 2; }
+.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 0 500px; min-width: 0; max-width: 100%; order: 2; }
 @media (max-width: 1280px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 360px; } }
 @media (max-width: 760px) {
   .dcp-toolbar { width: 100%; flex-wrap: wrap; }
