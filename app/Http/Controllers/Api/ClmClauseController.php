@@ -346,7 +346,10 @@ class ClmClauseController extends Controller
                 'updated_by'    => $user->id,
             ]);
         });
-        return response()->json(['status' => true, 'data' => $row], 201);
+        /* Without content — the modal awaits this and never reads it, so
+           echoing the clause body back sends it a second time for nothing
+           (QA #40). Every other column still goes back. */
+        return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
     public function libraryUpdate(Request $request, $id)
@@ -385,7 +388,8 @@ class ClmClauseController extends Controller
         if (array_key_exists('party', $data)) $data['party'] = trim((string) $data['party']);
         $data['updated_by'] = $user->id;
         $row->update($data);
-        return response()->json(['status' => true, 'data' => $row->fresh()]);
+        // Without content — see libraryStore.
+        return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
     public function libraryDestroy(Request $request, $id)

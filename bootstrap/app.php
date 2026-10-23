@@ -34,6 +34,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // therefore counts the queries auth and tenant checks make too.
         $middleware->appendToGroup('api', \App\Http\Middleware\ProfileRequest::class);
 
+        // gzip JSON replies when the caller asked for gzip. Nothing upstream
+        // was compressing them, so the CLM document lists were crossing the
+        // wire whole — 1.75 MB for /clm/agreement-library, which gzips to
+        // 119 KB. Appended AFTER ProfileRequest so it runs innermost and the
+        // profiler's X-Profile-Total-Ms therefore includes the encode.
+        $middleware->appendToGroup('api', \App\Http\Middleware\CompressJsonResponse::class);
+
         // eSSL / ZKTeco terminals POST to /iclock/* over plain HTTP and cannot
         // carry a CSRF token — exempt the device push path (it is tenant-guarded
         // by device Serial in EsslDeviceController). See ESSL doc §17.

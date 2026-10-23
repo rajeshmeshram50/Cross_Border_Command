@@ -20,68 +20,23 @@ import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSeg
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import SearchClear from '../../../../components/ui/SearchClear';
-import {
-  readCustomerMasterBundle,
-  writeCustomerMasterBundle,
-  bustCustomerMasterBundle,
-} from './customerBundleCache';
+import { readCustomerMasterBundle,writeCustomerMasterBundle, bustCustomerMasterBundle,} from './customerBundleCache';
 
-/* Truncate a long attachment file name so it never spills out of the
- * ATTACHMENT cell into the ACTIONS column. The full name shows on hover
- * via the wrapping Tooltip. Caps at 25 chars + ellipsis. */
-const truncFileName = (s: string | undefined | null, n = 25): string => {
-  const v = String(s ?? '');
-  return v.length > n ? v.slice(0, n) + '…' : v;
-};
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Add Customer — 3-stage modal
- *
- * Native React port of #addCustomerModal from Customer_Flow.html.
- *   Stage 1 — Customer Legal Identity (Identification + Address & Contact)
- *   Stage 2 — KYC / Due Diligence (Company DD / Owner KYC / Trade Licence)
- *   Stage 3 — Evidence Vault (KYC Documents / Trade Documents)
- *
- * All CSS is scoped under `.acm-root` so it doesn't bleed into the rest of
- * the app. Saving is stubbed: clicking Save/Submit fires an alert, no real
- * persistence wire-up yet — that lands when the customers table migration
- * lands and we swap the front-end arrays for /api/customers POST.
- * ──────────────────────────────────────────────────────────────────────── */
-
-/* Evidence Vault (the former Stage 3) was removed from the customer form —
- * those uploads now live in the standalone CustomerEvidenceVaultModal. The
- * form is a 2-stage flow: Legal Identity → KYC / Due Diligence. */
 type Stage = 1 | 2;
 type StageTab = 'identification' | 'address-contact';
 type KycSubTab = 'company-dd' | 'owner-kyc' | 'trade-licence';
 type EvTab = 'kyc-documents' | 'trade-documents';
 type EvSubTab = 'dd' | 'kyc' | 'tl';
 
-/** Unified location row — every additional location captures both the
- *  address *and* the contact person at that address. The fields used
- *  to live in two parallel interfaces (AddressRow + ContactRow) with
- *  the same shape; merging them here removes the duplicate state and
- *  the duplicate sub-modal. */
 interface LocationRow {
   id: string;
   type: string; line: string; country: string; state: string; city: string; pin: string;
   cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: 'yes' | 'no' | '';
 }
-/** Default value for the "Address Type" field — surfaced as the
- *  pre-selected option on the primary address form and on every new
- *  Add Location sub-modal. User can switch to any other master entry. */
 const DEFAULT_ADDRESS_TYPE = 'Registered Office';
 
-/* ── Master option shape — every list comes back from /master/{slug}
- *    normalized to { id, name } so the JSX is uniform regardless of the
- *    underlying column (segments uses `title`, the rest use `name`).
- *    States additionally carry country_id so we can filter by selected
- *    country at the UI layer. */
 interface MasterOpt { id: number; name: string; code?: string; regulatory_status?: string | null; }
 interface StateOpt extends MasterOpt { country_id: number; }
-/** master_state_codes row, flattened. Keyed by state NAME (not id) because this
- *  form's State dropdown stores the display name — the supplier form matches on
- *  id instead, since its dropdown is id-based. */
 interface StateCodeOpt { stateName: string; code: string; }
 interface MasterLists {
   customerTypes:     MasterOpt[];
@@ -93,9 +48,6 @@ interface MasterLists {
   states:            StateOpt[];
   stateCodes:        StateCodeOpt[];
   designations:      MasterOpt[];
-  /** Document Type master — backs the "Document / License Name"
-   *  dropdown on the Stage 2 Add Document / License sub-modal.
-   *  Managed in the Master module under "Document Types". */
   documentTypes:     MasterOpt[];
 }
 const EMPTY_MASTERS: MasterLists = {
@@ -103,39 +55,8 @@ const EMPTY_MASTERS: MasterLists = {
   addressTypes: [], countries: [], states: [], stateCodes: [], designations: [], documentTypes: [],
 };
 
-// MasterSelect expects `{ value, label }`. Customer/segment/classification/
-// risk/address values on this form are still stored as the display name
-// (everything saves as strings), so value === label here. If the customers
-// API later switches to storing master ids, this is the one place to swap
-// `String(o.id)` in.
 const toSelectOpts = (rows: MasterOpt[]) => rows.map(o => ({ value: o.name, label: o.name }));
 
-/* Render a saved segment value (name, or comma-joined / array of names) as
- * "S-001: Name" using the segment master codes, so read-only summaries match
- * the "code: name" labels the segment dropdown shows. Falls back to the bare
- * name when no code is known. */
-function segDisplay(value: string | string[] | null | undefined, segs: { name: string; code?: string }[]): string {
-  const arr = Array.isArray(value)
-    ? value
-    : String(value ?? '').split(',').map(s => s.trim()).filter(Boolean);
-  if (arr.length === 0) return '';
-  return arr.map(n => {
-    const code = segs.find(s => s.name === n)?.code;
-    return code ? `${code}: ${n}` : n;
-  }).join(', ');
-}
-
-/**
- * Same as `toSelectOpts` but also injects the currently-selected
- * `current` value as a synthetic option when it isn't already in the
- * list. Without this, opening an existing customer for edit shows the
- * placeholder when the saved value either (a) was captured as free
- * text before the field became a master dropdown (e.g. a typed
- * designation like "Director, CFO"), or (b) was deleted/renamed in
- * the master after the customer was saved. Keeping the synthetic row
- * preserves the user's history and avoids silently zeroing the value
- * on the next Save.
- */
 const optsWith = (rows: MasterOpt[], current?: string | null) => {
   const base = toSelectOpts(rows);
   const v = (current ?? '').trim();
@@ -143,57 +64,6 @@ const optsWith = (rows: MasterOpt[], current?: string | null) => {
   return base;
 };
 
-/* Stage 2 / Stage 3 reference lists.
- *   - Stage 2 Company DD and Owner KYC are backed by live
- *     customer_documents + customer_owners (so they render from
- *     the parent's API state, not these arrays).
- *   - Stage 3 (Evidence Vault) is still design-only — its renderer
- *     consumes the arrays below directly as read-only placeholder
- *     rows. When the Evidence Vault backend lands, swap the source
- *     to live data; the table layout stays unchanged.
- *   - Trade Licence on Stage 2 also reads TL_DOCS for now (the
- *     same design-only treatment). */
-type KycDocRow = { code: string; name: string; authority: string; expiry: string; status: string };
-
-const DD_DOCS: KycDocRow[] = [
-  { code: 'DD-001', name: 'Certificate of Incorporation',                          authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     status: 'mandatory' },
-  { code: 'DD-002', name: 'Memorandum & Articles of Association (MOA/AOA)',        authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     status: 'mandatory' },
-  { code: 'DD-003', name: 'Board Resolution for Authorized Signatory',             authority: 'Company Board',                expiry: '12/2026', status: 'mandatory' },
-  { code: 'DD-004', name: 'Financial Statements (Last 2-3 Years)',                 authority: 'Statutory Auditor',            expiry: '03/2026', status: 'mandatory' },
-  { code: 'DD-005', name: 'Bank Account Verification Letter / Cancelled Cheque',   authority: 'Authorized Dealer Bank',       expiry: 'N/A',     status: 'mandatory' },
-  { code: 'DD-006', name: 'Tax Registration Certificate',                          authority: 'Income Tax Department',        expiry: 'N/A',     status: 'optional'  },
-];
-const OWN_KYC_DOCS: KycDocRow[] = [
-  { code: 'KYC-001', name: 'PAN Card',                                  authority: 'Income Tax Department',           expiry: 'N/A',    status: 'active' },
-  { code: 'KYC-002', name: 'Aadhaar Card',                              authority: 'UIDAI',                           expiry: 'N/A',    status: 'active' },
-  { code: 'KYC-003', name: 'Address Proof',                             authority: 'Bank / Utility / Govt Authority', expiry: 'N/A',    status: 'active' },
-  { code: 'KYC-004', name: 'Identity Proof (Passport / DL / Voter ID)', authority: 'GOI / RTO / ECI',                 expiry: 'Varies', status: 'active' },
-  { code: 'KYC-005', name: 'Company Registration Certificate',          authority: 'Registrar of Companies (ROC)',    expiry: 'N/A',    status: 'active' },
-  { code: 'KYC-006', name: 'GST Certificate',                           authority: 'GST Department',                  expiry: '09/2030', status: 'active' },
-  { code: 'KYC-007', name: 'Passport-size Photograph',                  authority: 'Self-Provided',                   expiry: 'N/A',    status: 'active' },
-  { code: 'KYC-008', name: 'Bank Statement (Last 6 Months)',            authority: 'Authorized Bank',                 expiry: 'N/A',    status: 'active' },
-  { code: 'KYC-009', name: 'Utility Bill',                              authority: 'Service Provider',                expiry: 'N/A',    status: 'active' },
-  { code: 'KYC-010', name: 'Property Tax Receipt',                      authority: 'Municipal Authority',             expiry: 'N/A',    status: 'active' },
-];
-const TL_DOCS: KycDocRow[] = [
-  { code: 'TL-001', name: 'Import Export Code (IEC)',      authority: 'DGFT',                     expiry: '03/2026', status: 'mandatory' },
-  { code: 'TL-002', name: 'RCMC Certificate',              authority: 'Export Promotion Council', expiry: '05/2027', status: 'mandatory' },
-  { code: 'TL-003', name: 'Export Licence',                authority: 'DGFT',                     expiry: '12/2026', status: 'optional'  },
-  { code: 'TL-004', name: 'Drug Licence',                  authority: 'CDSCO',                    expiry: '08/2027', status: 'optional'  },
-  { code: 'TL-005', name: 'FSSAI Licence',                 authority: 'FSSAI',                    expiry: '06/2028', status: 'optional'  },
-  { code: 'TL-006', name: 'GST Registration',              authority: 'GST Department',           expiry: 'N/A',     status: 'mandatory' },
-  { code: 'TL-007', name: 'ISO Certification',             authority: 'Certification Body',       expiry: '11/2027', status: 'optional'  },
-  { code: 'TL-008', name: 'Pollution Control Certificate', authority: 'Pollution Control Board',  expiry: '07/2026', status: 'mandatory' },
-];
-
-/* ─── File-upload guard ─────
- * Browser `accept=` is only a hint — users can switch the file picker
- * to "All files" and select a .php / .exe / .zip anyway. We re-check
- * the chosen file's extension + size here and reject + alert if it
- * doesn't match. The server enforces the same list
- * (mimes:jpg,jpeg,png,pdf) so a manipulated request can't slip through
- * either. Word / Excel are NOT accepted — browsers can't preview them
- * (they download), which broke the View flow. */
 const ALLOWED_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png'];
 const ALLOWED_PHOTO_EXTS = ['jpg', 'jpeg', 'png'];
 const MAX_UPLOAD_MB = 2;
@@ -211,35 +81,17 @@ function validateUpload(file: File, kind: FileKind = 'doc'): string | null {
 }
 
 const KYC_PER_PAGE = 6;
-const KYC_TAB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string; data: typeof DD_DOCS; showAdd: boolean; addLabel?: string }> = {
-  'company-dd':   { title:'COMPANY DUE DILIGENCE', sub:'| Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',     placeholder:'Search DD document name...',     data: DD_DOCS,      showAdd: true,  addLabel:'Add Document / License' },
-  'owner-kyc':    { title:'OWNER KYC DETAILS',     sub:'| Owner identity proofs, address proofs, and photographs', nameCol:'KYC Document Name', placeholder:'Search KYC document name...',    data: OWN_KYC_DOCS, showAdd: true,  addLabel:'Add Owner KYC Document' },
-  'trade-licence':{ title:'TRADE LICENCE',         sub:'| Trade licence documents and regulatory approvals',     nameCol:'Document Name',         placeholder:'Search trade licence document...', data: TL_DOCS,    showAdd: true,  addLabel:'Add Trade Licence' },
-};
-const EV_SUB_META: Record<EvSubTab, { title: string; sub: string; nameCol: string; data: typeof DD_DOCS }> = {
-  dd:  { title:'COMPANY DUE DILIGENCE', sub:'| Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',  data: DD_DOCS },
-  kyc: { title:'OWNER KYC DETAILS',     sub:'| Owner identity proofs, address proofs, and photographs', nameCol:'KYC Document Name', data: OWN_KYC_DOCS },
-  tl:  { title:'TRADE LICENCE',         sub:'| Trade licence documents and regulatory approvals',     nameCol:'Document Name',      data: TL_DOCS },
+const KYC_TAB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string }> = {
+  'company-dd':   { title:'COMPANY DUE DILIGENCE', sub:'| Licenses, statutory documents, and compliance proofs', nameCol:'DD Document Name',     placeholder:'Search DD document name...' },
+  'owner-kyc':    { title:'OWNER KYC DETAILS',     sub:'| Owner identity proofs, address proofs, and photographs', nameCol:'KYC Document Name', placeholder:'Search KYC document name...' },
+  'trade-licence':{ title:'TRADE LICENCE',         sub:'| Trade licence documents and regulatory approvals',     nameCol:'Document Name',         placeholder:'Search trade licence document...' },
 };
 
 const newId = (prefix: string) => prefix + '_' + Math.random().toString(36).slice(2, 9);
 
-/* ── Stage memory ──────────────────────────────────────────────────
- * Module-level map keyed by customer.db_id (edit mode) that survives
- * close/reopen so a user who accidentally dismisses the modal on
- * Stage 2 or Stage 3 lands back on the same stage when they reopen —
- * not jarringly bounced back to Stage 1.
- *
- * Only writes happen for edit-mode customers; create mode starts
- * fresh on every open. The entry is cleared after a successful final
- * submit so the next visit reads as "fresh open" again. */
 type StageMemoryEntry = { stage: Stage; maxStage: Stage; tab: StageTab; kycSub: KycSubTab; evTab: EvTab };
 const stageMemory = new Map<number, StageMemoryEntry>();
 
-// Minimal customer shape the parent list passes in when editing. Mirrors the
-// `Customer` type in SalesCustomers; kept inline so this modal doesn't depend
-// on the parent file. `db_id` is the underlying numeric primary key — needed
-// for PUT/DELETE; absent until the row has been persisted server-side.
 export interface EditCustomer {
   id: string; db_id?: number; company: string; type: string; segment: string; segment_ids?: number[];
   country: string; contact: string; phone: string; email: string;
@@ -248,9 +100,6 @@ export interface EditCustomer {
   gstNumber?: string;
 }
 
-/* GST Scrutiny — one entry per GST number a domestic customer is
- * registered under. `id` is a number once persisted; a `local-…`
- * string while the row is held client-side before the customer exists. */
 type GstRow = {
   id: number | string;
   gst_number: string;
@@ -268,33 +117,13 @@ type GstDraft = {
   redFlags: string;
 };
 
-/* Standard 15-char GSTIN: 2-digit state code, 10-char PAN, 1 entity
- * char, 'Z', 1 checksum char. e.g. 27AADCI6120M1ZH. */
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
-/* Domestic vs international is decided by the PRIMARY ADDRESS country: India →
- * domestic (GST applies), any other country → international (no GST at all).
- * GST Number and the GST Scrutiny button are hidden outright, not disabled.
- *
- * An unset country is NOT domestic: until the user picks one there is no answer
- * yet, so the GST field stays hidden rather than guessing. This is safe now that
- * GST Number sits in the same card as Country, directly beneath it — nothing
- * appears above the field that decides it. Country is a required field, so by
- * save time this always resolves to a real yes/no. */
 const DOMESTIC_COUNTRY = 'India';
 function isDomesticCountry(country?: string): boolean {
   return (country ?? '').trim() === DOMESTIC_COUNTRY;
 }
 
-/* PIN / ZIP rules, copied verbatim from the shipment module
- * (CreateShipmentOrderModal + ShipmentOrderController) so the same address
- * means the same thing in both places: India → exactly 6 digits; every other
- * country → letters/digits plus spaces and hyphens (UK "SL7 1TB", Canada
- * "K1A 0B1"), capped at 12. Replaces the previous single 3–10 alphanumeric
- * rule, which accepted a 5-digit Indian PIN and rejected spaced foreign codes.
- *
- * Label, maxLength and sanitiser all branch on country too — keep the four
- * helpers together so a future rule change can't update one and miss another. */
 const PIN_DOMESTIC_RE = /^[0-9]{6}$/;
 const ZIP_INTL_RE = /^[A-Za-z0-9\s\-]+$/;
 
@@ -303,12 +132,6 @@ const pinMaxLen = (country?: string) => (isDomesticCountry(country) ? 6 : 12);
 const pinPlaceholder = (country?: string) =>
   isDomesticCountry(country) ? 'Enter 6-digit PIN code' : 'Enter zip code';
 
-/* Both branches strip at the keystroke so a character that can never be valid
- * simply doesn't appear — the user never types "745223@@@@" and then reads an
- * error about it. Domestic keeps digits only; international also keeps spaces
- * and hyphens, which are legitimate in foreign codes ("SL7 1TB", "K1A 0B1").
- * (The shipment module passes international input through untouched; this is
- * the one place we deliberately tighten its rule.) */
 const pinSanitize = (v: string, country?: string) =>
   isDomesticCountry(country)
     ? v.replace(/\D/g, '').slice(0, 6)
@@ -328,31 +151,11 @@ function pinError(v: string, country?: string): string | undefined {
     : 'Zip Code can contain only letters, digits, spaces and hyphens';
 }
 
-/* Payload normaliser: anything that fails the country's rule is sent as null
- * rather than as a bad string. The backend column is nullable, so a legacy or
- * partial value lands empty and the user fixes it on the next edit instead of
- * the save 422-ing on a field they never touched. */
 const cleanPinFor = (v: any, country?: string): string | null => {
   const s = String(v ?? '').trim();
   return s && !pinError(s, country) ? s : null;
 };
 
-/* Only 86 of the 249 countries in the master have states; the other 163
- * (Afghanistan, Croatia, Haiti …) have none at all.
- *
- * State is required for EVERY country — an address without one is incomplete
- * wherever it is. It was briefly required only where the master happened to
- * offer states, which made the same field mandatory for an Indian customer and
- * ignorable for an Afghan one.
- *
- * The consequence is deliberate: a country whose states aren't seeded yet
- * CANNOT have a customer saved against it until someone adds them under
- * Master → States. States are master data, not free text, so the control stays
- * a dropdown and the placeholder says where to go instead of showing an empty
- * list with no explanation.
- *
- * This helper no longer drives required-ness — only the placeholder and the
- * disabled state, since there is genuinely nothing to open when it's empty. */
 function countryHasStates(masters: MasterLists, country?: string): boolean {
   const name = (country ?? '').trim();
   if (!name) return false;
@@ -360,10 +163,6 @@ function countryHasStates(masters: MasterLists, country?: string): boolean {
   return !!c && masters.states.some(s => s.country_id === c.id);
 }
 
-/* Progressive GSTIN validator — instead of one generic "invalid" message,
- * it pinpoints the first segment that's wrong in plain language so the
- * user understands the structure (2 digits → 5 letters → 4 digits → …).
- * Returns undefined when valid. Input is already uppercase-alphanumeric. */
 function gstNumberError(v: string, stateCode?: string): string | undefined {
   if (!v.trim()) return 'GST Number is required';
   if (v.length !== 15) return `GST Number must be 15 characters (you've entered ${v.length}). Format: 2 digits, 5 letters, 4 digits, 1 letter, 1 digit/letter, Z, 1 digit/letter — e.g. 27AADCI6120M1ZH`;
@@ -374,8 +173,6 @@ function gstNumberError(v: string, stateCode?: string): string | undefined {
   if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]/.test(v)) return 'Character 13 (entity code) must be a digit or letter';
   if (v[13] !== 'Z') return 'Character 14 must be the letter Z';
   if (!GSTIN_RE.test(v)) return 'Character 15 (checksum) must be a digit or letter';
-  /* The GSTIN's first 2 digits ARE the state code, so they must match the
-   * selected State. Only checked once a state is picked (state code known). */
   const sc = (stateCode ?? '').trim();
   if (sc && v.slice(0, 2) !== sc) {
     return `GST state code (${v.slice(0, 2)}) does not match the selected state's code (${sc}). Pick the matching state or correct the GST Number.`;
@@ -386,21 +183,9 @@ function gstNumberError(v: string, stateCode?: string): string | undefined {
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** When set, modal opens in Edit mode with form pre-filled from this row. */
   customer?: EditCustomer | null;
-  /** Fired after a successful POST or PUT so the parent list can refetch. */
-  /** Fires after a successful save. Receives the saved customer's db id so the
-   *  caller can, e.g., map the newly-created customer to a lead. */
   onSaved?: (savedId?: number | null) => void;
-  /** When opened from a currency-locked opportunity, the customer's country must
-   *  match the trade type (INR ⇒ India, any export currency ⇒ non-India). Blocks
-   *  creating a mismatched customer at the source. Omit for the standalone
-   *  Customer master (no restriction). */
   leadCurrency?: string | null;
-  /** Optional landing stage. When set (typically 2 for KYC or 3 for Trade
-   * Docs), the modal opens on that stage instead of Stage 1 — used by the
-   * CLM panel deep-link from the opportunity detail page. Only respected
-   * in Edit mode (customer present); ignored on create. */
   initialStage?: Stage;
 }
 
@@ -409,12 +194,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const toast = useToast();
   const confirm = useConfirm();
 
-  /**
-   * Segment-removal document confirmation. When the save is refused with a 409
-   * `requires_doc_confirmation` (the removed segment has documents unique to it),
-   * show the orphan docs and ask the user to confirm deletion. Returns true if
-   * the caller should retry the save with `confirm_segment_doc_removal: true`.
-   */
   const confirmOrphanDocs = async (err: any): Promise<boolean> => {
     const data = err?.response?.data;
     if (err?.response?.status !== 409 || !data?.requires_doc_confirmation) return false;
@@ -443,31 +222,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const [kycPage, setKycPage] = useState<Record<KycSubTab, number>>({ 'company-dd':1, 'owner-kyc':1, 'trade-licence':1 });
   const [kycSearch, setKycSearch] = useState('');
   const [evTab, setEvTab] = useState<EvTab>('kyc-documents');
-  const [evSub, setEvSub] = useState<EvSubTab>('dd');
-  // History panel defaults to OPEN so the moment the user reaches
-  // Stage 2 they can see the captured Stage 1 data (Basic Company
-  // Details + Primary Address & Contact Person) without an extra
-  // click. They can still collapse it via the chevron if they want
-  // more vertical space for the active stage.
-  // History panel is collapsed by default — Stage 2/3 users mostly
-  // want to focus on the current stage's fields, not re-read what
-  // they just filled in. Click the header bar to expand.
+  const [, setEvSub] = useState<EvSubTab>('dd');
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // ── Master dropdowns. Every <select> on this modal sources its
-  //    options from /customers/master-bundle, scoped server-side to the
-  //    inviting tenant. Inactive rows are filtered out by the server.
   const [masters, setMasters] = useState<MasterLists>(EMPTY_MASTERS);
-  /* True until /customers/master-bundle resolves (or the sessionStorage
-   * cache hits). The modal body renders a shimmer skeleton while this
-   * is true so the user sees structure instead of empty dropdowns. */
   const [mastersLoading, setMastersLoading] = useState<boolean>(true);
-  /* Segments carrying a Document Control Panel rule. Everything else stays
-   * visible in the dropdown but can't be picked — a rule-less segment brings
-   * no documents, so tagging a customer with it means nothing downstream. */
   const { ruledCodes: ruledSegCodes, typesByCode: segTypesByCode, loaded: segRulesLoaded } = useRuledSegments(open);
-  /* Segment ID → its Domestic/International rule types. The segment field holds
-   * ids (two segments may share a name), so the by-code map is re-keyed onto ids. */
   const segTypesById = useMemo(() => {
     const m = new Map<string, Set<SegDocType>>();
     for (const s of masters.segments) {
@@ -476,7 +236,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     }
     return m;
   }, [masters.segments, segTypesByCode]);
-  /** Segment id (as held in form.coSeg) → its name, for messages and the name-keyed server maps. */
   const segNameOf = (v: string) => masters.segments.find(s => String(s.id) === String(v))?.name ?? String(v);
   useEffect(() => {
     if (!open) return;
@@ -491,9 +250,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       address_types: IdNamed[];
       countries: IdNamed[];
       states: Array<{ id: number | string; name?: string | null; country_id?: number | string | null }>;
-      /* master_state_codes with its parent state eager-loaded. `state` is null
-       * for any row whose state_id no longer resolves — those are filtered out
-       * below rather than offered as a blank code. */
       state_codes?: Array<{ id: number | string; state_id?: number | string | null; state_code?: string | null; state?: { id: number | string; name?: string | null; country_id?: number | string | null } | null }>;
       designations: IdNamed[];
       document_type: Array<{ id: number | string; title?: string | null }>;
@@ -507,23 +263,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       .filter(r => r.name);
 
     const hydrate = (b: Bundle) => {
-      // Segments — server returns `name`; the model also appends `title`
-      // (alias) for legacy consumers. Read whichever is present.
       const segments: MasterOpt[] = (b.segments || [])
         .map(r => ({ id: Number(r.id), name: String(r.title ?? r.name ?? ''), code: String(r.code ?? ''), regulatory_status: r.regulatory_status ?? null }))
         .filter(r => r.name);
-      // Countries — alpha-sort for the dropdown to mirror the previous
-      // client-side sort.
       const countries = pickName([...(b.countries ?? [])].sort((a, b) =>
         String(a.name ?? '').localeCompare(String(b.name ?? '')))
       );
-      // Document Type master — field is `title` (not `name`).
       const documentTypes: MasterOpt[] = (b.document_type || [])
         .map(r => ({ id: Number(r.id), name: String(r.title ?? '') }))
         .filter(r => r.name);
-      /* GST state codes, flattened to stateName → code. Rows whose `state` is
-       * null are dropped: their state_id points at a state that no longer
-       * exists, so there's nothing to match the dropdown's value against. */
       const stateCodes: StateCodeOpt[] = (b.state_codes || [])
         .map(r => ({ stateName: String(r.state?.name ?? ''), code: String(r.state_code ?? '') }))
         .filter(r => r.stateName && r.code);
@@ -542,10 +290,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       });
     };
 
-    // Cache hit — hydrate immediately for an instant render, then STILL refetch
-    // fresh below (stale-while-revalidate). Without the refetch, a master added
-    // after the bundle was cached — e.g. a NEW SEGMENT — never showed in the
-    // dropdown because the network call was skipped entirely on a cache hit.
     const cached = readCustomerMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
@@ -559,9 +303,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         hydrate(res.data);
         writeCustomerMasterBundle(res.data);
       } catch {
-        // Dropdowns stay empty; the form still renders and individual
-        // save attempts will surface validation errors if a required
-        // option is missing.
       } finally {
         if (!cancelled) setMastersLoading(false);
       }
@@ -570,38 +311,19 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     return () => { cancelled = true; };
   }, [open]);
 
-  // Form: company + primary address + primary contact
   const [form, setForm] = useState({
     coName:'', coLegal:'', coType:'', coWeb:'', coSeg:[] as string[], coClass:'', coRisk:'',
-    /* Stage 1 — domestic GST flag. 'Yes' reveals the GST Scrutiny header
-       button. Required; defaults to 'Yes' (most customers are domestic). */
     coGstApplicable:'Yes' as 'Yes'|'No'|'',
-    // GST number captured on the customer itself when GST Applicable = Yes;
-    // it auto-fills the GST Scrutiny form.
     coGstNumber:'',
-    /* Primary address type is locked to "Registered Office" in the UI
-       — other types live on the Address & Contact Details tab. */
-    // stateCode is read-only, derived from `state` via the state_codes master.
     addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', stateCode:'', city:'', pin:'',
     cpName:'', cpDesig:'', cpTel:'', cpEmail:'', cpWa:'yes' as 'yes'|'no'|'',
   });
   const setF = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }));
 
-  // Additional locations (each row = address + the contact person at that
-  // address; previously stored as two parallel arrays which carried the
-  // same fields). The primary address+contact lives on `form` above.
   const [locations, setLocations] = useState<LocationRow[]>([]);
 
-  // Inline validation errors. Key = form field name on Stage 1; value =
-  // the message rendered under the input. Cleared on next keystroke.
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  /* Real-time duplicate detection for the primary contact phone & email.
-   * Fires inline error the moment the user finishes typing a value
-   * that's already used by an additional location row — much friendlier
-   * than letting them click Save & Next and bounce back. The check
-   * mirrors the click-time validator in validateStage1() so behaviour
-   * stays consistent. */
   useEffect(() => {
     const phone = (form.cpTel   || '').trim();
     const email = (form.cpEmail || '').trim().toLowerCase();
@@ -620,8 +342,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.cpTel, form.cpEmail, locations]);
 
-  // Switching the country to India scrubs the contact number down to bare 10
-  // digits so the +91-prefixed field never carries stale junk / extra length.
   useEffect(() => {
     if (!isDomesticCountry(form.country)) return;
     setForm(prev => (/\D/.test(prev.cpTel) || prev.cpTel.length > 10)
@@ -629,50 +349,18 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.country]);
 
-  /* Numeric PK of the saved customer. In edit mode it comes from the
-   * `customer` prop (passed in from the list). In create mode it's set
-   * by the Stage 1 → 2 auto-save POST so Stage 2 KYC upload calls have
-   * a `/customers/{id}/documents` target without forcing the user to
-   * close + re-open the modal. */
   const [savedDbId, setSavedDbId] = useState<number | null>(customer?.db_id ?? null);
 
-  /* ── GST Scrutiny (domestic customers) ────────────────────────────
-   * Rows are held in modal state and persisted via the customer's
-   * gst-scrutiny CRUD. When the customer already has an id (edit mode,
-   * or after the Stage 1 auto-save) each add/remove hits the server
-   * immediately; when it doesn't yet (brand-new, unsaved), rows are
-   * held locally (string temp id) and flushed once the customer row is
-   * created. `gstRowsRef` mirrors state so the async flush reads the
-   * latest list without re-binding. */
   const [gstRows, setGstRows] = useState<GstRow[]>([]);
   const [gstPopupOpen, setGstPopupOpen] = useState(false);
-  /* `is_map_lead` from the server — 'Yes' once an opportunity has been raised
-     against this customer. While it is set, Country is frozen: the lead
-     snapshotted the country into its own sender_country_* columns and the
-     quotation/PI chain reads that snapshot, so moving it here would leave every
-     existing opportunity quoting a country the customer no longer has. Only
-     ever true in edit mode — a brand-new customer has no leads yet. The server
-     enforces the same rule in CustomerController::mappedLeadCountryDenial. */
   const [mapLeadLocked, setMapLeadLocked] = useState(false);
-  // Segment NAMES locked against removal because a product on a PI / Shipment
-  // belongs to them (server-driven, per-segment).
   const [lockedSegments, setLockedSegments] = useState<string[]>([]);
-  /** Segment name (lowercase) → why it's locked: 'pi' (on a Quotation/PI/
-   *  Shipment) or 'product' (a product in it is mapped to an opportunity). */
   const [lockedSegmentReasons, setLockedSegmentReasons] = useState<Record<string, string>>({});
-  // Server-provided data for the unique-document removal guard (condition 2):
-  // required doc keys (category|code) per segment NAME, and the keys uploaded.
   const [segReqKeys, setSegReqKeys] = useState<Record<string, string[]>>({});
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const gstRowsRef = useRef<GstRow[]>([]);
   useEffect(() => { gstRowsRef.current = gstRows; }, [gstRows]);
 
-  /* QA #41 — the customer's GSTIN is the single source of truth for its GST
-   * Scrutiny rows: on save the backend rewrites every row's gst_number to the
-   * customer's current GSTIN. Mirror that INSTANTLY in the UI so editing the
-   * GST Number in Stage 1 updates the numbers shown in the Scrutiny popup
-   * without a save + reopen. Gate on a complete 15-char GSTIN so half-typed
-   * values don't flicker the rows. */
   useEffect(() => {
     const gst = (form.coGstNumber ?? '').trim().toUpperCase();
     if (gst.length !== 15) return;
@@ -714,79 +402,31 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     return true;
   };
 
-  /* Flush any locally-held rows once the customer row is first created,
-   * then reload from the server so they carry real numeric ids (delete
-   * works correctly afterwards). */
   const flushLocalGst = async (newId: number) => {
     const locals = gstRowsRef.current.filter(r => r._local);
     if (!locals.length) return;
     for (const r of locals) {
-      try { await api.post(`/customers/${newId}/gst-scrutiny`, gstBody(r)); } catch { /* best-effort */ }
+      try { await api.post(`/customers/${newId}/gst-scrutiny`, gstBody(r)); } catch {  }
     }
     try {
       const { data } = await api.get(`/customers/${newId}/gst-scrutiny`);
       setGstRows(data.data ?? []);
-    } catch { /* keep local view */ }
+    } catch {  }
   };
 
-  /* Synchronous re-entry lock — `saving` state is async and React
-   * batches updates, so two rapid Save & Next clicks can both pass
-   * the saving check before either has set saving=true. A ref flips
-   * immediately on the synchronous tick, blocking the second call
-   * cold. Fixes the duplicate-row issue users saw on quick clicks. */
   const inFlightRef = useRef(false);
 
-  // Dirty-saved flag — true whenever an intermediate persistStage1
-  // succeeded during this modal session. We use it on close to fire
-  // onSaved so the parent list refreshes even if the user closed via
-  // the X button after a Save & Next instead of finishing Stage 3.
-  // Cleared after onSaved fires so re-opens start clean.
   const dirtySavedRef = useRef(false);
 
-  /* The GST uniqueness answer, reported up from Stage1Identification.
-   * A ref rather than state: validateStage1 only needs the latest value at the
-   * moment it runs, and re-rendering the whole modal on every keystroke of the
-   * GST field to carry it would be a poor trade.
-   *
-   * These two live HERE, above `if (!open) return null`, and must stay here.
-   * They sat below it, so a closed modal ran 69 hooks and an open one ran 70 —
-   * React saw the hook list grow between renders and tore the tree down with
-   * "Rendered more hooks than during the previous render", which is the
-   * "Something went wrong" screen on the Customer button (#82). */
   const gstGateRef = useRef<{ status: string; takenBy: string | null }>({ status: 'idle', takenBy: null });
-  /* Stable identity — the child reports through an effect that lists this in
-   * its deps, so a fresh arrow each render would re-fire it every render. */
   const reportGstGate = useCallback((g: { status: string; takenBy: string | null }) => {
     gstGateRef.current = g;
   }, []);
 
-  // Trade docs selection — populated solely from the segment rule's `td`
-  // selections intersected with the party=Buyer trade-doc library (see the
-  // segment-template effect below). Starts EMPTY: no hardcoded placeholder
-  // rows, so only real clm_trade_doc_library entries ever appear here.
-  /* `db_id` is the numeric clm_trade_doc_library.id — required by the
-   * Zoho Sign send modal — and is always populated from the
-   * /clm/trade-doc-library/for-party/buyer join below. */
-  const [tdDocs, setTdDocs] = useState<TdDocRow[]>([]);
+  const [, setTdDocs] = useState<TdDocRow[]>([]);
 
-  /* "Send for Signature" launch state — when non-null, the Zoho Sign
-   * wizard pops with the listed clm_trade_doc_library ids pre-checked.
-   * The Stage 3 Trade Documents tab's per-row "Send" button (single id)
-   * and the "Send Selected Documents for Signature" footer button
-   * (all currently-checked ids) both write to this state. */
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
 
-  /* Resend cooldown — Zoho's remind API operates per-REQUEST (one request
-   * may bundle 1..10 docs), so clicking Resend on any row in a bundle
-   * triggers ONE email covering every unsigned doc in that request.
-   * To stop a 3-doc bundle from triggering 3 reminder emails, every
-   * successful remind seeds a 60-second cooldown keyed by zoho-side
-   * signature_request_id; the Resend button on every sibling row in
-   * the same bundle disables for the cooldown window.
-   *
-   * Stored as { signature_request_id: expiresAtMs }. A self-pruning
-   * setTimeout schedules cleanup at the earliest expiry; the resulting
-   * state change re-renders the table so the button auto-enables. */
   const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
   useEffect(() => {
     const expiries = Object.values(recentReminds);
@@ -803,25 +443,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     }, wait);
     return () => window.clearTimeout(id);
   }, [recentReminds]);
-  const isReminderCooldown = (reqId?: number): boolean => !!reqId && (recentReminds[reqId] ?? 0) > Date.now();
-  const reminderCooldownSeconds = (reqId?: number): number => {
-    if (!reqId) return 0;
-    return Math.max(0, Math.ceil(((recentReminds[reqId] ?? 0) - Date.now()) / 1000));
-  };
 
-  /* Signature-request status, keyed by clm_trade_doc_library.id. Hydrated
-   * from /clm/signature-requests?party_id=N and refreshed every 15s while
-   * the user is on the Stage 3 Trade Documents tab. The poller passes
-   * `sync=true` so the backend pulls each inprogress row from Zoho on the
-   * same request — that's how completed signings, declines and recalls
-   * appear in the table without the user having to reload. */
   type SigInfo = { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null };
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, SigInfo>>({});
 
   useEffect(() => {
-    // Dormant since the Evidence Vault (Stage 3) was removed from this form:
-    // `evTab` can no longer become 'trade-documents' here, so this poller
-    // never fires. Kept for the standalone Evidence Vault flow's parity.
     const partyId = customer?.db_id ?? savedDbId;
     if (!open || evTab !== 'trade-documents' || !partyId) return;
 
@@ -847,28 +473,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           last_reminder_sent_at?: string | null;
         }> = Array.isArray(r.data?.data) ? r.data.data : [];
 
-        // Latest request wins when a single doc has been resent. The list
-        // endpoint returns rows newest-first (per the controller's ->latest()
-        // ordering), so the first row we see for a doc id is the most
-        // recent — `if (!map.has(docId))` keeps it that way.
         const map: Record<number, SigInfo> = {};
         for (const row of rows) {
           const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
           for (let i = 0; i < ids.length; i++) {
             const docId = Number(ids[i]);
             if (!docId || map[docId]) continue;
-            // Resolve a usable URL from whatever the backend populated.
-            // Production sometimes returns signed_document_paths=null
-            // (the Zoho-download queue job hadn't run yet) while the
-            // webhook-set certificate_path is already there. Fall back
-            // through the chain so the View / Download buttons enable
-            // as soon as ANY signed artefact exists, instead of staying
-            // disabled until the queue worker catches up.
-            // Backend transforms the response with file_url() now (see
-            // ClmSignatureController::index), so .url / .file_url on each
-            // signed_document_paths entry is already an absolute URL —
-            // Azure blob URL on the deployed SPA, /storage/… on local.
-            // Prefer those over raw paths so we don't double-resolve.
             const signedArr = row.signed_document_paths;
             let rawSignedUrl: string | null = null;
             if (Array.isArray(signedArr)) {
@@ -878,20 +488,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             }
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-            /* file_url and certificate_* are NOT fallbacks here. When
-             * the certificate is minted but the signed PDF hasn't been
-             * fetched yet (signed_document_paths === []), Laravel's
-             * model accessor often returns the cert URL via file_url,
-             * which would silently link the "View signed document"
-             * button to the certificate. Keep them strictly separate:
-             * rawSignedUrl stays null → View/Download show "No
-             * attachment yet" until the signed PDF lands; certificate
-             * gets its own URL + button below. */
             const rawCertUrl = row.certificate_url || row.certificate_path || null;
-            // resolveFileUrl is a no-op when the URL is already absolute
-            // (http(s)://…), so passing the pre-resolved URL through it
-            // is safe. It still adds the API base for any legacy row
-            // that only has the bare `uploads/…` path on disk.
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
@@ -904,7 +501,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         }
         setSigStatusByDoc(map);
       } catch {
-        // Silent — polling failures shouldn't toast every 15s.
       }
     };
 
@@ -913,10 +509,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     return () => { cancelled = true; window.clearInterval(iv); };
   }, [open, stage, evTab, customer?.db_id, savedDbId]);
 
-  // Project the polled status into the tdDocs rows so the table renders
-  // live state. Kept as an effect (not a useMemo on render) because we
-  // also want the `sent` flag to flip permanently once a doc has been
-  // sent, even if the polling response transiently drops it.
   useEffect(() => {
     setTdDocs(prev => prev.map(d => {
       if (!d.db_id) return d;
@@ -935,78 +527,23 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     }));
   }, [sigStatusByDoc]);
 
-  /* Segment-rule template — resolved KYC / DD / TL / TD / QC master rows
-   * for the currently-selected segment. The Stage 2 Trade Licence sub-
-   * tab and Stage 3 Trade Documents tab render off these when present
-   * (falling back to the legacy static lists otherwise). Stage 2 Company
-   * DD also surfaces the segment's required-doc reference list as an
-   * info banner so the user knows which uploads are expected. */
   type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
-  /* segment name → its required KYC/DD/Trade-License doc codes (from the DCP
-   * rules). Lets us block removing a segment in edit mode once any of its
-   * documents have been uploaded (you can still add segments / remove empty
-   * ones). Built alongside the Stage 2 doc-catalog fetch below. */
-  const [segCodeMap, setSegCodeMap] = useState<Record<string, string[]>>({});
-  /* True while the Stage 2 segment-rule document catalog is being fetched from
-   * the DB (CLM segment-rules + trade-doc-library). Drives the table shimmer so
-   * the Company-DD / Owner-KYC / Trade-Licence grids don't flash empty while the
-   * call is in flight (it fires after hydration, so showShimmer is already off). */
+  const [, setSegCodeMap] = useState<Record<string, string[]>>({});
   const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
 
-  /* Can the remove-segment guard give a trustworthy answer yet?
-   *
-   * It needs `segCodeMap` populated for every selected segment. That map is
-   * built by an async fetch that itself waits on the masters bundle, so it is
-   * NOT ready the instant the field renders. Names that don't resolve to a
-   * master row never get an entry (the fetch skips them), so they're excluded
-   * here — otherwise readiness could never be reached.
-   *
-   * Only meaningful once the customer exists; a fresh form has no uploads. */
-  const segGuardReady = (() => {
-    if (!isEdit && !savedDbId) return true;
-    // Masters gate the name→id resolution the fetch depends on. Deliberately
-    // NOT gated on `segmentDocsLoading`: the map keeps its previous entries
-    // during a refetch, so removing two segments in a row shouldn't stall.
-    if (mastersLoading) return false;
-    return (form.coSeg ?? [])
-      .filter((v: string) => masters.segments.some(s => String(s.id) === v))
-      .every((v: string) => segCodeMap[v] !== undefined);
-  })();
 
-  /* Per-row file uploads against the segment-rule reference rows in
-   * Stage 2 (Company DD / Owner KYC / Trade Licence). Key shape is
-   * `${sub-tab}::${doc.code}` so codes don't collide across categories.
-   * Value carries the File plus a blob URL for View/Download links —
-   * the URL stays valid as long as the modal session lives. */
   type SegRefUpload = SegRefUploadEntry;
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
-  /* Persist a segment-rule reference upload to the server. refKey
-   * shape is `${sub-tab}::${doc.code}` — we split the sub-tab back into
-   * its (kyc|dd|tl) category and POST FormData to the SegmentDocUpload
-   * endpoint that the Evidence Vault reads from. Without this round-
-   * trip the upload only lives in browser memory and disappears the
-   * next time the modal opens. */
-  /* Sub-tab → backend category. NOTE: the sub-tab key is
-   * 'trade-licence' (British spelling — matches the KycSubTab type).
-   * Earlier this map used 'trade-license' (American), causing the
-   * lookup to return undefined and persistSegmentRefUpload to return
-   * early — so trade-licence segment-ref uploads were never reaching
-   * the server. They showed as a blob URL in the current session
-   * but vanished on re-edit. */
   const SUB_TO_CAT_C: Record<string, 'kyc' | 'dd' | 'tl'> = {
     'company-dd':    'dd',
     'owner-kyc':     'kyc',
     'trade-licence': 'tl',
   };
   const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, opts?: { issueDate?: string; expiryDate?: string }) => {
-    // File-type / size guard at the single upload chokepoint — the `accept=`
-    // hint on the picker is bypassable (users can switch to "All files"), so a
-    // .txt / .php / .exe could otherwise reach the server. Reject it instantly
-    // with a clear message. The backend enforces the same mimes rule too.
     const fileErr = validateUpload(file, 'doc');
     if (fileErr) {
       toast.error('Unsupported file', fileErr);
@@ -1052,30 +589,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     }
   };
 
-  // Sub-modal — single one now since address and contact share the same
-  // fields. `editing` carries the location row id when re-opening for edit.
   const [locModal, setLocModal] = useState<{ open:boolean; editing:string|null }>({ open:false, editing:null });
 
-  // Delete-confirm popup for the Address & Contact table. Project-wide
-  // DeleteConfirmModal — same component used by Branches / Clients /
-  // Employees so the experience stays consistent across modules.
   const [delModal, setDelModal] = useState<{ open:boolean; id:string|null }>({ open:false, id:null });
-  // Brief spinner on the address/contact delete so the action has visible
-  // feedback (QA follow-up). The removal is client-side (persisted on Save), so
-  // there's no request to await — we show the loader for a short beat.
   const [delLocBusy, setDelLocBusy] = useState(false);
 
-  // Stage 2 — "Add Document / License" popup. Triggered from the
-  // Company Due Diligence / Owner KYC / Trade Licence section headers.
-  // `sub` carries which of the three buckets is being added to so the
-  // modal can label itself contextually.
   const [docModal, setDocModal] = useState<{ open:boolean; sub:KycSubTab }>({ open:false, sub:'company-dd' });
 
-  /* ── Stage 2 — KYC live data ───────────────────────────────────────
-   * Pulled from /customers/{id}/documents (kind=dd|tl) and
-   * /customers/{id}/owners when the modal opens in edit mode. Saving
-   * a new row pushes its server response into the matching bucket so
-   * the Stage 2 table refreshes without a full refetch. */
   type KycDocRowApi = {
     id: number; kind: 'dd' | 'tl'; name: string; license_number?: string | null;
     issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null;
@@ -1085,11 +605,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   type KycOwnerRowApi = {
     id: number; owner_name: string; designation?: string | null; official_email?: string | null;
     phone_number?: string | null;
-    /* Both *_path and *_url carried side-by-side. The backend's
-     * Storage::url() can throw on misconfigured public disks
-     * (FilesystemAdapter raises "This driver does not support
-     * retrieving URLs"). When that happens, *_url comes back null
-     * and the frontend falls back to resolveFileUrl(*_path). */
     id_proof_path?: string | null;       id_proof_url?: string | null;
     address_proof_path?: string | null;  address_proof_url?: string | null;
     photograph_path?: string | null;     photograph_url?: string | null;
@@ -1098,55 +613,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const [kycDocs,   setKycDocs]   = useState<KycDocRowApi[]>([]);
   const [kycOwners, setKycOwners] = useState<KycOwnerRowApi[]>([]);
 
-  /** Confirm-delete state for Stage 2 rows. `kind` decides which
-   *  endpoint the confirm calls. */
   const [kycDelModal, setKycDelModal] = useState<{ open: boolean; kind: 'doc' | 'owner'; id: number | null; label?: string }>({ open: false, kind: 'doc', id: null });
-  /* In-flight flag for the Stage 2 delete confirm — drives spinner +
-   * disabled state on the confirm dialog while the DELETE request is
-   * in flight. */
   const [kycDeleting, setKycDeleting] = useState(false);
 
-  /** Edit-mode targets for Stage 2 sub-modals. When set, the matching
-   *  sub-modal opens pre-filled and saves via PUT instead of POST. */
   const [editDocId,   setEditDocId]   = useState<number | null>(null);
   const [editOwnerId, setEditOwnerId] = useState<number | null>(null);
 
-  // Saving flag — disables the Submit/Save & Next button + suppresses
-  // double-submits while POST/PUT is in flight.
   const [saving, setSaving] = useState(false);
 
-  // Hydrating flag — covers the brief window between modal open and
-  // the full customer detail landing from /api/customers/:id in Edit
-  // mode. Used to dim the body so the user doesn't start typing into
-  // fields that are about to be overwritten.
   const [hydrating, setHydrating] = useState(false);
-  /* Derived flag — true while EITHER the edit-mode entity prefill is in
-   * flight (hydrating) OR the master bundle is still loading on first
-   * open (mastersLoading). Every JSX shimmer/skeleton block reads this
-   * so a new customer sees the same shimmer treatment an edit-mode
-   * customer already gets. */
   const showShimmer = hydrating || mastersLoading;
 
-  // Reset all state when modal closes. When `customer` is provided we open in
-  // Edit mode and prefill the form fields we know about (company name, type,
-  // segment, country, contact person, phone, email, whatsapp). The list row
-  // doesn't carry KYC/address detail so those stay blank — when the real GET
-  // /api/customers/:id endpoint lands, fetch and hydrate the rest here.
   useEffect(() => {
     if (!open) return;
-    /* Both create and edit modes always land on Stage 1 so the user
-     * reviews identity first before stepping forward. Sub-tab memory
-     * (KYC sub-tab, vault tab) is still restored so inner navigation
-     * isn't lost if the user advances back to Stage 2/3 manually. */
     const memKey = customer?.db_id ?? null;
     const remembered = memKey ? stageMemory.get(memKey) : null;
-    /* Deep-link: when the caller asked us to land on a specific stage
-     * (and we're in Edit mode, so identity is already captured), honour
-     * it and bump maxStage so the tracker lets us be there. */
-    /* Clamp to ≤2 — the form is now a 2-stage flow. A caller could still
-     * pass the legacy initialStage=3 (Evidence Vault), and module-level
-     * stageMemory may hold a 3 from before; never let either land past
-     * Stage 2. */
     const landing = Math.min(2, (isEdit && initialStage) ? initialStage : 1) as Stage;
     setStage   (landing);
     setMaxStage(Math.min(2, Math.max(remembered?.maxStage ?? 1, landing)) as Stage);
@@ -1162,22 +643,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       coLegal:  customer?.company ?? '',
       coType:   customer?.type ?? '',
       coWeb:    '',
-      /* Segment is now multi-valued. The list row only carries a
-       * single comma-separated string (legacy), so split on comma and
-       * trim — empty pieces drop out. */
       coSeg:    (customer?.segment_ids ?? []).map(String),
       coClass:  '',
       coRisk:   '',
-      /* Derived from the country now, not entered — kept in the shape only
-         because the form object is typed around it. buildPayload recomputes it. */
       coGstApplicable: (customer?.gstApplicable as 'Yes'|'No'|undefined) ?? 'No',
       coGstNumber: (customer?.gstNumber as string|undefined) ?? '',
       addrType: DEFAULT_ADDRESS_TYPE,
       addr:     '',
       country:  customer?.country ?? '',
       state:    '',
-      // Blank here: this seed comes from the thin list row, which has no state.
-      // The full record's state_code arrives with the detail fetch below.
       stateCode: '',
       city:     '',
       pin:      '',
@@ -1192,48 +666,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     setKycOwners([]);
     setGstRows([]);
     setGstPopupOpen(false);
-    // Default to unlocked; the edit-mode hydration below sets it from the
-    // server. Create mode never locks — the customer has no leads yet.
     setMapLeadLocked(false);
     setLockedSegments([]);
     setSegReqKeys({});
     setUploadedKeys([]);
     setErrors({});
-    // Edit mode arrives with db_id (Stage 2 KYC POSTs work
-    // immediately); create mode starts null and gets filled by the
-    // Stage 1 → 2 auto-save POST so KYC uploads gain a target in the
-    // same modal session.
     setSavedDbId(customer?.db_id ?? null);
     setTdDocs([]);
     setSegmentDocs(EMPTY_SEG_DOCS);
-    /* Revoke any previously-issued blob URLs so the browser releases
-     * them back to the GC. Failing to do this leaks each picked file
-     * for the lifetime of the tab. */
     Object.values(segmentRefUploads).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
     setSegmentRefUploads({});
     setLocModal({ open:false, editing:null });
-    // Flip the shimmer ON immediately when an edit-mode modal opens.
-    // Without this, the first render after `open` flips sees
-    // `hydrating = false` (stale state from a previous close), so the
-    // body shows neither shimmer nor data for a brief flash. The
-    // hydration effect below still drives the actual fetch and the
-    // setHydrating(false) on completion, but the shimmer is now
-    // guaranteed from frame 1. Create mode keeps it off — there's
-    // nothing to load.
     setHydrating(!!customer?.db_id);
-    // Deps deliberately use a stable identifier (the customer's primary
-    // key) instead of the customer object itself. Otherwise any parent
-    // re-render that produces a new `customer` reference — even with
-    // identical data — would re-run this effect, wipe in-progress
-    // Stage 2/3 edits, and jump the user back to Stage 1.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, customer?.db_id ?? null, customer?.id ?? null]);
 
-  /* Persist stage/tab into module-level memory whenever it changes.
-   * Reading happens in the open-effect above — closing the modal
-   * (which unmounts the component or flips `open` to false) leaves the
-   * last-known stage in the map ready for the next open. Edit mode
-   * only; create mode has no anchor key to remember it by. */
   useEffect(() => {
     if (!open) return;
     const memKey = customer?.db_id ?? null;
@@ -1241,37 +688,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     stageMemory.set(memKey, { stage, maxStage, tab, kycSub, evTab });
   }, [open, customer?.db_id, stage, maxStage, tab, kycSub, evTab]);
 
-  /* ── Edit-mode hydration. The list row passed in `customer` only
-   * carries a thin slice of fields (company / type / segment / country
-   * / contact / phone / email / whatsapp). On open we fetch the full
-   * record from /api/customers/:id so every Stage 1 field — including
-   * legal name, classification, risk level, website, full address +
-   * pin, and the additional Locations & Contacts table — repopulates
-   * with whatever the user saved before. */
   useEffect(() => {
     if (!open || !customer?.db_id) return;
     let cancelled = false;
     setHydrating(true);
 
-    /* Edit-mode hydration in ONE round-trip.
-     *
-     * /customers/{id} now embeds `documents`, `owners`, and
-     * `segment_uploads` inline (server-side change in CustomerController::show).
-     * This replaces the prior 4-call edit-mode hydration:
-     *   - GET /customers/{id}
-     *   - GET /customers/{id}/documents
-     *   - GET /customers/{id}/owners
-     *   - GET /segment-uploads/customer/{id}
-     *
-     * On the single-threaded `php artisan serve` those 4 calls used to
-     * serialise behind each other, costing ~2-5s just in Laravel boot tax.
-     * Even on Apache the network round-trips compounded. One bundled
-     * response keeps all the same data with one HTTP call.
-     *
-     * Falls back gracefully if the server hasn't been updated yet — the
-     * embedded keys default to empty so existing behaviour (empty Stage 2
-     * tabs) is preserved instead of crashing.
-     */
     api.get(`/customers/${customer.db_id}`)
       .then(r => {
         if (cancelled) return;
@@ -1279,10 +700,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         const pa = d.primary_address ?? {};
         setMapLeadLocked(d.isMapLead === 'Yes');
         setLockedSegments(Array.isArray(d.locked_segments) ? d.locked_segments : []);
-        // Why each segment is locked ('pi' | 'product'), keyed lowercase — lets
-        // the removal guard name the real blocker instead of always blaming a
-        // Quotation / PI / Shipment. Older API responses omit it; the guard then
-        // falls back to the previous wording.
         setLockedSegmentReasons(d.locked_segment_reasons && typeof d.locked_segment_reasons === 'object' ? d.locked_segment_reasons : {});
         setSegReqKeys(d.segment_required_doc_keys && typeof d.segment_required_doc_keys === 'object' ? d.segment_required_doc_keys : {});
         setUploadedKeys(Array.isArray(d.uploaded_doc_keys) ? d.uploaded_doc_keys : []);
@@ -1291,20 +708,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           coLegal:  d.legalName     ?? d.company ?? '',
           coType:   d.type          ?? '',
           coWeb:    d.website       ?? '',
-          /* Server still ships a single comma-joined `segment` string
-           * (the column is scalar) — split + trim back into an array
-           * for the multi-select. Array shapes from a future PATCH
-           * also land here once the backend column is widened. */
           coSeg:    Array.isArray(d.segment_ids) ? d.segment_ids.map(String) : [],
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
-          // Fall back to 'No' (matching the create default) when the record
-          // has no stored GST flag — don't imply GST applies.
           coGstApplicable: (d.gstApplicable as 'Yes'|'No'|undefined) ?? 'No',
           coGstNumber: (d.gstNumber as string|undefined) ?? '',
-          // Primary address type is locked to "Registered Office" — even
-          // if older data stored a different label, normalise here so
-          // the disabled dropdown stays in sync with the saved record.
           addrType: DEFAULT_ADDRESS_TYPE,
           addr:     pa.address_line ?? d.addr    ?? '',
           country:  pa.country      ?? d.country ?? '',
@@ -1318,7 +726,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           cpEmail:  pa.cp_email       ?? d.email   ?? '',
           cpWa:     (pa.cp_whatsapp === 'no' || d.whatsapp === 'No') ? 'no' : 'yes',
         });
-        // Additional locations — map the server shape back to LocationRow.
         const extra = Array.isArray(d.locations) ? d.locations : [];
         setLocations(extra.map((a: any) => ({
           id:             'loc_' + String(a.id),
@@ -1335,18 +742,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           cpWhatsapp:     a.cp_whatsapp === 'no' ? 'no' : 'yes',
         })));
 
-        // Stage 2 data — now arrives in the same response as `documents`,
-        // `owners`, and `segment_uploads`. Top-level keys, not inside `data`.
         const root = r.data ?? {};
         setKycDocs(Array.isArray(root.documents) ? root.documents : []);
         setKycOwners(Array.isArray(root.owners) ? root.owners : []);
-        // GST Scrutiny history (domestic customers).
         setGstRows(Array.isArray(root.gst_scrutiny) ? root.gst_scrutiny : []);
 
-        // Stage 3 segment-rule reference uploads. Same hydration pattern
-        // as before — only the source moved from a separate call to this
-        // bundled response. British 'trade-licence' spelling matches the
-        // KycSubTab type + render's refKey lookup.
         const refs = Array.isArray(root.segment_uploads?.data) ? root.segment_uploads.data : [];
         const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-licence' };
         const hydrated: Record<string, SegRefUpload> = {};
@@ -1363,53 +763,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         }
         if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
       })
-      .catch(() => { /* hydration failure: leave the thin prefill from the list row */ })
+      .catch(() => {  })
       .finally(() => { if (!cancelled) setHydrating(false); });
 
     return () => { cancelled = true; };
   }, [open, customer?.db_id]);
 
-  /* ── Segment-rule template fetch ───────────────────────────────────
-   * Whenever the user picks (or hydration sets) a segment in Stage 1,
-   * resolve each chosen segment's id from the segments master and pull
-   * its KYC / DD / TL / TD / QC documents in parallel. The category
-   * arrays are then merged and deduped by `code` so a doc that's
-   * required by multiple segments only renders once in Stage 2 + Stage
-   * 3. Mandatory wins on dedupe: if ANY selected segment marks a code
-   * as 'M', the merged row inherits 'M' even when another segment had
-   * it as 'O'.
-   *
-   * Bailout (resets segmentDocs to empty) when nothing's selected, the
-   * masters list hasn't loaded yet, or no chosen name resolves to a
-   * master row.
-   */
   useEffect(() => {
     if (!open) return;
-    /* Lazy gate — only fire the CLM segment-rules + trade-doc-library
-     * fetches once the user reaches Stage 2 or higher. Stage 1 only
-     * edits identity + address; it doesn't need this data. Previously
-     * these calls fired on modal open and added 1-2 sec to the Stage 1
-     * open even for users who only edit Stage 1. The `stage` value is
-     * in the dep array below so the fetch fires exactly when the user
-     * clicks the Stage 2 (or Stage 3) tab.
-     *
-     * NOTE: we deliberately do NOT clear segmentDocs when stage<2 — if
-     * the user navigates Stage 2 → Stage 1, the previously-loaded docs
-     * stay cached and are immediately usable when they go back.
-     *
-     * We ALSO load when maxStage>=2 even while sitting on Stage 1: in
-     * edit mode the modal restores maxStage (e.g. 3) so the stepper
-     * renders Stages 2 & 3 as "visited". Without the docs loaded their
-     * real completeness can't be computed and they'd falsely paint green.
-     * Loading here keeps the stepper's done/incomplete state honest. A
-     * fresh "Add" (maxStage=1) still skips the fetch — Stages 2 & 3 are
-     * pending/gray there, so their completeness is never read.
-     *
-     * In EDIT mode we ALWAYS load (even on Stage 1 with maxStage=1): the
-     * segment-remove guard needs `segCodeMap` to know which documents each
-     * segment owns. Without this, opening an existing customer on Stage 1
-     * (no stage memory → maxStage=1) left segCodeMap empty, so a segment
-     * with uploaded docs could be removed. */
     if (stage < 2 && maxStage < 2 && !isEdit) return;
 
     const picked = (form.coSeg ?? []).filter(Boolean);
@@ -1421,10 +782,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
     let cancelled = false;
     setSegmentDocsLoading(true);
-    /* Fetch the KYC/DD/TL set for the rule matching the customer's trade type:
-     * India (primary address) → domestic rule, any other country → international.
-     * A segment with no rule of that type returns an empty set (and the Stage-1
-     * validation blocks the mismatch), so only the right documents ever load. */
     const custDocType: SegDocType = isDomesticCountry(form.country) ? 'domestic' : 'international';
     Promise.all([
       Promise.all(
@@ -1434,19 +791,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             .catch(() => ({}))
         )
       ),
-      /* Party filter for the customer form: only trade docs whose
-       * `party` CSV mentions "Buyer" reach Stage 3. The endpoint scopes
-       * to the current client. We intersect against the segment-rule td
-       * set below so the union of (segments × party=Buyer) renders. */
       api.get('/clm/trade-doc-library/for-party/buyer')
         .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
         .catch(() => [] as Array<{ code: string }>),
     ]).then(([results, partyDocs]) => {
       if (cancelled) return;
-      /* Per-category merge + dedupe. Key = code; Mandatory > Optional
-       * so a doc that's mandatory in any rule stays mandatory in the
-       * union. Order is "first-seen wins" otherwise so the Stage 2
-       * table doesn't reshuffle every render. */
       const mergeCat = (cat: 'kyc'|'dd'|'tl'|'td'|'qc') => {
         const map = new Map<string, SegDocRow>();
         for (const r of results) {
@@ -1469,8 +818,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         qc:  mergeCat('qc'),
       };
       setSegmentDocs(merged);
-      /* Per-segment doc-code map (KYC/DD/Trade License) — `results[i]`
-       * aligns with `segRows[i]`. Used by the remove-segment guard. */
       const codeMap: Record<string, string[]> = {};
       results.forEach((r: any, i: number) => {
         const seg = segRows[i];
@@ -1483,10 +830,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         codeMap[String(seg.id)] = Array.from(codes);
       });
       setSegCodeMap(codeMap);
-      /* Stage 3 Trade Documents = the merged segment-rule `td` set
-       * intersected with the party=Buyer trade-doc library. No hardcoded
-       * fallback — when the intersection is empty the table is empty, so
-       * only real clm_trade_doc_library rows ever show. */
       const partyById = new Map<string, number>(
         (partyDocs as Array<{ code: string; id: number }>).map(p => [p.code, p.id]),
       );
@@ -1505,7 +848,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, stage, maxStage, form.coSeg, form.country, masters.segments]);
 
-  // Inject DM Sans/Inter once
   useEffect(() => {
     const id = 'acm-fonts';
     if (document.getElementById(id)) return;
@@ -1516,28 +858,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     document.head.appendChild(link);
   }, []);
 
-  /* Scroll lock — QA #71.
-   *
-   * <html> + <body> alone did not hold. The customer list behind this modal
-   * does not scroll the page: it scrolls inside its OWN overflowY:auto rows
-   * container (SalesCustomers.tsx), and Velzon's `.main-content` scrolls too.
-   * Freezing the document left both of those free, so the page kept moving
-   * under the overlay.
-   *
-   * The shared hook asks the DOM which elements are actually scrolling at the
-   * moment the modal opens and freezes those as well, so it does not need to
-   * know any of their names. `.acm-root` is this modal's own portal root —
-   * passing it as the exception keeps `.acm-body` (and every sub-modal, which
-   * renders inside the same portal) scrollable. */
   useScrollLock(open, '.acm-root');
 
-  // Close wrapper — if any intermediate Save & Next persisted edits
-  // during this session, fire onSaved on the way out so the parent
-  // list refreshes (otherwise the user has to manually reload the
-  // page to see their Identification-tab changes). Resets the flag
-  // so a subsequent re-open of the same modal starts clean.
   const handleClose = () => {
-    if (inFlightRef.current || saving) return;   // don't allow closing mid-save
+    if (inFlightRef.current || saving) return;
     if (dirtySavedRef.current) {
       dirtySavedRef.current = false;
       onSaved?.(savedDbId ?? customer?.db_id ?? null);
@@ -1545,7 +869,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     onClose();
   };
 
-  // ESC closes the sub-modal first, then the main modal.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1562,27 +885,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   const gotoStage = (s: Stage) => {
     if (s > maxStage) return;
-    /* Same GST gate as goNext(). Needed separately because in EDIT mode
-     * maxStage already starts at 2, so clicking the stepper card jumps to
-     * Stage 2 without ever going through goNext. */
     if (s === 2 && !gstScrutinyComplete) { promptForGstScrutiny(); return; }
     setStage(s);
     if (s === 1) setTab('identification');
   };
 
-  /* Single source of truth for Stage 1 field rules. Returns the error
-   * message for one field (or null when clean). Used both by the full
-   * Save-&-Next validator below and by the per-keystroke validator
-   * passed into Stage1Identification — so inline red errors fire in
-   * real time as the user types. */
   const stage1FieldRule = (k: string, f: typeof form): string | null => {
     switch (k) {
       case 'coName':
         if (!f.coName.trim()) return 'Company name is required';
         if (f.coName.trim().length < 2) return 'Company name must be at least 2 characters';
         if (f.coName.trim().length > 30) return 'Company name must be 30 characters or fewer';
-        // \p{L}/\p{N} (u flag) allow non-Latin / Unicode names (e.g. 中文, العربية,
-        // देवनागरी) — only block markup / symbol-soup, not legitimate scripts.
         if (!/^[\p{L}\p{N} .,'&()\-\/]+$/u.test(f.coName.trim()))
           return 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
         if (!/\p{L}/u.test(f.coName)) return 'Company name must contain at least one letter';
@@ -1600,11 +913,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         return null;
       case 'coSeg': {
         if (!f.coSeg || f.coSeg.length === 0) return 'Select at least one segment';
-        /* Trade-type match: the segment's document-type rule must match the
-         * customer's trade type — a Domestic customer needs a Domestic rule, an
-         * International customer needs an International rule. A segment carrying
-         * both types satisfies either. Only checked once the rules have loaded
-         * and a country (which decides domestic vs international) is chosen. */
         if (segRulesLoaded && f.country) {
           const custType: SegDocType = isDomesticCountry(f.country) ? 'domestic' : 'international';
           const custLabel = custType === 'domestic' ? 'Domestic' : 'International';
@@ -1625,15 +933,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!f.coRisk) return 'Select a risk level';
         return null;
       case 'coGstApplicable':
-        // No longer a user field — derived from the country at payload time.
-        // Kept as a no-op case so any stale caller can't fall through to an error.
         return null;
       case 'coGstNumber':
-        // International → not rendered, so it can't be required; a hidden field
-        // holding an error would block Save with nothing on screen to fix.
         if (!isDomesticCountry(f.country)) return null;
-        // Domestic → GST always applies, so the number is always required.
-        // State code is passed so the GSTIN prefix must match the chosen state.
         return gstNumberError((f.coGstNumber ?? '').trim(), f.stateCode) ?? null;
       case 'coWeb':
         if (!f.coWeb || !f.coWeb.trim()) return null;
@@ -1648,16 +950,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!f.addr.trim()) return 'Address is required';
         if (f.addr.trim().length < 4) return 'Address must be at least 4 characters';
         if (f.addr.trim().length > 75) return 'Address must be 75 characters or fewer';
-        // Must contain at least one letter — blocks gibberish like "1234"
-        // or "...." while still allowing addresses that mix letters,
-        // numbers, commas, hyphens, etc.
         if (!/[A-Za-z]/.test(f.addr)) return 'Address must contain at least one letter';
         return null;
       case 'country':
         if (!f.country) return 'Select a country';
         return null;
       case 'state':
-        // Required for EVERY country — see the note above countryHasStates().
         if (!f.state) {
           return countryHasStates(masters, f.country)
             ? 'Select a state'
@@ -1671,7 +969,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        // Country decides the rule — see pinError() near the top of the file.
         return pinError(f.pin, f.country) ?? null;
       case 'cpName':
         if (!f.cpName.trim()) return 'Contact person name is required';
@@ -1684,8 +981,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         return null;
       case 'cpTel':
         if (!f.cpTel.trim()) return 'Contact number is required';
-        // India → exactly 10 digits (the +91 prefix is added on display, not
-        // stored); other countries keep the flexible 7–15 rule.
         if (isDomesticCountry(f.country)) { if (!/^\d{10}$/.test(f.cpTel)) return 'Enter a valid 10-digit mobile number'; }
         else if (!/^\+?[0-9\s-]{7,15}$/.test(f.cpTel)) return 'Phone must be 7–15 digits';
         if (locations.some(l => (l.cpContact || '').trim() === f.cpTel.trim()))
@@ -1705,34 +1000,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   };
 
   const STAGE1_FIELD_KEYS = [
-    // 'coGstApplicable' dropped — it's derived from the country now, not entered.
     'coName','coLegal','coType','coSeg','coClass','coRisk','coGstNumber','coWeb',
     'addrType','addr','country','state','city','pin',
     'cpName','cpDesig','cpTel','cpEmail','cpWa',
   ];
 
-  /* ── Stage 1 validation. Runs when the user clicks Save & Next on
-   *    Stage 1 (and on the final Submit on Stage 3 so a back-edit can't
-   *    smuggle through a bad email/phone). Returns true when the form
-   *    is clean. Error messages render inline under the corresponding
-   *    field via the `errors` state. */
   const validateStage1 = (): boolean => {
     const next: Record<string, string> = {};
     for (const k of STAGE1_FIELD_KEYS) {
       const msg = stage1FieldRule(k, form);
       if (msg) next[k] = msg;
     }
-    /* GST uniqueness, which the field rules cannot carry.
-     *
-     * stage1FieldRule is a pure function of the form, so it can only judge the
-     * SHAPE of a GSTIN. Whether the number already belongs to another customer
-     * is an answer from the server, held in gstStatus -- and nothing consulted
-     * it, so a duplicate passed Stage 1 and was only caught later at GST
-     * Scrutiny, several stages in. (QA #43)
-     *
-     * 'checking' blocks too. The lookup is debounced, so typing a number and
-     * clicking straight through would otherwise race past an answer that had
-     * not arrived yet -- which is the same bug with a smaller window. */
     if (isDomesticCountry(form.country) && !next.coGstNumber) {
       const gate = gstGateRef.current;
       if (gate.status === 'taken') {
@@ -1745,32 +1023,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     }
     setErrors(next);
     if (Object.keys(next).length === 0) return true;
-    // Surface the first field with an error to the user. The body
-    // is scrollable so an off-screen field can be missed otherwise.
-    // Also fire a toast — inline reds can be off-screen on small
-    // viewports — auto-scroll surfaces the offending field. Toast
-    // suppressed: the inline red error + scroll-into-view already
-    // communicates the rejection without a second popup layer.
     const firstKey = Object.keys(next)[0];
     const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return false;
   };
 
-  /* ── Real per-stage completeness for the stepper ──────────────────
-   * The stepper used to paint a stage GREEN purely because it had been
-   * VISITED (s.n <= maxStage). That misled users: walk forward to
-   * Stage 3 and back, and Stages 2/3 read as "done ✓" even with nothing
-   * uploaded. Here we compute genuine completeness so the stepper can
-   * show an amber "incomplete" state for a visited-but-empty stage.
-   *
-   *   Stage 1 — every required identity field is valid.
-   *   Stage 2 & 3 — share ONE segment-rule upload set (dd/kyc/tl). A
-   *     stage is complete when every MANDATORY doc is uploaded; when the
-   *     rule carries only OPTIONAL docs, it counts as complete once at
-   *     least one is uploaded (so an all-optional, nothing-uploaded
-   *     stage stays amber instead of falsely green). A segment with no
-   *     rule docs at all has nothing to satisfy → complete. */
   const stageComplete: [boolean, boolean, boolean] = (() => {
     const s1 = STAGE1_FIELD_KEYS.every(k => !stage1FieldRule(k, form));
 
@@ -1792,33 +1050,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     return [s1, docsComplete, docsComplete];
   })();
 
-  /* Per-keystroke validator passed down to Stage1Identification. Runs
-   * the single-field rule against the post-change form and updates the
-   * errors map with just that field's error — so inline red shows up
-   * in real time instead of waiting for Save & Next. */
-  /* Per-field check. CORRECTS an error already on screen; never raises a new
-   * one on its own.
-   *
-   * It used to raise them, and every keystroke ran through it — so typing the
-   * first digit of a PIN code answered with "PIN Code must be 6 digits", and
-   * touching Customer Segment complained before the user had finished
-   * choosing. The form was arguing with input that was merely incomplete.
-   *
-   * Errors are RAISED by validateStage1() when the user clicks Save & Next.
-   * From that moment a field is in `errors`, this starts tracking it, and the
-   * red clears the instant the value becomes valid — which is the half of the
-   * behaviour worth keeping.
-   *
-   * Cascades still clear correctly without any special case: switch the
-   * country to international and stage1FieldRule('coGstNumber') returns null,
-   * so a GST error already on screen is removed as the field disappears.
-   *
-   * The GST field's 500ms debounce lower down was an earlier attempt at this
-   * same problem, solved for that one field. This covers the rest. */
   const validateField = (k: string, nextForm: typeof form) => {
     const msg = stage1FieldRule(k, nextForm);
     setErrors(prev => {
-      // Not flagged yet → say nothing.
       if (!(k in prev)) return prev;
       const next = { ...prev };
       if (msg) next[k] = msg;
@@ -1827,27 +1061,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     });
   };
 
-  /* Build the POST/PUT payload from the form + locations. Mirrors the
-   * shape declared in CustomerController::validatePayload(). */
   const buildPayload = () => ({
     company_name:   form.coName,
     legal_name:     form.coLegal,
     type:           form.coType,
-    /* Multi-segment is stored as a comma-joined string for now — the
-     * legacy `customers.segment` column is scalar (string). Order is
-     * preserved so the first entry stays the "primary" segment for
-     * existing list-row callers that only read the first label. */
     segment:        (form.coSeg ?? []).map(segNameOf).join(', '),
     segment_ids:    (form.coSeg ?? []).map(Number).filter(Boolean),
     classification: form.coClass,
     risk_level:     form.coRisk,
-    /* DERIVED from the primary address country, never from a user toggle:
-       India → domestic → GST always applies; anything else → international →
-       no GST. The Yes/No control was removed once country became the decider,
-       so this is the single source of truth for the flag. Legacy customers
-       stored as India + 'No' are corrected to 'Yes' on their next save. */
     gst_applicable: isDomesticCountry(form.country) ? 'Yes' : 'No',
-    // Send the GST number only when domestic; the backend also clears it otherwise.
     gst_number:     isDomesticCountry(form.country) ? ((form.coGstNumber ?? '').trim().toUpperCase() || null) : null,
     website:        form.coWeb,
     status:         'Active' as const,
@@ -1880,23 +1102,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     })),
   });
 
-  /* A domestic customer (GST applies) must have at least one GST Scrutiny
-   * entry. Local entries added in the popup count, so this works for both new
-   * and edit. International customers have no GST, so they always pass. */
   const gstScrutinyComplete = !isDomesticCountry(form.country) || gstRows.length > 0;
 
-  // Snap back to where the entry is added and open the popup, so the warning
-  // lands the user ON the fix rather than just telling them about it.
   const promptForGstScrutiny = () => {
     toast.warning('GST Scrutiny required', 'Add at least one GST Scrutiny entry before moving to KYC / Due Diligence.');
     setStage(1); setTab('identification'); setGstPopupOpen(true);
   };
 
-  /* When this modal is opened from a currency-locked opportunity, the customer's
-   * country must match the trade type: INR ⇒ India (domestic), any export
-   * currency ⇒ non-India. Returns a message to block the save, or null when fine.
-   * This is the first line of defence; the backend lead-mapping guard is the
-   * second. Empty country is left to the required-field validation. */
   const currencyCountryBlock = (): string | null => {
     const lc = (leadCurrency ?? '').trim().toUpperCase();
     const country = (form.country ?? '').trim();
@@ -1910,29 +1122,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   };
 
   const submitCustomer = async () => {
-    // Country must match the opportunity currency (domestic vs export).
     const ccBlock = currencyCountryBlock();
     if (ccBlock) { setStage(1); setTab('identification'); toast.error('Country doesn’t match the opportunity', ccBlock); return; }
-    /* Final-submit gate. The Stage 1 → 2 gate in goNext() is the primary one;
-     * this stays as a backstop for edit-mode sessions that open straight on a
-     * later stage and never pass through that boundary. */
     if (!gstScrutinyComplete) { promptForGstScrutiny(); return; }
-    // Synchronous re-entry lock — saving state is async so two
-    // rapid clicks could both slip past the check. The ref blocks
-    // any second call on the same tick.
     if (inFlightRef.current || saving) return;
     inFlightRef.current = true;
     setSaving(true);
     try {
-      // Prefer customer.db_id (edit mode) BUT fall back to savedDbId
-      // (the id persistStage1 just created in this session). Without
-      // that fallback, the final Submit click after a Stage 1→2 auto-
-      // save would POST a *second* row for the same customer — silent
-      // duplicate. Mirrors persistStage1's idempotent check.
       const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
       let finalDbId: number | null = persistedDbId || null;
-      // Inner attempt so a segment-removal 409 can prompt + retry with the
-      // confirm flag (see persistStage1).
       const attempt = async (confirmDocRemoval: boolean): Promise<void> => {
         const payload = { ...buildPayload(), ...(confirmDocRemoval ? { confirm_segment_doc_removal: true } : {}) };
         try {
@@ -1950,26 +1148,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         }
       };
       await attempt(false);
-      // Final submit succeeded → drop the remembered stage so a future
-      // re-open of this customer starts fresh on Stage 1 instead of
-      // bouncing back to Stage 3 (which is where this submit fired from).
       if (persistedDbId) stageMemory.delete(persistedDbId);
-      // Stage-3 submit fires onSaved itself, so clear the dirty flag
-      // to stop handleClose from firing onSaved a second time.
       dirtySavedRef.current = false;
       onSaved?.(finalDbId);
       onClose();
     } catch (err: any) {
-      // Surface Laravel validation errors back to the matching field.
-      // Backend sends 422 { errors: { 'primary_address.cp_email': [...] } }.
       const apiErrors = err?.response?.data?.errors ?? null;
       if (apiErrors && typeof apiErrors === 'object') {
         const next: Record<string, string> = {};
         for (const [key, msgs] of Object.entries(apiErrors)) {
           const msg = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
-          // Map server-side nested keys back to Stage 1 form keys
-          // (primary_address.cp_email → cpEmail) so the inline error
-          // lands on the right input.
           const map: Record<string, string> = {
             'company_name': 'coName', 'legal_name': 'coLegal',
             'type': 'coType', 'segment': 'coSeg',
@@ -1979,12 +1167,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             'primary_address.city': 'city', 'primary_address.pin': 'pin',
             'primary_address.cp_name': 'cpName', 'primary_address.cp_designation': 'cpDesig',
             'primary_address.cp_contact': 'cpTel', 'primary_address.cp_email': 'cpEmail',
-            /* The model-level guard reports on the DATABASE COLUMN, not the request
-               field: EnforcesUniqueEmail throws withMessages([$col => …]) from
-               Customer's saving hook, and $col is `primary_email`. Without this line
-               the duplicate-email message landed on a key no input renders and
-               vanished (QA #72) — same address, two names, depending on which layer
-               rejected it. */
             'primary_email': 'cpEmail',
             'primary_address.cp_whatsapp': 'cpWa',
           };
@@ -1995,13 +1177,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         const firstKey = Object.keys(next)[0];
         const el = document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`);
         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        /* The toast is suppressed only when an inline error is actually on
-           screen. A key the map does not know lands on a field nothing
-           renders, so the red text exists in state and appears nowhere — and
-           the suppression then hides the last thing that would have told the
-           user anything. Checking that at least one error reached a rendered
-           input keeps that from happening again, whatever key a new server
-           rule introduces. */
         if (!Object.keys(next).some(k => document.querySelector(`[data-field="${k}"]`))) {
           toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
         }
@@ -2014,39 +1189,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     }
   };
 
-  /* Auto-save Stage 1 when transitioning from the Address & Contact
-   * sub-tab to Stage 2. Without this, Stage 2 KYC upload calls have
-   * no `/customers/{id}/documents` target — the user would have to
-   * Save Customer (Stage 3), close the modal, find the row in the
-   * list, and re-open as edit. Same auto-save pattern is used by
-   * AddConsigneeModal. */
   const persistStage1 = async (): Promise<number | null> => {
-    // Country must match the opportunity currency (domestic vs export) — block
-    // the create/save of a mismatched customer at the source.
     const ccBlock = currencyCountryBlock();
     if (ccBlock) { toast.error('Country doesn’t match the opportunity', ccBlock); return null; }
-    // Synchronous re-entry lock — see inFlightRef declaration.
-    // Without it, two rapid Save & Next clicks both read savedDbId
-    // before the first POST's response had set it, and both end up
-    // POSTing — silent duplicate.
     if (inFlightRef.current || saving) return savedDbId;
     inFlightRef.current = true;
     setSaving(true);
-    // Min-display window — on fast networks (localhost / cached) the
-    // save can complete in <50ms and the Save & Next spinner flashes
-    // imperceptibly. Force at least 350ms of loader so users get
-    // clear "something happened" feedback before the stage advances.
     const _saveStart = Date.now();
     try {
-      // Inner attempt so a segment-removal 409 can prompt for document
-      // confirmation and RETRY with confirm_segment_doc_removal=1, all inside
-      // the outer re-entry lock (a recursive persistStage1() call would be
-      // blocked by inFlightRef).
       const attempt = async (confirmDocRemoval: boolean): Promise<number | null> => {
         const payload = { ...buildPayload(), ...(confirmDocRemoval ? { confirm_segment_doc_removal: true } : {}) };
-        // Prefer the existing customer.db_id (edit mode) over savedDbId
-        // (in-session POST result). Either way, if we already have a
-        // row id we PUT — never re-POST.
         const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
         try {
           if (persistedDbId) {
@@ -2061,12 +1213,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           return newId;
         } catch (e: any) {
           if (!confirmDocRemoval && await confirmOrphanDocs(e)) return attempt(true);
-          throw e;   // fall through to the outer 422 handler
+          throw e;
         }
       };
       return await attempt(false);
     } catch (err: any) {
-      // Replay the same 422 → inline-error mapping that submitCustomer uses.
       const apiErrors = err?.response?.data?.errors ?? null;
       if (apiErrors && typeof apiErrors === 'object') {
         const next: Record<string, string> = {};
@@ -2079,12 +1230,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           'primary_address.city': 'city', 'primary_address.pin': 'pin',
           'primary_address.cp_name': 'cpName', 'primary_address.cp_designation': 'cpDesig',
           'primary_address.cp_contact': 'cpTel', 'primary_address.cp_email': 'cpEmail',
-          /* The model-level guard reports on the DATABASE COLUMN, not the request
-             field: EnforcesUniqueEmail throws withMessages([$col => …]) from
-             Customer's saving hook, and $col is `primary_email`. Without this line
-             the duplicate-email message landed on a key no input renders and
-             vanished (QA #72) — same address, two names, depending on which layer
-             rejected it. */
           'primary_email': 'cpEmail',
           'primary_address.cp_whatsapp': 'cpWa',
         };
@@ -2097,11 +1242,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         setTab('identification');
         const firstKey = Object.keys(next)[0];
         document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Same guard as Stage 1 — never let a mapped-nowhere error go unseen.
         if (!Object.keys(next).some(k => document.querySelector(`[data-field="${k}"]`))) {
           toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
         }
-        // Toast suppressed — inline red errors + scroll handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Please try again.');
       }
@@ -2116,53 +1259,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   const goNext = async () => {
     if (stage === 1) {
-      /* Always validate Stage 1 before leaving it, no matter which
-       * sub-tab is active. Previously the gate only fired from the
-       * Identification tab — a user could click straight to the
-       * Address & Contact tab, hit Save & Next, and slip past with an
-       * empty form. Snapping back to Identification on failure
-       * surfaces every red field at once. */
       if (!validateStage1()) {
         setTab('identification');
         return;
       }
       if (tab === 'identification') {
-        // Persist the form NOW (not just on the final tab) so that
-        // edits made to the Identification tab don't get lost when
-        // the user clicks Save & Next and then closes the modal.
-        // persistStage1 is idempotent — it PUTs when we already have
-        // a row id (edit mode / mid-session POST result) and POSTs
-        // only the first time. That means clicking Save & Next on
-        // each tab in turn won't create duplicate rows.
         const id = await persistStage1();
         if (!id) return;
         setTab('address-contact');
         return;
       }
-      /* GST Scrutiny gate — enforced HERE, at the Stage 1 → 2 boundary,
-       * rather than at final submit. GST is part of the customer's legal
-       * identity, so Stage 1 isn't complete without it; catching it at the
-       * end meant the user filled all of KYC first and only then got sent
-       * back. Domestic only — international customers have no GST. */
       if (!gstScrutinyComplete) { promptForGstScrutiny(); return; }
-      // Leaving Stage 1 entirely → persist so Stage 2 KYC has a target.
       const id = await persistStage1();
       if (!id) return;
       setStage(2); setMaxStage(m => Math.max(m, 2) as Stage);
-      // onSaved intentionally NOT fired here — Stage 1 → 2 is an
-      // intermediate auto-save, not the user's explicit "I'm done"
-      // action. Calling it triggered the parent's "Customer updated"
-      // toast twice (once here, once again after the final save).
-      // The parent refreshes its list when the modal actually closes.
     } else {
-      /* Stage 2 (final): no validation gate. Stage 2 is a
-       * segment-rule-driven reference view — the manual Add flow that
-       * the old DD/Owner KYC gate enforced has been removed.
-       *
-       * Sub-tab cycling: walk through Company DD → Owner KYC →
-       * Trade Licence, each getting its own Save & Next step. On the
-       * last sub-tab the primary button submits the customer — there is
-       * no Stage 3 (Evidence Vault) to step into anymore. */
       if (kycSub === 'company-dd') { setKycSub('owner-kyc');    return; }
       if (kycSub === 'owner-kyc')  { setKycSub('trade-licence'); return; }
       submitCustomer();
@@ -2172,8 +1283,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     if (stage === 1) {
       if (tab === 'address-contact') setTab('identification');
     } else {
-      // Mirror goNext: step backwards through Stage 2 sub-tabs before
-      // falling back to Stage 1's last tab.
       if (kycSub === 'trade-licence') { setKycSub('owner-kyc'); return; }
       if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
       setStage(1); setTab('address-contact');
@@ -2181,35 +1290,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   };
 
   const atStart = stage === 1 && tab === 'identification';
-  // Final step = Stage 2's last sub-tab (Trade Licence). The primary
-  // button submits there instead of advancing — there's no Stage 3.
   const onFinalTab = stage === 2 && kycSub === 'trade-licence';
   const nextLabel = onFinalTab
     ? (isEdit ? 'Update Customer' : 'Submit Customer')
     : 'Save & Next';
 
-  /* Stage 2 advance: no gates. The form moves freely between stages
-   * 1 → 2 — only Stage 1's required fields are enforced. */
   const stage2Missing = '';
   const nextLocked = false;
 
   return createPortal((
-    /* No backdrop-click-to-close — users were losing partially filled
-       forms by misclicking the overlay. Close only via the X / Cancel
-       button or the ESC key.
-       Portalled to <body> so the fixed overlay centres in the VIEWPORT:
-       rendered inline it inherited a transformed ancestor as its containing
-       block, which pushed the modal low on the page instead of centre. */
     <div className="acm-root">
       <style>{ACM_SHELL_CSS}</style>
       <style>{SCOPED_CSS}</style>
-      {/* CLM shared styles — powers the teal AuthorityBadges "+N" popover used in
-          the KYC / DD / Trade Licence issuing-authority columns, matching the
-          Supplier form exactly. */}
       <style>{CLM_CSS}</style>
       <div className="acm-card">
 
-        {/* HEADER */}
         <div className="acm-header">
           <div className="acm-header-left">
             <div className="acm-header-icon">
@@ -2225,35 +1320,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               <div className="acm-subtitle">{isEdit ? 'Update customer details, KYC, and trade documents.' : 'Capture, verify, and onboard customers with complete compliance and product readiness.'}</div>
             </div>
           </div>
-          {/* Header "Loading customer details…" pill removed — the body shimmer
-              already signals loading, so both together was redundant (QA #40). */}
-          {/* GST Scrutiny button + close grouped on the right so they sit
-              together (the header is justify-content: space-between, which
-              would otherwise push them apart). Greyed/disabled until the
-              customer is DOMESTIC (India), a GST Number has been entered, AND
-              the Customer Legal Identity step has been saved — the scrutiny
-              form auto-fills from that number, so opening it before one
-              exists gives an empty popup. */}
           <div className="acm-header-right">
             {(() => {
-              // GST exists only for a domestic (India) customer — the country
-              // decides, not a toggle.
               const gstOn = isDomesticCountry(form.country);
               const hasGstNo = !!(form.coGstNumber ?? '').trim();
-              /* Customer Legal Identity saved. A scrutiny entry belongs to a
-               * customer, and its GST number is copied from the one validated
-               * on this step, so scrutinising before the identity exists put
-               * the user in the wrong order: they could file scrutiny rows
-               * against a company name, GST number and country still being
-               * typed, and a duplicate GST was caught only afterwards. (QA #43)
-               *
-               * Deliberately keyed on the row existing, which the Save & Next
-               * on the Identification tab creates -- NOT on all of Stage 1
-               * being complete. The scrutiny requirement itself is enforced at
-               * the Stage 1 -> 2 boundary below, so gating on the whole stage
-               * would unlock the button only after the step that demands it:
-               * a deadlock. In edit mode the row already exists, so an
-               * established customer's button is live immediately. */
               const identitySaved = !!(savedDbId || customer?.db_id);
               const canScrutinise = gstOn && hasGstNo && identitySaved;
               return (
@@ -2281,22 +1351,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           </div>
         </div>
 
-        {/* Indeterminate top progress bar — gives the user immediate
-            "actively loading" feedback while the parallel /customers,
-            /documents, /owners and /segment-uploads fetches resolve. The
-            shimmer skeletons below fill in the visual scaffold; this bar
-            is the kinetic cue that they're not stuck. */}
         {showShimmer && <div className="acm-top-progress" role="progressbar" aria-label="Loading"><span /></div>}
 
-        {/* STEPPER — swap to skeleton during edit-mode hydration OR the
-            initial master-bundle load so the whole top of the modal
-            reads as "loading" instead of showing a partially-active
-            stepper above an empty body. */}
         {showShimmer
           ? <StepperShimmer />
           : <Stepper stage={stage} maxStage={maxStage} onGoto={gotoStage} complete={stageComplete} />}
 
-        {/* HISTORY PANEL */}
         {stage > 1 && (
           <div className={`acm-history ${historyOpen ? 'acm-hist-open' : ''}`}>
             <div className="acm-history-header" onClick={() => setHistoryOpen(o => !o)}>
@@ -2319,18 +1379,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               </div>
             </div>
             <div className="acm-history-body">
-              {/* On Stage 2 the only "previous stage" is Stage 1, so the
-                  recap shows just the legal-identity summary. The former
-                  Stage 2 KYC recap (HistoryStage2) belonged to Stage 3,
-                  which has been removed. */}
               <HistoryStage1 form={form} locations={locations} customerId={customer?.id} segments={masters.segments} />
             </div>
           </div>
         )}
 
-        {/* STAGE 1 TABS — swap to shimmer pills during edit-mode
-            hydration OR the master-bundle load so the tab row matches
-            the loading state of the stepper above and the body below. */}
         {stage === 1 && showShimmer && (
           <div className="acm-tabs acm-tabs-shimmer">
             <Shimmer height={36} width={180} radius={999} />
@@ -2340,63 +1393,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         {stage === 1 && !showShimmer && (
           <div className="acm-tabs">
             <button type="button" className={`acm-tab ${tab === 'identification' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => setTab('identification')}>Customer Identification</button>
-            {/* Can't jump to Address & Contact until the Customer Identification
-                fields are valid — clicking validates first and only switches if
-                clean (else it surfaces the inline errors). Already on that tab
-                or going back to identification stays free. */}
             <button type="button" className={`acm-tab ${tab === 'address-contact' ? 'acm-tab-on' : 'acm-tab-off'}`} onClick={() => { if (tab === 'address-contact' || validateStage1()) setTab('address-contact'); }}>Address &amp; Contact Details</button>
           </div>
         )}
 
-        {/* Stage 3 (Evidence Vault) tabs removed — KYC / Trade Documents
-            uploads now live in the standalone CustomerEvidenceVaultModal. */}
 
-        {/* BODY */}
         <div className="acm-body">
-          {/* Edit-mode hydration UX — show a full-form shimmer while
-              /customers/:id is in flight so the user sees structured
-              skeleton blocks (matching the actual section layout)
-              instead of a half-empty form. When the GET resolves the
-              shimmer swaps to the populated form in one frame. This
-              feels faster than the previous "form with thin progress
-              strip" because there's no jarring mid-load repaint as
-              additional fields populate. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => String(s.id)) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesById={segTypesById} onGstGate={reportGstGate} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
-              /* A segment can't be removed when (1) a PRODUCT on a PI / Shipment
-               * belongs to it, or (2) it has an uploaded document not shared with
-               * any remaining segment. Block only those (re-add them) and let the
-               * rest go through. Mirrors the server, which rejects the same at save. */
               const lockedRemoved = removed.filter(s => lockedSegments.some(l => l.toLowerCase() === segNameOf(s).toLowerCase()));
-              // (2) Unique-document lock — uses the SAME server data the backend
-              // uses (required category|code keys per segment + the uploaded keys),
-              // so the UI blocks exactly what save does. A removed segment is
-              // blocked when it requires an UPLOADED key that no REMAINING segment
-              // requires (removing it would orphan that file).
               const uploadedSet = new Set(uploadedKeys);
               const keepKeys = new Set(vs.flatMap(s => segReqKeys[segNameOf(s)] ?? []));
               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
                 && (segReqKeys[segNameOf(s)] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
-              /* Name the ACTUAL blocker. A segment is locked either because its
-               * product sits on a Quotation / PI / Shipment, or — earlier in the
-               * flow — because a product in it is merely mapped to an opportunity
-               * from the Product Directory. Both used to report the first
-               * reason, so a customer with only a mapped product was told about
-               * a quotation that had never been raised, and the message pointed
-               * at nothing the user could go and fix. */
               if (lockedRemoved.length) {
                 const reasonOf = (s: string) => lockedSegmentReasons[segNameOf(s).trim().toLowerCase()] ?? 'pi';
                 const piNames   = lockedRemoved.filter(s => reasonOf(s) !== 'product').map(segNameOf);
                 const prodNames = lockedRemoved.filter(s => reasonOf(s) === 'product').map(segNameOf);
                 if (piNames.length) {
-                  // Deliberately generic: the Quotation / PI / Shipment lock names
-                  // no document. Listing all three read as if all three existed
-                  // when only one did, and the internal document type isn't the
-                  // user's concern here. The Product-Directory case below stays
-                  // specific because there the user CAN go and act on it.
                   toast.error('Cannot remove segment', `${piNames.join(', ')} — this segment is currently in use.`);
                 }
                 if (prodNames.length) {
@@ -2478,7 +1495,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           
         </div>
 
-        {/* FOOTER */}
         <div className="acm-footer">
           <div className="acm-req-note">
             <span className="acm-req-dot" />
@@ -2520,7 +1536,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           </div>
         </div>
 
-        {/* While saving, lock the whole form so no field/step can be edited mid-save. */}
         {saving && (
           <div className="acm-save-lock" aria-live="polite" aria-busy="true">
             <span className="acm-save-lock-spinner" />
@@ -2530,20 +1545,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
       </div>
 
-      {/* SUB-MODAL: Add/edit a single Location (address + contact).
-          `disallowedTypes` blocks every address type already claimed on
-          this customer (primary + every other location row) so each
-          type can only appear ONCE per customer. The row being edited
-          keeps its own type available so it doesn't disappear from
-          its own dropdown. */}
       {locModal.open && (() => {
-        /* Collect every email + phone already used on this customer —
-         * primary contact (Stage 1) plus every additional location
-         * the user has already added — minus the row currently being
-         * edited (if any). The sub-modal blocks save when the user
-         * tries to enter a value that's already in this set, so the
-         * "same number across two addresses" trap is caught client-
-         * side before the API conflict. */
         const editingId = locModal.editing;
         const otherLocs = editingId
           ? locations.filter(l => l.id !== editingId)
@@ -2558,9 +1560,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           primaryPhone,
           ...otherLocs.map(l => (l.cpContact || '').trim()),
         ].filter(Boolean);
-        // Address type uniqueness — collect every type already used on
-        // the primary + other locations. Each type can be used only once
-        // per customer, so the dropdown excludes these on the next Add.
         const usedAddressTypes = [
           (form.addrType || '').trim(),
           ...otherLocs.map(l => (l.type || '').trim()),
@@ -2583,9 +1582,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         );
       })()}
 
-      {/* CONFIRM DELETE — project-wide DeleteConfirmModal. The label
-          shown to the user is the address type of the row being
-          deleted so it reads e.g. "Delete Warehouse?" not just "Delete". */}
       <DeleteConfirmModal
         open={delModal.open}
         title="Delete Address & Contact"
@@ -2605,9 +1601,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         }}
       />
 
-      {/* Stage 2 delete confirm — covers both doc and owner rows. The
-          `kind` tells us which endpoint to hit. On success the row is
-          dropped from local state so the table updates instantly. */}
       <DeleteConfirmModal
         open={kycDelModal.open}
         title={kycDelModal.kind === 'doc' ? 'Delete Document' : 'Delete Owner'}
@@ -2639,10 +1632,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         }}
       />
 
-      {/* SUB-MODAL (Stage 2) — Owner KYC has its own dedicated "Add
-          Owner Due Diligence" form (Owner Name + Designation + Email +
-          Phone + 3 file uploads). The other two sub-tabs use the
-          generic Document / License form. */}
       {docModal.open && docModal.sub === 'owner-kyc' && (
         <OwnerDDSubModal
           masters={masters}
@@ -2664,15 +1653,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           masters={masters}
           customerId={savedDbId}
           editing={editDocId ? kycDocs.find(d => d.id === editDocId) ?? null : null}
-          /* When a new Document Type is added via the popup-on-popup,
-             append it to masters.documentTypes so the dropdown picks
-             it up immediately (no need to re-open the modal). */
           onDocTypeAdded={(opt) => setMasters(m => ({ ...m, documentTypes: [...m.documentTypes, opt] }))}
           onClose={() => { setEditDocId(null); setDocModal(m => ({ ...m, open: false })); }}
           onSaved={(row) => {
-            // On create → prepend the new row. On update → replace it
-            // in place so the table reflects the change without
-            // re-fetching the whole list.
             setKycDocs(prev => editDocId
               ? prev.map(d => d.id === editDocId ? row : d)
               : [row, ...prev]);
@@ -2682,31 +1665,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         />
       )}
 
-      {/* Stage 3 Trade Documents → Send for Signature.
-          Opens the Zoho Sign wizard pre-checked with whichever
-          documents the user picked (single id from a row's "Send"
-          button, or the multi-id list from the footer button).
-          The wizard's onSent flips those rows' `sent` flags so
-          they show "Resend" thereafter. */}
       <SalesCustomerSendForSignatureModal
-        /* Bigger signature box — a company signature is routinely wider than the
-           150pt default and Zoho prints it past the field, over the next one.
-           Opt-in, so Quotation / PI keep their tuned placements. */
         boxSize={{ width: 240, height: 55 }}
         open={Array.isArray(sendForSignature)}
-        /* multiBox: the ONE resolved signer can be asked to sign the same
-           document in several places (Legal Team #9 / BR-03). Matches the
-           supplier form and both evidence vaults, which already send this
-           way - the requirement belongs to the document, not the screen it
-           was sent from. Single-signer trade-doc mode only; roleMode takes
-           precedence when a multi-party send sets tradeSigners. */
         multiBox
         customer={(() => {
-          // The Zoho send modal needs the saved DB id. In edit mode it
-          // comes from the `customer` prop; in create mode it shows up
-          // after the Stage 1 → 2 auto-save POST. The Stage 3 handlers
-          // already block when this id is missing, so this null-return
-          // is defensive only.
           const partyId = (customer?.db_id ?? savedDbId) ?? null;
           if (!partyId) return null;
           return {
@@ -2728,8 +1691,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         }}
       />
 
-      {/* GST Scrutiny — history list + add form, opened from the header
-          button. Domestic (GST Applicable = Yes) customers only. */}
       <GstScrutinyManagePopup
         open={gstPopupOpen}
         rows={gstRows}
@@ -2741,13 +1702,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   ), document.body);
 }
 
-/* ───────────────────────────────────────────────────────────────────
- * GST Scrutiny popup — a self-contained overlay showing the customer's
- * GST scrutiny history (list) plus a top-right "+ Add GST Scrutiny"
- * button that reveals the entry form. Mirrors the supplier's GST
- * Scrutiny popup field-for-field. Persistence is delegated to the
- * parent via onAdd/onRemove (which decide server vs local-hold).
- * ─────────────────────────────────────────────────────────────────── */
 const EMPTY_GST_DRAFT: GstDraft = { gstNumber: '', status: 'Active', lastFilingDate: '', prevNonGst2aInvoice: '', redFlags: '' };
 const GST_STATUS_OPTS = [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }];
 function GstScrutinyManagePopup(props: {
@@ -2755,8 +1709,6 @@ function GstScrutinyManagePopup(props: {
   rows: GstRow[];
   onClose: () => void;
   onAdd: (draft: GstDraft) => Promise<boolean>;
-  /* GST number captured on the customer (Stage 1). Auto-fills the Add form
-     so the user doesn't retype it. */
   defaultGstNumber?: string;
 }) {
   const { open, rows, onClose, onAdd, defaultGstNumber } = props;
@@ -2768,36 +1720,28 @@ function GstScrutinyManagePopup(props: {
 
   const GST_PER_PAGE = 5;
 
-  // Reset the inline form + paging whenever the popup is opened/closed.
   useEffect(() => {
     if (!open) { setAdding(false); setDraft(EMPTY_GST_DRAFT); setErrs({}); setPage(1); }
   }, [open]);
 
-  // Newest first. `rows` already arrives newest-first (server orders by id
-  // desc; new local rows are prepended), so just paginate as-is.
   const pageCount = Math.max(1, Math.ceil(rows.length / GST_PER_PAGE));
   const safePage = Math.min(page, pageCount);
   const pageRows = rows.slice((safePage - 1) * GST_PER_PAGE, safePage * GST_PER_PAGE);
-  // Keep the current page valid if rows shrink (e.g. last item on a page removed).
   useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
   if (!open) return null;
 
   const setD = <K extends keyof GstDraft>(k: K, v: GstDraft[K]) => setDraft(prev => ({ ...prev, [k]: v }));
 
-  // GST number: strictly 15-char uppercase alphanumeric (e.g. 27AADCI6120M1ZH).
   const save = async () => {
     const e: typeof errs = {};
     const gstErr = gstNumberError(draft.gstNumber);
     if (gstErr) e.gstNumber = gstErr;
-    // The same GSTIN recurs across a customer's periodic scrutiny entries, so
-    // no per-customer duplicate check — only the format is enforced.
     if (!draft.lastFilingDate) e.lastFilingDate = 'GST Last Filing Date is required';
     if (Object.keys(e).length) { setErrs(e); return; }
     setBusy(true);
     const ok = await onAdd(draft);
     setBusy(false);
-    // Jump back to page 1 so the just-added (newest) entry is visible on top.
     if (ok) { setDraft(EMPTY_GST_DRAFT); setErrs({}); setAdding(false); setPage(1); }
   };
 
@@ -2833,8 +1777,8 @@ function GstScrutinyManagePopup(props: {
         </div>
 
         <div className="acm-gst-body">
-          <div className="acm-gst-table-wrap">
-            <table className="acm-gst-table">
+          <div className="acm-gst-table-wrap dt-root hr-dt" data-accent="violet">
+            <table className="acm-gst-table dt-table">
               <thead>
                 <tr>
                   <th className="acm-gst-srno-col">SR NO</th>
@@ -2852,13 +1796,11 @@ function GstScrutinyManagePopup(props: {
                   const sr = (safePage - 1) * GST_PER_PAGE + i + 1;
                   return (
                     <tr key={r.id}>
-                      <td className="acm-gst-srno-col"><span className="acm-gst-sr">{String(sr).padStart(2, '0')}</span></td>
-                      <td style={{ fontWeight: 600 }}>{r.gst_number}</td>
+                      <td className="acm-gst-srno-col"><span className="dt-serial">{sr}</span></td>
+                      <td>{r.gst_number}</td>
                       <td><span className={`acm-gst-status acm-gst-status-${String(r.status).toLowerCase()}`}>{r.status}</span></td>
                       <td>{r.last_filing_date || '—'}</td>
                       <td>{(() => {
-                        // Long free-text values overflow the column — cap with an
-                        // ellipsis and reveal the full text on hover.
                         const v = r.prev_non_gst_2a_invoice || '';
                         if (!v) return '—';
                         const span = <span style={{ display: 'inline-block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{v}</span>;
@@ -2876,8 +1818,6 @@ function GstScrutinyManagePopup(props: {
               </tbody>
             </table>
 
-            {/* Pager sits INSIDE the table card as a footer strip (standard
-                app pager) — only once there's more than a page of entries. */}
             {rows.length > GST_PER_PAGE && (
               <WorklistPager total={rows.length} page={safePage} pageSize={GST_PER_PAGE} onPage={setPage} />
             )}
@@ -2886,8 +1826,6 @@ function GstScrutinyManagePopup(props: {
       </div>
     </div>
 
-    {/* Add form is its OWN popup, stacked ABOVE the list popup (higher
-        z-index). The list stays visible/dimmed behind it. */}
     {adding && (
       <div className="acm-gst-overlay" style={{ zIndex: 1300, background: 'rgba(6,4,18,0.82)', backdropFilter: 'blur(3px)' }} role="dialog" aria-modal="true">
         <div className="acm-gst-card acm-gst-form-card" style={{ width: 'min(900px, 96vw)' }}>
@@ -2912,13 +1850,6 @@ function GstScrutinyManagePopup(props: {
             <div className="acm-gst-form">
               <div className="acm-row acm-row-3">
                 <Field label="GST Number" required error={errs.gstNumber}>
-                  {/* Read-only — the GST number is captured on the customer
-                      (Stage 1) and flows in here. Edit it on the customer form;
-                      it won't be re-typed per scrutiny entry. */}
-                  {/* A class, not an inline rgba: the inline grey was a
-                      translucent fill that the dark `.acm-field input` rule
-                      overrode with !important anyway, so this field looked
-                      exactly like the editable ones it is not. */}
                   <input
                     className={`acm-input-ro${errs.gstNumber ? ' acm-input-error' : ''}`}
                     value={draft.gstNumber}
@@ -2944,10 +1875,6 @@ function GstScrutinyManagePopup(props: {
               </div>
               <div className="acm-gst-form-actions">
                 <button type="button" className="acm-btn-ghost" onClick={closeForm} disabled={busy}>Cancel</button>
-                {/* The word alone changing to "Saving…" reads as a label, not as
-                    progress, so the button looked unresponsive while the entry
-                    was being posted. The spinner is what shows it is working.
-                    (QA #90) */}
                 <button type="button" className="acm-btn-primary" onClick={save} disabled={busy}>
                   {busy ? (
                     <>
@@ -2968,7 +1895,6 @@ function GstScrutinyManagePopup(props: {
   );
 }
 
-/* ───── Stepper ───── */
 function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage: Stage; onGoto: (s: Stage) => void; complete: [boolean, boolean, boolean] }) {
   const steps = [
     { n:1 as Stage, title:'Customer Legal Identity', sub:'Company, GST, PAN & contact',
@@ -2982,26 +1908,8 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
   return (
     <div className="acm-stepper">
       {steps.map((s, i) => {
-        /* Reachability is driven by `maxStage` so a user who reached
-         * Stage 2 (or 3) and then navigated back to Stage 1 still sees
-         * the later stage as visited+clickable, not as a locked
-         * pending step. Four visual states:
-         *   active     — current stage (purple)
-         *   done       — visited AND genuinely complete (purple ✓)
-         *   incomplete — visited but data/docs missing (neutral gray)
-         *   pending    — not yet reached (s.n > maxStage, locked)
-         * `complete` is index-0-based (Stage n → complete[n-1]). */
         const visited = s.n <= maxStage;
-        /* Completion ticks removed (user request): a green ✓ used to show
-         * even when nothing was uploaded / no trade docs were sent
-         * (Evidence Vault is design-only here), which read as "done" and
-         * confused users. Steps now show only their icon + number —
-         * active step highlighted, visited steps neutral, unreached steps
-         * locked. No "complete" indication anywhere. */
         const isActive = s.n === stage;
-        /* A stage that's behind us AND genuinely complete paints GREEN with a
-         * ✓ (Figma look). Visited-but-incomplete stays neutral gray; unreached
-         * stays locked. `complete` is 0-based (Stage n → complete[n-1]). */
         const isDone = !isActive && visited && complete[s.n - 1];
         const cls = isActive
           ? 'acm-step-active'
@@ -3024,9 +1932,6 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
               </div>
             </div>
             {i < steps.length - 1 && (
-              /* Connector lights up if the next step has been reached
-               * (regardless of current position), so going back to
-               * Stage 1 doesn't visually undo the 1↔2 connection. */
               <div className="acm-step-connector"><div className="acm-connector-line" data-done={s.n < maxStage ? '1' : '0'} /></div>
             )}
           </Fragment>
@@ -3037,22 +1942,16 @@ function Stepper({ stage, maxStage, onGoto, complete }: { stage: Stage; maxStage
 }
 
 
-/* ───── Stage 2 KYC shimmer — mimics the sub-tabs + toolbar + table
- * header strip so the swap to the real Stage2KYC after hydration is
- * structurally identical (no layout shift). */
 function Stage2Shimmer() {
   return (
     <div>
-      {/* Sub-tab row (Company DD / Owner KYC / Trade Licence) */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <Shimmer height={46} width={460} radius={11} />
       </div>
-      {/* Toolbar (search + add) */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12 }}>
         <Shimmer height={36} width="60%" radius={8} />
         <Shimmer height={36} width={170} radius={8} />
       </div>
-      {/* Table header strip + 3 body rows */}
       <div style={{ border: '1px solid var(--vz-border-color)', borderRadius: 10, overflow: 'hidden' }}>
         <div style={{ padding: '12px 14px', background: 'rgba(124,58,237,0.04)' }}>
           <Shimmer height={11} width="40%" radius={4} />
@@ -3072,92 +1971,39 @@ function Stage2Shimmer() {
   );
 }
 
-/* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
-/* ───── Stage 1 — Identification + Primary Address & Contact ───── */
 function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, docsLocked = false, onCountryBlockedByDocs, mapLeadLocked = false, onCountryBlockedByLead, currentCustomerId, unruledSegments = [], segTypesById, onGstGate }:
   { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[];
-    /** True when GST Scrutiny entries exist. Only guards the Country field now —
-     *  the GST Applicable toggle it used to lock no longer exists. */
     gstLocked: boolean;
-    /** Fired when the user tries to go international while GST Scrutiny entries
-     *  exist — the change is refused rather than hiding those records. */
     onCountryBlockedByGst: () => void;
-    /** True when KYC/DD/TL documents have been uploaded. Blocks any country
-     *  change that would FLIP the trade type (Domestic ↔ International), which
-     *  would switch the segment's document rule and orphan those uploads. */
     docsLocked?: boolean;
-    /** Fired when a trade-type-flipping country change is refused because
-     *  documents are already uploaded. */
     onCountryBlockedByDocs?: () => void;
-    /** True when `is_map_lead = 'Yes'` — the customer has already been used to
-     *  raise a lead, so Country is frozen entirely (not just the India side,
-     *  the way gstLocked works). Disabled rather than refused-on-change: there
-     *  is no valid new value at all, so the control should read as inert. */
     mapLeadLocked?: boolean;
-    /** Fired when the user clicks the disabled Country field, to explain why. */
     onCountryBlockedByLead?: () => void;
-    /** DB id of the customer being edited — excluded from the GST duplicate
-     *  check so editing a record doesn't collide with its own GST number. */
     currentCustomerId?: number | null;
-    /** Segment names with no Document Control Panel rule — listed but not
-     *  selectable, since they'd bring no compliance documents with them. */
     unruledSegments?: string[];
-    /** Segment NAME → its Domestic/International rule types, for the dropdown
-     *  badges (Intl / Dom / +2 when a segment has both). */
     segTypesById: Map<string, Set<SegDocType>>;
-    /** Reports the GST duplicate-check answer up to the parent so Save & Next
-     *  can refuse a number that already belongs to another customer. The
-     *  lookup is debounced and lives down here with the field, but the gate
-     *  that uses it is validateStage1, several hundred lines up. */
     onGstGate?: (g: { status: string; takenBy: string | null }) => void }) {
-  /* India (or not-yet-chosen) → domestic → GST fields render. Any other country
-   * → international → they're hidden. Driven by the Primary Address & Contact
-   * Person card's Country, which lives in this same component. */
   const domestic = isDomesticCountry(form.country);
-  /* Segment names whose "+2" badge has been clicked open — those show the
-   * individual Intl + Dom badges instead of the collapsed +2. */
   const [expandedSegBadges, setExpandedSegBadges] = useState<Set<string>>(new Set());
   const toggleSegBadge = (name: string) => setExpandedSegBadges(prev => {
     const next = new Set(prev);
     next.has(name) ? next.delete(name) : next.add(name);
     return next;
   });
-  // States filter against the selected country: look up the country
-  // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
   const states = selectedCountry
     ? masters.states.filter(s => s.country_id === selectedCountry.id)
     : [];
-  /* Drives the State control's placeholder and disabled state — see
-     countryHasStates(). Mirrors `locHasStates` on the additional-address form. */
   const hasStates = countryHasStates(masters, form.country);
-  // Wraps `setF` so each keystroke runs the per-field validator — the
-  // inline red error appears the moment the input is wrong, mirroring
-  // the desired UX of the consignee modal.
   const set = (k: string, v: any) => {
     setF(k as any, v);
     validateField(k, { ...form, [k]: v });
   };
 
-  /* GST Number — debounced format check, then a duplicate check.
-   *
-   * Validating on every keystroke would flag a half-typed GSTIN as invalid, so
-   * hold off until the user pauses for 500ms. The cleanup clearTimeout cancels
-   * the pending timer on each new keystroke, so only a real pause fires it.
-   *
-   * Order matters: the FORMAT is checked locally first (free). Only a
-   * well-formed GSTIN is worth a round-trip, so the /gst-available call runs
-   * just once per completed number — never per keystroke, and never for a
-   * partial string that could not match anything anyway.
-   *
-   * `taken` is UX only; CustomerController::validatePayload() holds the real
-   * branch-scoped unique rule (two users can pass this check simultaneously). */
   const [gstStatus, setGstStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid' | 'taken'>('idle');
   const [gstTakenBy, setGstTakenBy] = useState<string | null>(null);
   const gstRaw = (form.coGstNumber ?? '').trim();
-  // Domestic == GST applies. (Was form.coGstApplicable === 'Yes' before the
-  // toggle was removed; the country is the decider now.)
   const gstApplicable = domestic;
   useEffect(() => {
     if (!gstApplicable || !gstRaw) { setGstStatus('idle'); setGstTakenBy(null); return; }
@@ -3165,15 +2011,8 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     setGstTakenBy(null);
     let cancelled = false;
     const t = window.setTimeout(() => {
-      /* Keeps an inline red already on screen in step with what is typed —
-         it no longer raises one. validateField only corrects fields that are
-         already flagged, so a GST number being typed for the first time stays
-         silent until Save & Next. `gstStatus` below still drives the field's
-         own valid / invalid / taken styling, which is a live availability
-         hint rather than a validation failure. */
       validateField('coGstNumber', { ...form, coGstNumber: gstRaw });
       if (gstNumberError(gstRaw, form.stateCode)) { setGstStatus('invalid'); return; }
-      // Well-formed — now ask the server whether this branch already has it.
       api.get('/customers/gst-available', {
         params: { gst_number: gstRaw, ignore_id: currentCustomerId ?? undefined },
       })
@@ -3183,33 +2022,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           if (d.available === false) { setGstTakenBy(d.taken_by ?? null); setGstStatus('taken'); }
           else setGstStatus('valid');
         })
-        // Network/permission failure must not block the user — the save-time
-        // rule still catches a genuine duplicate.
         .catch(() => { if (!cancelled) setGstStatus('valid'); });
     }, 500);
     return () => { cancelled = true; window.clearTimeout(t); };
-    /* form.stateCode belongs here: the GSTIN's first 2 digits ARE the state
-       code, so the SAME number flips between valid and invalid when the user
-       picks a different State. Without it the effect never re-ran on a state
-       change and `gstStatus` stayed on its last answer — a number validated
-       against Maharashtra kept its green "GST Number is valid" after the state
-       was switched to Assam. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gstRaw, gstApplicable, form.stateCode]);
 
-  /* GSTIN prefix vs. the selected state's code, surfaced inline.
-   *
-   * Deliberately separate from the format errors, which stay silent until
-   * Save & Next so a half-typed number isn't flagged mid-keystroke (see
-   * validateField — it only ever CORRECTS an error that is already on screen,
-   * it never raises one). That reasoning doesn't apply here: this check is
-   * gated on a COMPLETE, well-formed GSTIN, so it can only fire on a finished
-   * number, and it's usually triggered by the user changing a DIFFERENT field
-   * (State) — which silently invalidated a number they'd already entered and
-   * been told was valid. That has to be visible immediately.
-   *
-   * Every format branch of gstNumberError is already satisfied once GSTIN_RE
-   * passes, so the only message it can return here is the state-code mismatch. */
   const gstStateMismatch = useMemo(
     () => (gstApplicable && GSTIN_RE.test(gstRaw))
       ? gstNumberError(gstRaw, form.stateCode) ?? null
@@ -3217,25 +2035,8 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     [gstApplicable, gstRaw, form.stateCode],
   );
 
-  /* Hand the duplicate-check answer to the parent, which gates Save & Next on
-   * it. Fires on every transition including back to 'idle', so clearing the
-   * field also clears the gate. */
   useEffect(() => { onGstGate?.({ status: gstStatus, takenBy: gstTakenBy }); }, [gstStatus, gstTakenBy, onGstGate]);
 
-  /* Contact Person Name and Whatsapp are lifted out of the JSX because they sit
-   * in DIFFERENT slots depending on whether GST Number is rendered:
-   *
-   *   India        City | PIN | GST          Contact | Desig | Contact No | Email      Whatsapp
-   *   non-India    City | PIN | Contact      Desig | Contact No | Email | Whatsapp     —
-   *
-   * Hiding GST would otherwise leave a hole in the City/PIN row and strand
-   * Whatsapp alone on a row of its own. Everything shifts up one slot instead,
-   * so both layouts are full.
-   *
-   * Held as variables (not duplicated in each branch) so there is exactly one
-   * definition per field — a second copy would drift the moment either is
-   * edited, and React would remount the input on the domestic↔international
-   * switch, losing focus mid-typing. */
   const contactPersonField = (
     <Field label="Contact Person Name" required error={errors.cpName} fieldKey="cpName">
       <input className={errors.cpName ? 'acm-input-error' : ''} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" />
@@ -3261,27 +2062,16 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           </div>
         </div>
         <div className="acm-section-body">
-          {/* Row 1 (4-col): identity + website. */}
           <div className="acm-row acm-row-4">
             <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
             <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
-            {/* "Customer Category" (was "Customer Type") — the Retailer /
-                Wholesaler master. Renamed because "Customer Type" now means
-                Domestic vs International on the list, and one label can't mean
-                two different things. The stored column is still `type`; only
-                the label moved. */}
             <Field label="Customer Category" required error={errors.coType} fieldKey="coType">
               <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer category" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
             <Field label="Company Website" error={errors.coWeb} fieldKey="coWeb"><input className={errors.coWeb ? 'acm-input-error' : ''} value={form.coWeb} onChange={e => set('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
           </div>
-          {/* Row 2 (4-col): segment → GST applicable → classification → risk. */}
           <div className="acm-row acm-row-4">
             <Field label="Customer Segment" required error={errors.coSeg} fieldKey="coSeg">
-              {/* masterFormKit's MasterMultiSelect renders visible violet
-                  chips with × buttons + a checkbox-marked dropdown so
-                  multi-select is obvious. `value` prop is plural despite
-                  the singular name. */}
               <MasterMultiSelect
                 value={form.coSeg}
 
@@ -3293,11 +2083,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 menuClassName="acm-seg-menu"
                 invalid={!!errors.coSeg}
                 onChange={vs => {
-                  /* Block removing a segment whose KYC/DD/Trade-License docs
-                   * are already uploaded (edit mode). Additions and removing
-                   * empty segments are always allowed. The guard lives in the
-                   * parent (it needs segmentRefUploads/segCodeMap/toast) and
-                   * returns the possibly-adjusted selection. */
                   set('coSeg', guardSegmentRemove(form.coSeg ?? [], vs));
                 }}
                 disabledValues={unruledSegments}
@@ -3313,9 +2098,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   const intl = () => badge('INT', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
                   const dom  = () => badge('DOM', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
                   if (both) {
-                    // Collapsed: a clickable "+2"; expanded: the two individual
-                    // badges. Stop propagation so the click doesn't toggle the
-                    // segment's checkbox.
                     return expandedSegBadges.has(id)
                       ? <>{reg}{intl()}{dom()}</>
                       : <>{reg}{badge('+2', 'Has both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
@@ -3326,9 +2108,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 maxChips={2}
               />
             </Field>
-            {/* GST Number lives in the PRIMARY ADDRESS card below, directly under
-                the Country that decides whether it exists at all — a field can't
-                sit above the one that governs it. */}
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
               <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} allowDeselect onChange={v => set('coClass', v)} />
             </Field>
@@ -3350,64 +2129,30 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
         <div className="acm-section-body">
           <div className="acm-row acm-row-2">
             <Field label="Address Type" required error={errors.addrType} fieldKey="addrType">
-              {/* The primary address is, by definition, the registered
-                 office — locked here so a user can't pick anything else
-                 for the primary slot. Other types (Warehouse, Billing,
-                 etc.) belong on the "Address & Contact Details" tab. */}
               <MasterSelect
                 value={DEFAULT_ADDRESS_TYPE}
                 options={[{ value: DEFAULT_ADDRESS_TYPE, label: DEFAULT_ADDRESS_TYPE }]}
                 placeholder="Select address type"
                 disabled
-                onChange={() => { /* locked */ }}
+                onChange={() => {  }}
               />
             </Field>
             <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" maxLength={75} /></Field>
           </div>
-          {/* Address geography — ONE 3-column grid that the fields flow
-              through, rather than fixed rows. Three of the six are
-              country-dependent (State Code, and GST Number vs Contact Person),
-              so any fixed row split leaves a gap the moment one drops out.
-              Three columns rather than four: a 4-col split would strand the
-              last field alone on its own line. */}
           <div className="acm-row acm-row-3">
             <Field label="Country" required error={errors.country} fieldKey="country">
-              {/* This field decides domestic vs international, so it also decides
-                  whether the GST Number below it renders at all.
-                  Going international while GST Scrutiny entries exist is REFUSED
-                  rather than silently hiding them — those records would be
-                  stranded behind a field the user can no longer see, with no way
-                  to reach them. (The old GST Applicable lock only disabled its
-                  control; this has to refuse outright because the field vanishes.)
-                  The gst_applicable flag itself needs no handling here — it is
-                  derived from this country in buildPayload. */}
-              {/* Frozen outright once the customer is mapped to a lead — see
-                  the mapLeadLocked prop doc. */}
               <MasterSelect value={form.country} options={optsWith(masters.countries, form.country)} placeholder="Select country" invalid={!!errors.country}
                 disabled={mapLeadLocked}
                 onChange={v => {
                 if (gstLocked && !isDomesticCountry(v)) { onCountryBlockedByGst(); return; }
-                /* Uploaded KYC/DD/TL docs belong to the current trade type's
-                   rule — refuse a change that flips Domestic ↔ International. */
                 if (docsLocked && isDomesticCountry(v) !== domestic) { onCountryBlockedByDocs?.(); return; }
                 const nextForm = { ...form, country: v, state: '', stateCode: '' };
-                // State resets on a country change, so its derived code must go too.
                 setF('country', v); setF('state', ''); setF('stateCode', '');
-                // Going international hides GST Number — drop any error it left
-                // behind, or Save would block on an invisible field.
                 if (!isDomesticCountry(v)) clearErr('coGstNumber');
                 validateField('country', nextForm); validateField('state', nextForm);
-                /* PIN and ZIP are different rules, so the code already typed has
-                   to be re-judged against the NEW country — otherwise a valid
-                   "SL7 1TB" stays green after switching to India. */
                 validateField('pin', nextForm);
-                /* Country decides domestic vs international, which the segment's
-                   document-type rule must match — re-judge the segment too. */
                 validateField('coSeg', nextForm);
               }} />
-              {/* The disabled control alone doesn't say WHY. Spell it out
-                  inline — the user cannot hover-discover a reason on a
-                  non-interactive element. */}
               {mapLeadLocked && (
                 <span
                   className="acm-field-note"
@@ -3418,10 +2163,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 </span>
               )}
             </Field>
-            {/* Required for every country. Where the master has no states for
-                the chosen country (163 of 249) the control stays disabled — there
-                is nothing to open — and the placeholder points at where to add
-                them, so it isn't a silent dead end. */}
             <Field label="State" required error={errors.state} fieldKey="state">
               <MasterSelect
                 value={form.state}
@@ -3435,39 +2176,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 invalid={!!errors.state}
                 onChange={v => {
                   set('state', v);
-                  /* Auto-fill State Code from the master_state_codes row for this
-                     state. Matched by NAME because this dropdown's value is the
-                     state name (the supplier form matches by id — its dropdown is
-                     id-based). Blank when the master has no code for the state:
-                     only 10 of India's 36 are defined today, and non-India states
-                     have none at all. */
                   const newCode = masters.stateCodes.find(sc => sc.stateName === v)?.code ?? '';
                   set('stateCode', newCode);
-                  /* The GSTIN prefix must match this state, so re-check the GST
-                     field against the NEW code (else a stale error/valid state
-                     lingers after switching state). */
                   validateField('coGstNumber', { ...form, state: v, stateCode: newCode });
                 }}
               />
             </Field>
-            {/* Derived from the selected State — read-only so it can't drift out
-                of sync (the GST state code is fixed per state). Shown for every
-                country, like the supplier form; it simply stays blank where the
-                master defines no code. */}
-            {/* DOMESTIC ONLY. This is the GST state code — its own tooltip says
-                so — and GST does not apply outside India, which is why the GST
-                Number field below already disappears for an international
-                customer. State Code was the one address field that never got
-                the same guard, so an international form still showed a GST
-                artefact on a page where GST had otherwise been hidden.
-                `required` marks it as part of that GST identity: it is
-                readOnly and always filled the moment a State is picked, so the
-                asterisk describes a field that is genuinely always present —
-                every sibling in this row already carries one.
-                Switching country clears state + stateCode (see the Country
-                onChange above), so nothing stale is left behind when it hides.
-                The row is a 3-column grid; the empty third column keeps the
-                remaining fields aligned with the row beneath. */}
             {domestic && (
               <Field label="State Code" required fieldKey="stateCode">
                 <input
@@ -3480,57 +2194,27 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 />
               </Field>
             )}
-            {/* ONE grid, not two rows of three.
-                State Code and the GST/Contact-Person slot both appear or vanish
-                with the country, so a fixed row boundary here left a hole in
-                the MIDDLE of the block whenever a field dropped out — an empty
-                third column beside Country and State on an international
-                customer, with City stranded on the next line.
-                Letting all six flow through a single 3-column grid means the
-                fields close ranks on their own:
-                  domestic      → Country · State · State Code
-                                  City · PIN · GST Number
-                  international → Country · State · City
-                                  Zip · Contact Person
-                Only the last row can now come up short, which reads as the end
-                of the block rather than a missing field. */}
             <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
             <Field label={pinLabel(form.country)} required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', pinSanitize(e.target.value, form.country))} inputMode={isDomesticCountry(form.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(form.country)} placeholder={pinPlaceholder(form.country)} /></Field>
-            {/* Third slot: GST Number for a domestic customer, otherwise Contact
-                Person Name shifted up from the row below. Either way the row is
-                full — GST simply isn't a field an international customer has.
-                There is no "GST Applicable" toggle: the country is the only
-                input, and the flag is derived from it in buildPayload. */}
             {!domestic && contactPersonField}
             {domestic && (
               <Field label="GST Number" required error={errors.coGstNumber} fieldKey="coGstNumber">
-                {/* Editable even after GST Scrutiny entries exist — changing it on
-                    save propagates the new number to those records. Switching the
-                    COUNTRY away from India is what's blocked in that case. */}
                 <input
                   className={`acm-input ${errors.coGstNumber || gstStateMismatch || gstStatus === 'taken' ? 'acm-input-error' : ''} ${gstStatus === 'valid' && !gstStateMismatch ? 'acm-input-ok' : ''}`}
                   placeholder="e.g. 27AADCI6120M1ZH"
                   maxLength={15}
                   value={form.coGstNumber ?? ''}
-                  /* setF (not set) — skip the per-keystroke validator; the
-                     debounced effect above owns this field's validation. */
                   onChange={e => { setF('coGstNumber', e.target.value.toUpperCase().replace(/\s+/g, '')); clearErr('coGstNumber'); }}
                 />
                 {gstStatus === 'checking' && !gstStateMismatch && (
                   <div className="acm-gst-hint acm-gst-checking">Checking GST Number…</div>
                 )}
-                {/* Never claim "valid" while the number contradicts the chosen
-                    state — the two used to render together, so the field showed
-                    a green tick above a red mismatch. */}
                 {gstStatus === 'valid' && !gstStateMismatch && (
                   <div className="acm-gst-hint acm-gst-ok">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                     GST Number is valid
                   </div>
                 )}
-                {/* State-code mismatch. Suppressed when `errors.coGstNumber`
-                    already carries it (after a Save & Next) so the same
-                    sentence isn't printed twice under the field. */}
                 {gstStateMismatch && !errors.coGstNumber && (
                   <div className="acm-gst-hint acm-gst-taken">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -3546,17 +2230,9 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
               </Field>
             )}
           </div>
-          {/* Contact row. Domestic: Contact Person leads it. International: it
-              moved up into the GST slot, so Designation leads and Whatsapp fills
-              the fourth column instead of needing a row of its own. */}
           <div className="acm-row acm-row-4">
             {domestic && contactPersonField}
             <Field label="Designation" required error={errors.cpDesig} fieldKey="cpDesig">
-              {/* Free-text input — matches AddConsigneeModal. The
-                  /master/designations dropdown forced users to pick
-                  from a fixed list that rarely matched the real
-                  designation; backend stores cp_designation as a
-                  string up to 128 chars either way. */}
               <input
                 className={`acm-input ${errors.cpDesig ? 'acm-input-error' : ''}`}
                 placeholder="Type designation (e.g. Compliance Officer)"
@@ -3576,8 +2252,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
             <Field label="Email" required error={errors.cpEmail} fieldKey="cpEmail"><input className={errors.cpEmail ? 'acm-input-error' : ''} type="email" value={form.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
             {!domestic && whatsappField}
           </div>
-          {/* Whatsapp gets its own row ONLY for a domestic customer — for an
-              international one it already rode along in the contact row above. */}
           {domestic && (
             <div className="acm-row acm-row-1">
               {whatsappField}
@@ -3589,13 +2263,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
   );
 }
 
-/* ───── Stage 1 — Address & Contact Details (primary + additional) ─────
- * Single table that surfaces both the primary address (captured on the
- * Customer Identification tab) and any additional locations the user
- * has added here. The primary row is read-only from this table — the
- * edit button jumps back to the Identification tab and the delete
- * button is disabled, since the primary address is mandatory for a
- * customer. */
 type PrimaryRowData = {
   type: string; line: string; country: string; state: string; city: string; pin: string;
   cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: string;
@@ -3646,20 +2313,12 @@ function Stage1AdditionalLocations({ primary, locations, onAdd, onEdit, onDel, o
                     <td>{i + 1}</td>
                     <td>
                       <div className="acm-type-cell">
-                        {/* Long custom address types (e.g. "Warehouse —
-                            Mumbai Distribution Hub") get truncated to
-                            14 chars with hover tooltip — keeps the
-                            column narrow. */}
                         {l.type
                           ? <TruncatedCell text={l.type} max={14} />
                           : <span>—</span>}
                         {l.isPrimary && <span className="acm-primary-tag">Primary</span>}
                       </div>
                     </td>
-                    {/* Tight per-column truncation — keep the table to
-                        a predictable width on tablets / smaller laptop
-                        screens. Long values overflow into the Tooltip
-                        on hover (full text always available there). */}
                     <td><TruncatedCell text={l.line} max={16} /></td>
                     <td><TruncatedCell text={place} max={18} /></td>
                     <td><TruncatedCell text={contact} max={18} /></td>
@@ -3699,56 +2358,7 @@ function Stage1AdditionalLocations({ primary, locations, onAdd, onEdit, onDel, o
   );
 }
 
-/* ───── Segment-required reference banner ─────
- * Compact callout rendered above the Company DD table when the
- * selected segment's rule defines required due-diligence documents.
- * Pure-read — clicking nothing; the user still uses "+ Add Document"
- * to upload. Acts as a checklist so they know what to expect. */
-function SegmentRequiredBanner({ segmentName, label, rows }: {
-  segmentName: string;
-  label: string;
-  rows: { code:string; name:string; requirement:'M'|'O' }[];
-}) {
-  const mandCount = rows.filter(r => r.requirement === 'M').length;
-  return (
-    <div style={{
-      margin: '0 0 12px',
-      padding: '10px 12px',
-      borderRadius: 10,
-      background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)',
-      border: '1px solid #c4b5fd',
-      fontSize: 11.5,
-    }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, color:'#5b21b6', fontWeight:700, letterSpacing:0.2 }}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Segment "{segmentName}" requires {rows.length} {label} document{rows.length === 1 ? '' : 's'}
-          {mandCount > 0 && <span style={{ color:'#7c3aed' }}> · {mandCount} mandatory</span>}
-      </div>
-      <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
-        {rows.map(r => (
-          <span key={r.code} style={{
-            display:'inline-flex', alignItems:'center', gap:4,
-            padding:'3px 8px', borderRadius:999, fontSize:10.5, fontWeight:600,
-            background: r.requirement === 'M' ? '#7c3aed' : '#ffffff',
-            color:      r.requirement === 'M' ? '#ffffff' : '#5b21b6',
-            border:     r.requirement === 'M' ? 'none' : '1px solid #c4b5fd',
-          }}>
-            {r.requirement === 'M' ? '★ ' : ''}{r.name}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
-/* Stage 2 reference-row actions cell. Initial state shows a single
- * Upload button — clicking it opens the file picker. Once a file is
- * picked the cell switches to View / Download / Delete actions backed
- * by a blob URL the parent component holds onto. Delete revokes the
- * URL and drops the entry from the upload map, returning the cell to
- * its initial Upload state. */
-/* One segment-rule reference upload. The issued / expiry dates are the ones
- * captured in the upload popup — the same pair the Evidence Vault shows. */
 type SegRefUploadEntry = {
   file: File | null; url: string; name: string;
   issueDate?: string | null; expiryDate?: string | null;
@@ -3760,8 +2370,6 @@ function SegRefIssueDate({ value }: { value?: string | null }) {
     : <span className="acm-expiry-na">N/A</span>;
 }
 
-/* Same reading as the Evidence Vault's Expired At cell: past dates red, the
- * next 30 days amber, anything later green, with the day count on hover. */
 function SegRefExpiryDate({ value }: { value?: string | null }) {
   if (!value) return <span className="acm-expiry-na">N/A</span>;
   const due = new Date(value);
@@ -3778,7 +2386,6 @@ function SegRefExpiryDate({ value }: { value?: string | null }) {
 function SegmentRefRowActions({ refKey, docName, docCode, authority, expiry, category, uploads, setUploads, persistUpload }: {
   refKey: string;
   docName: string;
-  /** Shown read-only in the upload popup, exactly as the Evidence Vault does. */
   docCode: string;
   authority?: string | null;
   expiry?: string | null;
@@ -3789,16 +2396,6 @@ function SegmentRefRowActions({ refKey, docName, docCode, authority, expiry, cat
 }) {
   const toast = useToast();
   const uploaded = uploads[refKey];
-  /* Re-using `onPick` for both first-time upload and re-upload. We
-   * show the blob URL immediately for instant feedback, then fire the
-   * server upload — the persist callback swaps the blob URL for a
-   * permanent attachment_url once the row hits segment_doc_uploads.
-   *
-   * validateUpload() gate enforces the extension allow-list (PDF /
-   * JPG / PNG / DOC / DOCX) AND the 2 MB size cap up front, so a
-   * 50 MB junk file can never reach the persist call. The server
-   * runs the same check (mimes + max size) — this is just the early
-   * client-side bounce so the user gets immediate feedback. */
   const [uploadOpen, setUploadOpen] = useState(false);
   const onPick = (f: File | undefined, opts?: { issueDate?: string; expiryDate?: string }): boolean => {
     if (!f) return false;
@@ -3822,10 +2419,6 @@ function SegmentRefRowActions({ refKey, docName, docCode, authority, expiry, cat
   };
 
 
-  /* The Evidence Vault's upload popup. A document attached while creating the
-     customer now carries the same issued / expiry dates one attached from the
-     vault does — both write the same segment_doc_uploads row, and the two paths
-     used to disagree: the vault captured dates, this stage could not. */
   const popup = uploadOpen ? (
     <VaultUploadPopup
       doc={{
@@ -3880,34 +2473,19 @@ function SegmentRefRowActions({ refKey, docName, docCode, authority, expiry, cat
   );
 }
 
-/* ───── Stage 2 — KYC sub-tabs + doc table ───── */
-function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs, owners, loading, segmentName, segmentDocs, segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload, customerSaved, onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
+function Stage2KYC({ sub, setSub, page, setPage, search, setSearch,  docs, owners, loading,  segmentDocs, segmentRefUploads, setSegmentRefUploads, persistSegmentRefUpload,  onEditDoc, onDeleteDoc, onEditOwner, onDeleteOwner }:
   { sub: KycSubTab; setSub: (s: KycSubTab) => void;
     page: Record<KycSubTab, number>; setPage: (s: KycSubTab, p: number) => void;
     search: string; setSearch: (s: string) => void;
     onAdd: (s: KycSubTab) => void;
-    /** True while the segment-rule document catalog is loading from the DB —
-     *  drives the in-table shimmer. */
     loading?: boolean;
-    /** Live KYC data fetched on edit. `docs` covers both DD + TL — filter by `kind`.  */
     docs: { id:number; kind:'dd'|'tl'; name:string; license_number?:string|null; issuing_authority?:string|null; issue_date?:string|null; expiry_date?:string|null; attachment_path?:string|null; attachment_url?:string|null; attachment_name?:string|null; status?:string }[];
     owners: { id:number; owner_name:string; designation?:string|null; official_email?:string|null; phone_number?:string|null; id_proof_path?:string|null; id_proof_url?:string|null; address_proof_path?:string|null; address_proof_url?:string|null; photograph_path?:string|null; photograph_url?:string|null; status?:string }[];
-    /** Segment chosen on Stage 1 + the KYC/DD/TL master rows the
-     *  segment rule references. When the segment has a configured rule
-     *  these drive the Trade Licence sub-tab and the reference banner
-     *  on Company DD; otherwise fall back to the legacy static lists. */
     segmentName: string;
     segmentDocs: { kyc:{ id:number; code:string; name:string; authority?:string|null; expiry?:string|null; status?:string; requirement:'M'|'O' }[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
-    /** Per-row file picker state for the segment-rule reference rows.
-     *  Key is `${sub}::${doc.code}`; value carries the File + a blob URL
-     *  used by the View / Download actions. Lifted to the parent so it
-     *  survives sub-tab switches. */
     segmentRefUploads: Record<string, SegRefUploadEntry>;
     setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, SegRefUploadEntry>>>;
-    /** Fires the actual POST /segment-uploads/customer/{id} so the
-     *  Evidence Vault sees the attachment. */
     persistSegmentRefUpload: (refKey: string, file: File, docName: string, opts?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
-    /** True only when the parent customer has a db_id (i.e. has been saved). */
     customerSaved: boolean;
     onEditDoc:     (id:number) => void;
     onDeleteDoc:   (id:number) => void;
@@ -3916,15 +2494,6 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
   }) {
   const meta = KYC_TAB_META[sub];
 
-  // Source data depends on the sub-tab:
-  //   company-dd   → live docs filtered by kind='dd'; falls back to a
-  //                  segment-driven reference table when no live rows
-  //                  yet AND the segment rule defines DD documents.
-  //   owner-kyc    → live owners; falls back to a segment-driven KYC
-  //                  reference table when no owners yet AND the segment
-  //                  rule defines KYC documents.
-  //   trade-licence → segment-driven reference table (segmentDocs.tl)
-  //                  with a static TL_DOCS fallback.
   const isOwners      = sub === 'owner-kyc';
   const isTradeLegacy = sub === 'trade-licence';
   const kind: 'dd' | 'tl' = sub === 'company-dd' ? 'dd' : 'tl';
@@ -3945,15 +2514,6 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
       (o.designation || '').toLowerCase().includes(q) ||
       (o.official_email || '').toLowerCase().includes(q));
   }, [owners, q]);
-  /* Segment-rule reference list per sub-tab. The DD / KYC / TL master
-   * rows the active segment's rule references are surfaced here as a
-   * 7-column reference table — the same table layout the Trade Licence
-   * sub-tab has always used. Source per sub-tab:
-   *   company-dd   → segmentDocs.dd
-   *   owner-kyc    → segmentDocs.kyc
-   *   trade-licence → segmentDocs.tl, falling back to static TL_DOCS
-   * Each row is normalized to { code, name, authority, expiry, status }
-   * so a single render path serves all three tabs. */
   const segmentRefSource = useMemo(() => {
     const norm = (rows: any[]) => rows.map(d => ({
       code:      d.code,
@@ -3974,20 +2534,6 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
       d.name.toLowerCase().includes(q) ||
       (d.authority || '').toLowerCase().includes(q));
   }, [q, segmentRefSource]);
-  /* Which sub-tabs are currently rendering the 5-col reference table.
-   * For all three sub-tabs: only when there's no live data yet — once
-   * the user adds a real upload (or an owner), the live tables take
-   * over so saved entries are visible on re-edit. The previous
-   * `isTradeLegacy` flag was unconditional, which is why uploaded
-   * Trade Licence docs vanished from the Edit screen — they exist in
-   * customer_documents (kind='tl') but were hidden behind the static
-   * segmentRef reference rows. */
-  /* Owner KYC carries NO segmentDocs.kyc requirement (#91). It used to, and a
-     segment with no standard KYC docs then fell through to the owners table —
-     a different thing entirely, with Owner Name / Designation / ID Proof
-     headers. So the same tab showed one set of columns when empty and another
-     once documents existed. Document columns are the canonical ones; the
-     owners table is only right when there are actually owners to show. */
   const showSegmentRef =
        (isTradeLegacy            && filteredDocs.length === 0 && (segmentDocs.tl?.length ?? 0) > 0)
     || (sub === 'company-dd'     && filteredDocs.length === 0 && (segmentDocs.dd?.length ?? 0) > 0)
@@ -3997,9 +2543,6 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                   : isOwners       ? filteredOwners.length
                   : filteredDocs.length;
 
-  // Rows-per-page is now user-selectable (via the shared WorklistPager) instead
-  // of a fixed KYC_PER_PAGE, so these in-modal doc tables get the same proper
-  // pagination as the full-page lists.
   const [rpp, setRpp] = useState(KYC_PER_PAGE);
   const maxPage = Math.max(1, Math.ceil(totalRows / rpp));
   const curPage = Math.min(page[sub], maxPage);
@@ -4008,13 +2551,10 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
   const ownerSlice  = filteredOwners.slice(start, start + rpp);
   const legacySlice = filteredTradeLegacy.slice(start, start + rpp);
 
-  // Compose an auto-code prefix that mirrors the design (DD-001 etc.).
-  // Uses the row's sr position so codes stay stable per page render.
   const codeFor = (kindLetters: string, sr: number) => `${kindLetters}-${String(sr).padStart(3, '0')}`;
 
   return (
     <div className="acm-kyc-stage">
-      {/* Same tab rail as the Customers list (shared .dt-tabrail / .dt-tab). */}
       <div className="acm-subtabs-row">
         <div className="dt-tabrail hr-dt" data-accent="violet">
           <div className="dt-tabs" role="tablist">
@@ -4043,11 +2583,6 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
               <span className="acm-section-title">{meta.title}</span>
               <span className="acm-section-sub">{meta.sub}</span>
             </div>
-            {/* Stage 2 sub-tab headers no longer carry a "+ Add" pill —
-                the section is driven entirely by the segment-rule
-                reference table below. Per-row upload actions on each
-                reference row are still the path to attaching real
-                files in a future iteration. */}
           </div>
         </div>
 
@@ -4063,9 +2598,6 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
         <div className="acm-section-body acm-section-body-table">
           <div className="acm-table-wrap">
             {loading ? (
-              /* Segment-rule catalog still loading from the DB — show a table
-                 shimmer (real headers + shimmer rows) so the grid doesn't flash
-                 empty while the call is in flight. */
               <table className="acm-table">
                 <thead><tr>
                   {isOwners ? (
@@ -4084,13 +2616,6 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                 <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 8} /></tbody>
               </table>
             ) : showSegmentRef ? (
-              /* Segment-rule reference table — shared layout for
-                 Company DD, Owner KYC, and Trade Licence sub-tabs.
-                 Rows come from the segment's configured rule (or the
-                 static TL_DOCS fallback for Trade Licence when no rule
-                 exists). Upload + download icons stay design-only for
-                 now; the "+ Add" pill above still launches the wired
-                 add flow. */
               <table className="acm-table">
                 <thead><tr>
                   <th>Sr No</th><th>Auto Code</th><th>Document Name</th>
@@ -4113,23 +2638,16 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                         <td>{srPad}</td>
                         <td><span className="acm-doc-code">{dl.code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{(() => {
-                          // Long name → one line + ellipsis, full text on hover
-                          // (same reveal as the Segment column's single value).
                           const v = dl.name || '';
                           const span = <span style={{ display: 'inline-block', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{v || '—'}</span>;
                           return v.length > 32 ? <Tooltip label={v}>{span}</Tooltip> : span;
                         })()}</td>
                         <td><AuthorityBadges value={dl.authority} variant="violet" /></td>
-                        {/* Requirement — tells the user up-front whether this
-                            doc must be uploaded (Mandatory) or is optional. */}
                         <td>
                           {dl.status === 'mandatory'
                             ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
                             : <span className="acm-badge acm-badge--opt">Optional</span>}
                         </td>
-                        {/* Dates captured in the upload popup — the same pair the
-                            Evidence Vault shows. N/A until a file carrying them
-                            is attached. */}
                         <td><SegRefIssueDate value={up?.issueDate} /></td>
                         <td><SegRefExpiryDate value={up?.expiryDate} /></td>
                         <td>
@@ -4203,10 +2721,6 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                       s ? (() => { const [y, m] = s.split('-'); return `${m}/${y}`; })() : 'N/A';
                     const expLabel = fmtMonthYear(d.expiry_date);
                     const issLabel = fmtMonthYear(d.issue_date);
-                    // Date pill colour: issue dates are informational
-                    // (blue), expiry dates are contextual — green when
-                    // still in the future, red only after they've
-                    // actually expired, grey when missing.
                     const todayStr = new Date().toISOString().slice(0, 10);
                     const expClass = !d.expiry_date ? 'acm-expiry-na'
                       : d.expiry_date < todayStr ? 'acm-expiry-past'
@@ -4257,16 +2771,9 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
     </div>
   );
 }
-/* Legacy KycRow (rendered the old hardcoded DD/TL rows) was removed
-   once Stage 2 became data-driven and inlined its row rendering. */
 
 
 
-/* ───── Stage 3 — Trade Documents ─────
- * Per-row signature status. `status` mirrors clm_signature_requests.status
- * exactly so it stays consistent across the front- and back-end; the badge
- * style + label below is the only place where status → human-readable copy
- * lives. */
 type TdSigStatus = 'idle' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
 type TdDocRow = {
   id: string; db_id: number | null;
@@ -4274,50 +2781,15 @@ type TdDocRow = {
   status?: TdSigStatus;
   signature_request_id?: number;
   signed_url?: string;
-  /* Zoho Sign completion-certificate URL — populated by the polling
-   * effect from clm_signature_requests.certificate_path on completed
-   * rows, resolved through resolveFileUrl so the same value works on
-   * local + Azure. Drives the third action-column button when the
-   * row's status is 'completed'. */
   certificate_url?: string;
-  /* Set by the parent right before rendering — true when this row's
-   * signature_request_id is inside the active 60-second Resend
-   * cooldown. The button disables to stop a multi-doc bundle from
-   * firing one reminder per doc. */
   cooldownActive?: boolean;
-  /* Reminder counter + last-sent timestamp from the matching
-   * clm_signature_requests row. Drives the "× N" badge that appears
-   * inside the Resend button once at least one reminder has been
-   * dispatched. Polled live on the 15s tick + bumped optimistically
-   * the moment the user clicks Resend. */
   reminder_count?: number;
   last_reminder_sent_at?: string | null;
 };
 
-const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: string }> = {
-  idle:       { label: 'N/A',                 bg: '#f1f5f9', fg: '#94a3b8' },
-  inprogress: { label: 'Awaiting Signature',  bg: '#fef3c7', fg: '#92400e' },
-  completed:  { label: 'Signed',              bg: '#dcfce7', fg: '#166534' },
-  declined:   { label: 'Declined',            bg: '#fee2e2', fg: '#991b1b' },
-  recalled:   { label: 'Recalled',            bg: '#e0e7ff', fg: '#3730a3' },
-  expired:    { label: 'Expired',             bg: '#fee2e2', fg: '#7f1d1d' },
-};
 
 
 
-/* ───── KYC file slot ─────
- * Shared widget used by Stage 2's Add Document / License and Owner KYC
- * sub-modals. Renders one of four states:
- *   1. No file        → "Click to upload" drop zone
- *   2. New File picked → name chip + Preview (blob URL) + Remove + Replace
- *   3. Existing file   → name chip + Preview (server URL) + Remove (flags
- *                        backend to delete) + Replace
- *   4. Existing flagged for removal → muted notice + Undo + Replace
- *
- * The parent controls the actual state — this component is pure UI plus
- * validation. The parent reads `removeExisting` on submit and appends
- * `remove_<field>=1` to the FormData so the backend nulls the column
- * and deletes the file from disk. */
 function KycFileSlot({
   label, required, kind = 'doc', accept, value, existingUrl, existingName,
   removeExisting, error, fieldKey,
@@ -4339,8 +2811,6 @@ function KycFileSlot({
 }) {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  // Blob URL for the newly-picked file so Preview opens it inline.
-  // Revoke on unmount / file-change to avoid leaks.
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!value) { setBlobUrl(null); return; }
@@ -4369,11 +2839,6 @@ function KycFileSlot({
 
   const previewUrl = hasNew ? blobUrl : (showExisting ? existingUrl : null);
   const previewName = hasNew ? value!.name : existingName || 'attachment';
-  // Cache-bust the server URL on click so a freshly-uploaded replacement
-  // shows the new file instead of the browser's cached copy. The blob
-  // URL (newly-picked file) is already unique per File instance, no
-  // busting needed. Evaluated at click time (not render time) so the
-  // URL doesn't churn every re-render.
   const openPreview = () => {
     if (!previewUrl) return;
     let url = previewUrl;
@@ -4468,9 +2933,6 @@ function KycFileSlot({
           </div>
         </div>
       ) : (
-        /* Single-line drop zone — the full mime hint lives in a tooltip
-           so the widget can slot into a narrow 4-column grid without
-           wrapping. Matches the height of the other inputs in the row. */
         <Tooltip label={hintText}>
           <button type="button" className={`acm-fileslot-drop ${error ? 'acm-input-error' : ''}`} onClick={() => inputRef.current?.click()}>
             <span className="acm-fileslot-drop-icon">
@@ -4486,31 +2948,18 @@ function KycFileSlot({
   );
 }
 
-/* ───── Document / License sub-modal (Stage 2 — KYC) ─────
- * One form covers all three sub-tabs (Company DD / Owner KYC / Trade
- * Licence). The doc name dropdown is sourced from the master list for
- * the currently-active sub-tab; the `+` button next to it toggles the
- * field to a free-text input so the user can capture a custom name
- * the master doesn't have yet (e.g. a one-off trade licence).
- *
- * Save is a stub for now — KYC doc storage isn't DB-backed yet. When
- * it lands, swap the onSave body for the real POST and the rest of
- * this form is already in shape. */
 type NewDoc = {
-  name: string;         // Document/License Name
-  license: string;      // License Number
-  authority: string;    // Issuing Authority
-  issueDate: string;    // YYYY-MM-DD
-  expiryDate: string;   // YYYY-MM-DD
+  name: string;
+  license: string;
+  authority: string;
+  issueDate: string;
+  expiryDate: string;
   attachment: File | null;
 };
 function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved, onDocTypeAdded }:
   { sub: KycSubTab; masters: MasterLists; customerId: number | null;
-    /** When set the form opens pre-filled with this row and saves via PUT. */
     editing?: { id: number; name: string; license_number?: string | null; issuing_authority?: string | null; issue_date?: string | null; expiry_date?: string | null; attachment_name?: string | null; attachment_url?: string | null; attachment_path?: string | null } | null;
     onClose: () => void;
-    /** Fires with the saved server row (already shaped by the API) so
-     *  the parent can prepend / replace it in the table state. */
     onSaved: (row: any) => void;
     onDocTypeAdded: (opt: MasterOpt) => void }) {
   const toast = useToast();
@@ -4520,28 +2969,16 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     authority:  editing.issuing_authority ?? '',
     issueDate:  editing.issue_date       ?? '',
     expiryDate: editing.expiry_date      ?? '',
-    attachment: null,   // existing file is shown as link; only set if user picks a new one
+    attachment: null,
   } : { name: '', license: '', authority: '', issueDate: '', expiryDate: '', attachment: null });
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  // When editing, the parent's row may already carry an uploaded
-  // attachment. Track a "remove on save" flag so we can null it
-  // server-side via remove_attachment=1 without forcing the user to
-  // re-upload a placeholder. Reset whenever a new file is picked.
   const [removeAttachment, setRemoveAttachment] = useState(false);
-  // Inline "Add Document Type" master popup (opens from the `+` next
-  // to the doc-name dropdown). Stays modal — never navigates away.
   const [typeModal, setTypeModal] = useState(false);
   const set = <K extends keyof NewDoc>(k: K, v: NewDoc[K]) => {
     setD(prev => ({ ...prev, [k]: v }));
     setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
   };
-  // Dropdown source: the Document Type master (managed in the Master
-  // module under "Document Types"). The currently-selected value is
-  // prepended as a synthetic option so legacy / since-renamed values
-  // still render correctly on edit. The "+" button next to the
-  // dropdown opens the master page in a new tab — the user adds the
-  // new type there, returns, and the fresh option appears here.
   const docOptions = (() => {
     const base = masters.documentTypes.map(x => ({ value: x.name, label: x.name }));
     if (d.name && !base.some(o => o.value === d.name)) {
@@ -4558,30 +2995,17 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     if (!d.authority.trim()) next.authority = 'Issuing authority is required';
     if (!d.issueDate)        next.issueDate = 'Issue date is required';
     else {
-      // Backstop in case a stale picker / paste lets a future issue
-      // date through — a document can't be issued in the future.
       const today = new Date().toISOString().slice(0, 10);
       if (d.issueDate > today) next.issueDate = 'Issue date cannot be in the future';
     }
     if (!d.expiryDate)       next.expiryDate = 'Expiry date is required';
     else {
-      // Expiry must not be earlier than today — a document that has
-      // already expired isn't useful and shouldn't be captured against
-      // an active KYC record.
       const today = new Date().toISOString().slice(0, 10);
       if (d.expiryDate < today) next.expiryDate = 'Expiry date cannot be in the past';
     }
-    // Cross-field check: expiry must not be earlier than issue date.
-    // Dates come from MasterDatePicker as YYYY-MM-DD strings, which
-    // sort lexicographically — direct string compare is safe.
     if (d.issueDate && d.expiryDate && d.expiryDate < d.issueDate) {
       next.expiryDate = 'Expiry date must be on or after the issue date';
     }
-    /* Attachment is mandatory for Company Due Diligence documents — the
-     * uploaded proof is the whole point of the KYC checklist. Trade
-     * Licence keeps the attachment optional (some licences are number-
-     * only references). On edit, an existing server-side attachment
-     * (still in place) counts as satisfying the requirement. */
     if (sub === 'company-dd') {
       const hasNew      = !!d.attachment;
       const hasExisting = !!editing?.attachment_url && !removeAttachment;
@@ -4597,8 +3021,6 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
       return;
     }
 
-    // Use multipart/form-data so the attachment can ride alongside the
-    // text fields. The server validates `kind` against ['dd','tl'].
     const kind = sub === 'company-dd' ? 'dd' : 'tl';
     const fd = new FormData();
     fd.append('kind', kind);
@@ -4610,18 +3032,12 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     if (d.attachment) {
       fd.append('attachment', d.attachment);
     } else if (removeAttachment && editing?.attachment_url) {
-      // No new pick + user clicked Remove on the existing file →
-      // backend nulls the column and deletes the disk file.
       fd.append('remove_attachment', '1');
     }
     fd.append('status', 'Active');
 
     setSaving(true);
     try {
-      // Edit → POST to the same path (Laravel accepts both POST and PUT
-      // on the update route; POST is used here so multipart files ride
-      // along with text fields. The route also accepts a `_method=PUT`
-      // sentinel if we want strict semantics later.)
       const url = editing
         ? `/customers/${customerId}/documents/${editing.id}`
         : `/customers/${customerId}/documents`;
@@ -4633,7 +3049,6 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors;
       if (apiErrors && typeof apiErrors === 'object') {
-        // Map server keys back to the local field names.
         const map: Record<string, string> = {
           name: 'name', license_number: 'license', issuing_authority: 'authority',
           issue_date: 'issueDate', expiry_date: 'expiryDate', attachment: 'name',
@@ -4644,7 +3059,6 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
           next2[localKey] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
-        // Toast suppressed — inline red errors handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document. Try again.');
       }
@@ -4682,9 +3096,6 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
                     type="button"
                     className="acm-doc-plus-btn"
                     aria-label="Add new document type"
-                    /* Opens the master's Add Document Type form inline
-                       on top of this sub-modal — never navigates away
-                       so the user's in-progress license stays intact. */
                     onClick={() => setTypeModal(true)}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -4701,10 +3112,6 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
               <input className={errs.authority ? 'acm-input-error' : ''} value={d.authority} onChange={e => set('authority', e.target.value)} placeholder="Enter issuing authority" />
             </Field>
             <Field label="Issuing Date" required error={errs.issueDate}>
-              {/* maxDate caps the picker at the earlier of today and
-                  the chosen expiry — a document can never be issued in
-                  the future, and the two date fields can never
-                  disagree with each other. */}
               <MasterDatePicker
                 value={d.issueDate}
                 maxDate={(() => {
@@ -4714,18 +3121,12 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
                 invalid={!!errs.issueDate}
                 onChange={(v: string) => {
                   set('issueDate', v);
-                  // Auto-clear an expiry that's now earlier than the new
-                  // issue date so the form stays internally consistent.
                   if (d.expiryDate && v && d.expiryDate < v) set('expiryDate', '');
                 }}
                 placeholder="DD/MM/YYYY"
               />
             </Field>
             <Field label="Expiry Date" required error={errs.expiryDate}>
-              {/* minDate forces expiry ≥ the later of (issue date, today)
-                  — a document can't be issued in the future, and it
-                  can't already be expired. Submit-time validator below
-                  is the backstop. */}
               <MasterDatePicker
                 value={d.expiryDate}
                 minDate={(() => {
@@ -4739,10 +3140,6 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
             </Field>
             <KycFileSlot
               label="Attachment"
-              /* Company Due Diligence requires the proof file — the
-                 whole point of the DD checklist is the uploaded
-                 document, so the red asterisk + submit-time validator
-                 enforce it. Trade Licence keeps it optional. */
               required={sub === 'company-dd'}
               kind="doc"
               accept=".pdf,.jpg,.jpeg,.png"
@@ -4777,7 +3174,7 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
           onClose={() => setTypeModal(false)}
           onSaved={(opt) => {
             onDocTypeAdded(opt);
-            set('name', opt.name);   // auto-select the freshly-created type
+            set('name', opt.name);
             setTypeModal(false);
           }}
         />
@@ -4786,18 +3183,6 @@ function DocumentSubModal({ sub, masters, customerId, editing, onClose, onSaved,
   );
 }
 
-/* ───── Inline "Add Document Type" master popup ─────
- * Rendered on top of the Add Document / License sub-modal. POSTs to
- * /master/document_type — the canonical Document Types master — so
- * the new row immediately shows up everywhere that consumes the
- * master (Stage 2 dropdown here, master listing page, anywhere else).
- *
- * Fields mirror the master schema:
- *   title         (required text)
- *   applicable_to (Customer | Vendor | Both | Internal)
- *   is_mandatory  (Yes | No)
- *   status        (Active | Inactive — required, defaults to Active)
- */
 function AddDocumentTypeMasterModal({ onClose, onSaved }:
   { onClose: () => void; onSaved: (opt: MasterOpt) => void }) {
   const toast = useToast();
@@ -4824,16 +3209,8 @@ function AddDocumentTypeMasterModal({ onClose, onSaved }:
         is_mandatory:  isMandatory  || null,
         status,
       });
-      // The master endpoint returns the created row — wrap it as a
-      // MasterOpt so the parent can append straight into the
-      // documentTypes list and auto-select the new entry.
       const row = data?.data ?? data;
       onSaved({ id: Number(row?.id ?? 0), name: String(row?.title ?? title.trim()) });
-      // The cached customer bundle is now stale — it doesn't contain the
-      // doctype we just created. Bust the sessionStorage entry so the next
-      // modal open refetches fresh data. The in-memory documentTypes list
-      // is updated by the parent via onSaved() above, so the CURRENT
-      // dropdown shows the new entry instantly regardless of this bust.
       bustCustomerMasterBundle();
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors;
@@ -4843,7 +3220,6 @@ function AddDocumentTypeMasterModal({ onClose, onSaved }:
           next2[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
-        // Toast suppressed — inline red errors handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document type. Try again.');
       }
@@ -4936,15 +3312,9 @@ function AddDocumentTypeMasterModal({ onClose, onSaved }:
   );
 }
 
-/* ───── Owner Due Diligence sub-modal ─────
- * Stage 2 → Owner KYC tab uses a different form than the generic
- * Document / License flow: an owner row needs identity proofs and
- * the owner's contact details, not a license number + expiry. Same
- * visual chrome as the other sub-modals (purple gradient header,
- * dark-mode aware) — only the field set changes. */
 type NewOwnerDD = {
   ownerName:     string;
-  designation:   string;       // master-backed
+  designation:   string;
   officialEmail: string;
   phoneNumber:   string;
   idProof:       File | null;
@@ -4953,11 +3323,8 @@ type NewOwnerDD = {
 };
 function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
   { masters: MasterLists; customerId: number | null;
-    /** When set the form opens pre-filled and saves via update. */
     editing?: { id: number; owner_name: string; designation?: string | null; official_email?: string | null; phone_number?: string | null; id_proof_path?: string | null; id_proof_url?: string | null; id_proof_name?: string | null; address_proof_path?: string | null; address_proof_url?: string | null; address_proof_name?: string | null; photograph_path?: string | null; photograph_url?: string | null; photograph_name?: string | null } | null;
     onClose: () => void;
-    /** Fires with the saved server row so the parent can prepend / replace it
-     *  in the Owner KYC table. */
     onSaved: (row: any) => void }) {
   const toast = useToast();
   const [d, setD] = useState<NewOwnerDD>(() => editing ? {
@@ -4965,8 +3332,6 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     designation:   editing.designation     ?? '',
     officialEmail: editing.official_email  ?? '',
     phoneNumber:   editing.phone_number    ?? '',
-    // Existing files are still on the server. Only set these if the
-    // user picks a new file — empty FormData fields are skipped below.
     idProof: null, addressProof: null, photograph: null,
   } : {
     ownerName: '', designation: '', officialEmail: '', phoneNumber: '',
@@ -4974,9 +3339,6 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
   });
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  // Track per-slot "remove existing" flags. The submit appends
-  // remove_<field>=1 when these are set and no new file has been
-  // picked, so the backend nulls the column + deletes the disk file.
   const [removeIdProof,      setRemoveIdProof]      = useState(false);
   const [removeAddressProof, setRemoveAddressProof] = useState(false);
   const [removePhotograph,   setRemovePhotograph]   = useState(false);
@@ -4993,11 +3355,6 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     else if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/.test(d.officialEmail))   next.officialEmail = 'Enter a valid email';
     if (!d.phoneNumber.trim())                          next.phoneNumber  = 'Phone number is required';
     else if (!/^\+?[0-9\s-]{7,15}$/.test(d.phoneNumber)) next.phoneNumber = 'Phone must be 7–15 digits';
-    // Files are required only when creating a new owner. On edit the
-    // existing files stay on disk until the user picks a replacement.
-    // If the user explicitly removed an existing file (without picking
-    // a replacement) we also fail validation — owners must have all
-    // three proofs at all times.
     const has = (file: File | null, existing: string | null | undefined, remove: boolean) =>
       !!file || (!!existing && !remove);
     if (!has(d.idProof,      editing?.id_proof_url,      removeIdProof))      next.idProof      = 'ID proof is required';
@@ -5005,7 +3362,6 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
     if (!has(d.photograph,   editing?.photograph_url,    removePhotograph))   next.photograph   = 'Photograph is required';
     setErrs(next);
     if (Object.keys(next).length > 0) {
-      // Toast suppressed — inline red errors mark each offending field.
       return;
     }
 
@@ -5029,8 +3385,6 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
 
     setSaving(true);
     try {
-      // On edit → POST to the update route (Laravel accepts both POST
-      // and PUT; we use POST so multipart files ride along cleanly).
       const url = editing
         ? `/customers/${customerId}/owners/${editing.id}`
         : `/customers/${customerId}/owners`;
@@ -5052,7 +3406,6 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
           next2[localKey] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
-        // Toast suppressed — inline red errors handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the owner. Try again.');
       }
@@ -5060,9 +3413,6 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
       setSaving(false);
     }
   };
-  // Per-slot meta — picks accept attribute + which "remove" flag the
-  // KycFileSlot's onRemoveExisting / onRestoreExisting toggles, plus
-  // the existing-file URL/name resolved from the editing prop.
   const SLOT_META: Record<'idProof' | 'addressProof' | 'photograph', {
     label: string; kind: FileKind; accept: string;
     existingUrl: string | null | undefined; existingName: string | null | undefined;
@@ -5162,50 +3512,26 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
   );
 }
 
-/* ───── Location sub-modal (merged Address + Contact form) ─────
- * `disallowedTypes` excludes address types already claimed elsewhere
- * (e.g. "Registered Office" when the primary address is already the
- * registered office — a customer can only have one). The currently
- * editing row's own type is still shown so existing data isn't hidden
- * from the user mid-edit. */
 function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], primaryCountry, onClose, onSave }:
   { editing: LocationRow | null; masters: MasterLists; disallowedTypes?: string[];
-    /** Emails already used by other addresses (primary + other locations)
-     *  on this customer — used to block duplicates within the same form
-     *  before the user can save and run into a backend conflict. */
     existingEmails?: string[];
     existingPhones?: string[];
-    /** The customer's PRIMARY address country. A domestic (India) customer's
-     *  extra addresses are India-only (country locked); an international
-     *  customer's extras are international-only (India removed from the list). */
     primaryCountry?: string;
     onClose: () => void; onSave: (rec: Omit<LocationRow, 'id'>) => void }) {
   const primaryDomestic = isDomesticCountry(primaryCountry);
   const primarySet = !!(primaryCountry ?? '').trim();
-  const toast = useToast();
-  // For new locations, skip the default "Registered Office" prefill if
-  // that type is disallowed — otherwise the user lands on a value
-  // they can't actually save with.
   const initialType = editing
     ? editing.type
     : (disallowedTypes?.includes(DEFAULT_ADDRESS_TYPE) ? '' : DEFAULT_ADDRESS_TYPE);
   const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
-    // Domestic customer → extra addresses are India too, so pre-fill + lock it.
     type: initialType, line: '', country: primaryDomestic ? 'India' : '', state: '', city: '', pin: '',
     cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: 'yes' as 'yes' | 'no' | '',
   });
-  // Strip disallowed types, but keep whatever the row currently has
-  // so an existing value never silently disappears from its own
-  // dropdown.
   const availableAddressTypes = useMemo(() => {
     if (!disallowedTypes || disallowedTypes.length === 0) return masters.addressTypes;
     return masters.addressTypes.filter(t => !disallowedTypes.includes(t.name) || t.name === d.type);
   }, [masters.addressTypes, disallowedTypes, d.type]);
   const [errs, setErrs] = useState<Record<string, string>>({});
-  /* Per-field validator — single source of truth shared with submit().
-   * Returns the error message for one field (or null when clean) so
-   * the inline red can fire on each keystroke instead of waiting for
-   * the user to click Save. */
   const locFieldRule = (k: string, dd: typeof d): string | null => {
     switch (k) {
       case 'type':
@@ -5221,7 +3547,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         if (!dd.country) return 'Select country';
         return null;
       case 'state':
-        // Same rule as the primary address — required for every country.
         if (!dd.state) {
           return countryHasStates(masters, dd.country)
             ? 'Select state'
@@ -5235,7 +3560,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        // Same country-driven rule as the primary address — see pinError().
         return pinError(dd.pin, dd.country) ?? null;
       case 'cpName':
         if (!dd.cpName.trim()) return 'Contact name required';
@@ -5245,7 +3569,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpContact':
         if (!dd.cpContact.trim()) return 'Phone required';
-        // India → exactly 10 digits (+91 shown, not stored); else flexible 7–15.
         if (isDomesticCountry(dd.country)) { if (!/^\d{10}$/.test(dd.cpContact)) return 'Enter a valid 10-digit mobile number'; }
         else if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7–15 digits';
         if (existingPhones.includes(dd.cpContact.trim()))
@@ -5274,10 +3597,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
       return next;
     });
   };
-  /* Real-time duplicate refresh — keep the existing useEffect so the
-   * inline error updates when the parent's existingPhones/Emails props
-   * change after open (e.g. user added another address). Uses the same
-   * messages as locFieldRule so set() and this effect stay in sync. */
   useEffect(() => {
     const phone = (d.cpContact || '').trim();
     const email = (d.cpEmail   || '').trim().toLowerCase();
@@ -5300,8 +3619,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
   const states = selectedCountry
     ? masters.states.filter(s => s.country_id === selectedCountry.id)
     : [];
-  /* Keeps State's required-ness, placeholder and disabled state in step —
-     see countryHasStates(). */
   const locHasStates = countryHasStates(masters, d.country);
   const submit = () => {
     const next: Record<string, string> = {};
@@ -5312,7 +3629,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     }
     setErrs(next);
     if (Object.keys(next).length === 0) { onSave(d); return; }
-    // Toast suppressed — inline red errors handle this.
   };
   return (
     <div className="acm-sub-modal">
@@ -5334,13 +3650,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Country" required error={errs.country}>
-              {/* Single setD for country+state — the old `set('country'); set('state','')`
-                  pair each rebuilt from a stale `d`, so the 2nd call reverted the
-                  country and the State stayed locked (QA: country/state not working). */}
               <MasterSelect
                 value={d.country}
-                /* Domestic customer → India only (locked). International customer
-                   → every country EXCEPT India. No primary yet → all countries. */
                 options={
                   primaryDomestic
                     ? masters.countries.filter(c => c.name === 'India').map(c => ({ value: c.name, label: c.name }))
@@ -5352,8 +3663,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 placeholder={primaryDomestic ? 'India' : 'Select country'}
                 invalid={!!errs.country}
                 onChange={v => {
-                  // Switching to India scrubs the contact number to bare 10 digits
-                  // for the +91-prefixed field.
                   const nextTel = isDomesticCountry(v) ? (d.cpContact || '').replace(/\D/g, '').slice(0, 10) : d.cpContact;
                   const nd = { ...d, country: v, state: '', cpContact: nextTel } as typeof d;
                   setD(nd);
@@ -5365,7 +3674,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                   });
                 }} />
             </Field>
-            {/* Mirrors the primary address — see countryHasStates(). */}
             <Field label="State" required error={errs.state}>
               <MasterSelect
                 value={d.state}
@@ -5386,9 +3694,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
             <Field label="Designation" required error={errs.cpDesignation}>
-              {/* Free-text input — matches AddConsigneeModal's location
-                  sub-modal. Backend stores cp_designation as a string
-                  up to 128 chars either way. */}
               <input
                 className={`acm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
                 placeholder="e.g. Sales Manager"
@@ -5425,11 +3730,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
   );
 }
 
-/* ───── Compact inline "label : value" pair ─────
- * Single line; the label is muted, value is the prominent dark text.
- * Long values truncate with an ellipsis and surface the full text on
- * hover via the project-wide Tooltip — keeps the grid columns lined
- * up no matter how long an address or company name gets. */
 function ReadInline({ label, value, span, node: rich, tip }: { label: string; value?: string | null; span?: number; node?: React.ReactNode; tip?: React.ReactNode }) {
   const v = (value ?? '').toString().trim();
   const node = (
@@ -5438,16 +3738,10 @@ function ReadInline({ label, value, span, node: rich, tip }: { label: string; va
       <span className={`acm-hs-inline-val ${!v ? 'is-empty' : ''}`}>{v ? (rich ?? v) : '—'}</span>
     </div>
   );
-  // Tooltip only when there's actual content to disambiguate.
-  // Tooltip text at the table's 500 weight, not the pill's default 600.
   const tipLabel = <span style={{ fontWeight: 500 }}>{tip ? <>{label}: {tip}</> : `${label}: ${v}`}</span>;
   return v ? <Tooltip label={tipLabel}>{node}</Tooltip> : node;
 }
 
-/* ───── Stage 1 read-only summary ─────
- * Dense horizontal layout — every Stage 1 field shown as a tight
- * "Label : Value" pair laid out in a 4-column grid. No card chrome;
- * the parent history panel already frames the content. */
 function HistoryStage1({ form, locations, customerId, segments = [] }: { form: any; locations: LocationRow[]; customerId?: string; segments?: MasterOpt[] }) {
   const segItems = (form.coSeg ?? []).map((v: string) => segments.find(s => String(s.id) === String(v))).filter(Boolean) as MasterOpt[];
   const wa = form.cpWa === 'yes' ? 'Yes' : form.cpWa === 'no' ? 'No' : '';
@@ -5483,30 +3777,7 @@ function HistoryStage1({ form, locations, customerId, segments = [] }: { form: a
     </div>
   );
 }
-function HistoryStage2({ ddCount, ownerCount, tlCount }:
-  { ddCount: number; ownerCount: number; tlCount: number }) {
-  const total = ddCount + ownerCount + tlCount;
-  return (
-    <div className="acm-hs-block">
-      <div className="acm-hs-header">
-        <div className="acm-hs-num"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg></div>
-        <div className="acm-hs-title">Stage 2 — KYC / Due Diligence</div>
-        <div className="acm-hs-divider" />
-      </div>
-      <div className="acm-hs-group">
-        <div className="acm-hs-group-label">Document Summary</div>
-        <div className="acm-hs-stats">
-          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{ddCount}</div><div className="acm-hs-stat-lbl">DD Docs</div></div>
-          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{ownerCount}</div><div className="acm-hs-stat-lbl">Owner KYC</div></div>
-          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{tlCount}</div><div className="acm-hs-stat-lbl">Trade Lic.</div></div>
-          <div className="acm-hs-stat"><div className="acm-hs-stat-num">{total}</div><div className="acm-hs-stat-lbl">Total</div></div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-/* ───── Reusable field wrapper ───── */
 function Field({ label, required, children, error, fieldKey }: { label: string; required?: boolean; children: React.ReactNode; error?: string; fieldKey?: string }) {
   return (
     <div className="acm-field" data-field={fieldKey}>
@@ -5517,11 +3788,6 @@ function Field({ label, required, children, error, fieldKey }: { label: string; 
   );
 }
 
-/* Attachment link with cache-busting. The browser caches /storage/
- * URLs aggressively, so a freshly-uploaded replacement at the same
- * URL slot would otherwise show the old image. Busting on click (not
- * in href) keeps middle-click / copy-link working with a stable URL,
- * while a left-click forces a fresh fetch. */
 function BustedLink({ url, path, label = 'View', className = 'acm-attach-link' }:
   { url?: string | null; path?: string | null; label?: string; className?: string }) {
   const href = url || (path ? resolveFileUrl(path) : '');
@@ -5543,10 +3809,6 @@ function BustedLink({ url, path, label = 'View', className = 'acm-attach-link' }
   );
 }
 
-/* Truncated table cell. Empty → muted dash. Short → render as-is.
- * Long → trim with an ellipsis and wrap in the project's portal-based
- * Tooltip so the full text shows on hover (clears table overflow
- * clipping, matches the look used everywhere else in the project). */
 function TruncatedCell({ text, max = 28, mono = false }: { text: string; max?: number; mono?: boolean }) {
   const t = (text ?? '').trim();
   if (!t) return <span style={{ color: '#9ca3af' }}>—</span>;
@@ -5561,45 +3823,16 @@ function TruncatedCell({ text, max = 28, mono = false }: { text: string; max?: n
   );
 }
 
-/* ───── Scoped CSS (root: .acm-root) ───── */
 const SCOPED_CSS = `
 @keyframes acm-cust-spin { to { transform: rotate(360deg); } }
 .acm-cust-spin { animation: acm-cust-spin .9s linear infinite; transform-origin: 50% 50%; }
-
-/* Edit-mode hydration progress strip — thin indeterminate bar that
-   sits above the Stage 1 form while /customers/:id resolves with
-   the full record. Replaces the previous full-form skeleton which
-   blocked the user from seeing the pre-filled list-row data. */
-.acm-hydrate-strip {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 14px;
-  background: #faf7ff;
-  border: 1px solid #e9e6f5;
-  border-radius: 10px;
-}
-.acm-hydrate-strip-text {
-  font-size: 11.5px; font-weight: 600; color: #6d28d9; letter-spacing: .02em;
-}
-.acm-hydrate-strip-bar {
-  flex: 1; height: 4px; border-radius: 999px;
-  background: linear-gradient(90deg,
-    rgba(124,58,237,.10) 0%, rgba(124,58,237,.10) 30%,
-    rgba(124,58,237,.55) 50%,
-    rgba(124,58,237,.10) 70%, rgba(124,58,237,.10) 100%);
-  background-size: 200% 100%;
-  animation: acm-hydrate-slide 1.2s linear infinite;
-}
 @keyframes acm-hydrate-slide {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-[data-bs-theme="dark"] .acm-hydrate-strip { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); }
-[data-bs-theme="dark"] .acm-hydrate-strip-text { color: #c4b5fd; }
-
 
 @keyframes acmSlideUp { from { opacity: 0; transform: translateY(24px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
-/* Saving lock — blankets the whole card so no field/step/button can be edited mid-save. */
 .acm-save-lock {
   position: absolute; inset: 0; z-index: 60;
   display: flex; flex-direction: column; gap: 12px;
@@ -5620,12 +3853,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-save-lock-spinner { border-color: rgba(167, 139, 250, 0.22); border-top-color: #a78bfa; }
 [data-bs-theme="dark"] .acm-save-lock-text { color: #c4b5fd; }
 
-/* Header — solid violet gradient banner. Bold brand color carries
-   the modal identity; white text + glassy icon box on top. */
- 
 .acm-close {
-  /* Square (rounded) to match the project-standard close button, not a circle
-     (QA #32). */
   width: 34px; height: 34px; border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.25);
   background: rgba(255,255,255,0.12);
@@ -5636,23 +3864,6 @@ const SCOPED_CSS = `
   position: relative; z-index: 1;
 }
 .acm-close:hover { background: rgba(255,255,255,0.22); transform: rotate(90deg); }
-
-/* ── Hydration feedback ───────────────────────────────────────────
- * A small "Loading…" pill in the modal header + an indeterminate
- * progress bar under the header so users get clear active-loading
- * feedback the moment they click Edit. Shimmer skeletons below fill
- * in the scaffold — these two cues confirm "yes, fetching now". */
-.acm-loading-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 5px 11px; border-radius: 999px;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.30);
-  color: #fff;
-  font-size: 11.5px; font-weight: 600; letter-spacing: .01em;
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
-  position: relative; z-index: 1;
-  animation: acmPillFade .2s ease both;
-}
 @keyframes acmPillFade { from { opacity: 0; transform: translateY(-2px) } to { opacity: 1; transform: none } }
 .acm-loading-spinner {
   display: inline-flex; width: 12px; height: 12px;
@@ -5662,8 +3873,6 @@ const SCOPED_CSS = `
 @media (prefers-reduced-motion: reduce) { .acm-loading-spinner { animation-duration: 2.4s; } }
 @keyframes acmSpin { to { transform: rotate(360deg); } }
 
-
-/* Stepper */
 .acm-connector-line { width: 100%; height: 3px; background: #e2e8f0; border-radius: 3px; position: relative; overflow: hidden; }
 .acm-connector-line::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, #8b5cf6, #6d28d9); border-radius: 3px; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.4,0,.2,1); }
 .acm-connector-line[data-done="1"]::after { transform: scaleX(1); }
@@ -5678,8 +3887,6 @@ const SCOPED_CSS = `
 .acm-step-active .acm-step-num { background: linear-gradient(135deg, #6d28d9, #4c1d95); color: #fff; }
 .acm-step-active .acm-step-title { color: #2e1065; }
 .acm-step-active .acm-step-sub { color: #6d28d9; }
-/* Completed stage — GREEN with a ✓ badge (Figma). Distinct from the
-   purple ACTIVE stage so "done vs current" reads at a glance. */
 .acm-step-done { background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); border: 2px solid #34d399; box-shadow: 0 6px 20px rgba(16,185,129,.18), 0 1px 0 rgba(255,255,255,.85) inset; }
 .acm-step-done .acm-step-badge { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 5px 12px rgba(22,163,74,.42); }
 .acm-step-done .acm-step-num { background: #fff; color: #16a34a; box-shadow: 0 1px 3px rgba(22,163,74,.30); }
@@ -5695,30 +3902,15 @@ const SCOPED_CSS = `
 .acm-step-pending .acm-step-title { color: #94a3b8; font-weight: 700; }
 .acm-step-pending .acm-step-sub { color: #cbd5e1; }
 
-/* Tabs */
 .acm-tab { padding: 7px 18px; border-radius: 10px; border: 1.5px solid transparent; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
 .acm-tab-on { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
 .acm-tab-off { background: #fff; color: #6d28d9; border-color: #c4b5fd; }
 .acm-tab-off:hover { background: #ede9fe; border-color: #7c3aed; }
 
-/* Body */
-/* KYC stage (DD / Owner KYC / Trade Licence) — stretch the table card to fill
-   the modal's fixed height so the pager pins to the bottom instead of floating
-   with a big empty gap under a short list. Scoped so Stage 1 is untouched. */
 .acm-kyc-stage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .acm-kyc-stage .acm-section-purple { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-/* Flex column so the TABLE grows and the pager (its last sibling) pins to the
-   bottom — without this the pager floated mid-card with empty space beneath. */
 .acm-kyc-stage .acm-section-body-table { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-/* Keep the rows area at least ~3 rows tall so on a SHORT / small laptop screen
-   the table never collapses to just its header + scrollbar. It still grows to
-   fill on taller screens; when the screen is too short the modal body scrolls. */
 .acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 1 1 auto; min-height: 168px; }
-/* Short viewports (small laptops, ~768px tall): the flex-fill table can't leave
-   room for the header + stepper + tabs + footer, so the modal stops scrolling and
-   the rows get clipped. Below this height, drop the flex-fill — the KYC stage
-   flows at its natural height and the modal BODY scrolls, while the table keeps a
-   bounded scroll of its own so every row is reachable. */
 @media (max-height: 820px) {
   .acm-kyc-stage,
   .acm-kyc-stage .acm-section-purple,
@@ -5729,7 +3921,6 @@ const SCOPED_CSS = `
 .acm-body::-webkit-scrollbar-track { background: #ede9fe; border-radius: 10px; }
 .acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }
 
-/* Section card */
 .acm-section-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; background: linear-gradient(135deg,#ede9fe,#ddd6fe); color: #7c3aed; border: 1px solid #c4b5fd; }
 .acm-section-title { font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #5b21b6; }
 .acm-section-sub { font-size: 11px; color: #9ca3af; font-weight: 500; display: inline-block; margin-left: 6px; }
@@ -5737,7 +3928,6 @@ const SCOPED_CSS = `
 .acm-section-head-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; }
 .acm-section-head-row > div:nth-child(2) { flex: 1; min-width: 0; }
 
-/* Forms */
 .acm-field label { font-size: 10px; font-weight: 800; letter-spacing: .09em; color: #6b7280; text-transform: uppercase; margin-bottom: 5px; }
 .acm-req { color: #ef4444; font-weight: 700; }
 .acm-field input, .acm-field select, .acm-field textarea {
@@ -5748,7 +3938,6 @@ const SCOPED_CSS = `
 }
 .acm-field input:focus, .acm-field select:focus, .acm-field textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.14); }
 .acm-field input::placeholder { color: #c4b5fd; font-size: 11.5px; }
-/* India mobile: fixed +91 country-code chip glued to the number input. */
 .acm-phone-wrap { display: flex; align-items: stretch; border: 1.5px solid #e0d9f7; border-radius: 9px; background: #fff; overflow: hidden; transition: border-color .18s, box-shadow .18s; }
 .acm-phone-wrap:focus-within { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.14); }
 .acm-phone-wrap.acm-phone-invalid { border-color: #ef4444; background: #fef2f2; }
@@ -5756,57 +3945,18 @@ const SCOPED_CSS = `
 .acm-phone-wrap input { border: none !important; border-radius: 0 !important; box-shadow: none !important; background: transparent !important; }
 [data-bs-theme="dark"] .acm-phone-wrap { background: #131c33; border-color: rgba(167,139,250,0.50); }
 [data-bs-theme="dark"] .acm-phone-cc { background: #1c2540; color: #e2e8f0; border-right-color: rgba(167,139,250,0.35); }
-/* Inline validation: red ring around the input + helper text underneath.
-   The MasterSelect dropdown already renders its own invalid state when
-   passed invalid={true}, so this rule only targets native inputs. */
 .acm-field input.acm-input-error { border-color: #ef4444; background: #fef2f2; }
 .acm-field input.acm-input-error:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,.15); }
 .acm-field-error { color: #ef4444; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
 
-/* Validation messages must not resize their grid row.
-   .acm-row is a CSS grid with the default stretch alignment, so a message
-   appearing under ONE field grew every cell in that row and shoved the rest
-   of the form down; clearing it snapped everything back. Customer Segment
-   made this obvious because its message toggles on every select/deselect -
-   and its trade-type mismatch text wraps to three lines in a quarter-width
-   column, so the jump was large.
-
-   The message is lifted out of flow into the 14px gap that already sits under
-   every row, so the field box is identical whether or not it is in error and
-   NOTHING moves. Deliberately no reserved padding: adding a strip under every
-   field would have grown each of this form's rows and pushed the modal
-   hundreds of pixels taller for a state that is usually empty.
-
-   One line, ellipsised, because the gap only fits one - a wrapping message
-   would ride over the next row's label. The full text stays on hover via the
-   title attribute Field() sets alongside it. */
-/* The message takes real space and wraps.
- *
- * It used to be absolutely positioned and clipped to one line, so the row
- * height never moved when an error appeared. The cost was that any message
- * longer than the field got an ellipsis — "The primary address.cp email has
- * already been ta…", "GST Number must be 15 characters (you've entered 8).
- * Format: 2 digi…" — which is exactly the half that tells the user what to
- * do. The full text was only on hover, and nobody hovers a red line they
- * cannot read.
- *
- * In flow it can wrap to as many lines as it needs: the field grows, the grid
- * row grows with it, and it can no longer land on the next row's label —
- * which is the only reason it was taken out of flow. The row does shift down
- * as the message appears; that is the normal cost and the readable trade. */
 .acm-row .acm-field > .acm-field-error,
 .acm-row .acm-field > .acm-field-note {
   line-height: 1.35;
 }
 
-/* Neutral counterpart to .acm-field-error — explains a field that is locked
-   rather than wrong (e.g. Country on a customer already mapped to a lead), so
-   it must not read as a validation failure. */
 .acm-field-note { display: block; color: #94a3b8; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; cursor: help; }
 [data-bs-theme="dark"] .acm-field-note { color: #94a3b8; }
 
-/* GST Number debounced-check feedback — green "valid" confirmation mirrors
-   the red .acm-field-error styling so both read as one system. */
 .acm-field input.acm-input-ok { border-color: #10b981; background: #f0fdf4; }
 .acm-field input.acm-input-ok:focus { box-shadow: 0 0 0 3.5px rgba(16,185,129,.15); }
 .acm-gst-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
@@ -5818,14 +3968,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-gst-checking { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-gst-taken { color: #fca5a5; }
 
-/* ── Stage 1 read-only summary (shown on Stage 2 / Stage 3) ─────────
-   Dense horizontal layout — every Stage 1 field rendered as a tight
-   "Label : Value" pair in a 4-column grid. No card chrome; the
-   collapsible history panel above already frames the block. */
-/* Comfortable breathing room around the dense 4-column grid so the
-   data isn't kissing the panel borders. Horizontal padding lines up
-   with the panel header's 16px gutter; vertical padding gives the
-   first/last rows space from the divider line. */
 .acm-hs-mirror { padding: 14px 18px 16px; }
 .acm-hs-grid {
   display: grid;
@@ -5836,8 +3978,6 @@ const SCOPED_CSS = `
 .acm-hs-inline {
   display: flex; align-items: baseline; gap: 6px;
   font-size: 12px; min-width: 0;
-  /* Hover affordance — subtle bg tint so the user knows the row is
-     hover-interactive (Tooltip shows full value). */
   cursor: default; padding: 1px 2px; border-radius: 4px;
   transition: background .12s;
 }
@@ -5849,96 +3989,15 @@ const SCOPED_CSS = `
 .acm-hs-inline-val {
   color: #6d28d9; font-weight: 500;
   line-height: 1.4; min-width: 0; flex: 1 1 auto;
-  /* Truncate long values to one line with an ellipsis. Full text is
-     still available on hover via the project-wide Tooltip. */
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .acm-hs-inline-val.is-empty { color: #cbd5e1; font-weight: 500; }
 
-/* Additional Address & Contact entries inside the history panel —
-   each row from the Stage 1 second tab gets its own outlined block
-   so the user can review every captured warehouse/billing address
-   without leaving the Stage 2/3 view. */
-.acm-hs-extras {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px dashed #ddd6fe;
-}
-.acm-hs-extras-head {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 8px;
-}
-.acm-hs-extras-title {
-  font-size: 11px; font-weight: 800; letter-spacing: .08em;
-  text-transform: uppercase; color: #5b21b6;
-}
-.acm-hs-extras-badge {
-  font-size: 10px; font-weight: 700;
-  padding: 2px 8px; border-radius: 999px;
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  color: #5b21b6; border: 1px solid #c4b5fd;
-}
-.acm-hs-extras-item {
-  background: rgba(124,58,237,0.04);
-  border: 1px solid rgba(124,58,237,0.18);
-  border-radius: 10px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-}
-.acm-hs-extras-item:last-child { margin-bottom: 0; }
-.acm-hs-extras-row {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 8px;
-}
-.acm-hs-extras-num {
-  font-size: 10px; font-weight: 800; color: #5b21b6;
-  background: #ede9fe; border: 1px solid #c4b5fd;
-  padding: 2px 7px; border-radius: 999px;
-}
-.acm-hs-extras-type {
-  font-size: 12px; font-weight: 700; color: #3b0764;
-  letter-spacing: .02em;
-}
-.acm-hs-extras-grid { row-gap: 8px; }
-
-/* Tiny section heading above each history block — visually separates
-   the Customer Identification grid from the Address & Contact list. */
-.acm-hs-section-label {
-  font-size: 11px; font-weight: 800; letter-spacing: .08em;
-  text-transform: uppercase; color: #5b21b6;
-  margin-bottom: 10px;
-}
-.acm-hs-section-label:not(:first-child) { margin-top: 14px; }
-
-/* "Primary" tag inline next to the address-type label on the first
-   row of the address list. Distinguishes the form-sourced primary
-   entry from the user-added additionals. */
-.acm-hs-extras-primary {
-  display: inline-block;
-  padding: 2px 8px; border-radius: 999px;
-  background: linear-gradient(135deg, #d1fae5, #a7f3d0);
-  color: #065f46; border: 1px solid #6ee7b7;
-  font-size: 9.5px; font-weight: 800;
-  letter-spacing: .04em; text-transform: uppercase;
-}
-
-[data-bs-theme="dark"] .acm-hs-section-label { color: #ddd6fe; }
-[data-bs-theme="dark"] .acm-hs-extras-primary { background: rgba(16,185,129,0.22); color: #a7f3d0; border-color: rgba(110,231,183,0.40); }
-
-/* Dark-mode variant. */
 [data-bs-theme="dark"] .acm-hs-inline:hover { background: rgba(167,139,250,0.10); }
 [data-bs-theme="dark"] .acm-hs-inline-lbl { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-hs-inline-val { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-hs-inline-val.is-empty { color: #475569; }
-[data-bs-theme="dark"] .acm-hs-extras { border-top-color: rgba(167,139,250,0.25); }
-[data-bs-theme="dark"] .acm-hs-extras-title { color: #ddd6fe; }
-[data-bs-theme="dark"] .acm-hs-extras-badge { background: rgba(124,58,237,0.30); color: #ede9fe; border-color: rgba(167,139,250,0.45); }
-[data-bs-theme="dark"] .acm-hs-extras-item { background: rgba(124,58,237,0.10); border-color: rgba(167,139,250,0.25); }
-[data-bs-theme="dark"] .acm-hs-extras-num { background: rgba(167,139,250,0.22); color: #ddd6fe; border-color: rgba(167,139,250,0.45); }
-[data-bs-theme="dark"] .acm-hs-extras-type { color: #f5f3ff; }
 
-/* Narrower viewports — collapse the dense 4-col layout to 2 cols so
-   labels still fit beside their values on a 3:2 ratio. */
 @media (max-width: 900px) {
   .acm-hs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -5946,7 +4005,6 @@ const SCOPED_CSS = `
 .acm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; color: #6b7280; cursor: pointer; letter-spacing: .04em; user-select: none; }
 .acm-radio input[type="radio"] { accent-color: #7c3aed; width: 14px; height: 14px; cursor: pointer; }
 
-/* Footer */
 .acm-footer {
   padding: 14px 22px; border-top: 1px solid rgba(167,139,250,.35);
   background: linear-gradient(180deg, rgba(255,255,255,.6) 0%, rgba(237,233,254,.92) 100%);
@@ -5966,17 +4024,8 @@ const SCOPED_CSS = `
 .acm-btn-next { border: none; background: linear-gradient(135deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 100%); color: #fff; box-shadow: 0 6px 18px -4px rgba(109,40,217,.55), 0 2px 4px rgba(76,29,149,.25), inset 0 1px 0 rgba(255,255,255,.28); }
 .acm-btn-next:hover { transform: translateY(-1.5px); box-shadow: 0 10px 24px -4px rgba(109,40,217,.65); }
 
-/* Sub-tabs (Stage 2) */
 .acm-subtabs-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-/* Tab height matches the Customers list rail. */
 .acm-subtabs-row .dt-tabrail .dt-tab { height: 38px; }
-.acm-subtab-pill { padding: 7px 18px; border-radius: 10px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
-.acm-subtab-pill:hover:not(.is-active) { background: #ede9fe; }
-.acm-subtab-pill.is-active { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
-
-/* Nested tabs (Stage 3) — pill style, matches Stage 2's .acm-subtab-pill
-   so the two stages read as one design language. */
-.acm-nested-tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .acm-nested-tab { padding: 7px 18px; border-radius: 10px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .2s; white-space: nowrap; }
 .acm-nested-tab:hover:not(.is-active) { background: #ede9fe; }
 .acm-nested-tab.is-active { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
@@ -5984,7 +4033,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-nested-tab:hover:not(.is-active) { background: rgba(167,139,250,0.10); }
 [data-bs-theme="dark"] .acm-nested-tab.is-active { background: linear-gradient(135deg,#6d28d9,#4c1d95); color: #fff; border-color: #7c3aed; }
 
-/* Doc toolbar */
 .acm-doc-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 16px; background: linear-gradient(180deg, #faf7ff, #f5efff); border-bottom: 1px solid #ede9fe; }
 .acm-doc-search { position: relative; flex: 1; max-width: 340px; min-width: 200px; }
 .acm-doc-search input { width: 100%; padding: 8px 14px 8px 36px !important; border: 1.5px solid #e0d9f7 !important; border-radius: 22px !important; font-size: 12px !important; background: #fff !important; font-family: inherit; color: #3b0764; outline: none; box-sizing: border-box; }
@@ -5992,9 +4040,6 @@ const SCOPED_CSS = `
 .acm-doc-search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #a78bfa; pointer-events: none; }
 .acm-doc-count { font-size: 11.5px; color: #6d28d9; font-weight: 700; white-space: nowrap; letter-spacing: .02em; }
 
-/* Tables — cap height + scroll the table body when there are lots of
-   rows so the modal footer never gets pushed off-screen. Header strip
-   stays sticky so the user always sees which column they're on. */
 .acm-table-wrap {
   width: 100%;
   max-width: 100%;
@@ -6005,12 +4050,6 @@ const SCOPED_CSS = `
   scrollbar-width: thin;
   scrollbar-color: #a78bfa #ede9fe;
 }
-/* The scroller had a styled thumb but NO track rule, and a thumb at 35%
-   alpha. Styling ::-webkit-scrollbar takes the bar over completely, so
-   with no track it painted a faint violet sliver on nothing — on the
-   Stage 2 document list people read that as "there is no scrollbar" and
-   never found the rows below the fold. Same track + thumb the modal body
-   (.acm-body) already uses, so the two scrollers match. */
 .acm-table-wrap::-webkit-scrollbar { height: 8px; width: 8px; }
 .acm-table-wrap::-webkit-scrollbar-track { background: #ede9fe; border-radius: 999px; }
 .acm-table-wrap::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 999px; }
@@ -6018,11 +4057,6 @@ const SCOPED_CSS = `
 .acm-table-wrap::-webkit-scrollbar-corner { background: #ede9fe; }
 .acm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12.5px; min-width: 900px; font-family: var(--font-sans); }
 .acm-table thead tr { background: linear-gradient(180deg, #faf7ff, #f5efff); }
-/* Sticky header — position:sticky needs an OWN background on the <th>
-   (the <tr>'s background doesn't follow a positioned cell), and
-   border-collapse:separate so the bottom border doesn't scroll up
-   with the rows. z-index:5 keeps the header above any positioned
-   badge/pill inside row cells. */
 .acm-table thead th {
   position: sticky;
   top: 0;
@@ -6035,9 +4069,6 @@ const SCOPED_CSS = `
   letter-spacing: .07em;
   color: #5b21b6;
   text-transform: uppercase;
-  /* Box-shadow stand-in for the bottom border — a real border on a
-     sticky cell scrolls away with the row above it; a box-shadow
-     stays glued to the cell's bottom edge. */
   box-shadow: inset 0 -1.5px 0 0 #e9d5ff;
   white-space: nowrap;
 }
@@ -6050,21 +4081,15 @@ const SCOPED_CSS = `
   font-weight: 500;
   line-height: 1.45;
 }
-/* Same type as the Customers list: every data cell 11.5 / 500. The Actions
-   column's buttons and icon glyphs keep their own sizing. */
 .acm-table tbody td:not(:last-child) *:not(i):not(svg):not(svg *):not(.seg-reg-badge) {
   font-size: 11.5px;
   font-weight: 500;
 }
-/* Auto-code chips (DD-004 …) read like the list's ID chip: mono 11 / 600. */
 .acm-table tbody td:not(:last-child) .acm-doc-code.acm-doc-code {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 11px;
   font-weight: 600;
 }
-/* Customer Segment dropdown: list rows at the table's weight (the ticked row
-   was 600), in DM Sans — the menu is portalled to <body>, where the theme's
-   Rubik would otherwise apply. */
 .master-select-menu.acm-seg-menu .master-select-item { font-family: var(--font-sans); font-weight: 500; }
 .master-select-menu.acm-seg-menu .master-select-item.active { font-weight: 500; }
 .acm-table tbody tr:last-child td { border-bottom: none; }
@@ -6072,7 +4097,6 @@ const SCOPED_CSS = `
 .acm-empty-row td { text-align: center; color: #9ca3af; padding: 26px 14px !important; font-size: 11.5px; font-style: italic; background: #fafaff; }
 .acm-empty-row strong { color: #6d28d9; font-style: normal; }
 
-/* Pills + chips */
 .acm-doc-code {
   display: inline-block;
   padding: 4px 10px;
@@ -6086,15 +4110,6 @@ const SCOPED_CSS = `
   letter-spacing: .02em;
   white-space: nowrap;
 }
-.acm-status-toggle { display: inline-flex; gap: 6px; align-items: center; }
-.acm-status-mandatory, .acm-status-optional { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: 10.5px; font-weight: 700; border: 1px solid transparent; }
-.acm-status-mandatory { background: #f5f3ff; color: #9ca3af; border-color: #e5e1f3; }
-.acm-status-mandatory.is-on { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; border-color: #86efac; }
-.acm-status-optional { background: #fff; color: #9ca3af; border-color: #e5e1f3; }
-.acm-status-optional.is-on { background: #fff; color: #374151; border-color: #9ca3af; font-weight: 700; }
-.acm-status-active { display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700; background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #15803d; border: 1px solid #86efac; }
-/* Requirement + completion badges — theme-aware (Stage 2 upload table + Stage 3
-   review). Light defaults plus dark overrides so they never wash out. */
 .acm-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid transparent; white-space:nowrap; }
 .acm-badge--mand   { background:#dcfce7; color:#15803d; border-color:#86efac; }
 .acm-badge--opt    { background:#f3f4f6; color:#4b5563; border-color:#e5e7eb; }
@@ -6106,7 +4121,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-badge--done   { background:rgba(16,185,129,0.18); color:#6ee7b7; border-color:rgba(16,185,129,0.40); }
 [data-bs-theme="dark"] .acm-badge--miss-m { background:rgba(239,68,68,0.18); color:#fca5a5; border-color:rgba(239,68,68,0.40); }
 [data-bs-theme="dark"] .acm-badge--miss-o { background:rgba(255,255,255,0.06); color:#94a3b8; border-color:rgba(255,255,255,0.12); }
-.acm-expiry-na, .acm-expiry-date, .acm-expiry-varies, .acm-expiry-future, .acm-expiry-past, .acm-expiry-soon, .acm-issue-date {
+.acm-expiry-na, .acm-expiry-future, .acm-expiry-past, .acm-expiry-soon, .acm-issue-date {
   display: inline-block;
   padding: 4px 12px;
   border-radius: 20px;
@@ -6120,13 +4135,7 @@ const SCOPED_CSS = `
 .acm-expiry-future { background: linear-gradient(135deg,#d1fae5,#a7f3d0); color: #047857; border: 1px solid #6ee7b7; }
 .acm-expiry-past   { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
 .acm-expiry-soon   { background: linear-gradient(135deg,#fef3c7,#fde68a); color: #92400e; border: 1px solid #fcd34d; }
-/* Legacy class — used by the design-only Trade Licence placeholder
-   table. Kept around so old data still renders consistently with the
-   new contextual colours; treats any non-empty date as future. */
-.acm-expiry-date   { background: linear-gradient(135deg,#d1fae5,#a7f3d0); color: #047857; border: 1px solid #6ee7b7; }
-.acm-expiry-varies { background: linear-gradient(135deg,#fef3c7,#fde68a); color: #92400e; border: 1px solid #fcd34d; }
 
-/* Action buttons */
 .acm-row-actions { display: inline-flex; gap: 4px; }
 .acm-row-btn { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #e0d9f7; background: #fff; color: #7c3aed; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
 .acm-row-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
@@ -6140,25 +4149,18 @@ const SCOPED_CSS = `
 .acm-doc-action-view { border-color: #c4b5fd; background: linear-gradient(135deg, #f5f3ff, #ede9fe); color: #6d28d9; }
 .acm-doc-action-view:hover { background: linear-gradient(135deg, #a78bfa, #7c3aed); color: #fff; }
 
-/* Whatsapp pills in tables */
 .acm-pill-yes, .acm-pill-no { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 10px; font-weight: 700; }
 .acm-pill-yes { background: linear-gradient(135deg,#dcfce7,#bbf7d0); color: #15803d; border: 1px solid #86efac; }
 .acm-pill-no { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
 
-/* Primary row marker in the Address & Contact Details table — the
-   row sourced from Stage 1's "PRIMARY ADDRESS & CONTACT PERSON"
-   section. Subtle violet wash + a small Primary tag so users can
-   distinguish it from rows added via "+ Add More Address & Contact". */
 .acm-primary-row td { background: linear-gradient(180deg, #faf7ff, #f5efff); }
 .acm-primary-row:hover td { background: #f3edff; }
 .acm-type-cell { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .acm-primary-tag { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #5b21b6; border: 1px solid #c4b5fd; }
 
-/* Add pill button */
 .acm-add-pill { display: inline-flex; align-items: center; gap: 5px; padding: 6px 14px; border-radius: 20px; border: 1px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .18s; white-space: nowrap; box-shadow: 0 2px 6px rgba(109,40,217,.1); flex-shrink: 0; }
 .acm-add-pill:hover { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; transform: translateY(-1px); }
 
-/* ── GST Scrutiny: header button + popup ─────────────────────────── */
 .acm-header-right { display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; flex-shrink: 0; }
 .acm-gst-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.55); background: rgba(255,255,255,0.18); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: all .18s; white-space: nowrap; position: relative; z-index: 1; }
 .acm-gst-btn:hover:not(.is-disabled) { background: rgba(255,255,255,0.30); transform: translateY(-1px); }
@@ -6168,10 +4170,7 @@ const SCOPED_CSS = `
 
 .acm-gst-overlay { position: fixed; inset: 0; background: rgba(17,12,40,0.55); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 1200; padding: 24px; }
 .acm-gst-card { width: min(920px, 96vw); max-height: 88vh; display: flex; flex-direction: column; background: var(--vz-card-bg, #fff); border: 0.5px solid #fff; border-radius: 18px; box-shadow: 0 24px 70px rgba(0,0,0,0.35); overflow: hidden; }
-/* Full-bleed gradient header — rounds with the card, no white inset line
-   or gloss band (those read as a white frame on top/left/right). */
 .acm-gst-head { position: relative; overflow: hidden; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 17px 22px; background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%); color: #fff; border-top-left-radius: 16px; border-top-right-radius: 16px; }
-/* Subtle dotted texture only — no white highlights bleeding to the edges. */
 .acm-gst-head::before { content: ''; position: absolute; inset: 0; opacity: .35; pointer-events: none; background-image: radial-gradient(rgba(255,255,255,.16) 1px, transparent 1px); background-size: 16px 16px; }
 .acm-gst-head-left { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; }
 .acm-gst-head-icon { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(255,255,255,.3), rgba(255,255,255,.12)); border: 1px solid rgba(255,255,255,.38); box-shadow: 0 5px 14px rgba(0,0,0,.18), 0 1px 0 rgba(255,255,255,.4) inset; }
@@ -6181,17 +4180,7 @@ const SCOPED_CSS = `
 .acm-gst-head-actions .acm-add-pill { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.55); color: #fff; box-shadow: none; }
 .acm-gst-head-actions .acm-add-pill:hover { background: #fff; color: #6d28d9; border-color: #fff; }
 .acm-gst-body { padding: 20px 22px 22px; overflow-y: auto; }
-/* Borderless form — the fields sit directly on the body (no boxed panel). */
 .acm-gst-form { padding: 0; margin: 0; }
-/* The tail row rides the SAME three-column track as the row above it.
-   Split 50/50 it had its own seam landing in the middle of the row above,
-   so the two rows read as two unrelated grids stacked on each other.
-   Red Flags takes the last two columns — it holds up to 300 characters,
-   while the invoice reference beside it is a short code, and one column is
-   still wide enough for the long "Previous Non-GST 2A Reflected Invoice"
-   label to stay on a single line.
-   The breakpoints follow .acm-row-3 (2 columns, then 1) so the rows keep
-   lining up as the popup narrows. */
 .acm-gst-form-card .acm-gst-form .acm-row-2 { grid-template-columns: repeat(3, 1fr); }
 .acm-gst-form-card .acm-gst-form .acm-row-2 > .acm-field:last-child { grid-column: span 2; }
 @media (max-width: 900px) {
@@ -6203,84 +4192,38 @@ const SCOPED_CSS = `
 }
 .acm-gst-form-card .acm-gst-form .acm-field label { white-space: nowrap; }
 .acm-gst-form-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 18px; }
-/* Keep form inputs solid white even in the error state (red border only). */
 .acm-gst-card .acm-field input.acm-input-error { background: #fff; }
 .acm-btn-ghost { padding: 8px 18px; border-radius: 9px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .acm-btn-ghost:hover:not(:disabled) { background: #ede9fe; }
-/* inline-flex + gap so a spinner can sit beside the label while saving. */
 .acm-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .acm-btn-primary:disabled, .acm-btn-ghost:disabled { opacity: 0.6; cursor: not-allowed; }
 .acm-gst-table-wrap { border: 1px solid #ece9f6; border-radius: 12px; overflow: hidden; }
-/* Pager lives INSIDE the table card — flush footer strip, no gap, corners
-   clipped by the wrap's overflow:hidden. */
 .acm-gst-table-wrap .wl-pager { margin-top: 0; border-radius: 0; }
 .acm-gst-table { width: 100%; border-collapse: collapse; }
-.acm-gst-table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
-.acm-gst-table th { text-align: left; background: transparent; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #8b7bb8; padding: 10px 12px; border-bottom: 1.5px solid #ece7f8; white-space: nowrap; }
-.acm-gst-table td { padding: 9px 12px; border-top: 1px solid #f0eef8; font-size: 12px; color: #475569; }
+.acm-gst-table thead tr { background: transparent; }
+.acm-gst-table th { text-align: left; padding: 10px 12px; white-space: nowrap; }
+.acm-gst-table td { padding: 9px 12px; }
+.acm-gst-table td .acm-gst-status { font-size: 11.5px; font-weight: 500; }
 .acm-gst-table th:first-child, .acm-gst-table td:first-child { padding-left: 16px; }
 .acm-gst-table th:last-child, .acm-gst-table td:last-child { padding-right: 16px; }
 .acm-gst-srno-col { width: 64px; }
-.acm-gst-sr { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 6px; border-radius: 7px; background: #f5f1fe; color: #6d28d9; border: 1px solid #e2d4fa; font-size: 11px; font-weight: 800; font-family: 'DM Mono', ui-monospace, monospace; }
-.acm-gst-empty { text-align: center; color: #9ca3af; padding: 26px 12px !important; }
+.acm-gst-empty { text-align: center; color: #9ca3af; padding: 26px 12px !important; white-space: normal !important; }
 .acm-gst-status { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
 .acm-gst-status-active { background: #dcfce7; color: #15803d; }
 .acm-gst-status-inactive { background: #fee2e2; color: #b91c1c; }
 .acm-gst-status-suspended { background: #fef3c7; color: #b45309; }
 .acm-gst-status-cancelled { background: #fee2e2; color: #b91c1c; }
-.acm-gst-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
-.acm-gst-pager-info { font-size: 11.5px; font-weight: 600; color: #8b7bb8; }
-.acm-gst-pager-btns { display: inline-flex; align-items: center; gap: 8px; }
-.acm-gst-page-cur { font-size: 12px; font-weight: 700; color: #6d28d9; min-width: 48px; text-align: center; }
-.acm-gst-page-btn { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid #e0d9f7; background: #fff; color: #6d28d9; font-size: 16px; font-weight: 700; line-height: 1; cursor: pointer; transition: all .15s; }
-.acm-gst-page-btn:hover:not(:disabled) { background: #ede9fe; border-color: #c4b5fd; }
-.acm-gst-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-[data-bs-theme="dark"] .acm-gst-pager-info { color: #a78bfa; }
-[data-bs-theme="dark"] .acm-gst-page-cur { color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-gst-page-btn { background: rgba(167,139,250,0.10); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 
-/* The light build outlines the card in solid #fff, which against a white page
-   is invisible and only rounds the edge. On the dark page it became a lit ring
-   around the whole popup — brighter than anything inside it. Same violet the
-   rest of this popup's dark chrome uses, at a strength that reads as an edge
-   rather than a highlight. */
 [data-bs-theme="dark"] .acm-gst-card { background: #0f1729; border-color: rgba(167,139,250,0.22); }
-/* No wash on the form in dark mode. The light build states the intent above —
-   "borderless form, the fields sit directly on the body" — but the dark rule
-   gave it a violet fill, and because .acm-gst-body pads it in by 22px the
-   result was a lighter rectangle floating inside a darker frame instead of one
-   surface running out to the card border. The fields carry their own fills;
-   the sheet behind them does not need one. */
 [data-bs-theme="dark"] .acm-gst-table-wrap { border-color: rgba(167,139,250,0.25); }
-[data-bs-theme="dark"] .acm-gst-table thead tr { background: rgba(124,58,237,.12); }
-[data-bs-theme="dark"] .acm-gst-table th { background: transparent; color: #c4b5fd; border-bottom-color: rgba(167,139,250,.2); }
-[data-bs-theme="dark"] .acm-gst-sr { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .acm-gst-table thead tr { background: transparent; }
 [data-bs-theme="dark"] .acm-gst-table td { color: #cbd5e1; border-top-color: rgba(167,139,250,0.15); }
 [data-bs-theme="dark"] .acm-btn-ghost { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
-/* Cancel's hover had no dark counterpart, so the light rule's #ede9fe kept
-   applying — a pale lavender fill under text that stays #c4b5fd, because the
-   light hover only sets a background. One step up from the resting tint
-   instead. */
 [data-bs-theme="dark"] .acm-btn-ghost:hover:not(:disabled) { background: rgba(167,139,250,0.22); border-color: rgba(167,139,250,0.55); color: #ddd6fe; }
 
-/* Pagination */
-/* WorklistPager carries its own band (background + layout), so this wrapper is
-   just a full-width block — the old flex/border/background here double-drew a
-   half-width line above the pager. */
 .acm-doc-pag-wrap { display: block; padding: 0; border: 0; background: transparent; }
-/* Every row in this section is inset by 16px — the section head, the search
-   toolbar, and each table cell. The shared pager band carries its own 14px,
-   so it alone hung 2px proud on both sides, and its 12px top margin floated
-   it off the table it reports on. Match the column, close the gap. */
 .acm-doc-pag-wrap .wl-pager { margin-top: 0; padding-left: 16px; padding-right: 16px; }
-.acm-doc-pag-info { font-size: 11px; color: #6b7280; font-weight: 500; }
-.acm-pagination { display: inline-flex; gap: 4px; }
-.acm-page-btn { min-width: 28px; height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid #e5e1f3; background: #fff; color: #6b7280; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s; }
-.acm-page-btn:hover:not(.is-active):not(:disabled) { border-color: #c4b5fd; color: #6d28d9; background: #f5f3ff; }
-.acm-page-btn.is-active { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border-color: #7c3aed; }
-.acm-page-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* Attachment link */
 .acm-attach-link {
   display: inline-flex; align-items: center; gap: 5px;
   color: #7c3aed; font-family: inherit;
@@ -6290,60 +4233,22 @@ const SCOPED_CSS = `
 }
 .acm-attach-link:hover { color: #5b21b6; text-decoration: underline; }
 
-/* Trade docs table */
-.acm-td-table col.col-srno { width: 52px; }
-.acm-td-table col.col-docname { width: 30%; }
-.acm-td-table col.col-sig { width: 220px; }
-.acm-td-table col.col-status { width: 130px; }
-.acm-td-table col.col-actions { width: 90px; }
-.acm-td-table td.td-status, .acm-td-table th.th-status, .acm-td-table td.td-actions, .acm-td-table th.th-actions { text-align: center; }
-.acm-td-check-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-family: inherit; font-size: 9px; font-weight: 800; letter-spacing: .1em; color: #6b7280; text-transform: uppercase; user-select: none; }
-.acm-td-check-label input[type="checkbox"] { accent-color: #7c3aed; width: 15px; height: 15px; margin: 0; cursor: pointer; }
-.acm-td-cell-check { display: flex; align-items: center; gap: 10px; }
-.acm-td-cell-check > input[type="checkbox"] { width: 15px; height: 15px; accent-color: #7c3aed; cursor: pointer; margin: 0; }
-.acm-btn-resend { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; border: 1.5px solid #7c3aed; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-/* Reminder-count badge embedded in the Resend pill. White-on-violet so
-   it reads against the existing button gradient without competing for
-   attention with the icon + label. */
-.acm-remind-count { display: inline-flex; align-items: center; justify-content: center;
-  margin-left: 2px; min-width: 18px; padding: 0 5px; height: 16px;
-  border-radius: 999px; background: rgba(255,255,255,.22); color: #fff;
-  font-family: 'Geist Mono', ui-monospace, monospace; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; line-height: 1; }
-.acm-btn-send { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 20px; border: 1.5px solid #7c3aed; background: #fff; color: #6d28d9; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
-.acm-btn-send:hover { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
-.acm-td-actions { display: flex; justify-content: center; align-items: center; gap: 14px; padding: 16px; border-top: 1px solid #ede9fe; background: linear-gradient(180deg, #faf7ff, #f5efff); flex-wrap: wrap; }
-.acm-btn-purple-lg { padding: 9px 20px; border-radius: 10px; border: none; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; box-shadow: 0 4px 12px rgba(109,40,217,.38); }
-.acm-btn-purple-lg-out { padding: 9px 20px; border-radius: 10px; border: 1.5px solid #c4b5fd; background: #fff; color: #6d28d9; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
-.acm-btn-purple-lg-out:hover { background: #ede9fe; }
-
-/* Sub-modals */
 .acm-sub-modal { position: fixed; inset: 0; z-index: 10001; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(20,20,30,.45); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .acm-sub-card { width: 100%; max-width: 880px; max-height: calc(100vh - 36px); background: #fff; border: 1px solid #e9e6f5; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 56px -16px rgba(15,15,30,.32), 0 8px 24px rgba(15,15,30,.14); animation: acmSlideUp .3s cubic-bezier(.34,1.56,.64,1); }
 .acm-sub-header { background: linear-gradient(110deg, #7c3aed 0%, #8b5cf6 60%, #a78bfa 100%); padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
 .acm-sub-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; }
-.acm-sub-title-accent { color: #fff; }
 .acm-sub-close { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.4); background: rgba(255,255,255,.15); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
 .acm-sub-close:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
 .acm-sub-body { flex: 1; padding: 20px 24px; overflow-y: auto; background: linear-gradient(180deg, #fff 0%, #fbfaff 100%); }
 .acm-sub-footer { padding: 14px 22px; display: flex; justify-content: center; gap: 12px; border-top: 1px solid #efeaf9; background: #faf9fd; flex-shrink: 0; }
 .acm-btn-save { padding: 7px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px rgba(109,40,217,.35); }
 
-/* "Add New Document / License" popup — clean white card with no
-   internal section borders (header/body/footer all one continuous
-   surface) to match the design mock. */
 .acm-doc-sub-card { max-width: 920px; border-radius: 18px; background: #fff !important; box-shadow: 0 24px 60px -16px rgba(15,15,30,.32), 0 8px 24px rgba(15,15,30,.14); }
-/* Purple gradient header strip — visually ties the sub-modal back to
-   the parent Add Customer modal which uses the same palette. */
 .acm-doc-sub-header {
   background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 35%, #7c3aed 70%, #8b5cf6 100%) !important;
   border-bottom: none; padding: 16px 26px; justify-content: center; position: relative;
 }
 .acm-doc-sub-title { color: #fff; font-size: 17px; font-weight: 800; letter-spacing: -.2px; }
-/* Close button: translucent white pill, sits over the colored header
-   so it stays visible against the gradient. Keyed off the header
-   class (not the card) so the rule applies to every sub-modal that
-   uses acm-doc-sub-header — Add Document / License, Add Document
-   Type, Owner Due Diligence, and Location & Contact. */
 .acm-doc-sub-header .acm-sub-close {
   position: absolute; top: 50%; right: 18px; transform: translateY(-50%);
   width: 32px; height: 32px; border-radius: 50%;
@@ -6354,34 +4259,17 @@ const SCOPED_CSS = `
 .acm-doc-sub-header .acm-sub-close:hover { background: rgba(255,255,255,0.28) !important; transform: translateY(-50%) rotate(90deg); }
 .acm-doc-sub-card .acm-sub-body { background: #fff !important; padding: 18px 26px 8px; }
 .acm-doc-sub-footer { background: #fff !important; border-top: none; padding: 6px 22px 22px; }
-/* Field labels inside this popup adopt a darker / tighter style than
-   the main modal (closer to the dark-on-white look in the mock). */
-.acm-doc-sub-body .acm-field label { color: #475569; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; }
-.acm-doc-sub-body .acm-field input,
-.acm-doc-sub-body .acm-field textarea {
-  border: 1.5px solid #e9d5ff; border-radius: 10px; padding: 10px 12px; font-size: 12.5px;
-  color: #3b0764; background: #fff;
-}
-.acm-doc-sub-body .acm-field input::placeholder,
-.acm-doc-sub-body .acm-field textarea::placeholder { color: #c4b5fd; font-weight: 400; }
-.acm-doc-sub-body .acm-field input:focus,
-.acm-doc-sub-body .acm-field textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.12); }
-/* Cancel: white pill, violet border + violet text. Matches the mock. */
 .acm-doc-sub-footer .acm-btn-mini-cancel {
   background: #fff; border: 1.5px solid #c4b5fd; color: #7c3aed;
   padding: 9px 22px; border-radius: 9px; font-weight: 700; font-size: 12px; cursor: pointer;
 }
 .acm-doc-sub-footer .acm-btn-mini-cancel:hover { background: #faf5ff; }
-/* Save: same purple gradient as the header strip so the two
-   "branded" surfaces of the popup visually agree. */
 .acm-doc-save {
   background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 35%, #7c3aed 70%, #8b5cf6 100%) !important;
   box-shadow: 0 4px 12px rgba(109,40,217,.35);
   padding: 9px 44px !important; min-width: 120px; font-size: 12px !important;
 }
 .acm-doc-save:hover { filter: brightness(1.08); box-shadow: 0 6px 16px rgba(109,40,217,.45); }
-/* Doc-name field: dropdown + a `+` square button that opens the
-   "Add New Document Type" secondary popup. */
 .acm-doc-name-row { display: flex; align-items: stretch; gap: 8px; }
 .acm-doc-plus-btn {
   flex-shrink: 0; width: 38px; height: 38px; border-radius: 9px;
@@ -6390,24 +4278,7 @@ const SCOPED_CSS = `
   transition: background .15s, border-color .15s;
 }
 .acm-doc-plus-btn:hover { background: #ede9fe; border-color: #7c3aed; }
-/* Attachment field renders as a same-height pill with a paperclip
-   icon and "ATTACH FILE" label so it visually balances with the
-   adjacent inputs in the bottom row. */
-.acm-doc-attach {
-  display: inline-flex; align-items: center; gap: 8px;
-  height: 40px; padding: 0 14px; width: 100%;
-  border: 1.5px solid #e9d5ff; border-radius: 10px;
-  background: #fff; color: #475569; cursor: pointer;
-  font-size: 11.5px; font-weight: 700; letter-spacing: .08em;
-}
-.acm-doc-attach:hover { border-color: #7c3aed; background: #faf7ff; color: #7c3aed; }
-.acm-doc-attach-label { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 
-/* ───── KYC file slot ─────
-   Used for the attachment in Document/License sub-modal and for the 3
-   identity-proof fields in the Owner KYC sub-modal. Three visual modes:
-   drop zone (no file), chip (file picked or existing), or muted notice
-   (existing flagged for removal). */
 .acm-fileslot-drop {
   display: inline-flex; align-items: center; gap: 8px;
   width: 100%; height: 40px;
@@ -6475,7 +4346,6 @@ const SCOPED_CSS = `
 }
 .acm-fileslot-removed-text { font-size: 11.5px; color: #b91c1c; font-weight: 600; }
 
-/* Dark-mode variants */
 [data-bs-theme="dark"] .acm-fileslot-drop { background: rgba(124,58,237,0.10); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-fileslot-drop:hover { background: rgba(124,58,237,0.18); border-color: #a78bfa; }
 [data-bs-theme="dark"] .acm-fileslot-drop-title { color: #ddd6fe; }
@@ -6493,11 +4363,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-fileslot-removed { background: rgba(239,68,68,0.10); border-color: rgba(252,165,165,0.40); }
 [data-bs-theme="dark"] .acm-fileslot-removed-text { color: #fca5a5; }
 
-/* "Add Document Type" master popup — sits above the Add Document /
-   License sub-modal at z-index 10002. Header is left-aligned (icon
-   + title + subtitle), unlike the centered title used elsewhere. */
 .acm-doc-type-sub-modal { z-index: 10002; }
-.acm-doc-type-card { max-width: 760px; border-radius: 18px; }
 .acm-doc-type-master-card { max-width: 560px; border-radius: 18px; }
 .acm-doc-type-master-head { justify-content: space-between !important; padding: 18px 24px !important; }
 .acm-doc-type-master-head-left { display: flex; align-items: center; gap: 14px; }
@@ -6511,9 +4377,6 @@ const SCOPED_CSS = `
 .acm-doc-type-master-body { padding: 18px 24px 4px !important; }
 .acm-doc-type-master-body .acm-row { margin-bottom: 14px; }
 .acm-doc-type-master-footer { padding: 8px 24px 22px !important; justify-content: flex-end !important; }
-/* Save Document Type button — dark-navy gradient with save icon, the
-   "premium master" look from the design spec (not the violet save
-   used elsewhere on this modal). */
 .acm-doc-type-master-save {
   background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 60%, #2563eb 100%) !important;
   display: inline-flex !important; align-items: center; gap: 8px;
@@ -6523,36 +4386,12 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-doc-type-master-save {
   background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #1e40af 100%) !important;
 }
-.acm-doc-type-body { padding: 24px 28px 12px; }
-.acm-doc-type-row { display: grid; grid-template-columns: 200px 1fr; align-items: start; gap: 16px; margin-bottom: 18px; }
-.acm-doc-type-row:last-child { margin-bottom: 0; }
-.acm-doc-type-label { font-size: 13px; font-weight: 700; color: #4338ca; padding-top: 6px; }
-.acm-doc-type-input-wrap { min-width: 0; }
-.acm-doc-type-input-wrap input,
-.acm-doc-type-input-wrap textarea {
-  width: 100%; padding: 6px 2px; font-family: inherit; font-size: 13px; color: #3b0764;
-  background: transparent; outline: none; border: none;
-  border-bottom: 1px solid #e2e8f0; border-radius: 0;
-  transition: border-color .18s;
-  resize: vertical;
-}
-.acm-doc-type-input-wrap input:focus,
-.acm-doc-type-input-wrap textarea:focus { border-bottom-color: #7c3aed; box-shadow: none; }
-.acm-doc-type-input-wrap input::placeholder,
-.acm-doc-type-input-wrap textarea::placeholder { color: #cbd5e1; font-size: 12.5px; }
 
-/* ── Dark-mode variants ─────────────────────────────────────────────
-   Both document popups (Add New Document / License + Add New Document
-   Type) flip to a deep slate surface when the page has data-bs-theme
-   set to "dark", matching the rest of the app's dark palette.        */
-[data-bs-theme="dark"] .acm-doc-sub-card,
-[data-bs-theme="dark"] .acm-doc-type-card {
+[data-bs-theme="dark"] .acm-doc-sub-card {
   background: #11182a !important;
   border: 1px solid rgba(255,255,255,0.08);
   box-shadow: 0 24px 60px -16px rgba(0,0,0,.65), 0 8px 24px rgba(0,0,0,.45);
 }
-/* Dark mode keeps the purple header strip — just deepens the gradient
-   slightly so it reads on the darker surrounding chrome. */
 [data-bs-theme="dark"] .acm-doc-sub-header {
   background: linear-gradient(135deg, #2e1065 0%, #4c1d95 35%, #6d28d9 70%, #7c3aed 100%) !important;
 }
@@ -6565,23 +4404,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-doc-sub-header .acm-sub-close:hover { background: rgba(255,255,255,0.28) !important; }
 [data-bs-theme="dark"] .acm-doc-sub-card .acm-sub-body { background: #11182a !important; }
 [data-bs-theme="dark"] .acm-doc-sub-footer { background: #11182a !important; }
-[data-bs-theme="dark"] .acm-doc-sub-body .acm-field label { color: #94a3b8; }
-[data-bs-theme="dark"] .acm-doc-sub-body .acm-field input,
-[data-bs-theme="dark"] .acm-doc-sub-body .acm-field textarea {
-  background: #1c2531;
-  border-color: rgba(167,139,250,0.30);
-  color: #f1f5f9;
-}
-[data-bs-theme="dark"] .acm-doc-sub-body .acm-field input::placeholder,
-[data-bs-theme="dark"] .acm-doc-sub-body .acm-field textarea::placeholder { color: #64748b; }
-[data-bs-theme="dark"] .acm-doc-sub-body .acm-field input:focus,
-[data-bs-theme="dark"] .acm-doc-sub-body .acm-field textarea:focus { border-color: #a78bfa; box-shadow: 0 0 0 3.5px rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .acm-doc-sub-footer .acm-btn-mini-cancel {
   background: transparent; border-color: rgba(167,139,250,0.45); color: #c4b5fd;
 }
 [data-bs-theme="dark"] .acm-doc-sub-footer .acm-btn-mini-cancel:hover { background: rgba(167,139,250,0.12); }
-/* Dark mode: keep the violet gradient (matches the dark-mode header)
-   but deepen it slightly to read against the slate card surface. */
 [data-bs-theme="dark"] .acm-doc-save {
   background: linear-gradient(135deg, #2e1065 0%, #4c1d95 35%, #6d28d9 70%, #7c3aed 100%) !important;
   color: #fff !important;
@@ -6594,37 +4420,16 @@ const SCOPED_CSS = `
   color: #c4b5fd;
 }
 [data-bs-theme="dark"] .acm-doc-plus-btn:hover { background: rgba(167,139,250,0.20); border-color: #a78bfa; color: #ede9fe; }
-[data-bs-theme="dark"] .acm-doc-attach {
-  background: #1c2531; border-color: rgba(167,139,250,0.30); color: #94a3b8;
-}
-[data-bs-theme="dark"] .acm-doc-attach:hover { border-color: #a78bfa; background: rgba(167,139,250,0.10); color: #ede9fe; }
-/* "Add New Document Type" — underline-style inputs flip to a lighter
-   slate underline on a dark surface. */
-[data-bs-theme="dark"] .acm-doc-type-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-doc-type-input-wrap input,
-[data-bs-theme="dark"] .acm-doc-type-input-wrap textarea {
-  background: transparent; color: #f1f5f9;
-  border-bottom-color: rgba(255,255,255,0.10);
-}
-[data-bs-theme="dark"] .acm-doc-type-input-wrap input:focus,
-[data-bs-theme="dark"] .acm-doc-type-input-wrap textarea:focus { border-bottom-color: #a78bfa; }
-[data-bs-theme="dark"] .acm-doc-type-input-wrap input::placeholder,
-[data-bs-theme="dark"] .acm-doc-type-input-wrap textarea::placeholder { color: #475569; }
 .acm-btn-save:hover { background: linear-gradient(135deg, #6d28d9, #4c1d95); transform: translateY(-1px); }
 .acm-btn-mini-cancel { padding: 7px 18px; border-radius: 9px; border: 1.5px solid rgba(124,58,237,.3); background: #fff; color: #5b21b6; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; }
 .acm-btn-mini-cancel:hover { border-color: #7c3aed; }
 
-/* Radio pills */
 .acm-radio-pills { display: inline-flex; gap: 10px; flex-wrap: wrap; }
 .acm-radio-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 18px; border: 1.5px solid #e5e1f3; border-radius: 9px; background: #fff; cursor: pointer; font-size: 12px; font-weight: 700; color: #6b7280; user-select: none; }
 .acm-radio-pill input[type="radio"] { accent-color: #7c3aed; width: 13px; height: 13px; margin: 0; }
 .acm-radio-pill.is-active { border-color: #7c3aed; background: #f5f3ff; color: #5b21b6; box-shadow: 0 0 0 3px rgba(124,58,237,.10); }
 
-/* History panel */
 .acm-history { margin: 10px 22px 0; border-radius: 12px; border: 1.5px solid #c4b5fd; background: #fff; overflow: hidden; box-shadow: 0 2px 12px rgba(109,40,217,.09); flex-shrink: 0; max-height: 46px; transition: max-height .38s cubic-bezier(.4,0,.2,1); }
-/* Expanded panel needs room for the 5-row inline grid + breathing
-   padding; below 900px the grid collapses to 2 cols (9-10 rows) so
-   the body keeps scrolling for narrow viewports. */
 .acm-history.acm-hist-open { max-height: 340px; }
 .acm-history-header { height: 46px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; cursor: pointer; background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%); border-left: 4px solid #7c3aed; user-select: none; }
 .acm-history-header:hover { background: linear-gradient(110deg, #ede9fe, #ddd6fe); }
@@ -6637,23 +4442,6 @@ const SCOPED_CSS = `
 .acm-history-chevron { width: 22px; height: 22px; border-radius: 50%; background: rgba(124,58,237,.12); display: flex; align-items: center; justify-content: center; color: #7c3aed; transition: transform .3s; }
 .acm-history-chevron.acm-open { transform: rotate(180deg); }
 .acm-history-body { overflow-y: auto; max-height: calc(340px - 46px); border-top: 1px solid #ede9fe; }
-.acm-hs-block { padding: 12px 16px 10px; border-bottom: 1px solid #f3f0fb; }
-.acm-hs-block:last-child { border-bottom: none; }
-.acm-hs-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.acm-hs-num { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, #10b981, #047857); color: #fff; font-size: 8px; font-weight: 900; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.acm-hs-title { font-size: 10px; font-weight: 800; color: #065f46; text-transform: uppercase; letter-spacing: .08em; }
-.acm-hs-divider { flex: 1; height: 1px; background: linear-gradient(90deg, #bbf7d0, transparent); }
-.acm-hs-group { margin-bottom: 9px; }
-.acm-hs-group:last-child { margin-bottom: 0; }
-.acm-hs-group-label { font-size: 8.5px; font-weight: 800; color: #a78bfa; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 5px; padding-bottom: 4px; border-bottom: 1px dashed #ede9fe; }
-/* Legacy .acm-hs-field / .acm-hs-fields / etc. styles for the old
-   per-field pill summary were removed once HistoryStage1 switched to
-   the dense inline "Label : Value" grid (see .acm-hs-inline above).
-   Only the Stage 2 doc-counter stats below remain in use. */
-.acm-hs-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
-.acm-hs-stat { background: linear-gradient(135deg, #f5f3ff, #ede9fe); border: 1px solid #ddd6fe; border-radius: 8px; padding: 6px 10px; text-align: center; }
-.acm-hs-stat-num { font-size: 14px; font-weight: 900; color: #5b21b6; line-height: 1; }
-.acm-hs-stat-lbl { font-size: 8px; font-weight: 700; color: #7c3aed; text-transform: uppercase; letter-spacing: .07em; margin-top: 2px; }
 
 @media (max-width: 900px) {
   .acm-card { max-width: 100%; }
@@ -6665,44 +4453,20 @@ const SCOPED_CSS = `
   .acm-step { min-width: 200px; flex: 0 0 auto; }
 }
 
-/* ════════════════════════════════════════════════════════════════════
-   DARK MODE — premium dark palette for the whole Add/Edit Customer
-   modal. Triggered by [data-bs-theme="dark"] (the project's standard).
-   Palette:
-     #0b1220 — modal card base (deepest)
-     #11182a — section / surface
-     #1c2531 — input / cell
-     #0f172a — borders / dividers
-     #f1f5f9 — primary text
-     #94a3b8 — muted text
-     #c4b5fd — lavender accents
-     #a78bfa — focus / interactive accent
-   ════════════════════════════════════════════════════════════════════ */
-
-/* Modal card + body */
 [data-bs-theme="dark"] .acm-card {
   background: linear-gradient(165deg, #0b1220 0%, #11182a 45%, #131c30 100%);
   border-color: rgba(167,139,250,0.20);
   box-shadow: 0 32px 80px -20px rgba(0,0,0,0.7), 0 12px 30px rgba(0,0,0,0.45);
 }
 [data-bs-theme="dark"] .acm-body {
-  /* Light-mode default is #fafafd which leaks through in dark mode
-     and makes the form look like a white slab inside a dark card.
-     Use a near-black navy so the section cards (#1a2236) sitting on
-     top read as distinct, slightly-lighter panels. */
   background: #0c1322;
   scrollbar-color: #4c1d95 #11182a;
 }
 [data-bs-theme="dark"] .acm-body::-webkit-scrollbar-track { background: #11182a; }
 [data-bs-theme="dark"] .acm-body::-webkit-scrollbar-thumb { background: #6d28d9; }
-/* Tabs strip + stepper share the same dark body background so the
-   transition between header and body reads as one continuous panel. */
 [data-bs-theme="dark"] .acm-stepper,
 [data-bs-theme="dark"] .acm-tabs { background: #0c1322; border-bottom-color: rgba(167,139,250,0.18); }
-/* Footer + req-note dark styles live below — keep here only the
-   stepper + tabs strip dark-mode matching. */
 
-/* Header banner — dark variant of the soft lavender wash. */
 [data-bs-theme="dark"] .acm-header {
   background: linear-gradient(135deg, #1e1838 0%, #251c44 50%, #2a1d49 100%);
   border-bottom-color: rgba(167,139,250,0.20);
@@ -6719,11 +4483,9 @@ const SCOPED_CSS = `
   border-color: #a78bfa;
   color: #e9d5ff;
 }
-[data-bs-theme="dark"] .acm-loading-pill { background: rgba(167,139,250,.18); border-color: rgba(167,139,250,.35); color: #ede9fe; }
 [data-bs-theme="dark"] .acm-top-progress { background: rgba(167,139,250,.14); }
 [data-bs-theme="dark"] .acm-top-progress > span { background: linear-gradient(90deg, transparent, #a78bfa 30%, #c4b5fd 70%, transparent); }
 
-/* Stepper — keep colored states but darken pending */
 [data-bs-theme="dark"] .acm-step-active { background: linear-gradient(135deg, rgba(76,29,149,0.45) 0%, rgba(109,40,217,0.30) 100%); border-color: #a78bfa; box-shadow: 0 6px 22px rgba(0,0,0,.4), 0 0 0 1px rgba(167,139,250,.15) inset; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-title { color: #f1f5f9; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-sub { color: #c4b5fd; }
@@ -6741,7 +4503,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-step-pending .acm-step-sub { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-connector-line { background: rgba(255,255,255,0.06); }
 
-/* History panel ("What you did in previous stages") */
 [data-bs-theme="dark"] .acm-history { background: #11182a; border-color: rgba(167,139,250,0.20); box-shadow: 0 2px 12px rgba(0,0,0,0.35); }
 [data-bs-theme="dark"] .acm-history-header { background: linear-gradient(110deg, rgba(76,29,149,0.30) 0%, rgba(109,40,217,0.20) 100%); border-left-color: #a78bfa; }
 [data-bs-theme="dark"] .acm-history-header:hover { background: linear-gradient(110deg, rgba(76,29,149,0.40), rgba(109,40,217,0.30)); }
@@ -6752,14 +4513,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-history-icon { background: linear-gradient(135deg, #4c1d95, #2e1065); }
 [data-bs-theme="dark"] .acm-history-chevron { background: rgba(167,139,250,0.15); color: #c4b5fd; }
 
-/* Stage 1 sub-tabs */
 [data-bs-theme="dark"] .acm-tab-off { background: transparent; color: #c4b5fd; border-color: rgba(167,139,250,0.45); }
 [data-bs-theme="dark"] .acm-tab-off:hover { background: rgba(167,139,250,0.10); border-color: #a78bfa; }
 [data-bs-theme="dark"] .acm-tab-on { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; box-shadow: 0 3px 10px rgba(0,0,0,.4); }
 
-/* Section card — lift further above the body so the panels really
-   pop. The brighter border + stronger top highlight make them read
-   as distinct elevated cards instead of muddy washes. */
 [data-bs-theme="dark"] .acm-section {
   background: #1f2942;
   border-color: rgba(167,139,250,0.35);
@@ -6768,9 +4525,6 @@ const SCOPED_CSS = `
     inset 0 1px 0 rgba(255,255,255,0.06);
 }
 [data-bs-theme="dark"] .acm-section-purple { border-top-color: #a78bfa; }
-/* Softer header wash — the previous gradient competed with the modal
-   header. A muted lavender tint keeps the section heading subtle while
-   the brighter title text below carries the emphasis. */
 [data-bs-theme="dark"] .acm-section-head {
   background: linear-gradient(110deg, rgba(124,58,237,0.22) 0%, rgba(167,139,250,0.10) 100%);
   border-bottom-color: rgba(167,139,250,0.28);
@@ -6779,17 +4533,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-section-title { color: #ffffff; }
 [data-bs-theme="dark"] .acm-section-sub { color: #d1d5db; }
 
-/* Form fields — proper contrast for labels, borders, and placeholders.
-   Previously borders were so faded inputs looked like ghost outlines
-   and placeholders blended into the input background. */
 [data-bs-theme="dark"] .acm-field label { color: #e2e8f0; font-weight: 700; }
-/* Dropdowns match the inputs beside them.
-   MasterSelect renders a BUTTON, so the rule below -- which names input,
-   select and textarea -- never reached it, and every dropdown kept
-   MasterSelect's own var(--vz-card-bg) while the fields around it took this
-   form's navy. On a row of Customer Category / Segment / Classification /
-   Risk Level the two alternated. (QA #44)
-   Both themes, because the light values matched only by coincidence. */
 .acm-root .master-select-toggle {
   border: 1.5px solid #e0d9f7;
   border-radius: 9px;
@@ -6808,10 +4552,6 @@ const SCOPED_CSS = `
   color: #ffffff;
 }
 [data-bs-theme="dark"] .acm-root .master-select-toggle:disabled { color: #94a3b8; }
-/* MasterDatePicker never got the same treatment, so it kept Velzon's
-   --vz-input-bg (#262a2f) and rendered as a pale grey field beside the
-   #131c33 inputs and selects - the GST Last Filing Date in QA #99, and the
-   date fields in the KYC stage in #101. One modal, one field colour. */
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle {
   background: #131c33;
   border-color: rgba(167,139,250,0.50);
@@ -6821,10 +4561,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-root .master-datepicker-toggle:disabled { color: #94a3b8; }
 
-/* Autofill paints its own background over any field Chrome filled, which no
-   ordinary background overrides -- so a remembered value sat pale blue beside
-   fields that were typed. These inputs are opaque, so an inset shadow in the
-   form's own colour covers it. */
 .acm-field input:-webkit-autofill,
 .acm-field input:-webkit-autofill:hover,
 .acm-field input:-webkit-autofill:focus {
@@ -6852,8 +4588,6 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .acm-field input::placeholder,
 [data-bs-theme="dark"] .acm-field textarea::placeholder { color: #94a3b8; }
-/* Read-only: one step off the editable surface in each theme, so "you cannot
-   type here" is visible without becoming a fourth colour in the form. */
 .acm-field input.acm-input-ro { background: #f5f3fb; color: #6b7280; cursor: not-allowed; }
 [data-bs-theme="dark"] .acm-field input.acm-input-ro {
   background: #1b2440 !important; color: #94a3b8; cursor: not-allowed;
@@ -6873,25 +4607,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-radio-pill { background: #131c33; border-color: rgba(167,139,250,0.40); color: #ddd6fe; }
 [data-bs-theme="dark"] .acm-radio-pill.is-active { background: rgba(124,58,237,0.45); border-color: #a78bfa; color: #ffffff; }
 
-/* Add buttons / action pills inside sections */
 [data-bs-theme="dark"] .acm-add-pill { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-add-pill:hover { background: rgba(167,139,250,0.22); border-color: #a78bfa; color: #ede9fe; }
 [data-bs-theme="dark"] .acm-row-btn { background: #1c2531; border-color: rgba(167,139,250,0.20); color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-row-btn:hover { background: rgba(167,139,250,0.18); border-color: #a78bfa; color: #ede9fe; }
 [data-bs-theme="dark"] .acm-row-btn-del:hover { background: rgba(239,68,68,0.18); border-color: #ef4444; color: #fca5a5; }
 
-/* Inline tables (Stage 1 Additional Locations, Stage 2 KYC docs/owners,
-   Stage 3 read-only Evidence Vault). The original light styles use
-   ".acm-table thead tr" (with the row selector) so the dark override
-   needs to match that specificity or the lavender gradient bleeds
-   through and shows as a white strip across the section body. */
 [data-bs-theme="dark"] .acm-table thead tr {
   background: linear-gradient(180deg, rgba(28,37,49,0.85), rgba(17,24,42,0.85)) !important;
 }
-/* Sticky <th> needs its OWN opaque background in dark mode for the
-   same reason as light mode — otherwise rows scroll through it.
-   Solid color (not gradient) so cells don't show a seam where the
-   gradient repeats per-cell. */
 [data-bs-theme="dark"] .acm-table thead th {
   color: #c4b5fd !important;
   background: #16202d !important;
@@ -6909,32 +4633,17 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-table tbody td[style*="color:#1f2937"] { color: #f1f5f9 !important; }
 [data-bs-theme="dark"] .acm-table tbody td[style*="color: rgb(107, 114, 128)"],
 [data-bs-theme="dark"] .acm-table tbody td[style*="color:#6b7280"] { color: #94a3b8 !important; }
-/* Table wrapper inside section-body-table — neutralize any lingering
-   light tint from the section card so the table flush-fits the
-   dark background. */
 [data-bs-theme="dark"] .acm-section-body-table { background: transparent !important; }
 [data-bs-theme="dark"] .acm-table-wrap { background: transparent; scrollbar-color: #6d28d9 #11182a; }
-/* Dark had no scrollbar rules at all, so the light thumb stayed and the
-   transparent track left it invisible against the dark card. Mirrors the
-   dark .acm-body scroller. */
 [data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-track { background: #11182a; }
 [data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-thumb { background: #6d28d9; }
 [data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-thumb:hover { background: #7c3aed; }
 [data-bs-theme="dark"] .acm-table-wrap::-webkit-scrollbar-corner { background: #11182a; }
-
-/* Status / expiry pills in tables */
-[data-bs-theme="dark"] .acm-status-active { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
-[data-bs-theme="dark"] .acm-status-mandatory.is-on { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
-[data-bs-theme="dark"] .acm-status-mandatory { background: transparent; color: #64748b; border-color: rgba(255,255,255,0.10); }
-[data-bs-theme="dark"] .acm-status-optional.is-on { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.20); }
-[data-bs-theme="dark"] .acm-status-optional { background: transparent; color: #64748b; border-color: rgba(255,255,255,0.10); }
 [data-bs-theme="dark"] .acm-expiry-na     { background: rgba(255,255,255,0.05); color: #94a3b8; border-color: rgba(255,255,255,0.10); }
 [data-bs-theme="dark"] .acm-issue-date    { background: rgba(99,102,241,0.20); color: #c7d2fe; border-color: rgba(99,102,241,0.40); }
 [data-bs-theme="dark"] .acm-expiry-future { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
 [data-bs-theme="dark"] .acm-expiry-past   { background: rgba(239,68,68,0.18); color: #fca5a5; border-color: rgba(239,68,68,0.40); }
 [data-bs-theme="dark"] .acm-expiry-soon   { background: rgba(245,158,11,0.18); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
-[data-bs-theme="dark"] .acm-expiry-date   { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
-[data-bs-theme="dark"] .acm-expiry-varies { background: rgba(245,158,11,0.18); color: #fcd34d; border-color: rgba(245,158,11,0.40); }
 [data-bs-theme="dark"] .acm-doc-code { background: rgba(167,139,250,0.15); color: #c4b5fd; border-color: rgba(167,139,250,0.30); }
 [data-bs-theme="dark"] .acm-pill-yes { background: rgba(16,185,129,0.18); color: #6ee7b7; border-color: rgba(16,185,129,0.40); }
 [data-bs-theme="dark"] .acm-pill-no  { background: rgba(255,255,255,0.06); color: #94a3b8; border-color: rgba(255,255,255,0.20); }
@@ -6947,16 +4656,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-doc-action-download { background: rgba(16,185,129,0.12); color: #6ee7b7; border-color: rgba(16,185,129,0.30); }
 [data-bs-theme="dark"] .acm-doc-action-view { background: rgba(56,189,248,0.12); color: #7dd3fc; border-color: rgba(56,189,248,0.30); }
 
-/* Stage 2 sub-tabs (pill row) */
-[data-bs-theme="dark"] .acm-subtab-pill { background: transparent; color: #c4b5fd; border: 1.5px solid rgba(167,139,250,0.40); }
-[data-bs-theme="dark"] .acm-subtab-pill:hover { background: rgba(167,139,250,0.10); }
-[data-bs-theme="dark"] .acm-subtab-pill.is-active { background: linear-gradient(135deg,#6d28d9,#4c1d95); color: #fff; border-color: #7c3aed; }
-
-/* Stage 2 doc toolbar + search */
 [data-bs-theme="dark"] .acm-doc-toolbar { background: rgba(28,37,49,0.4); border-color: rgba(255,255,255,0.06); }
-/* Light-mode .acm-doc-search input uses !important on background +
-   border so the dark override must match that specificity or the
-   white pill leaks into dark mode. */
 [data-bs-theme="dark"] .acm-doc-search input {
   background: #131c33 !important;
   border-color: rgba(167,139,250,0.40) !important;
@@ -6969,20 +4669,7 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .acm-doc-search-icon { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-doc-count { color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-doc-pag-info { color: #94a3b8; }
-[data-bs-theme="dark"] .acm-page-btn { background: #1c2531; color: #c4b5fd; border-color: rgba(167,139,250,0.25); }
-[data-bs-theme="dark"] .acm-page-btn:hover:not(:disabled) { background: rgba(167,139,250,0.18); color: #ede9fe; }
-[data-bs-theme="dark"] .acm-page-btn.is-active { background: linear-gradient(135deg,#6d28d9,#4c1d95); border-color: #7c3aed; color: #fff; }
-[data-bs-theme="dark"] .acm-page-btn:disabled { opacity: 0.4; }
 
-
-
-/* Stage 2 doc counter stats (history) */
-[data-bs-theme="dark"] .acm-hs-stat { background: linear-gradient(135deg, rgba(76,29,149,0.28), rgba(109,40,217,0.18)); border-color: rgba(167,139,250,0.30); }
-[data-bs-theme="dark"] .acm-hs-stat-num { color: #ede9fe; }
-[data-bs-theme="dark"] .acm-hs-stat-lbl { color: #c4b5fd; }
-
-/* Footer + bottom action buttons */
 [data-bs-theme="dark"] .acm-footer {
   background: linear-gradient(180deg, rgba(15,23,42,0.6) 0%, rgba(17,24,42,0.95) 100%);
   border-top-color: rgba(167,139,250,0.25);
@@ -6991,30 +4678,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-btn-prev { background: rgba(167,139,250,0.08); color: #ddd6fe; border-color: rgba(167,139,250,0.45); }
 [data-bs-theme="dark"] .acm-btn-prev:hover { background: rgba(167,139,250,0.18); border-color: #a78bfa; color: #ffffff; }
 
-/* Error message text under invalid fields */
 [data-bs-theme="dark"] .acm-field-error { color: #fca5a5; }
 
-/* ============================================================
- *  RESPONSIVE — tablet & mobile
- *  Strategy: the modal is normally a fixed-width card centered on
- *  the screen. On narrower viewports we (a) eat the side padding,
- *  (b) collapse multi-col grids down toward 1 col, (c) stack the
- *  header / footer rows that were side-by-side, (d) loosen the
- *  step indicator and sub-modal so they fit, and (e) drop heavy
- *  visual chrome (large icons, generous padding) so the form is
- *  still usable on a phone.
- * ============================================================ */
-
-/* ── Small laptop (≤ 1440px) ─────────────────────────────────
-   1366×768 / 1440×900 are the most common laptop sizes. Only the
-   HEIGHT and the screen-edge gutter change here.
-   This block used to set a bare max-width: calc(100vw - 20px),
-   written back when the card's own cap was 1440px and the point was to
-   keep it off the screen edges. The cap has since come down to 1224
-   (see ACM_SHELL_CSS), but the override stayed — and being a media rule
-   it WINS, so on every laptop at 100% zoom the form ignored its 1224
-   cap and stretched edge-to-edge again. min() keeps the card at its own
-   width and lets the viewport only shrink it further. */
 @media (max-width: 1440px) {
   .acm-root { padding: 10px; }
   .acm-card {
@@ -7029,10 +4694,6 @@ const SCOPED_CSS = `
   .acm-section-body, .acm-sec-pad { padding: 14px; }
 }
 
-/* ── Compact laptop (≤ 1280px) ────────────────────────────────
-   Common HP/Dell business laptops (1280×800, 1366×768). 4-col
-   grids start to feel cramped here — collapse to 2x2 and tighten
-   the stepper chrome. */
 @media (max-width: 1280px) {
   .acm-row-4 { grid-template-columns: 1fr 1fr; }
   .acm-step { padding: 9px 11px; gap: 9px; }
@@ -7043,9 +4704,6 @@ const SCOPED_CSS = `
   .acm-step-connector { flex-basis: 18px; }
 }
 
-/* ── Tablet (≤ 1024px) ───────────────────────────────────────
-   Collapse all multi-col grids to 2 cols, fix the stepper to
-   wrap, and tighten paddings further. */
 @media (max-width: 1024px) {
   .acm-root { padding: 8px; }
   .acm-card {
@@ -7056,20 +4714,14 @@ const SCOPED_CSS = `
   .acm-row-3 { grid-template-columns: 1fr 1fr; }
   .acm-row-2 { grid-template-columns: 1fr 1fr; }
   .acm-section-body, .acm-sec-pad { padding: 12px; }
-  /* Stepper: hide the connector lines (the chevrons get tiny) and
-     allow steps to flex-wrap onto two rows so they don't shrink
-     into unreadable pills. */
   .acm-stepper { padding: 10px 12px 8px; flex-wrap: wrap; gap: 8px; }
   .acm-history { margin: 10px 12px 0; }
   .acm-step-connector { display: none; }
   .acm-step { flex: 1 1 calc(50% - 6px); min-width: 0; }
-  /* Tabs: tighter padding */
   .acm-tabs { padding: 0 16px; }
-  /* Body */
   .acm-body { padding: 12px 14px 14px; }
 }
 
-/* ── Mobile (≤ 640px) ───────────────────────────────────────── */
 @media (max-width: 640px) {
   .acm-root { padding: 0; align-items: stretch; }
   .acm-card {
@@ -7079,37 +4731,25 @@ const SCOPED_CSS = `
     width: 100vw;
     max-width: 100vw;
   }
-  /* Header: stack icon + title, tighten font */
   .acm-header { padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 10px; }
   .acm-header-icon { width: 40px; height: 40px; }
   .acm-title { font-size: 16px; }
   .acm-subtitle   { font-size: 11.5px; }
   .acm-close { position: absolute; top: 12px; right: 12px; }
-  /* Stepper: full vertical stack on phone */
   .acm-stepper { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
   .acm-history { margin: 10px 12px 0; }
   .acm-step-connector { display: none; }
   .acm-step { width: 100%; flex: 0 0 auto; }
-  /* Tabs */
   .acm-tabs { flex-wrap: wrap; padding: 0 12px; }
   .acm-tab { flex: 1 1 auto; min-width: 40%; font-size: 12px; padding: 8px 10px; }
-  /* Body padding */
   .acm-body { padding: 12px; }
-  /* All grids → single column on phone */
   .acm-row-4, .acm-row-3, .acm-row-2 { grid-template-columns: 1fr; }
   .acm-row { gap: 10px; }
-  /* Inputs slightly smaller */
   .acm-input { font-size: 13px; padding: 8px 10px; }
-  /* Section header tightens */
   .acm-section-head { padding: 10px 12px; gap: 8px; }
   .acm-section-title { font-size: 12.5px; }
   .acm-section-sub { display: none; }
   .acm-section-body, .acm-sec-pad { padding: 10px; }
-  /* Footer: stack actions, full-width buttons. Hide the "fields with *"
-     hint on phones to free up vertical space. Reset align-items so the
-     column-direction children actually stretch to full width (the base
-     rule uses align-items: center which would otherwise shrink the
-     buttons to content width and centre them — bad mobile look). */
   .acm-footer {
     padding: 10px 12px 14px;
     flex-direction: column;
@@ -7131,7 +4771,6 @@ const SCOPED_CSS = `
     font-size: 13px;
     justify-content: center;
   }
-  /* Sub-modal */
   .acm-sub-modal { padding: 0; align-items: stretch; }
   .acm-sub-card { border-radius: 0; max-height: 100vh; height: 100vh; width: 100vw; }
   .acm-sub-header { padding: 14px 16px; }
@@ -7143,20 +4782,14 @@ const SCOPED_CSS = `
     gap: 8px;
   }
   .acm-btn-mini-cancel, .acm-btn-save, .acm-doc-save { width: 100%; flex: 0 0 auto; }
-  /* Map-Consignee popup (if present), Stage 2 toolbar */
   .acm-doc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
-  /* Follows the toolbar down to 12px so the column holds on phone too. */
   .acm-doc-pag-wrap .wl-pager { padding-left: 12px; padding-right: 12px; }
   .acm-doc-search { max-width: 100%; }
   .acm-doc-count { align-self: flex-start; }
-  /* Stage 2 sub-tabs wrap */
   .acm-subtabs-row { flex-wrap: wrap; gap: 6px; }
-  /* History recap card collapses to single column */
   .acm-recap-grid { grid-template-columns: 1fr; }
-  /* Same-as-Customer banner: tighter */
   .acm-same-banner { padding: 10px 12px; gap: 10px; }
   .acm-same-banner-sub { font-size: 11.5px; }
-  /* Address & Contact action button — wrap label */
   .acm-add-pill { font-size: 11.5px; padding: 6px 12px; }
   .acm-section-head-row { flex-wrap: wrap; gap: 8px; }
 }

@@ -168,7 +168,13 @@ class ClmTncController extends Controller
                 'updated_by' => $user->id,
             ]);
         });
-        return response()->json(['status' => true, 'data' => $row], 201);
+        /* Without content. The caller just posted it, so echoing it back sends
+           the whole document a second time for nothing — the wizard awaits this
+           response and never reads it. On live a T&C carrying an imported Word
+           document made this a 1.5 MB reply to a save, which is most of the
+           40 s the save took. Every other column still goes back, so a caller
+           that wants the new row's id or code is unaffected. */
+        return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
     public function libraryUpdate(Request $request, $id)
@@ -214,7 +220,8 @@ class ClmTncController extends Controller
         }
         $data['segment_ids'] = $this->segmentIdsFor($row->client_id, $row->branch_id, $effSegment, $effRegulatory);
         $row->update($data);
-        return response()->json(['status' => true, 'data' => $row->fresh()]);
+        // Without content — see libraryStore.
+        return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
     /** The segments this row covers, resolved by name + tier within its branch — what PI/PO T&C fetch matches. */
@@ -354,7 +361,8 @@ class ClmTncController extends Controller
                 'status'     => $data['status'] ?? $row->status ?? 'active',
                 'updated_by' => $user->id,
             ]);
-            return response()->json(['status' => true, 'data' => $row]);
+            // Without content — see libraryStore.
+            return response()->json(['status' => true, 'data' => $row->makeHidden('content')]);
         }
 
         $known = ClmTncCategory::query()->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower(trim($data['category']))]);
@@ -385,7 +393,8 @@ class ClmTncController extends Controller
                 'updated_by' => $user->id,
             ]);
         });
-        return response()->json(['status' => true, 'data' => $row], 201);
+        // Without content — see libraryStore.
+        return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
     /**

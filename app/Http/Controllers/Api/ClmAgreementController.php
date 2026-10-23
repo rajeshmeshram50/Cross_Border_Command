@@ -206,9 +206,34 @@ class ClmAgreementController extends Controller
         $rows->each(function ($r) use ($signedIds, $usedIds) {
             $r->setAttribute('is_signed', in_array((int) $r->id, $signedIds, true));
             $r->setAttribute('in_use', in_array((int) $r->id, $usedIds, true));
+            /* The list does not render the document — it shows title, type,
+               regulatory, segment and party — but `content` was 92.9% of this
+               response: 1,626,331 of 1,750,358 bytes across thirteen rows, one
+               of them a 959 kB agreement. The editor fetches the one row it
+               opens from libraryShow() below. */
+            $r->makeHidden('content');
         });
 
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+    }
+
+    /**
+     * One agreement, with its document body — what the editor opens.
+     *
+     * Scoped exactly as libraryIndex() scopes the list, NOT as libraryUpdate()
+     * scopes an edit. Those differ: the list passes the requested branch filter
+     * while an edit is pinned to the caller's own branch. Scoping this like an
+     * edit meant a row the user could see in the list came back 404 when they
+     * opened it. Whatever the list showed, this serves; whether it may then be
+     * SAVED is still libraryUpdate's decision.
+     */
+    public function libraryShow(Request $request, $id)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+        $lookup = ClmAgreementLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $request->integer('branch_id') ?: null);
+
+        return response()->json(['status' => true, 'data' => $lookup->firstOrFail()]);
     }
 
     public function libraryStore(Request $request)
@@ -252,7 +277,12 @@ class ClmAgreementController extends Controller
                 'updated_by'     => $user->id,
             ]);
         });
-        return response()->json(['status' => true, 'data' => $row], 201);
+        /* Without content. The wizard just posted it and awaits this response
+           without reading it, so echoing the document back sends it a second
+           time for nothing — 1.5 MB on live for an agreement carrying an
+           imported Word document, which is most of the 42 s the save took.
+           Every other column still goes back. */
+        return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
     public function libraryUpdate(Request $request, $id)
@@ -294,7 +324,8 @@ class ClmAgreementController extends Controller
             $data['docx_original_name'] = null;
         }
         $row->update($data);
-        return response()->json(['status' => true, 'data' => $row->fresh()]);
+        // Without content — see libraryStore.
+        return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
     public function uploadHeaderLogo(Request $request)

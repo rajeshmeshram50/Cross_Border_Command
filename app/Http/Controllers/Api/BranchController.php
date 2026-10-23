@@ -333,6 +333,9 @@ class BranchController extends Controller
                     $logoPath = $request->file('logo')->storeAs("branches/logos/{$branch->id}", $this->uploadFileName($request->file('logo')), 'public');
                     $branch->update(['logo' => $logoPath]);
                     \App\Services\LogoDarkVariantGenerator::generate($logoPath);
+                    // AFTER the dark variant, so the screen-sized copy is made
+                    // for both. The original stays full resolution for PDFs.
+                    \App\Services\LogoWebVariantGenerator::generate($logoPath);
                 }
                 if ($request->hasFile('profile_photo')) {
                     $branch->update([
@@ -820,11 +823,13 @@ class BranchController extends Controller
                 if ($request->hasFile('logo')) {
                     if ($branch->logo) {
                         \App\Services\LogoDarkVariantGenerator::delete($this->relativePath($branch->logo));
+                        \App\Services\LogoWebVariantGenerator::delete($this->relativePath($branch->logo));
                         Storage::disk('public')->delete($this->relativePath($branch->logo));
                     }
                     $logoPath = $request->file('logo')->storeAs("branches/logos/{$branch->id}", $this->uploadFileName($request->file('logo')), 'public');
                     $branch->update(['logo' => $logoPath]);
                     \App\Services\LogoDarkVariantGenerator::generate($logoPath);
+                    \App\Services\LogoWebVariantGenerator::generate($logoPath);
                 }
                 if ($request->hasFile('profile_photo')) {
                     if ($branch->profile_photo) {

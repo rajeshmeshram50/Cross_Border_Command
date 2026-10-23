@@ -8,13 +8,11 @@ import { LogOut, Maximize2, Minimize2, Moon, Sun, Bell, ChevronsLeft, ChevronsRi
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
-import * as Icons from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-
-function getIcon(name?: string): LucideIcon {
-  if (!name) return Icons.Circle;
-  return (Icons as unknown as Record<string, LucideIcon>)[name] || Icons.Circle;
-}
+/* getIcon used to read off `import * as Icons from 'lucide-react'`, which
+   pulls the whole library into the bundle — a namespace import cannot be
+   tree-shaken, because the bundler cannot know which icon a runtime string
+   will name. menuIcons names the ones the menu actually uses. */
+import { getMenuIcon as getIcon } from './menuIcons';
 
 // Curved tree-branch connector — replaces the flat dash / circle markers on
 // nested submenu rows so the hierarchy reads as an L-shaped elbow.

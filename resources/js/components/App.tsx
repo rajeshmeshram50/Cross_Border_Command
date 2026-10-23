@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, Suspense } from 'react';
+import { useState, useEffect, useCallback, createContext, useContext, Suspense } from 'react';
 import api from '../api';
 import { lazyPage } from '../utils/lazyPage';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams, useNavigationType } from 'react-router-dom';
@@ -536,10 +536,26 @@ function AuthRoutes() {
   );
 }
 
+/* The splash plays over the page instead of in place of it. It used to be
+   rendered alone for its full 2.4 s, so the page's code and API calls only
+   started after it — every refresh paid that wait on top of the load (QA #13).
+   Now the page loads underneath while the same animation plays on top.
+   The callback is stable on purpose: SplashLoader restarts its timers when
+   onComplete changes, and the page re-rendering beneath must not do that. */
 function DashboardRoutes({ user }: { user: any }) {
+  const [splashDone, setSplashDone] = useState(false);
+  const finishSplash = useCallback(() => setSplashDone(true), []);
+  return (
+    <>
+      <DashboardRoutesInner user={user} />
+      {!splashDone && <SplashLoader onComplete={finishSplash} />}
+    </>
+  );
+}
+
+function DashboardRoutesInner({ user }: { user: any }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [splashDone, setSplashDone] = useState(false);
 
   const isPlanGoverned = user.user_type === 'client_admin'
     || user.user_type === 'branch_user'
@@ -562,10 +578,6 @@ function DashboardRoutes({ user }: { user: any }) {
     return () => window.removeEventListener('popstate', onPop);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onboardingPending, navigate]);
-
-  if (!splashDone) {
-    return <SplashLoader onComplete={() => setSplashDone(true)} />;
-  }
 
   const navigateFn = (p: string, data?: any) => {
     const path = getPagePath(p, data);

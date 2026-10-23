@@ -55,7 +55,11 @@ const Ctx = createContext<AuthCtx>({
 // v8 — added `client_profile_photo` / `branch_profile_photo` (profile dropdown).
 // v9 — added `user_profile_photo` (super_admin & non-tenant users own photo).
 // v10 — added `employee_profile_photo` (passport-size photo from onboarding).
-const USER_SCHEMA_VERSION = 10;
+// v11 — added `client_logo_web` / `branch_logo_web` (screen-sized header logo).
+//       Without the bump an already signed-in session keeps its cached user,
+//       which has neither field, and goes on downloading the full-size logo
+//       until the next login.
+const USER_SCHEMA_VERSION = 11;
 
 function readCachedUser(): AuthUser | null {
   try {

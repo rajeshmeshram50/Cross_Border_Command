@@ -35,7 +35,10 @@ type AgrType = { id: number; code: string; name: string; description: string; in
 type AgrLib = {
   id: number; code: string; agreement_type: string; title: string; purpose?: string | null; party: string;
   regulatory: 'highly'|'less'; signing: boolean; segment: string | null;
-  agr_status: string; content: string | null; is_signed?: boolean; in_use?: boolean;
+  /* content is OPTIONAL: the list endpoint leaves it out (it was 92.9% of that
+     response and the table never renders it) and the wizard fetches the one
+     row it opens. */
+  agr_status: string; content?: string | null; is_signed?: boolean; in_use?: boolean;
 };
 type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
@@ -52,7 +55,10 @@ export default function ClmAgreementsPage() {
     Promise.all([
       api.get<{ status: boolean; data: AgrType[] }>('/clm/agreement-types'),
       api.get<{ status: boolean; data: AgrLib[]  }>('/clm/agreement-library'),
-      api.get<{ status: boolean; data: Seg[]     }>('/clm/segments'),
+      /* lite=1 — see the note on ClmTncPage. These segments feed the agreement
+         wizard's dropdown (name / code / regulatory_status); in_use on this
+         page belongs to agreement types and library rows, not to segments. */
+      api.get<{ status: boolean; data: Seg[]     }>('/clm/segments', { params: { lite: 1 } }),
     ]).then(([t, l, s]) => { setTypes(t.data.data ?? []); setLib(l.data.data ?? []); setSegs(s.data.data ?? []); })
       .catch(() => toast.error('Load failed', 'Could not load agreements'))
       .finally(() => setLoading(false));
