@@ -192,16 +192,50 @@ the runway.
 
 ### Adding a route to the prefetch list
 
-The specifier in `ROUTES` must match `App.tsx` **character for character**.
-One difference and Vite emits a second module: you download the chunk twice and
-warm the wrong one. Copy the line from `App.tsx`, then verify:
+`ROUTES` is **generated from `App.tsx`**, not typed, because a specifier that
+differs by one character makes Vite emit a second module — you download the
+chunk twice and warm the wrong one. After adding routes, regenerate it:
+
+```php
+// php regen.php  — prints the ROUTES body; paste it over the existing one
+$s = file_get_contents('resources/js/components/App.tsx');
+preg_match_all('/const\s+(\w+)\s*=\s*lazyPage\(\(\) => import\(\'([^\']+)\'\)\)/', $s, $m);
+$spec = array_combine($m[1], $m[2]);
+preg_match_all('/<Route\s+path="([^"]+)"\s+element=\{<(\w+)\s*\/?>/', $s, $r);
+$pairs = [];
+foreach ($r[1] as $i => $path) {
+    $c = $r[2][$i];
+    if (!isset($spec[$c]) || str_contains($path, ':') || str_contains($path, '*')) continue;
+    $pairs[$path] = $spec[$c];
+}
+ksort($pairs);
+$w = 0; foreach (array_keys($pairs) as $k) $w = max($w, strlen($k) + 3);
+foreach ($pairs as $path => $sp) {
+    echo '  ' . str_pad("'$path':", $w + 1) . "() => import('$sp'),\n";
+}
+```
+
+A route with a parameter (`/master/:slug`) is skipped by that script — the
+param does not change the chunk, so those go in the `PATTERNS` table by hand,
+one regex per route. `/master/:slug` and `/clm/:slug` each cover a whole menu
+section, which is why they are worth having. The dedupe key for a pattern is
+its NAME, not the path, so warming `/master/countries` also settles
+`/master/states` rather than filling the set with fifty entries for one chunk.
+
+Then verify:
 
 ```bash
-# every prefetch target must resolve to exactly ONE chunk
-php -r '$m=json_decode(file_get_contents("public/build/manifest.json"),true);
-  foreach($m as $k=>$v){if(empty($v["file"]))continue;
-  $b=preg_replace("/-[A-Za-z0-9_-]+\.js$/","",basename($v["file"]));$n[$b][]=$v["file"];}
-  print_r(array_filter($n,fn($x)=>count(array_unique($x))>1));'
+# every prefetch specifier must be character-identical to an App.tsx one.
+# Expect "not matching App.tsx: 0".
+php -r '
+$a = file_get_contents("resources/js/components/App.tsx");
+preg_match_all("/lazyPage\(\(\) => import\(\x27([^\x27]+)\x27\)\)/", $a, $m);
+$app = array_flip($m[1]);
+$p = file_get_contents("resources/js/utils/routePrefetch.ts");
+preg_match_all("/\(\) => import\(\x27([^\x27]+)\x27\)/", $p, $n);
+$bad = array_filter(array_unique($n[1]), fn($s) => !isset($app[$s]));
+printf("prefetch specifiers: %d   not matching App.tsx: %d\n", count(array_unique($n[1])), count($bad));
+foreach ($bad as $b) echo "  MISMATCH: $b\n";'
 ```
 
 Keep the list short. Prefetching all 114 routes costs more than it saves, and

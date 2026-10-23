@@ -20,7 +20,7 @@ import { useSelector } from "react-redux";
 import { createSelector } from 'reselect';
 /* Hover/tap starts the route's chunks before the click lands — see
    utils/routePrefetch. Covers the deep pages the idle walk skips. */
-import { prefetchRoute } from '../../../utils/routePrefetch';
+import { prefetchRoute, prefetchGroup } from '../../../utils/routePrefetch';
 
 const VerticalLayout = (props : any) => {
     // Re-render this layout whenever any sidebar menu item is toggled. The
@@ -197,7 +197,7 @@ const VerticalLayout = (props : any) => {
                                 (item.subItems ? (
                                     <li className="nav-item">
                                         <Link
-                                            onClick={item.click}
+                                            onClick={(e: any) => { prefetchGroup(item.subItems); item.click?.(e); }}
                                             // cbc-has-sub: explicit marker for items that actually have a
                                             // dropdown. The two-column caret keys off this class instead of
                                             // aria-expanded, which the activation JS stamps onto flat active
