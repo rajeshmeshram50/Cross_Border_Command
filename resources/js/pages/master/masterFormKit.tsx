@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 // Side-effect import: MasterMultiSelect (below) reuses .master-select-* classes,
 // so the dropdown CSS must load whenever this module is imported — even when

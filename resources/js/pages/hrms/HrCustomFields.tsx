@@ -14,7 +14,7 @@ import '../../../css/recruitment.css';
 // via the app's <Tooltip> on hover.
 const truncate = (s: string, n = 30) => (s.length > n ? s.slice(0, n) + '…' : s);
 
-// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Types ────────────────────────────────────────────────────────────────────
 type FieldType = 'text' | 'date' | 'number' | 'textarea';
 
 interface UsedInRef { id: number; code: string | null; name: string | null; }
@@ -37,7 +37,7 @@ interface CustomFieldRow {
 interface Stats { total: number; text: number; date: number; number: number; textarea: number; other: number; }
 const ZERO_STATS: Stats = { total: 0, text: 0, date: 0, number: 0, textarea: 0, other: 0 };
 
-// â”€â”€ Type tones (matches the chip colours from the spec) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Type tones (matches the chip colours from the spec) ──────────────────────
 const TYPE_TONES: Record<FieldType, { bg: string; fg: string; border: string; label: string; icon: string }> = {
   text:     { bg: '#ccfbf1', fg: '#0f766e', border: '#5eead4', label: 'text',     icon: 'ri-text' },
   date:     { bg: '#ede9fe', fg: '#6d28d9', border: '#c4b5fd', label: 'date',     icon: 'ri-calendar-line' },
@@ -45,7 +45,7 @@ const TYPE_TONES: Record<FieldType, { bg: string; fg: string; border: string; la
   textarea: { bg: '#ffedd5', fg: '#9a3412', border: '#fdba74', label: 'textarea', icon: 'ri-chat-1-line' },
 };
 
-// â”€â”€ Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrCustomFields() {
   const toast = useToast();
   const navigate = useNavigate();
@@ -280,7 +280,7 @@ export default function HrCustomFields() {
           .cf-page .cf-back-btn { transition: background 150ms ease, color 150ms ease, border-color 150ms ease; }
           .cf-page .cf-back-btn:hover { background: #eef2ff !important; border-color: #c7d2fe !important; }
 
-          /* â”€â”€ Dark mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+          /* ── Dark mode ─────────────────────────────────────────────────── */
           [data-bs-theme="dark"] .cf-page .cf-header-card,
           [data-layout-mode="dark"] .cf-page .cf-header-card,
           [data-bs-theme="dark"] .cf-page .cf-filter-card,

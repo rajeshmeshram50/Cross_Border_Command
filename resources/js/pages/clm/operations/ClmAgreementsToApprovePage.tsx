@@ -1,7 +1,7 @@
-﻿import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
-// Vite-friendly worker URL â€” same setup the CTC sign-position modal uses.
+// Vite-friendly worker URL — same setup the CTC sign-position modal uses.
 import PdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../../contexts/ToastContext';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -23,14 +23,14 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 type AtaRow = AtaContract & { dbId: number };
 
 // Display dates as DD-Mon-YYYY (e.g. 17-Jul-2026). The API returns "17 Jul
-// 2026"; swap the spaces for hyphens (QA #9). "â€”" / empty pass through.
-const dashDate = (s: string): string => (s && s !== 'â€”' ? s.replace(/\s+/g, '-') : s);
+// 2026"; swap the spaces for hyphens (QA #9). "—" / empty pass through.
+const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
 
 // The CTC DATE can carry a submission time ("18 Jul 2026 12:32"). Split it into
 // a hyphenated date and a 12-hour AM/PM time so the date shows on top (no
 // trailing hyphen) and the time on its own line below.
 const dateTimeParts = (s: string): { date: string; time: string } => {
-  if (!s || s === 'â€”') return { date: s || 'â€”', time: '' };
+  if (!s || s === '—') return { date: s || '—', time: '' };
   const p = s.trim().split(/\s+/);
   const date = p.slice(0, 3).join('-');
   let time = '';
@@ -44,15 +44,15 @@ const dateTimeParts = (s: string): { date: string; time: string } => {
   return { date, time };
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
- * CLM Operations Â· Without Shipment ID â†’ Agreements To Approve.
+/* ─────────────────────────────────────────────────────────────────────────
+ * CLM Operations · Without Shipment ID → Agreements To Approve.
  *
  * Faithful port of the cyan-themed `rAta()` view from the CLM_CaseToCase
  * prototype: header strip, five summary cards, capsule filter tabs
  * (All / Pending / Clarifications / Approved / Rejected), a status-aware
  * table, plus the Take Action modal (Raise Clarification / Reject) and
  * direct Approve flow.
- * â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+ * ───────────────────────────────────────────────────────────────────────── */
 
 type AtaTab = 'all' | 'pending' | 'clarification' | 'approved' | 'rejected';
 
@@ -79,7 +79,7 @@ const S_CFG = {
   rejected:      { label: 'Rejected', bg: '#FEF2F2', border: '#FECACA', color: '#DC2626', dot: '#EF4444' },
 } as const;
 
-// Status pills read as glaring light chips on the dark table â€” swap to translucent
+// Status pills read as glaring light chips on the dark table — swap to translucent
 // dark fills + lighter text in dark mode, keyed off the semantic colour.
 const badgeTok = (cfg: { bg: string; border: string; color: string }, dark: boolean) => {
   if (!dark) return { bg: cfg.bg, border: cfg.border, text: cfg.color };
@@ -96,7 +96,7 @@ export default function ClmAgreementsToApprovePage() {
   const [tab, setTab]   = useState<AtaTab>('pending');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  // Dynamic rows-per-page â€” auto-fits the table to the viewport (like the CTC /
+  // Dynamic rows-per-page — auto-fits the table to the viewport (like the CTC /
   // Sent pages); the user's explicit pick from the pager sticks thereafter.
   const [pageSize, setPageSize] = useState(PER_PAGE);
   const autoFitRef = useRef(true);
@@ -110,7 +110,7 @@ export default function ClmAgreementsToApprovePage() {
   const [reviewId, setReviewId] = useState<string | null>(null);
   const [ata, setAta]   = useState<AtaRow[]>([]);
   const [loading, setLoading] = useState(true);
-  // True while an approve / reject / clarify request is in flight â€” keeps the
+  // True while an approve / reject / clarify request is in flight — keeps the
   // modal open with a spinner so the user knows the action is processing.
   const [submitting, setSubmitting] = useState(false);
   const load = () => {
@@ -159,7 +159,7 @@ export default function ClmAgreementsToApprovePage() {
   const actionContract = ata.find(c => c.id === actionId) || null;
   const reviewContract = ata.find(c => c.id === reviewId) || null;
 
-  // Download the approved (or any) agreement's PDF straight from the list â€”
+  // Download the approved (or any) agreement's PDF straight from the list —
   // reuses the same fetch path as the Review modal (signature-style preview,
   // falling back to the latest drafted version rendered to PDF).
   const [dlId, setDlId] = useState<string | null>(null);
@@ -206,13 +206,13 @@ export default function ClmAgreementsToApprovePage() {
     try {
       if (mode === 'rejected') { await api.post(`/clm/ctc-contracts/${row.dbId}/reject`, { reason: comment }); toast.error('Agreement rejected', 'Sent back to initiator'); }
       else { await api.post(`/clm/ctc-contracts/${row.dbId}/clarify`, { query: comment }); toast.info('Clarification raised', 'Sent to initiator'); }
-      // Success â†’ close both the action popup AND the review PDF behind it.
+      // Success → close both the action popup AND the review PDF behind it.
       setActionId(null); setActionChoice(null); setReviewId(null);
       load();
     } catch (e: any) {
       /* Show what the server actually said. A 422 from the length rule arrived
          here and was thrown away for a flat "Please try again", which told the
-         user nothing and suggested a transient fault â€” so they retried the same
+         user nothing and suggested a transient fault — so they retried the same
          over-long text and got the same nothing. Laravel puts the field message
          in errors.<field>[0]; message is the fallback. */
       const err = e?.response?.data;
@@ -276,7 +276,7 @@ export default function ClmAgreementsToApprovePage() {
                 <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
               </span>
             </div>
-            <div style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .85, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval â€” accept, reject, or request clarification before sending to counterparties.</div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .85, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval — accept, reject, or request clarification before sending to counterparties.</div>
           </div>
         </div>
       </div>
@@ -297,13 +297,13 @@ export default function ClmAgreementsToApprovePage() {
 
       {/* Whole-page lock while an agreement PDF is being built. The server
           renders it before it can stream a byte, and on a table-heavy contract
-          that runs for tens of seconds â€” the row button alone gave no sign of
+          that runs for tens of seconds — the row button alone gave no sign of
           it. Same spinner lock the other two CTC pages use. */}
       {dlId !== null && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(8,47,73,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
           <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ataSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Preparing your downloadâ€¦</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Large agreements can take a moment â€” please don't leave this page.</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Preparing your download…</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Large agreements can take a moment — please don't leave this page.</div>
         </div>, document.body)}
 
       {/* FILTER TABS + TABLE */}
@@ -312,7 +312,7 @@ export default function ClmAgreementsToApprovePage() {
           {/* The CLM rail: a hairline capsule holding 34px tabs on radius 8,
               as Agreements We Sent and Case to Case have it and as .clm-tab
               renders on the master pages. This was a radius-30 capsule of
-              radius-25 lozenges with no border and an inset shadow â€” a
+              radius-25 lozenges with no border and an inset shadow — a
               different control in the same module. */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(6,182,212,.10)' : 'rgba(255,255,255,.6)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.22)' : 'rgba(6,182,212,.28)'}`, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box' }}>
             {([
@@ -332,7 +332,7 @@ export default function ClmAgreementsToApprovePage() {
                   {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', borderRadius: '8px 8px 0 0', pointerEvents: 'none' }} />}
                   {dot && <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : dot, flexShrink: 0, boxShadow: active ? 'none' : `0 0 0 2px ${dot}40` }} />}
                   <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-                  {/* Raw count, not pad2 â€” "1" as on every other CLM rail and
+                  {/* Raw count, not pad2 — "1" as on every other CLM rail and
                       on the KPI tiles above, rather than "01". */}
                   <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 800, lineHeight: 1,
                     ...(active
@@ -345,7 +345,7 @@ export default function ClmAgreementsToApprovePage() {
           <div style={{ flex: 1 }} />
           <div className="ops-search ops-search--cyan">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title, created by, approverâ€¦" />
+            <input autoComplete="off" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by ID, title, created by, approver…" />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
@@ -364,7 +364,7 @@ export default function ClmAgreementsToApprovePage() {
           contract={reviewContract}
           onClose={() => setReviewId(null)}
           onApprove={(id) => doApprove(id)}
-          /* Keep the review modal mounted behind â€” the clarify/reject popup
+          /* Keep the review modal mounted behind — the clarify/reject popup
              stacks ON TOP of the PDF, so cancelling returns to the document. */
           onClarify={(id) => { setActionChoice('clarify'); setActionId(id); }}
           onReject={(id) => { setActionChoice('reject'); setActionId(id); }}
@@ -386,7 +386,7 @@ export default function ClmAgreementsToApprovePage() {
  * It was the icon on the left, the label in the metric's colour with a chip
  * beside it repeating that word, a 24px/900 figure in the metric's colour at
  * -1.5px tracking, and a caption restating the label. The chip and the caption
- * are dropped rather than restyled â€” both said what the label already said â€”
+ * are dropped rather than restyled — both said what the label already said —
  * and the figure is no longer zero-padded, so a count of 1 reads "1".
  */
 function StatCard({ t, accent, value, label, icon }: {
@@ -397,7 +397,7 @@ function StatCard({ t, accent, value, label, icon }: {
     <div style={{ position: 'relative', overflow: 'hidden', borderRadius: 14, padding: '11px 15px', background: t.surface, border: `1px solid ${t.dark ? t.border : 'var(--vz-border-color)'}`, borderTopWidth: 0, boxShadow: '0 1px 4px rgba(6,182,212,.1)', transition: 'all .18s', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}
       onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(6,182,212,.2)'; }}
       onMouseLeave={e => { e.currentTarget.style.transform = ''; e.currentTarget.style.boxShadow = '0 1px 4px rgba(6,182,212,.1)'; }}>
-      {/* Flush to the top edge â€” the card drops its own top border so the rule
+      {/* Flush to the top edge — the card drops its own top border so the rule
           IS the edge, which keeps it a clean 3px band. */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${c1},${c2})` }} />
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -415,7 +415,7 @@ function Pager({ total, page, setPage, t }: { total: number; page: number; setPa
   const start = (safe - 1) * PER_PAGE;
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: t.pagerBg, borderTop: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}` }}>
-      <span style={{ fontSize: 11.5, color: t.dark ? '#67e8f9' : '#0e7490', fontWeight: 500 }}>Showing <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{total === 0 ? 0 : start + 1}â€“{Math.min(start + PER_PAGE, total)}</b> of <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{total}</b></span>
+      <span style={{ fontSize: 11.5, color: t.dark ? '#67e8f9' : '#0e7490', fontWeight: 500 }}>Showing <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{total === 0 ? 0 : start + 1}–{Math.min(start + PER_PAGE, total)}</b> of <b style={{ color: t.dark ? '#cffafe' : '#164e63', fontWeight: 800 }}>{total}</b></span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => {
           const a = p === safe;
@@ -427,7 +427,7 @@ function Pager({ total, page, setPage, t }: { total: number; page: number; setPa
 }
 
 /* Opens the Review & Approve modal (read the PDF, then approve / reject /
-   clarify). Named for what it does â€” it doesn't approve directly. */
+   clarify). Named for what it does — it doesn't approve directly. */
 function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: () => void; onBlocked?: () => void }) {
   return (
     <Tooltip label={active ? 'Review & Approve' : 'Awaiting clarification response'}>
@@ -438,7 +438,7 @@ function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: (
   );
 }
 
-/* Respond / chat button â€” opens the shared clarification thread so ANY approver
+/* Respond / chat button — opens the shared clarification thread so ANY approver
    on the contract can read the conversation and add their own remark. Always
    active (unlike Review & Approve, which waits for the initiator's reply). */
 function RespondBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
@@ -452,25 +452,25 @@ function RespondBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
   );
 }
 
-/* View + Take Action buttons removed â€” the Review & Approve modal now handles
+/* View + Take Action buttons removed — the Review & Approve modal now handles
    viewing the PDF and all three actions (clarify / reject / approve). The old
    chat-bubble button is gone too: the full conversation history now lives inside
    the Raise Clarification popup itself. */
 
-/* Lists every approver on a contract with their individual decision (âœ“/âœ•/?/â€¢),
+/* Lists every approver on a contract with their individual decision (✓/✕/?/•),
    so a multi-approver / multi-round agreement shows who actually decided rather
    than just the static primary approver. Falls back to the single `approver`. */
 const APPR_ST: Record<string, { ic: string; color: string }> = {
-  approved:      { ic: 'âœ“', color: '#059669' },
-  rejected:      { ic: 'âœ•', color: '#DC2626' },
+  approved:      { ic: '✓', color: '#059669' },
+  rejected:      { ic: '✕', color: '#DC2626' },
   clarification: { ic: '?', color: '#7C3AED' },
-  pending:       { ic: 'â€¢', color: '#94A3B8' },
+  pending:       { ic: '•', color: '#94A3B8' },
 };
 function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
   const list = (c.approvers && c.approvers.length)
     ? c.approvers
     : (c.approver ? [{ name: c.approver, status: c.status }] : []);
-  if (!list.length) return <span style={{ fontSize: 11, color: t.textSub }}>â€”</span>;
+  if (!list.length) return <span style={{ fontSize: 11, color: t.textSub }}>—</span>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       {list.map((a, i) => {
@@ -536,7 +536,7 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                        <Tooltip label={dlId === c.id ? 'Preparing PDFâ€¦' : 'Download agreement PDF'}>
+                        <Tooltip label={dlId === c.id ? 'Preparing PDF…' : 'Download agreement PDF'}>
                           <button type="button" onClick={() => onDownload(c.id)} disabled={dlId === c.id} aria-label="Download agreement PDF" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 27, height: 27, borderRadius: 8, border: `1px solid ${c.status === 'approved' ? '#A7F3D0' : '#FECACA'}`, background: c.status === 'approved' ? '#ECFDF5' : '#FEF2F2', color: c.status === 'approved' ? '#059669' : '#DC2626', cursor: dlId === c.id ? 'wait' : 'pointer', flexShrink: 0 }}>
                             {dlId === c.id
                               ? <svg className="ata-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
@@ -611,13 +611,13 @@ function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSi
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><ApproverList c={c} t={t} /></td>
                   <td style={{ ...TD_L, maxWidth: 120 }}>
-                    <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{latest?.query ?? 'â€”'}</div></Tooltip>
-                    {hasResp && <div style={{ fontSize: 9.5, color: '#059669', fontWeight: 600, marginTop: 2 }}>âœ“ Response provided</div>}
+                    <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{latest?.query ?? '—'}</div></Tooltip>
+                    {hasResp && <div style={{ fontSize: 9.5, color: '#059669', fontWeight: 600, marginTop: 2 }}>✓ Response provided</div>}
                   </td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.expDate)}</span></td>
                   <td style={TD_C}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'nowrap' }}>
-                      {/* Open the shared clarification thread â€” available to EVERY
+                      {/* Open the shared clarification thread — available to EVERY
                           approver (not just the one who raised it) so any of them
                           can read the conversation and add their own remark. */}
                       <RespondBtn onClick={() => onChat(c.id)} t={t} />
@@ -638,14 +638,14 @@ function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSi
   );
 }
 
-/* â”€â”€ Take Action modal (Raise Clarification / Reject) â”€â”€ */
+/* ── Take Action modal (Raise Clarification / Reject) ── */
 function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, submitting = false, t }: { contract: AtaContract; onClose: () => void; onSubmit: (id: string, mode: 'clarification' | 'rejected', comment: string) => void; initialChoice?: 'clarify' | 'reject' | null; submitting?: boolean; t: OpsTokens }) {
   const [choice, setChoice] = useState<'clarify' | 'reject' | null>(initialChoice);
   const [comment, setComment] = useState('');
   /* 1,000 characters per submission, for a rejection reason and a clarification
      query alike.
      The server's ceiling for a query is 2,000 (CtcContractController), and this
-     used to match it. One query of 2,000 characters is not a question, though â€”
+     used to match it. One query of 2,000 characters is not a question, though —
      it is a document, and it lands in a chat bubble in a 230px thread that the
      initiator has to scroll. A clarification round-trip is cheap; a second
      query is the right way to ask a second thing. The server keeps its 2,000 as
@@ -655,11 +655,11 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
   /* The initiator is the only person who answers an approver's query, so they
      are the only one whose typing belongs in this modal. Without the filter the
      per-tenant whisper channel lets anyone with an agreements page open appear
-     here as "â€¦is typing". */
+     here as "…is typing". */
   const { typingName, notifyTyping, stopTyping } = useTyping(contract.id, { expect: [contract.createdBy] });
   /* Clarify is the only branch with a conversation to read, so it is the only
      one that earns the second pane. Reject and the undecided Choose-Action
-     state stay the narrow single column they have always been â€” widening them
+     state stay the narrow single column they have always been — widening them
      would leave half the card empty. */
   const isClarify = choice === 'clarify';
 
@@ -684,7 +684,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
         {submitting && (
           <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(8,3,28,.35)', cursor: 'progress', borderRadius: 'inherit' }} />
         )}
-        {/* Header â€” red for reject, cyan for clarify / default. */}
+        {/* Header — red for reject, cyan for clarify / default. */}
         <div style={{ background: choice === 'reject' ? 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(135deg,#7f1d1d 0%,#b91c1c 42%,#dc2626 78%,#ef4444 100%)' : 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', backgroundSize: '14px 14px, auto', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', pointerEvents: 'none' }} />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
@@ -695,7 +695,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
                 <div style={{ fontSize: 18, fontWeight: 900, color: '#fff', letterSpacing: '-.4px', lineHeight: 1.15, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
               </div>
             </div>
-            <button onClick={close} style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.15)', border: '1.5px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 17, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>âœ•</button>
+            <button onClick={close} style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.15)', border: '1.5px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 17, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✕</button>
           </div>
         </div>
 
@@ -703,7 +703,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
         {/* Body */}
         <div style={{ padding: '20px 24px 22px', background: t.surface, overflowY: 'auto' }}>
           {/* When a specific action was chosen from the Review modal, this popup
-              is single-purpose â€” the Choose-Action cards are hidden entirely. */}
+              is single-purpose — the Choose-Action cards are hidden entirely. */}
           {!initialChoice && (
             <>
               <div style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 12 }}>Choose Action</div>
@@ -724,12 +724,12 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
             {isClarify && <ClarificationThread contract={contract} typingName={typingName} t={t} />}
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? (contract.clarifications.length > 0 ? 'Add New Clarification Query' : 'Clarification Query') : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
-              <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreementâ€¦' : choice === 'clarify' ? 'Enter your clarification query for the initiatorâ€¦' : 'Enter your clarification query or rejection reasonâ€¦'}
+              <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
                 maxLength={commentMax}
                 style={{ width: '100%', height: isClarify ? 168 : 85, padding: '11px 13px', border: `1.5px solid ${err && !comment.trim() ? '#EF4444' : t.searchBorder}`, borderRadius: 11, fontFamily: 'inherit', fontSize: 12, color: t.text, resize: 'none', outline: 'none', lineHeight: 1.55, background: t.searchBg, boxSizing: 'border-box' }} />
               {/* Always on, not only near the ceiling. `maxLength` stops the
                   field dead at 1,000 and a counter that appears at 900 explains
-                  that only to someone who was already past it â€” by then they
+                  that only to someone who was already past it — by then they
                   have written the query they now have to cut. Shown from the
                   first keystroke, it is a budget rather than a post-mortem.
                   Amber at the limit; the colour is the only thing that changes
@@ -739,11 +739,11 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                 )}
                 {comment.length >= commentMax
-                  ? `Character limit reached â€” ${commentMax.toLocaleString()} maximum`
+                  ? `Character limit reached — ${commentMax.toLocaleString()} maximum`
                   : `${comment.length.toLocaleString()} / ${commentMax.toLocaleString()}`}
               </div>
               {err && !choice && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please choose an action.</div>}
-              {/* Submit then Cancel, 2:1 â€” the same pair, in the same order, the
+              {/* Submit then Cancel, 2:1 — the same pair, in the same order, the
                   initiator gets on the other side of this conversation.
                   Reject keeps "Confirm Rejection": it is terminal for the
                   agreement, and a plain "Submit" on a red button would be the
@@ -754,7 +754,7 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
                   {submitting
                     ? <svg className="ata-spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                     : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
-                  {submitting ? 'Submittingâ€¦' : (choice === 'reject' ? 'Confirm Rejection' : 'Submit')}
+                  {submitting ? 'Submitting…' : (choice === 'reject' ? 'Confirm Rejection' : 'Submit')}
                 </button>
                 <button onClick={close} disabled={submitting} style={{ flex: 1, padding: 13, borderRadius: 12, border: `1.5px solid ${t.searchBorder}`, background: 'transparent', color: t.textMuted, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? .55 : 1 }}>Cancel</button>
               </div>
@@ -784,13 +784,13 @@ function ChoiceCard({ sel, onClick, grad, selBg, selBd, baseBg, baseBd, title, t
   );
 }
 
-/* â”€â”€ Clarification conversation thread â€” embedded inside the Raise Clarification
- *    popup so the approver reads the full back-and-forth (plus a live "typingâ€¦"
- *    indicator) right above the box where they add their next query. â”€â”€ */
+/* ── Clarification conversation thread — embedded inside the Raise Clarification
+ *    popup so the approver reads the full back-and-forth (plus a live "typing…"
+ *    indicator) right above the box where they add their next query. ── */
 function ClarificationThread({ contract, typingName, t }: { contract: AtaContract; typingName: string | null; t: OpsTokens }) {
   /* Open on the NEWEST message, the way every chat does. The thread is
      oldest-first, so a conversation long enough to scroll opened on the first
-     query â€” usually one already answered â€” with the live exchange below the
+     query — usually one already answered — with the live exchange below the
      fold. Layout effect, not effect: `scrollTop` has to land before the browser
      paints, or the thread shows the top for a frame and then lurches. */
   const threadRef = useRef<HTMLDivElement | null>(null);
@@ -800,7 +800,7 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
   }, [contract.clarifications.length]);
 
   /* maxHeight tracks the composer pane opposite it (label + 168px box + button
-     + note â‰ˆ 265) so the two columns end level instead of one trailing a ragged
+     + note ≈ 265) so the two columns end level instead of one trailing a ragged
      edge below the other. */
   return (
     <div ref={threadRef} className="ata-thread" style={{ background: t.dark ? '#102234' : '#F0FDFF', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.28)' : '#CFFAFE'}`, borderRadius: 14, padding: '12px 14px', maxHeight: 265, overflowY: 'auto' }}>
@@ -809,15 +809,15 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
         <span style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0891b2' }}>Conversation History</span>
       </div>
       {contract.clarifications.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '18px 10px', fontSize: 11, fontWeight: 600, color: t.textMuted }}>No previous clarification â€” this will be the first query.</div>
+        <div style={{ textAlign: 'center', padding: '18px 10px', fontSize: 11, fontWeight: 600, color: t.textMuted }}>No previous clarification — this will be the first query.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {contract.clarifications.map((cl, i) => (
             <div key={i}>
-              {/* Your query (right) â€” filled cyan bubble */}
+              {/* Your query (right) — filled cyan bubble */}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'flex-start' }}>
                 <div style={{ maxWidth: '82%', minWidth: 0 }}>
-                  <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>{cl.by || contract.approver} Â· Approver Â· {cl.date}</div>
+                  <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3, textAlign: 'right' }}>{cl.by || contract.approver} · Approver · {cl.date}</div>
                   <div style={{ background: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.42)' : '#A5F3FC'}`, borderRadius: '12px 4px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.dark ? '#a5f3fc' : '#0e7490', lineHeight: 1.55, wordBreak: 'break-word' }}>{cl.query}</div>
                 </div>
                 <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(cl.by || contract.approver)}</span></div>
@@ -828,12 +828,12 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
                   three-word reply stretched edge to edge while a three-word
                   query sat in a small pill. Shrink-to-fit under the same cap,
                   so length reads as length. The surface fill also read as an
-                  input box on the pale card â€” tinted, it reads as a bubble. */}
+                  input box on the pale card — tinted, it reads as a bubble. */}
               {cl.response
                 ? <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 7 }}>
                     <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0c4a6e' }}>{inits(contract.createdBy)}</span></div>
                     <div style={{ maxWidth: '82%', minWidth: 0 }}>
-                      <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.createdBy} Â· Initiator</div>
+                      <div style={{ fontSize: 8.5, fontWeight: 700, color: t.textMuted, marginBottom: 3 }}>{contract.createdBy} · Initiator</div>
                       <div style={{ background: t.dark ? 'rgba(255,255,255,.05)' : '#fff', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#D8EFF4'}`, borderRadius: '4px 12px 12px 12px', padding: '9px 12px', fontSize: 11.5, color: t.textSub, lineHeight: 1.55, wordBreak: 'break-word', boxShadow: t.dark ? 'none' : '0 1px 3px rgba(8,145,178,.07)' }}>{cl.response}</div>
                     </div>
                   </div>
@@ -847,14 +847,14 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
   );
 }
 
-/* This modal's overlay sits at zIndex 9999999 â€” far above Tooltip's 260000
+/* This modal's overlay sits at zIndex 9999999 — far above Tooltip's 260000
  * default. A tooltip inside it is portalled to <body>, so without an explicit
  * bump it renders BEHIND the overlay and simply never appears. Every Tooltip
  * used inside the modal must pass this. */
 const MODAL_TIP_Z = 10000001;
 
 /* Modal header title. It is CSS-clipped at 520px, so the full title is only
- * reachable on hover â€” and the hover was missing entirely, leaving a long name
+ * reachable on hover — and the hover was missing entirely, leaving a long name
  * unreadable. The tooltip attaches only when the text is ACTUALLY cut, measured
  * from the DOM (scrollWidth vs clientWidth) rather than guessed from a length. */
 function ReviewModalTitle({ text }: { text: string }) {
@@ -868,9 +868,9 @@ function ReviewModalTitle({ text }: { text: string }) {
   return clipped ? <Tooltip label={text} position="bottom" zIndex={MODAL_TIP_Z}>{el}</Tooltip> : el;
 }
 
-/* â”€â”€ Review & Approve modal â€” a page-by-page agreement reader. One page is
+/* ── Review & Approve modal — a page-by-page agreement reader. One page is
  *    shown at a time with prev/next navigation; the three action buttons stay
- *    locked until every page has been viewed (maxSeen reaches the last page). â”€â”€ */
+ *    locked until every page has been viewed (maxSeen reaches the last page). ── */
 function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject, submitting = false, t }: {
   contract: AtaRow; onClose: () => void; onApprove: (id: string) => void; onClarify: (id: string) => void; onReject: (id: string) => void; submitting?: boolean; t: OpsTokens;
 }) {
@@ -886,7 +886,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
   const stageRef = useRef<HTMLDivElement | null>(null);
 
   // "reachedEnd" = scrolled through every page. Kept only to drive the reading-
-  // progress bar / next-page pulse â€” it no longer auto-unlocks the actions.
+  // progress bar / next-page pulse — it no longer auto-unlocks the actions.
   const reachedEnd = numPages > 1 && maxSeen >= numPages;
   // The read-confirmation is ALWAYS required: reaching the last page does NOT
   // auto-unlock, so the consent box stays visible (even on the final page) until
@@ -904,7 +904,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
-  // Action buttons stay tappable even when locked â€” tapping before the full
+  // Action buttons stay tappable even when locked — tapping before the full
   // agreement is read shows a toaster instead of doing nothing.
   const guard = (fn: (id: string) => void) => {
     if (!unlocked) { toast.warning('Read the full agreement', 'Read all pages, or tick "I have read the agreement", before taking an action.'); return; }
@@ -919,8 +919,8 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
     let cancelled = false;
     // Prefer the signature-style preview (page shell + org signature applied).
     // If that render fails for this contract, fall back to the latest drafted
-    // version rendered to PDF â€” the same reliable path the Case-to-Case list
-    // "Download" uses â€” so the reviewer always gets a PDF instead of the
+    // version rendered to PDF — the same reliable path the Case-to-Case list
+    // "Download" uses — so the reviewer always gets a PDF instead of the
     // "Could not load the agreement PDF." error (QA #7).
     const fetchBlob = async (): Promise<Blob> => {
       try {
@@ -947,7 +947,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
         setNumPages(pdf.numPages);
         setActivePage(1);
         setMaxSeen(1);
-        // Each document needs its OWN read-confirmation â€” reset the consent so a
+        // Each document needs its OWN read-confirmation — reset the consent so a
         // tick carried over from a previously-reviewed doc can't auto-unlock this
         // one (which made a single-page doc show "Fully reviewed" with no pill).
         setConfirmedRead(false);
@@ -1030,7 +1030,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} Â· Review &amp; Approve</div>
+                <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · Review &amp; Approve</div>
                 <ReviewModalTitle text={contract.title} />
               </div>
             </div>
@@ -1041,7 +1041,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
                   Download
                 </button>
               </Tooltip>
-              <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 16, cursor: 'pointer' }}>âœ•</button>
+              <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 9, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', color: '#fff', fontSize: 16, cursor: 'pointer' }}>✕</button>
             </div>
           </div>
           {/* Reading-progress bar */}
@@ -1049,15 +1049,15 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
             <div style={{ height: '100%', width: `${progressPct}%`, background: unlocked ? 'linear-gradient(90deg,#34d399,#10b981)' : 'linear-gradient(90deg,#a5f3fc,#fff)', borderRadius: 4, transition: 'width .3s ease' }} />
           </div>
           <div style={{ position: 'relative', zIndex: 1, padding: '5px 0 8px', fontSize: 8.5, fontWeight: 700, letterSpacing: '.06em', color: 'rgba(255,255,255,.8)', textTransform: 'uppercase' }}>
-            {unlocked ? 'âœ“ Fully reviewed' : `Reviewed ${maxSeen} of ${numPages || 'â€¦'} pages`}
+            {unlocked ? '✓ Fully reviewed' : `Reviewed ${maxSeen} of ${numPages || '…'} pages`}
           </div>
         </div>
 
-        {/* Page stage â€” the wrapper holds the FIXED arrows (they never scroll
+        {/* Page stage — the wrapper holds the FIXED arrows (they never scroll
             away); the inner div is the only thing that scrolls a long page. */}
         <div style={{ flex: 1, minHeight: 0, position: 'relative', background: t.dark ? 'radial-gradient(circle at 50% 0%, #14233a, #0b1220)' : 'radial-gradient(circle at 50% 0%, #eef4f8, #d8e2ea)' }}>
           <div ref={stageRef} style={{ position: 'absolute', inset: 0, overflowY: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px 64px' }}>
-            {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: t.dark ? '#cbd5e1' : '#475569' }}><span className="spinner-border text-info" role="status" aria-hidden="true" /><span style={{ fontSize: 12, fontWeight: 600 }}>Loading agreementâ€¦</span></div>}
+            {loading && <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, color: t.dark ? '#cbd5e1' : '#475569' }}><span className="spinner-border text-info" role="status" aria-hidden="true" /><span style={{ fontSize: 12, fontWeight: 600 }}>Loading agreement…</span></div>}
             {error && <div style={{ alignSelf: 'center', textAlign: 'center', color: '#dc2626', fontWeight: 600, fontSize: 12.5 }}>Could not load the agreement PDF.</div>}
             {!loading && !error && (
               <div className="ata-paper" style={{ width: '100%', maxWidth: 620, borderRadius: 6, overflow: 'hidden', boxShadow: '0 12px 40px rgba(8,3,28,.35)', background: '#fff' }}>
@@ -1065,7 +1065,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               </div>
             )}
           </div>
-          {/* Fixed prev / next â€” pinned to the viewer centre regardless of scroll. */}
+          {/* Fixed prev / next — pinned to the viewer centre regardless of scroll. */}
           {!loading && !error && numPages > 1 && (
             <>
               <Tooltip label="Previous page" zIndex={MODAL_TIP_Z}>
@@ -1081,9 +1081,9 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
             </>
           )}
 
-          {/* Consent pill â€” FLOATS over the document (no white strip), pinned to
+          {/* Consent pill — FLOATS over the document (no white strip), pinned to
               the bottom-centre of the viewer. Appears once the PDF has loaded and
-              stays visible on EVERY page (including the last) â€” ticking it is the
+              stays visible on EVERY page (including the last) — ticking it is the
               only thing that unlocks the actions.
               It stays mounted AFTER ticking too. Unmounting on tick left the
               reviewer with no confirmation that a LEGAL acknowledgement had
@@ -1091,7 +1091,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               own checked styling below dead code.
               A <div>, not a <label>: wrapping the input in a label made the whole
               pill a hit target, so a stray click anywhere near it flipped that
-              acknowledgement. Only the box itself toggles now â€” the text carries
+              acknowledgement. Only the box itself toggles now — the text carries
               an aria-label on the input instead, so screen readers keep it. */}
           {!loading && !error && numPages > 0 && (
             <div style={{
@@ -1100,7 +1100,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               padding: '10px 20px', borderRadius: 10, transition: 'all .2s',
               boxShadow: confirmedRead ? '0 8px 24px rgba(5,150,105,.28)' : '0 8px 24px rgba(8,145,178,.22)',
               // The pill floats over the WHITE PDF paper (always white, even in
-              // dark mode), so it stays light-with-dark-text regardless of theme â€”
+              // dark mode), so it stays light-with-dark-text regardless of theme —
               // dark-mode near-white text here would be invisible on the paper.
               background: confirmedRead ? '#ecfdf5' : '#ecfeff',
               border: `1.5px solid ${confirmedRead ? '#a7f3d0' : '#a5f3fc'}`,
@@ -1127,7 +1127,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 32, boxSizing: 'border-box', padding: '0 13px', borderRadius: 30, background: t.dark ? 'rgba(6,182,212,.14)' : '#ecfeff', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#a5f3fc'}`, fontSize: 11.5, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490' }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-              Page {activePage} / {numPages || 'â€¦'}
+              Page {activePage} / {numPages || '…'}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1135,7 +1135,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
             <button onClick={() => guard(onReject)} disabled={submitting} style={{ ...actBtn('#ef4444', '#dc2626'), opacity: submitting ? .55 : (unlocked ? 1 : .45), cursor: (submitting || !unlocked) ? 'not-allowed' : 'pointer' }}>Reject</button>
             <button onClick={() => guard(onApprove)} disabled={submitting} style={{ ...actBtn('#0891b2', '#0e7490'), cursor: submitting ? 'wait' : 'pointer' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{submitting
-                ? <><svg className="ata-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>Approvingâ€¦</>
+                ? <><svg className="ata-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>Approving…</>
                 : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Approve</>}</span>
             </button>
           </div>
@@ -1161,7 +1161,7 @@ const ATA_CSS = `
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
 
-/* â”€â”€ Responsive Take Action modal â”€â”€
+/* ── Responsive Take Action modal ──
    Clarify runs two panes side by side on a laptop: the thread on the left, the
    new query on the right. Below this width they stack, thread first. */
 @media (max-width: 820px) {
@@ -1169,7 +1169,7 @@ const ATA_CSS = `
 }
 @keyframes ataSpin { to { transform: rotate(360deg); } }
 
-/* Slim scrollbar for the clarification thread â€” see the note on .aws-thread in
+/* Slim scrollbar for the clarification thread — see the note on .aws-thread in
    the initiator-side page; same rule, cyan to match this modal. */
 .ata-thread { scrollbar-width: thin; scrollbar-color: rgba(6,182,212,.4) transparent; }
 .ata-thread::-webkit-scrollbar { width: 5px; }
