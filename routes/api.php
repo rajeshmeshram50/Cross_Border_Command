@@ -970,6 +970,10 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::post ('/employees/{employee}/documents', [EmployeeDocumentController::class, 'store']);
 
     // Policies & Agreements document set — pick, finalise, re-open (#24).
+    /* The Exit Documents stage's four reads in one trip. The separate routes
+       below stay — other screens still use them individually. (QA #13) */
+    Route::get  ('/employees/{employee}/exit/document-bundle',        [\App\Http\Controllers\Api\ExitDocumentBundleController::class, 'show']);
+    Route::get  ('/employees/{employee}/exit/overview',               [\App\Http\Controllers\Api\ExitDocumentBundleController::class, 'overview']);
     Route::get  ('/employees/{employee}/onboarding-doc-set',          [\App\Http\Controllers\Api\HrOnboardingDocSetController::class, 'show']);
     Route::put  ('/employees/{employee}/onboarding-doc-set',          [\App\Http\Controllers\Api\HrOnboardingDocSetController::class, 'save']);
     Route::post ('/employees/{employee}/onboarding-doc-set/finalize', [\App\Http\Controllers\Api\HrOnboardingDocSetController::class, 'finalize']);
