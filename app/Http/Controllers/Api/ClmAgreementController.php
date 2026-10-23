@@ -475,6 +475,9 @@ class ClmAgreementController extends Controller
             : null;
 
         $segmentsOut = [];
+        // Filled by segmentTradeDocs() on first use and reused for every segment:
+        // the party's trade-doc uploads do not depend on the segment (QA #15).
+        $tdUploadsByOwner = null;
         foreach ($segments as $seg) {
             $name = $seg->name;
             $code = $seg->code;
@@ -538,7 +541,7 @@ class ClmAgreementController extends Controller
                 'name'       => $seg->name,
                 'regulatory' => $seg->regulatory_status,
                 'agreements' => $agreementsOut,
-                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners, $latestPerTradeDoc, $needs, $buyerEqualsConsignee),
+                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners, $latestPerTradeDoc, $needs, $buyerEqualsConsignee, $tdUploadsByOwner),
             ];
         }
 
@@ -670,7 +673,13 @@ class ClmAgreementController extends Controller
         return response()->json(['status' => true, 'saved' => count($data['items'])]);
     }
 
-    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = [], array $needs = [], bool $buyerEqualsConsignee = false): array
+    /**
+     * @param array|null $uploadsCache The party uploads, loaded on first use and
+     *        handed back so the caller's next segment reuses them. They depend on
+     *        the party only, so re-reading them per segment was N identical
+     *        queries per lead (QA #15: ~0.15 s each on live).
+     */
+    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = [], array $needs = [], bool $buyerEqualsConsignee = false, ?array &$uploadsCache = null): array
     {
         $name = $seg->name;
         $code = $seg->code;
@@ -692,15 +701,18 @@ class ClmAgreementController extends Controller
             ->get();
         if ($docs->isEmpty()) return [];
 
-        $uploadsByOwner = [];
-        foreach ($partyOwners as $owner) {
-            $model = $owner['model'];
-            $uploadsByOwner[$owner['party']] = SegmentDocUpload::where('uploadable_type', get_class($model))
-                ->where('uploadable_id', $model->id)
-                ->where('category', 'td')
-                ->get()
-                ->keyBy('doc_code');
+        if ($uploadsCache === null) {
+            $uploadsCache = [];
+            foreach ($partyOwners as $owner) {
+                $model = $owner['model'];
+                $uploadsCache[$owner['party']] = SegmentDocUpload::where('uploadable_type', get_class($model))
+                    ->where('uploadable_id', $model->id)
+                    ->where('category', 'td')
+                    ->get()
+                    ->keyBy('doc_code');
+            }
         }
+        $uploadsByOwner = $uploadsCache;
 
         $out = [];
         foreach ($docs as $m) {
