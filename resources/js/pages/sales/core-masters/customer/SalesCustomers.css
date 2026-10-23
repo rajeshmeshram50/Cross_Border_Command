@@ -1797,3 +1797,13 @@
    is lifted above it (z-index 1) but this button was not, so the wash sat on
    top and greyed its white text. */
 .smc-root .frm-cstrip.hr-cstrip .cstrip__action-btn { position: relative; z-index: 1; }
+/* Cust Category / Customer Type pills: at the table type (11.5px) "International"
+   no longer fit its fixed 8% column at the 1440px minimum width, and the cell's
+   ellipsis showed a stray "..." after the pill. Tighter side padding and no
+   extra tracking keep the text size and let it fit. */
+.smc-table-wrap .table tbody td .smc-type-pill,
+.smc-table-wrap .table tbody td .smc-trade-pill {
+  padding: 4px 8px;
+  letter-spacing: 0;
+  max-width: 100%;
+}
