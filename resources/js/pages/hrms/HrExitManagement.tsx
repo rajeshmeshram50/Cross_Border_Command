@@ -2415,9 +2415,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     //    are not released for this exit at all, in which case none were issued
     //    and none can ever come back signed.
     // Required = the finalized ticked set (not every matched template).
-    if (!noSettlementDue && docSetLoaded && !docFinalized && exitTemplates.length > 0) {
+    // docsReleased mirrors the gate in handleComplete — see the note there.
+    if (docsReleased && !noSettlementDue && docSetLoaded && !docFinalized && exitTemplates.length > 0) {
       items.push('Exit document set not finalized');
-    } else if (!noSettlementDue) {
+    } else if (docsReleased && !noSettlementDue) {
       const unsigned = exitRequiredIds.filter(id => runByTemplateId.get(id)?.status !== 'Completed');
       if (unsigned.length) items.push(`${unsigned.length} exit document${unsigned.length > 1 ? 's' : ''} not fully signed`);
     }
@@ -2439,7 +2440,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lwdReached, lwd, reportingManagerDisabled, directReportCount, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, noSettlementDue, blacklistApplies, blacklisted, blacklistReason, docFinalized, docSetLoaded, exitRequiredIds]);
+  }, [lwdReached, lwd, reportingManagerDisabled, directReportCount, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, noSettlementDue, blacklistApplies, blacklisted, blacklistReason, docFinalized, docSetLoaded, exitRequiredIds, docsReleased]);
 
   /* Direct-report COUNT, refreshed whenever the wizard opens and after each
      reassignment. Loaded up-front rather than on the closure stage so the
@@ -2573,9 +2574,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return total === 0 ? 0 : Math.round((done / total) * 100);
     }
     if (n === 'documents') {
-      // Documents are not released for this exit — nothing to generate, send
-      // or sign, so the stage holds no work.
-      if (noSettlementDue) return 100;
+      /* Documents are not released for this exit — nothing to generate, send
+         or sign, so the stage holds no work.
+         !docsReleased belongs here for the same reason, and without it the
+         stage stuck at 90%: the cap below only lifts on finalising, and
+         finalising is disabled while the release switch is off. Every other
+         stage read Completed while this one sat at 90% and completion failed
+         with "1 stage not complete" — the deadlock the total === 0 note below
+         warns about, arrived at by a different road. (QA #15) */
+      if (noSettlementDue || !docsReleased) return 100;
       const total = exitTemplates.length;
       /* No exit-document template matches this employee → there is nothing to
          generate and nothing to sign, so the stage holds no work. Reads 100,
@@ -2634,6 +2641,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
        below, which would otherwise hold them In Progress waiting on a payment
        that is not owed and signatures on documents that are not issued. */
     if (noSettlementDue && (n === 'fnf' || n === 'documents')) return 'Completed';
+    /* Documents not released is the same "signatures on documents that are not
+       issued" case the note above describes — it just arrives by the switch
+       rather than by probation. Without it the stage read 100% (rawStagePct
+       already exempts this) while its STATUS stayed In Progress, and completion
+       gates on status: "1 stage not complete — Exit Documents Management
+       (100%)", a percentage and a verdict contradicting each other.
+       'documents' only; the F&F is money and owes nothing to this switch. */
+    if (!docsReleased && n === 'documents') return 'Completed';
     // Clearance & Handover — only complete when EVERY clearance is approved AND
     // EVERY assigned asset is handed over. A stale persisted "Completed" must
     // not show 100% while clearances/assets are still pending.
@@ -2896,7 +2911,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
        The two checks are now one rule stated once, rather than a lenient
        version on the checklist and a strict one on the button. */
-    const docSetApplies = !noSettlementDue && exitTemplates.length > 0;
+    /* docsReleased as well: with the release switch off, View and Send are
+       disabled, so nothing in the set can be sent and nothing can ever come
+       back signed. Requiring a finalized, fully-signed set then is a demand
+       the screen itself refuses to let anyone meet. (QA #15) */
+    const docSetApplies = docsReleased && !noSettlementDue && exitTemplates.length > 0;
     if (docSetApplies && docSetLoaded && !docFinalized) {
       toast.error('Exit can’t be completed — document set not finalized',
         'Tick the exit documents this employee needs and finalize the set in “Exit Documents Management” first.');
@@ -4615,9 +4634,32 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               <i className="ri-lock-unlock-line" /> Re-open set
                             </button>
                           ) : (
-                            <button type="button" className="ep-doc-btn" disabled={docSetBusy || docSelected.size === 0}
-                              onClick={finalizeDocSet}
-                              style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, cursor: docSelected.size === 0 ? 'not-allowed' : 'pointer', opacity: docSelected.size === 0 ? .6 : 1 }}>
+                            /* Not while the documents are unreleased. Finalising
+                               then was a trap: the set became required, but View
+                               and Send stay disabled, so nothing in it could ever
+                               be sent or signed — and the exit then refused to
+                               complete over documents nobody was allowed to
+                               touch. (QA #15) */
+                            /* Greyed but still CLICKABLE when the release switch
+                               is off, so the click can say why. `disabled` would
+                               swallow it and leave a dead button — the same
+                               reason the employee toolbar keeps its locked
+                               actions clickable. */
+                            <button type="button" className="ep-doc-btn"
+                              disabled={docSetBusy || docSelected.size === 0}
+                              aria-disabled={!docsReleased || undefined}
+                              onClick={() => {
+                                if (!docsReleased) {
+                                  toast.warning(
+                                    'Documents are not released yet',
+                                    'Switch on “release this employee’s documents” above first — a set finalized now could never be sent or signed.',
+                                  );
+                                  return;
+                                }
+                                finalizeDocSet();
+                              }}
+                              title={!docsReleased ? releaseHint : undefined}
+                              style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, cursor: (docSelected.size === 0 || !docsReleased) ? 'not-allowed' : 'pointer', opacity: (docSelected.size === 0 || !docsReleased) ? .6 : 1 }}>
                               <i className="ri-check-double-line" /> Finalize document set
                             </button>
                           )}
@@ -4653,14 +4695,30 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               {/* Tick = required for this exit. Locked once the set
                                   is finalized, or once the doc is sent/signed. */}
                               {(() => {
-                                const cbLocked = docFinalized || docSetBusy || runInFlight || runCompleted;
+                                // !docsReleased too: ticking a document the user
+                                // cannot then send only builds a set that blocks
+                                // the exit. (QA #15)
+                                const cbLocked = docFinalized || docSetBusy || runInFlight || runCompleted || !docsReleased;
                                 return (
                                   <input type="checkbox" className="form-check-input mt-0" aria-label="Require this document"
+                                    // Not disabled on !docsReleased — a disabled
+                                    // input swallows the click, and the click is
+                                    // what carries the explanation.
                                     checked={docSelected.has(tpl.id)} disabled={docFinalized || docSetBusy}
-                                    title={runInFlight || runCompleted ? 'Already sent for signature — can’t be removed from the set' : docFinalized ? 'Set is finalized — re-open to change' : 'Require this document for this exit'}
-                                    onClick={(e) => { e.stopPropagation(); if (runInFlight || runCompleted) { e.preventDefault(); toast.warning('Already in signing', 'This document is already sent for signature or signed — you can’t remove it from the set.'); } }}
-                                    onChange={(e) => { e.stopPropagation(); if (runInFlight || runCompleted) return; toggleDocSelect(tpl.id); }}
-                                    style={{ flexShrink: 0, marginRight: 8, cursor: cbLocked ? 'not-allowed' : 'pointer', opacity: (runInFlight || runCompleted) ? 0.6 : 1 }} />
+                                    aria-disabled={!docsReleased || undefined}
+                                    title={!docsReleased ? releaseHint : runInFlight || runCompleted ? 'Already sent for signature — can’t be removed from the set' : docFinalized ? 'Set is finalized — re-open to change' : 'Require this document for this exit'}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!docsReleased) {
+                                        e.preventDefault();
+                                        toast.warning('Documents are not released yet',
+                                          'Switch on “release this employee’s documents” above to choose which ones this exit needs.');
+                                        return;
+                                      }
+                                      if (runInFlight || runCompleted) { e.preventDefault(); toast.warning('Already in signing', 'This document is already sent for signature or signed — you can’t remove it from the set.'); }
+                                    }}
+                                    onChange={(e) => { e.stopPropagation(); if (runInFlight || runCompleted || !docsReleased) return; toggleDocSelect(tpl.id); }}
+                                    style={{ flexShrink: 0, marginRight: 8, cursor: cbLocked ? 'not-allowed' : 'pointer', opacity: (runInFlight || runCompleted || !docsReleased) ? 0.6 : 1 }} />
                                 );
                               })()}
                               <span className="ep-doc-icon"><i className="ri-file-text-line" /></span>
