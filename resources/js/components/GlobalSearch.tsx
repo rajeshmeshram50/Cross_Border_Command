@@ -1,13 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
-import * as Icons from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { MENU_ITEMS } from '../constants';
-
-function getIcon(name: string): LucideIcon {
-  return (Icons as unknown as Record<string, LucideIcon>)[name] || Icons.Circle;
-}
+/* Was `import * as Icons from 'lucide-react'` with a runtime lookup, which
+   cannot be tree-shaken and brought the whole library along. */
+import { getMenuIcon as getIcon } from '../layouts/menuIcons';
 
 interface Props {
   onNavigate: (id: string) => void;

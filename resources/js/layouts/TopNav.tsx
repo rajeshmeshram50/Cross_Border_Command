@@ -6,13 +6,21 @@ import { MENU_ITEMS } from '../constants';
 import type { MenuGroup, MenuItem } from '../types';
 import Logo from '../components/Logo';
 import BranchSwitcher from '../components/BranchSwitcher';
-import * as Icons from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+/* Named, not `import * as Icons`. A namespace import cannot be tree-shaken —
+   the bundler cannot know which icon a runtime string will name — so the whole
+   library landed in the entry chunk every user downloads. The dynamic menu
+   lookup now goes through menuIcons, and the handful this file names directly
+   are imported by name. */
+import {
+  AlertTriangle, Bell, CheckCircle, ChevronDown, Circle,
+  LogOut, Maximize2, Minimize2, Moon, Sun, UserPlus,
+} from 'lucide-react';
+import { getMenuIcon as getIcon } from './menuIcons';
 
-function getIcon(name?: string): LucideIcon {
-  if (!name) return Icons.Circle;
-  return (Icons as unknown as Record<string, LucideIcon>)[name] || Icons.Circle;
-}
+const Icons = {
+  AlertTriangle, Bell, CheckCircle, ChevronDown, Circle,
+  LogOut, Maximize2, Minimize2, Moon, Sun, UserPlus,
+};
 
 interface Props {
   current: string;
