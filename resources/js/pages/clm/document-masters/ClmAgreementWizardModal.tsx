@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -50,7 +50,11 @@ export type AgrLib = {
   signing: boolean;
   segment: string | null;
   agr_status: string;
-  content: string | null;
+  /* OPTIONAL on purpose. The list endpoint leaves `content` out — it was 92.9%
+     of that response and the table never renders it — so undefined means "not
+     fetched yet" and the wizard asks for this row on open. null still means
+     "this agreement has no body". */
+  content?: string | null;
   /* Stage 2 page-shell — same shape Trade Document carries. Nullable for
    * rows that pre-date the columns; the wizard layers the row's config
    * over branded defaults so missing keys stay safe. */
@@ -471,6 +475,35 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     }
   };
 
+  /* Fetches the document body for the row being edited. Guarded by the row id
+     rather than a boolean: open agreement A, close it, open B, and A's reply
+     can still land — without this check it would seed B's editor with A's
+     document. */
+  const contentWantedFor = useRef<number | null>(null);
+  const [contentLoading, setContentLoading] = useState(false);
+
+  const loadContent = useCallback(async (id: number) => {
+    contentWantedFor.current = id;
+    setContentLoading(true);
+    try {
+      const { data } = await api.get<{ data?: { content?: string | null } }>(`/clm/agreement-library/${id}`);
+      if (contentWantedFor.current !== id) return;   // a different row is open now
+      const html = data?.data?.content ?? '';
+      setContent(html);
+      // Re-seeds the TipTap document as well as `content`. It reports a change,
+      // which would otherwise leave the form looking edited before the user has
+      // touched it, so dirty is cleared straight after.
+      agr.setHTML(html);
+      setDirty(false);
+    } catch {
+      if (contentWantedFor.current === id) {
+        toast.error('Could not load the agreement', 'Its content could not be fetched. Close and reopen to try again.');
+      }
+    } finally {
+      if (contentWantedFor.current === id) setContentLoading(false);
+    }
+  }, [agr, toast]);
+
   // Reset/hydrate on open
   useEffect(() => {
     if (!open) return;
@@ -485,7 +518,13 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       setPurpose(existing.purpose ?? '');
       setParties(new Set((existing.party ?? '').split(',').map(s => normalizeParty(s.trim())).filter(Boolean)));
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
+      /* The list omits `content` — it was 92.9% of that response and the table
+         never shows it — so an undefined one means "fetch it". A row that does
+         carry it (an older caller, a freshly saved draft) is used as-is.
+         The wizard always opens on step 1 and the editor is on step 2, so this
+         has a whole screen of the user's time to arrive in. */
       setContent(existing.content ?? '');
+      if (existing.content === undefined) void loadContent(existing.id);
       // Layer the saved zone config over branded defaults — pre-migration
       // rows come back with null and keep the logged-in user's branch
       // branding as their starting point.
@@ -1010,14 +1049,19 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
           </div>
           <div className="agw-foot-right">
             <button type="button" className="agw-btn agw-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+            {/* Both buttons are held while the document body is still on its
+                way. Step 2 IS the editor, so letting the user through to one
+                that has not been seeded yet would show an empty agreement —
+                and a save from there would write that emptiness over the
+                real one. */}
             {step === 1 ? (
-              <button type="button" className="agw-btn agw-btn-primary" onClick={goNext} disabled={saving || nexting}>
-                {nexting && <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>}
-                {nexting ? 'Saving…' : 'Save & Next'}
+              <button type="button" className="agw-btn agw-btn-primary" onClick={goNext} disabled={saving || nexting || contentLoading}>
+                {(nexting || contentLoading) && <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>}
+                {contentLoading ? 'Loading…' : nexting ? 'Saving…' : 'Save & Next'}
                 {!nexting && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>}
               </button>
             ) : (
-              <button type="button" className="agw-btn agw-btn-save" onClick={() => void handleSave()} disabled={saving}>
+              <button type="button" className="agw-btn agw-btn-save" onClick={() => void handleSave()} disabled={saving || contentLoading}>
                 {saving ? (
                   <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                 ) : (

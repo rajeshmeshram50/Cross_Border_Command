@@ -35,7 +35,10 @@ type AgrType = { id: number; code: string; name: string; description: string; in
 type AgrLib = {
   id: number; code: string; agreement_type: string; title: string; purpose?: string | null; party: string;
   regulatory: 'highly'|'less'; signing: boolean; segment: string | null;
-  agr_status: string; content: string | null; is_signed?: boolean; in_use?: boolean;
+  /* content is OPTIONAL: the list endpoint leaves it out (it was 92.9% of that
+     response and the table never renders it) and the wizard fetches the one
+     row it opens. */
+  agr_status: string; content?: string | null; is_signed?: boolean; in_use?: boolean;
 };
 type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
