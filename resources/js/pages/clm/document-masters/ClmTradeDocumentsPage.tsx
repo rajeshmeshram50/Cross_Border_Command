@@ -58,7 +58,9 @@ export default function ClmTradeDocumentsPage() {
       api.get<{ status: boolean; data: TdName[] }>('/clm/trade-doc-names'),
       // Segments drive the Step-1 Segment Regulatory Status selector in the
       // draft modal (same source the Agreement wizard uses).
-      api.get<{ status: boolean; data: Seg[] }>('/clm/segments').catch(() => ({ data: { data: [] } })),
+      /* lite=1 — see the note on ClmTncPage. Seg here is name +
+         regulatory_status only; in_use on this page is a trade-doc name's. */
+      api.get<{ status: boolean; data: Seg[] }>('/clm/segments', { params: { lite: 1 } }).catch(() => ({ data: { data: [] } })),
     ]).then(([n, s]) => { setNames(n.data.data ?? []); setSegments((s.data as { data?: Seg[] }).data ?? []); })
       .catch(() => toast.error('Load failed', 'Could not load trade documents'))
       .finally(() => setLoading(false));

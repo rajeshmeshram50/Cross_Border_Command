@@ -252,7 +252,12 @@ class ClmAgreementController extends Controller
                 'updated_by'     => $user->id,
             ]);
         });
-        return response()->json(['status' => true, 'data' => $row], 201);
+        /* Without content. The wizard just posted it and awaits this response
+           without reading it, so echoing the document back sends it a second
+           time for nothing — 1.5 MB on live for an agreement carrying an
+           imported Word document, which is most of the 42 s the save took.
+           Every other column still goes back. */
+        return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
     public function libraryUpdate(Request $request, $id)
@@ -294,7 +299,8 @@ class ClmAgreementController extends Controller
             $data['docx_original_name'] = null;
         }
         $row->update($data);
-        return response()->json(['status' => true, 'data' => $row->fresh()]);
+        // Without content — see libraryStore.
+        return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
     public function uploadHeaderLogo(Request $request)

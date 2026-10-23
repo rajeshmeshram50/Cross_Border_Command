@@ -65,7 +65,13 @@ export default function ClmTncPage() {
     Promise.all([
       api.get<{ status: boolean; data: Cat[] }>('/clm/tnc-categories'),
       api.get<{ status: boolean; data: Lib[] }>('/clm/tnc-library'),
-      api.get<{ status: boolean; data: Seg[] }>('/clm/segments'),
+      /* lite=1. The segments here only fill the wizard's dropdown, which reads
+         name, code and regulatory_status — exactly what lite returns. Without
+         it the endpoint also runs usageLabels(), three whole-table JSON scans
+         PER SEGMENT to work out where each one is referenced, and this page
+         never looks at in_use or used_in. On live that call takes 14-16s for
+         1.9 kB of response, and it is what the T&C list is waiting on. */
+      api.get<{ status: boolean; data: Seg[] }>('/clm/segments', { params: { lite: 1 } }),
       api.get<{ status: boolean; data: GlobalTnc[] }>('/clm/tnc-global')
         .catch(() => ({ data: { data: [] as GlobalTnc[] } })),
     ]).then(([c, l, s, g]) => {

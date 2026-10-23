@@ -52,7 +52,10 @@ export default function ClmAgreementsPage() {
     Promise.all([
       api.get<{ status: boolean; data: AgrType[] }>('/clm/agreement-types'),
       api.get<{ status: boolean; data: AgrLib[]  }>('/clm/agreement-library'),
-      api.get<{ status: boolean; data: Seg[]     }>('/clm/segments'),
+      /* lite=1 — see the note on ClmTncPage. These segments feed the agreement
+         wizard's dropdown (name / code / regulatory_status); in_use on this
+         page belongs to agreement types and library rows, not to segments. */
+      api.get<{ status: boolean; data: Seg[]     }>('/clm/segments', { params: { lite: 1 } }),
     ]).then(([t, l, s]) => { setTypes(t.data.data ?? []); setLib(l.data.data ?? []); setSegs(s.data.data ?? []); })
       .catch(() => toast.error('Load failed', 'Could not load agreements'))
       .finally(() => setLoading(false));
