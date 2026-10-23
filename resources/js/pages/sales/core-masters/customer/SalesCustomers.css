@@ -1740,9 +1740,10 @@
    app.css restyles every button inside an HRMS header strip with !important
    (42px pill, 13px/600), so the button's own values are restated. */
 .smc-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn {
-  height: auto !important;
+  /* 40px = the search bar / Filter / tabs below. */
+  height: 40px !important;
   min-height: 0 !important;
-  padding: 9px 18px !important;
+  padding: 0 18px !important;
   border-radius: 12px !important;
   font-size: 11.5px !important;
   font-weight: 700 !important;

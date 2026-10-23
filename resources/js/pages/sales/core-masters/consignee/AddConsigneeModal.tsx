@@ -2465,7 +2465,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         <div className="acm-wiz-header">
           <div className="acm-wiz-hicon"><IconTruck size={20} /></div>
           <div className="acm-wiz-htxt">
-            <div className="acm-wiz-htitle">{consignee?.db_id ? 'Edit Consignee' : 'Add Consignee'}</div>
+            <div className="acm-wiz-htitle">{consignee?.db_id ? `Edit Consignee — ${consignee.id}` : 'Add Consignee'}</div>
             <div className="acm-wiz-hsub">
               {consignee?.db_id
                 ? 'Update consignee identity, KYC, and trade documents.'
@@ -3872,9 +3872,9 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
 /* ─── Stage 2 — KYC / Due Diligence ─── */
 /* ─── Stage 2 — KYC / Due Diligence (table-driven) ─── */
 const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string; addLabel: string }> = {
-  'company-dd':   { title: 'COMPANY DUE DILIGENCE', sub: '| Licenses, statutory documents, and compliance proofs', nameCol: 'DD Document Name',  placeholder: 'Search DD document name…',    addLabel: 'Add Document / License' },
-  'owner-kyc':    { title: 'OWNER KYC DETAILS',     sub: '| Owner identity proofs, address proofs, and photographs', nameCol: 'KYC Document Name', placeholder: 'Search owner name…',          addLabel: 'Add Owner KYC' },
-  'trade-licence':{ title: 'TRADE LICENCE',         sub: '| Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
+  'company-dd':   { title: 'COMPANY DUE DILIGENCE', sub: 'Licenses, statutory documents, and compliance proofs', nameCol: 'DD Document Name',  placeholder: 'Search DD document name…',    addLabel: 'Add Document / License' },
+  'owner-kyc':    { title: 'OWNER KYC DETAILS',     sub: 'Owner identity proofs, address proofs, and photographs', nameCol: 'KYC Document Name', placeholder: 'Search owner name…',          addLabel: 'Add Owner KYC' },
+  'trade-licence':{ title: 'TRADE LICENCE',         sub: 'Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
 };
 
 /* Per-row actions cell for the segment-rule reference rows. Starts as
@@ -4320,18 +4320,25 @@ const Stage2 = ({
         </ConsigneeHistoryPanel>
       )}
 
+      {/* Same tab rail as the list pages (Customers list), in this form's emerald. */}
       <div className="acm-kyc-subtabs">
+        <div className="dt-tabrail hr-dt" data-accent="emerald">
+        <div className="dt-tabs" role="tablist">
         {(['company-dd', 'owner-kyc', 'trade-licence'] as KycSubTab[]).map(s => (
           <button
             key={s}
             type="button"
-            className={`acm-kyc-subtab ${sub === s ? 'on' : ''}`}
+            role="tab"
+            aria-selected={sub === s}
+            className={`dt-tab ${sub === s ? 'on' : 'off'}`}
             onClick={() => setSub(s)}
           >
             {s === 'company-dd' ? <IconHome size={12} /> : s === 'owner-kyc' ? <IconUser /> : <IconDoc />}
             {s === 'company-dd' ? 'Company Due Diligence' : s === 'owner-kyc' ? 'Owner KYC' : 'Trade Licence'}
           </button>
         ))}
+        </div>
+        </div>
       </div>
 
       <div className="acm-kyc-card">
@@ -4341,6 +4348,9 @@ const Stage2 = ({
             <div className="acm-kyc-head-text">
               <span className="acm-kyc-head-title">{meta.title}</span>
               <span className="acm-kyc-head-sub">{meta.sub}</span>
+            </div>
+            <div className="acm-kyc-count">
+              {totalRows} {(isOwners && !showingOwnerRefs) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}
             </div>
             {/* Stage 2 sub-tab headers no longer carry a "+ Add" pill.
                 Rows now come exclusively from the selected segment's
@@ -4367,17 +4377,14 @@ const Stage2 = ({
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          <div className="acm-kyc-count">
-            {totalRows} {(isOwners && !showingOwnerRefs) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}
-          </div>
         </div>
 
         <div className="acm-kyc-body">
-          <div className="acm-loc-table-wrap">
+          <div className="acm-loc-table-wrap acm-kyc-table-wrap dt-root hr-dt" data-accent="emerald">
             {loading ? (
               /* Segment-rule catalog still loading from the DB — table shimmer
                  (real headers + shimmer rows) so the grid doesn't flash empty. */
-              <table className="acm-loc-table">
+              <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
                     {isOwners ? (
@@ -4402,7 +4409,7 @@ const Stage2 = ({
                  owners have been captured yet. The "+ Add Owner KYC"
                  pill still opens the existing owner-form to capture
                  real entries on top of these references. */
-              <table className="acm-loc-table">
+              <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
@@ -4456,7 +4463,7 @@ const Stage2 = ({
                 </tbody>
               </table>
             ) : isOwners ? (
-              <table className="acm-loc-table">
+              <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
                     <th>SR NO</th><th>OWNER NAME</th><th>DESIGNATION</th><th>EMAIL</th><th>PHONE</th>
@@ -4509,7 +4516,7 @@ const Stage2 = ({
                 </tbody>
               </table>
             ) : (
-              <table className="acm-loc-table">
+              <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th>
@@ -6366,7 +6373,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               {isDomesticCountry(d.country) ? (
                 <div className="avm-phone-in">
                   <span className="avm-phone-cc">+91</span>
-                  <input className="avm-input avm-phone-field" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} />
+                  <input className={`avm-input avm-phone-field${errs.cpContact ? ' acm-input-error' : ''}`} type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} />
                 </div>
               ) : (
                 <input
@@ -6949,13 +6956,16 @@ const SCOPED_CSS = `
 .acg-linked-bar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
-  padding: 10px 16px;
+  /* Same side insets as the stepper below (22px, +8px scrollbar gutter on the
+     right), so the icon and the Show toggle line up with the step cards. */
+  padding: 10px 30px 10px 22px;
   cursor: pointer;
   /* Figma: clean white bar — no left accent stripe. */
   background: #ffffff;
   user-select: none;
 }
 .acg-linked-bar:hover { background: #f6fefb; }
+.acg-linked-scroll .acg-hs-mirror { padding-left: 22px; padding-right: 30px; }
 .acg-linked-bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .acg-linked-icon {
   width: 30px; height: 30px; border-radius: 8px;
@@ -7191,7 +7201,9 @@ const SCOPED_CSS = `
    with the form below. */
 .acm-wiz-pinned-top {
   flex-shrink: 0;
-  padding: 14px 18px 2px;
+  /* Same side insets as .acm-wiz-body below: 22px, plus its 8px reserved
+     scrollbar gutter on the right, so the step cards end where the cards do. */
+  padding: 14px 30px 2px 22px;
   display: flex; flex-direction: column; gap: 6px;
   background: transparent;
 }
@@ -7347,11 +7359,12 @@ const SCOPED_CSS = `
 
 /* Section header */
 /* Section cards — white card with the Supplier form's left gradient strip, teal */
-.acm-sec-card { position: relative; background: #fff; border: 1px solid #d5f3ea; border-radius: 14px; overflow: hidden; flex-shrink: 0; }
-.acm-sec-card::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; z-index: 1;
-  width: 4px; opacity: .85; pointer-events: none;
-  background: linear-gradient(180deg, #5eead4, #0d9488, #0f766e);
+/* The strip is a background layer, not a clipped ::before: backgrounds follow the
+   border radius on their own, so the card needs no overflow:hidden and the
+   inherited-segment popover can open past the card's edge. */
+.acm-sec-card {
+  position: relative; border: 1px solid #d5f3ea; border-radius: 14px; flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #fff;
 }
 .acm-sec-header {
   display: flex; align-items: center; gap: 10px;
@@ -7361,7 +7374,7 @@ const SCOPED_CSS = `
   padding: 7px 14px;
   margin-top: 4px;
 }
-.acm-sec-card > .acm-sec-header { border: none; border-bottom: 1px solid #ecfaf6; border-radius: 0; margin-top: 0; }
+.acm-sec-card > .acm-sec-header { border: none; border-bottom: 1px solid #ecfaf6; border-radius: 0; margin-top: 0; background: transparent; }
 .acm-sec-icon {
   width: 25px; height: 25px; border-radius: 8px;
   background: #f0fdfa; color: #0d9488; border: 1px solid #ccfbf1;
@@ -7374,7 +7387,7 @@ const SCOPED_CSS = `
 
 /* Forms */
 .acm-sec-pad { background: #fff; border: 1px solid #d5f3ea; border-top: none; border-radius: 0 0 14px 14px; padding: 8px 14px 10px; }
-.acm-sec-card > .acm-sec-pad { border: none; border-radius: 0; }
+.acm-sec-card > .acm-sec-pad { border: none; border-radius: 0; background: transparent; }
 .acm-grid-2  { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .acm-grid-3  { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .acm-grid-4  { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
@@ -7498,14 +7511,15 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.acg-history-title { font-size: 12px; font-weight: 800; color: #064e3b; white-space: nowrap; }
-.acg-history-meta  { font-size: 9.5px; color: #047857; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Type sizes follow the Supplier form's recap (.avm-prev-*). */
+.acg-history-title { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: #064e3b; white-space: nowrap; }
+.acg-history-meta  { font-size: 10.5px; font-weight: 500; color: #047857; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acg-history-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .acg-history-badge {
   padding: 3px 11px; border-radius: 20px;
   background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
-  font-size: 9.5px; font-weight: 800;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
   white-space: nowrap;
 }
 .acg-history-chevron {
@@ -7555,7 +7569,7 @@ const SCOPED_CSS = `
 }
 .acg-hs-inline {
   display: flex; align-items: baseline; gap: 6px;
-  font-size: 12px; min-width: 0; max-width: 100%;
+  font-size: 11.5px; min-width: 0; max-width: 100%;
   overflow: hidden;   /* keep long values (e.g. Registered Address) inside the column — the rest shows on hover via the tooltip */
   cursor: default;
   padding: 1px 2px;
@@ -7565,7 +7579,8 @@ const SCOPED_CSS = `
 .acg-hs-inline:hover { background: rgba(16,185,129,0.06); }
 .acg-hs-inline-lbl {
   color: #64748b;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 500;
   letter-spacing: .01em;
   white-space: nowrap;
   flex-shrink: 0;
@@ -8105,26 +8120,15 @@ const SCOPED_CSS = `
      table card below. Now they sit a single flex-gap apart. */
   margin-bottom: 0;
 }
-.acm-kyc-subtab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 16px; border-radius: 999px;
-  background: #fff; color: #4b5563;
-  border: 1px solid #e5e7eb;
-  font-weight: 600; font-size: 12.5px; letter-spacing: .01em;
-  cursor: pointer; transition: all .15s ease;
-}
-.acm-kyc-subtab:hover { border-color: #10b981; color: #047857; }
-.acm-kyc-subtab.on {
-  background: linear-gradient(135deg, #0d9488, #065f46);
-  border-color: transparent; color: #fff;
-  box-shadow: 0 4px 10px rgba(13,148,136,.32);
-}
+.acm-kyc-subtabs .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+/* KYC card = the Stage 1 section card (left teal strip as a background layer,
+   white header with the count on the right), full-width search, and the table
+   inset as its own bordered box — same layout as the Supplier / Customer forms. */
 .acm-kyc-card {
-  background: #fff;
-  border: 1px solid rgba(16,185,129,.25);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(15,42,35,.04);
+  position: relative;
+  background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #fff;
+  border: 1px solid #d5f3ea;
+  border-radius: 14px;
   /* Don't let the flex column body squash the card below its
      intrinsic height — without this, the table can be clipped at
      the bottom and .acm-wiz-body's overflow-y never trips, so the
@@ -8132,44 +8136,44 @@ const SCOPED_CSS = `
   flex-shrink: 0;
 }
 .acm-kyc-head {
-  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
-  border-bottom: 1px solid rgba(16,185,129,.25);
-  padding: 12px 16px;
+  background: transparent;
+  border-bottom: 1px solid #ecfaf6;
+  padding: 7px 14px;
 }
-.acm-kyc-head-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.acm-kyc-head-row { display: flex; align-items: center; gap: 10px; width: 100%; }
 .acm-kyc-head-icon {
-  width: 28px; height: 28px;
+  width: 25px; height: 25px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  background: #10b981; color: #fff; border-radius: 8px;
+  background: #f0fdfa; color: #0d9488; border: 1px solid #ccfbf1; border-radius: 8px;
 }
-.acm-kyc-head-text { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.acm-kyc-head-title { color: #065f46; font-weight: 700; font-size: 12.5px; letter-spacing: .04em; }
-.acm-kyc-head-sub   { color: #047857; font-weight: 500; font-size: 12px; }
-.acm-kyc-toolbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-  gap: 12px;
-}
-.acm-kyc-search {
-  flex: 1; max-width: 380px;
-  position: relative;
-  display: flex; align-items: center;
-}
-.acm-kyc-search svg { position: absolute; left: 10px; color: #9ca3af; }
-.acm-kyc-search input {
-  width: 100%;
-  padding: 7px 12px 7px 32px;
-  border: 1px solid #d1d5db; border-radius: 8px;
-  font-size: 13px; background: #fff;
-}
-.acm-kyc-search input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
+.acm-kyc-head-text { display: flex; align-items: center; gap: 0; flex: 1; min-width: 0; }
+.acm-kyc-head-title { color: #0f766e; font-weight: 600; font-size: 11px; letter-spacing: .02em; text-transform: uppercase; }
+.acm-kyc-head-sub   { color: #14b8a6; font-weight: 500; font-size: 10.5px; margin-left: 8px; }
+.acm-kyc-head-sub::before { content: '|'; margin-right: 7px; color: #99f6e4; font-weight: 600; }
 .acm-kyc-count {
-  font-size: 12px; color: #6b7280; font-weight: 600;
-  padding: 4px 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 999px;
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 700; color: #0f766e;
+  padding: 5px 12px; border-radius: 999px;
+  background: #f0fdfa; border: 1px solid #ccfbf1;
 }
-.acm-kyc-body { padding: 0; }
+.acm-kyc-toolbar { display: flex; align-items: center; padding: 10px 14px 0 18px; }
+.acm-kyc-search { flex: 1; max-width: none; position: relative; display: flex; align-items: center; }
+.acm-kyc-search svg { position: absolute; left: 13px; color: #14b8a6; }
+.acm-kyc-search input {
+  width: 100%; height: 38px;
+  padding: 0 12px 0 36px;
+  border: 1px solid color-mix(in srgb, #2dd4bf 22%, var(--vz-border-color, #e9ebec)); border-radius: 10px;
+  background: color-mix(in srgb, #2dd4bf 5%, var(--vz-card-bg, #fff));
+  font-family: inherit; font-size: 13px; color: var(--vz-body-color, #495057);
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+.acm-kyc-search input::placeholder { color: #94a3b8; opacity: .45; font-weight: 400; }
+.acm-kyc-search input:focus { outline: none; background: var(--vz-card-bg, #fff); border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13,148,136,.15); }
+.acm-kyc-body { padding: 10px 14px 12px 18px; }
+.acm-kyc-body .acm-kyc-table-wrap.acm-kyc-table-wrap.dt-root {
+  border: 1px solid #d5f3ea; border-radius: 12px; background: #fff;
+  box-shadow: 0 2px 8px rgba(13,148,136,.06);
+}
 .acm-kyc-code {
   display: inline-block;
   padding: 2px 8px; border-radius: 4px;
@@ -8415,8 +8419,8 @@ const SCOPED_CSS = `
 /* Contact Persons table = the Consignee list table (dt-root hr-dt + dt-table,
    emerald accent). The modal's own .acm-loc-table header/cell rules come later
    in the cascade, so the list values are restated for this table only. */
-.acm-cp-table-wrap.dt-root { display: block; border: 0; border-radius: 0; box-shadow: none; overflow-x: auto; overflow-y: auto; }
-.acm-cp-table-wrap .acm-loc-table.dt-table thead th {
+:is(.acm-cp-table-wrap, .acm-kyc-table-wrap).dt-root { display: block; border: 0; border-radius: 0; box-shadow: none; overflow-x: auto; overflow-y: auto; }
+:is(.acm-cp-table-wrap, .acm-kyc-table-wrap) .acm-loc-table.dt-table thead th {
   font-size: 9.5px; font-weight: 800; letter-spacing: .07em;
   padding: 10px 12px;
 }
@@ -8479,12 +8483,28 @@ const SCOPED_CSS = `
   display: flex; flex-direction: column;
   box-shadow: 0 24px 60px rgba(15,42,35,.30);
 }
+/* Same teal header as the Edit Consignee wizard (.acm-wiz-header). */
 .acm-loc-sub-header {
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 20px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(115deg, #115e59 0%, #0f766e 28%, #0d9488 55%, #14b8a6 80%, #2dd4bf 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
   color: #fff;
 }
+.acm-loc-sub-header::before {
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(153,246,228,.4), transparent 45%);
+}
+.acm-loc-sub-header::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+.acm-loc-sub-header > * { position: relative; z-index: 1; }
 .acm-loc-sub-title { font-size: 16px; font-weight: 700; letter-spacing: .01em; }
 .acm-loc-sub-close {
   width: 30px; height: 30px; border-radius: 50%;
@@ -8508,11 +8528,24 @@ const SCOPED_CSS = `
   flex: 0 0 auto; min-width: 90px;
   display: inline-flex; align-items: center; gap: 8px;
   padding: 8px 14px; border-radius: 8px;
-  background: #fff; border: 1px solid #d1d5db;
+  background: #fff; border: 1px solid #ccf3ea;
   font-weight: 600; font-size: 12.5px; color: #374151;
   cursor: pointer; transition: all .15s ease;
 }
-.acm-loc-radio input { accent-color: #10b981; margin: 0; }
+/* Drawn radio: the native one has a dark grey ring when unselected. */
+.acm-loc-radio input {
+  -webkit-appearance: none; appearance: none; flex-shrink: 0;
+  width: 16px; height: 16px; margin: 0; border-radius: 50%;
+  border: 1.5px solid #99f6e4; background: #fff;
+  display: inline-grid; place-content: center; cursor: pointer;
+  transition: border-color .15s ease;
+}
+.acm-loc-radio input::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%;
+  background: #0d9488; transform: scale(0); transition: transform .15s ease;
+}
+.acm-loc-radio input:checked { border-color: #0d9488; }
+.acm-loc-radio input:checked::before { transform: scale(1); }
 .acm-loc-radio.on { background: #ecfdf5; border-color: #10b981; color: #065f46; }
 .acm-input-error { border-color: #ef4444 !important; }
 /* Location & Contact sub-modal: the list view's type. Scoped to the card so
@@ -8622,7 +8655,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-id-tab     { background: none; color: #8fb8ae; }
 [data-bs-theme="dark"] .acm-id-tab:hover { color: #ccfbf1; }
 [data-bs-theme="dark"] .acm-id-tab.on  { background: none; color: #5eead4; border-bottom-color: #2dd4bf; box-shadow: none; }
-[data-bs-theme="dark"] .acm-sec-card   { background: #103129; border-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-sec-card   { background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #103129; border-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-sec-card > .acm-sec-header,
+[data-bs-theme="dark"] .acm-sec-card > .acm-sec-pad { background: transparent; }
 [data-bs-theme="dark"] .acm-sec-header { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-sec-pad    { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-sec-icon   { background: rgba(16,185,129,.15); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
@@ -8769,6 +8804,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-loc-sub-footer  { background: #103129; border-top-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-loc-radio       { background: #103129; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-loc-radio.on    { background: rgba(16,185,129,.18); border-color: #10b981; color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-loc-radio input { background: #0a1f1a; border-color: rgba(45,212,191,.45); }
+[data-bs-theme="dark"] .acm-loc-radio input::before { background: #2dd4bf; }
+[data-bs-theme="dark"] .acm-loc-radio input:checked { border-color: #2dd4bf; }
 [data-bs-theme="dark"] .acm-input-error     { border-color: #ef4444 !important; }
 
 /* Polished file upload — dark */
@@ -8784,16 +8822,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-file-chip-x:hover  { background: rgba(239,68,68,.15); }
 
 /* KYC sub-tabs + card — dark */
-[data-bs-theme="dark"] .acm-kyc-subtab     { background: #103129; border-color: rgba(16,185,129,.20); color: #94a3b8; }
-[data-bs-theme="dark"] .acm-kyc-subtab:hover { color: #6ee7b7; border-color: #10b981; }
-[data-bs-theme="dark"] .acm-kyc-subtab.on  { background: linear-gradient(135deg,#10b981 0%,#059669 100%); color: #fff; }
-[data-bs-theme="dark"] .acm-kyc-card       { background: #0f2a23; border-color: rgba(16,185,129,.25); }
-[data-bs-theme="dark"] .acm-kyc-head       { background: linear-gradient(180deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-bottom-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-kyc-card       { background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #0f2a23; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-kyc-head       { background: transparent; border-bottom-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-kyc-head-icon  { background: rgba(16,185,129,.15); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .acm-kyc-body .acm-kyc-table-wrap.acm-kyc-table-wrap.dt-root { background: transparent; border-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-kyc-head-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-kyc-head-sub   { color: #34d399; }
-[data-bs-theme="dark"] .acm-kyc-toolbar    { background: #103129; border-bottom-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-kyc-toolbar    { background: transparent; }
 [data-bs-theme="dark"] .acm-kyc-search input { background: #0a1f1a; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-kyc-count      { background: #103129; border-color: rgba(16,185,129,.25); color: #94a3b8; }
+[data-bs-theme="dark"] .acm-kyc-count      { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.30); color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-kyc-code       { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .acm-kyc-exp        { background: rgba(255,255,255,.06); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-kyc-exp.na     { color: #6b7280; }
@@ -8847,7 +8884,8 @@ const SCOPED_CSS = `
   }
   .acm-wiz-header { padding: 12px 18px; }
   .acm-steps { padding: 12px 16px 10px; }
-  .acm-wiz-pinned-top { padding: 12px 18px 8px; }
+  .acm-wiz-pinned-top { padding: 12px 26px 8px 18px; }
+  .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 18px; padding-right: 26px; }
   .acm-wiz-body { padding: 14px 18px 16px; }
   .acm-wiz-footer { padding: 10px 18px; }
   .acm-sec-pad { padding: 14px; }
@@ -8868,7 +8906,8 @@ const SCOPED_CSS = `
   .acm-step-sub   { font-size: 9px; }
   /* Wizard body padding shrinks slightly so the form has more
      horizontal room on 1366-wide screens. */
-  .acm-wiz-pinned-top { padding: 10px 14px 8px; gap: 10px; }
+  .acm-wiz-pinned-top { padding: 10px 22px 8px 14px; gap: 10px; }
+  .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 14px; padding-right: 22px; }
   .acm-wiz-body { padding: 12px 14px 14px; }
   .acm-sec-pad { padding: 12px; }
 }
@@ -8928,7 +8967,8 @@ const SCOPED_CSS = `
   .acm-wiz-header { padding: 12px 16px; }
   .acm-wiz-htitle { font-size: 17px; }
   .acm-wiz-hsub   { font-size: 11px; }
-  .acm-wiz-pinned-top { padding: 10px 14px 8px; gap: 8px; }
+  .acm-wiz-pinned-top { padding: 10px 22px 8px 14px; gap: 8px; }
+  .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 14px; padding-right: 22px; }
   .acm-wiz-body { padding: 12px 14px 14px; }
   .acm-sec-pad { padding: 12px; }
   /* Sub-modal stays a centered card on portrait tablet — only goes
@@ -8989,6 +9029,7 @@ const SCOPED_CSS = `
   .acm-id-tab { flex: 0 0 auto; font-size: 11.5px; padding: 8px 10px; }
   /* Body padding */
   .acm-wiz-pinned-top { padding: 10px 12px 8px; gap: 8px; }
+  .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 12px; padding-right: 12px; }
   .acm-wiz-body { padding: 12px; }
   /* ALL grids → single col on phone */
   .acm-grid-4, .acm-grid-3, .acm-grid-2 { grid-template-columns: 1fr; }
@@ -9037,14 +9078,12 @@ const SCOPED_CSS = `
   }
   .acm-loc-sub-footer .acm-btn { width: 100%; flex: 0 0 auto; }
   /* Stage 2 KYC sub-tabs */
-  .acm-kyc-subtabs { flex-wrap: wrap; gap: 6px; }
-  .acm-kyc-subtab { flex: 1 1 45%; font-size: 12px; padding: 8px 10px; }
+  .acm-kyc-subtabs .dt-tabrail { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   /* KYC toolbar (search + count + add) */
   .acm-kyc-head-row { flex-wrap: wrap; gap: 8px; }
   .acm-kyc-head-text { flex: 1 1 100%; }
-  .acm-kyc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
-  .acm-kyc-search { max-width: 100%; }
-  .acm-kyc-count { align-self: flex-start; }
+  .acm-kyc-toolbar { padding: 10px 12px 0 14px; }
+  .acm-kyc-body { padding: 10px 12px 12px 14px; }
   /* Same-as-Customer banner */
   .acm-same-banner { padding: 10px 12px; gap: 10px; }
   .acm-same-banner-sub { font-size: 11.5px; }
