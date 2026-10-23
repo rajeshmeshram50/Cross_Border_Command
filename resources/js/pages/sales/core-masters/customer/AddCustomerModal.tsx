@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import SegmentBadge, { SEG_TAG_DARK, SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
@@ -624,6 +624,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   const [hydrating, setHydrating] = useState(false);
   const showShimmer = hydrating || mastersLoading;
+
+  // The card fits the (shorter) international Customer Identification form; remember that height so the
+  // Address & Contact Details tab keeps it instead of jumping to the full fixed height.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [stage1CardH, setStage1CardH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (open && stage === 1 && tab === 'identification' && !showShimmer && cardRef.current) setStage1CardH(cardRef.current.offsetHeight);
+  }, [open, stage, tab, showShimmer, form.country]);
 
   useEffect(() => {
     if (!open) return;
@@ -1307,7 +1315,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       <style>{ACM_SHELL_CSS}</style>
       <style>{SCOPED_CSS}</style>
       <style>{CLM_CSS}</style>
-      <div className="acm-card">
+      <div className="acm-card" ref={cardRef} style={stage === 1 && tab !== 'identification' && stage1CardH ? { height: stage1CardH } : undefined}>
 
         <div className="acm-header">
           <div className="acm-header-left">
