@@ -791,7 +791,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             .catch(() => ({}))
         )
       ),
-      api.get('/clm/trade-doc-library/for-party/buyer')
+      // view=list: only `code` is read from these rows, and the full version
+      // carries every trade document's drafted body — over a megabyte for this
+      // party (113 kB even after gzip).
+      api.get('/clm/trade-doc-library/for-party/buyer', { params: { view: 'list' } })
         .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
         .catch(() => [] as Array<{ code: string }>),
     ]).then(([results, partyDocs]) => {

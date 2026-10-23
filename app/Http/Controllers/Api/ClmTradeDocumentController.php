@@ -331,7 +331,11 @@ class ClmTradeDocumentController extends Controller
                 'updated_by' => $user->id,
             ]);
         });
-        return response()->json(['status' => true, 'data' => $row], 201);
+        /* Without the document body. The caller just posted it, so echoing it
+           back sends the whole draft a second time — a 94 kB document came back
+           as a 94 kB reply (QA #26). The draft modal reads only `id` from this,
+           and every other column still goes back. */
+        return response()->json(['status' => true, 'data' => $row->makeHidden('content')], 201);
     }
 
     public function libraryUpdate(Request $request, $id)
@@ -403,7 +407,8 @@ class ClmTradeDocumentController extends Controller
             $data['docx_original_name'] = null;
         }
         $row->update($data);
-        return response()->json(['status' => true, 'data' => $row->fresh()]);
+        // Without the document body — see libraryStore.
+        return response()->json(['status' => true, 'data' => $row->fresh()->makeHidden('content')]);
     }
 
     public function libraryDestroy(Request $request, $id)
@@ -1103,6 +1108,25 @@ class ClmTradeDocumentController extends Controller
             $q->where('party', 'like', '%Supplier-%');
         } else {
             $q->where('party', 'like', '%' . $party . '%');
+        }
+
+        /* ?view=list drops the document body, exactly as libraryIndex does and
+           for the same reason: three of the four callers here only read `code`
+           (and `name`) off these rows — the Add Customer, Add Consignee and Add
+           Vendor modals, which use them to work out which trade documents a
+           party needs. Unsliced, this reply is over a megabyte: 113 kB for
+           buyer AFTER gzip.
+
+           It stays opt-in because the fourth caller cannot do without it:
+           SalesCustomerSendForSignatureModal seeds its editor from
+           `doc.content`, so for it the body IS the point. */
+        if ($request->input('view') === 'list') {
+            $q->select([
+                'id', 'client_id', 'branch_id', 'code', 'name', 'title',
+                'doc_type', 'purpose', 'party', 'regulatory', 'segment',
+                'file_path', 'docx_path', 'docx_original_name',
+                'status', 'created_at', 'updated_at',
+            ]);
         }
 
         $rows = $q->orderBy('id')->get();
