@@ -1683,9 +1683,19 @@ function InitiateOnboardingModal({
   const [stage5Finalized, setStage5Finalized] = useState(false);
   const [coreReady, setCoreReady] = useState(false);
   const [stage5Loaded, setStage5Loaded] = useState(false);
+  /* Fetched-for guard, the same one the salary-structure effect below has had
+     all along. Without it this ran twice on open — measured on the server at
+     475ms + 210ms for the identical answer. The cleanup only flips `cancelled`,
+     which discards the RESULT; the request has already gone, so a superseded
+     run still costs a full round trip. The salary-structure effect shares these
+     exact deps and fired once, which is what pointed at the guard rather than
+     at the dependency list. (QA #4/#5) */
+  const docSetLoadedForRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!isOpen || !emp?.dbId) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Finalized(false); setStage5Loaded(false); return; }
+    if (!isOpen || !emp?.dbId) { docSetLoadedForRef.current = null; setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Finalized(false); setStage5Loaded(false); return; }
     if (!coreReady) return;
+    if (docSetLoadedForRef.current === emp.dbId) return;
+    docSetLoadedForRef.current = emp.dbId;
     let cancelled = false;
     (async () => {
       try {
@@ -1869,6 +1879,16 @@ function InitiateOnboardingModal({
 
   const r = emp?.raw || {};
   const [s1Saving, setS1Saving] = useState(false);
+  /* The Stage 1 fields as last PUT, so an untouched Next sends nothing.
+     Reset per employee: another record must never inherit this one's baseline
+     and have its first save skipped. (QA #5) */
+  const stage1SavedSigRef = useRef<string | null>(null);
+  /** Same, for the Payroll & Finance stage. (QA #9) */
+  const stage4SavedSigRef = useRef<string | null>(null);
+  useEffect(() => {
+    stage1SavedSigRef.current = null;
+    stage4SavedSigRef.current = null;
+  }, [emp?.dbId, isOpen]);
   const [s1, setS1] = useState({
     first_name:  '',
     middle_name: '',
@@ -2582,7 +2602,38 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     }
     try {
       await persistObBreakup(emp.dbId);
+
+      /* Nothing changed since the last save — so there is nothing to send.
+       *
+       * This stage PUT unconditionally. Clicking Next on an untouched Stage 1
+       * ran the full employee update (48 queries) and then onSaved's refetch,
+       * for a record identical to the one already on the server. Paging
+       * forward without editing anything paid the full cost of a save.
+       *
+       * Two things have to hold, both copied from the employee wizard's
+       * persistCurrentStepInner, which has had this short-circuit for a while:
+       *
+       *   the FIELDS match what was last sent — compared without the two
+       *     progress markers, because those change on every Next and would
+       *     make every payload look different;
+       *   and progress has ALREADY reached the server. Skipping while the
+       *     stored watermark is behind would let someone close the wizard and
+       *     reopen it at an earlier stage than they actually completed.
+       * (QA #5) */
+      const { wizard_step_completed: wantStep, onboarding_stage_completed: wantMacro, ...fields } = payload;
+      const sig       = JSON.stringify(fields);
+      const haveStep  = Number((emp as any)?.raw?.wizard_step_completed ?? 0);
+      const haveMacro = Number((emp as any)?.raw?.onboarding_stage_completed ?? 0);
+      if (
+        stage1SavedSigRef.current === sig
+        && Number(wantStep ?? 0) <= haveStep
+        && Number(wantMacro ?? 0) <= haveMacro
+      ) {
+        return true;   // the finally below clears the saving / locked flags
+      }
+
       await api.put(`/employees/${emp.dbId}`, payload);
+      stage1SavedSigRef.current = sig;
       if (!silent) {
         onSaved?.();
         if (markComplete) {
@@ -2622,13 +2673,28 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   };
 
   const [stage2Docs, setStage2Docs] = useState<{ document_key: string; status: string }[]>([]);
+  /* The SAME fetch's full rows, kept so Stage 2 can be seeded from them instead
+     of asking for the list again when it mounts. stage2Docs stays the narrow
+     shape because onDocsChanged feeds it that, and the two must not be
+     conflated. (QA #5) */
+  const [stage2DocsFull, setStage2DocsFull] = useState<ApiDocument[]>([]);
+  // Same guard, same reason — this one measured 1.21s + 432ms on the server
+  // for one answer. See the note on docSetLoadedForRef. (QA #4/#5)
+  const stage2DocsLoadedForRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!isOpen || !emp?.dbId) return;
+    if (!isOpen || !emp?.dbId) { stage2DocsLoadedForRef.current = null; return; }
     if (!coreReady) return;
+    if (stage2DocsLoadedForRef.current === emp.dbId) return;
+    stage2DocsLoadedForRef.current = emp.dbId;
     let cancelled = false;
     api.get(`/employees/${emp.dbId}/documents`)
-      .then(r => { if (!cancelled) setStage2Docs(Array.isArray(r.data) ? r.data : []); })
-      .catch(() => { if (!cancelled) setStage2Docs([]); });
+      .then(r => {
+        if (cancelled) return;
+        const rows: ApiDocument[] = Array.isArray(r.data) ? r.data : [];
+        setStage2Docs(rows);
+        setStage2DocsFull(rows);
+      })
+      .catch(() => { if (!cancelled) { setStage2Docs([]); setStage2DocsFull([]); } });
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId, coreReady]);
 
@@ -2786,7 +2852,32 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       payload.onboarding_stage_completed = 4;
     }
     try {
+      /* Same short-circuit Stage 1 has: an untouched Next sends nothing.
+         The payroll fields are compared without the two progress markers and
+         without the completion timestamp — stage4_completed_at is a fresh
+         new Date() on every click, so leaving it in would make every payload
+         look changed and the guard would never fire. Progress still has to
+         reach the server, so an advance is never skipped. (QA #9) */
+      const {
+        wizard_step_completed: s4Step,
+        onboarding_stage_completed: s4Macro,
+        stage4_completed_at: _s4At,
+        ...s4Fields
+      } = payload;
+      const s4Sig     = JSON.stringify(s4Fields);
+      const s4HaveMac = Number((emp as any)?.raw?.onboarding_stage_completed ?? 0);
+      const s4HaveStp = Number((emp as any)?.raw?.wizard_step_completed ?? 0);
+      if (
+        stage4SavedSigRef.current === s4Sig
+        && Number(s4Macro ?? 0) <= s4HaveMac
+        && Number(s4Step ?? 0) <= s4HaveStp
+      ) {
+        setS4ShowErrors(false);
+        return true;
+      }
+
       await api.put(`/employees/${emp.dbId}`, payload);
+      stage4SavedSigRef.current = s4Sig;
       setS4ShowErrors(false);
       onSaved?.();
       return true;
@@ -2820,7 +2911,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     const current = Number(emp.raw?.onboarding_stage_completed ?? 0);
     if (n <= current) return;
     try {
-      await api.put(`/employees/${emp.dbId}`, { onboarding_stage_completed: n });
+      /* The dedicated progress route, not the full employee update. Writing
+         this one integer through PUT /employees/{id} cost 41 queries —
+         validation, salary-structure mirroring, payslip recompute, HOD wiring,
+         every relation eager-loaded — against 8 here. Stages 2, 3, 5 and 6 all
+         advance through this call. (QA #6/#7) */
+      await api.patch(`/employees/${emp.dbId}/onboarding-progress`, { onboarding_stage_completed: n });
       onSaved?.();
     } catch {}
   };
@@ -3255,6 +3351,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <Stage2Documents
                 ref={stage2Ref}
                 emp={emp}
+                initialDocs={stage2DocsFull}
                 onDocsChanged={(rows) => setStage2Docs(rows)}
                 onProgress={setStage2Prev}
               />
@@ -4372,9 +4469,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               setNextLoading(true);
               try {
                 if (!emp?.dbId) return;
-                await api.put(`/employees/${emp.dbId}`, {
+                /* The progress route, 8 queries against the full update's 41.
+                   onboarding_complete_notes is no longer sent: `employees` has
+                   no such column, so update() has been dropping it all along —
+                   the note was never stored. Sending it to a second endpoint
+                   that also cannot keep it would just hide that. (QA #10) */
+                await api.patch(`/employees/${emp.dbId}/onboarding-progress`, {
                   onboarding_stage_completed: 6,
-                  onboarding_complete_notes: completeNotes.trim() || null,
                 });
                 onSaved?.();
                 await new Promise(r => setTimeout(r, 350));
@@ -4548,9 +4649,15 @@ export interface Stage2DocumentsHandle {
 }
 const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   emp: OnboardRow;
+  /* The documents the WIZARD already loaded when it opened. This stage used to
+     fetch the same endpoint again on mount — measured at 1.21s on the server —
+     for a list the parent was already holding. Seeded here and refreshed by
+     reloadDocs() after any upload or delete, so it is a head start, not a
+     substitute. (QA #5) */
+  initialDocs?: ApiDocument[];
   onDocsChanged?: (rows: { document_key: string; status: string }[]) => void;
   onProgress?: (p: { required: number; uploaded: number }) => void;
-}>(({ emp, onDocsChanged, onProgress }, ref) => {
+}>(({ emp, initialDocs, onDocsChanged, onProgress }, ref) => {
   const toast = useToast();
   const empPerm = useModulePermission('hr.employee', 'employee records');
   const readOnly = !empPerm.canEdit;
@@ -4612,9 +4719,20 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     let cancelled = false;
     const hydrate = async () => {
       try {
+        /* Refetch the employee ONLY when the one field this reads is missing.
+           It pulled the whole record for has_prior_experience, and emp.raw
+           already carries it — apiToOnboardRow keeps the full payload (raw: e)
+           and the parent refetched the employee moments earlier via onSaved.
+           That made GET /employees/{id} the THIRD call to the same endpoint on
+           a Stage 1 → 2 move: once on open, once from onSaved, once here. The
+           `?? emp.raw` fallback below already admitted the fetch is optional;
+           this stops paying for it when it is. (QA #4/#5) */
+        const cachedFlag = (emp as any)?.raw?.has_prior_experience;
         const [r, empFresh] = await Promise.all([
           api.get(`/employees/${emp.dbId}/previous-employments`),
-          api.get(`/employees/${emp.dbId}`).catch(() => null),
+          cachedFlag === undefined
+            ? api.get(`/employees/${emp.dbId}`).catch(() => null)
+            : Promise.resolve(null),
         ]);
         if (cancelled) return;
         const list: any[] = Array.isArray(r.data) ? r.data : [];
@@ -4725,10 +4843,23 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         .filter(c => c.company_name.trim())
         .map(c => persistCompany(c._localKey));
       await Promise.all(work);
-      if (emp?.dbId && hasExperience !== null) {
+      /* Only when the answer actually moved.
+       *
+       * This PUT fired every time Stage 2 was left, to write ONE boolean —
+       * and PUT /employees/{id} is the full update path, ~48 queries. Leaving
+       * Stage 2 without touching the question paid for a save of a value the
+       * server already held, which is most of the Stage 2 → Stage 3 wait.
+       *
+       * emp.raw carries the stored value (the detail endpoint returns it), so
+       * the comparison costs nothing. Undefined — a record that has never been
+       * asked — is deliberately NOT equal to either answer, so the first real
+       * answer is always sent. (QA #6/#7) */
+      const storedPrior = (emp as any)?.raw?.has_prior_experience;
+      const wantPrior   = hasExperience === 'yes';
+      if (emp?.dbId && hasExperience !== null && storedPrior !== wantPrior) {
         try {
           await api.put(`/employees/${emp.dbId}`, {
-            has_prior_experience: hasExperience === 'yes',
+            has_prior_experience: wantPrior,
           });
         } catch {}
       }
@@ -4905,7 +5036,23 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     } catch { return null; }
     finally { setDocsLoading(false); }
   };
-  useEffect(() => { reloadDocs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [emp?.dbId]);
+  /* Seed from what the wizard already has; only fetch when it has nothing.
+     Stage 1 → Stage 2 was serial — the save finished, THEN this stage mounted
+     and asked for a document list the parent loaded when the wizard opened.
+     On the server that was 1.21s of the ~7s transition, spent re-reading an
+     answer already in memory. Uploads and deletes still call reloadDocs(), so
+     the list cannot go stale. (QA #5) */
+  useEffect(() => {
+    if (initialDocs && initialDocs.length) {
+      const map: Record<string, ApiDocument> = {};
+      for (const d of initialDocs) map[d.document_key] = d;
+      setDocsByKey(map);
+      setDocsLoading(false);
+      return;
+    }
+    reloadDocs();
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [emp?.dbId]);
 
   const triggerUpload = (docKey: string, docName: string, accept: string, maxMb?: number) => {
     if (!emp?.dbId) {

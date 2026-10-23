@@ -3408,6 +3408,70 @@ class EmployeeController extends Controller
             ->min();
     }
 
+    /**
+     * PATCH /employees/{id}/onboarding-progress — move the wizard's watermarks.
+     *
+     * The onboarding wizard advances a stage by writing one or two integers,
+     * and it did that through update(): 41 queries of validation, salary
+     * structure mirroring, payslip recompute and HOD wiring, none of which a
+     * progress marker touches. Every Next in the wizard paid for it.
+     *
+     * FORWARD ONLY, the same rule update() applies: the stored value is the
+     * high-water mark, so re-opening a finished employee and paging through
+     * cannot roll their progress back. A request that asks for less is
+     * accepted and changes nothing, because the caller's intent — "I am at
+     * least here" — is already satisfied.
+     *
+     * Deliberately NOT a general-purpose patch: only these two columns, and
+     * only upward. Anything else still goes through update(), where the
+     * payroll and permission consequences are handled. (QA #5-#11)
+     */
+    public function updateOnboardingProgress(Request $request, $id)
+    {
+        $this->authorize($request, 'can_edit');
+
+        $data = $request->validate([
+            'wizard_step_completed'      => ['sometimes', 'integer', 'min:0', 'max:10'],
+            'onboarding_stage_completed' => ['sometimes', 'integer', 'min:0', 'max:10'],
+            /* onboarding_complete_notes is deliberately NOT here: there is no
+               such column on `employees`. Stage 6 has been posting it to
+               update() all along, where validated() drops it — so the sign-off
+               note has never been stored. Accepting it here would only move
+               the silence. Flagged separately; it needs a column first. */
+        ]);
+
+        /* NOT resolveRow(): that eager-loads fullWith() — every relation, ~25
+           queries — and this endpoint reads two integer columns. Same tenant
+           scope, applied to a query that selects only what it touches. */
+        $q = Employee::query()->withTrashed()->select([
+            'id', 'client_id', 'branch_id',
+            'wizard_step_completed', 'onboarding_stage_completed',
+        ]);
+        $this->applyScope($q, $request->user());
+        $row = $q->findOrFail($this->resolveIdParam($id));
+
+        $patch = [];
+        foreach (['wizard_step_completed', 'onboarding_stage_completed'] as $col) {
+            if (!array_key_exists($col, $data)) continue;
+            $want = (int) $data[$col];
+            if ($want > (int) ($row->{$col} ?? 0)) $patch[$col] = $want;
+        }
+
+        if ($patch) {
+            // forceFill + save on the resolved row: it is already scoped to the
+            // caller's tenant by resolveRow, so no second lookup is needed.
+            $row->forceFill($patch)->save();
+        }
+
+        return response()->json([
+            'message' => 'Progress saved.',
+            'data'    => [
+                'wizard_step_completed'      => (int) ($row->wizard_step_completed ?? 0),
+                'onboarding_stage_completed' => (int) ($row->onboarding_stage_completed ?? 0),
+            ],
+        ]);
+    }
+
     private function resolveRow(Request $request, int $id): Employee
     {
         $q = Employee::query()->withTrashed()->with(self::fullWith());

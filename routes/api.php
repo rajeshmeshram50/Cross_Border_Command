@@ -959,6 +959,10 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     Route::get   ('/employees/{id}/holidays',     [EmployeeController::class, 'holidays']);
     Route::post  ('/employees/{id}/set-password', [EmployeeController::class, 'setPassword']);
     Route::put   ('/employees/{id}/bank-details', [EmployeeController::class, 'updateBankDetails']);
+    /* Advancing the onboarding wizard writes two integers. Through update() that
+       cost 41 queries — validation, structure mirroring, payslip recompute, HOD
+       wiring — none of which a progress marker needs. (QA #5-#11) */
+    Route::patch ('/employees/{id}/onboarding-progress', [EmployeeController::class, 'updateOnboardingProgress']);
     Route::apiResource('employees', EmployeeController::class);
 
 
