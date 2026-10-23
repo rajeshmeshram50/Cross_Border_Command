@@ -1511,17 +1511,20 @@
 [data-bs-theme="dark"] .smcg-filterpop-x { background: rgba(255,255,255,.08); color: #6ee7b7; }
 
 /* ── Aligned with the HRMS Employee list (same as the Customers list) ────────── */
-.smcg-root .frm-cstrip .frm-cstrip-title { font-size: 17px; font-weight: 700; }
+/* Title + subtitle sized like the Supplier Management header (.sup-fig .cstrip__title / __sub). */
+.smcg-root .frm-cstrip .frm-cstrip-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; }
+.smcg-root .frm-cstrip .frm-cstrip-sub { font-size: 10px; font-weight: 500; opacity: .85; margin-top: 2px; line-height: 1.3; }
 /* Left edges: header icon, banner icon and the toolbar's first control share
    one inset; right edges all end 15px in (1 border + 14 padding). */
 .smcg-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
 .smcg-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
 .smcg-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
 .smcg-root .smcg-toolbar { padding: 14px; gap: 14px; }
-/* Search and Filter stand 46px tall, as on the Customers toolbar. */
-.smcg-root .smcg-toolbar .dt-filter-btn { height: 46px; flex-shrink: 0; }
+/* Tabs 40px / 12.5px; the search bar and Filter button stand the same 40px (as on Customers). */
+.smcg-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+.smcg-root .smcg-toolbar .dt-filter-btn { height: 40px; flex-shrink: 0; }
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search {
-  height: 46px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
+  height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
 /* type="search" is kept (it keeps Chrome's autofill off); hide the browser's
    own clear so dt-search-clear is the only one. */
@@ -1532,24 +1535,29 @@
   display: none;
 }
 
-/* Add Consignee = the Create Quotation button shape (46px, 12px radius,
-   11.5/700) in the page's emerald. app.css restyles every button inside an
-   HRMS header strip with !important, so the button's own values are restated. */
+/* Add Consignee = the Add Supplier button (supplier-management.css .sup-fig .cstrip__action-btn)
+   in the page's emerald. app.css restyles every button inside an HRMS header
+   strip with !important, so the button's own values are restated. */
 .smcg-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn {
-  height: 46px !important;
-  padding: 0 18px !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 9px 18px !important;
   border-radius: 12px !important;
   font-size: 11.5px !important;
   font-weight: 700 !important;
+  letter-spacing: .02em !important;
+  gap: 7px;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
-  background: linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%);
-  box-shadow: 0 4px 14px rgba(5, 150, 105, .24), 0 1px 3px rgba(4, 120, 87, .16), inset 0 1px 0 rgba(255, 255, 255, .2);
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  box-shadow: 0 4px 16px rgba(5, 150, 105, .5), 0 1px 3px rgba(4, 120, 87, .3), 0 1px 0 rgba(255, 255, 255, .2) inset;
+  transition: background .2s, transform .2s, box-shadow .2s;
 }
 .smcg-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn:hover {
   color: #fff;
-  background: linear-gradient(135deg, #064e3b 0%, #065f46 55%, #059669 100%);
-  box-shadow: 0 8px 22px rgba(5, 150, 105, .30), 0 2px 5px rgba(4, 120, 87, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
+  background: linear-gradient(135deg, #059669 0%, #047857 50%, #065f46 100%);
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 24px rgba(5, 150, 105, .6), 0 2px 6px rgba(4, 120, 87, .35), 0 1px 0 rgba(255, 255, 255, .2) inset;
 }
 
 /* Supplier step-card banner, recoloured from violet to the page's emerald. */
