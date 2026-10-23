@@ -301,7 +301,15 @@ export const CLM_CSS = `
    module. These are those pages' numbers. */
 .clm-tabrail {
   display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 4px; border-radius: 11px;
+  /* 3px, as DataTable's .dt-tabs: the rail has no explicit height, so its box
+     is tab + padding x2 + border x2. At 4px a 40px tab made a 50px rail; at
+     3px it is 48, which is what Customers renders. */
+  /* 48px stated, not inferred. The rail used to size itself as tab + padding
+     x2 + border x2, which came out 48 here and 50 on the pill rails, and the
+     search beside it had to guess which. Every toolbar control in CLM is 48
+     now; see .clm-search. */
+  height: 48px; box-sizing: border-box;
+  padding: 3px; border-radius: 11px;
   background: rgba(255,255,255,.6);
   border: 1px solid rgba(6,182,212,.28);
 }
@@ -325,7 +333,10 @@ export const CLM_CSS = `
      accent count. Inactive is now an accent-50 → accent-150 wash (#f0fdff →
      #cffafe) carrying the accent label, which is CTC's #f5f1fe → #ede9fe with
      #6d28d9 read off the teal ramp. */
-  font-size: 12.5px; font-weight: 700; color: #0e7490;
+  /* 650, not 700 — the weight Customers and HRMS render (DataTable.css line
+     1166; DM Sans is a variable face, so it is a real weight). A tab lettered
+     in the accent on a tinted track carries more ink at 700. */
+  font-size: 12.5px; font-weight: 650; color: #0e7490;
   cursor: pointer; border: 1px solid rgba(6,182,212,.22);
   background: linear-gradient(135deg, #f0fdff, #cffafe);
   overflow: hidden;
@@ -376,6 +387,7 @@ export const CLM_CSS = `
 /* Premium pill switcher for 2-tab header strips (TD/TNC/AGR/CL) */
 .clm-pill-group {
   display: flex; align-items: center; gap: 0; flex-shrink: 0;
+  height: 48px; box-sizing: border-box;
   background: rgba(255,255,255,.55);
   backdrop-filter: blur(8px);
   border-radius: 14px; padding: 4px;
@@ -434,7 +446,11 @@ export const CLM_CSS = `
      ramp (#f0fdff / #a5f3fc / #22d3ee) that CLM already uses.
      42px, the toolbar height the shared .dt-search uses — CLM's 34px box
      sat visibly shallower than the same bar on HRMS. */
-  padding: 0 14px; height: 42px;
+  /* 48px — the height of the tab RAIL beside it, not of the tab. 40 matched
+     the tab, but the tab sits inside a rail that adds 3px of padding and a 1px
+     border on each side, and it is the two boxes that the eye compares. It was
+     42 before that, DataTable's number from when the tab was 34. */
+  padding: 0 14px; height: 48px;
   border: 1.5px solid #cef8fd; border-radius: 11px;
   background: linear-gradient(180deg, #f6feff, #f0fdff);
   flex: 1 1 240px; min-width: 200px;

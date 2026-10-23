@@ -277,7 +277,7 @@ export default function ClmAgreementsSentPage() {
           {/* The employee list's rail — its `hr-dt` skin, not the base .dt-tabs
               rule — on the teal ramp. See the longer note on Case to Case.
               3px of padding puts the rail at 42, which is .ops-search. */}
-          <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3,
+          <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box',
             ...(t.dark
               ? { background: 'rgba(8,145,178,.08)', border: '1px solid rgba(8,145,178,.22)' }
               : { background: 'linear-gradient(180deg, color-mix(in srgb, #f0fdfa 60%, #fff), #f0fdfa)', border: '1px solid color-mix(in srgb, #a5e8f5 60%, #fff)' }) }}>
@@ -641,7 +641,7 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
                       <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                       <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
-                      <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
+                      <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 650, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FCA5A5,#EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(rej.by)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.dark ? '#fca5a5' : '#7F1D1D', whiteSpace: 'nowrap' }}>{rej.by}</span></div></td>
                       {/* The marker is the bare glyph, not a chip. It used to be

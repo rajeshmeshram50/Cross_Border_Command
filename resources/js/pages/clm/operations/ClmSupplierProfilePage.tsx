@@ -148,8 +148,8 @@ const CSS = `
    ran 11.5px/700 on 0 18px at radius 9 and stood 38px tall on the Buyer page
    and 40px on the Supplier one - the same control at three sizes inside one
    module. */
-.bpa-seg{display:flex;align-items:center;background:rgba(255,255,255,.6);border:1px solid rgba(6,182,212,.28);border-radius:11px;padding:4px;gap:8px;}
-.bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
+.bpa-seg{display:flex;align-items:center;height:48px;box-sizing:border-box;background:rgba(255,255,255,.6);border:1px solid rgba(6,182,212,.28);border-radius:11px;padding:3px;gap:8px;}
+.bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:650;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
 .bpa-tab svg{flex-shrink:0;}
 .bpa-tab-active{border:0;background:linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%);color:#fff;box-shadow:0 5px 14px rgba(6,182,212,.5),inset 0 1px 0 rgba(255,255,255,.4),inset 0 -2px 6px rgba(14,116,144,.3);text-shadow:0 1px 2px rgba(12,74,110,.4);}
 .bpa-tab-inactive{background:linear-gradient(135deg,#ecfeff,#cffafe);border:1px solid rgba(6,182,212,.25);color:#0e7490;box-shadow:none;}
@@ -755,11 +755,15 @@ const SUB_BAR: CSSProperties = { display: 'flex', alignItems: 'center', padding:
 
 /* Top-bar search box — filters the table under it (party-wise and
  * transaction-wise each own their query). */
+/* The CLM search box (.clm-search): 40px — the tab height — on radius 11, a
+ * tinted accent wash rather than flat white, and a 16px accent magnifier. This
+ * one was 36px at radius 9 with a 13px icon at 70% and an 11.5px input: the
+ * shortest search in the module. */
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
-    <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', flex: 1, maxWidth: '680px' }}>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0, opacity: 0.7 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-      <input type="text" autoComplete="off" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
+    <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '48px', padding: '0 14px', borderRadius: '11px', background: 'linear-gradient(180deg,#f6feff,#f0fdff)', border: '1.5px solid #cef8fd', flex: 1, maxWidth: '680px', boxSizing: 'border-box' }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+      <input type="text" autoComplete="off" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: '13px', fontWeight: 500, fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
       {/* Inside the box, not beside it: SearchBox owns its own flex row, so a
           sibling would sit outside the border with the ⌘K chip between them. */}
       <SearchClear show={value} onClear={() => onChange('')} />

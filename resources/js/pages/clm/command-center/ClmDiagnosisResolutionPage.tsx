@@ -534,8 +534,11 @@ const SCOPED_CSS = `
 .dr-list-card { background:#fff; border:1px solid #cffafe; border-radius:13px; overflow:hidden; box-shadow:0 1px 4px rgba(6,182,212,.06); }
 .dr-list-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; background:linear-gradient(110deg,#f0fdff,#e8fbfd); border-bottom:1px solid #a5f3fc; }
 .dr-search { position:relative; display:flex; align-items:center; flex:1; max-width:420px; }
-.dr-search svg { position:absolute; left:11px; }
-.dr-search input { width:100%; padding:8px 12px 8px 33px; border:1.5px solid rgba(6,182,212,.3); border-radius:9px; font-family:inherit; font-size:12px; color:#0c4a6e; background:#fff; outline:none; }
+.dr-search svg { position:absolute; left:14px; width:16px; height:16px; stroke:#22d3ee; }
+/* 40px — the tab height, as every CLM search. The padding-built box came out
+   at 35px on radius 9 with a 12px input. */
+.dr-search input { width:100%; height:48px; box-sizing:border-box; padding:0 14px 0 38px; border:1.5px solid #cef8fd; border-radius:11px; font-family:inherit; font-size:13px; font-weight:500; color:#0c4a6e; background:linear-gradient(180deg,#f6feff,#f0fdff); outline:none; }
+.dr-search input::placeholder { color:#50c0d8; font-weight:500; }
 .dr-search input:focus { border-color:#0891b2; box-shadow:0 0 0 3px rgba(8,145,178,.14); }
 .dr-rec-badge { font-size:10px; font-weight:700; color:#0e7490; background:rgba(6,182,212,.12); border:1px solid rgba(6,182,212,.28); border-radius:20px; padding:5px 12px; white-space:nowrap; }
 

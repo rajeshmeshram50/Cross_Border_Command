@@ -425,7 +425,7 @@ export default function ClmCaseToCasePage() {
               3px of padding: 34 (tab) + 3 x 2 + 1 x 2 (border) = 42, which is
               .ops-search beside it. At 4 the rail stood 2px proud.
               On small screens it wraps to full width (QA #42). */}
-          <div className="ctc-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3,
+          <div className="ctc-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box',
             ...(t.dark
               ? { background: 'rgba(124,58,237,.08)', border: '1px solid rgba(124,58,237,.22)' }
               : { background: 'linear-gradient(180deg, color-mix(in srgb, #faf5ff 60%, #fff), #faf5ff)', border: '1px solid color-mix(in srgb, #ddd6fe 60%, #fff)' }) }}>

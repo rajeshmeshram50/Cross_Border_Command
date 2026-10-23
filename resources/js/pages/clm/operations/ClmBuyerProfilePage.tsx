@@ -181,10 +181,17 @@ const BP_CSS = `
 :where(.bpx-32) { font-size: 7.5px !important; font-weight: 700 !important; color: #0891b2 !important; background: rgba(6,182,212,.1) !important; border: 1px solid rgba(6,182,212,.25) !important; padding: 1px 6px !important; border-radius: 20px !important; }
 :where(.bpx-33) { font-size: 9px !important; font-weight: 500 !important; color: #0e7490 !important; margin-top: 2px !important; }
 :where(.bpx-34) { display: flex !important; align-items: center !important; gap: 8px !important; }
-:where(.bpx-35) { display: flex !important; gap: 3px !important; padding: 3px !important; height: 34px !important; border-radius: 9px !important; background: rgba(6,182,212,.08) !important; border: 1.5px solid #A5F3FC !important; }
+/* The tab rail leads its group and the search closes it, as on every other
+   CLM toolbar. The search is written first here, and .bpx-34 is shared by
+   several groups, so this orders the rail rather than moving markup. */
+:where(.bpx-34) .bpx-64 { order: -1 !important; }
+/* The same rail as .bpx-64 — the transaction-wise scope switch is the same
+   control as the party-wise one and was 4px shorter on a different track. */
+:where(.bpx-35) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; box-sizing: border-box !important; padding: 3px !important; border-radius: 11px !important; background: rgba(255,255,255,.6) !important; border: 1px solid rgba(6,182,212,.28) !important; }
 :where(.bpx-36) { width: 26px !important; height: 26px !important; border-radius: 7px !important; background: rgba(255,255,255,.75) !important; border: 1.5px solid rgba(8,145,178,.22) !important; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; color: #0891b2 !important; transition: all .15s !important; flex-shrink: 0 !important; }
-:where(.bpx-37) { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)) !important; gap: 6px !important; }
-:where(.bpx-38) { display: flex !important; align-items: center !important; justify-content: space-between !important; margin-bottom: 5px !important; }
+:where(.bpx-37) { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)) !important; gap: 8px !important; }
+:where(.bpx-38) { display: flex !important; align-items: flex-start !important; justify-content: space-between !important; gap: 10px !important; margin-bottom: 0 !important; }
+:where(.bpx-38) svg { width: 18px !important; height: 18px !important; }
 :where(.bpx-39) { display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 16px 10px 20px !important; background: linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%) !important; border-bottom: 1px solid #A5F3FC !important; min-height: 52px !important; flex-shrink: 0 !important; }
 :where(.bpx-40) { font-size: 13px !important; font-weight: 800 !important; color: #0c4a6e !important; letter-spacing: -.2px !important; }
 :where(.bpx-41) { font-size: 8px !important; font-weight: 700 !important; color: #0891b2 !important; background: rgba(6,182,212,.1) !important; border: 1px solid rgba(6,182,212,.25) !important; padding: 2px 7px !important; border-radius: 20px !important; white-space: nowrap !important; }
@@ -208,9 +215,18 @@ const BP_CSS = `
 :where(.bpx-59) { display: flex !important; align-items: center !important; justify-content: space-between !important; flex-wrap: wrap !important; gap: 10px !important; padding: 12px 18px !important; background: linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%) !important; border-bottom: 1.5px solid #A5F3FC !important; min-height: 60px !important; flex-shrink: 0 !important; }
 :where(.bpx-60) { width: 36px !important; height: 36px !important; border-radius: 10px !important; background: linear-gradient(135deg,#06b6d4,#0891b2) !important; display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0 !important; box-shadow: 0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3) !important; }
 :where(.bpx-61) { font-size: 9.5px !important; color: #0891b2 !important; font-weight: 500 !important; margin-top: 1px !important; }
-:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 7px !important; height: 38px !important; padding: 0 12px !important; border-radius: 9px !important; background: #fff !important; border: 1.5px solid #A5F3FC !important; box-shadow: 0 1px 4px rgba(6,182,212,.08) !important; width: 380px !important; max-width: 100% !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
-:where(.bpx-63) { border: none !important; outline: none !important; font-size: 11.5px !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; min-width: 0 !important; background: transparent !important; }
-:where(.bpx-64) { display: flex !important; gap: 3px !important; padding: 3px !important; height: 38px !important; border-radius: 9px !important; background: rgba(6,182,212,.08) !important; border: 1.5px solid #A5F3FC !important; }
+/* The CLM search box (.clm-search): 42px on radius 11, a tinted accent wash
+   rather than flat white, a soft accent hairline, and the 16px accent
+   magnifier. This ran 38px on radius 9 with an 11.5px input. */
+:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg,#f6feff,#f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; width: 380px !important; max-width: 100% !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
+:where(.bpx-62) > svg { width: 16px !important; height: 16px !important; stroke: #22d3ee !important; flex-shrink: 0 !important; }
+:where(.bpx-62):focus-within { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(6,182,212,.14) !important; }
+:where(.bpx-63) { border: none !important; outline: none !important; font-size: 13px !important; font-weight: 500 !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; min-width: 0 !important; background: transparent !important; }
+:where(.bpx-63)::placeholder { color: #50c0d8 !important; font-weight: 500 !important; }
+/* The CLM tab rail: gap 8 on 3px of padding, radius 11, a 1px accent
+   hairline over a white wash, and no fixed height - the 40px tabs give it its
+   48px. It was a 38px trough at gap 3 on a 1.5px border. */
+:where(.bpx-64) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; box-sizing: border-box !important; padding: 3px !important; border-radius: 11px !important; background: rgba(255,255,255,.6) !important; border: 1px solid rgba(6,182,212,.28) !important; }
 :where(.bpx-65) { overflow: auto !important; flex: 1 !important; min-height: 0 !important; }
 :where(.bpx-66) { padding: 9px 12px !important; text-align: center !important; }
 :where(.bpx-67) { font-size: 11px !important; font-weight: 700 !important; color: #0891b2 !important; }
@@ -297,8 +313,8 @@ const BP_CSS = `
    ran 11.5px/700 on 0 18px at radius 9 and stood 38px tall on the Buyer page
    and 40px on the Supplier one - the same control at three sizes inside one
    module. */
-.bpa-seg{display:flex;align-items:center;background:rgba(255,255,255,.6);border:1px solid rgba(6,182,212,.28);border-radius:11px;padding:4px;gap:8px;}
-.bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
+.bpa-seg{display:flex;align-items:center;height:48px;box-sizing:border-box;background:rgba(255,255,255,.6);border:1px solid rgba(6,182,212,.28);border-radius:11px;padding:3px;gap:8px;}
+.bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:650;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
 .bpa-tab svg{flex-shrink:0;}
 .bpa-tab-active{border:0;background:linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%);color:#fff;box-shadow:0 5px 14px rgba(6,182,212,.5),inset 0 1px 0 rgba(255,255,255,.4),inset 0 -2px 6px rgba(14,116,144,.3);text-shadow:0 1px 2px rgba(12,74,110,.4);}
 .bpa-tab-inactive{background:linear-gradient(135deg,#ecfeff,#cffafe);border:1px solid rgba(6,182,212,.25);color:#0e7490;box-shadow:none;}
@@ -508,16 +524,25 @@ const thStyle: CSSProperties = {
 };
 const thTxt: CSSProperties = { fontSize: '7px', fontWeight: 800, letterSpacing: '.09em', textTransform: 'uppercase', color: '#0891b2', opacity: .85 };
 
+/* The KPI tile, as the employee list builds it (HrEmployees.tsx, KPI_CARDS) and
+   as Agreements We Sent and Agreements To Approve now do: a 3px accent rule
+   flush across the top, the label in small muted caps, the figure under it at
+   24px/700 in the body colour, and the icon in a 38px tile at the top RIGHT.
+   This tile ran an 8px label under a 19px/900 figure at -1px tracking, with a
+   22px icon and a 6px tag chip sharing the top row - roughly half the type
+   scale of the same tile elsewhere in CLM. */
 const cardStyle: CSSProperties = {
-  position: 'relative', overflow: 'hidden', borderRadius: '8px', padding: '7px 9px',
-  background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 3px rgba(6,182,212,.07)',
+  position: 'relative', overflow: 'hidden', borderRadius: '14px', padding: '11px 15px',
+  background: '#fff', border: '1px solid var(--vz-border-color)', borderTopWidth: 0,
+  boxShadow: '0 1px 3px rgba(6,182,212,.07)',
   transition: 'all .15s',
 };
-const cardTopBar: CSSProperties = { position: 'absolute', top: 0, left: 0, right: 0, height: '2.5px', background: 'linear-gradient(90deg,#06b6d4,#0891b2)', borderRadius: '8px 8px 0 0' };
-const cardIco: CSSProperties = { width: '22px', height: '22px', borderRadius: '6px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(6,182,212,.25)' };
-const cardNum: CSSProperties = { fontSize: '19px', fontWeight: 900, color: '#0c4a6e', letterSpacing: '-1px', lineHeight: 1 };
-const cardLabel: CSSProperties = { fontSize: '8px', fontWeight: 700, color: '#0891b2', marginTop: '3px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
-const pill = (color: string): CSSProperties => ({ fontSize: '6px', fontWeight: 800, padding: '1px 4px', borderRadius: '20px', letterSpacing: '.06em', color, background: '#ecfeff', border: '1px solid #A5F3FC' });
+/* Flush to the top edge - the card drops its own top border so the rule IS the
+   edge, which keeps it a clean 3px band. */
+const cardTopBar: CSSProperties = { position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg,#06b6d4,#0891b2)' };
+const cardIco: CSSProperties = { width: '38px', height: '38px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,.10)' };
+const cardNum: CSSProperties = { fontSize: '24px', fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 };
+const cardLabel: CSSProperties = { fontSize: '10.5px', fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px', lineHeight: 1.25 };
 
 function cardHoverIn(e: React.MouseEvent<HTMLDivElement>) {
   e.currentTarget.style.transform = 'translateY(-2px)';
@@ -1019,7 +1044,7 @@ export default function ClmBuyerProfilePage() {
                   {([['international', 'International Transactions'], ['domestic', 'Domestic Transactions']] as const).map(([key, label]) => {
                     const on = txnScope === key;
                     return (
-                      <button key={key} onClick={() => { setTxnScope(key); setWsEqPage(1); setWsNeqPage(1); setWosEqPage(1); setWosNeqPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0 12px', border: 'none', borderRadius: '7px', fontFamily: 'inherit', fontSize: '10.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s', color: on ? '#fff' : '#0e7490', background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'transparent', boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none' }}>
+                      <button key={key} onClick={() => { setTxnScope(key); setWsEqPage(1); setWsNeqPage(1); setWosEqPage(1); setWosNeqPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden', ...(on ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' } : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid rgba(6,182,212,.25)', color: '#0e7490' }) }}>
                         {key === 'international'
                           ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                           : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
@@ -1047,11 +1072,12 @@ export default function ClmBuyerProfilePage() {
                   <div key={idx} style={cardStyle} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                     <div style={cardTopBar} />
                     <div className="bpx-38">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={cardLabel}>{c.label}</p>
+                        <div style={cardNum}>{c.num}</div>
+                      </div>
                       <div style={cardIco}>{c.ico}</div>
-                      <span style={pill(c.tagC)}>{c.tag}</span>
                     </div>
-                    <div style={cardNum}>{c.num}</div>
-                    <div style={cardLabel}>{c.label}</div>
                   </div>
                 ))}
               </div>
@@ -1313,11 +1339,12 @@ export default function ClmBuyerProfilePage() {
                       <div key={idx} onClick={() => { const k = CARD_KEYS[idx]; setCardFilter(cardFilter === k ? 'all' : k); setBuyerPage(1); setConsPage(1); }} style={{ ...cardStyle, cursor: 'pointer', ...(cardFilter === CARD_KEYS[idx] && CARD_KEYS[idx] !== 'all' ? { background: '#ecfeff', borderColor: '#0891b2' } : {}) }} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />
                         <div className="bpx-38">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={cardLabel}>{c.label}</p>
+                            <div style={cardNum}>{c.num}</div>
+                          </div>
                           <div style={cardIco}>{c.ico}</div>
-                          <span style={pill(c.tagC)}>{c.tag}</span>
                         </div>
-                        <div style={cardNum}>{c.num}</div>
-                        <div style={cardLabel}>{c.label}</div>
                       </div>
                     ))}
                   </div>
@@ -1336,11 +1363,12 @@ export default function ClmBuyerProfilePage() {
                       <div key={idx} onClick={() => { const k = CARD_KEYS[idx]; setCardFilter(cardFilter === k ? 'all' : k); setBuyerPage(1); setConsPage(1); }} style={{ ...cardStyle, cursor: 'pointer', ...(cardFilter === CARD_KEYS[idx] && CARD_KEYS[idx] !== 'all' ? { background: '#ecfeff', borderColor: '#0891b2' } : {}) }} onMouseEnter={cardHoverIn} onMouseLeave={cardHoverOut}>
                         <div style={cardTopBar} />
                         <div className="bpx-38">
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={cardLabel}>{c.label}</p>
+                            <div style={cardNum}>{c.num}</div>
+                          </div>
                           <div style={cardIco}>{c.ico}</div>
-                          <span style={pill(c.tagC)}>{c.tag}</span>
                         </div>
-                        <div style={cardNum}>{c.num}</div>
-                        <div style={cardLabel}>{c.label}</div>
                       </div>
                     ))}
                   </div>
@@ -1372,7 +1400,12 @@ export default function ClmBuyerProfilePage() {
                       {([['international', 'International Customers'], ['domestic', 'Domestic Customers']] as const).map(([key, label]) => {
                         const on = buyerScope === key;
                         return (
-                          <button key={key} onClick={() => { setBuyerScope(key); setBuyerPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0 13px', border: 'none', borderRadius: '7px', fontFamily: 'inherit', fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s', color: on ? '#fff' : '#0e7490', background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'transparent', boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none' }}>
+                          <button key={key} onClick={() => { setBuyerScope(key); setBuyerPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box',
+                            fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap',
+                            transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                            ...(on
+                              ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
+                              : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid rgba(6,182,212,.25)', color: '#0e7490' }) }}>
                             {key === 'international'
                               ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                               : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
@@ -1468,7 +1501,12 @@ export default function ClmBuyerProfilePage() {
                       {([['international', 'International Consignees'], ['domestic', 'Domestic Consignees']] as const).map(([key, label]) => {
                         const on = consScope === key;
                         return (
-                          <button key={key} onClick={() => { setConsScope(key); setConsPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0 13px', border: 'none', borderRadius: '7px', fontFamily: 'inherit', fontSize: '11px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all .15s', color: on ? '#fff' : '#0e7490', background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'transparent', boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none' }}>
+                          <button key={key} onClick={() => { setConsScope(key); setConsPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box',
+                            fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap',
+                            transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                            ...(on
+                              ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
+                              : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid rgba(6,182,212,.25)', color: '#0e7490' }) }}>
                             {key === 'international'
                               ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                               : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
