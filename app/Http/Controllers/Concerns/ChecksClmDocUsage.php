@@ -82,8 +82,40 @@ trait ChecksClmDocUsage
     /**
      * Document CODES referenced by each source, grouped by branch.
      * Shape: ['rules' => [branchKey => [code => true]], 'uploads' => [branchKey => [code => true]]]
+     *
+     * Cached for a minute, as ClmAuthorityController already caches its own
+     * usage sets and for the same reasons. Building this reads the segment
+     * rules plus every upload-owner table in full, and that is most of what
+     * the KYC, DD, QC and Trade Licence lists cost: 17-21 queries each, the
+     * same number whether the page shows three rows or three hundred. On a
+     * server where the database is a network hop away each one is a round
+     * trip, and all four pages rebuild the identical sets.
+     *
+     * A minute of staleness is safe: these sets only drive `in_use`, which
+     * greys out a delete button, and destroy() runs its own live check before
+     * deleting. The worst case is a button enabled up to 60s longer than it
+     * should be, and a refusal if it is pressed.
+     *
+     * Best-effort, like the rest of the caching here: if the cache store is
+     * unavailable the closure simply runs.
      */
     protected function clmDocUsageSets(?int $clientId): array
+    {
+        $build = fn (): array => $this->buildClmDocUsageSets($clientId);
+
+        try {
+            return \Illuminate\Support\Facades\Cache::remember(
+                'clm:docusage:v1:' . ($clientId ?? 0),
+                now()->addSeconds(60),
+                $build
+            );
+        } catch (\Throwable $e) {
+            return $build();
+        }
+    }
+
+    /** The uncached build — see clmDocUsageSets(). */
+    protected function buildClmDocUsageSets(?int $clientId): array
     {
         $rules = $uploads = [];
 

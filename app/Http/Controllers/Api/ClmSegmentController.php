@@ -132,20 +132,40 @@ class ClmSegmentController extends Controller
                 $addById($sid, 'Segment Rules');
             }
         }
-        // Customers / consignees hold their segments as ids (segment_ids JSON).
-        foreach ([['customers', 'Customers'], ['consignees', 'Consignees']] as [$table, $label]) {
-            if ($this->schemaHas($table) && $this->schemaHas($table, 'segment_ids')) {
-                foreach ($ids as $sid) {
-                    if (DB::table($table)->whereNull('deleted_at')->whereJsonContains('segment_ids', (int) $sid)->exists()) {
-                        $addById($sid, $label);
-                    }
+        /* Customers / consignees / T&C hold their segments as ids in a JSON
+           column. This used to ask the question once PER SEGMENT —
+           `whereJsonContains(...)->exists()` in a loop — which is a full scan
+           of the table for every segment the page shows. At 38 segments that
+           was 114 queries across these three tables alone, and it is why
+           /clm/segments cost 129 queries to return 1.9 kB.
+
+           One pass per table instead: read the column, expand it in PHP.
+           Only NUMERIC elements count, which is what `@> '[4]'` did — a
+           stored "4" (string) never matched before and must not start to.
+           A malformed value is skipped rather than throwing, so one bad row
+           cannot take the whole list down. */
+        $referencedIds = function (string $table, bool $softDeletes) use ($ids): array {
+            $q = DB::table($table)->whereNotNull('segment_ids');
+            if ($softDeletes) $q->whereNull('deleted_at');
+            $seen = [];
+            foreach ($q->pluck('segment_ids') as $raw) {
+                $arr = is_array($raw) ? $raw : json_decode((string) $raw, true);
+                if (!is_array($arr)) continue;
+                foreach ($arr as $v) {
+                    if (!is_int($v)) continue;
+                    if (in_array($v, $ids, true)) $seen[$v] = true;
                 }
             }
-        }
-        if ($this->schemaHas('clm_tnc_library', 'segment_ids')) {
-            foreach ($ids as $sid) {
-                if (DB::table('clm_tnc_library')->whereJsonContains('segment_ids', (int) $sid)->exists()) $addById($sid, 'T&C Library');
-            }
+            return array_keys($seen);
+        };
+
+        foreach ([
+            ['customers', 'Customers', true],
+            ['consignees', 'Consignees', true],
+            ['clm_tnc_library', 'T&C Library', false],
+        ] as [$table, $label, $softDeletes]) {
+            if (!$this->schemaHas($table) || !$this->schemaHas($table, 'segment_ids')) continue;
+            foreach ($referencedIds($table, $softDeletes) as $sid) $addById($sid, $label);
         }
         foreach ([['vendors', 'Vendors'], ['products', 'Products']] as [$table, $label]) {
             if ($this->schemaHas($table) && $this->schemaHas($table, 'segment_id')) {
