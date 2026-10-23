@@ -2261,7 +2261,13 @@ const SCOPED_CSS = `
 .lwp-root .lwp-empty {
   text-align: center !important; padding: 40px 12px !important;
   color: #94a3b8 !important; font-style: italic;
+  vertical-align: middle;
 }
+/* Empty state: the table stretches to the scroll area and the "No leads found"
+   row takes the spare height, so the message sits in the middle of the table
+   (same as the Productivity Tracker). */
+.lwp-root .lwp-table:has(.lwp-empty) { height: 100%; }
+.lwp-root .lwp-table:has(.lwp-empty) tbody tr:has(.lwp-empty) { height: 100%; background: transparent; border-bottom: 0; }
 
 /* ─── Skeleton / shimmer loader ─── */
 .lwp-root .lwp-skel-row { cursor: default !important; background: transparent !important; }
