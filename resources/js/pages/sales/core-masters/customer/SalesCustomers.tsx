@@ -634,35 +634,37 @@ export default function SalesCustomers() {
   return (
     <div className="smc-root">
 
-      {/* HRMS header strip — the same one the Employee list uses. */}
-      <div className="frm-cstrip hr-cstrip">
-        <span className="frm-cstrip-accent" />
-        <div className="frm-cstrip-left">
-          <div className="frm-cstrip-icon"><i className="ri-group-line" /></div>
-          <div className="min-w-0">
-            <div className="frm-cstrip-title">Customers</div>
-            <div className="frm-cstrip-sub">
-              Manage customer onboarding and lifecycle with strict compliance, KYC verification, and product mapping for sales readiness.
+      {/* Header strip + "What We Are Doing Here" — the Supplier list's header
+          (.sup-fig .cstrip) and step-card banner, in one .sup-fig as on that page. */}
+      <div className="sup-fig">
+        <div className="cstrip">
+          <span className="cstrip__accent" />
+          <span className="cstrip__glow" />
+          <span className="cstrip__sheen" />
+          <div className="cstrip__left">
+            <div className="cstrip__avatar-wrap">
+              <div className="cstrip__avatar"><i className="ri-group-line" style={{ fontSize: 17, color: '#fff' }} /></div>
+              <span className="cstrip__online-dot" />
+            </div>
+            <div className="min-w-0">
+              <div className="cstrip__title">Customers</div>
+              <div className="cstrip__sub">Manage customer onboarding and lifecycle with strict compliance, KYC verification, and product mapping for sales readiness.</div>
             </div>
           </div>
+          {canAdd && (
+            <div className="cstrip__right">
+              <button
+                type="button"
+                className="cstrip__action-btn"
+                onClick={() => { setEditing(null); setAddOpen(true); }}
+              >
+                <span className="cstrip__action-btn-sheen" />
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                Add Customer
+              </button>
+            </div>
+          )}
         </div>
-        {canAdd && (
-          <span className="sup-fig" style={{ display: 'contents' }}>
-            <button
-              type="button"
-              className="cstrip__action-btn flex-shrink-0"
-              onClick={() => { setEditing(null); setAddOpen(true); }}
-            >
-              <span className="cstrip__action-btn-sheen" />
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-              Add Customer
-            </button>
-          </span>
-        )}
-      </div>
-
-      {/* "What We Are Doing Here" — the Supplier list's step-card banner. */}
-      <div className="sup-fig">
         <div className={`bref-box smc-bref ${wdhOpen ? '' : 'is-collapsed'}`}>
           <div className="bref-box__header" onClick={() => setWdhOpen(o => !o)} role="button">
             <div className="bref-box__header-ico"><i className="ri-group-line" style={{ fontSize: 15 }} /></div>

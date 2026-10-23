@@ -626,13 +626,21 @@ export default function SalesQPI() {
         setFillH(prev => (prev === cardH ? prev : cardH));
       }
       if (rppManualRef.current) return;
-      const top    = host.getBoundingClientRect().top;
-      const theadH = (host.querySelector('thead') as HTMLElement | null)?.offsetHeight || 44;
-      const rowH   = (host.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 48;
-      const FOOTER  = 56;
-      const HOSTPAD = 15;
-      const avail   = window.innerHeight - top - theadH - FOOTER - HOSTPAD - 16;
-      const rowsFit = Math.max(4, Math.floor(avail / rowH));
+      /* Measured, not estimated (same fix as the Customers / Consignee lists): the
+         rows get the space from the bottom of the header row to the card's bottom
+         edge (window − 16px, see fillH), less the real pager, the real horizontal
+         scrollbar, and the card border + host's 1px bottom padding. The old fixed
+         allowances (56 + 15 + 16) could round a fitting last row away. */
+      const top      = host.getBoundingClientRect().top;
+      const theadEl  = host.querySelector('thead') as HTMLElement | null;
+      const theadBot = theadEl ? theadEl.getBoundingClientRect().bottom : top + 14 + 44;
+      const rowH     = (host.querySelector('tbody tr') as HTMLElement | null)?.getBoundingClientRect().height || 48;
+      const pagerH   = (cardEl?.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight ?? 56;
+      const scroller = host.querySelector('.table-responsive') as HTMLElement | null;
+      const sbH      = scroller ? scroller.offsetHeight - scroller.clientHeight : 0;
+      const avail    = (window.innerHeight - 16) - theadBot - pagerH - sbH - 2;
+      // +2: sub-pixel row heights must not cost a whole row.
+      const rowsFit  = Math.max(4, Math.floor((avail + 2) / rowH));
       setRpp(prev => (prev === rowsFit ? prev : rowsFit));
     };
     fit();
@@ -1399,28 +1407,37 @@ export default function SalesQPI() {
     <div className="qpi-root">
       <style>{SCOPED_CSS}</style>
 
-      <div className="frm-cstrip hr-cstrip">
-        <span className="frm-cstrip-accent" />
-        <div className="frm-cstrip-left">
-          <div className="frm-cstrip-icon"><i className="ri-file-list-3-line" /></div>
-          <div className="min-w-0">
-            <div className="frm-cstrip-title">Quotations V/S Proforma Invoice</div>
-            <div className="frm-cstrip-sub">Manage quotation creation, customer approval and PI conversion</div>
-          </div>
-        </div>
-        <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
-          <div className="dt-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={tab === 'quotation'} className={`dt-tab ${tab === 'quotation' ? 'on' : 'off'}`} onClick={() => switchTab('quotation')}>
-              <i className="ri-file-text-line" /> Quotation <span className="dt-tab-count">{quotations.length}</span>
-            </button>
-            <button type="button" role="tab" aria-selected={tab === 'pi'} className={`dt-tab ${tab === 'pi' ? 'on' : 'off'}`} onClick={() => switchTab('pi')}>
-              <i className="ri-computer-line" /> Proforma Invoice <span className="dt-tab-count">{pis.length}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
+      {/* Header strip + "What We Are Doing Here" — the Supplier list's header
+          (.sup-fig .cstrip) and step-card banner, in one .sup-fig as on that page.
+          The Quotation / Proforma Invoice rail sits where Supplier has its button. */}
       <div className="sup-fig">
+        <div className="cstrip">
+          <span className="cstrip__accent" />
+          <span className="cstrip__glow" />
+          <span className="cstrip__sheen" />
+          <div className="cstrip__left">
+            <div className="cstrip__avatar-wrap">
+              <div className="cstrip__avatar"><i className="ri-file-list-3-line" style={{ fontSize: 17, color: '#fff' }} /></div>
+              <span className="cstrip__online-dot" />
+            </div>
+            <div className="min-w-0">
+              <div className="cstrip__title">Quotations V/S Proforma Invoice</div>
+              <div className="cstrip__sub">Manage quotation creation, customer approval and PI conversion</div>
+            </div>
+          </div>
+          <div className="cstrip__right">
+            <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+              <div className="dt-tabs" role="tablist">
+                <button type="button" role="tab" aria-selected={tab === 'quotation'} className={`dt-tab ${tab === 'quotation' ? 'on' : 'off'}`} onClick={() => switchTab('quotation')}>
+                  <i className="ri-file-text-line" /> Quotation <span className="dt-tab-count">{quotations.length}</span>
+                </button>
+                <button type="button" role="tab" aria-selected={tab === 'pi'} className={`dt-tab ${tab === 'pi' ? 'on' : 'off'}`} onClick={() => switchTab('pi')}>
+                  <i className="ri-computer-line" /> Proforma Invoice <span className="dt-tab-count">{pis.length}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
         <div className={`bref-box qpi-bref ${wdhOpen ? '' : 'is-collapsed'}`}>
           <div className="bref-box__header" onClick={() => setWdhOpen(o => !o)} role="button">
             <div className="bref-box__header-ico"><i className="ri-file-list-3-line" style={{ fontSize: 15 }} /></div>
@@ -4172,19 +4189,18 @@ const SCOPED_CSS = `
   padding: 0;
   margin: 0;
   color: var(--vz-body-color);
-  display: flex; flex-direction: column;
+  /* 8px between the header block and the table: the header is the Supplier
+     list's (.sup-fig .cstrip), so app.css's HRMS-strip margins don't apply. */
+  display: flex; flex-direction: column; gap: 8px;
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
-/* Title + subtitle sized like the Supplier Management header (.sup-fig .cstrip__title / __sub). */
-.qpi-root .frm-cstrip .frm-cstrip-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; }
-.qpi-root .frm-cstrip .frm-cstrip-sub { font-size: 10px; font-weight: 500; opacity: .85; margin-top: 2px; line-height: 1.3; }
 /* Tabs 40px / 12.5px; search, document-type filter and the table-bar button stand the same 40px. */
 .qpi-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
-.qpi-root .frm-cstrip.hr-cstrip > .dt-tabrail { position: relative; z-index: 1; }
 .qpi-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
-.qpi-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
+/* Left edges: header icon, banner icon and first tab start 19px in; right edges end 15px in. */
+.qpi-root .sup-fig .cstrip { padding-left: 18px; padding-right: 14px; }
+.qpi-root .sup-fig .cstrip__left { padding-left: 0; }
 .master-select-menu.qpi-doctype-menu { width: 186px !important; min-width: 186px !important; max-width: 186px !important; }
-.qpi-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
 .qpi-root .qpi-tablebar .dt-search,
 .qpi-root .qpi-tablebar .qpi-doctype-filter,
 .qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle { height: 40px; }
