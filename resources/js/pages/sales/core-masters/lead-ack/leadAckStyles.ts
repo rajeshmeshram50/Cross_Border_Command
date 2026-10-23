@@ -313,17 +313,26 @@ export const LEAD_ACK_CSS = `
 }
 .lam-modal-md { width: min(92vw, 460px); }
 .lam-modal-lg { width: min(94vw, 720px); }
+/* Header = the Customer form header (.acm-header): violet gradient, soft glow,
+   top sheen — the same header every Sales popup now uses. */
 .lam-modal-header {
   position: relative; overflow: hidden;
-  background: linear-gradient(135deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%);
-  padding: 20px 22px;
-  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
+  padding: 14px 22px;
+  display: flex; align-items: center; gap: 12px;
   flex-shrink: 0;
 }
 .lam-modal-header::before {
-  content: ''; position: absolute; inset: 0;
-  background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px);
-  background-size: 18px 18px; pointer-events: none;
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(216,180,254,.4), transparent 45%);
+}
+.lam-modal-header::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
 }
 
 /* ── Rich header variant — layered radial glows + diagonal sheen
@@ -331,10 +340,12 @@ export const LEAD_ACK_CSS = `
    Add/Edit form modal so it reads as a real material with depth,
    not a flat purple band. ── */
 .lam-modal-header-rich {
-  background:
-    linear-gradient(135deg, #2b1d6b 0%, #4c1d95 28%, #6d28d9 55%, #7c3aed 78%, #a78bfa 100%);
-  padding: 24px 24px;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
+  padding: 14px 22px;
 }
+/* The orbs / diagonal sheen are replaced by the shared header's glow + sheen. */
+.lam-modal-header-rich .lam-mh-orb,
+.lam-modal-header-rich .lam-mh-sheen { display: none; }
 .lam-mh-orb {
   position: absolute; border-radius: 50%;
   pointer-events: none;
@@ -358,25 +369,24 @@ export const LEAD_ACK_CSS = `
 }
 .lam-modal-hicon {
   position: relative; z-index: 2;
-  width: 44px; height: 44px; border-radius: 12px;
+  width: 38px; height: 38px; border-radius: 11px;
   background: rgba(255,255,255,0.18);
-  border: 1.5px solid rgba(255,255,255,0.30);
+  border: 1px solid rgba(255,255,255,0.25);
   display: inline-flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 22px; flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.22);
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  color: #fff; font-size: 18px; flex-shrink: 0;
 }
 .lam-modal-htext { flex: 1; min-width: 0; padding-right: 40px; position: relative; z-index: 2; }
 /* When the modal is rendered without a top-right X (lam-modal-noclose),
    drop the reserved padding so the title block breathes evenly across
    the header instead of looking left-shifted. */
 .lam-modal-noclose .lam-modal-htext { padding-right: 0; }
-.lam-modal-title { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -0.01em; }
-.lam-modal-sub   { font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 4px; }
+/* Page-header title size (Supplier .cstrip__title), as on the other Sales popups. */
+.lam-modal-title { font-size: 14.5px; font-weight: 700; color: #fff; letter-spacing: -.3px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.lam-modal-sub   { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,0.85); margin-top: 3px; }
 .lam-modal-close {
   position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
   z-index: 2;
-  width: 34px; height: 34px; border-radius: 10px;
+  width: 32px; height: 32px; border-radius: 9px;
   background: rgba(255,255,255,0.12); color: #fff;
   border: 1px solid rgba(255,255,255,0.25);
   cursor: pointer;
@@ -391,7 +401,7 @@ export const LEAD_ACK_CSS = `
 }
 
 .lam-modal-body { padding: 24px 24px 20px; background: #faf7ff; overflow-y: auto; flex: 1; }
-.lam-modal-helper { font-size: 12.5px; color: #6b7280; margin-bottom: 14px; line-height: 1.6; }
+.lam-modal-helper { font-size: 12px; font-weight: 500; color: #64748b; margin-bottom: 14px; line-height: 1.6; }
 
 /* Opportunity-type selector buttons */
 .lam-opp-options { display: flex; flex-direction: column; gap: 12px; }
@@ -414,8 +424,8 @@ export const LEAD_ACK_CSS = `
   border: 1.5px solid;
 }
 .lam-opp-text { flex: 1; min-width: 0; }
-.lam-opp-title { font-size: 13.5px; font-weight: 800; line-height: 1.25; }
-.lam-opp-sub   { font-size: 11.5px; margin-top: 3px; font-weight: 500; }
+.lam-opp-title { font-size: 13px; font-weight: 700; line-height: 1.25; }
+.lam-opp-sub   { font-size: 11px; margin-top: 3px; font-weight: 500; }
 .lam-opp-chev  { font-size: 18px; opacity: 0.65; transition: transform .18s ease; }
 .lam-opp:hover .lam-opp-chev { transform: translateX(3px); opacity: 1; }
 
@@ -713,10 +723,10 @@ export const LEAD_ACK_CSS = `
   .lam-row.cols-2 { grid-template-columns: minmax(0, 1fr); }
   .lam-modal { border-radius: 16px; max-height: calc(100vh - 24px); }
   .lam-modal-md, .lam-modal-lg { width: 100%; }
-  .lam-modal-header { padding: 16px 18px; gap: 12px; }
-  .lam-modal-header-rich { padding: 18px 18px; }
-  .lam-modal-hicon { width: 40px; height: 40px; font-size: 20px; }
-  .lam-modal-title { font-size: 15px; }
+  .lam-modal-header { padding: 14px 16px; gap: 12px; }
+  .lam-modal-header-rich { padding: 14px 16px; }
+  .lam-modal-hicon { width: 36px; height: 36px; font-size: 17px; }
+  .lam-modal-title { font-size: 14px; }
   .lam-modal-sub   { font-size: 11px; }
   .lam-modal-body   { padding: 18px 16px 14px; }
   .lam-modal-footer { padding: 12px 16px; flex-direction: column-reverse; align-items: stretch; gap: 8px; }
