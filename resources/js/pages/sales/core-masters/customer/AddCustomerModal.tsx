@@ -630,7 +630,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const cardRef = useRef<HTMLDivElement>(null);
   const [stage1CardH, setStage1CardH] = useState<number | null>(null);
   useLayoutEffect(() => {
-    if (open && stage === 1 && tab === 'identification' && !showShimmer && cardRef.current) setStage1CardH(cardRef.current.offsetHeight);
+    // Forget it on close: SalesMatrixDetail keeps this modal mounted between opens.
+    if (!open) { setStage1CardH(null); return; }
+    if (stage === 1 && tab === 'identification' && !showShimmer && cardRef.current) setStage1CardH(cardRef.current.offsetHeight);
   }, [open, stage, tab, showShimmer, form.country]);
 
   useEffect(() => {
@@ -4620,7 +4622,7 @@ const SCOPED_CSS = `
     height: min(94vh, calc(100vh - 16px));
   }
   .acm-header { padding: 12px 18px; }
-  .acm-stepper { padding: 12px 16px 10px; }
+  .acm-stepper { padding: 12px 26px 10px 18px; }
   .acm-history { margin: 10px 16px 0; }
   .acm-body { padding: 14px 18px 16px; }
   .acm-footer { padding: 10px 18px; }
@@ -4647,11 +4649,11 @@ const SCOPED_CSS = `
   .acm-row-3 { grid-template-columns: 1fr 1fr; }
   .acm-row-2 { grid-template-columns: 1fr 1fr; }
   .acm-section-body, .acm-sec-pad { padding: 12px; }
-  .acm-stepper { padding: 10px 12px 8px; flex-wrap: wrap; gap: 8px; }
+  .acm-stepper { padding: 10px 22px 8px 14px; flex-wrap: wrap; gap: 8px; }
   .acm-history { margin: 10px 12px 0; }
   .acm-step-connector { display: none; }
   .acm-step { flex: 1 1 calc(50% - 6px); min-width: 0; }
-  .acm-tabs { margin: 10px 16px 0; }
+  .acm-tabs { margin: 10px 22px 0 14px; }
   .acm-body { padding: 12px 14px 14px; }
 }
 
