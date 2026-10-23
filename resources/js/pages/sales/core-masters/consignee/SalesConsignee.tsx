@@ -973,41 +973,19 @@ export default function SalesConsignee() {
       {mappedTarget && createPortal(
         <div onMouseDown={() => { setMappedTarget(null); setMappedSeg(null); setCustMapOpen(false); }} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.50)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
           <div onMouseDown={e => e.stopPropagation()} style={{ width: '96vw', maxWidth: 1280, maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: mc.card, borderRadius: 18, overflow: 'hidden', boxShadow: '0 30px 80px rgba(0,0,0,.45)' }}>
-            {/* Header — purple gradient (customer module palette) + dotted texture. */}
-            <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '20px', background: 'linear-gradient(135deg,#4c1d95 0%,#6d28d9 50%,#7c3aed 100%)', color: '#fff', flexShrink: 0 }}>
-              {/* Dotted overlay effect. */}
-              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: .5, backgroundImage: 'radial-gradient(rgba(255,255,255,.35) 1.4px, transparent 1.5px)', backgroundSize: '16px 16px' }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
-                  <i className="ri-links-line" style={{ fontSize: 20 }} />
+            {/* Header — the Customer form header (.acm-header): violet gradient, glow and sheen. */}
+            <div className="smcg-mapped-head">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                <div className="smcg-mapped-head-icon">
+                  <i className="ri-links-line" style={{ fontSize: 19 }} />
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>Mapped Customers</div>
-                  <div style={{ fontSize: 12.5, opacity: .9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Customers linked to <strong>{mappedTarget.id}</strong> · {mappedTarget.company}</div>
+                  <div className="smcg-mapped-head-title">Mapped Customers</div>
+                  <div className="smcg-mapped-head-sub">Customers linked to <strong>{mappedTarget.id}</strong> · {mappedTarget.company}</div>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                {canEdit && (() => {
-                  // A "Same as Customer" consignee mirrors exactly ONE customer,
-                  // so it can't be mapped to more — disable Map Customer and
-                  // explain why on click.
-                  const sac = !!mappedTarget.same_as_customer;
-                  return (
-                    <button
-                      type="button"
-                      aria-disabled={sac}
-                      onClick={() => {
-                        if (sac) { toast.warning('Same as Customer', 'This consignee is “Same as Customer”, so it can be linked to only one customer. Turn off Same as Customer to map more.'); return; }
-                        custMapOpen ? setCustMapOpen(false) : openCustMap();
-                      }}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, background: '#fff', color: '#6d28d9', border: 'none', borderRadius: 9, padding: '7px 13px', cursor: sac ? 'not-allowed' : 'pointer', opacity: sac ? 0.5 : 1 }}
-                    >
-                      <i className="ri-link" /> Map Customer
-                    </button>
-                  );
-                })()}
-                <span style={{ fontSize: 12, fontWeight: 700, background: 'rgba(255,255,255,.16)', borderRadius: 20, padding: '3px 12px' }}>{(mappedTarget.customers ?? []).length} {(mappedTarget.customers ?? []).length === 1 ? 'customer' : 'customers'}</span>
-                <button type="button" onClick={() => setMappedTarget(null)} aria-label="Close" style={{ width: 30, height: 30, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,.16)', color: '#fff', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+                <button type="button" onClick={() => setMappedTarget(null)} aria-label="Close" className="smcg-mapped-close">×</button>
               </div>
             </div>
 
@@ -1050,9 +1028,9 @@ export default function SalesConsignee() {
             })()}
             {/* Search toolbar — filter the mapped customers (matches the
                 Consignees modal search). */}
-            <div style={{ padding: '14px 18px 0' }}>
-              <div className="ui-search-abs" style={{ position: 'relative', maxWidth: 420 }}>
-                <i className="ri-search-line" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: mc.textMuted, fontSize: 15 }} />
+            <div className="smcg-mapped-toolbar">
+              <div className="ui-search-abs smcg-mapped-search">
+                <i className="ri-search-line" />
                 <input
                   type="search"
                   name="consignee-mapped-customer-search"
@@ -1062,18 +1040,41 @@ export default function SalesConsignee() {
                   data-lpignore="true"
                   data-form-type="other"
                   placeholder="Search customers…"
-                  style={{ width: '100%', padding: '9px 14px 9px 36px', borderRadius: 10, border: `1px solid ${mc.border}`, background: mc.card, color: mc.textStrong, fontSize: 13, outline: 'none' }}
                 />
                 <SearchClear show={mappedSearch} onClear={() => { setMappedSearch(''); }} />
               </div>
+              <div className="smcg-mapped-toolbar-right">
+                <span className="smcg-mapped-count">{(mappedTarget.customers ?? []).length} {(mappedTarget.customers ?? []).length === 1 ? 'customer' : 'customers'}</span>
+                {canEdit && (() => {
+                  // A "Same as Customer" consignee mirrors exactly ONE customer,
+                  // so it can't be mapped to more — disable Map Customer and
+                  // explain why on click.
+                  const sac = !!mappedTarget.same_as_customer;
+                  return (
+                    <button
+                      type="button"
+                      aria-disabled={sac}
+                      onClick={() => {
+                        if (sac) { toast.warning('Same as Customer', 'This consignee is “Same as Customer”, so it can be linked to only one customer. Turn off Same as Customer to map more.'); return; }
+                        custMapOpen ? setCustMapOpen(false) : openCustMap();
+                      }}
+                      className="smcg-mapped-add"
+                    >
+                      <i className="ri-link" /> Map Customer
+                    </button>
+                  );
+                })()}
+              </div>
             </div>
             {/* Table — ~5 rows visible, the rest scroll (header ~44px + 5×~46px). */}
-            <div style={{ padding: '12px 18px 18px', maxHeight: 320, overflowX: 'auto', overflowY: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, borderRadius: 10, overflow: 'hidden', minWidth: 780 }}>
+            <div className="smcg-mapped-body">
+            <div className="smcg-mapped-card">
+            <div className="smcg-mapped-table-wrap dt-root hr-dt" data-accent="violet">
+              <table className="smcg-mapped-table dt-table">
                 <thead>
-                  <tr style={{ background: 'linear-gradient(110deg,#6d28d9 0%,#7c3aed 55%,#5b21b6 100%)' }}>
+                  <tr>
                     {['SR NO', 'CUSTOMER ID', 'COMPANY NAME', 'SEGMENT', 'TYPE', 'COUNTRY', 'CONTACT PERSON', 'CONTACT NO'].map((h, i) => (
-                      <th key={h} style={{ color: '#fff', fontSize: 11.5, fontWeight: 700, letterSpacing: .3, textAlign: i === 0 ? 'center' : 'left', padding: '11px 14px', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ textAlign: i === 0 ? 'center' : 'left' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1089,34 +1090,38 @@ export default function SalesConsignee() {
                       const i = start + li;
                       const segList = String(cu.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
                       return (
-                        <tr key={cu.id} style={{ background: i % 2 ? mc.rowAlt : mc.rowBase }}>
-                          <td style={{ textAlign: 'center', padding: '10px 14px', fontSize: 13, color: mc.textMuted, borderBottom: `1px solid ${mc.border}` }}>{i + 1}</td>
-                          <td style={{ padding: '10px 14px', borderBottom: `1px solid ${mc.border}` }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: mc.chipFg, background: mc.chipBg, borderRadius: 8, padding: '2px 9px', whiteSpace: 'nowrap' }}>{cu.code || `C-${cu.id}`}</span>
-                          </td>
-                          <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: mc.textStrong, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{truncTip(cu.name, 20)}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}` }}>
+                        <tr key={cu.id}>
+                          <td style={{ textAlign: 'center' }}><span className="dt-serial">{i + 1}</span></td>
+                          <td><span className="dt-id-chip">{cu.code || `C-${cu.id}`}</span></td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{truncTip(cu.name, 20)}</td>
+                          <td>
                             {segList.length === 0 ? '—' : (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: mc.chipBg, color: mc.chipFg, borderRadius: 6, padding: '1px 8px', fontSize: 11.5, fontWeight: 600 }}>{truncSegment(segList[0])}<SegmentNameBadge name={segList[0]} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>
+                              /* Same pill + "+N" as the Customers list Segment column (.smc-seg / .smc-seg-more). */
+                              <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+                                <Tooltip label={segList[0]} disabled={segList[0].length <= 18}>
+                                  <span className="smc-seg smc-seg--withbadge">
+                                    <span className="smc-seg-name">{segList[0]}</span>
+                                    <SegmentNameBadge name={segList[0]} style={{ marginLeft: 0 }} />
+                                  </span>
+                                </Tooltip>
                                 {segList.length > 1 && (
                                   <Tooltip label={`View ${segList.length - 1} more`}>
-                                    <span
-                                      role="button"
+                                    <button
+                                      type="button"
+                                      className="smc-seg-more"
                                       onClick={(e) => { e.stopPropagation(); setMappedSeg({ names: segList, x: e.clientX, y: e.clientY }); }}
-                                      style={{ cursor: 'pointer', fontSize: 11, color: mc.chipFg, fontWeight: 700, background: mc.chipBg, borderRadius: 6, padding: '1px 6px' }}
                                     >
                                       +{segList.length - 1}
-                                    </span>
+                                    </button>
                                   </Tooltip>
                                 )}
                               </span>
                             )}
                           </td>
-                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#475569', borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.type || '—'}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.country || '—'}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{truncTip(cu.contact, 15)}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{truncTip(cu.phone, 15)}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{cu.type || '—'}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{cu.country || '—'}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{truncTip(cu.contact, 15)}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{truncTip(cu.phone, 15)}</td>
                         </tr>
                       );
                     });
@@ -1139,7 +1144,7 @@ export default function SalesConsignee() {
                 /* No Close button here -- the header's x already closes this,
                    and a second control for the same thing only competes with
                    the pager for the row. */
-                <div className="smcg-mapped-foot" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', padding: '13px 20px', borderTop: `1px solid ${mc.border}`, background: mc.rowAlt }}>
+                <div className="smcg-mapped-pag">
                   {/* No hideNavWhenSinglePage -- see CustomerConsigneesModal:
                       the paired popup shows its controls, so this one must. */}
                   <WorklistPager
@@ -1155,24 +1160,39 @@ export default function SalesConsignee() {
                 </div>
               );
             })()}
+            </div>
+            </div>
           </div>
         </div>,
         document.body,
       )}
 
       {/* "+N" segment overflow popover for the Mapped Customers modal. */}
-      {mappedSeg && createPortal(
-        <>
-          <div onClick={() => setMappedSeg(null)} style={{ position: 'fixed', inset: 0, zIndex: 1097 }} />
-          <div style={{ position: 'fixed', left: Math.max(8, Math.min(mappedSeg.x, window.innerWidth - 290)), top: Math.max(8, Math.min(mappedSeg.y + 10, window.innerHeight - 268)), zIndex: 1098, width: 270, maxHeight: 260, overflowY: 'auto', background: mc.popBg, borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.35)', padding: 8, border: `1px solid ${mc.border}` }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: mc.chipFg, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .3 }}>Segments ({mappedSeg.names.length})</div>
-            {mappedSeg.names.map((n, i) => (
-              <div key={i} title={n} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: mc.textStrong, padding: '5px 7px', borderRadius: 6, background: i % 2 ? mc.rowAlt : 'transparent' }}><span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</span><SegmentNameBadge name={n} style={{ marginLeft: 'auto', flexShrink: 0 }} /></div>
-            ))}
-          </div>
-        </>,
-        document.body,
-      )}
+      {mappedSeg && (() => {
+        /* Same popover as the Customers list Segment "+N" (.smc-seg-pop): pinned
+           title, ~3 rows visible, each row a name pill + its Reg badge on the right. */
+        const ROWS_MAX_H = 108;
+        const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + mappedSeg.names.length * 34);
+        const left = Math.max(8, Math.min(mappedSeg.x, window.innerWidth - 280));
+        const top  = Math.max(8, Math.min(mappedSeg.y + 10, window.innerHeight - estH - 8));
+        return createPortal(
+          <>
+            <div onClick={() => setMappedSeg(null)} style={{ position: 'fixed', inset: 0, zIndex: 1097 }} />
+            <div className="smc-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1098, width: 268, borderRadius: 12, padding: 8 }}>
+              <div className="smc-seg-pop-title">Segments ({mappedSeg.names.length})</div>
+              <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
+                {mappedSeg.names.map((n, i) => (
+                  <div key={i} className={`smc-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                    <Tooltip label={n} disabled={n.length <= 18}><span className="smc-seg">{n}</span></Tooltip>
+                    <SegmentNameBadge name={n} style={{ marginLeft: 'auto', flexShrink: 0 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>,
+          document.body,
+        );
+      })()}
     </div>
   );
 }
