@@ -2880,15 +2880,32 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return;
     }
 
-    // HARD gate: the document set must be FINALISED and every TICKED exit
-    // document fully SIGNED before the exit can be finalised.
-    if (docSetLoaded && !docFinalized) {
+    /* HARD gate: the document set must be FINALISED and every TICKED exit
+       document fully SIGNED before the exit can be finalised.
+       …but only where a set can exist at all. This carried neither of the two
+       exemptions the completion checklist above already applies, so it blocked
+       exits it had no business blocking (QA #15):
+
+         exitTemplates.length === 0 — no exit template matches this employee,
+           so there is nothing to tick and docFinalized can NEVER become true.
+           The exit was unfinishable, with a toast telling the user to go and
+           finalize a set that does not exist.
+         noSettlementDue — no documents are released for this exit, which is
+           why rawStageStatus already reports 'documents' as Completed. The
+           stage read 100% while this refused to pass it.
+
+       The two checks are now one rule stated once, rather than a lenient
+       version on the checklist and a strict one on the button. */
+    const docSetApplies = !noSettlementDue && exitTemplates.length > 0;
+    if (docSetApplies && docSetLoaded && !docFinalized) {
       toast.error('Exit can’t be completed — document set not finalized',
         'Tick the exit documents this employee needs and finalize the set in “Exit Documents Management” first.');
       setStage(3);
       return;
     }
-    const unsignedDocs = exitRequiredIds.filter(id => runByTemplateId.get(id)?.status !== 'Completed');
+    const unsignedDocs = !docSetApplies
+      ? []
+      : exitRequiredIds.filter(id => runByTemplateId.get(id)?.status !== 'Completed');
     if (unsignedDocs.length) {
       toast.error(
         `Exit can't be completed — ${unsignedDocs.length} document${unsignedDocs.length > 1 ? 's' : ''} not fully signed`,
@@ -5857,10 +5874,24 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
      Present is derived (paid working days minus the holidays and paid leave
      already credited inside it) so the rows sum to the days on the books
      instead of counting a holiday twice. */
-  const weekOffDays   = Number(b.weekoff_days || 0);
+  /* The week-offs that were PAID, not the ones that fell in the window.
+   *
+   * These differ when an unpaid leave covers a week-off: the sandwich rule
+   * docks it, so it earns nothing and is already counted inside lop_days.
+   * Listing the calendar count as "Weekly offs PAID" put those same days in
+   * two rows at once, and the table then summed to more days than the employee
+   * was employed — 15 against 13 on the books. The money was never wrong; the
+   * account of it was. Falls back to the calendar count on a slip computed
+   * before the field existed. (QA #14) */
+  const weekOffDays   = b.weekoff_paid_days !== undefined && b.weekoff_paid_days !== null
+    ? Number(b.weekoff_paid_days)
+    : Number(b.weekoff_days || 0);
   const holidayDays   = Number(b.holiday_days || 0);
   const paidLeaveDays = Number(b.paid_leave_days || 0);
-  const presentOnly   = Math.max(0, paidDays - holidayDays - paidLeaveDays);
+  /* Present is what is LEFT of the paid days once the other paid reasons are
+     taken out — week-offs included, because paid_days credits them too. Leaving
+     them in made Present absorb them and the rows over-count. */
+  const presentOnly   = Math.max(0, paidDays - holidayDays - paidLeaveDays - weekOffDays);
   /* Every category is listed even at zero — this is an account of the cycle's
      days, and "no paid leave" is an answer the reader wants, not a row to hide.
      Dropping the empties made the table change shape between employees. */
@@ -5878,7 +5909,12 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
      week-offs and holidays, itemised row by row in that very table — but a
      reader has no way to know that from two bare numbers (QA #118). */
   const stats = [
-    { label: 'Working days', value: b.working_days, hint: 'Calendar days on the books minus week-offs and holidays.' },
+    /* The hint used to say "minus week-offs and holidays", which is not what
+       the engine does: working_days is every CALENDAR day in the window, and a
+       week-off is paid out of it rather than removed from it (CBC #11). Stating
+       the wrong basis is what makes the day table look like it double counts.
+       (QA #14) */
+    { label: 'Working days', value: b.working_days, hint: 'Calendar days employed this cycle — week-offs and holidays are paid out of these, not excluded.' },
     { label: 'Paid days',    value: activeDays > 0 ? paidCalendarDays : b.paid_days, hint: 'Calendar days on the books, less loss of pay.' },
     { label: 'LOP days',     value: b.lop_days, hint: 'Days docked as loss of pay (absent / unpaid leave).' },
     { label: 'OT hours',     value: b.overtime_hours, hint: 'Approved overtime hours this cycle.' },
