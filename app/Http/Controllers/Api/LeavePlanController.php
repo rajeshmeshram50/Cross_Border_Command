@@ -69,7 +69,31 @@ class LeavePlanController extends Controller
 
         $this->applyScope($q, $user, $branchFilter);
 
-        $rows = $q->orderByDesc('is_default')->orderBy('plan_name')->get();
+        /* Search server-side, because the page now holds only one page of
+           plans — filtering what the browser happens to have would hide
+           matches that live on page 2. */
+        if ($search = trim((string) $request->query('search', ''))) {
+            $q->where('plan_name', 'ilike', '%' . $search . '%');
+        }
+
+        $q->orderByDesc('is_default')->orderBy('plan_name');
+
+        /* Paged only when the caller asks. Two of the three callers are
+           dropdowns — the employee form's and the Job tab's — which need every
+           plan to resolve the one an employee is on; defaulting to a page would
+           silently truncate those lists. The Leave Plans SCREEN sends per_page
+           and gets a page. Capped at 100 so a hand-edited URL cannot ask for
+           the whole table through the detail eager-loads. (QA #8) */
+        $perPage = (int) $request->integer('per_page');
+        $total   = null;
+        if ($perPage > 0) {
+            $perPage = min($perPage, 100);
+            $page    = max(1, (int) $request->integer('page'));
+            $total   = (clone $q)->reorder()->count();
+            $rows    = $q->forPage($page, $perPage)->get();
+        } else {
+            $rows = $q->get();
+        }
 
         // Per-plan setup completeness. A plan is "configured" only when it has
         // at least one leave type AND every assigned type has FINISHED its setup
@@ -91,7 +115,10 @@ class LeavePlanController extends Controller
             $plan->setup_complete = $total > 0 && $configured === $total;
         });
 
-        return response()->json(['data' => $rows]);
+        // total only when paged, so an unpaged caller's response is unchanged.
+        return response()->json(
+            ['data' => $rows] + ($total !== null ? ['total' => $total] : [])
+        );
     }
 
     public function show(Request $request, int $id)

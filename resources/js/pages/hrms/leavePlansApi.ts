@@ -76,6 +76,22 @@ export const leavePlansApi = {
       params: withDetail ? { with_detail: 1 } : undefined,
     }).then(r => r.data.data),
 
+  /* One page of plans, plus the total so the footer can count.
+     Separate from list() on purpose: the two dropdowns that call list() need
+     EVERY plan to resolve the one an employee is on, and would break silently
+     if the default became a page. Only the Leave Plans screen pages. (QA #8) */
+  page: (page: number, perPage: number, withDetail = true, search?: string) =>
+    api.get<{ data: ApiLeavePlan[]; total?: number }>('/leave-plans', {
+      params: {
+        page, per_page: perPage,
+        ...(withDetail ? { with_detail: 1 } : {}),
+        ...(search ? { search } : {}),
+      },
+    }).then(r => ({
+      rows: r.data.data ?? [],
+      total: Number(r.data.total ?? (r.data.data?.length ?? 0)),
+    })),
+
   show: (id: number) =>
     api.get<{ data: ApiLeavePlan }>(`/leave-plans/${id}`).then(r => r.data.data),
 
