@@ -410,6 +410,15 @@ export default function HrBroadcastCentre() {
                   </div>
                 </div>
               </div>
+              {/* Page action rides INSIDE the strip, as on Candidate Management
+                  and Holiday Calendar (#56). It was in the DataTable toolbar,
+                  which put an action in the filter row and made this header
+                  read as a different component. Filters stay below. */}
+              <div className="cand-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+                <button type="button" className="cand-pill-btn cand-pill-btn--primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
+                  <i className="ri-add-line" />New Announcement
+                </button>
+              </div>
             </div>
 
             <Row className="g-1 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-4">
@@ -463,9 +472,6 @@ export default function HrBroadcastCentre() {
                   <div style={{ minWidth: 130 }}>
                     <MasterSelect value={typeFilter} onChange={applyFilter(setTypeFilter)} options={[{ value: 'All', label: 'All Types' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All Types" />
                   </div>
-                  <button type="button" className="rec-btn-primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
-                    <i className="ri-add-line" />New Announcement
-                  </button>
                 </>
               }
             />

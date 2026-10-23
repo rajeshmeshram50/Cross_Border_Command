@@ -469,6 +469,28 @@ export default function HrHoliday() {
                   </div>
                 </div>
               </div>
+              {/* Page actions ride INSIDE the strip, as on Candidate Management
+                  (#54). They were in the DataTable toolbar, which left that row
+                  carrying filters and actions together and read as a different
+                  component from every other HRMS page. Filters stay below. */}
+              <div className="cand-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+                <Tooltip label="Download Excel template">
+                  <button type="button" className="cand-pill-btn cand-pill-btn--blue" onClick={downloadTemplate}>
+                    <i className="ri-download-2-line" />Template
+                  </button>
+                </Tooltip>
+                <button type="button" className="cand-pill-btn cand-pill-btn--green" onClick={() => fileRef.current?.click()} disabled={importing}>
+                  {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
+                </button>
+                <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
+                  <button type="button" className="cand-pill-btn cand-pill-btn--violet" onClick={() => setManageGroupsOpen(true)}>
+                    <i className="ri-folder-add-line" />Groups
+                  </button>
+                </Tooltip>
+                <button type="button" className="cand-pill-btn cand-pill-btn--primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
+                  <i className="ri-add-line" />Add Holiday
+                </button>
+              </div>
             </div>
 
             <DataTable<HolidayRow>
@@ -527,23 +549,6 @@ export default function HrHoliday() {
                         options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />
                     </div>
                   </div>
-                  <Tooltip label="Download Excel template">
-                    <button type="button" className="rec-btn-ghost" onClick={downloadTemplate}>
-                      <i className="ri-download-2-line" />Template
-                    </button>
-                  </Tooltip>
-                  <button type="button" className="rec-btn-ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
-                    {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
-                  </button>
-
-                  <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
-                    <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}>
-                      <i className="ri-folder-add-line" />Groups
-                    </button>
-                  </Tooltip>
-                  <button type="button" className="rec-btn-primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
-                    <i className="ri-add-line" />Add Holiday
-                  </button>
                 </>
               }
             />
@@ -673,20 +678,21 @@ function HolidayModal({
     <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static" keyboard={false}
       modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0">
       <ModalBody className="p-0" >
-        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
+        <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <i className="ri-calendar-event-line" style={{ fontSize: 18, color: '#fff' }} />
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <i className="ri-calendar-event-line" style={{ fontSize: 16, color: '#fff' }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>{editing ? 'Edit Holiday' : 'Add Holiday'}</h5>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Manage a company holiday date</div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>{editing ? 'Edit Holiday' : 'Add Holiday'}</h5>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>Manage a company holiday date</div>
               </div>
             </div>
-            <button type="button" onClick={onClose} disabled={saving}
-              style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32, opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
-              <i className="ri-close-line" style={{ fontSize: 18 }} />
+            <button type="button" onClick={onClose} disabled={saving} aria-label="Close"
+              className="rec-close-btn d-inline-flex align-items-center justify-content-center"
+              style={{ opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+              <i className="ri-close-line" />
             </button>
           </div>
         </div>
@@ -835,15 +841,15 @@ function ManageGroupsModal({
     <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static" keyboard={false}
       modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0">
       <ModalBody className="p-0" >
-        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
+        <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                <i className="ri-folder-settings-line" style={{ fontSize: 18, color: '#fff' }} />
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className="ri-folder-settings-line" style={{ fontSize: 16, color: '#fff' }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16 }}>Holiday Groups</h5>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Holiday lists you assign to employees</div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>Holiday Groups</h5>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>Holiday lists you assign to employees</div>
               </div>
             </div>
             <div className="d-flex align-items-center gap-2">
@@ -934,12 +940,13 @@ function ManageGroupsModal({
           zIndex={1060} modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0"
           style={{ maxWidth: 540, width: '94vw' }}>
           <ModalBody className="p-0" >
-            <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
+            <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
               <div className="d-flex align-items-center justify-content-between">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15 }}>{editing ? 'Edit Group' : 'Add Group'}</h5>
-                <button type="button" onClick={closeForm} disabled={saving}
-                  style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 30, height: 30, opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
-                  <i className="ri-close-line" style={{ fontSize: 18 }} />
+                <button type="button" onClick={closeForm} disabled={saving} aria-label="Close"
+                  className="rec-close-btn d-inline-flex align-items-center justify-content-center"
+                  style={{ opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
+                  <i className="ri-close-line" />
                 </button>
               </div>
             </div>

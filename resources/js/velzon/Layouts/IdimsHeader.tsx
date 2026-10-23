@@ -459,6 +459,30 @@ export default function IdimsHeader() {
     setSearchOpen(false); setMoreOpen(false); setMoreExpand(null);
   };
   const go = (path: string) => { closeMenus(); setMobileOpen(false); navigate(path); };
+
+  /* A WIDTH change re-flows the nav: items move between the visible row and
+     "More" (see the overflow measurement below). An open panel is positioned
+     from its button's rect at open time, so after the reflow it hangs over the
+     new layout anchored to a button that moved — or that no longer exists,
+     because it collapsed into "More". Nothing recalculates that anchor, so
+     close instead. Closing DevTools is the usual way to hit it (#58).
+
+     Width only, deliberately. On a phone the address bar hiding changes
+     innerHeight on every scroll, and a height-only change does not re-flow the
+     row — reacting to it would shut the menu under the user's finger. */
+  useEffect(() => {
+    let lastW = window.innerWidth;
+    const onResize = () => {
+      if (window.innerWidth === lastW) return;
+      lastW = window.innerWidth;
+      closeMenus();
+      setMobileOpen(false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+    // closeMenus only calls setState, which is stable — a first-render closure is fine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   /* One button, two jobs.
      Paused wins when both counts are non-zero: parked requests are pages
      frozen mid-load, and unfreezing them matters more than stopping whatever

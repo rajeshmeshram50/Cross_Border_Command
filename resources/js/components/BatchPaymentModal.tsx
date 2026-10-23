@@ -197,22 +197,22 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
           )}
           {/* Header */}
           <div className="bpw-head" style={header}>
-            <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <span style={heroIco}><i className="ri-stack-line" /></span>
               <div>
-                <div style={{ fontSize: 11.5, letterSpacing: 1, opacity: .85, textTransform: 'uppercase' }}>HRMS · Expense Management</div>
-                <div style={{ fontSize: 23, fontWeight: 800 }}>Pay Multiple Claims</div>
-                <div style={{ fontSize: 13, opacity: .92 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
+                <div style={{ fontSize: 10, letterSpacing: .8, opacity: .75, textTransform: 'uppercase', fontWeight: 700 }}>HRMS · Expense Management</div>
+                <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
+                <div style={{ fontSize: 11, opacity: .85, marginTop: 1 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
               </div>
             </div>
-            <button onClick={onClose} style={xBtn} aria-label="Close">✕</button>
+            <button onClick={onClose} style={xBtn} aria-label="Close"><i className="ri-close-line" /></button>
           </div>
 
           {/* HISTORY is the base popup's only content. */}
           <div className="bpw-body" style={body}>
             <div style={rowBetween}>
               <div style={{ fontWeight: 700, color: 'var(--bpw-text)', fontSize: 15 }}>Previous batch payments</div>
-              <button style={primaryBtn} onClick={() => { resetForm(); setView('select'); }}><span style={{ fontSize: 16 }}>＋</span> Make New Payment</button>
+              <button style={primaryBtn} onClick={() => { resetForm(); setView('select'); }}><i className="ri-add-line" />Make New Payment</button>
             </div>
             <div style={tableWrap}>
               <table style={table}>
@@ -262,15 +262,15 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               </div>
             )}
             <div className="bpw-head" style={header}>
-              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <span style={heroIco}><i className="ri-stack-line" /></span>
                 <div>
-                  <div style={{ fontSize: 11.5, letterSpacing: 1, opacity: .85, textTransform: 'uppercase' }}>HRMS · Expense Management</div>
-                  <div style={{ fontSize: 23, fontWeight: 800 }}>Pay Multiple Claims</div>
-                  <div style={{ fontSize: 13, opacity: .92 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
+                  <div style={{ fontSize: 10, letterSpacing: .8, opacity: .75, textTransform: 'uppercase', fontWeight: 700 }}>HRMS · Expense Management</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
+                  <div style={{ fontSize: 11, opacity: .85, marginTop: 1 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
                 </div>
               </div>
-              <button onClick={() => { resetForm(); setView('history'); }} style={xBtn} aria-label="Close">✕</button>
+              <button onClick={() => { resetForm(); setView('history'); }} style={xBtn} aria-label="Close"><i className="ri-close-line" /></button>
             </div>
             <div className="bpw-rail" style={rail}>
               <div className="bpw-stepper">
@@ -518,8 +518,12 @@ const card: React.CSSProperties = {
   ['--vz-primary' as any]: 'var(--bpw-teal-fg)',
   ['--vz-primary-bg-subtle' as any]: 'rgba(14,116,144,.10)',
 };
-const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, padding: '22px 26px', background: 'linear-gradient(120deg,#0e7490,#0891b2 55%,#06b6d4)', color: '#fff', flexShrink: 0 };
-const heroIco: React.CSSProperties = { width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 };
+/* Teal kept deliberately — this dialog is colour-coded for payments. What
+   changes is the SCALE: it ran a 23px/800 title and a 44px chip against the
+   15px/700 and 32px .rec-form-header uses everywhere else, which is what
+   read as a different typeface (#61). No font-family was ever set here. */
+const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 22px 12px', background: 'linear-gradient(120deg,#0e7490,#0891b2 55%,#06b6d4)', color: '#fff', flexShrink: 0 };
+const heroIco: React.CSSProperties = { width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 };
 const rail: React.CSSProperties = { display: 'flex', gap: 28, padding: '12px 26px', borderBottom: '1px solid var(--bpw-border)', background: 'var(--bpw-surface-2)', flexShrink: 0 };
 const selChip: React.CSSProperties = { background: '#0e7490', color: '#fff', borderRadius: 999, padding: '6px 14px', fontWeight: 700, fontSize: 13 };
 // flex-grow 0 so the body sizes to its content (never stretches to fill the
@@ -528,7 +532,7 @@ const selChip: React.CSSProperties = { background: '#0e7490', color: '#fff', bor
 // content scroll within the 92vh cap.
 const body: React.CSSProperties = { padding: 22, overflowY: 'auto', flex: '0 1 auto', minHeight: 0 };
 const footer: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 26px', borderTop: '1px solid var(--bpw-border-soft)', background: 'var(--bpw-surface-2)', flexShrink: 0 };
-const xBtn: React.CSSProperties = { background: 'rgba(255,255,255,.2)', color: '#fff', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 14, flexShrink: 0 };
+const xBtn: React.CSSProperties = { background: 'rgba(255,255,255,.18)', color: '#fff', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 17, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const rowBetween: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 };
 const tableWrap: React.CSSProperties = { overflowX: 'auto', border: '1px solid var(--bpw-border)', borderRadius: 12 };
 const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
@@ -540,8 +544,13 @@ const req: React.CSSProperties = { color: '#ef4444' };
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid var(--bpw-input-border)', borderRadius: 9, fontSize: 14, background: 'var(--bpw-surface)', boxSizing: 'border-box' };
 const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 };
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 14 };
-const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#0891b2', color: '#fff', border: 'none', borderRadius: 9, padding: '10px 18px', fontWeight: 700, cursor: 'pointer', fontSize: 14 };
-const ghostBtn: React.CSSProperties = { background: 'var(--bpw-surface)', color: 'var(--bpw-text)', border: '1px solid var(--bpw-input-border)', borderRadius: 9, padding: '10px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 14 };
+/* Mirrors .hrexp-cta — the violet pill on the Expense page that OPENS this
+   dialog (Batch Payment / Export). Same gradient, radius, shadow and type,
+   so the action reads as the same control once the modal is open (#61).
+   The header keeps its teal; that is the dialog's identity, the buttons are
+   the app's. */
+const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 18px', background: 'linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%)', color: '#fff', border: 'none', borderRadius: 999, boxShadow: '0 8px 18px rgba(91,63,209,0.30)', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
+const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 18px', background: 'var(--bpw-surface)', color: 'var(--bpw-text)', border: '1px solid var(--bpw-input-border)', borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
 const ghostSm: React.CSSProperties = { background: 'var(--bpw-surface)', color: 'var(--bpw-teal-fg)', border: '1px solid var(--bpw-teal-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
 const warnSm: React.CSSProperties = { background: 'var(--bpw-warn-bg)', color: 'var(--bpw-warn-fg)', border: '1px solid var(--bpw-warn-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 const disabledSm: React.CSSProperties = { background: 'var(--bpw-surface-2)', color: 'var(--bpw-muted-2)', border: '1px solid var(--bpw-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'not-allowed', whiteSpace: 'nowrap' };
@@ -629,7 +638,10 @@ const BPW_CSS = `
 .bpw-root input,.bpw-root select,.bpw-root textarea{color:var(--bpw-text);}
 @keyframes bpwSpin{to{transform:rotate(360deg);}}
 .bpw-spin{animation:bpwSpin .8s linear infinite;transform-origin:center;}
-.bpw-stepper{display:flex;align-items:center;gap:0;max-width:640px;}
+/* No max-width: the rail is two steps, and capping it at 640px while every
+   step was flex:1 is what truncated "Payment details" to "Payment deta…".
+   Matches the Generate Document stepper, which sizes steps to content. */
+.bpw-stepper{display:flex;align-items:center;gap:0;}
 /* SHORT VIEWPORTS — trim the chrome before the body starts scrolling.
    The header, step rail and footer are fixed-height and carry generous
    padding; on a laptop or at browser zoom they ate enough of the card that
@@ -647,10 +659,10 @@ const BPW_CSS = `
   .bpw-body{padding:10px !important;}
   .bpw-foot{padding:8px 18px !important;}
 }
-.bpw-connector{flex:0 0 28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.bpw-connector{flex:1 1 28px;min-width:28px;max-width:72px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .bpw-line{height:3px;width:100%;border-radius:2px;background:var(--bpw-border);}
 .bpw-line[data-done="1"]{background:linear-gradient(90deg,#22c55e,#16a34a);}
-.bpw-step{flex:1;padding:11px 14px;border-radius:14px;display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;transition:all .25s;cursor:pointer;min-width:0;}
+.bpw-step{flex:0 1 auto;padding:11px 14px;border-radius:14px;display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;transition:all .25s;cursor:pointer;min-width:0;}
 .bpw-badge-wrap{position:relative;flex-shrink:0;width:40px;height:40px;}
 .bpw-badge{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;transition:all .25s;}
 .bpw-num{position:absolute;bottom:-4px;right:-4px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;border:2px solid var(--bpw-surface);line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.15);}

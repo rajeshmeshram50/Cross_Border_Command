@@ -866,14 +866,21 @@ export default function HrLeave() {
                   </div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap">
-                <button type="button" className="rec-btn-ghost" onClick={() => setHolidaysOpen(true)}>
+              {/* Both on cand-pill-btn, the strip convention (#60). They were
+                  rec-btn-ghost and rec-btn-primary: 36px tall against the 40px
+                  every other strip uses, and weight 600 against 700, so the two
+                  sat at different sizes beside each other. The white/filled
+                  split stays — that is the secondary/primary hierarchy
+                  Candidate Management and Holiday Calendar use, where the tone
+                  variants are all white pills and only the icon is coloured. */}
+              <div className="cand-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+                <button type="button" className="cand-pill-btn cand-pill-btn--violet" onClick={() => setHolidaysOpen(true)}>
                   <i className="ri-calendar-event-line" />Holidays
                 </button>
                 {canManagePlans && (
                   <button
                     type="button"
-                    className="rec-btn-primary"
+                    className="cand-pill-btn cand-pill-btn--primary"
                     onClick={() => navigate('/hr/leave-plans')}
                   >
                     <i className="ri-settings-3-line" />Leave Plans

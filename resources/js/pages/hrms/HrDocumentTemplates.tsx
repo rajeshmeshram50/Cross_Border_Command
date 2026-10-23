@@ -617,9 +617,8 @@ export default function HrDocumentTemplates() {
             </div>
             {/* Category tabs live in the header strip — the page's top-level
                split, so it belongs beside the title rather than in a strip of
-               its own (Add Template moved down to the table toolbar with the
-               rest of the list's controls). No emoji: the icons added colour
-               noise and the labels stand on their own.
+               its own. No emoji: the icons added colour noise and the labels
+               stand on their own.
                Renders the shared .dt-tabrail / .dt-tabs / .dt-tab classes from
                components/ui/DataTable.css — the SAME markup and CSS as the
                Level tabs in the table toolbar below, so the two strips are
@@ -750,18 +749,18 @@ export default function HrDocumentTemplates() {
                   shown={filtered.length}
                   total={facetBase.length}
                 />
+                {/* Next to the filter control, at the right end of the toolbar.
+                    The header strip already carries the category tabs, and the
+                    two together crowded the first row. */}
+                <button type="button" className="cand-pill-btn cand-pill-btn--primary flex-shrink-0" onClick={() => navigate('/hr/doc-templates/new')}>
+                  <i className="ri-add-line" />Add Template
+                </button>
                 {/* Status picker removed — the Status column sorts from its own
                     header now, and the KPI tiles above already break the totals
                     down by Active / Draft / Deprecated.
                     The standalone "N templates" pill is gone too: that number is
                     the active Level tab's badge, so it was saying the same thing
                     twice. */}
-                {/* Add Template sits at the right end of the toolbar — the list's
-                    primary action next to the list's own controls. */}
-                <button type="button" className="dtm-add-tpl-btn flex-shrink-0" onClick={() => navigate('/hr/doc-templates/new')}
-                  style={{ padding: '7px 12px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
-                  <i className="ri-add-line me-1" /> Add Template
-                </button>
               </>
             }
               /* The bar belongs to the ROWS, so it renders inside the table card
@@ -1585,7 +1584,6 @@ function DtmDarkStyles() {
       @media (max-width: 575.98px) {
         .dtm-page .dt-search { flex: 1 1 100%; max-width: 100%; }
         .dtm-page .dt-toolbar { row-gap: 8px; }
-        .dtm-page .dtm-add-tpl-btn { flex: 1 1 auto; justify-content: center; }
       }
 
       /* ── Toolbar: shrink to fit rather than wrap ──
@@ -1624,7 +1622,6 @@ function DtmDarkStyles() {
         .dtm-page .dt-search { flex: 0 3 240px; max-width: 240px; }
         .dtm-page .dtm-filter-label { font-size: 10px; }
         .dtm-page .dtm-filter-label + div { min-width: 130px !important; max-width: 150px !important; }
-        .dtm-page .dtm-add-tpl-btn { padding: 7px 10px !important; font-size: 11.5px !important; }
       }
 
       /* ── Density by viewport HEIGHT ──
@@ -1634,13 +1631,12 @@ function DtmDarkStyles() {
          stay the same — so the table is left a sliver and the row count drops
          to its floor with the last row still clipped.
          Below 900px tall the chrome gives up a few pixels everywhere; below
-         740px it gives up more. Nothing is hidden — the same page, tighter, so
-         more rows fit instead of fewer. */
+         740px it gives up more. The HEADER STRIP is deliberately exempt: it used
+         to shrink its title to 16px and hide the subtitle entirely, which made
+         this the only module whose header changed with window height and read
+         as a different size from Recruitment (#57). Rows are won from the KPI
+         tiles and the table, not from the page title. */
       @media (max-height: 900px) {
-        .dtm-page .frm-cstrip { min-height: 56px; padding: 9px 16px; }
-        .dtm-page .frm-cstrip-icon { width: 38px; height: 38px; font-size: 18px; }
-        .dtm-page .frm-cstrip-title { font-size: 16px; }
-        .dtm-page .frm-cstrip-sub { font-size: 11.5px; margin-top: 2px; }
         .dtm-page .dtm-kpi-tile { padding: 12px 14px !important; }
         .dtm-page .dtm-kpi-icon { width: 38px !important; height: 38px !important; }
         /* !important throughout this block: the tiles and the Generate button
@@ -1659,8 +1655,6 @@ function DtmDarkStyles() {
         .dtm-page .dtm-kpi-tile { padding: 10px 12px !important; }
         .dtm-page .dtm-kpi-icon { width: 34px !important; height: 34px !important; }
         .dtm-page .dtm-kpi-num { font-size: 16px !important; }
-        
-        .dtm-page .frm-cstrip-sub { display: none; }
         .dtm-page .dt-table tbody td { padding: 4px 8px; font-size: 11px; }
         .dtm-page .dt-table tbody .dt-serial { width: 20px; height: 20px; font-size: 9.5px; }
         .dtm-page .dtm-gen-btn { padding: 4px 9px !important; font-size: 11px !important; }
@@ -1787,8 +1781,6 @@ function DtmDarkStyles() {
       /* .dtm-act-* dark rules removed — the Actions column renders the shared
          <ActionCell> (.dt-act), which carries its own light + dark styling. */
       /* Add Template button — hover feedback (BUG-039). Applies in both themes. */
-      .dtm-page .dtm-add-tpl-btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
-      .dtm-page .dtm-add-tpl-btn:active { transform: translateY(0); }
 
       /* ── Toolbar: two rows, fixed ─────────────────────────────────────────
          Row 1   tabs ............................................... Filter
@@ -1831,7 +1823,6 @@ function DtmDarkStyles() {
           width: 100%; max-width: 300px; min-width: 150px;
         }
         .dtm-page .dt-toolbar .sl-refine { grid-column: 3; grid-row: 1; justify-self: end; }
-        .dtm-page .dt-toolbar .dtm-add-tpl-btn { grid-column: 4; grid-row: 1; justify-self: end; }
         /* Square-ish now that the label is gone — the text padding left it a
            wide pill wrapped around a 15px glyph. */
         .dtm-page .sl-refine-btn { padding: 0 11px; gap: 5px; }

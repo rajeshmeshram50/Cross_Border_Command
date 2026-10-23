@@ -6841,9 +6841,18 @@
 
 /* Same field as the roster's .hr-dt .dt-search — 42px, 11px radius, lavender
    gradient fill, violet icon + placeholder. */
+/* The shrink factor was the bug, not the width (#53). At flex: 0 1 320px with
+   min-width: 190px this box took whatever .ev-tabstrip's tab rail left over, so
+   the SAME control rendered anywhere from 190 to 320px depending on how many
+   tabs that particular vault shows — which is the inconsistency QA reported.
+   The floor now sits close to the basis, so it either renders at its size or
+   wraps to its own line (the parent already has flex-wrap: wrap). The basis is
+   also 320 -> 440px: the two tabs leave roughly 500px beside them in this modal,
+   and the old box used a third of it while "Search by document name or code…"
+   did not fit. */
 .ev-search {
   display: inline-flex; align-items: center; gap: 8px;
-  flex: 0 1 320px; min-width: 190px;
+  flex: 0 1 440px; min-width: 360px;
   height: 42px; padding: 0 14px;
   border: 1.5px solid color-mix(in srgb, var(--dt-a-200) 55%, #fff);
   border-radius: 11px;
@@ -6867,6 +6876,11 @@
   color: var(--vz-secondary-color); font-size: 15px; line-height: 1; padding: 0;
 }
 .ev-search button:hover { color: #7c3aed; }
+/* Below this the tab rail alone fills the row, so a 320px floor would
+   force a horizontal scrollbar — take the whole next line instead. */
+@media (max-width: 575.98px) {
+  .ev-search { flex: 1 1 100%; min-width: 0; }
+}
 
 /* Document table — the vault lists read as a grid, not a stack of cards. */
 /* Auto layout, deliberately. table-layout:fixed honoured the th widths but
@@ -11538,21 +11552,6 @@
   row-gap: 8px;
 }
 
-.holiday-page .dt-toolbar-actions .rec-btn-ghost {
-  padding-left: 18px;
-  padding-right: 18px;
-  font-weight: 700;
-  gap: 7px;
-  letter-spacing: 0.01em;
-}
-
-[data-bs-theme="dark"] .holiday-page .dt-toolbar-actions .rec-btn-ghost,
-[data-layout-mode="dark"] .holiday-page .dt-toolbar-actions .rec-btn-ghost {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: var(--vz-border-color);
-  color: var(--vz-body-color);
-}
-
 .hol-grp-add-btn {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 11px; border-radius: 8px;
@@ -11567,29 +11566,8 @@
   border-color: rgba(255, 255, 255, 0.45);
 }
 
-.holiday-page .hol-groups-btn {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  border: 1px solid #c4b5fd;
-  color: #6d28d9;
-  font-weight: 700;
-}
-.holiday-page .hol-groups-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #ddd6fe, #c4b5fd);
-  border-color: #a78bfa;
-  color: #5b21b6;
-}
-[data-bs-theme="dark"] .holiday-page .hol-groups-btn,
-[data-layout-mode="dark"] .holiday-page .hol-groups-btn {
-  background: rgba(124, 92, 252, 0.18);
-  border-color: rgba(167, 139, 250, 0.55);
-  color: #c4b5fd;
-}
-[data-bs-theme="dark"] .holiday-page .hol-groups-btn:hover:not(:disabled),
-[data-layout-mode="dark"] .holiday-page .hol-groups-btn:hover:not(:disabled) {
-  background: rgba(124, 92, 252, 0.3);
-  border-color: rgba(167, 139, 250, 0.8);
-  color: #ddd6fe;
-}
+/* .hol-groups-btn removed with #54 — Groups now uses cand-pill-btn--violet
+   like the other three actions, and the override made it the odd one out. */
 
         .hr-employees-surface { background: #ffffff; }
         [data-bs-theme="dark"] .hr-employees-surface { background: #1c2531; }
