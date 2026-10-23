@@ -21,6 +21,7 @@ import NativeTitleTooltips from './NativeTitleTooltips';
 import VelzonShell from '../velzon/VelzonShell';
 import AccessDenied from './AccessDenied';
 import { canAccessPath } from '../utils/routeAccess';
+import { startIdlePrefetch } from '../utils/routePrefetch';
 import { FEATURE_FLAGS } from '../constants';
 import AppErrorBoundary from './AppErrorBoundary';
 const Login = lazyPage(() => import('../pages/auth/Login'));
@@ -171,6 +172,15 @@ function RouteFallback() {
     </div>
   );
 }
+
+/* Landing pages worth warming. Deliberately a short list: prefetching all 114
+   routes would cost more than it saves. */
+const PREFETCH_PATHS = [
+  '/hr/attendance', '/hr/employees', '/hr/recruitment', '/hr/leave',
+  '/hr/leave-plans', '/hr/exit-management', '/hr/document-templates',
+  '/hr/overview', '/clock-in', '/my-team', '/products', '/vendors',
+  '/payments', '/settings',
+];
 
 const NavigateContext = createContext<{
   navigate: (path: string, data?: any) => void;
@@ -799,6 +809,14 @@ function DashboardRoutesInner({ user }: { user: any }) {
 function Router() {
   const { user } = useAuth();
   const location = useLocation();
+
+  /* Warm the landing chunks while the browser is idle, so clicking a module
+     resolves from memory instead of waiting on a request. Only the routes this
+     user may open — prefetching a module they cannot reach is pure waste. */
+  useEffect(() => {
+    if (!user) return;
+    startIdlePrefetch(PREFETCH_PATHS.filter((p) => canAccessPath(p, user)));
+  }, [user]);
 
   if (location.pathname.startsWith('/onboarding/')) {
     return (

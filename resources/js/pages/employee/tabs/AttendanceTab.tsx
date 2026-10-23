@@ -4,7 +4,7 @@ import api from '../../../api';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import { KpiTile, AnimatedNumber } from '../EmployeeProfileShared';
 import RegularizationModal, { type RegPrefillPunch } from '../../hrms/RegularizationModal';
-import { to12h } from '../../hrms/RegularizationApprovals';
+import { to12h } from '../../../utils/timeFormat';
 import { regularizationApi, type ApiRegularization } from '../../hrms/regularizationApi';
 import AttendanceLogsView, { type AttLog } from './AttendanceLogsView';
 import WorklistPager from '../../../components/ui/WorklistPager';

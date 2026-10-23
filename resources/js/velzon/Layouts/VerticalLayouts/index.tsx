@@ -18,6 +18,9 @@ import { withTranslation } from "react-i18next";
 import withRouter from "../../Components/Common/withRouter";
 import { useSelector } from "react-redux";
 import { createSelector } from 'reselect';
+/* Hover/tap starts the route's chunks before the click lands — see
+   utils/routePrefetch. Covers the deep pages the idle walk skips. */
+import { prefetchRoute } from '../../../utils/routePrefetch';
 
 const VerticalLayout = (props : any) => {
     // Re-render this layout whenever any sidebar menu item is toggled. The
@@ -200,6 +203,9 @@ const VerticalLayout = (props : any) => {
                                             // aria-expanded, which the activation JS stamps onto flat active
                                             // items too (causing stray carets on Dashboard etc.).
                                             className="nav-link menu-link cbc-has-sub"
+                                            onMouseEnter={() => prefetchRoute(item.link)}
+                                            onTouchStart={() => prefetchRoute(item.link)}
+                                            onFocus={() => prefetchRoute(item.link)}
                                             to={item.link ? item.link : "/#"}
                                             aria-expanded={item.stateVariables}
                                             data-path-prefix={item.pathPrefix}
@@ -221,7 +227,10 @@ const VerticalLayout = (props : any) => {
                                                         {!subItem.isChildItem ? (
                                                             <li className="nav-item">
                                                                 <Link
-                                                                    to={subItem.link ? subItem.link : "/#"}
+                                                                    onMouseEnter={() => prefetchRoute(subItem.link)}
+                                            onTouchStart={() => prefetchRoute(subItem.link)}
+                                            onFocus={() => prefetchRoute(subItem.link)}
+                                            to={subItem.link ? subItem.link : "/#"}
                                                                     className="nav-link"
                                                                 >
                                                                     {props.t(subItem.label)}
@@ -253,7 +262,10 @@ const VerticalLayout = (props : any) => {
                                                                                     {!childItem.childItems ?
                                                                                         <li className="nav-item">
                                                                                             <Link
-                                                                                                to={childItem.link ? childItem.link : "/#"}
+                                                                                                onMouseEnter={() => prefetchRoute(childItem.link)}
+                                            onTouchStart={() => prefetchRoute(childItem.link)}
+                                            onFocus={() => prefetchRoute(childItem.link)}
+                                            to={childItem.link ? childItem.link : "/#"}
                                                                                                 className={childItem.icon ? "nav-link cbc-sub" : "nav-link"}>
                                                                                                 {childItem.icon ? (
                                                                                                     <React.Fragment>
@@ -275,7 +287,7 @@ const VerticalLayout = (props : any) => {
                                                                                                 <ul className="nav nav-sm flex-column">
                                                                                                     {childItem.childItems.map((subChildItem : any, key : number) => (
                                                                                                         <li className="nav-item" key={key}>
-                                                                                                            <Link to={subChildItem.link} className="nav-link" data-key="t-basic-action">{props.t(subChildItem.label)} </Link>
+                                                                                                            <Link to={subChildItem.link} onMouseEnter={() => prefetchRoute(subChildItem.link)} onTouchStart={() => prefetchRoute(subChildItem.link)} onFocus={() => prefetchRoute(subChildItem.link)} className="nav-link" data-key="t-basic-action">{props.t(subChildItem.label)} </Link>
                                                                                                         </li>
                                                                                                     ))}
                                                                                                 </ul>
@@ -303,6 +315,9 @@ const VerticalLayout = (props : any) => {
                                     <li className="nav-item">
                                         <Link
                                             className="nav-link menu-link"
+                                            onMouseEnter={() => prefetchRoute(item.link)}
+                                            onTouchStart={() => prefetchRoute(item.link)}
+                                            onFocus={() => prefetchRoute(item.link)}
                                             to={item.link ? item.link : "/#"}>
                                             <i className={item.icon}></i> <span>{props.t(item.label)}</span>
                                             {item.badgeName ?
