@@ -1422,6 +1422,87 @@ class HrDocumentTemplateController extends Controller
         }
     }
 
+    /** Widest the letterhead logo is ever embedded at. The DOCX header renders
+     *  it to 200px (see buildDocxFile's $maxW), so 1000 is 5x the display size
+     *  — ample at 300 DPI print — and still a fraction of what tenants upload. */
+    private const DOCX_LOGO_MAX_W = 1000;
+
+    /**
+     * Downscale an oversized letterhead logo before PhpWord embeds it.
+     *
+     * The logo goes into the .docx at its STORED pixel size while the header
+     * shows it 200px wide. One tenant's was 9653x3094 — 1.17MB of a 1.24MB
+     * download, so 94% of every template DOCX was an image nobody can see at
+     * that resolution, on every version and every template. (QA #24)
+     *
+     * Returns the ORIGINAL path on any failure: a logo that renders large is a
+     * slow download, but a logo that fails to render is a broken letterhead.
+     *
+     * $sourceKey is the logo's STABLE relative path, used to cache the resized
+     * copy. $abs cannot be used for that — on the server it is a throwaway temp
+     * file copied out of Azure, with a different name every request.
+     */
+    private function shrinkLogoForDocx(string $abs, ?string $sourceKey = null): string
+    {
+        try {
+            $dim = @getimagesize($abs);
+            [$w, $h] = [(int) ($dim[0] ?? 0), (int) ($dim[1] ?? 0)];
+            if ($w <= self::DOCX_LOGO_MAX_W || $w < 1 || $h < 1) return $abs;
+
+            /* Cache the resized copy. Decoding a 30-megapixel PNG and
+               resampling it is ~1.4s, and the result is identical for every
+               download of every template on this letterhead — paying it per
+               request trades 900KB of transfer for worse wall-clock. Keyed on
+               the source's path and byte size, so a re-upload misses. */
+            $disk  = Storage::disk('public');
+            $ck    = $sourceKey
+                ? 'docx-logo-cache/' . md5(ltrim($sourceKey, '/') . '|' . @filesize($abs) . '|' . self::DOCX_LOGO_MAX_W) . '.png'
+                : null;
+            if ($ck) {
+                try {
+                    if ($disk->exists($ck)) {
+                        $hit = $this->localFile($ck);
+                        if ($hit) return $hit;
+                    }
+                } catch (\Throwable $e) { /* unreadable cache → resize below */ }
+            }
+
+            $src = match (strtolower(pathinfo($abs, PATHINFO_EXTENSION))) {
+                'png'         => @imagecreatefrompng($abs),
+                'jpg', 'jpeg' => @imagecreatefromjpeg($abs),
+                'gif'         => @imagecreatefromgif($abs),
+                default       => null,          // bmp: rare, left alone
+            };
+            if (!$src) return $abs;
+
+            $nw = self::DOCX_LOGO_MAX_W;
+            $nh = max(1, (int) round($h * $nw / $w));
+            $dst = imagecreatetruecolor($nw, $nh);
+            /* alphablending OFF + savealpha ON, and a transparent fill: without
+               this a PNG logo with a transparent background comes back black. */
+            imagealphablending($dst, false);
+            imagesavealpha($dst, true);
+            imagefill($dst, 0, 0, imagecolorallocatealpha($dst, 0, 0, 0, 127));
+            imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+            imagedestroy($src);
+
+            $tmp = tempnam(sys_get_temp_dir(), 'logo_') . '.png';
+            $ok  = @imagepng($dst, $tmp);
+            imagedestroy($dst);
+            if (!$ok || !is_file($tmp) || filesize($tmp) < 1) return $abs;
+
+            // Best effort — a cache that cannot be written costs the next
+            // request a resize, nothing more.
+            if ($ck) {
+                try { $disk->put($ck, (string) file_get_contents($tmp)); }
+                catch (\Throwable $e) { /* ignore */ }
+            }
+            return $tmp;
+        } catch (\Throwable $e) {
+            return $abs;
+        }
+    }
+
     private function resolveDocxLogo(?string $logoPath): ?string
     {
         // localFile() copies Azure blobs to a temp file so addImage() works on
@@ -1430,8 +1511,10 @@ class HrDocumentTemplateController extends Controller
         if (!$abs) return null;
         $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
 
-        // Formats PhpWord embeds natively — pass straight through.
-        if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) return $abs;
+        // Formats PhpWord embeds natively — pass straight through, downscaled.
+        if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) {
+            return $this->shrinkLogoForDocx($abs, $logoPath);
+        }
 
         // WEBP → PNG via GD (bundled with PHP on XAMPP). Preserve transparency.
         if ($ext === 'webp' && function_exists('imagecreatefromwebp')) {

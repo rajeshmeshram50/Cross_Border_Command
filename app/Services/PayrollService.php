@@ -706,6 +706,9 @@ class PayrollService
                 'present_days'      => (float) ($slip['present_days'] ?? 0),
                 'paid_days'         => (float) ($slip['paid_days'] ?? 0),
                 'weekoff_days'      => (float) ($slip['weekoff_days'] ?? 0),
+                // The paid share of those — see the note where it is computed.
+                // The F&F day table lists this, not the calendar count. (QA #14)
+                'weekoff_paid_days' => (float) ($slip['weekoff_paid_days'] ?? 0),
                 'holiday_days'      => (float) ($slip['holiday_days'] ?? 0),
                 'lop_days'          => (float) ($slip['lop_days'] ?? 0),
                 'paid_leave_days'   => (float) ($slip['paid_leave_days'] ?? 0),
@@ -1749,6 +1752,7 @@ class PayrollService
 
         $paidDays    = 0.0;
         $overlapDays = 0.0;
+        $weekOffPaidDays = 0.0;
         /* Work credit earned on the employee's OWN working dates. This is what
          * "did this person actually attend?" means — distinct from $presentDays,
          * which also counts punches on weekly offs. Used by the zero-attendance
@@ -1776,7 +1780,19 @@ class PayrollService
             $weekOff  = $isWeekOff ? 1.0 : 0.0;
 
             $credited = $worked + $paidLv + $holiday + $weekOff;
-            $paidDays += max(0.0, min(1.0 - $unpaidLv, $credited));
+            $dayCredit = max(0.0, min(1.0 - $unpaidLv, $credited));
+            $paidDays += $dayCredit;
+
+            /* What the week-offs were ACTUALLY paid, which is not the same as
+             * how many fell in the window. The cap above is the sandwich rule:
+             * an unpaid leave that deliberately covers a Sunday docks it, so
+             * that day earns 0 and lands in loss of pay instead.
+             *
+             * weekoff_days alone could not tell the two apart, so the F&F day
+             * table printed "Weekly offs PAID 2" for days already inside the
+             * LOP count — the same two days listed twice, and the rows summed
+             * to more than the employee was employed. (QA #14) */
+            if ($isWeekOff) $weekOffPaidDays += $dayCredit;
 
             /* Two sources claiming the same day is a data-quality problem even
              * now that the money is right — HR should still be told that the
@@ -1798,6 +1814,7 @@ class PayrollService
             }
         }
         $paidDays    = round(min($effectiveWorkingDays, $paidDays), 2);
+        $weekOffPaidDays = round(min($paidDays, $weekOffPaidDays), 2);
         $overlapDays = round($overlapDays, 2);
         if ($overlapDays > 0) {
             $exceptions = $this->withException(
@@ -2813,6 +2830,12 @@ class PayrollService
             'present_days'   => $presentDays,
             'paid_days'      => $paidDays,
             'weekoff_days'   => $weekOffDays,
+            /* How many of those week-offs were actually PAID. weekoff_days is
+               the calendar count; this is the credit that survived the sandwich
+               cap. The two differ exactly when an unpaid leave covers a week-off,
+               and the difference is already inside lop_days — so a reader adding
+               weekoff_days to the other rows counts those days twice. (QA #14) */
+            'weekoff_paid_days' => $weekOffPaidDays,
             /* Computed since the holiday rules landed but never emitted, so no
                reader could tell a paid holiday from any other paid day. The F&F
                day breakdown needs it to say WHY a day was paid. */

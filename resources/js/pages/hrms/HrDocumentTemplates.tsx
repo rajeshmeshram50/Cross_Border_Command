@@ -330,16 +330,28 @@ export default function HrDocumentTemplates() {
     const targets = filtered.filter(r => selected.has(r.id) && r.status === from);
     if (!targets.length) return;
     setBulkBusy(true);
-    let done = 0; const failed: string[] = [];
-    for (const r of targets) {
-      try {
-        await api.put(`/hr-document-templates/${r.id}`, { status: next });
-        done++;
-      } catch { failed.push(r.code); }
+    /* In parallel, not one await after another. These writes are independent —
+       a status flip per row — so serialising them made the action cost N round
+       trips end to end: deprecating 20 templates was 20 sequential requests,
+       each carrying the server's full latency. (QA #21) */
+    const results = await Promise.allSettled(
+      targets.map(r => api.put(`/hr-document-templates/${r.id}`, { status: next })),
+    );
+    const failed: string[] = [];
+    const updated: TemplateRow[] = [];
+    results.forEach((res, i) => {
+      if (res.status === 'fulfilled' && res.value?.data?.id) updated.push(res.value.data as TemplateRow);
+      else failed.push(targets[i].code);
+    });
+    const done = updated.length;
+    // Each PUT returned its updated row, so apply them instead of refetching
+    // all 201 templates; `stats` recomputes from `rows`.
+    if (updated.length) {
+      const byId = new Map(updated.map(u => [u.id, u]));
+      setRows(prev => prev.map(r => byId.get(r.id) ?? r));
     }
     setBulkBusy(false);
     setSelected(new Set());
-    await fetchAll();
     const verb = next === 'Deprecated' ? 'deprecated' : 'activated';
     if (failed.length) {
       toast.error(`${done} ${verb}, ${failed.length} failed`, `Could not update: ${failed.join(', ')}`);
@@ -355,7 +367,10 @@ export default function HrDocumentTemplates() {
       const { data } = await api.put(`/hr-document-templates/${row.id}`, { status: next });
       toast.success(next === 'Active' ? 'Activated' : 'Deprecated', `${data.code} is now ${next}.`);
       setRows(prev => prev.map(r => r.id === data.id ? data : r));
-      fetchAll();
+      /* No fetchAll(). The PUT returns the updated row, the line above applies
+         it, and `stats` is a useMemo over `rows` — so the tab counts move with
+         it. The refetch was pulling all 201 templates (194 KB) to learn what
+         the response had just told us, which is the 4s on this action. (QA #21) */
     } catch (err: any) {
       toast.error('Could not update', err?.response?.data?.message || 'Please try again.');
     }

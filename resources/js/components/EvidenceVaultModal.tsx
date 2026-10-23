@@ -13,7 +13,7 @@ import HeaderFooterPanel, {
   type HeaderConfig, type FooterConfig,
 } from '../pages/hrms/doc-templates/HeaderFooterPanel';
 
-type DocStatus = 'Verified' | 'Uploaded' | 'Signed' | 'Sent' | 'Pending' | 'Not Generated' | 'Optional' | 'Generated' | 'Completed';
+type DocStatus = 'Verified' | 'Uploaded' | 'Signed' | 'Sent' | 'Pending' | 'Not Generated' | 'Optional' | 'Generated' | 'Completed' | 'Rejected' | 'Cancelled';
 
 /** States that mean the document is actually IN the vault — these carry the
  *  green pill and the tick. 'Sent' and 'Pending' deliberately don't: something
@@ -293,7 +293,11 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     run.status === 'Completed'   ? 'Completed'
     : run.status === 'In Progress' ? 'Sent'
     : run.status === 'Pending'     ? 'Sent'
-    : run.status === 'Rejected'    ? 'Pending'
+    /* Say what happened. Rejected used to read 'Pending' and Cancelled fell
+       through to 'Not Generated' — a refused document described as merely
+       waiting, and a withdrawn one as never sent. (QA #34) */
+    : run.status === 'Rejected'    ? 'Rejected'
+    : run.status === 'Cancelled'   ? 'Cancelled'
     : 'Not Generated';
 
   const buildTplGroup = (templates: VaultTemplate[], orphanRuns: VaultRun[], title: string, groupIcon: string, groupBg: string, groupFg: string) => {
@@ -304,11 +308,18 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
        deprecated template can't reach here at all: /hr-document-templates/match
        returns Active ones only, so anything deprecated would have to come
        through a run, and only a fully signed run now does. */
+    /* …plus REJECTED and CANCELLED. The signed-only rule above is right about
+       "Not Generated" and in-flight rows — they are noise. A refused one is
+       not: it is the one row that needs somebody to act, and filtering it out
+       meant a rejected organizational document vanished from the vault with no
+       way to re-send it. Not a missing button — a missing ROW. (QA #34) */
+    const ACTIONABLE = new Set(['Completed', 'Rejected', 'Cancelled']);
     const docs = templates
-      .filter(tpl => runByTemplateId.get(tpl.id)?.status === 'Completed')
+      .filter(tpl => ACTIONABLE.has(runByTemplateId.get(tpl.id)?.status ?? ''))
       .map(tpl => {
       const run = runByTemplateId.get(tpl.id) || null;
-      const status: DocStatus = 'Completed';
+      // The filter above guarantees a run; the fallback is for the compiler.
+      const status: DocStatus = run ? runStatusToDoc(run) : 'Not Generated';
       return {
         id: tpl.id, key: `tpl-${tpl.id}`,
         name: tpl.name || '(unnamed template)',
@@ -329,7 +340,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     // signed documents silently vanish from the vault and the counts read 0
     // even though the signed PDFs exist. Render them straight off the run.
     const orphanDocs = orphanRuns
-      .filter(run => run.status === 'Completed')   // signed only, as above
+      .filter(run => ACTIONABLE.has(run.status))   // signed, or refused and re-sendable
       .map(run => ({
         id: run.template_id || run.id, key: `run-${run.id}`,
         name: run.template?.name || run.code || 'Signed document',
@@ -1195,6 +1206,10 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                 <tbody>
                   {g.docs.map((d, di) => {
                     const status = d.status as DocStatus;
+                    /* A refused run has no signed PDF to download, but it does
+                       have the document that was sent — so View stays, Download
+                       goes, and Re-send appears. (QA #34) */
+                    const refused  = status === 'Rejected' || status === 'Cancelled';
                     const disabled = status === 'Not Generated' || status === 'Optional';
                     return (
                       <tr key={d.key}>
@@ -1239,15 +1254,28 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                                 : <i className="ri-eye-line" />}
                             </button>
                           </Tooltip>
-                          <button type="button"
-                            className="ev-doc-btn ev-doc-btn--download"
-                            disabled={disabled || busyKey === d.key}
-                            onClick={() => handleDownloadRow(d)}
-                          >
-                            {busyKey === d.key && busyAction === 'download'
-                              ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
-                              : <><i className="ri-download-line" />Download</>}
-                          </button>
+                          {!refused && (
+                            <button type="button"
+                              className="ev-doc-btn ev-doc-btn--download"
+                              disabled={disabled || busyKey === d.key}
+                              onClick={() => handleDownloadRow(d)}
+                            >
+                              {busyKey === d.key && busyAction === 'download'
+                                ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
+                                : <><i className="ri-download-line" />Download</>}
+                            </button>
+                          )}
+                          {/* The only way forward for a refused document. It is
+                              why the row is listed at all. (QA #34) */}
+                          {refused && (
+                            <button type="button" className="ev-doc-btn ev-doc-btn--send"
+                              disabled={sendingTplId != null}
+                              onClick={() => sendDocForSignature(d.id, d.name)}>
+                              {sendingTplId === d.id
+                                ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Sending…</>
+                                : <><i className="ri-send-plane-line" />Re-send</>}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
