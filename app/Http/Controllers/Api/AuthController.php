@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\PasswordChangedMail;
 use App\Models\Permission;
 use App\Models\User;
+use App\Services\LogoWebVariantGenerator;
 use App\Support\BrandingResolver;
 use App\Support\Settings;
 use App\Traits\PasswordHistory;
@@ -863,6 +864,16 @@ class AuthController extends Controller
             'branch_name' => $user->branch?->name,
             'client_logo' => file_url($user->client?->logo),
             'branch_logo' => file_url($user->branch?->logo),
+            /* The screen-sized copies, for the header only — null until
+               logos:backfill-web has run on this environment.
+
+               Separate fields rather than shrinking the two above, because
+               those are not only a header source: a signature row seeded from
+               /me keeps the branch_logo URL in header_config.logo_url, and the
+               PDF renderers resolve the header logo from it. Pointing them at
+               a 160px image would print a blurred logo. */
+            'client_logo_web' => file_url(LogoWebVariantGenerator::existingWebPath($user->client?->logo)),
+            'branch_logo_web' => file_url(LogoWebVariantGenerator::existingWebPath($user->branch?->logo)),
             'client_profile_photo' => file_url($user->client?->profile_photo),
             'branch_profile_photo' => file_url($user->branch?->profile_photo),
             // Passport-size photo from the employee onboarding documents

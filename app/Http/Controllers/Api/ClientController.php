@@ -257,6 +257,9 @@ class ClientController extends Controller
             if ($request->hasFile('logo')) {
                 $brandingUpdates['logo'] = $request->file('logo')->store('clients/logos', 'public');
                 \App\Services\LogoDarkVariantGenerator::generate($brandingUpdates['logo']);
+                // AFTER the dark variant, so the screen-sized copy is made for
+                // both. The original stays full resolution for PDFs.
+                \App\Services\LogoWebVariantGenerator::generate($brandingUpdates['logo']);
             }
             if ($request->hasFile('favicon')) {
                 $brandingUpdates['favicon'] = $request->file('favicon')->store('clients/favicons', 'public');
@@ -566,11 +569,13 @@ class ClientController extends Controller
             if ($request->hasFile('logo')) {
                 if ($client->logo) {
                     \App\Services\LogoDarkVariantGenerator::delete($this->relativePath($client->logo));
+                    \App\Services\LogoWebVariantGenerator::delete($this->relativePath($client->logo));
                     Storage::disk('public')->delete($this->relativePath($client->logo));
                 }
                 $logoPath = $request->file('logo')->store('clients/logos', 'public');
                 $client->update(['logo' => $logoPath]);
                 \App\Services\LogoDarkVariantGenerator::generate($logoPath);
+                \App\Services\LogoWebVariantGenerator::generate($logoPath);
             }
             if ($request->hasFile('favicon')) {
                 if ($client->favicon) {

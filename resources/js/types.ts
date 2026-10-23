@@ -33,6 +33,14 @@ export interface AuthUser {
   branch_name?: string;
   client_logo?: string | null;
   branch_logo?: string | null;
+  /* Screen-sized copies of the two above, for the header. Null until
+     `php artisan logos:backfill-web` has run on this environment — the server
+     only sends a URL when the file is really on disk, so the header never
+     requests one that is not there. The full-size fields stay as they are:
+     they also seed the logo stored on signature rows, which the PDF renderers
+     embed, and a 160px image printed at 300dpi is a blur. */
+  client_logo_web?: string | null;
+  branch_logo_web?: string | null;
   client_profile_photo?: string | null;
   branch_profile_photo?: string | null;
   user_profile_photo?: string | null;

@@ -12,13 +12,12 @@ import { onNetworkChange, stopAll, resumeAll, pendingRequests } from '../../api'
 import { useToast } from '../../contexts/ToastContext';
 import logoFallback from '../assets/images/igc-logo.png';
 import NotificationsDrawer, { useUnreadNotifications } from '../../components/NotificationsDrawer';
-import * as LucideIcons from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-
 // Resolve a lucide icon component by its name (the menu groups carry icon
 // names like 'BarChart3', 'UserSquare', 'Truck'). Falls back to Circle.
-const getLucide = (name?: string): LucideIcon =>
-  (name && (LucideIcons as unknown as Record<string, LucideIcon>)[name]) || LucideIcons.Circle;
+// Was `import * as LucideIcons`, which cannot be tree-shaken: the bundler
+// cannot know which icon a runtime string will name, so all ~1500 of them
+// landed in the entry chunk. menuIcons names the ones the menu uses.
+import { getMenuIcon as getLucide } from '../../layouts/menuIcons';
 
 
 type Leaf = { id: string; label: string; icon?: string };
@@ -311,6 +310,36 @@ export default function IdimsHeader() {
   const [logoDarkMissing, setLogoDarkMissing] = useState(false);
   useEffect(() => { setLogoDarkMissing(false); }, [rawLogo]);
   const showDarkLogo = theme === 'dark' && !!darkLogoSrc && !logoDarkMissing;
+
+  /* Prefer the screen-sized copy (LogoWebVariantGenerator writes one beside
+     every uploaded logo). Tenants upload print assets — the one on live is
+     9653x3094 / 1.1 MB for a 52px slot, and it is this page's LCP element —
+     while the original has to stay full resolution because the PDF headers
+     embed it.
+
+     The URL comes from the server, which only sends it when the file is
+     really on disk. The header does NOT derive it: deriving meant that on any
+     environment where logos:backfill-web had not run yet, every page load
+     requested a file that was not there, took a 404, and only then fell back
+     to the full logo — the same megabyte plus a wasted round trip.
+
+     It has to come from the SAME source as rawLogo: a branch logo with no
+     variant must fall back to that branch's full logo, never to the client's
+     small one, or the header would quietly show a different company's mark. */
+  const rawLogoWeb = (user?.branch_logo ? user?.branch_logo_web : user?.client_logo_web) || null;
+
+  // The dark variant of the small copy sits at the same place in the naming
+  // scheme, and the generator always writes the pair together.
+  const darkWebRaw = rawLogoWeb && /-w\.(png|jpe?g|webp)$/i.test(rawLogoWeb)
+    ? rawLogoWeb.replace(/-w\.(png|jpe?g|webp)$/i, '-dark-w.png')
+    : null;
+
+  const [logoWebMissing, setLogoWebMissing] = useState(false);
+  useEffect(() => { setLogoWebMissing(false); }, [rawLogoWeb, showDarkLogo]);
+
+  const fullSrc = showDarkLogo ? darkLogoSrc! : logoSrc;
+  const webSrc = showDarkLogo ? darkWebRaw : rawLogoWeb;
+  const shownLogoSrc = (webSrc && !logoWebMissing) ? resolveFileUrl(webSrc) : fullSrc;
 
   /* ── Profile photo ── */
   const rawPhoto = user?.user_profile_photo || user?.employee_profile_photo
@@ -842,8 +871,28 @@ export default function IdimsHeader() {
       {openDD && <div className="idims-dd-backdrop" onClick={() => setOpenDD(null)} />}
       <nav className="idims-nav">
         <div className="idims-logo" onClick={() => go('/dashboard')}>
-          <img className="idims-logo-full" src={showDarkLogo ? darkLogoSrc! : logoSrc} alt="logo"
-            onError={() => { if (showDarkLogo) setLogoDarkMissing(true); }} />
+          {/* This image is the page's LCP element on every screen — it is the
+              largest thing painted — so it is marked high priority. Without it
+              the browser discovers it at its default priority, behind the
+              stylesheet and the scripts, and it is already late: the src comes
+              from the signed-in user (branch_logo / client_logo), so it cannot
+              even be requested until the auth call has returned.
+
+              decoding="async" keeps the decode off the main thread. That
+              matters here because a tenant can upload anything: the logo in
+              use on live is 9653x3094, which is 30 megapixels to decode for a
+              52px slot, and decoding it synchronously blocks the first
+              interaction as well as the paint. */}
+          <img className="idims-logo-full" src={shownLogoSrc} alt="logo"
+            fetchPriority="high" decoding="async"
+            onError={() => {
+              // Two fallbacks, in order: drop the screen-sized variant for the
+              // full file, and only then (dark mode) drop the dark logo for the
+              // light one. Without the first test a missing "-w" in dark mode
+              // would skip straight to the light logo on a dark nav.
+              if (!logoWebMissing) setLogoWebMissing(true);
+              else if (showDarkLogo) setLogoDarkMissing(true);
+            }} />
         </div>
         <div className="idims-divider" />
         <div className="idims-nav-stack">
