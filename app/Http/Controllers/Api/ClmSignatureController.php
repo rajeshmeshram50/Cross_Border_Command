@@ -1444,6 +1444,14 @@ class ClmSignatureController extends Controller
      */
     private function renderCtcPdf(CtcContract $c, array $signers, ?array $headerOverride, ?array $footerOverride, ?string $contentOverride, string $requestUuid, int $cacheMinutes = 30)
     {
+        /* dompdf holds the whole document tree in memory. A 15-page contract
+           measured here peaks at 392 MB, and Review & Approve on live opens
+           documents of 305 pages — so on PHP's default limit this path simply
+           died, and the browser got a 500 after six seconds before falling
+           back to the stored version. 1024M is the ceiling every other PDF
+           path in the app already sets; this one only ever raised the TIME
+           limit, which is why it was the one that failed. */
+        @ini_set('memory_limit', '1024M');
         @set_time_limit(180);
 
         $sourceHtml = $contentOverride !== null ? $contentOverride : (string) $c->content;
@@ -3213,7 +3221,11 @@ class ClmSignatureController extends Controller
            preview mid-render (CS-414) — the request died inside dompdf's CSS
            parser with nothing rendered. Raised per document, not per request, so
            a bulk send of several documents gives each one the same room; every
-           other PDF path in the app already does this. */
+           other PDF path in the app already does this.
+           The memory limit goes with it, and for the same reason: dompdf holds
+           the whole document tree, a 15-page contract peaks at 392 MB here, and
+           the default killed long documents outright. */
+        @ini_set('memory_limit', '1024M');
         @set_time_limit(180);
 
         // Content override takes precedence over the row's saved HTML —

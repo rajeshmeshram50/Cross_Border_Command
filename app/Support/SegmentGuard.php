@@ -541,24 +541,72 @@ class SegmentGuard
                 $preferByName[mb_strtolower(trim($s->name))][] = (int) $s->id;
             }
         }
+        /* Every name `$prefer` does not already answer, looked up in ONE query
+           and remembered for the rest of the request.
+
+           This ran the lookup once PER NAME, and the Customer Profile page
+           resolves a segment list for every customer on it — 80 of that
+           endpoint's 111 queries were this one statement repeated. Batching
+           alone still left one query per customer, because the same handful of
+           segment names comes back for each; the memo collapses those too.
+
+           The ordering is the one the per-name query used, so taking the first
+           row per name picks exactly what ->value('id') picked. Misses are
+           remembered as well, so an unknown name is not re-asked per row. */
+        $scope = ($clientId ?? 'n') . '|' . ($branchId ?? 'n') . '|' . $tier;
+        self::$resolveMemo[$scope] ??= [];
+        $memo = &self::$resolveMemo[$scope];
+
+        $keys = [];
+        foreach ($names as $name) {
+            $key = mb_strtolower(trim((string) $name));
+            if ($key !== '' && !isset($preferByName[$key]) && !array_key_exists($key, $memo)) {
+                $keys[$key] = true;
+            }
+        }
+
+        if ($keys) {
+            $rows = ClmSegment::withoutGlobalScopes()
+                ->whereIn(\Illuminate\Support\Facades\DB::raw('LOWER(TRIM(name))'), array_keys($keys))
+                ->where(fn ($q) => $q->where('client_id', $clientId)->orWhereNull('client_id'))
+                ->when($tier !== '', fn ($q) => $q->whereRaw('LOWER(TRIM(regulatory_status)) = ?', [$tier]))
+                ->orderByRaw('CASE WHEN branch_id = ? THEN 0 WHEN branch_id IS NULL THEN 1 ELSE 2 END', [$branchId])
+                ->orderBy('id')
+                ->get(['id', 'name']);
+            foreach ($rows as $r) {
+                $k = mb_strtolower(trim((string) $r->name));
+                if (!isset($memo[$k])) $memo[$k] = (int) $r->id;   // first in that order wins
+            }
+            // Names the query found nothing for: record the miss.
+            foreach (array_keys($keys) as $k) $memo[$k] ??= null;
+        }
+
         $out = [];
         foreach ($names as $name) {
             $key = mb_strtolower(trim((string) $name));
             if ($key === '') continue;
-            $ids = $preferByName[$key] ?? [];
-            if (!$ids) {
-                $id = ClmSegment::withoutGlobalScopes()
-                    ->whereRaw('LOWER(TRIM(name)) = ?', [$key])
-                    ->where(fn ($q) => $q->where('client_id', $clientId)->orWhereNull('client_id'))
-                    ->when($tier !== '', fn ($q) => $q->whereRaw('LOWER(TRIM(regulatory_status)) = ?', [$tier]))
-                    ->orderByRaw('CASE WHEN branch_id = ? THEN 0 WHEN branch_id IS NULL THEN 1 ELSE 2 END', [$branchId])
-                    ->orderBy('id')
-                    ->value('id');
-                $ids = $id ? [(int) $id] : [];
-            }
+            $ids = $preferByName[$key] ?? (isset($memo[$key]) ? [$memo[$key]] : []);
             foreach ($ids as $id) if (!in_array($id, $out, true)) $out[] = $id;
         }
         return $out;
+    }
+
+    /**
+     * Name -> id answers already looked up, per client|branch|tier, for the
+     * life of the request. See resolveIds().
+     *
+     * @var array<string, array<string, int|null>>
+     */
+    private static array $resolveMemo = [];
+
+    /**
+     * Drop the memo. Only needed by a request that WRITES segments and then
+     * resolves names in the same request — no caller does that today, and this
+     * exists so one added later cannot read a stale miss.
+     */
+    public static function forgetResolved(): void
+    {
+        self::$resolveMemo = [];
     }
 
     /**

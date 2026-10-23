@@ -54,7 +54,7 @@ export const OPS_SEARCH_CSS = `
 .ops-search {
   display: flex; align-items: center; gap: 8px;
   box-sizing: border-box;
-  height: 42px; padding: 0 14px;
+  height: 48px; padding: 0 14px;   /* the tab RAIL's height — see .clm-search */
   border: 1.5px solid var(--ops-edge);
   border-radius: 11px;
   background: var(--ops-fill);

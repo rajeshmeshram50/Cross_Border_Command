@@ -460,7 +460,11 @@ export default function AddVendorModal(props: {
     if (segAddLoading) return;
     setSegAddLoading(true);
     try {
-      const { data } = await api.get<{ data: { code: string; name: string; regulatory_status?: string }[] }>('/clm/segments');
+      // lite=1: this only needs code, name and regulatory_status, which is
+      // exactly what lite returns. Without it the endpoint also runs its usage
+      // scan — one probe per segment across several tables, 129 queries here —
+      // to produce in_use/used_in, which the Segment "+" never reads.
+      const { data } = await api.get<{ data: { code: string; name: string; regulatory_status?: string }[] }>('/clm/segments', { params: { lite: 1 } });
       const segRows = data.data ?? [];
       setSegAdd({ nextCode: nextSegmentCode(segRows), segments: segRows });
     } catch {

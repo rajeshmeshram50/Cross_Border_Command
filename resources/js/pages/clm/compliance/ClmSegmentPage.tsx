@@ -184,7 +184,8 @@ export default function ClmSegmentPage() {
         }
         .clm-root .seg-filter-ms { flex: 0 0 auto; }
         .clm-root .seg-filter-ms .master-select-toggle {
-          height: 34px; padding: 0 10px 0 12px;
+          /* 40px, the height of the tabs and the search it shares the row with. */
+          height: 48px; padding: 0 12px;
           border: 1.5px solid rgba(6,182,212,.22); border-radius: 8px;
           background: #fff; color: #0c4a6e; font-size: 12px; font-weight: 600;
           box-shadow: 0 1px 4px rgba(6,182,212,.07);

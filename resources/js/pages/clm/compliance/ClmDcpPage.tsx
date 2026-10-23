@@ -108,7 +108,8 @@ const DCP_TABS_CSS = `
 [data-bs-theme="dark"] .clm-table-fill.dcp-fill-empty { background: #0f172a; }
 .dcp-filter-btn {
   display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
-  height: 38px; padding: 0 20px; border-radius: 14px;
+  /* 40px and radius 11, the height of the search beside it. */
+  height: 48px; padding: 0 20px; border-radius: 11px;
   font-size: 12.5px; font-weight: 600; cursor: pointer;
   color: #fff;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
