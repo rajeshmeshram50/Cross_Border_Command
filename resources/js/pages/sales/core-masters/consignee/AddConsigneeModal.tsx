@@ -7,6 +7,7 @@ import api from '../../../../api';
 import { MasterSelect, MasterDatePicker } from '../../../master/masterFormKit';
 import { VaultUploadPopup, type VaultStatus } from '../customer/CustomerEvidenceVaultModal';
 import BaseTooltip from '../../../../components/ui/Tooltip';
+import '../../../../components/ui/DataTable.css';
 import { downloadFile } from '../../../../utils/downloadFile';
 // Consignee-form tooltips follow the active app theme (light pill in light
 // mode) instead of the shared component's always-dark default — QA #34.
@@ -2347,7 +2348,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       type="checkbox"
                       checked={picked}
                       readOnly
-                      style={{ marginRight: 4, width: 16, height: 16, flex: '0 0 auto', accentColor: '#0d9488', cursor: 'pointer' }}
+                      style={{ marginRight: 4, width: 16, height: 16, flex: '0 0 auto', accentColor: '#059669', cursor: 'pointer' }}
                     />
                     <div className="acm-pop-avatar">{c.initials}</div>
                     <div className="acm-pop-info">
@@ -2368,7 +2369,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     type="button"
                     className="acm-picker-done"
                     onClick={() => setSearchOpen(false)}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '10px 12px', border: 'none', borderRadius: 10, background: 'linear-gradient(135deg,#0d9488,#065f46)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', boxShadow: '0 3px 10px rgba(5,150,105,.28)' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '10px 12px', border: 'none', borderRadius: 10, background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', boxShadow: '0 3px 10px rgba(5,150,105,.28)' }}
                   >
                     <IconCheck size={14} /> Done{pickedCount > 0 ? ` · ${pickedCount} selected` : ''}
                   </button>
@@ -2406,11 +2407,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                   const isPrimary = idx === 0;
                   const canRemove = !(isPrimary && primaryLocked);
                   return (
-                    <div key={o.db_id ?? o.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 11px', minHeight: 54, border: `1px solid ${isPrimary ? (isDark ? 'rgba(20,184,166,.45)' : '#99f6e4') : (isDark ? 'rgba(148,163,184,.20)' : '#dbeafe')}`, borderRadius: 10, background: isPrimary ? (isDark ? 'rgba(20,184,166,.14)' : '#f0fdfa') : (isDark ? 'rgba(148,163,184,.08)' : '#f8fafc'), minWidth: 0 }}>
+                    <div key={o.db_id ?? o.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 11px', minHeight: 54, border: `1px solid ${isPrimary ? (isDark ? 'rgba(52,211,153,.45)' : '#a7f3d0') : (isDark ? 'rgba(148,163,184,.20)' : '#dbeafe')}`, borderRadius: 10, background: isPrimary ? (isDark ? 'rgba(16,185,129,.14)' : '#ecfdf5') : (isDark ? 'rgba(148,163,184,.08)' : '#f8fafc'), minWidth: 0 }}>
                       <div className="acm-pop-avatar" style={{ width: 30, height: 30, fontSize: 11, flex: '0 0 auto' }}>{o.initials}</div>
                       <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.4 }}>{o.name}</div>
-                        <div style={{ fontSize: 11, color: isDark ? '#94a3b8' : '#64748b', marginTop: 1 }}>{o.id}{isPrimary ? ' · PRIMARY' : ''}</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: isDark ? '#e2e8f0' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.4 }}>{o.name}</div>
+                        <div style={{ fontSize: 11, fontWeight: 500, color: isDark ? '#94a3b8' : '#64748b', marginTop: 1 }}>{o.id}{isPrimary ? ' · PRIMARY' : ''}</div>
                       </div>
                       {canRemove ? (
                         <span role="button" onClick={() => togglePickCustomer(o)} style={{ cursor: 'pointer', display: 'inline-flex', color: '#94a3b8', flex: '0 0 auto' }} aria-label={`Remove ${o.name}`}><IconClose size={13} /></span>
@@ -2431,7 +2432,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             </div>
           </div>
           <div className="acm-pick-footer">
-            <button className="acm-btn acm-btn-light" onClick={handleClose}><IconClose size={14} /> Cancel</button>
             <button
               className={`acm-btn acm-btn-primary ${customer ? '' : 'acm-btn-disabled'}`}
               onClick={confirmCustomer}
@@ -3814,8 +3814,8 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
       </div>
     </div>
     <div className="acm-loc-body">
-      <div className="acm-loc-table-wrap">
-        <table className="acm-loc-table">
+      <div className="acm-loc-table-wrap acm-cp-table-wrap dt-root hr-dt" data-accent="emerald">
+        <table className="acm-loc-table dt-table">
           <thead>
             <tr>
               <th>SR NO</th><th>CONTACT PERSON NAME</th><th>DESIGNATION</th><th>ADDRESS DETAILS</th>
@@ -3829,7 +3829,7 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
               const addressDetails = [l.type, l.line, place].filter(Boolean).join(', ');
               return (
                 <tr key={l.id} className={l.isPrimary ? 'acm-loc-primary-row' : undefined}>
-                  <td>{i + 1}</td>
+                  <td><span className="dt-serial">{i + 1}</span></td>
                   <td>
                     <div className="acm-loc-type-cell">
                       {l.cpName ? <TruncatedCell text={l.cpName} max={18} /> : <span>—</span>}
@@ -6850,10 +6850,10 @@ const SCOPED_CSS = `
   box-shadow: 0 14px 34px rgba(13,148,136,.18), 0 4px 12px rgba(0,0,0,.08);
   padding: 10px;
 }
-.acm-seg-pop-title { font-size: 10.5px; font-weight: 800; letter-spacing: .5px; color: #0f766e; margin-bottom: 8px; }
+.acm-seg-pop-title { font-size: 9.5px; font-weight: 800; letter-spacing: .07em; color: #0f766e; margin-bottom: 8px; }
 .acm-seg-pop-row {
   display: flex; align-items: center; gap: 8px;
-  font-size: 12.5px; font-weight: 600; color: #134e4a;
+  font-size: 11.5px; font-weight: 500; color: #134e4a;
   background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 20px;
   padding: 5px 12px; margin-bottom: 6px;
 }
@@ -6912,6 +6912,32 @@ const SCOPED_CSS = `
   padding: 11px 13px; font-size: 12px; color: #1e40af; line-height: 1.5;
 }
 .acm-info-icon { flex-shrink: 0; margin-top: 1px; }
+
+/* Customer picker: the consignee page's emerald (not teal) and the list
+   view's type. Scoped to .acm-pick so the wizard behind it is unchanged. */
+.acm-pick .acm-pick-header { background: linear-gradient(150deg, #047857 0%, #059669 45%, #10b981 75%, #34d399 100%); }
+.acm-pick .acm-pick-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
+.acm-pick .acm-pick-sub { font-size: 12px; font-weight: 500; }
+.acm-pick .acm-label { font-size: 9.5px; font-weight: 800; letter-spacing: .07em; }
+.acm-pick .acm-info { font-size: 11.5px; font-weight: 500; }
+.acm-pick .acm-picker input { font-size: 12.5px; font-weight: 500; }
+.acm-pick .acm-picker input::placeholder { color: #5ac0a5; font-weight: 400; }
+.acm-pick .acm-pop-name { font-size: 12.5px; font-weight: 600; color: #1f2937; }
+.acm-pick .acm-pop-meta { font-size: 11px; font-weight: 500; color: #64748b; }
+.acm-pick .acm-pop-avatar { background: linear-gradient(135deg, #10b981 0%, #059669 55%, #047857 100%); }
+[data-bs-theme="dark"] .acm-pick .acm-picker input::placeholder { color: #6b8a7e; }
+[data-bs-theme="dark"] .acm-pick .acm-pop-name { color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-pick .acm-pop-meta { color: #94a3b8; }
+.acm-pick .acm-pick-footer .acm-btn { font-size: 12.5px; font-weight: 700; }
+.acm-pick .acm-pick-footer .acm-btn-primary { background: linear-gradient(135deg, #059669 0%, #047857 100%); }
+.acm-pick .acm-pick-footer .acm-btn-primary.acm-btn-disabled,
+.acm-pick .acm-pick-footer .acm-btn-primary:disabled {
+  opacity: 1; background: #e5e7eb; color: #9ca3af; box-shadow: none !important;
+}
+[data-bs-theme="dark"] .acm-pick .acm-pick-footer .acm-btn-primary.acm-btn-disabled,
+[data-bs-theme="dark"] .acm-pick .acm-pick-footer .acm-btn-primary:disabled {
+  background: rgba(255,255,255,.08); color: #64748b;
+}
 
 /* ─── Linked Customer panel — slim collapsible header + dense
    4-col Label : Value grid (mirrors the "What you did in previous
@@ -7364,7 +7390,7 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; gap: 7px;
   height: 38px; padding: 0 16px;
   background: #fff; border: 1.5px solid #e5e7eb; border-radius: 999px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700; color: #1f2937;
+  font-family: inherit; font-size: 12.5px; font-weight: 650; color: #1f2937;
   cursor: pointer; transition: all .18s;
 }
 .acm-id-tab.on {
@@ -7391,7 +7417,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.acm-sec-title { font-size: 13px; font-weight: 800; color: #064e3b; display: inline; }
+.acm-sec-title { font-size: 13px; font-weight: 600; color: #064e3b; display: inline; }
 .acm-sec-sep   { color: #d1d5db; margin: 0 8px; font-weight: 400; }
 .acm-sec-sub   { font-size: 11.5px; color: #6b7280; font-weight: 500; }
 
@@ -8102,7 +8128,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-same-banner.is-blocked .acm-same-banner-sub strong { color: #1e293b; }
 .acm-same-banner-warn {
   display: inline-block;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 11.5px;
   letter-spacing: .01em;
   color: #64748b;
@@ -8131,9 +8157,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   box-shadow: 0 1px 3px rgba(16,185,129,.30);
 }
 .acm-same-banner-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; line-height: 1.4; }
-.acm-same-banner-title { font-size: 13px; font-weight: 700; color: #065f46; letter-spacing: .01em; }
-.acm-same-banner-sub   { font-size: 12px; color: #047857; }
-.acm-same-banner-sub strong { color: #065f46; }
+.acm-same-banner-title { font-size: 13px; font-weight: 600; color: #065f46; letter-spacing: .01em; }
+.acm-same-banner-sub   { font-size: 12px; font-weight: 500; color: #047857; }
+.acm-same-banner-sub strong { color: #065f46; font-weight: 600; }
 /* Locked-input visual cue — pairs with the disabled prop wired on
  * every field in the Basic Company + Primary Address sections. */
 /* Duplicate of the rule near .acm-input, kept in step with it: a locked
@@ -8453,6 +8479,22 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-loc-placeholder-row td { background: rgba(255,255,255,0.02); color: #cbd5e1; }
 [data-bs-theme="dark"] .acm-loc-placeholder-row:hover td { background: rgba(255,255,255,0.04); }
 .acm-loc-type-cell { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+/* Contact Persons table = the Consignee list table (dt-root hr-dt + dt-table,
+   emerald accent). The modal's own .acm-loc-table header/cell rules come later
+   in the cascade, so the list values are restated for this table only. */
+.acm-cp-table-wrap.dt-root { display: block; border: 0; border-radius: 0; box-shadow: none; overflow-x: auto; overflow-y: auto; }
+.acm-cp-table-wrap .acm-loc-table.dt-table thead th {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .07em;
+  padding: 10px 12px;
+}
+.acm-cp-table-wrap .acm-loc-table.dt-table tbody td:not(:last-child),
+.acm-cp-table-wrap .acm-loc-table.dt-table tbody td:not(:last-child) *:not(i):not(svg):not(svg *) {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+}
+.acm-cp-table-wrap .acm-loc-table.dt-table tbody td { padding: 10px 12px; overflow: visible; }
+.acm-cp-table-wrap .acm-loc-table.dt-table tbody td .dt-serial.dt-serial { font-size: 11px !important; font-weight: 800 !important; }
+.acm-cp-table-wrap .acm-loc-table.dt-table tbody td .acm-loc-primary-tag.acm-loc-primary-tag { font-size: 10px !important; font-weight: 700 !important; }
 .acm-loc-primary-tag {
   display: inline-block; padding: 2px 8px; border-radius: 999px;
   font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;

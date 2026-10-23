@@ -1631,3 +1631,39 @@
    is lifted above it (z-index 1) but this button was not, so the wash sat on
    top and greyed its white text. */
 .smcg-root .frm-cstrip.hr-cstrip .cstrip__action-btn { position: relative; z-index: 1; }
+/* Header strip in the same emerald as the banner, toolbar and table. The HRMS
+   strip's green variant (hr-cstrip--teal) is teal (#14b8a6 / #0d9488), a
+   different shade from everything else on this page. */
+.smcg-root .frm-cstrip.hr-cstrip.hr-cstrip--teal {
+  border-color: #a7f3d0;
+  background: linear-gradient(110deg, #f0fdf9 0%, #e7fbf3 25%, #d1fae5 55%, #bdf0da 85%, #a7f3d0 100%);
+  box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(5, 150, 105, .16), 0 2px 8px rgba(0, 0, 0, .06);
+}
+.smcg-root .frm-cstrip.hr-cstrip.hr-cstrip--teal::after {
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, .5) 0%, transparent 50%),
+    radial-gradient(ellipse at 10% 50%, rgba(167, 243, 208, .45) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 50%, rgba(52, 211, 153, .22) 0%, transparent 55%);
+}
+.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-icon {
+  background: linear-gradient(135deg, #10b981 0%, #059669 55%, #065f46 100%);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, .25), 0 4px 14px rgba(5, 150, 105, .40);
+}
+.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-icon::after { border-color: #ecfdf5; }
+.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-title { color: #064e3b; }
+.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-sub { color: #047857; }
+.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-accent { background: linear-gradient(180deg, #34d399, #059669, #065f46); }
+[data-bs-theme="dark"] .smcg-root .frm-cstrip.hr-cstrip.hr-cstrip--teal {
+  border-color: rgba(52, 211, 153, .30);
+  background:
+    radial-gradient(130% 130% at 0% 50%, rgba(5, 150, 105, .20), transparent 55%),
+    linear-gradient(165deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, 0) 60%),
+    var(--vz-card-bg);
+}
+[data-bs-theme="dark"] .smcg-root .frm-cstrip.hr-cstrip.hr-cstrip--teal::after {
+  background-image:
+    radial-gradient(ellipse at 10% 50%, rgba(52, 211, 153, .16) 0%, transparent 55%),
+    radial-gradient(ellipse at 90% 50%, rgba(16, 185, 129, .12) 0%, transparent 60%);
+}
+[data-bs-theme="dark"] .smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-title { color: #ecfdf5; }
+[data-bs-theme="dark"] .smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-sub { color: #6ee7b7; }
