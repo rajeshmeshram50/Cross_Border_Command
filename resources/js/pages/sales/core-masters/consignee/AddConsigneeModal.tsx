@@ -3803,7 +3803,7 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
         <Tooltip label={lockedTip} disabled={!locked}>
           <button
             type="button"
-            className="acm-add-pill"
+            className="acm-btn acm-btn-primary acm-cp-add-btn"
             onClick={() => { if (!locked) onAdd(); }}
             disabled={locked}
             style={locked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
@@ -8302,8 +8302,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-loc-head-icon {
   width: 28px; height: 28px;
   display: inline-flex; align-items: center; justify-content: center;
-  background: #10b981; color: #fff; border-radius: 8px;
+  background: linear-gradient(135deg, #0d9488, #065f46); color: #fff; border-radius: 8px;
 }
+.acm-cp-add-btn { flex-shrink: 0; min-width: 0; }
 .acm-loc-head-text { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .acm-loc-head-title { color: #065f46; font-weight: 700; font-size: 12.5px; letter-spacing: .04em; }
 .acm-loc-head-sub   { color: #047857; font-weight: 500; font-size: 12px; }
@@ -8583,6 +8584,15 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-loc-radio.on { background: #ecfdf5; border-color: #10b981; color: #065f46; }
 .acm-input-error { border-color: #ef4444 !important; background: #fef2f2 !important; }
 .acm-err-text { display: block; margin-top: 4px; color: #b91c1c; font-size: 11.5px; font-weight: 500; }
+/* Location & Contact sub-modal: the list view's type. Scoped to the card so
+   the wizard's own fields are unchanged. */
+.acm-loc-sub-card .acm-loc-sub-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
+.acm-loc-sub-card .acm-field-label { font-size: 9.5px; font-weight: 800; letter-spacing: .07em; }
+.acm-loc-sub-card .acm-input,
+.acm-loc-sub-card .master-select-toggle { font-size: 12.5px; font-weight: 500; }
+.acm-loc-sub-card .acm-input::placeholder { font-weight: 400; }
+.acm-loc-sub-card .acm-loc-radio { font-size: 12.5px; font-weight: 500; }
+.acm-loc-sub-card .acm-loc-sub-footer .acm-btn { font-size: 12.5px; font-weight: 700; }
 
 /* ─── Dark mode ─── */
 [data-bs-theme="dark"] .acm-overlay { background: rgba(0,0,0,.65); }
