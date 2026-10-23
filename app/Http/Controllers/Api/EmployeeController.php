@@ -1757,17 +1757,25 @@ class EmployeeController extends Controller
             }
         }
 
-        foreach (['person', 'candidate', 'organisation', 'customer', 'consignee', 'vendor'] as $scope) {
-            $ignore = $selfRows;
+        /* All six scopes in ONE round trip. Asking per scope meant 31 queries
+           whenever the address was FREE — which is the answer while someone is
+           still typing a new one. Each was a sub-millisecond index scan; the
+           trips were the cost. 31 queries / 161ms → 1 / 1.8ms locally, and far
+           more than that on the server. Scope order is preserved, so the
+           message still names what the loop would have named. (QA #1) */
+        $conflict = \App\Support\EmailGuard::firstConflictAcross(
+            ['person', 'candidate', 'organisation', 'customer', 'consignee', 'vendor'],
+            $email,
+            $clientId,
+            $selfRows,
+        );
 
-            $conflict = \App\Support\EmailGuard::conflict($scope, $email, $clientId, $ignore);
-            if ($conflict) {
-                return response()->json([
-                    'available' => false,
-                    'conflict'  => true,
-                    'message'   => \App\Support\EmailGuard::message($conflict),
-                ]);
-            }
+        if ($conflict) {
+            return response()->json([
+                'available' => false,
+                'conflict'  => true,
+                'message'   => \App\Support\EmailGuard::message($conflict),
+            ]);
         }
 
         return response()->json(['available' => true, 'conflict' => null]);
@@ -2853,7 +2861,27 @@ class EmployeeController extends Controller
         $frozenCycles = collect();
         if (!empty(array_intersect($payrollFields, array_keys($data)))) {
             try {
-                app(\App\Services\PayrollService::class)->recomputeEmployeePayslips((int) $row->id);
+                /* Scoped to the OPEN window, not every payslip the employee has.
+                 *
+                 * Unscoped, this walked every draft/generated slip back to the
+                 * employee's first — and Stage 4 is the salary stage, so
+                 * annual_salary changes and this fires on every save. It is why
+                 * the employee PUT stayed slow on the server while the salary
+                 * POST beside it was quick: SalaryStructureController has passed
+                 * $structure->effective_from since QA #2, this call site never
+                 * did.
+                 *
+                 * $openFrom is already the earliest period_start among this
+                 * employee's draft/generated slips in a non-locked period —
+                 * exactly the range a recompute can reach. Anything earlier is
+                 * frozen by Rule 14/15 and was being loaded only to be skipped.
+                 * Null (no open slips) keeps the old behaviour. (QA #1) */
+                /* ?? because $openFrom is set inside the pf_eligible/esi block
+                   above, which a salary-only Stage 4 save never enters. */
+                app(\App\Services\PayrollService::class)->recomputeEmployeePayslips(
+                    (int) $row->id,
+                    $openFrom ?? $this->openPayslipWindowStart((int) $row->id),
+                );
 
                 $frozenCycles = \App\Models\Payslip::where('employee_id', $row->id)
                     ->whereHas('run', fn($q) => $q->whereNotIn('status', ['draft', 'generated']))
@@ -3348,6 +3376,25 @@ class EmployeeController extends Controller
      *  Includes soft-deleted rows since the index() now surfaces them
      *  for the Disabled tab — restore + show + edit on a disabled row
      *  must all be able to find it. */
+    /**
+     * Earliest period a recompute can actually reach: the first period_start
+     * among this employee's draft/generated payslips in a non-locked period.
+     * Everything before it is frozen by Rule 14/15 and would be loaded only to
+     * be skipped. Null when nothing is open — the caller then recomputes all,
+     * which is the old behaviour and costs nothing on an empty set. (QA #1)
+     */
+    private function openPayslipWindowStart(int $employeeId)
+    {
+        return \App\Models\Payslip::where('employee_id', $employeeId)
+            ->whereHas('run', fn ($q) => $q->whereIn('status', ['draft', 'generated'])
+                ->whereHas('period', fn ($p) => $p->where('status', '!=', 'locked')))
+            ->with('run.period')
+            ->get()
+            ->map(fn ($s) => $s->run?->period?->period_start)
+            ->filter()
+            ->min();
+    }
+
     private function resolveRow(Request $request, int $id): Employee
     {
         $q = Employee::query()->withTrashed()->with(self::fullWith());
