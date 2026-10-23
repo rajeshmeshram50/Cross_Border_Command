@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { Card, CardBody, Input } from 'reactstrap';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../../api';
@@ -92,6 +93,10 @@ interface GeneratedDoc {
   template?: { id: number; code: string; name: string };
   employee?: { id: number; emp_code: string; first_name: string; last_name: string };
 }
+/** Recipients per page. Matches the 5 the picker showed before it paged
+ *  server-side; the footer's selector can raise it. */
+const EMP_PER_PAGE = 5;
+
 
 const STEPS = [
   { key: 1, label: 'Select Employees',  sub: 'Choose who receives this document' },
@@ -188,7 +193,21 @@ export default function GenerateDocument() {
              default view shipped the full employee object with every accessor
              re-run per row. Measured on 431 employees: 1091 KB / 38 queries
              / 508 ms → 334 KB / 14 queries / 229 ms. (QA #20) */
-          api.get('/employees', { params: { view: 'list', onboarded_only: 1, with_document_category: 1 } }),
+          /* Page one, already scoped to this template by the server.
+             This used to fetch every onboarded employee and filter to the
+             template's category and level in the browser — which cannot scale:
+             at 1,000 employees the screen downloads 1,000 to show 5. The
+             server now applies both filters and returns one page.
+             for_template_id rather than the two filters directly, because the
+             template is fetched in this same batch and is not known yet.
+             (QA #22) */
+          api.get('/employees', {
+            params: {
+              view: 'list', onboarded_only: 1, with_document_category: 1,
+              for_template_id: templateId,
+              page: 1, per_page: EMP_PER_PAGE,
+            },
+          }),
           /* Who already has this document in flight.
              The backend refuses to create a second ACTIVE run for the same
              template + employee — it returns the existing one instead — so
@@ -200,7 +219,13 @@ export default function GenerateDocument() {
         if (cancelled) return;
         setTemplate(tplRes.data as TemplateRow);
         setKnownTokens(tokensRes.data as KnownTokens);
-        setEmployees(Array.isArray(empRes.data) ? empRes.data : (empRes.data?.data ?? []));
+        {
+          const body: any = empRes.data ?? {};
+          const list: EmployeeRow[] = Array.isArray(body) ? body : (body.data ?? []);
+          setEmployees(list);
+          // The server's count across all pages, for the footer.
+          setEmpTotal(Number(body.total ?? list.length));
+        }
 
         const runs: any[] = Array.isArray(runsRes.data) ? runsRes.data : (runsRes.data?.data ?? []);
         const active = new Map<number, { id: number; status: string; code: string | null }>();
@@ -238,9 +263,29 @@ export default function GenerateDocument() {
     return knownTokens.custom_fields.filter(c => found.has(c.name));
   }, [template, knownTokens]);
 
+  const [empTotal, setEmpTotal] = useState(0);
+
+  /* Every employee row this screen has seen, across pages.
+     selectedEmployees used to filter the CURRENT list, which worked while the
+     whole set was loaded at once. With pages from the server, someone ticked
+     on page 1 is no longer in `employees` when Next is pressed — the id
+     survives in selectedIds, but the ROW needed to render Steps 2 and 3 and to
+     send is only in the page that is gone. They would drop out silently.
+     Resolving through this cache keeps a selection meaningful wherever it was
+     made. (QA #22) */
+  const [knownRows, setKnownRows] = useState<Map<number, EmployeeRow>>(new Map());
+  const rememberRows = useCallback((rows: EmployeeRow[]) => {
+    setKnownRows(prev => {
+      const next = new Map(prev);
+      for (const r of rows) next.set(r.id, r);
+      return next;
+    });
+  }, []);
+  useEffect(() => { rememberRows(employees); }, [employees, rememberRows]);
+
   const selectedEmployees = useMemo(
-    () => employees.filter(e => selectedIds.has(e.id)),
-    [employees, selectedIds],
+    () => [...selectedIds].map(id => knownRows.get(id)).filter(Boolean) as EmployeeRow[],
+    [selectedIds, knownRows],
   );
 
   // Recipients are scoped to (1) the template's DEPARTMENT category
@@ -602,6 +647,9 @@ export default function GenerateDocument() {
               selectedIds={selectedIds}
               setSelectedIds={setSelectedIds}
               alreadySent={alreadySent}
+              templateId={templateId as number}
+              total={empTotal}
+              onRowsLoaded={rememberRows}
             />
           )}
           {step === 2 && (
@@ -1087,35 +1135,84 @@ function Step1(props: {
   category?: string;
   selectedIds: Set<number>;
   setSelectedIds: (s: Set<number>) => void;
+  /** Needed to ask the server for a page scoped to this template. */
+  templateId: number;
+  /** The server's count across all pages, for the first render. */
+  total?: number;
+  /* Every row this step loads, handed up so the parent can resolve a selected
+     id to a row later. Without it, ticking someone on page 1 and paging on
+     would drop them from Steps 2 and 3 — the id survives, the row does not. */
+  onRowsLoaded?: (rows: EmployeeRow[]) => void;
   /** employee_id -> the live run they already hold for this template. */
   alreadySent: Map<number, { id: number; status: string; code: string | null }>;
 }) {
   const [search, setSearch] = useState('');
-
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return props.employees;
-    return props.employees.filter(e => {
-      const name = `${e.first_name ?? ''} ${e.last_name ?? ''}`.toLowerCase();
-      return name.includes(needle)
-        || (e.emp_code || '').toLowerCase().includes(needle)
-        || (e.email || '').toLowerCase().includes(needle)
-        || (e.department?.name || '').toLowerCase().includes(needle);
-    });
-  }, [props.employees, search]);
-
-  // 5-per-page pagination over the (search-filtered) employee list.
-  const PER_PAGE = 5;
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const safePage = Math.min(page, totalPages);
-  const pageRows = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
+  const [perPage, setPerPage] = useState(EMP_PER_PAGE);
+
+  /* Pages and search come from the SERVER.
+     The list used to be sliced in the browser out of a set fetched whole,
+     which does not scale: at 1,000 eligible employees the screen downloads
+     1,000 to show 5. Each page is now a request, scoped to the template, and
+     the search goes with it so a match on page 40 is still found.
+     Page one is the one the parent already loaded, so opening the wizard costs
+     no extra call — only paging, searching or changing the page size does.
+     (QA #22) */
+  const [rows, setRows] = useState<EmployeeRow[] | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
+  const [pageLoading, setPageLoading] = useState(false);
+  const debounced = useRef<number | null>(null);
+  const reqToken = useRef(0);
+
+  const loadPage = (p: number, term: string, size: number) => {
+    const token = ++reqToken.current;
+    setPageLoading(true);
+    api.get('/employees', {
+      params: {
+        view: 'list', onboarded_only: 1, with_document_category: 1,
+        for_template_id: props.templateId,
+        page: p, per_page: size,
+        ...(term.trim() ? { search: term.trim() } : {}),
+      },
+    })
+      .then(r => {
+        if (token !== reqToken.current) return;   // a newer page already won
+        const body: any = r.data ?? {};
+        const list: EmployeeRow[] = Array.isArray(body) ? body : (body.data ?? []);
+        setRows(list);
+        setTotal(Number(body.total ?? list.length));
+        props.onRowsLoaded?.(list);
+      })
+      .catch(() => { if (token === reqToken.current) { setRows([]); setTotal(0); } })
+      .finally(() => { if (token === reqToken.current) setPageLoading(false); });
+  };
+
+  // Search re-queries, debounced, and returns to page 1.
+  useEffect(() => {
+    if (debounced.current) window.clearTimeout(debounced.current);
+    debounced.current = window.setTimeout(() => {
+      if (!search.trim() && rows === null) return;   // untouched: keep page one
+      setPage(1);
+      loadPage(1, search, perPage);
+    }, 350);
+    return () => { if (debounced.current) window.clearTimeout(debounced.current); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [search]);
+
+  const PER_PAGE   = perPage;
+  const pageRows   = rows ?? props.employees;
+  const totalRows  = total ?? props.total ?? props.employees.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / PER_PAGE));
+  const safePage   = Math.min(page, totalPages);
 
   /* Select-all works on the people who can actually receive the document.
      Counting the locked ones would leave the box unchecked forever (they can
      never be selected), and adding them would put recipients into the list
      that the send silently drops. */
-  const selectable = filtered.filter(e => !props.alreadySent.has(e.id));
+  /* Scoped to THIS PAGE now that pages come from the server — the rest are not
+     in the browser to tick, and a box claiming to select 1,000 while adding 5
+     would be worse than one that is honest about its reach. */
+  const selectable = pageRows.filter(e => !props.alreadySent.has(e.id));
   const allChecked = selectable.length > 0 && selectable.every(e => props.selectedIds.has(e.id));
   const toggleAll = () => {
     const next = new Set(props.selectedIds);
@@ -1169,7 +1266,7 @@ function Step1(props: {
           <div style={{ textAlign: 'center' }}>Designation</div>
         </div>
         <div>
-          {filtered.length === 0 ? (
+          {pageRows.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>
               <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
               {search.trim()
@@ -1221,28 +1318,20 @@ function Step1(props: {
             );
           })}
         </div>
-        {filtered.length > PER_PAGE && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderTop: '1px solid #f1f5f9', background: '#fafafa' }} className="gd-pagination">
-            <span style={{ fontSize: 12, color: '#6b7280' }}>
-              {(safePage - 1) * PER_PAGE + 1}–{Math.min(safePage * PER_PAGE, filtered.length)} of {filtered.length}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
-                aria-label="Previous page"
-                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: safePage <= 1 ? 'not-allowed' : 'pointer', opacity: safePage <= 1 ? 0.5 : 1 }}>
-                <i className="ri-arrow-left-s-line" />
-              </button>
-              <span style={{ minWidth: 44, textAlign: 'center', fontSize: 12.5, fontWeight: 700, color: '#4338ca' }}>
-                {safePage} / {totalPages}
-              </span>
-              <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
-                aria-label="Next page"
-                style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff', cursor: safePage >= totalPages ? 'not-allowed' : 'pointer', opacity: safePage >= totalPages ? 0.5 : 1 }}>
-                <i className="ri-arrow-right-s-line" />
-              </button>
-            </div>
-          </div>
-        )}
+        {/* The same footer the Document Template list carries — "Showing X–Y
+            of Z", a Rows-per-page selector and the page pills — rather than a
+            second hand-rolled pager that drifts from it. Every control here
+            re-queries the server. (QA #22) */}
+        <WorklistPager
+          total={totalRows}
+          page={safePage}
+          pageSize={PER_PAGE}
+          hideNavWhenSinglePage
+          onPage={(p) => { setPage(p); loadPage(p, search, PER_PAGE); }}
+          onPageSize={(n) => { setPerPage(n); setPage(1); loadPage(1, search, n); }}
+          pageSizeOptions={[5, 10, 25, 50]}
+          note={pageLoading ? 'loading…' : undefined}
+        />
       </div>
     </div>
   );

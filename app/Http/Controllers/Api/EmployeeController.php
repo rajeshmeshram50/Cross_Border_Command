@@ -53,7 +53,13 @@ class EmployeeController extends Controller
      */
     private const LIST_WITH = [
         'department:id,name',
-        'designation:id,name',
+        /* `level` as well as the name. The full WITH set says why it must be
+           selected — the document generator filters recipients on
+           designation.level === template.role_type — and that filter skips
+           itself when NO row carries a level. So a screen moved onto this
+           lighter view silently stopped scoping by tier and offered employees
+           at every level. One column on a relation already being loaded. */
+        'designation:id,name,level',
         'primaryRole:id,name',
         'ancillaryRole:id,name',
         // Column-limited on purpose. Left unrestricted this loads a whole
@@ -396,6 +402,56 @@ class EmployeeController extends Controller
         }
         if ($dept = $request->query('department_id')) {
             $q->where('department_id', $dept);
+        }
+
+        /* Template eligibility, decided HERE instead of in the browser.
+         *
+         * Generate Document fetched every onboarded employee and filtered
+         * client-side to the template's category and level, which is fine at
+         * 400 employees and not at 4,000: the page could not be computed until
+         * after the filter, so the filter had to see everybody. Both move
+         * server-side, which makes the list smaller AND pageable. (QA #22)
+         *
+         * for_template_id resolves both off the template, because the screen
+         * fetches the template and this list in the same parallel batch and
+         * does not have its category or level yet. One indexed lookup against
+         * a whole extra round trip.
+         *
+         * The category map is HrTemplateMatch::categoryMap(), the same source
+         * `with_document_category` stamps rows from, so filter and label can
+         * never disagree. Departments outside the map are Non-IT — the stamp's
+         * own default — which is why that branch asks for the unmapped ids
+         * rather than keeping a list of its own. */
+        $wantCat   = trim((string) $request->query('document_category', ''));
+        $wantLevel = trim((string) $request->query('designation_level', ''));
+        if ($tplId = (int) $request->integer('for_template_id')) {
+            // Locals, not $request->merge(): merge lands in the input bag and
+            // these are read with query(), which would not see it.
+            $tpl = \App\Models\HrDocumentTemplate::select('employee_category', 'role_type')->find($tplId);
+            if ($tpl) {
+                $wantCat   = $wantCat   ?: trim((string) $tpl->employee_category);
+                $wantLevel = $wantLevel ?: trim((string) $tpl->role_type);
+            }
+        }
+
+        if ($cat = $wantCat) {
+            $map = \App\Support\HrTemplateMatch::categoryMap();
+            $ids = array_keys(array_filter($map, fn ($c) => $c === $cat));
+            if ($cat === 'Non-IT') {
+                $mapped = array_keys($map);
+                $q->where(function ($w) use ($ids, $mapped) {
+                    $w->whereIn('department_id', $ids)
+                        ->orWhereNull('department_id')
+                        ->orWhereNotIn('department_id', $mapped ?: [0]);
+                });
+            } else {
+                $q->whereIn('department_id', $ids ?: [0]);
+            }
+        }
+
+        // The designation tier a template is written for (designation.level).
+        if ($level = $wantLevel) {
+            $q->whereHas('designation', fn ($d) => $d->where('level', $level));
         }
 
         /* Active / Disabled split, mirroring what the SPA derives per row: a
