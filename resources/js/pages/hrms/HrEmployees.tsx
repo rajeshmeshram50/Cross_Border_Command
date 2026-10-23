@@ -3915,7 +3915,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                   className="rounded-pill px-3 hr-emp-onboard-btn"
                   title={perm.lockedTitle('export') ?? 'Export the current employee list to Excel'}
                 >
-                  <i className={`align-bottom me-1 ${exporting ? 'ri-loader-4-line' : 'ri-file-excel-2-line'}`}></i>
+                  {/* ri-spin: the loader icon is static without it, so the button
+                      swapped one still picture for another. Same fix as #43. (QA #68) */}
+                  <i className={`align-bottom me-1 ${exporting ? 'ri-loader-4-line ri-spin' : 'ri-file-excel-2-line'}`}></i>
                   {exporting ? 'Exporting…' : 'Export'}
                 </Button>
                 {/* An onboarding invite is how an employee joins the roster —
