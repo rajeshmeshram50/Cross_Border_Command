@@ -1709,9 +1709,12 @@
 .smc-root .smc-toolbar { padding: 14px; gap: 14px; }
 /* Tabs 40px / 12.5px; the search bar and Filter button stand the same 40px. */
 .smc-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
-.smc-root .smc-toolbar .dt-filter-btn { height: 40px; flex-shrink: 0; }
+/* Search and Filter stretch to the tab rail's full height (40px tabs + the rail's padding and
+   border) so every control in the row is the same height; 40px floor for a wrapped row. */
+.smc-root .smc-toolbar { align-items: stretch; }
+.smc-root .smc-toolbar .dt-filter-btn { height: auto; min-height: 40px; flex-shrink: 0; }
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search {
-  height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
+  height: auto; min-height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
 /* One type size and weight for every data cell (HRMS body text: 11.5 / 500).
    Badges with a fixed design keep their own sizing. */
@@ -1757,3 +1760,29 @@
   letter-spacing: 0;
   max-width: 100%;
 }
+
+/* Search = the tab rail's track: the same 1px border, 3px padding and tint as
+   .dt-tabs (so both stand 48px), with the 40px field drawn inside it by ::before
+   — the icon, input and clear button all sit inside that field. */
+.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search {
+  position: relative;
+  min-height: 48px;
+  padding: 3px 14px 3px 38px;
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  border-radius: 11px;
+  box-shadow: none;
+}
+.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search::before {
+  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
+  border-radius: 8px;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
+  transition: border-color .16s, box-shadow .16s;
+}
+.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search > * { position: relative; z-index: 1; }
+.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search .dt-search-icon { position: absolute; }
+.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.smc-root .smc-table-card .smc-toolbar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }

@@ -4201,10 +4201,16 @@ const SCOPED_CSS = `
 .qpi-root .sup-fig .cstrip { padding-left: 18px; padding-right: 14px; }
 .qpi-root .sup-fig .cstrip__left { padding-left: 0; }
 .master-select-menu.qpi-doctype-menu { width: 186px !important; min-width: 186px !important; max-width: 186px !important; }
+/* Search, Doc Type filter and Create Quotation stretch to the tab rail's full height (40px tabs + the rail's padding and
+   border) so every control in the row is the same height; 40px floor for a wrapped row. */
+.qpi-root .qpi-tablebar { align-items: stretch; }
 .qpi-root .qpi-tablebar .dt-search,
-.qpi-root .qpi-tablebar .qpi-doctype-filter,
-.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle { height: 40px; }
-.qpi-root .qpi-tablebar .cstrip__action-btn { height: 40px; padding-top: 0; padding-bottom: 0; }
+.qpi-root .qpi-tablebar .qpi-doctype-filter { height: auto; min-height: 40px; }
+.qpi-root .qpi-tablebar .qpi-doctype-filter { align-items: stretch; }
+.qpi-root .qpi-tablebar .qpi-doctype-filter > div,
+.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-wrap { height: 100%; }
+.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle { height: 100%; min-height: 40px; }
+.qpi-root .qpi-tablebar .cstrip__action-btn { height: auto; min-height: 40px; padding-top: 0; padding-bottom: 0; }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
   flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
@@ -5457,4 +5463,31 @@ const SCOPED_CSS = `
   .qpi-act { width: 28px; height: 28px; }
   .qpi-convert-btn { padding: 6px 8px; }
 }
+
+/* Search = the tab rail's track: the same 1px border, 3px padding and tint as
+   .dt-tabs (so both stand 48px), with the 40px field drawn inside it by ::before
+   — the icon, input and clear button all sit inside that field. */
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
+  position: relative;
+  min-height: 48px;
+  padding: 3px 14px 3px 38px;
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  border-radius: 11px;
+  box-shadow: none;
+}
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before {
+  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
+  border-radius: 8px;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
+  transition: border-color .16s, box-shadow .16s;
+}
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search > * { position: relative; z-index: 1; }
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search .dt-search-icon { position: absolute; }
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
+[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
+
 `;
