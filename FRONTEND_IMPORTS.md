@@ -167,17 +167,26 @@ prefetchRoute('/hr/attendance');      // warm one route
 startIdlePrefetch(paths);             // walk a list during idle time
 ```
 
-Two triggers:
+Three triggers:
 
 - **Idle** — `App.tsx` fires `startIdlePrefetch` once the user is known,
   filtered through `canAccessPath` so nobody warms a module they can't open.
-  One chunk per idle slot; firing fourteen at once would contend with the API
+  One chunk per idle slot; firing them all at once would contend with the API
   calls the current screen is still making. `requestIdleCallback` with a
   `setTimeout` fallback, because **Safari doesn't have it** and our floor is
   `safari16.4`. Skipped entirely on `saveData` or a `2g` connection.
+- **Parent nav click** — clicking "HRMS" only expands the submenu, and a parent
+  item's `link` is `"/#"`, so the per-link hover never fires for it. The click
+  is still a clear signal, so `prefetchGroup(item.subItems)` queues that
+  group's leaves through the same idle walk.
 - **Hover / touch / focus** — wired at all five sidebar `<Link>` sites in
   `velzon/Layouts/VerticalLayouts/index.tsx`. `onTouchStart` because there is no
   hover on the Zebra handheld; `onFocus` for keyboard nav.
+
+Coverage: **90 exact paths** generated from `App.tsx`, plus **8 `PATTERNS`** for
+parameterised routes. It shipped with 14 hand-written entries, which meant
+prefetch silently did nothing for ~100 sidebar links — including every
+`/master/:slug` link, whose `MasterPage` chunk is 100 kB.
 
 **Why idle and not just hover.** Timing:
 
@@ -244,6 +253,66 @@ across 50 chunks, which is not something to fetch on spec. Those rely on hover.
 
 ---
 
+## 6. Serving — compression and caching
+
+Splitting and prefetching decide *how many* requests and *when*. These decide
+how big each one is and whether it happens again. Both live in
+`public/.htaccess`, and both are inside `<IfModule>` guards — **if the module
+isn't loaded, the rule does nothing and says nothing.**
+
+```bash
+apachectl -M | grep -E "headers|deflate"   # both must be present
+```
+
+### Compression
+
+```apache
+AddOutputFilterByType DEFLATE application/javascript
+AddOutputFilterByType DEFLATE text/javascript        # ← and this one
+AddOutputFilterByType DEFLATE application/x-javascript
+```
+
+**`text/javascript` is the one that matters.** Apache 2.4.55+ and Debian/Ubuntu
+`mime.types` serve `.js` as `text/javascript` (the IANA type), so a list naming
+only `application/javascript` matches nothing and every chunk goes out raw.
+Measured on the server: a 500 kB entry transferred **414 kB** where gzip makes
+it **135 kB** — 3.7× — and a hard refresh moved 2.1 MB instead of ~700 kB.
+
+Verify per file, not by reading the config:
+
+```bash
+curl -sI -H 'Accept-Encoding: gzip' https://HOST/build/assets/app-XXXX.js \
+  | grep -iE 'content-type|content-encoding|content-length'
+```
+
+`content-encoding: gzip` must be there. API JSON is compressed separately by
+`App\Http\Middleware\CompressJsonResponse`, which is why a 188 kB `daily-view`
+body arrives as 9.3 kB even if Apache is misconfigured.
+
+### Caching
+
+`/build/assets/` gets `Cache-Control: public, max-age=31536000, immutable`.
+Safe because Vite content-hashes every filename, so a deploy ships new names
+and a stale file can never be served. This is what makes prefetch cheap — the
+cost is paid once per deploy, not per visit, and it is why `vendor-*` chunks
+exist at all: their hashes survive a deploy of our own code.
+
+Proof from a hard refresh after a deploy:
+
+```
+vendor-ui-CmjXd81Z.js     (memory cache)   0 ms   ← hash unchanged, kept
+vendor-redux-nz8XsMCd.js  (memory cache)   0 ms
+app-DnuMLt9t.js           414 kB   773 ms         ← our code changed, refetched
+```
+
+### `206 Partial Content` on a script
+
+Means the browser **range-requested** it: a previous download was cut off, it
+cached the partial, and asked for the rest. Large uncompressed files over a slow
+link are how that happens, so fix compression first. Two consequences: the
+transferred size shown is the *range*, not the whole file, so don't read it as
+the real number; and if 206s persist after compression is correct, something
+between the client and Apache is interrupting transfers.
 ## Choosing
 
 | situation | use |
@@ -254,14 +323,41 @@ across 50 chunks, which is not something to fetch on spec. Those rely on hover.
 | small and on nearly every screen | add to the `shared-ui` allowlist |
 | framework / third-party on every screen | a `vendor-*` chunk |
 | a module landing page | add to `routePrefetch` |
+| a route with a parameter | add a regex to `PATTERNS` |
+| several API reads on one screen | one bundle endpoint — see below |
 
-**Two habits worth keeping:**
+**Three habits worth keeping:**
 
 1. **Fewer requests beats fewer bytes.** A 1 kB file and an 80 kB file cost the
    same second. Splitting out 12 kB to avoid duplicating it is a loss.
 2. **Measure the build, not dev.** Dev ships unminified source with inline
    sourcemaps — `recruitment.css` reports 486 kB there and ~15 kB in the build.
    Dev-mode numbers tell you nothing about production.
+3. **Check the wire, not the config.** Every rule here sits behind an
+   `<IfModule>` guard or a mime-type match that can silently miss. `curl -I`
+   the actual file.
+
+### The same principle applies to API calls
+
+A screen firing eight GETs pays the floor eight times, so the bundle pattern
+mirrors `manualChunks`: fewer trips, same data. Three exist —
+`ExitDocumentBundleController`, `RecruitmentBundleController`, and
+`MasterController::bulk` (`/master/bulk?keys=a,b,c`).
+
+All three **call the existing controller methods** rather than reimplementing
+them, so payloads are identical by construction and a later change to any of
+them is picked up with no second copy to keep in step. Verify that when you add
+one — compare the bundle's keys against the separate endpoints byte for byte.
+Recruitment: same 13 queries, same 4111 bytes, all four keys identical.
+
+Guard each sub-call separately. A bundle that 500s because one panel failed is
+worse than the calls it replaced, and the frontend usually already treats the
+optional ones as `.catch(() => zero)`.
+
+And **check the envelope**. `/master/bulk` answers
+`{ status, data: { <slug>: rows }, skipped }` — the slugs are under `.data`. An
+unwrap that read the top level left every dropdown silently empty, with no error
+anywhere.
 
 ---
 
@@ -274,8 +370,41 @@ across 50 chunks, which is not something to fetch on spec. Those rely on hover.
 - `sweetalert2` (80 kB) is imported at module level in several screens but only
   used for confirm dialogs. Moving it to a dynamic `import()` inside the
   handlers removes one request from every one of them.
-- The ~1 s per-request floor is infrastructure, not code: check OPcache in the
-  PHP-FPM pool, `pm.max_children`, `php artisan config:cache` + `route:cache`,
-  and enable **HTTP/2** — 16 requests against the HTTP/1.1 six-connection cap is
-  why chunks queue behind API calls at all. No amount of frontend work
-  substitutes for that.
+- The app shell fires 4 API calls on **every** page load — `/me`, `/settings`,
+  `/notifications/unread-count`, and `/branches`, the last of which is SERIAL
+  because `BranchSwitcherContext` runs on `[user?.id]` and cannot start until
+  `/me` returns. A `/bootstrap` endpoint returning all four would collapse that
+  to one request and break the chain. `/branches` is also a stale-while-
+  revalidate candidate: tenancy data that changes almost never, refetched on
+  every load.
+- `/attendance/daily-view` takes 3.39 s for 2.9 kB on the server — the slowest
+  single call on that screen, and unexplained by its payload.
+
+## Where the time actually goes
+
+Measured on the server, so the frontend work above is kept in proportion.
+
+```
+Load:   1.58 s     every JS chunk 0 ms, from cache
+Finish: 7.77 s
+        ──────
+        6.2 s of API calls
+```
+
+```
+/notifications/unread-count   0.4 kB   1.19-1.67 s
+/branches                     2.9 kB   1.71 s
+/attendance/daily-view        2.9 kB   3.39 s
+/up  (boots Laravel, no auth, no DB, no app code)   ~1 s   vs 119 ms locally
+```
+
+**A request costs ~1 s regardless of size.** 400 bytes take 1.19 s; OPcache is
+On, so it is not recompilation. Everything in this document reduces request
+count or payload size, and neither is the binding constraint any more. The two
+remaining levers are both infrastructure:
+
+- **HTTP/2.** 11 requests against HTTP/1.1's six-connection cap run in two
+  waves. One config line (`Protocols h2 http/1.1`) makes it one. Worth ~2-3 s.
+- **The floor itself.** `pm.max_children` in the PHP-FPM pool — if requests
+  queue for a worker, every timing above is explained. `php artisan
+  config:cache` + `route:cache` are free and were absent.
