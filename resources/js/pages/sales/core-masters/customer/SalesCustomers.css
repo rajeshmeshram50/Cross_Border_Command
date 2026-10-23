@@ -1793,3 +1793,17 @@
   background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 55%, #7c3aed 100%);
   box-shadow: 0 8px 22px rgba(124, 58, 237, .28), 0 2px 5px rgba(91, 33, 182, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
+/* The HRMS strip paints a full-size ::after wash over itself; the title block
+   is lifted above it (z-index 1) but this button was not, so the wash sat on
+   top and greyed its white text. */
+.smc-root .frm-cstrip.hr-cstrip .cstrip__action-btn { position: relative; z-index: 1; }
+/* Cust Category / Customer Type pills: at the table type (11.5px) "International"
+   no longer fit its fixed 8% column at the 1440px minimum width, and the cell's
+   ellipsis showed a stray "..." after the pill. Tighter side padding and no
+   extra tracking keep the text size and let it fit. */
+.smc-table-wrap .table tbody td .smc-type-pill,
+.smc-table-wrap .table tbody td .smc-trade-pill {
+  padding: 4px 8px;
+  letter-spacing: 0;
+  max-width: 100%;
+}

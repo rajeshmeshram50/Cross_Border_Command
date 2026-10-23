@@ -41,6 +41,20 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        /* ZeptoMail over its HTTP API, selectable as MAIL_MAILER=zeptomail.
+         *
+         * Registered rather than hardcoded so the SMTP mailer stays intact and
+         * `failover` can hold both — the API first, SMTP behind it. Nothing
+         * that sends mail changes; only the transport under it does.
+         * See App\Mail\Transport\ZeptoMailTransport for why. */
+        \Illuminate\Support\Facades\Mail::extend('zeptomail', function (array $config) {
+            return new \App\Mail\Transport\ZeptoMailTransport(
+                (string) ($config['token'] ?? ''),
+                (string) ($config['endpoint'] ?? 'https://api.zeptomail.in/v1.1/email'),
+                (int) ($config['timeout'] ?? 20),
+            );
+        });
+
         // Auto-force https on every generated URL the moment APP_URL is set
         // to an https:// origin (real cert or Cloudflare Flexible SSL).
         //

@@ -49,6 +49,17 @@ return [
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 
+        /* ZeptoMail's HTTP API. One POST instead of SMTP's ten-step
+           conversation — see AppMailTransportZeptoMailTransport.
+           The token is the SEND MAIL TOKEN from ZeptoMail's API tab, which is
+           a different credential from the SMTP password. */
+        'zeptomail' => [
+            'transport' => 'zeptomail',
+            'token'     => env('ZEPTOMAIL_TOKEN'),
+            'endpoint'  => env('ZEPTOMAIL_ENDPOINT', 'https://api.zeptomail.in/v1.1/email'),
+            'timeout'   => (int) env('ZEPTOMAIL_TIMEOUT', 20),
+        ],
+
         'ses' => [
             'transport' => 'ses',
         ],
@@ -79,11 +90,19 @@ return [
             'transport' => 'array',
         ],
 
+        /* Both, in order: the API, then SMTP if it is unavailable.
+           Symfony marks a failing mailer unhealthy for retry_after seconds, so
+           an API outage costs one failed attempt rather than one per email.
+
+           'log' is deliberately NOT in this list. It "succeeds" by writing the
+           message to a file, so a failover that reached it would report mail
+           as sent that nobody will ever receive — the one outcome worse than
+           an error. */
         'failover' => [
             'transport' => 'failover',
             'mailers' => [
+                'zeptomail',
                 'smtp',
-                'log',
             ],
             'retry_after' => 60,
         ],
