@@ -101,10 +101,34 @@ export const regularizationApi = {
   cancel: (id: number) =>
     api.post<{ data: ApiRegularization }>(`/regularizations/${id}/cancel`).then(r => r.data.data),
 
+  /* Unpaged: every matching row. Kept for callers that need the whole set to
+     count from. Sending no per_page is what tells the server not to page. */
   approvals: (params: { status?: string; search?: string; branch_id?: number } = {}) =>
     api.get<{ data: ApiRegularization[] }>('/regularizations/approvals', { params })
       // Always resolve to an array — a missing/differently-shaped `data.data`
       // (e.g. an empty or error body) must not leave `rows` undefined and crash
       // the list render (`rows.length`).
       .then(r => (Array.isArray(r.data?.data) ? r.data.data : (Array.isArray(r.data) ? (r.data as unknown as ApiRegularization[]) : []))),
+
+  /* Paged: one page, the matching total, and the per-status totals for the tab
+     strip. A separate method rather than an optional flag on approvals(),
+     because the two resolve to different shapes and a caller that forgot to
+     unwrap would silently render an object as an empty list.
+
+     `status` is passed through as 'All' rather than omitted — the server
+     defaults a MISSING status to Pending, so dropping it would quietly filter
+     the All tab. */
+  approvalsPage: (params: {
+    status?: string; search?: string; branch_id?: number;
+    page: number; per_page: number;
+    /** Per-status totals across every tab, under the search in force. */
+    with_counts?: boolean;
+  }) =>
+    api.get<{ data: ApiRegularization[]; total?: number; counts?: Record<string, number> }>(
+      '/regularizations/approvals', { params },
+    ).then(r => ({
+      data: Array.isArray(r.data?.data) ? r.data.data : [],
+      total: Number(r.data?.total ?? 0),
+      counts: r.data?.counts,
+    })),
 };

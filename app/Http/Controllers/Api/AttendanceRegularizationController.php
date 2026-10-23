@@ -547,7 +547,16 @@ class AttendanceRegularizationController extends Controller
                 !$myEmployeeId
                 && !Employee::where('reporting_manager_user_id', $user->id)->exists()
             ) {
-                return response()->json(['data' => []]);
+                /* Nothing to show. Still answer in the shape the caller asked
+                   for — a paged caller reading `total`/`counts` off a bare
+                   {data:[]} gets undefined and renders NaN in the footer. */
+                return response()->json(
+                    ['data' => []]
+                    + ($request->integer('per_page') > 0 ? ['total' => 0] : [])
+                    + ($request->boolean('with_counts')
+                        ? ['counts' => ['All' => 0, 'Pending' => 0, 'Approved' => 0, 'Rejected' => 0, 'Cancelled' => 0]]
+                        : [])
+                );
             }
 
             // My own requests, plus requests by anyone who reports to me.
@@ -611,16 +620,42 @@ class AttendanceRegularizationController extends Controller
                 $w->where('branch_id', $branchId)->orWhereNull('branch_id');
             });
         }
+        /* Search, matched against the text the TABLE PRINTS rather than the raw
+           columns. It prints "29 August 2026" and "Adjust log", so matching raw
+           fields alone meant "August" found nothing (the column holds
+           2026-08-29) and "Adjust log" found nothing (the column holds
+           'adjust') — this mirrors searchHaystack() in the page, which is what
+           ran while the search was still client-side.
+
+           Not covered: the 12-hour punch strings and `original_display`, both
+           built per row AFTER the query. Reaching them would mean loading every
+           row again, which is the cost paging just removed. */
         if ($search = trim((string) $request->input('search', ''))) {
-            $like = '%' . $search . '%';
-            $q->whereIn('employee_id', function ($sub) use ($like) {
-                $sub->select('id')->from('employees')
-                    ->where(function ($w) use ($like) {
-                        $w->where('first_name', 'ilike', $like)
-                            ->orWhere('last_name', 'ilike', $like)
-                            ->orWhere('display_name', 'ilike', $like)
-                            ->orWhere('emp_code', 'ilike', $like);
-                    });
+            $like  = '%' . $search . '%';
+            $lower = mb_strtolower($search);
+            $q->where(function ($w) use ($like, $lower) {
+                $w->whereIn('employee_id', function ($sub) use ($like) {
+                    $sub->select('employees.id')->from('employees')
+                        ->leftJoin('master_departments', 'master_departments.id', '=', 'employees.department_id')
+                        ->where(function ($e) use ($like) {
+                            $e->where('employees.first_name', 'ilike', $like)
+                                ->orWhere('employees.last_name', 'ilike', $like)
+                                ->orWhere('employees.display_name', 'ilike', $like)
+                                ->orWhere('employees.emp_code', 'ilike', $like)
+                                ->orWhere('master_departments.name', 'ilike', $like);
+                        });
+                })
+                    ->orWhere('type', 'ilike', $like)
+                    ->orWhere('reason', 'ilike', $like)
+                    ->orWhere('status', 'ilike', $like)
+                    // The date as fmtDate() renders it, plus the ISO form people paste.
+                    ->orWhereRaw("to_char(regularization_date, 'FMDD FMMonth YYYY') ILIKE ?", [$like])
+                    ->orWhereRaw("to_char(regularization_date, 'FMDD FMMon YYYY') ILIKE ?", [$like])
+                    ->orWhereRaw('regularization_date::text ILIKE ?', [$like]);
+
+                // The two labels the Type column shows for `mode`.
+                if (str_contains($lower, 'adjust')) $w->orWhere('mode', 'adjust');
+                if (str_contains($lower, 'exempt')) $w->orWhere('mode', 'exempt');
             });
         }
 
@@ -679,6 +714,22 @@ class AttendanceRegularizationController extends Controller
         });
 
         $this->attachOriginalPunches($rows);
+
+        /* Drop the Employee $appends this queue has no use for.
+           It shows a name, a code and a department — never a photo. But
+           photo_url falls back to a per-row employee_documents lookup whenever
+           photoDocument is not eager-loaded, and the reporting-manager relation
+           returns Employee models too, so 7 requests fired 13 of this
+           endpoint's 24 queries for a field nothing renders. makeHidden() is
+           checked BEFORE the accessor runs, so the query never happens. */
+        $rows->each(function (AttendanceRegularization $row) {
+            foreach ([$row->employee, $row->employee?->reportingManager] as $e) {
+                $e?->makeHidden([
+                    'photo_url', 'face_registered', 'profile_completion',
+                    'other_assets_resolved', 'ancillary_roles_resolved', 'encrypted_id',
+                ]);
+            }
+        });
 
         // total/counts only when asked for, so the old contract is byte-identical
         // for callers that do not page.

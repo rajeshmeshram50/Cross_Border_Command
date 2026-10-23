@@ -13,8 +13,9 @@ import { to12h, punchPair12h } from '../../utils/timeFormat';
    render through fmtClock/renderTime with hour24 hardcoded false, so a 24-hour
    "13:00" here was the only place in the attendance area still showing one, and
    the same punch read differently on two tables of the same page.
-   Re-exported because the employee Attendance tab imports it from here. */
-export { to12h };
+   The employee Attendance tab imports to12h straight from utils/timeFormat:
+   reaching it through this component made two route chunks share a subtree,
+   and Rollup hoisted it into a separate 11.5 kB request. */
 
 /* The theme is toggled at runtime on <html>, and nothing in this tree
    re-renders when it flips — so observe the attribute instead of reading it
@@ -86,27 +87,19 @@ const fmtDate = (iso: string) => {
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
-/** Everything a row shows, flattened into one lowercase haystack.
- *
- *  The search box reads the RENDERED text, not the raw record: the table
- *  prints "29 August 2026", "Adjust log" and "06:00 PM-06:31 PM", so typing
- *  any of those has to find the row. Matching the raw fields instead would
- *  mean "August" found nothing (the record holds 2026-08-29) and "Adjust log"
- *  found nothing (the record holds mode 'adjust') — a search box that misses
- *  what is on screen is worse than none. */
-const searchHaystack = (r: ApiRegularization) => [
-  empName(r),
-  r.employee?.emp_code,
-  r.employee?.department?.name,
-  fmtDate(r.regularization_date),
-  r.regularization_date,
-  r.mode === 'exempt' ? 'Exempt day' : 'Adjust log',
-  r.type,
-  to12h(r.original_display),
-  ...(r.punches ?? []).map(p => punchPair12h(p.in, p.out)),
-  r.reason,
-  r.status,
-].filter(Boolean).join(' ').toLowerCase();
+/* The search runs in SQL now — see the `search` block in
+   AttendanceRegularizationController::approvals(), which matches the rendered
+   date ("29 August 2026") and the Type labels ("Adjust log") as well as the raw
+   columns, because a search box that misses what is on screen is worse than
+   none. It cannot reach the 12-hour punch strings or `original_display`: both
+   are built per row after the query. */
+
+/** Every tab at zero — the starting badges, and what an error or an
+ *  out-of-scope viewer leaves behind. Written out rather than `{}` so the
+ *  badges render "0" instead of blanking out. */
+const EMPTY_COUNTS: Record<string, number> = {
+  Pending: 0, Approved: 0, Rejected: 0, Cancelled: 0, All: 0,
+};
 
 /** How many punch chips show before the rest collapse behind "+N more". */
 const PUNCH_PREVIEW = 3;
@@ -261,52 +254,82 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
   const [page, setPage]       = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch]   = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  /** Rows matching the open tab, and the per-status totals for the tab strip —
+   *  both straight from SQL, so neither is capped by the page on screen. */
+  const [total, setTotal]     = useState(0);
+  const [counts, setCounts]   = useState<Record<string, number>>(EMPTY_COUNTS);
 
-  // Always fetch the FULL set (every status) once, then filter client-side.
-  // Fetching only the active tab meant we couldn't show accurate per-tab
-  // counts — the Rejected tab could hold rows the header never counted (#44).
+  // Typing shouldn't fire a request per keystroke now that the search runs on
+  // the server. Same 350ms the leave approvals queue uses.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* ONE page, from the server, plus the counts for every tab.
+     This queue used to pull every row of every status and slice it in the
+     browser, because per-tab counts could only be derived from the full set
+     (#44). The counts now come from a copy of the same query taken before the
+     status clause, so the full fetch has nothing left to pay for — and with a
+     few hundred requests it was the fetch, not the slicing, that cost the time
+     (QA #16, #33). */
+  const reqRef = useRef(0);
   const load = useCallback(() => {
+    const token = ++reqRef.current;
     setLoading(true);
     setError(null);
-    regularizationApi.approvals({ status: 'All' })
-      .then(setRows)
-      .catch((err: any) => setError(err?.response?.data?.message || 'Failed to load regularization requests.'))
-      .finally(() => { setLoading(false); setHasLoaded(true); });
-  }, []);
+    regularizationApi.approvalsPage({
+      status,
+      search: debouncedSearch || undefined,
+      page,
+      per_page: pageSize,
+      with_counts: true,
+    })
+      .then(res => {
+        // A slower earlier request must not overwrite a newer page's rows.
+        if (token !== reqRef.current) return;
+        setRows(res.data);
+        setTotal(res.total);
+        setCounts(res.counts ?? EMPTY_COUNTS);
+      })
+      .catch((err: any) => {
+        if (token !== reqRef.current) return;
+        setError(err?.response?.data?.message || 'Failed to load regularization requests.');
+      })
+      .finally(() => {
+        if (token !== reqRef.current) return;
+        setLoading(false);
+        setHasLoaded(true);
+      });
+  }, [status, debouncedSearch, page, pageSize]);
 
-  // `load` is a stable useCallback([]), so refreshKey is what actually re-runs
-  // this — the parent bumps it when a request is raised from the day panel.
+  // refreshKey is bumped by the parent when a request is raised from the day
+  // panel; the rest of the deps ride in on `load` itself.
   useEffect(() => { load(); }, [load, refreshKey]);
-  // Reset to the first page whenever the status filter or the search changes —
-  // otherwise narrowing to three matches while sitting on page 3 shows an
-  // empty table over a "1-0 of 3" footer.
-  useEffect(() => { setPage(1); }, [status, search]);
 
-  /* The search narrows the set the tabs count FROM, not just the rows on
-     screen. Counting the unsearched set would put "Approved 28" above a table
-     showing two matches — the header contradicting the body, which is the same
-     trap the employee list hit (QA #173). Empty search leaves every count
-     exactly as it was. */
-  const needle = search.trim().toLowerCase();
-  const searched = needle
-    ? rows.filter(r => searchHaystack(r).includes(needle))
-    : rows;
+  /* Back to page 1 whenever the result set is REPLACED rather than moved
+     through. Staying on page 3 while narrowing to three matches asks the server
+     for a page that does not exist and draws an empty table that reads as "no
+     results" instead of "wrong page". */
+  useEffect(() => { setPage(1); }, [status, debouncedSearch, pageSize]);
 
-  // Per-tab counts derived from the full set, so every tab shows how many
-  // requests it holds (the badge lives on the tabs, not the section title).
-  const counts: Record<string, number> = {
-    Pending:  searched.filter(r => r.status === 'Pending').length,
-    Approved: searched.filter(r => r.status === 'Approved').length,
-    Rejected: searched.filter(r => r.status === 'Rejected').length,
-    All:      searched.length,
-  };
-  const filtered = status === 'All' ? searched : searched.filter(r => r.status === status);
+  /* Approving the last row on the last page empties it. The server answers
+     honestly (0 rows, the new total), so step back rather than sit on a page
+     past the end — client-side slicing used to clamp this for free. */
+  useEffect(() => {
+    const last = Math.max(1, Math.ceil(total / pageSize));
+    if (page > last) setPage(last);
+  }, [total, pageSize, page]);
 
-  // Client-side pagination so the table gets the standard footer (record count
-  // + pager) like the rest of the app (CBC #37).
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const paged     = filtered.slice((safePage - 1) * pageSize, (safePage - 1) * pageSize + pageSize);
+  /* The server counts the tabs across the SEARCHED set, not the raw one — a
+     header reading "Approved 28" above a table showing two matches contradicts
+     its own body, which is the trap the employee list hit (QA #173). The counts
+     query is a clone taken before the status clause, so an empty search leaves
+     every count exactly as it was.
+     Still the debounced needle, not `search`: the message below has to describe
+     the rows actually on screen, which are the ones the last request fetched. */
+  const needle = debouncedSearch.toLowerCase();
 
   const act = async (row: ApiRegularization, decision: 'approve' | 'reject') => {
     let comment: string | undefined;
@@ -442,15 +465,15 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                   </tr>
                 </thead>
                 <tbody>
-                  {paged.length === 0 ? (
+                  {rows.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="text-center text-muted ep-fs-13 py-4">
                         {needle
-                          ? <>No requests match “{search.trim()}”.</>
+                          ? <>No requests match “{debouncedSearch}”.</>
                           : <>No {status === 'All' ? '' : status.toLowerCase()} regularization requests.</>}
                       </td>
                     </tr>
-                  ) : paged.map(r => {
+                  ) : rows.map(r => {
                     const tone = statusTone(r.status, dark);
                     const rowBusy    = busy?.id === r.id;
                     const approving  = rowBusy && busy?.action === 'approve';
@@ -573,8 +596,8 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
               </table>
             </div>
             <WorklistPager
-              total={filtered.length}
-              page={safePage}
+              total={total}
+              page={page}
               pageSize={pageSize}
               onPage={setPage}
               onPageSize={(n) => { setPageSize(n); setPage(1); }}
