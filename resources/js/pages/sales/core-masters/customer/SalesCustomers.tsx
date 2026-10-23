@@ -287,15 +287,24 @@ export default function SalesCustomers() {
        * pager, which this table doesn't render — so footerH came back 0 and the
        * auto-fit over-counted rows by one (QA #31). Measure the real pager. */
       const footerH  = (el.querySelector('.tc-wl-pag, .smc-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
-      const rowH     = (el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 44;
-      const avail = h - toolbarH - filterbarH - theadH - footerH - 8;
+      const rowEl    = el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null;
+      const rowH     = rowEl?.getBoundingClientRect().height || 44;
+      /* Measure the space the rows actually get — the scroll box minus the
+         header — instead of estimating it from the card's height. The estimate
+         also took off a spare 8px and missed the card's border, which was just
+         enough to round a fitting last row down and leave a row-sized gap. */
+      const scrollBox = el.querySelector('.smc-table-wrap .table-responsive') as HTMLElement | null;
+      const avail = scrollBox
+        ? scrollBox.clientHeight - theadH
+        : h - toolbarH - filterbarH - theadH - footerH - 8;
       /* The page size is EXACTLY how many rows fit — not `max(10, fit)`. Flooring
        * at 10 was the "always 10" bug: on a screen that fits 8 it still asked for
        * 10 (so 2 rows sat under the pager and it never looked full), and it
        * masked the real fit on taller screens too. Now it shrinks and grows with
        * the viewport like the Lead Worksheet. Floor of 5 just avoids a silly
        * 1–2-row page on a very short window. */
-      const rowsFit = Math.max(5, Math.floor(avail / rowH));
+      // +2: sub-pixel row heights must not cost a whole row.
+      const rowsFit = Math.max(5, Math.floor((avail + 2) / rowH));
       setPageSize(rowsFit);
     };
     const onResize = () => fit();

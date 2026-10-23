@@ -327,13 +327,22 @@ export default function SalesConsignee() {
       // Worklist pager is `.tc-wl-pag`, not `.row` — measure the real footer so
       // the row auto-fit isn't off by one (QA #31, mirrors the customer table).
       const footerH  = (el.querySelector('.tc-wl-pag, .smcg-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
-      const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 44;
-      const avail = h - toolbarH - filterbarH - theadH - footerH - 8;
+      const rowEl    = el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null;
+      const rowH     = rowEl?.getBoundingClientRect().height || 44;
+      /* Measure the space the rows actually get — the scroll box minus the
+         header — instead of estimating it from the card's height. The estimate
+         also took off a spare 8px and missed the card's border, which was just
+         enough to round a fitting last row down and leave a row-sized gap. */
+      const scrollBox = el.querySelector('.smcg-table-wrap .table-responsive') as HTMLElement | null;
+      const avail = scrollBox
+        ? scrollBox.clientHeight - theadH
+        : h - toolbarH - filterbarH - theadH - footerH - 8;
       /* Exactly how many rows fit — not `max(10, fit)`. The old floor pinned it
          at 10 regardless of viewport (the "always 10" bug); it now tracks the
          screen like the Lead Worksheet. Floor of 5 avoids a 1–2-row page on a
          very short window. Mirrors SalesCustomers. */
-      const rowsFit = Math.max(5, Math.floor(avail / rowH));
+      // +2: sub-pixel row heights must not cost a whole row.
+      const rowsFit = Math.max(5, Math.floor((avail + 2) / rowH));
       setPageSize(rowsFit);
     };
     const onResize = () => fit();
