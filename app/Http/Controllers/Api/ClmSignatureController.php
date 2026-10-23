@@ -1016,6 +1016,27 @@ class ClmSignatureController extends Controller
             'content_override'       => 'nullable|string',
         ]);
         $c = CtcContract::where('client_id', $user->client_id)->findOrFail($data['contract_id']);
+
+        /* Two callers, with opposite lifetimes.
+         *
+         * WITH overrides: the signature-placement editor, re-previewing after
+         * every adjustment. Each preview is a different document, so a long
+         * cache life would only fill the cache table with drafts nobody opens
+         * again. Keep the default.
+         *
+         * WITHOUT overrides: Agreements To Approve, showing a FINISHED
+         * contract to a reviewer. dompdf takes 57 s on a real 697 kB contract
+         * here and about 1.5 min on live, and the 30-minute default meant a
+         * second reviewer, a reviewer returning after lunch, or the same
+         * person reopening the document all paid it again. The key hashes the
+         * content, both updated_at stamps and every config, so an edited
+         * contract gets a different key and this can never show a stale one —
+         * a week only decides how often an UNCHANGED contract is re-rendered.
+         */
+        $isFinishedDocument = ($data['header_config_override'] ?? null) === null
+            && ($data['footer_config_override'] ?? null) === null
+            && !array_key_exists('content_override', $data);
+
         $bytes = $this->renderCtcPdf(
             $c,
             [],
@@ -1023,6 +1044,7 @@ class ClmSignatureController extends Controller
             $data['footer_config_override'] ?? null,
             array_key_exists('content_override', $data) ? (string) $data['content_override'] : null,
             Str::uuid()->toString(),
+            $isFinishedDocument ? 60 * 24 * 7 : 30,
         );
         return response($bytes, 200, [
             'Content-Type'        => 'application/pdf',
@@ -1411,7 +1433,16 @@ class ClmSignatureController extends Controller
     }
 
     /** Render a CTC contract body to a signature-ready PDF (page-shell + org sig). */
-    private function renderCtcPdf(CtcContract $c, array $signers, ?array $headerOverride, ?array $footerOverride, ?string $contentOverride, string $requestUuid)
+    /**
+     * @param int $cacheMinutes How long the rendered bytes stay cached. The key
+     *   below hashes the body, the configs, the logo and both updated_at
+     *   stamps, so a longer life can never serve a stale document — it only
+     *   decides how often an UNCHANGED one is re-rendered. The default suits
+     *   the signature-placement editor, which previews after every edit and
+     *   whose keys are therefore short-lived anyway; the approval view passes
+     *   a much longer one (see ctcPreview).
+     */
+    private function renderCtcPdf(CtcContract $c, array $signers, ?array $headerOverride, ?array $footerOverride, ?string $contentOverride, string $requestUuid, int $cacheMinutes = 30)
     {
         @set_time_limit(180);
 
@@ -1481,7 +1512,7 @@ class ClmSignatureController extends Controller
 
         if (strlen($bytes) <= 5 * 1024 * 1024) {
             try {
-                Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes(30));
+                Cache::put($cacheKey, base64_encode($bytes), now()->addMinutes($cacheMinutes));
             } catch (\Throwable $e) {
                 // caching is an optimisation, never a requirement
             }

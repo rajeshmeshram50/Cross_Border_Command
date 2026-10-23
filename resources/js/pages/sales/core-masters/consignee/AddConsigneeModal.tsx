@@ -8,6 +8,7 @@ import { MasterSelect, MasterDatePicker } from '../../../master/masterFormKit';
 import { VaultUploadPopup, type VaultStatus } from '../customer/CustomerEvidenceVaultModal';
 import BaseTooltip from '../../../../components/ui/Tooltip';
 import '../../../../components/ui/DataTable.css';
+import '../../../p2p/p2p-master-management/supplier-management/add-vendor-modal.css';
 import { downloadFile } from '../../../../utils/downloadFile';
 // Consignee-form tooltips follow the active app theme (light pill in light
 // mode) instead of the shared component's always-dark default — QA #34.
@@ -2300,7 +2301,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           </div>
           <div className="acm-pick-body">
             <label className="acm-label">
-              <IconUser /> CUSTOMER ACCOUNT <span className="acm-req">*</span>
+              <IconUser /> CUSTOMER ACCOUNT <span className="avm-req">*</span>
             </label>
             <div className="acm-picker-wrap" ref={pickerWrapRef}>
             <div className="acm-picker" onClick={() => setSearchOpen(true)}>
@@ -2464,7 +2465,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         <div className="acm-wiz-header">
           <div className="acm-wiz-hicon"><IconTruck size={20} /></div>
           <div className="acm-wiz-htxt">
-            <div className="acm-wiz-htitle">{consignee?.db_id ? 'Edit Consignee' : 'Add Consignee'}</div>
+            <div className="acm-wiz-htitle">{consignee?.db_id ? `Edit Consignee — ${consignee.id}` : 'Add Consignee'}</div>
             <div className="acm-wiz-hsub">
               {consignee?.db_id
                 ? 'Update consignee identity, KYC, and trade documents.'
@@ -3136,20 +3137,15 @@ const StepNode = ({ n, title, sub, status, icon, clickable = false, onClick }: {
       <div className="acm-step-title">{title}</div>
       <div className="acm-step-sub">{sub}</div>
     </div>
-    {status === 'done' && <div className="acm-step-done-mark"><IconCheck size={12} /></div>}
+    {status === 'active' && <span className="acm-step-pill acm-step-pill-active">In Progress</span>}
+    {status === 'done' && <span className="acm-step-pill acm-step-pill-done">Completed</span>}
   </div>
 );
 
 const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; title: string; sub: string; accent?: string }) => {
-  /* Glossy gradient badge (matches the stepper / linked-customer icons)
-     instead of a flat fill. Blue accent → blue gradient; everything else
-     → the brand green gradient. */
-  const iconBg = accent === '#3b82f6'
-    ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)'
-    : 'linear-gradient(135deg, #0d9488, #065f46)';
   return (
-  <div className="acm-sec-header" style={accent ? { borderTopColor: accent } : undefined}>
-    <div className="acm-sec-icon" style={{ background: iconBg }}>{icon}</div>
+  <div className="acm-sec-header" data-accent={accent}>
+    <div className="acm-sec-icon">{icon}</div>
     <div>
       <div className="acm-sec-title">{title}</div>
       <span className="acm-sec-sep">|</span>
@@ -3207,12 +3203,10 @@ const TruncatedCell = ({ text, max = 28, mono = false }: { text: string; max?: n
 };
 
 const Field = ({ label, required, error, fieldKey, children }: { label: string; required?: boolean; error?: string; fieldKey?: string; children: React.ReactNode }) => (
-  <div className="acm-field" data-field={fieldKey}>
-    <label className="acm-field-label">
-      {label.toUpperCase()} {required && <span className="acm-req">*</span>}
-    </label>
+  <div className={`acm-field avm-field avm-master-select${error ? ' has-error' : ''}`} data-field={fieldKey}>
+    <span className="avm-field-label">{label}{required && <span className="avm-req">*</span>}</span>
     {children}
-    {error && <span className="acm-err-text">{error}</span>}
+    {error && <span className="avm-field-error"><i className="ri-error-warning-line" /> {error}</span>}
   </div>
 );
 
@@ -3226,62 +3220,48 @@ const Field = ({ label, required, error, fieldKey, children }: { label: string; 
  * 4-col contact, then the WhatsApp radio row). Light + dark mode
  * inherit from the shared `.shimmer` styles in app.css. */
 function Stage1FormShimmer() {
-  const FieldShim = () => (
-    <div className="acm-field">
-      <Shimmer height={10} width="40%" radius={4} style={{ marginBottom: 7 }} />
-      <Shimmer height={36} radius={9} />
+  const FieldShim = ({ short }: { short?: boolean }) => (
+    <div className="acm-field avm-field">
+      <Shimmer height={10} width={short ? 110 : '40%'} radius={4} />
+      {short ? <Shimmer height={14} width={110} radius={4} style={{ margin: '9px 0' }} /> : <Shimmer height={38} radius={10} />}
     </div>
   );
-  const Section = ({ rows, accent = '#10b981' }: { rows: { cols: number }[]; accent?: string }) => (
-    <div style={{
-      background: 'var(--shim-card-bg, #fff)',
-      border: '1px solid var(--shim-border, #e5e7eb)',
-      borderTop: `2px solid ${accent}`,
-      borderRadius: 12,
-      overflow: 'hidden',
-      marginBottom: 16,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--shim-secondary-bg, #f9fafb)', borderBottom: '1px solid var(--shim-border, #e5e7eb)' }}>
-        <Shimmer width={28} height={28} radius={8} />
-        <Shimmer height={12} width="32%" radius={4} />
+  const Card = ({ rows }: { rows: { cols: number; n?: number; short?: boolean }[] }) => (
+    <div className="acm-sec-card">
+      <div className="acm-sec-header">
+        <Shimmer width={25} height={25} radius={8} />
+        <Shimmer height={11} width="32%" radius={4} />
       </div>
-      <div style={{ padding: 14 }}>
+      <div className="acm-sec-pad">
         {rows.map((r, i) => (
-          <div
-            key={i}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${r.cols}, minmax(0, 1fr))`,
-              gap: 14,
-              marginBottom: i < rows.length - 1 ? 14 : 0,
-            }}
-          >
-            {Array.from({ length: r.cols }).map((_, j) => <FieldShim key={j} />)}
+          <div key={i} className={`acm-grid-${r.cols}${i ? ' acm-mt-12' : ''}`}>
+            {Array.from({ length: r.n ?? r.cols }).map((_, j) => <FieldShim key={j} short={r.short} />)}
           </div>
         ))}
       </div>
     </div>
   );
   return (
-    <div>
-      {/* Same-as-Customer banner placeholder */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 12,
-        padding: 14, borderRadius: 12, marginBottom: 14,
-        background: 'var(--shim-secondary-bg, #f9fafb)',
-        border: '1px solid var(--shim-border, #e5e7eb)',
-      }}>
-        <Shimmer width={22} height={22} radius={6} />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <Shimmer height={12} width="22%" radius={4} />
-          <Shimmer height={10} width="65%" radius={4} />
+    <>
+      {/* Tabs + Same-as-Customer banner */}
+      <div className="acm-id-tabs-row">
+        <div className="acm-id-tabs">
+          <Shimmer height={14} width={220} radius={4} style={{ margin: '0 14px 10px' }} />
+          <Shimmer height={14} width={160} radius={4} style={{ margin: '0 14px 10px' }} />
+        </div>
+        <div className="acm-same-banner acm-same-banner-inline" style={{ pointerEvents: 'none' }}>
+          <Shimmer width={16} height={16} radius={4} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+            <Shimmer height={10} width="22%" radius={4} />
+            <Shimmer height={9} width="60%" radius={4} />
+          </div>
         </div>
       </div>
-      {/* Basic Company Details — 3 rows of 2 cols = 6 fields */}
-      <Section rows={[{ cols: 2 }, { cols: 2 }, { cols: 2 }]} accent="#10b981" />
-      {/* Primary Address & Contact — 1+2 / 4 / 4 / 1 */}
-      <Section rows={[{ cols: 2 }, { cols: 4 }, { cols: 4 }, { cols: 1 }]} accent="#3b82f6" />
-    </div>
+      {/* Basic Company Details · Company Address · Primary Contact — same rows as the form */}
+      <Card rows={[{ cols: 2 }, { cols: 4 }]} />
+      <Card rows={[{ cols: 2 }, { cols: 4 }]} />
+      <Card rows={[{ cols: 4 }, { cols: 1, short: true }]} />
+    </>
   );
 }
 
@@ -3480,6 +3460,7 @@ const Stage1 = ({
 
       {tab === 'identification' && (
         <>
+          <div className="acm-sec-card">
           <SectionHeader icon={<IconHome />} title="Basic Company Details"     sub="Company identity, segment, and risk classification" accent="#10b981" />
           {/* Figma layout: row 1 = Company Name | Legal Name (2-col),
               row 2 = Website | Segment | Classification | Risk (4-col). */}
@@ -3487,7 +3468,7 @@ const Stage1 = ({
             <div className="acm-grid-2">
             <Field label="Company Name" required error={errors.companyName} fieldKey="companyName">
               <input
-                className={`acm-input ${errors.companyName ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errors.companyName ? 'acm-input-error' : ''}`}
                 placeholder="Enter company name"
                 value={form.companyName}
                 maxLength={30}
@@ -3496,12 +3477,12 @@ const Stage1 = ({
               />
             </Field>
             <Field label="Company Legal Name" required error={errors.legalName} fieldKey="legalName">
-              <input className={`acm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
+              <input className={`avm-input ${errors.legalName ? 'acm-input-error' : ''}`} placeholder="Enter legal name" value={form.legalName} onChange={e => set('legalName', e.target.value)} disabled={lock} />
             </Field>
             </div>
             <div className="acm-grid-4 acm-mt-12">
             <Field label="Company Website" error={errors.website} fieldKey="website">
-              <input className={`acm-input ${errors.website ? 'acm-input-error' : ''}`} placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
+              <input className={`avm-input ${errors.website ? 'acm-input-error' : ''}`} placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
             <Field label="Consignee Segment" required error={errors.segment} fieldKey="segment">
               {/* Segment is INHERITED from the parent customer and is NOT
@@ -3599,7 +3580,9 @@ const Stage1 = ({
             </Field>
             </div>
           </div>
+          </div>
 
+          <div className="acm-sec-card">
           <SectionHeader icon={<IconPin />} title="Company Address &amp; Primary Contact" sub="Registered office location and primary contact details" accent="#3b82f6" />
           <div className="acm-sec-pad">
             <div className="acm-grid-2">
@@ -3618,7 +3601,7 @@ const Stage1 = ({
                 />
               </Field>
               <Field label="Address" required error={errors.address} fieldKey="address">
-                <input className={`acm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Enter full address" value={form.address} onChange={e => set('address', e.target.value)} disabled={lock} maxLength={75} />
+                <input className={`avm-input ${errors.address ? 'acm-input-error' : ''}`} placeholder="Enter full address" value={form.address} onChange={e => set('address', e.target.value)} disabled={lock} maxLength={75} />
               </Field>
             </div>
             <div className="acm-grid-4 acm-mt-12">
@@ -3663,11 +3646,11 @@ const Stage1 = ({
                 />
               </Field>
               <Field label="City" required error={errors.city} fieldKey="city">
-                <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="Enter city" value={form.city} onChange={e => set('city', e.target.value)} disabled={lock} />
+                <input className={`avm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="Enter city" value={form.city} onChange={e => set('city', e.target.value)} disabled={lock} />
               </Field>
               <Field label={pinLabel(form.country)} required error={errors.pin} fieldKey="pin">
                 <input
-                  className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`}
+                  className={`avm-input ${errors.pin ? 'acm-input-error' : ''}`}
                   placeholder={pinPlaceholder(form.country)}
                   inputMode={isDomesticCountry(form.country) ? 'numeric' : 'text'}
                   maxLength={pinMaxLen(form.country)}
@@ -3678,15 +3661,17 @@ const Stage1 = ({
               </Field>
             </div>
           </div>
+          </div>
 
           {/* Primary Contact Details — split into its own section (Figma):
               the address section above carries only the registered-office
               fields; the contact person lives here under a green header. */}
+          <div className="acm-sec-card">
           <SectionHeader icon={<IconUser />} title="Primary Contact Details" sub="Key contact person for this consignee" accent="#10b981" />
           <div className="acm-sec-pad">
             <div className="acm-grid-4">
               <Field label="Contact Person Name" required error={errors.contactName} fieldKey="contactName">
-                <input className={`acm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Enter contact name" value={form.contactName} onChange={e => set('contactName', e.target.value)} disabled={lock} />
+                <input className={`avm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Enter contact name" value={form.contactName} onChange={e => set('contactName', e.target.value)} disabled={lock} />
               </Field>
               <Field label="Designation" required error={errors.designation} fieldKey="designation">
                 {/* Free-text input — users were asked to type the
@@ -3694,7 +3679,7 @@ const Stage1 = ({
                     /master/designations dropdown. Master fetch still
                     runs (harmless) but no longer drives the UI here. */}
                 <input
-                  className={`acm-input ${errors.designation ? 'acm-input-error' : ''}`}
+                  className={`avm-input ${errors.designation ? 'acm-input-error' : ''}`}
                   placeholder="Enter designation"
                   value={form.designation}
                   onChange={e => set('designation', e.target.value)}
@@ -3704,32 +3689,33 @@ const Stage1 = ({
               </Field>
               <Field label="Contact No" required error={errors.contactNo} fieldKey="contactNo">
                 {isDomesticCountry(form.country) ? (
-                  <div className={`acm-phone-wrap${errors.contactNo ? ' acm-phone-invalid' : ''}`}>
-                    <span className="acm-phone-cc">+91</span>
-                    <input type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={form.contactNo} onChange={e => set('contactNo', e.target.value.replace(/\D/g, '').slice(0, 10))} disabled={lock} />
+                  <div className="avm-phone-in">
+                    <span className="avm-phone-cc">+91</span>
+                    <input className="avm-input avm-phone-field" type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={form.contactNo} onChange={e => set('contactNo', e.target.value.replace(/\D/g, '').slice(0, 10))} disabled={lock} />
                   </div>
                 ) : (
-                  <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
+                  <input className={`avm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
                 )}
               </Field>
               <Field label="Email ID" required error={errors.email} fieldKey="email">
-                <input className={`acm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="Enter email address" value={form.email} onChange={e => set('email', e.target.value)} disabled={lock} />
+                <input className={`avm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="Enter email address" value={form.email} onChange={e => set('email', e.target.value)} disabled={lock} />
               </Field>
             </div>
             <div className="acm-mt-12">
               <Field label="Whatsapp Enabled?" required error={errors.whatsapp} fieldKey="whatsapp">
-                <div className="acm-radio-row">
-                  <label className="acm-radio">
+                <div className="avm-radio-row">
+                  <label className="avm-radio">
                     <input type="radio" name="acm-wa" checked={form.whatsapp === 'Yes'} disabled={lock} onChange={() => set('whatsapp', 'Yes')} />
-                    <span /> Yes
+                    Yes
                   </label>
-                  <label className="acm-radio">
+                  <label className="avm-radio">
                     <input type="radio" name="acm-wa" checked={form.whatsapp === 'No'} disabled={lock} onChange={() => set('whatsapp', 'No')} />
-                    <span /> No
+                    No
                   </label>
                 </div>
               </Field>
             </div>
+          </div>
           </div>
         </>
       )}
@@ -3799,7 +3785,7 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
         <div className="acm-loc-head-icon"><IconUser /></div>
         <div className="acm-loc-head-text">
           <span className="acm-loc-head-title">Contact Persons</span>
-          <span className="acm-loc-head-sub">| Authorized contacts associated with this consignee</span>
+          <span className="acm-loc-head-sub">Authorized contacts associated with this consignee</span>
         </div>
         <Tooltip label={lockedTip} disabled={!locked}>
           <button
@@ -3886,9 +3872,9 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
 /* ─── Stage 2 — KYC / Due Diligence ─── */
 /* ─── Stage 2 — KYC / Due Diligence (table-driven) ─── */
 const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string; addLabel: string }> = {
-  'company-dd':   { title: 'COMPANY DUE DILIGENCE', sub: '| Licenses, statutory documents, and compliance proofs', nameCol: 'DD Document Name',  placeholder: 'Search DD document name…',    addLabel: 'Add Document / License' },
-  'owner-kyc':    { title: 'OWNER KYC DETAILS',     sub: '| Owner identity proofs, address proofs, and photographs', nameCol: 'KYC Document Name', placeholder: 'Search owner name…',          addLabel: 'Add Owner KYC' },
-  'trade-licence':{ title: 'TRADE LICENCE',         sub: '| Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
+  'company-dd':   { title: 'COMPANY DUE DILIGENCE', sub: 'Licenses, statutory documents, and compliance proofs', nameCol: 'DD Document Name',  placeholder: 'Search DD document name…',    addLabel: 'Add Document / License' },
+  'owner-kyc':    { title: 'OWNER KYC DETAILS',     sub: 'Owner identity proofs, address proofs, and photographs', nameCol: 'KYC Document Name', placeholder: 'Search owner name…',          addLabel: 'Add Owner KYC' },
+  'trade-licence':{ title: 'TRADE LICENCE',         sub: 'Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
 };
 
 /* Per-row actions cell for the segment-rule reference rows. Starts as
@@ -4334,18 +4320,25 @@ const Stage2 = ({
         </ConsigneeHistoryPanel>
       )}
 
+      {/* Same tab rail as the list pages (Customers list), in this form's emerald. */}
       <div className="acm-kyc-subtabs">
+        <div className="dt-tabrail hr-dt" data-accent="emerald">
+        <div className="dt-tabs" role="tablist">
         {(['company-dd', 'owner-kyc', 'trade-licence'] as KycSubTab[]).map(s => (
           <button
             key={s}
             type="button"
-            className={`acm-kyc-subtab ${sub === s ? 'on' : ''}`}
+            role="tab"
+            aria-selected={sub === s}
+            className={`dt-tab ${sub === s ? 'on' : 'off'}`}
             onClick={() => setSub(s)}
           >
             {s === 'company-dd' ? <IconHome size={12} /> : s === 'owner-kyc' ? <IconUser /> : <IconDoc />}
             {s === 'company-dd' ? 'Company Due Diligence' : s === 'owner-kyc' ? 'Owner KYC' : 'Trade Licence'}
           </button>
         ))}
+        </div>
+        </div>
       </div>
 
       <div className="acm-kyc-card">
@@ -4355,6 +4348,9 @@ const Stage2 = ({
             <div className="acm-kyc-head-text">
               <span className="acm-kyc-head-title">{meta.title}</span>
               <span className="acm-kyc-head-sub">{meta.sub}</span>
+            </div>
+            <div className="acm-kyc-count">
+              {totalRows} {(isOwners && !showingOwnerRefs) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}
             </div>
             {/* Stage 2 sub-tab headers no longer carry a "+ Add" pill.
                 Rows now come exclusively from the selected segment's
@@ -4381,17 +4377,14 @@ const Stage2 = ({
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          <div className="acm-kyc-count">
-            {totalRows} {(isOwners && !showingOwnerRefs) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}
-          </div>
         </div>
 
         <div className="acm-kyc-body">
-          <div className="acm-loc-table-wrap">
+          <div className="acm-loc-table-wrap acm-kyc-table-wrap dt-root hr-dt" data-accent="emerald">
             {loading ? (
               /* Segment-rule catalog still loading from the DB — table shimmer
                  (real headers + shimmer rows) so the grid doesn't flash empty. */
-              <table className="acm-loc-table">
+              <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
                     {isOwners ? (
@@ -4416,7 +4409,7 @@ const Stage2 = ({
                  owners have been captured yet. The "+ Add Owner KYC"
                  pill still opens the existing owner-form to capture
                  real entries on top of these references. */
-              <table className="acm-loc-table">
+              <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>DOCUMENT NAME</th>
@@ -4470,7 +4463,7 @@ const Stage2 = ({
                 </tbody>
               </table>
             ) : isOwners ? (
-              <table className="acm-loc-table">
+              <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
                     <th>SR NO</th><th>OWNER NAME</th><th>DESIGNATION</th><th>EMAIL</th><th>PHONE</th>
@@ -4523,7 +4516,7 @@ const Stage2 = ({
                 </tbody>
               </table>
             ) : (
-              <table className="acm-loc-table">
+              <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
                     <th>SR NO</th><th>AUTO CODE</th><th>{meta.nameCol.toUpperCase()}</th>
@@ -5576,8 +5569,8 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
         </div>
         <div className="acm-loc-sub-body">
           <div className="acm-loc-grid-2">
-            <div className="acm-field" data-field="name">
-              <label className="acm-field-label">{titleLabel.toUpperCase()} NAME <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select" data-field="name">
+              <label className="avm-field-label">{titleLabel} Name<span className="avm-req">*</span></label>
               <div className="acg-doc-name-row">
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <MasterSelect
@@ -5601,33 +5594,33 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
                   </button>
                 </Tooltip>
               </div>
-              {errs.name && <span className="acm-err-text">{errs.name}</span>}
+              {errs.name && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.name}</span>}
             </div>
-            <div className="acm-field" data-field="license_number">
-              <label className="acm-field-label">LICENSE / DOCUMENT NUMBER <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select" data-field="license_number">
+              <label className="avm-field-label">License / Document Number<span className="avm-req">*</span></label>
               <input
-                className={`acm-input ${errs.license_number ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.license_number ? 'acm-input-error' : ''}`}
                 placeholder="Enter license number (max 25)"
                 value={d.license_number ?? ''}
                 maxLength={25}
                 onChange={e => set('license_number', e.target.value.slice(0, 25))}
               />
-              {errs.license_number && <span className="acm-err-text">{errs.license_number}</span>}
+              {errs.license_number && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.license_number}</span>}
             </div>
           </div>
-          <div className="acm-field acm-mt-12" data-field="issuing_authority">
-            <label className="acm-field-label">ISSUING AUTHORITY <span className="acm-req">*</span></label>
+          <div className="acm-field avm-field avm-master-select acm-mt-12" data-field="issuing_authority">
+            <label className="avm-field-label">Issuing Authority<span className="avm-req">*</span></label>
             <input
-              className={`acm-input ${errs.issuing_authority ? 'acm-input-error' : ''}`}
+              className={`avm-input ${errs.issuing_authority ? 'acm-input-error' : ''}`}
               placeholder="e.g. Registrar of Companies"
               value={d.issuing_authority ?? ''}
               onChange={e => set('issuing_authority', e.target.value)}
             />
-            {errs.issuing_authority && <span className="acm-err-text">{errs.issuing_authority}</span>}
+            {errs.issuing_authority && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.issuing_authority}</span>}
           </div>
           <div className="acm-loc-grid-2 acm-mt-12">
-            <div className="acm-field" data-field="issue_date">
-              <label className="acm-field-label">ISSUE DATE <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select" data-field="issue_date">
+              <label className="avm-field-label">Issue Date<span className="avm-req">*</span></label>
               {/* maxDate caps at the earlier of today and the chosen
                   expiry — a document can never be issued in the future,
                   and the two date fields can never disagree. */}
@@ -5644,10 +5637,10 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
                   if (d.expiry_date && v && d.expiry_date < v) set('expiry_date', '');
                 }}
               />
-              {errs.issue_date && <span className="acm-err-text">{errs.issue_date}</span>}
+              {errs.issue_date && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.issue_date}</span>}
             </div>
-            <div className="acm-field" data-field="expiry_date">
-              <label className="acm-field-label">EXPIRY DATE <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select" data-field="expiry_date">
+              <label className="avm-field-label">Expiry Date<span className="avm-req">*</span></label>
               {/* minDate forces expiry ≥ the later of (today, issue
                   date) — a document can't already be expired and
                   can't be valid before it was even issued. The
@@ -5663,12 +5656,12 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
                 invalid={!!errs.expiry_date}
                 onChange={(v: string) => set('expiry_date', v)}
               />
-              {errs.expiry_date && <span className="acm-err-text">{errs.expiry_date}</span>}
+              {errs.expiry_date && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.expiry_date}</span>}
             </div>
           </div>
           <div className="acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">ATTACHMENT</label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Attachment</label>
               <FileUploadField
                 value={file}
                 displayName={file ? '' : (removeAttachment ? '' : existingAttachmentName)}
@@ -5779,20 +5772,20 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
           <button type="button" className="acm-loc-sub-close" onClick={onClose} aria-label="Close"><IconClose /></button>
         </div>
         <div className="acm-loc-sub-body">
-          <div className="acm-field" data-field="title">
-            <label className="acm-field-label">DOCUMENT TYPE NAME <span className="acm-req">*</span></label>
+          <div className="acm-field avm-field avm-master-select" data-field="title">
+            <label className="avm-field-label">Document Type Name<span className="avm-req">*</span></label>
             <input
-              className={`acm-input ${errs.title ? 'acm-input-error' : ''}`}
+              className={`avm-input ${errs.title ? 'acm-input-error' : ''}`}
               placeholder="e.g. GST Registration Certificate"
               value={title}
               onChange={e => { setTitle(e.target.value); if (errs.title) setErrs(p => { const n = { ...p }; delete n.title; return n; }); }}
               autoFocus
             />
-            {errs.title && <span className="acm-err-text">{errs.title}</span>}
+            {errs.title && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.title}</span>}
           </div>
           <div className="acm-loc-grid-2 acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">APPLICABLE TO</label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Applicable To</label>
               <MasterSelect
                 value={applicableTo}
                 options={[
@@ -5805,8 +5798,8 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
                 onChange={(v) => setApplicableTo(v)}
               />
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">IS MANDATORY</label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Is Mandatory</label>
               <MasterSelect
                 value={isMandatory}
                 options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
@@ -5815,8 +5808,8 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
               />
             </div>
           </div>
-          <div className="acm-field acm-mt-12" data-field="status">
-            <label className="acm-field-label">STATUS <span className="acm-req">*</span></label>
+          <div className="acm-field avm-field avm-master-select acm-mt-12" data-field="status">
+            <label className="avm-field-label">Status<span className="avm-req">*</span></label>
             <MasterSelect
               value={status}
               options={[{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }]}
@@ -5824,7 +5817,7 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
               invalid={!!errs.status}
               onChange={(v) => setStatus(v)}
             />
-            {errs.status && <span className="acm-err-text">{errs.status}</span>}
+            {errs.status && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.status}</span>}
           </div>
         </div>
         <div className="acm-loc-sub-footer">
@@ -5951,24 +5944,24 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
         </div>
         <div className="acm-loc-sub-body">
           <div className="acm-loc-grid-2">
-            <div className="acm-field">
-              <label className="acm-field-label">OWNER / DIRECTOR NAME <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Owner / Director Name<span className="avm-req">*</span></label>
               <input
-                className={`acm-input ${errs.owner_name ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.owner_name ? 'acm-input-error' : ''}`}
                 placeholder="Full name"
                 value={d.owner_name}
                 onChange={e => set('owner_name', e.target.value)}
               />
-              {errs.owner_name && <span className="acm-err-text">{errs.owner_name}</span>}
+              {errs.owner_name && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.owner_name}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">DESIGNATION</label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Designation</label>
               {/* Free-text input — was a MasterSelect tied to
                   /master/designations; switched to a plain input so
                   users can type any designation (Director, Owner,
                   Authorised Signatory, etc.) without master upkeep. */}
               <input
-                className="acm-input"
+                className="avm-input"
                 placeholder="e.g. Director, Owner, Authorised Signatory"
                 value={d.designation ?? ''}
                 onChange={e => set('designation', e.target.value)}
@@ -5977,32 +5970,32 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
             </div>
           </div>
           <div className="acm-loc-grid-2 acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">OFFICIAL EMAIL</label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Official Email</label>
               <input
-                className={`acm-input ${errs.official_email ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.official_email ? 'acm-input-error' : ''}`}
                 type="email"
                 placeholder="owner@company.com"
                 value={d.official_email ?? ''}
                 onChange={e => set('official_email', e.target.value)}
               />
-              {errs.official_email && <span className="acm-err-text">{errs.official_email}</span>}
+              {errs.official_email && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.official_email}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">PHONE NUMBER</label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Phone Number</label>
               <input
-                className={`acm-input ${errs.phone_number ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.phone_number ? 'acm-input-error' : ''}`}
                 type="tel"
                 placeholder="7-15 digit number"
                 value={d.phone_number ?? ''}
                 onChange={e => set('phone_number', e.target.value)}
               />
-              {errs.phone_number && <span className="acm-err-text">{errs.phone_number}</span>}
+              {errs.phone_number && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.phone_number}</span>}
             </div>
           </div>
           <div className="acm-loc-grid-2 acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">ID PROOF</label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">ID Proof</label>
               <FileUploadField
                 value={idProof}
                 displayName={idProof ? '' : (removeIdProof ? '' : existingIdProofName)}
@@ -6012,8 +6005,8 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
                 accept=".pdf,.jpg,.jpeg,.png"
               />
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">ADDRESS PROOF</label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Address Proof</label>
               <FileUploadField
                 value={addressProof}
                 displayName={addressProof ? '' : (removeAddressProof ? '' : existingAddressProofName)}
@@ -6024,8 +6017,8 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
               />
             </div>
           </div>
-          <div className="acm-field acm-mt-12">
-            <label className="acm-field-label">PHOTOGRAPH</label>
+          <div className="acm-field avm-field avm-master-select acm-mt-12">
+            <label className="avm-field-label">Photograph</label>
             <FileUploadField
               value={photograph}
               displayName={photograph ? '' : (removePhotograph ? '' : existingPhotographName)}
@@ -6254,8 +6247,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         </div>
         <div className="acm-loc-sub-body">
           <div className="acm-loc-grid-2">
-            <div className="acm-field">
-              <label className="acm-field-label">ADDRESS TYPE <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Address Type<span className="avm-req">*</span></label>
               <MasterSelect
                 value={d.type}
                 options={optsWith(addressTypes, d.type)}
@@ -6263,23 +6256,23 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 invalid={!!errs.type}
                 onChange={v => set('type', v)}
               />
-              {errs.type && <span className="acm-err-text">{errs.type}</span>}
+              {errs.type && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.type}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">ADDRESS <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Address<span className="avm-req">*</span></label>
               <input
-                className={`acm-input ${errs.line ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.line ? 'acm-input-error' : ''}`}
                 placeholder="Enter complete address"
                 value={d.line}
                 onChange={e => set('line', e.target.value)}
                 maxLength={75}
               />
-              {errs.line && <span className="acm-err-text">{errs.line}</span>}
+              {errs.line && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.line}</span>}
             </div>
           </div>
           <div className="acm-loc-grid-4 acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">COUNTRY <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Country<span className="avm-req">*</span></label>
               <MasterSelect
                 value={d.country}
                 /* Domestic consignee → India only (locked). International → every
@@ -6309,10 +6302,10 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                   });
                 }}
               />
-              {errs.country && <span className="acm-err-text">{errs.country}</span>}
+              {errs.country && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.country}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">STATE <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">State<span className="avm-req">*</span></label>
               <MasterSelect
                 value={d.state}
                 options={optsWith(filteredStates, d.state)}
@@ -6324,90 +6317,90 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 invalid={!!errs.state}
                 onChange={v => set('state', v)}
               />
-              {errs.state && <span className="acm-err-text">{errs.state}</span>}
+              {errs.state && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.state}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">CITY <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">City<span className="avm-req">*</span></label>
               <input
-                className={`acm-input ${errs.city ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.city ? 'acm-input-error' : ''}`}
                 placeholder="Enter City"
                 value={d.city}
                 onChange={e => set('city', e.target.value)}
               />
-              {errs.city && <span className="acm-err-text">{errs.city}</span>}
+              {errs.city && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.city}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">{pinLabel(d.country).toUpperCase()} <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">{pinLabel(d.country)}<span className="avm-req">*</span></label>
               <input
-                className={`acm-input ${errs.pin ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.pin ? 'acm-input-error' : ''}`}
                 placeholder={pinPlaceholder(d.country)}
                 inputMode={isDomesticCountry(d.country) ? 'numeric' : 'text'}
                 maxLength={pinMaxLen(d.country)}
                 value={d.pin}
                 onChange={e => set('pin', pinSanitize(e.target.value, d.country))}
               />
-              {errs.pin && <span className="acm-err-text">{errs.pin}</span>}
+              {errs.pin && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.pin}</span>}
             </div>
           </div>
           <div className="acm-loc-grid-4 acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">CONTACT PERSON NAME <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Contact Person Name<span className="avm-req">*</span></label>
               <input
-                className={`acm-input ${errs.cpName ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.cpName ? 'acm-input-error' : ''}`}
                 placeholder="Full name"
                 value={d.cpName}
                 onChange={e => set('cpName', e.target.value)}
               />
-              {errs.cpName && <span className="acm-err-text">{errs.cpName}</span>}
+              {errs.cpName && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.cpName}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">DESIGNATION <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Designation<span className="avm-req">*</span></label>
               {/* Free-text input — was a MasterSelect tied to
                   /master/designations; switched to a plain input so
                   the location's contact designation can be anything
                   the user types. */}
               <input
-                className={`acm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
                 placeholder="e.g. Sales Manager"
                 value={d.cpDesignation}
                 onChange={e => set('cpDesignation', e.target.value)}
                 maxLength={60}
               />
-              {errs.cpDesignation && <span className="acm-err-text">{errs.cpDesignation}</span>}
+              {errs.cpDesignation && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.cpDesignation}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">CONTACT NO <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Contact No<span className="avm-req">*</span></label>
               {isDomesticCountry(d.country) ? (
-                <div className={`acm-phone-wrap${errs.cpContact ? ' acm-phone-invalid' : ''}`}>
-                  <span className="acm-phone-cc">+91</span>
-                  <input type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} />
+                <div className="avm-phone-in">
+                  <span className="avm-phone-cc">+91</span>
+                  <input className={`avm-input avm-phone-field${errs.cpContact ? ' acm-input-error' : ''}`} type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} />
                 </div>
               ) : (
                 <input
-                  className={`acm-input ${errs.cpContact ? 'acm-input-error' : ''}`}
+                  className={`avm-input ${errs.cpContact ? 'acm-input-error' : ''}`}
                   type="tel"
                   placeholder="7-15 digit mobile"
                   value={d.cpContact}
                   onChange={e => set('cpContact', e.target.value)}
                 />
               )}
-              {errs.cpContact && <span className="acm-err-text">{errs.cpContact}</span>}
+              {errs.cpContact && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.cpContact}</span>}
             </div>
-            <div className="acm-field">
-              <label className="acm-field-label">EMAIL ID <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Email ID<span className="avm-req">*</span></label>
               <input
-                className={`acm-input ${errs.cpEmail ? 'acm-input-error' : ''}`}
+                className={`avm-input ${errs.cpEmail ? 'acm-input-error' : ''}`}
                 type="email"
                 placeholder="name@company.com"
                 value={d.cpEmail}
                 onChange={e => set('cpEmail', e.target.value)}
               />
-              {errs.cpEmail && <span className="acm-err-text">{errs.cpEmail}</span>}
+              {errs.cpEmail && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.cpEmail}</span>}
             </div>
           </div>
           <div className="acm-mt-12">
-            <div className="acm-field">
-              <label className="acm-field-label">WHATSAPP ENABLED? <span className="acm-req">*</span></label>
+            <div className="acm-field avm-field avm-master-select">
+              <label className="avm-field-label">Whatsapp Enabled?<span className="avm-req">*</span></label>
               <div className="acm-loc-radio-row">
                 <label className={`acm-loc-radio ${d.cpWhatsapp === 'yes' ? 'on' : ''}`}>
                   <input type="radio" name="locWa" value="yes" checked={d.cpWhatsapp === 'yes'} onChange={() => set('cpWhatsapp', 'yes')} />
@@ -6418,7 +6411,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                   <span /> NO
                 </label>
               </div>
-              {errs.cpWhatsapp && <span className="acm-err-text">{errs.cpWhatsapp}</span>}
+              {errs.cpWhatsapp && <span className="avm-field-error"><i className="ri-error-warning-line" /> {errs.cpWhatsapp}</span>}
             </div>
           </div>
         </div>
@@ -6682,8 +6675,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-badge--miss-o { background:rgba(255,255,255,0.06); color:#94a3b8; border-color:rgba(255,255,255,0.12); }
 .acm-overlay {
   position: fixed; inset: 0;
-  background: rgba(15, 42, 35, 0.55);
-  backdrop-filter: blur(6px);
+  background: rgba(40, 44, 52, .42);
+  -webkit-backdrop-filter: blur(7px) saturate(118%);
+          backdrop-filter: blur(7px) saturate(118%);
   display: flex; align-items: center; justify-content: center;
   /* Same base z-index as AddCustomerModal so any modal launched from
    * a sibling popup (e.g. CustomerConsigneesModal at 1090) stacks
@@ -6707,6 +6701,13 @@ const SCOPED_CSS = `
   transition: all .25s;
 }
 .acm-close:hover { background: rgba(255,255,255,.30); transform: rotate(90deg); }
+.acm-wiz-header .acm-close {
+  top: 17px; right: 18px; z-index: 1;
+  width: 32px; height: 32px; border-radius: 9px;
+  background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.25);
+  transition: background .15s, transform .12s;
+}
+.acm-wiz-header .acm-close:hover { background: rgba(255,255,255,.22); }
 
 /* ─── Phase A — Customer picker ─── */
 .acm-pick {
@@ -6776,7 +6777,6 @@ const SCOPED_CSS = `
   font-size: 11px; font-weight: 800; color: #047857;
   letter-spacing: 0.08em; text-transform: uppercase;
 }
-.acm-req { color: #ef4444; }
 
 .acm-picker {
   display: flex; align-items: center; gap: 10px;
@@ -6956,13 +6956,16 @@ const SCOPED_CSS = `
 .acg-linked-bar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
-  padding: 10px 16px;
+  /* Same side insets as the stepper below (22px, +8px scrollbar gutter on the
+     right), so the icon and the Show toggle line up with the step cards. */
+  padding: 10px 30px 10px 22px;
   cursor: pointer;
   /* Figma: clean white bar — no left accent stripe. */
   background: #ffffff;
   user-select: none;
 }
 .acg-linked-bar:hover { background: #f6fefb; }
+.acg-linked-scroll .acg-hs-mirror { padding-left: 22px; padding-right: 30px; }
 .acg-linked-bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .acg-linked-icon {
   width: 30px; height: 30px; border-radius: 8px;
@@ -7054,37 +7057,24 @@ const SCOPED_CSS = `
   flex-shrink: 0;
 }
 .acm-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  height: 42px; padding: 0 18px;
-  border-radius: 11px;
-  font-family: inherit; font-size: 13px; font-weight: 700;
-  cursor: pointer; transition: all .18s;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 40px; padding: 0 18px;
+  border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
   border: 1.5px solid transparent;
 }
-.acm-btn-light {
-  background: #fff; color: #1f2937; border-color: #e5e7eb;
-}
-/* Match the primary button's interactive feel — a soft shadow + a 1px
- * lift so Cancel/Previous read as proper buttons on hover instead of
- * sitting flat next to a glowing Save & Next. */
-.acm-btn-light:hover {
-  background: #f9fafb;
-  border-color: #10b981;
-  color: #047857;
-  box-shadow: 0 4px 14px rgba(5,150,105,.18);
-  transform: translateY(-1px);
-}
+.acm-btn-light { background: #fff; color: #0d9488; border-color: #a7f3d0; }
+.acm-btn-light:hover { background: #f0fdfa; border-color: #0d9488; color: #0f766e; }
 .acm-btn-primary {
-  background: linear-gradient(135deg, #0d9488, #065f46);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(5,150,105,.30);
-  /* Sensible min-width so the primary CTA stays prominent without
-     stretching to fill the footer at high zoom levels. The wizard
-     footer .acm-footer-right row overrides this with flex:1 for the
-     2-up Previous + Save & Next layout. */
+  position: relative; overflow: hidden; border: none; color: #fff;
+  background: linear-gradient(135deg, #14b8a6, #0d9488, #0f766e);
+  box-shadow: 0 6px 18px rgba(13,148,136,.45), 0 1px 0 rgba(255,255,255,.2) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+  /* Keeps the primary CTA prominent; the footer row overrides it with flex:1 for Previous + Save & Next. */
   min-width: 180px;
 }
-.acm-btn-primary:hover { box-shadow: 0 6px 20px rgba(5,150,105,.45); transform: translateY(-1px); }
+.acm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(13,148,136,.55), 0 1px 0 rgba(255,255,255,.2) inset; }
 .acm-btn-disabled,
 .acm-btn:disabled {
   opacity: .60; cursor: not-allowed; transform: none !important; box-shadow: none !important;
@@ -7127,19 +7117,19 @@ const SCOPED_CSS = `
 
 /* ─── Phase B — Wizard ─── */
 .acm-wiz {
-  /* Wider + shorter footprint: cap width at 1440 so the 2-col / 4-col
-     field rows get more horizontal room, and trim the locked height so
-     the modal reads as a wide panel rather than a tall one. */
+  /* Cap width at 1440 so the 2-col / 4-col field rows get room. Height is
+     locked (like the Customer form) so switching stages / tabs never makes
+     the modal grow or shrink; the body scrolls internally. */
   width: 100%; max-width: 1440px;
-  /* Locked height so all three stages occupy the same viewport
-     footprint — switching between Stage 1 (lots of fields), Stage 2
-     (single row table), and Stage 3 no longer makes the modal grow
-     or shrink. min() caps the height so tall monitors don't get an
-     oversized modal; body scrolls internally, header + footer anchored. */
-  /* Tall like the Customer form (.acm-card) — 92vh instead of a fixed 660px. */
   height: min(92vh, calc(100vh - 24px));
-  background: #f0fdf4; border-radius: 16px; overflow: hidden;
-  box-shadow: 0 30px 80px rgba(0,0,0,.40);
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(153,246,228,.25), transparent 45%),
+    radial-gradient(ellipse at 100% 8%, rgba(94,234,212,.20), transparent 50%),
+    linear-gradient(180deg, #f7fdfb 0%, #effcf8 55%, #e6f8f2 100%);
+  border: 1.5px solid rgba(255, 255, 255, .65);
+  border-radius: 22px; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
+  color: #134e4a;
   display: flex; flex-direction: column;
   position: relative;   /* positioning context for the saving lock overlay */
 }
@@ -7170,44 +7160,38 @@ const SCOPED_CSS = `
    text reads sharp against the wash. */
 .acm-wiz-header {
   position: relative;
-  display: flex; align-items: center; gap: 14px;
-  padding: 18px 56px 18px 22px;
-  /* Brighter, more even teal (Figma) — matches the picker header; drops the
-     dark emerald corner that made the old ramp read dark-green → light. */
-  background: linear-gradient(120deg,#0f766e 0%,#0d9488 45%,#14b8a6 78%,#2dd4bf 100%);
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 64px 14px 22px;
+  background: linear-gradient(115deg, #115e59 0%, #0f766e 28%, #0d9488 55%, #14b8a6 80%, #2dd4bf 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
   color: #fff;
   flex-shrink: 0;
   overflow: hidden;
 }
 .acm-wiz-header::before {
-  content: '';
-  position: absolute;
-  inset: 0;
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(153,246,228,.4), transparent 45%);
+}
+.acm-wiz-header::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
   pointer-events: none;
-      /* White dot-grid texture (Figma) over teal-tinted glows. The glows were
-         PURPLE (copied from the violet Customer header) which muddied the teal
-         — recolored to soft white + mint so the header reads as clean teal. */
-      background-image:
-      radial-gradient(rgba(255, 255, 255, .18) 1.1px, transparent 1.6px),
-      radial-gradient(circle at 15% 50%, rgba(255, 255, 255, .14) 0%, transparent 55%),
-      radial-gradient(ellipse at 85% 50%, rgba(94, 234, 212, .20) 0%, transparent 55%);
-    background-size: 18px 18px, auto, auto;
-    background-position: 0 0, 0 0, 0 0;
-    }
-
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
 .acm-wiz-hicon {
   position: relative; z-index: 1;
   width: 38px; height: 38px; border-radius: 11px;
-  background: rgba(255,255,255,0.22);
-  border: 1px solid rgba(255,255,255,0.35);
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.25);
+  color: #fff;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
 }
-.acm-wiz-htitle { position: relative; z-index: 1; font-size: 18px; font-weight: 800; letter-spacing: -0.3px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.10); }
-.acm-wiz-hsub   { position: relative; z-index: 1; font-size: 11.5px; color: rgba(255,255,255,0.92); margin-top: 2px; line-height: 1.4; max-width: 860px; }
+.acm-wiz-htxt { position: relative; z-index: 1; min-width: 0; }
+.acm-wiz-htitle { position: relative; z-index: 1; font-size: 18px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.1; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.acm-wiz-hsub   { position: relative; z-index: 1; font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; line-height: 1.4; max-width: 860px; }
 
 /* Pinned top — stepper + Linked Customer summary. Sits between the
    wizard header (gradient bar) and the scrolling body. Compact,
@@ -7217,23 +7201,23 @@ const SCOPED_CSS = `
    with the form below. */
 .acm-wiz-pinned-top {
   flex-shrink: 0;
-  padding: 8px 20px 4px;
+  /* Same side insets as .acm-wiz-body below: 22px, plus its 8px reserved
+     scrollbar gutter on the right, so the step cards end where the cards do. */
+  padding: 14px 30px 2px 22px;
   display: flex; flex-direction: column; gap: 6px;
-  background: #f0fdf4;
-  border-bottom: 1px solid rgba(16,185,129,0.12);
+  background: transparent;
 }
 .acm-wiz-body {
   flex: 1; min-height: 0; overflow-y: auto;
-  padding: 6px 20px 14px;
+  scrollbar-gutter: stable;
+  padding: 12px 22px 14px;
   display: flex; flex-direction: column; gap: 8px;
-  /* Visible thin scrollbar mirroring [[AddVendorModal]]'s .avm-body so
-     Stage 2/3 tabs (Company DD, Owner KYC, Trade Licence, Evidence
-     Vault) show a styled rail when the table grows past the body. */
-  scrollbar-width: thin; scrollbar-color: #6ee7b7 transparent;
+  background: transparent;
+  scrollbar-width: thin; scrollbar-color: #a7f3d0 transparent;
 }
 .acm-wiz-body::-webkit-scrollbar { width: 8px; }
-.acm-wiz-body::-webkit-scrollbar-thumb { background: #6ee7b7; border-radius: 99px; }
-.acm-wiz-body::-webkit-scrollbar-thumb:hover { background: #10b981; }
+.acm-wiz-body::-webkit-scrollbar-thumb { background: #a7f3d0; border-radius: 99px; }
+.acm-wiz-body::-webkit-scrollbar-thumb:hover { background: #5eead4; }
 
 /* Linked customer summary */
 .acm-linked {
@@ -7284,90 +7268,65 @@ const SCOPED_CSS = `
   font-size: 10.5px; font-weight: 700;
 }
 
-/* Step indicator */
-.acm-steps {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px 0;
-}
+/* Step indicator — Supplier form stepper, teal */
+.acm-steps { display: flex; align-items: stretch; gap: 0; padding: 0; }
 .acm-step {
   position: relative;
-  flex: 1;
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px;
-  background: #fff; border: 1.5px solid #e5e7eb; border-radius: 12px;
-  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 13px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255,255,255,.7), rgba(240,253,250,.55));
+  border: 1.5px solid rgba(153,246,228,.6); border-radius: 15px;
+  box-shadow: 0 1px 3px rgba(13,148,136,.05);
+  transition: border-color .15s, background .15s, box-shadow .15s;
 }
 .acm-step-clickable { cursor: pointer; }
-.acm-step-clickable:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(16,185,129,0.16);
-  border-color: #10b981;
-}
-.acm-step-active {
-  background: #ecfdf5;
-  border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16,185,129,.18);
-}
-.acm-step-done {
-  background: #ecfdf5;
-  border-color: #a7f3d0;
-}
-.acm-step-incomplete {
-  background: #f8fafc;
-  border-color: #e2e8f0;
-}
+.acm-step-clickable:hover { border-color: #5eead4; box-shadow: 0 6px 16px rgba(13,148,136,.14); }
 .acm-step-badge {
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 38px; height: 38px; border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
-  background: #f3f4f6; color: #6b7280;
-  font-size: 13px; font-weight: 800;
-  flex-shrink: 0;
-}
-.acm-step-active .acm-step-badge {
-  background: linear-gradient(135deg, #0d9488, #065f46); color: #fff;
-}
-.acm-step-done .acm-step-badge {
-  /* Figma: green badge with a white ✓ on the completed step. */
-  background: linear-gradient(135deg, #0d9488, #065f46); color: #fff;
-}
-.acm-step-incomplete .acm-step-badge {
-  background: linear-gradient(135deg, #e2e8f0, #cbd5e1); color: #64748b;
+  color: #fff; font-size: 13px; font-weight: 800;
+  background: linear-gradient(135deg, #99f6e4, #5eead4);
+  box-shadow: 0 4px 12px rgba(94,234,212,.4), 0 1px 0 rgba(255,255,255,.4) inset;
+  flex-shrink: 0; transition: all .25s;
 }
 .acm-step-text { min-width: 0; flex: 1; }
-.acm-step-title { font-size: 13px; font-weight: 700; color: #1f2937; }
-.acm-step-active .acm-step-title { color: #064e3b; }
+.acm-step-title { font-size: 13.5px; font-weight: 600; color: #134e4a; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acm-step-sub { font-size: 11px; font-weight: 500; color: #0d9488; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acm-step-pill { flex-shrink: 0; padding: 4px 11px; border-radius: 99px; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; }
+.acm-step-pill-active { background: linear-gradient(135deg, #14b8a6, #0d9488); box-shadow: 0 3px 8px rgba(13,148,136,.4); }
+.acm-step-pill-done { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 3px 8px rgba(22,163,74,.35); }
+.acm-step-active { border-color: #5eead4; background: linear-gradient(135deg, #f0fdfa, #d5f5ee); box-shadow: 0 10px 26px rgba(13,148,136,.2), 0 0 0 1px rgba(94,234,212,.3), 0 1px 0 rgba(255,255,255,.8) inset; }
+.acm-step-active .acm-step-badge { background: linear-gradient(135deg, #14b8a6, #0d9488, #0f766e); box-shadow: 0 6px 16px rgba(13,148,136,.5), 0 1px 0 rgba(255,255,255,.4) inset; }
+.acm-step-done { border-color: #86efac; background: linear-gradient(135deg, #f0fdf4, #d6fadf); box-shadow: 0 8px 22px rgba(34,197,94,.18), 0 1px 0 rgba(255,255,255,.7) inset; }
+.acm-step-done .acm-step-badge { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 12px rgba(22,163,74,.4); }
+.acm-step-done .acm-step-title { color: #15803d; }
+.acm-step-done .acm-step-sub { color: #4d9e6a; }
+.acm-step-incomplete { border-color: #e2e8f0; background: #f8fafc; }
+.acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #cbd5e1, #94a3b8); box-shadow: none; }
 .acm-step-incomplete .acm-step-title { color: #475569; }
-.acm-step-sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
-.acm-step-active .acm-step-sub { color: #047857; }
 .acm-step-incomplete .acm-step-sub { color: #94a3b8; }
-.acm-step-done-mark {
-  position: absolute; right: 10px; bottom: 8px;
-  width: 18px; height: 18px; border-radius: 50%;
-  background: #10b981; color: #fff;
-  display: flex; align-items: center; justify-content: center;
-}
-.acm-steps-arrow {
-  flex-shrink: 0;
-  width: 22px; height: 22px; border-radius: 50%;
-  background: #fff; border: 1.5px solid #a7f3d0;
-  display: flex; align-items: center; justify-content: center;
-  color: #10b981;
-}
+/* Connector between the two steps — a plain line, as on the Supplier form. */
+.acm-steps-arrow { flex: 0 0 26px; align-self: center; height: 2px; border-radius: 2px; background: #a7f3d0; }
+.acm-steps-arrow > * { display: none; }
 
 /* Identification / vault tabs */
 .acm-id-tabs {
-  display: flex; align-items: center; gap: 10px;
-  padding: 4px 0 2px;
+  display: flex; align-items: flex-end; gap: 6px;
+  padding: 0;
+  border-bottom: 1.5px solid #ccf3ea;
 }
 /* Row that places the sub-tabs + Same-as-Customer banner side-by-side.
    Tabs stay their natural width on the left; banner takes the rest of
    the row. Wraps to two stacked rows on narrow viewports. */
 .acm-id-tabs-row {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: flex-end; gap: 10px;
   flex-wrap: wrap;
   padding: 0;
+  border-bottom: 1.5px solid #ccf3ea;
 }
-.acm-id-tabs-row .acm-id-tabs { flex: 0 0 auto; padding: 0; }
+.acm-id-tabs-row .acm-id-tabs { flex: 0 0 auto; padding: 0; border-bottom: none; }
+.acm-id-tabs-row .acm-same-banner-inline { margin-bottom: 6px; }
 /* Inline variant of the Same-as-Customer banner — slimmer padding +
    compact typography so it fits next to the tab pills without
    dominating the row. Title + sub stack tightly to keep the height
@@ -7387,65 +7346,73 @@ const SCOPED_CSS = `
 @media (max-width: 820px) {
   .acm-same-banner-inline { flex: 1 1 100%; }
 }
+/* Underline tabs (Supplier form), teal */
 .acm-id-tab {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 38px; padding: 0 16px;
-  background: #fff; border: 1.5px solid #e5e7eb; border-radius: 999px;
-  font-family: inherit; font-size: 12.5px; font-weight: 650; color: #1f2937;
-  cursor: pointer; transition: all .18s;
+  background: none; border: none; border-bottom: 2.5px solid transparent; border-radius: 0;
+  margin-bottom: -1.5px; padding: 8px 14px;
+  font-family: inherit; font-size: 12px; font-weight: 700; color: #5f8f86;
+  cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s;
 }
-.acm-id-tab.on {
-  /* Unified brand gradient (same one used for the icons). */
-  background: linear-gradient(135deg, #0d9488, #065f46);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 3px 10px rgba(13,148,136,.32);
-}
+.acm-id-tab:hover, .acm-id-tab.on { color: #0f766e; }
+.acm-id-tab.on { border-bottom-color: #0d9488; }
 
 /* Section header */
+/* Section cards — white card with the Supplier form's left gradient strip, teal */
+/* The strip is a background layer, not a clipped ::before: backgrounds follow the
+   border radius on their own, so the card needs no overflow:hidden and the
+   inherited-segment popover can open past the card's edge. */
+.acm-sec-card {
+  position: relative; border: 1px solid #d5f3ea; border-radius: 14px; flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #fff;
+}
 .acm-sec-header {
   display: flex; align-items: center; gap: 10px;
   background: #fff;
-  border: 1px solid #e5e7eb;
-  border-top: 3px solid #10b981;
-  border-radius: 12px 12px 0 0;
-  padding: 9px 14px;
+  border: 1px solid #d5f3ea;
+  border-radius: 14px 14px 0 0;
+  padding: 7px 14px;
   margin-top: 4px;
 }
+.acm-sec-card > .acm-sec-header { border: none; border-bottom: 1px solid #ecfaf6; border-radius: 0; margin-top: 0; background: transparent; }
 .acm-sec-icon {
-  width: 28px; height: 28px; border-radius: 8px;
-  background: #10b981; color: #fff;
+  width: 25px; height: 25px; border-radius: 8px;
+  background: #f0fdfa; color: #0d9488; border: 1px solid #ccfbf1;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.acm-sec-title { font-size: 13px; font-weight: 600; color: #064e3b; display: inline; }
-.acm-sec-sep   { color: #d1d5db; margin: 0 8px; font-weight: 400; }
-.acm-sec-sub   { font-size: 11.5px; color: #6b7280; font-weight: 500; }
+.acm-sec-title { font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: #0f766e; display: inline; }
+.acm-sec-sep   { color: #99f6e4; margin: 0 7px; font-weight: 600; }
+.acm-sec-sub   { font-size: 10.5px; color: #14b8a6; font-weight: 500; }
 
 /* Forms */
-.acm-sec-pad { background: #fff; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px; padding: 14px; }
+.acm-sec-pad { background: #fff; border: 1px solid #d5f3ea; border-top: none; border-radius: 0 0 14px 14px; padding: 8px 14px 10px; }
+.acm-sec-card > .acm-sec-pad { border: none; border-radius: 0; background: transparent; }
 .acm-grid-2  { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .acm-grid-3  { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .acm-grid-4  { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .acm-mt-12   { margin-top: 12px; }
 .acm-field   { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-.acm-field-label {
-  font-size: 10.5px; font-weight: 800; color: #047857;
-  letter-spacing: 0.08em;
+/* Field chrome (label, input, placeholder, +91 addon, radio, error, dropdown)
+   comes from the Supplier form's add-vendor-modal.css via the avm-* classes.
+   Only the teal colours replace its violet ones here. */
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-field-label { color: #134e4a; font-weight: 500; }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-input { border-color: color-mix(in srgb, #2dd4bf 22%, var(--vz-border-color, #e9ebec)); background: color-mix(in srgb, #2dd4bf 5%, var(--vz-card-bg, #fff)); }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:hover:not(:disabled):not([readonly]) { border-color: rgba(13,148,136,.55); box-shadow: 0 2px 6px rgba(13,148,136,.08); }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:focus { background: var(--vz-card-bg, #fff); border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13,148,136,.15), 0 4px 12px rgba(13,148,136,.12); }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-wrap .master-select-toggle {
+  background: color-mix(in srgb, #2dd4bf 5%, var(--vz-card-bg, #fff)) !important;
+  border-color: color-mix(in srgb, #2dd4bf 22%, var(--vz-border-color, #e9ebec)) !important;
 }
-.acm-input {
-  height: 40px; padding: 0 12px;
-  background: #fff;
-  border: 1.5px solid #e5e7eb; border-radius: 9px;
-  font-family: inherit; font-size: 13px; color: #1f2937;
-  outline: none; transition: border-color .15s, box-shadow .15s;
-}
-.acm-input:focus {
-  border-color: #10b981;
-  box-shadow: 0 0 0 3px rgba(16,185,129,.18);
-}
-/* Distinct from the disabled value below -- see the dark rules. */
-.acm-input::placeholder { color: #b6bdc7; }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-wrap.show .master-select-toggle { border-color: #0d9488 !important; box-shadow: 0 0 0 3px rgba(13,148,136,.15) !important; }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-phone-cc { background: color-mix(in srgb, #2dd4bf 14%, var(--vz-card-bg, #fff)); border-color: color-mix(in srgb, #2dd4bf 22%, var(--vz-border-color, #e9ebec)); }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-radio { color: #134e4a; }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-radio input { accent-color: #0d9488; }
+/* Same-as-Customer locks the whole form: the mirrored values must stay readable,
+   not the Supplier sheet's washed-out disabled grey. */
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:disabled, :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input[disabled] { background: #f4f7f6 !important; color: #4b5563 !important; }
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-toggle:disabled,
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-wrap.disabled .master-select-toggle { background: #f4f7f6 !important; color: #4b5563 !important; }
 /* Upload dialog, as launched FROM THIS FORM.
    The dialog is shared with the Customer and Supplier vaults, whose header is
    violet -- correct there, foreign here: this form is the teal ramp, and a
@@ -7483,7 +7450,6 @@ const SCOPED_CSS = `
 .acm-doc-date { font-size: 12px; font-weight: 600; color: #475569; white-space: nowrap; }
 .acm-doc-date--na { color: #9aa4b2; font-weight: 500; }
 .acm-doc-date--past { color: #b91c1c; }
-.acm-input:disabled { background: #f9fafb; color: #4b5563; cursor: not-allowed; }
 
 /* Autofill.
    Chrome paints its own background over any field it filled, which no
@@ -7495,44 +7461,17 @@ const SCOPED_CSS = `
    The transition is the belt to that brace: Chrome applies the background as
    a transition, so a long enough delay means it never arrives at all.
    (QA #37 / #44) */
-.acm-input:-webkit-autofill,
-.acm-input:-webkit-autofill:hover,
-.acm-input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #1f2937;
-  -webkit-box-shadow: 0 0 0 1000px #fff inset;
-  caret-color: #1f2937;
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill,
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill:hover,
+:is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #495057;
+  -webkit-box-shadow: 0 0 0 1000px #f7fdfb inset;
+  caret-color: #495057;
   transition: background-color 9999s ease-out 0s;
   /* Chrome brings its own font along with the background, so a remembered
      value could come out a different size from a typed one. */
   font-family: inherit !important;
   font-size: 13px !important;
-}
-select.acm-input { appearance: none; background-image: linear-gradient(45deg, transparent 50%, #9ca3af 50%), linear-gradient(135deg, #9ca3af 50%, transparent 50%); background-position: calc(100% - 16px) 17px, calc(100% - 11px) 17px; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 28px; }
-.acm-phone-wrap { display: flex; align-items: stretch; height: 40px; border: 1.5px solid #e5e7eb; border-radius: 9px; background: #fff; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
-.acm-phone-wrap:focus-within { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.18); }
-.acm-phone-wrap.acm-phone-invalid { border-color: #ef4444; background: #fef2f2; }
-.acm-phone-cc { display: flex; align-items: center; padding: 0 12px; background: #f0fdf4; color: #065f46; font-size: 13px; font-weight: 700; border-right: 1.5px solid #e5e7eb; flex-shrink: 0; }
-.acm-phone-wrap input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: 0 12px; font-family: inherit; font-size: 13px; color: #1f2937; }
-.acm-phone-wrap input::placeholder { color: #9ca3af; }
-[data-bs-theme="dark"] .acm-phone-wrap { background: #0a1f1a; border-color: rgba(16,185,129,.25); }
-[data-bs-theme="dark"] .acm-phone-cc { background: #0d2a22; color: #6ee7b7; border-right-color: rgba(16,185,129,.25); }
-[data-bs-theme="dark"] .acm-phone-wrap input { color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-phone-wrap input::placeholder { color: #6b8a7e; }
-
-.acm-radio-row { display: flex; align-items: center; gap: 16px; height: 40px; }
-.acm-radio {
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: 13px; font-weight: 600; color: #1f2937; cursor: pointer;
-}
-.acm-radio input { display: none; }
-.acm-radio span {
-  width: 18px; height: 18px; border-radius: 50%;
-  border: 1.5px solid #d1d5db;
-  display: inline-block; position: relative; transition: all .15s;
-}
-.acm-radio input:checked + span {
-  border-color: #10b981;
-  background: radial-gradient(circle, #10b981 40%, transparent 45%);
 }
 
 /* ─── "What you did in previous stages" — compact emerald-themed
@@ -7572,14 +7511,15 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.acg-history-title { font-size: 12px; font-weight: 800; color: #064e3b; white-space: nowrap; }
-.acg-history-meta  { font-size: 9.5px; color: #047857; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Type sizes follow the Supplier form's recap (.avm-prev-*). */
+.acg-history-title { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: #064e3b; white-space: nowrap; }
+.acg-history-meta  { font-size: 10.5px; font-weight: 500; color: #047857; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acg-history-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .acg-history-badge {
   padding: 3px 11px; border-radius: 20px;
   background: linear-gradient(135deg, #0d9488, #065f46);
   color: #fff;
-  font-size: 9.5px; font-weight: 800;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
   white-space: nowrap;
 }
 .acg-history-chevron {
@@ -7629,7 +7569,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acg-hs-inline {
   display: flex; align-items: baseline; gap: 6px;
-  font-size: 12px; min-width: 0; max-width: 100%;
+  font-size: 11.5px; min-width: 0; max-width: 100%;
   overflow: hidden;   /* keep long values (e.g. Registered Address) inside the column — the rest shows on hover via the tooltip */
   cursor: default;
   padding: 1px 2px;
@@ -7639,7 +7579,8 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acg-hs-inline:hover { background: rgba(16,185,129,0.06); }
 .acg-hs-inline-lbl {
   color: #64748b;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 500;
   letter-spacing: .01em;
   white-space: nowrap;
   flex-shrink: 0;
@@ -7951,9 +7892,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 /* Footer */
 .acm-wiz-footer {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 20px;
-  background: #fff;
-  border-top: 1px solid #e5e7eb;
+  padding: 14px 22px;
+  background: #f2fbf8;
+  border-top: 1px solid #dcf3ec;
   flex-shrink: 0;
   /* Allow wrap so narrow viewports stack Cancel above Previous +
      Save & Next instead of overflowing. flex-shrink stays 0 so the
@@ -7961,7 +7902,7 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   flex-wrap: wrap;
   row-gap: 8px;
 }
-.acm-footer-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 8px; }
+.acm-footer-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px; }
 
 /* When a popup-on-popup is open, blur the wizard underneath so the
  * focus is squarely on the sub-modal. Disable pointer events too so
@@ -8163,16 +8104,12 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 .acm-same-banner-sub strong { color: #065f46; font-weight: 600; }
 /* Locked-input visual cue — pairs with the disabled prop wired on
  * every field in the Basic Company + Primary Address sections. */
-/* Duplicate of the rule near .acm-input, kept in step with it: a locked
-   value has to stay readable and distinctly darker than a placeholder. */
-.acm-input:disabled { background: #f9fafb; color: #4b5563; cursor: not-allowed; }
 [data-bs-theme="dark"] .acm-same-banner    { background: linear-gradient(135deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-color: rgba(16,185,129,.35); }
 [data-bs-theme="dark"] .acm-same-banner.is-on { background: linear-gradient(135deg, rgba(16,185,129,.28) 0%, rgba(16,185,129,.16) 100%); }
 [data-bs-theme="dark"] .acm-same-banner-box   { background: #0a1f1a; border-color: #10b981; }
 [data-bs-theme="dark"] .acm-same-banner-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-same-banner-sub   { color: #34d399; }
 [data-bs-theme="dark"] .acm-same-banner-sub strong { color: #d1fae5; }
-[data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #a7c7bc; }
 
 /* ─── Stage 2 — KYC sub-tabs + card ─── */
 .acm-kyc-subtabs {
@@ -8183,26 +8120,15 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
      table card below. Now they sit a single flex-gap apart. */
   margin-bottom: 0;
 }
-.acm-kyc-subtab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 16px; border-radius: 999px;
-  background: #fff; color: #4b5563;
-  border: 1px solid #e5e7eb;
-  font-weight: 600; font-size: 12.5px; letter-spacing: .01em;
-  cursor: pointer; transition: all .15s ease;
-}
-.acm-kyc-subtab:hover { border-color: #10b981; color: #047857; }
-.acm-kyc-subtab.on {
-  background: linear-gradient(135deg, #0d9488, #065f46);
-  border-color: transparent; color: #fff;
-  box-shadow: 0 4px 10px rgba(13,148,136,.32);
-}
+.acm-kyc-subtabs .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+/* KYC card = the Stage 1 section card (left teal strip as a background layer,
+   white header with the count on the right), full-width search, and the table
+   inset as its own bordered box — same layout as the Supplier / Customer forms. */
 .acm-kyc-card {
-  background: #fff;
-  border: 1px solid rgba(16,185,129,.25);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(15,42,35,.04);
+  position: relative;
+  background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #fff;
+  border: 1px solid #d5f3ea;
+  border-radius: 14px;
   /* Don't let the flex column body squash the card below its
      intrinsic height — without this, the table can be clipped at
      the bottom and .acm-wiz-body's overflow-y never trips, so the
@@ -8210,44 +8136,44 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   flex-shrink: 0;
 }
 .acm-kyc-head {
-  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
-  border-bottom: 1px solid rgba(16,185,129,.25);
-  padding: 12px 16px;
+  background: transparent;
+  border-bottom: 1px solid #ecfaf6;
+  padding: 7px 14px;
 }
-.acm-kyc-head-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.acm-kyc-head-row { display: flex; align-items: center; gap: 10px; width: 100%; }
 .acm-kyc-head-icon {
-  width: 28px; height: 28px;
+  width: 25px; height: 25px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  background: #10b981; color: #fff; border-radius: 8px;
+  background: #f0fdfa; color: #0d9488; border: 1px solid #ccfbf1; border-radius: 8px;
 }
-.acm-kyc-head-text { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.acm-kyc-head-title { color: #065f46; font-weight: 700; font-size: 12.5px; letter-spacing: .04em; }
-.acm-kyc-head-sub   { color: #047857; font-weight: 500; font-size: 12px; }
-.acm-kyc-toolbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-  gap: 12px;
-}
-.acm-kyc-search {
-  flex: 1; max-width: 380px;
-  position: relative;
-  display: flex; align-items: center;
-}
-.acm-kyc-search svg { position: absolute; left: 10px; color: #9ca3af; }
-.acm-kyc-search input {
-  width: 100%;
-  padding: 7px 12px 7px 32px;
-  border: 1px solid #d1d5db; border-radius: 8px;
-  font-size: 13px; background: #fff;
-}
-.acm-kyc-search input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.12); }
+.acm-kyc-head-text { display: flex; align-items: center; gap: 0; flex: 1; min-width: 0; }
+.acm-kyc-head-title { color: #0f766e; font-weight: 600; font-size: 11px; letter-spacing: .02em; text-transform: uppercase; }
+.acm-kyc-head-sub   { color: #14b8a6; font-weight: 500; font-size: 10.5px; margin-left: 8px; }
+.acm-kyc-head-sub::before { content: '|'; margin-right: 7px; color: #99f6e4; font-weight: 600; }
 .acm-kyc-count {
-  font-size: 12px; color: #6b7280; font-weight: 600;
-  padding: 4px 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 999px;
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 700; color: #0f766e;
+  padding: 5px 12px; border-radius: 999px;
+  background: #f0fdfa; border: 1px solid #ccfbf1;
 }
-.acm-kyc-body { padding: 0; }
+.acm-kyc-toolbar { display: flex; align-items: center; padding: 10px 14px 0 18px; }
+.acm-kyc-search { flex: 1; max-width: none; position: relative; display: flex; align-items: center; }
+.acm-kyc-search svg { position: absolute; left: 13px; color: #14b8a6; }
+.acm-kyc-search input {
+  width: 100%; height: 38px;
+  padding: 0 12px 0 36px;
+  border: 1px solid color-mix(in srgb, #2dd4bf 22%, var(--vz-border-color, #e9ebec)); border-radius: 10px;
+  background: color-mix(in srgb, #2dd4bf 5%, var(--vz-card-bg, #fff));
+  font-family: inherit; font-size: 13px; color: var(--vz-body-color, #495057);
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+.acm-kyc-search input::placeholder { color: #94a3b8; opacity: .45; font-weight: 400; }
+.acm-kyc-search input:focus { outline: none; background: var(--vz-card-bg, #fff); border-color: #0d9488; box-shadow: 0 0 0 3px rgba(13,148,136,.15); }
+.acm-kyc-body { padding: 10px 14px 12px 18px; }
+.acm-kyc-body .acm-kyc-table-wrap.acm-kyc-table-wrap.dt-root {
+  border: 1px solid #d5f3ea; border-radius: 12px; background: #fff;
+  box-shadow: 0 2px 8px rgba(13,148,136,.06);
+}
 .acm-kyc-code {
   display: inline-block;
   padding: 2px 8px; border-radius: 4px;
@@ -8284,31 +8210,38 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 
 /* ─── Address & Contact table card ─── */
 .acm-loc-card {
+  position: relative;
   background: #fff;
-  border: 1px solid rgba(16,185,129,.25);
-  border-radius: 12px;
+  border: 1px solid #d5f3ea;
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 1px 2px rgba(15,42,35,.04);
   /* Same as .acm-kyc-card: without this the flex-column body squashed the
      card to fit (overflow:hidden then clipped it), so .acm-wiz-body never
      overflowed and the Contact Person tab had no scrollbar. */
   flex-shrink: 0;
 }
-.acm-loc-head {
-  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
-  border-bottom: 1px solid rgba(16,185,129,.25);
-  padding: 12px 16px;
+.acm-loc-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; z-index: 1;
+  width: 4px; opacity: .85; pointer-events: none;
+  background: linear-gradient(180deg, #5eead4, #0d9488, #0f766e);
 }
-.acm-loc-head-row { display: flex; align-items: center; gap: 12px; width: 100%; }
+.acm-loc-head {
+  background: #fff;
+  border-bottom: 1px solid #ecfaf6;
+  padding: 7px 14px;
+}
+.acm-loc-head-row { display: flex; align-items: center; gap: 10px; width: 100%; }
 .acm-loc-head-icon {
-  width: 28px; height: 28px;
+  width: 25px; height: 25px; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #0d9488, #065f46); color: #fff; border-radius: 8px;
+  background: #f0fdfa; color: #0d9488; border: 1px solid #ccfbf1; border-radius: 8px;
 }
 .acm-cp-add-btn { flex-shrink: 0; min-width: 0; }
+.acm-btn.acm-cp-add-btn { height: auto; padding: 7px 12px; border-radius: 9px; font-size: 11px; font-weight: 700; line-height: 1; box-shadow: 0 3px 9px rgba(13,148,136,.42); }
 .acm-loc-head-text { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.acm-loc-head-title { color: #065f46; font-weight: 700; font-size: 12.5px; letter-spacing: .04em; }
-.acm-loc-head-sub   { color: #047857; font-weight: 500; font-size: 12px; }
+.acm-loc-head-title { color: #0f766e; font-weight: 600; font-size: 11px; letter-spacing: .02em; text-transform: uppercase; }
+.acm-loc-head-sub   { color: #14b8a6; font-weight: 500; font-size: 10.5px; }
+.acm-loc-head-sub::before { content: '|'; margin-right: 7px; color: #99f6e4; font-weight: 600; }
 .acm-add-pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 7px 14px; border-radius: 999px;
@@ -8363,7 +8296,9 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   color: #cbd5e1;
   border-color: rgba(148,163,184,0.30);
 }
-.acm-loc-body { padding: 0; }
+/* The table sits inset inside the card as its own bordered box. */
+.acm-loc-body { padding: 10px 14px 12px 18px; }
+.acm-loc-body .acm-loc-table-wrap.acm-loc-table-wrap { border: 1px solid #d5f3ea; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(13,148,136,.06); }
 /* Horizontal + vertical scroll wrapper. The inner table sets a
    min-width of 860px (Stage 1 location table) or 980px (Stage 2 KYC
    tables) so columns stay legible — this wrapper picks up the
@@ -8484,8 +8419,8 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 /* Contact Persons table = the Consignee list table (dt-root hr-dt + dt-table,
    emerald accent). The modal's own .acm-loc-table header/cell rules come later
    in the cascade, so the list values are restated for this table only. */
-.acm-cp-table-wrap.dt-root { display: block; border: 0; border-radius: 0; box-shadow: none; overflow-x: auto; overflow-y: auto; }
-.acm-cp-table-wrap .acm-loc-table.dt-table thead th {
+:is(.acm-cp-table-wrap, .acm-kyc-table-wrap).dt-root { display: block; border: 0; border-radius: 0; box-shadow: none; overflow-x: auto; overflow-y: auto; }
+:is(.acm-cp-table-wrap, .acm-kyc-table-wrap) .acm-loc-table.dt-table thead th {
   font-size: 9.5px; font-weight: 800; letter-spacing: .07em;
   padding: 10px 12px;
 }
@@ -8548,12 +8483,28 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   display: flex; flex-direction: column;
   box-shadow: 0 24px 60px rgba(15,42,35,.30);
 }
+/* Same teal header as the Edit Consignee wizard (.acm-wiz-header). */
 .acm-loc-sub-header {
+  position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 20px;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  background: linear-gradient(115deg, #115e59 0%, #0f766e 28%, #0d9488 55%, #14b8a6 80%, #2dd4bf 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
   color: #fff;
 }
+.acm-loc-sub-header::before {
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(153,246,228,.4), transparent 45%);
+}
+.acm-loc-sub-header::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+.acm-loc-sub-header > * { position: relative; z-index: 1; }
 .acm-loc-sub-title { font-size: 16px; font-weight: 700; letter-spacing: .01em; }
 .acm-loc-sub-close {
   width: 30px; height: 30px; border-radius: 50%;
@@ -8577,21 +8528,29 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   flex: 0 0 auto; min-width: 90px;
   display: inline-flex; align-items: center; gap: 8px;
   padding: 8px 14px; border-radius: 8px;
-  background: #fff; border: 1px solid #d1d5db;
+  background: #fff; border: 1px solid #ccf3ea;
   font-weight: 600; font-size: 12.5px; color: #374151;
   cursor: pointer; transition: all .15s ease;
 }
-.acm-loc-radio input { accent-color: #10b981; margin: 0; }
+/* Drawn radio: the native one has a dark grey ring when unselected. */
+.acm-loc-radio input {
+  -webkit-appearance: none; appearance: none; flex-shrink: 0;
+  width: 16px; height: 16px; margin: 0; border-radius: 50%;
+  border: 1.5px solid #99f6e4; background: #fff;
+  display: inline-grid; place-content: center; cursor: pointer;
+  transition: border-color .15s ease;
+}
+.acm-loc-radio input::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%;
+  background: #0d9488; transform: scale(0); transition: transform .15s ease;
+}
+.acm-loc-radio input:checked { border-color: #0d9488; }
+.acm-loc-radio input:checked::before { transform: scale(1); }
 .acm-loc-radio.on { background: #ecfdf5; border-color: #10b981; color: #065f46; }
-.acm-input-error { border-color: #ef4444 !important; background: #fef2f2 !important; }
-.acm-err-text { display: block; margin-top: 4px; color: #b91c1c; font-size: 11.5px; font-weight: 500; }
+.acm-input-error { border-color: #ef4444 !important; }
 /* Location & Contact sub-modal: the list view's type. Scoped to the card so
    the wizard's own fields are unchanged. */
 .acm-loc-sub-card .acm-loc-sub-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
-.acm-loc-sub-card .acm-field-label { font-size: 9.5px; font-weight: 800; letter-spacing: .07em; }
-.acm-loc-sub-card .acm-input,
-.acm-loc-sub-card .master-select-toggle { font-size: 12.5px; font-weight: 500; }
-.acm-loc-sub-card .acm-input::placeholder { font-weight: 400; }
 .acm-loc-sub-card .acm-loc-radio { font-size: 12.5px; font-weight: 500; }
 .acm-loc-sub-card .acm-loc-sub-footer .acm-btn { font-size: 12.5px; font-weight: 700; }
 
@@ -8689,33 +8648,42 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-step-sub   { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-title { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-step-active .acm-step-sub   { color: #6ee7b7; }
-[data-bs-theme="dark"] .acm-steps-arrow { background: #103129; border-color: rgba(16,185,129,.30); color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-steps-arrow { background: rgba(16,185,129,.30); }
 
-[data-bs-theme="dark"] .acm-id-tab     { background: #103129; border-color: rgba(16,185,129,.20); color: #ecfdf5; }
-/* Selected tab in dark mode — the light-mode emerald gradient blended
-   into the modal's dark-green wash, so the active tab was almost
-   invisible. Brighter mint gradient + emerald glow ring makes the
-   selection unmistakable against the dark backdrop. */
-[data-bs-theme="dark"] .acm-id-tab.on {
-  background: linear-gradient(135deg, #5eead4, #2dd4bf 50%, #14b8a6);
-  color: #022c22;
-  border-color: rgba(110,231,183,.55);
-  box-shadow: 0 0 0 1px rgba(110,231,183,.45), 0 4px 14px rgba(16,185,129,.45);
-}
+[data-bs-theme="dark"] .acm-id-tabs,
+[data-bs-theme="dark"] .acm-id-tabs-row { border-bottom-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-id-tab     { background: none; color: #8fb8ae; }
+[data-bs-theme="dark"] .acm-id-tab:hover { color: #ccfbf1; }
+[data-bs-theme="dark"] .acm-id-tab.on  { background: none; color: #5eead4; border-bottom-color: #2dd4bf; box-shadow: none; }
+[data-bs-theme="dark"] .acm-sec-card   { background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #103129; border-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-sec-card > .acm-sec-header,
+[data-bs-theme="dark"] .acm-sec-card > .acm-sec-pad { background: transparent; }
 [data-bs-theme="dark"] .acm-sec-header { background: #103129; border-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-sec-pad    { background: #103129; border-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-sec-icon   { background: rgba(16,185,129,.15); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .acm-sec-title  { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-sec-sub    { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-sec-sep    { color: rgba(16,185,129,.40); }
-[data-bs-theme="dark"] .acm-field-label { color: #6ee7b7; }
-[data-bs-theme="dark"] .acm-input      { background: #0a1f1a; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-input:-webkit-autofill,
-[data-bs-theme="dark"] .acm-input:-webkit-autofill:hover,
-[data-bs-theme="dark"] .acm-input:-webkit-autofill:focus {
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-field-label { color: #6ee7b7; }
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input { background: #0a1f1a; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:focus { background: #0a1f1a; border-color: #2dd4bf; box-shadow: 0 0 0 3px rgba(45,212,191,.18); }
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-wrap .master-select-toggle { background: #0a1f1a !important; border-color: rgba(16,185,129,.25) !important; color: #ecfdf5 !important; }
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:disabled,
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input[disabled],
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-toggle:disabled,
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-wrap.disabled .master-select-toggle { background: #14241f !important; color: #a7c7bc !important; }
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-phone-cc { background: #0d2a22; color: #6ee7b7; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-radio { color: #ecfdf5; }
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-radio input { accent-color: #2dd4bf; }
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill,
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill:hover,
+[data-bs-theme="dark"] :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill:focus {
   -webkit-text-fill-color: #ecfdf5;
   -webkit-box-shadow: 0 0 0 1000px #0a1f1a inset;
   caret-color: #ecfdf5;
 }
+[data-bs-theme="dark"] .acm-loc-body .acm-loc-table-wrap.acm-loc-table-wrap { background: transparent; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-loc-head-icon { background: rgba(16,185,129,.15); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 
 /* The dropdowns match the text inputs beside them.
    MasterSelect's toggle is background: var(--vz-card-bg) and this modal
@@ -8750,15 +8718,10 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
    empty field from one holding data -- "https://example.com" and "wasdfgh"
    read identically. The value is now plainly readable and the placeholder
    plainly secondary. */
-[data-bs-theme="dark"] .acm-input::placeholder { color: #4f6f65; }
 [data-bs-theme="dark"] .acm-doc-date { color: #cbd5e1; }
 [data-bs-theme="dark"] .acm-doc-date--na { color: #6b8a7e; }
 [data-bs-theme="dark"] .acm-doc-date--past { color: #fca5a5; }
-[data-bs-theme="dark"] .acm-input:disabled { background: #14241f; color: #a7c7bc; }
-[data-bs-theme="dark"] .acm-input:disabled::placeholder { color: #44605a; }
 [data-bs-theme="dark"] .acm-overlay .master-select-toggle:disabled { color: #a7c7bc; }
-[data-bs-theme="dark"] .acm-radio       { color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-radio span  { border-color: rgba(255,255,255,.30); }
 
 /* Segment multi-select chips → emerald, to match the consignee form. The
    shared master chip is violet (inline styles), which read as an out-of-theme
@@ -8841,8 +8804,10 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-loc-sub-footer  { background: #103129; border-top-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-loc-radio       { background: #103129; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-loc-radio.on    { background: rgba(16,185,129,.18); border-color: #10b981; color: #6ee7b7; }
-[data-bs-theme="dark"] .acm-input-error     { background: rgba(239,68,68,.10) !important; border-color: #ef4444 !important; }
-[data-bs-theme="dark"] .acm-err-text        { color: #fca5a5; }
+[data-bs-theme="dark"] .acm-loc-radio input { background: #0a1f1a; border-color: rgba(45,212,191,.45); }
+[data-bs-theme="dark"] .acm-loc-radio input::before { background: #2dd4bf; }
+[data-bs-theme="dark"] .acm-loc-radio input:checked { border-color: #2dd4bf; }
+[data-bs-theme="dark"] .acm-input-error     { border-color: #ef4444 !important; }
 
 /* Polished file upload — dark */
 [data-bs-theme="dark"] .acm-file-drop          { background: #103129; border-color: rgba(16,185,129,.25); }
@@ -8857,16 +8822,15 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 [data-bs-theme="dark"] .acm-file-chip-x:hover  { background: rgba(239,68,68,.15); }
 
 /* KYC sub-tabs + card — dark */
-[data-bs-theme="dark"] .acm-kyc-subtab     { background: #103129; border-color: rgba(16,185,129,.20); color: #94a3b8; }
-[data-bs-theme="dark"] .acm-kyc-subtab:hover { color: #6ee7b7; border-color: #10b981; }
-[data-bs-theme="dark"] .acm-kyc-subtab.on  { background: linear-gradient(135deg,#10b981 0%,#059669 100%); color: #fff; }
-[data-bs-theme="dark"] .acm-kyc-card       { background: #0f2a23; border-color: rgba(16,185,129,.25); }
-[data-bs-theme="dark"] .acm-kyc-head       { background: linear-gradient(180deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-bottom-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-kyc-card       { background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #0f2a23; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-kyc-head       { background: transparent; border-bottom-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-kyc-head-icon  { background: rgba(16,185,129,.15); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
+[data-bs-theme="dark"] .acm-kyc-body .acm-kyc-table-wrap.acm-kyc-table-wrap.dt-root { background: transparent; border-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-kyc-head-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-kyc-head-sub   { color: #34d399; }
-[data-bs-theme="dark"] .acm-kyc-toolbar    { background: #103129; border-bottom-color: rgba(16,185,129,.20); }
+[data-bs-theme="dark"] .acm-kyc-toolbar    { background: transparent; }
 [data-bs-theme="dark"] .acm-kyc-search input { background: #0a1f1a; border-color: rgba(16,185,129,.25); color: #ecfdf5; }
-[data-bs-theme="dark"] .acm-kyc-count      { background: #103129; border-color: rgba(16,185,129,.25); color: #94a3b8; }
+[data-bs-theme="dark"] .acm-kyc-count      { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.30); color: #6ee7b7; }
 [data-bs-theme="dark"] .acm-kyc-code       { background: rgba(16,185,129,.18); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .acm-kyc-exp        { background: rgba(255,255,255,.06); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-kyc-exp.na     { color: #6b7280; }
@@ -8920,7 +8884,8 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   }
   .acm-wiz-header { padding: 12px 18px; }
   .acm-steps { padding: 12px 16px 10px; }
-  .acm-wiz-pinned-top { padding: 12px 18px 8px; }
+  .acm-wiz-pinned-top { padding: 12px 26px 8px 18px; }
+  .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 18px; padding-right: 26px; }
   .acm-wiz-body { padding: 14px 18px 16px; }
   .acm-wiz-footer { padding: 10px 18px; }
   .acm-sec-pad { padding: 14px; }
@@ -8941,7 +8906,8 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-step-sub   { font-size: 9px; }
   /* Wizard body padding shrinks slightly so the form has more
      horizontal room on 1366-wide screens. */
-  .acm-wiz-pinned-top { padding: 10px 14px 8px; gap: 10px; }
+  .acm-wiz-pinned-top { padding: 10px 22px 8px 14px; gap: 10px; }
+  .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 14px; padding-right: 22px; }
   .acm-wiz-body { padding: 12px 14px 14px; }
   .acm-sec-pad { padding: 12px; }
 }
@@ -9001,7 +8967,8 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-wiz-header { padding: 12px 16px; }
   .acm-wiz-htitle { font-size: 17px; }
   .acm-wiz-hsub   { font-size: 11px; }
-  .acm-wiz-pinned-top { padding: 10px 14px 8px; gap: 8px; }
+  .acm-wiz-pinned-top { padding: 10px 22px 8px 14px; gap: 8px; }
+  .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 14px; padding-right: 22px; }
   .acm-wiz-body { padding: 12px 14px 14px; }
   .acm-sec-pad { padding: 12px; }
   /* Sub-modal stays a centered card on portrait tablet — only goes
@@ -9058,17 +9025,16 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   .acm-steps-arrow { display: none; }
   .acm-step { width: 100%; }
   /* Identification / Vault sub-tabs */
-  .acm-id-tabs { flex-wrap: wrap; gap: 6px; padding: 0 12px; }
-  .acm-id-tab { flex: 1 1 45%; min-width: 0; font-size: 12px; padding: 8px 10px; }
+  .acm-id-tabs { overflow-x: auto; scrollbar-width: none; gap: 0; padding: 0; }
+  .acm-id-tab { flex: 0 0 auto; font-size: 11.5px; padding: 8px 10px; }
   /* Body padding */
   .acm-wiz-pinned-top { padding: 10px 12px 8px; gap: 8px; }
+  .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 12px; padding-right: 12px; }
   .acm-wiz-body { padding: 12px; }
   /* ALL grids → single col on phone */
   .acm-grid-4, .acm-grid-3, .acm-grid-2 { grid-template-columns: 1fr; }
   .acm-loc-grid-2, .acm-loc-grid-4 { grid-template-columns: 1fr; }
   .acm-mt-12 { margin-top: 10px; }
-  /* Field input sizing */
-  .acm-input { font-size: 13px; padding: 9px 11px; }
   /* Section header */
   .acm-sec-header { padding: 10px 12px; }
   .acm-sec-title { font-size: 13px; }
@@ -9112,14 +9078,12 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
   }
   .acm-loc-sub-footer .acm-btn { width: 100%; flex: 0 0 auto; }
   /* Stage 2 KYC sub-tabs */
-  .acm-kyc-subtabs { flex-wrap: wrap; gap: 6px; }
-  .acm-kyc-subtab { flex: 1 1 45%; font-size: 12px; padding: 8px 10px; }
+  .acm-kyc-subtabs .dt-tabrail { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   /* KYC toolbar (search + count + add) */
   .acm-kyc-head-row { flex-wrap: wrap; gap: 8px; }
   .acm-kyc-head-text { flex: 1 1 100%; }
-  .acm-kyc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
-  .acm-kyc-search { max-width: 100%; }
-  .acm-kyc-count { align-self: flex-start; }
+  .acm-kyc-toolbar { padding: 10px 12px 0 14px; }
+  .acm-kyc-body { padding: 10px 12px 12px 14px; }
   /* Same-as-Customer banner */
   .acm-same-banner { padding: 10px 12px; gap: 10px; }
   .acm-same-banner-sub { font-size: 11.5px; }

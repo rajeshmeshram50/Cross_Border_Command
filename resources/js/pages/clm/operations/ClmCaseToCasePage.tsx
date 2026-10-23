@@ -438,7 +438,10 @@ export default function ClmCaseToCasePage() {
               const active = tab === key;
               return (
                 <button key={key} disabled={lifecycleBusy !== null} onClick={() => { setTab(key); setPage(1); }}
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 34,
+                  /* 40px — the house tab height, set on Customers, Consignee
+                     and QPI in f4ecf29f and carried across every CLM rail with
+                     it. It was 34, which is what HRMS still uses. */
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40,
                     /* Transparent on the active tab rather than absent, so
                        switching tabs does not move the rail by a pixel. */
                     border: 0, borderRadius: 8,
@@ -697,7 +700,9 @@ const CTC_CSS = `
   /* Only the gap here now: the base padding is already 8 on every side. */
   .ctc-toolbar { gap: 8px !important; }
   .ctc-tabrail { width: 100%; gap: 6px; }
-  .ctc-tabrail > button { flex: 1 1 100% !important; justify-content: flex-start; height: 40px; }
+  /* The height is 40 on every width now, so this rule only has to change the
+     flow — it used to raise the phone tabs from 34 to 40 on its own. */
+  .ctc-tabrail > button { flex: 1 1 100% !important; justify-content: flex-start; }
   /* Push the count badge to the far right so every row lines up. */
   .ctc-tabrail > button > span:last-child { margin-left: auto; }
 }

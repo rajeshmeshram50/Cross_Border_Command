@@ -78,7 +78,8 @@ export const ACM_SHELL_CSS = `
   0%   { left: -35%; }
   100% { left: 100%; }
 }
-.acm-stepper { padding: 14px 18px 2px; display: flex; align-items: stretch; gap: 0; flex-shrink: 0; background: transparent; }
+/* Side insets = .acm-body: 22px, plus its 8px scrollbar gutter on the right. */
+.acm-stepper { padding: 14px 30px 2px 22px; display: flex; align-items: stretch; gap: 0; flex-shrink: 0; background: transparent; }
 .acm-step-connector { flex: 0 0 26px; align-self: center; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .acm-step {
   flex: 1; min-width: 0;
@@ -93,7 +94,7 @@ export const ACM_SHELL_CSS = `
 .acm-step-badge-wrap { position: relative; flex-shrink: 0; width: 38px; height: 38px; }
 .acm-step-text { min-width: 0; flex: 1; }
 .acm-step-pending { cursor: not-allowed; }
-.acm-tabs { margin: 12px 22px 0; padding: 0; display: flex; gap: 6px; flex-shrink: 0; background: transparent; border-bottom: 1.5px solid #e2d4fa; }
+.acm-tabs { margin: 12px 30px 0 22px; padding: 0; display: flex; gap: 6px; flex-shrink: 0; background: transparent; border-bottom: 1.5px solid #e2d4fa; }
 .acm-body { flex: 1; overflow-y: auto; scrollbar-gutter: stable; padding: 12px 22px 14px; background: transparent; scrollbar-width: thin; scrollbar-color: #ddd6fe transparent; display: flex; flex-direction: column; }
 .acm-section { position: relative; background: #fff; border: 1px solid #ece4fb; border-radius: 14px; margin-bottom: 8px; overflow: hidden; }
 .acm-section::before {

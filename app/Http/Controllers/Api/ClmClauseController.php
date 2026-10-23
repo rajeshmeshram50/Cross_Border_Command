@@ -253,12 +253,10 @@ class ClmClauseController extends Controller
         // linked by FK — so we detect usage by looking for that heading in every
         // CTC contract's current content + saved versions. Drives the client-side
         // "can't delete a clause that's used in a CTC" guard.
-        $items = [];
+        $used = $this->usedClauseNames((int) $user->client_id);
         foreach ($rows as $row) {
-            $row->in_use = 0;
-            $items[] = ['row' => $row, 'needle' => $this->clauseNeedle((string) $row->name)];
+            $row->in_use = isset($used[mb_strtolower(trim((string) $row->name))]) ? 1 : 0;
         }
-        $this->scanCtcForClauses((int) $user->client_id, $items);
 
         return response()->json([
             'status' => true,
@@ -266,6 +264,58 @@ class ClmClauseController extends Controller
             'count'  => $rows->count(),
             'total'  => $total ?? $rows->count(),
         ]);
+    }
+
+    /**
+     * The clause names this client has used in a CTC draft, lower-cased, as a
+     * lookup set. Cached for a minute.
+     *
+     * The scan itself cannot be cheap: clauses are COPIED into a draft as
+     * `<h3>Name</h3>`, not linked by a foreign key, so finding out whether one
+     * is in use means reading every CTC contract's content AND every saved
+     * version and searching the text. On this tenant that is 2.0 MB of current
+     * content plus 5.5 MB across 192 saved versions — 7.5 MB read and
+     * lower-cased, 188 ms of it, on EVERY Clause Library load. It was also
+     * done per PAGE of clauses, so paging through the library repeated the
+     * whole thing.
+     *
+     * Scanning for every clause at once and remembering the answer turns that
+     * into one pass per minute, however many pages are viewed. Staleness is
+     * safe for the same reason it is elsewhere in CLM: this only greys out a
+     * delete button, and destroy() re-checks before it deletes.
+     *
+     * @return array<string, true>
+     */
+    private function usedClauseNames(int $clientId): array
+    {
+        $build = function () use ($clientId): array {
+            $names = ClmClauseLibrary::where('client_id', $clientId)
+                ->whereNotNull('name')->pluck('name');
+
+            $items = [];
+            foreach ($names as $name) {
+                $needle = $this->clauseNeedle((string) $name);
+                if ($needle === '') continue;
+                $items[] = ['row' => (object) ['in_use' => 0, 'name' => (string) $name], 'needle' => $needle];
+            }
+            $this->scanCtcForClauses($clientId, $items);
+
+            $used = [];
+            foreach ($items as $it) {
+                if ($it['row']->in_use) $used[mb_strtolower(trim($it['row']->name))] = true;
+            }
+            return $used;
+        };
+
+        try {
+            return \Illuminate\Support\Facades\Cache::remember(
+                'clm:clause:used:v1:' . $clientId,
+                now()->addSeconds(60),
+                $build
+            );
+        } catch (\Throwable $e) {
+            return $build();
+        }
     }
 
     /** Scan every CTC contract's content + saved versions in CHUNKS (bounded

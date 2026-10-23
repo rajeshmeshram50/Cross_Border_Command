@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
+
+/* Named once so each list and its row-fitting agree on the key the fitted
+   page size is remembered under â€” a mismatch would quietly cost the extra
+   fetch the memory exists to avoid. */
+const TD_NAMES_URL   = '/clm/trade-doc-names';
+const TD_LIBRARY_URL = '/clm/trade-doc-library';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf, SimpleNameModal } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -13,7 +19,7 @@ import { saveApiBlob } from '../../../utils/downloadFile';
 import SearchClear from '../../../components/ui/SearchClear';
 import useDismissPopover from '../shared/useDismissPopover';
 
-/* Central CLM → Trade Documents Master (two tabs: List + Library). */
+/* Central CLM â†’ Trade Documents Master (two tabs: List + Library). */
 
 type TdName = { id: number; code: string; name: string; in_use?: number };
 type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; regulatory?: 'highly'|'less'; segment?: string | null; file_path: string | null; content: string | null; is_signed?: boolean };
@@ -43,7 +49,7 @@ export default function ClmTradeDocumentsPage() {
   const [segments, setSegments] = useState<Seg[]>([]);
   const [loading, setLoading]   = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
 
-  /* The two LISTS are no longer fetched here — each pane asks the server for
+  /* The two LISTS are no longer fetched here â€” each pane asks the server for
      its own page. `/clm/trade-doc-library` unpaged was 788 KB for 100 rows,
      because every row carried its drafted `content` plus header/footer config
      (~8 KB each) that the list never renders.
@@ -58,7 +64,7 @@ export default function ClmTradeDocumentsPage() {
       api.get<{ status: boolean; data: TdName[] }>('/clm/trade-doc-names'),
       // Segments drive the Step-1 Segment Regulatory Status selector in the
       // draft modal (same source the Agreement wizard uses).
-      /* lite=1 — see the note on ClmTncPage. Seg here is name +
+      /* lite=1 â€” see the note on ClmTncPage. Seg here is name +
          regulatory_status only; in_use on this page is a trade-doc name's. */
       api.get<{ status: boolean; data: Seg[] }>('/clm/segments', { params: { lite: 1 } }).catch(() => ({ data: { data: [] } })),
     ]).then(([n, s]) => { setNames(n.data.data ?? []); setSegments((s.data as { data?: Seg[] }).data ?? []); })
@@ -111,17 +117,17 @@ export default function ClmTradeDocumentsPage() {
   );
 }
 
-/* ─── Names sub-tab ─── */
+/* â”€â”€â”€ Names sub-tab â”€â”€â”€ */
 
 function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => void }) {
   const toast = useToast();
   const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
-    usePagedList<TdName>('/clm/trade-doc-names', reloadKey);
+    usePagedList<TdName>(TD_NAMES_URL, reloadKey);
   const [editing, setEditing] = useState<TdName | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TdName | null>(null);
 
-  /* `rows` IS the page — sorted, searched and sliced by the endpoint. */
+  /* `rows` IS the page â€” sorted, searched and sliced by the endpoint. */
   const slice      = rows;
   const start      = (page - 1) * rpp;
   const safePage   = page;
@@ -129,7 +135,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
   // the "Rows per page" dropdown we respect their choice.
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
-  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total]);
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], TD_NAMES_URL);
   const isEmpty    = !loading && slice.length === 0;
 
   const onSave = async (name: string, id?: number) => {
@@ -160,7 +166,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
         </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input autoComplete="off" type="text" placeholder="Search trade document types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <input autoComplete="off" type="text" placeholder="Search trade document typesâ€¦" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
@@ -189,11 +195,11 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                       <div className="clm-actions">
                         {(() => {
                           // A trade document type used by Library drafts can't be edited
-                          // OR deleted — the library references it by name, so renaming
+                          // OR deleted â€” the library references it by name, so renaming
                           // would orphan those drafts and deleting would break them.
                           // Only fresh (unused) types are editable/deletable (QA #43).
                           const used = (r.in_use ?? 0) > 0;
-                          const usedMsg = (verb: string) => `Used by ${r.in_use} draft${r.in_use === 1 ? '' : 's'} in the Trade Document Library — can't ${verb}. Remove or reassign ${r.in_use === 1 ? 'it' : 'them'} first.`;
+                          const usedMsg = (verb: string) => `Used by ${r.in_use} draft${r.in_use === 1 ? '' : 's'} in the Trade Document Library â€” can't ${verb}. Remove or reassign ${r.in_use === 1 ? 'it' : 'them'} first.`;
                           return (
                             <>
                               <Tooltip label={used ? usedMsg('edit') : 'Edit'}>
@@ -241,16 +247,16 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
   );
 }
 
-/* ─── Library sub-tab ─── */
+/* â”€â”€â”€ Library sub-tab â”€â”€â”€ */
 
 function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; segments: Seg[]; reloadKey: number; reload: () => void }) {
   const toast = useToast();
   const { rows, total, loading, search, setSearch, page, setPage, rpp, setRpp } =
-    usePagedList<TdLib>('/clm/trade-doc-library', reloadKey, LIST_VIEW);
+    usePagedList<TdLib>(TD_LIBRARY_URL, reloadKey, LIST_VIEW);
   const [editing, setEditing] = useState<TdLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<TdLib | null>(null);
-  // List rows leave out the document body and letterhead, so Edit loads the full row first —
+  // List rows leave out the document body and letterhead, so Edit loads the full row first â€”
   // opening the editor from the list row would show a blank document.
   const [openingId, setOpeningId] = useState<number | null>(null);
   const openEdit = async (r: TdLib) => {
@@ -261,20 +267,20 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
       setEditing(data.data);
       setModalOpen(true);
     } catch {
-      toast.error('Could not open the document', 'Its content could not be loaded — please try again.');
+      toast.error('Could not open the document', 'Its content could not be loaded â€” please try again.');
     } finally {
       setOpeningId(null);
     }
   };
-  // All-segments popover — opened from the +N badge in the SEGMENT column.
+  // All-segments popover â€” opened from the +N badge in the SEGMENT column.
   /* flipUp/maxH keep the popover inside the viewport: a +N badge on one of the
    * last rows has almost no room below it, and the panel used to open downwards
    * regardless and get cut off by the bottom of the screen (QA #4). */
   const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
-  // All-parties popover — opened from the +N badge in the APPLICABLE PARTY column.
+  // All-parties popover â€” opened from the +N badge in the APPLICABLE PARTY column.
   // Same viewport clamp as the segment popover above (QA #4).
   const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean; maxH: number } | null>(null);
-  // Scroll / resize / Escape / tab switch — see useDismissPopover.
+  // Scroll / resize / Escape / tab switch â€” see useDismissPopover.
   useDismissPopover(!!(segOpen || partyOpen), () => { setSegOpen(null); setPartyOpen(null); });
 
   /* Download a library row as PDF (full page-shell: branded header + content
@@ -285,7 +291,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   // Open "Download as Doc / PDF" menu (anchored to the row's download button).
   const [dlMenuFor, setDlMenuFor] = useState<{ row: TdLib; top: number; right: number } | null>(null);
-  // 0→100 progress + label for the "Generating…" popup. The server gives no real
+  // 0â†’100 progress + label for the "Generatingâ€¦" popup. The server gives no real
   // progress, so it eases toward ~90 while rendering and snaps to 100 on done.
   const [dlProgress, setDlProgress] = useState(0);
   const [dlKind, setDlKind] = useState<'pdf' | 'docx'>('pdf');
@@ -304,8 +310,8 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
       window.clearInterval(timer);
       setDlProgress(100);
       /* Check the bytes before writing them to disk.
-         With responseType 'blob' axios returns whatever arrived — a JSON error
-         body or an HTML page included — and if that came back with HTTP 200
+         With responseType 'blob' axios returns whatever arrived â€” a JSON error
+         body or an HTML page included â€” and if that came back with HTTP 200
          nothing throws. The old code then wrapped those bytes in a Blob with a
          Word MIME type and saved them as .docx, so Word opened a web page under
          a document name and reported the file as corrupt. The failure was
@@ -323,8 +329,8 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
     } catch (e: any) {
       window.clearInterval(timer);
       /* saveApiBlob throws a plain Error with no `response`, so its explanation
-         ("The server did not return a Word document…") would otherwise fall
-         through to the generic default and be lost — the one message that says
+         ("The server did not return a Word documentâ€¦") would otherwise fall
+         through to the generic default and be lost â€” the one message that says
          what actually went wrong. */
       let msg = (typeof e?.message === 'string' && !e?.response) ? e.message : 'Please try again.';
       try {
@@ -339,7 +345,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
     }
   };
 
-  /* `rows` IS the page — sorted, searched and sliced by the endpoint. */
+  /* `rows` IS the page â€” sorted, searched and sliced by the endpoint. */
   const slice      = rows;
   const start      = (page - 1) * rpp;
   const safePage   = page;
@@ -347,7 +353,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
   // the "Rows per page" dropdown we respect their choice.
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
-  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total]);
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], TD_LIBRARY_URL);
   const isEmpty    = !loading && slice.length === 0;
 
   const onDelete = async () => {
@@ -383,7 +389,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
         </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input autoComplete="off" type="text" placeholder="Search trade document drafts…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <input autoComplete="off" type="text" placeholder="Search trade document draftsâ€¦" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
@@ -416,12 +422,12 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                     <Tooltip label={r.title}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.title}</div></td></Tooltip>
                     {r.name
                       ? <Tooltip label={r.name}><td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
-                      : <td><span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>—</span></td>}
+                      : <td><span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>â€”</span></td>}
                     <td style={{ textAlign: 'center' }}>
                       {(() => {
                         const isHigh = r.regulatory === 'highly';
                         return (
-                          <Tooltip label={isHigh ? 'Highly Regulated — needs segment-specific compliance' : 'Less Regulated — applies to all standard segments'}>
+                          <Tooltip label={isHigh ? 'Highly Regulated â€” needs segment-specific compliance' : 'Less Regulated â€” applies to all standard segments'}>
                             <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-emerald'}`}>
                               <span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}
                             </span>
@@ -436,7 +442,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                         const extra = segList.length - 1;
                         return (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <Tooltip label={`Segment scope · ${segList[0]}`}><span className="clm-badge clm-badge-teal" style={{ verticalAlign: 'middle' }}>{segList[0].length > 15 ? `${segList[0].slice(0, 15)}…` : segList[0]}</span></Tooltip>
+                            <Tooltip label={`Segment scope Â· ${segList[0]}`}><span className="clm-badge clm-badge-teal" style={{ verticalAlign: 'middle' }}>{segList[0].length > 15 ? `${segList[0].slice(0, 15)}â€¦` : segList[0]}</span></Tooltip>
                             {extra > 0 && (
                               <Tooltip label="View all segments">
                                 <button
@@ -464,11 +470,11 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                     <td>
                       {(() => {
                         const list = partyLabels(r.party);
-                        if (list.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>—</span>;
+                        if (list.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>â€”</span>;
                         const extra = list.length - 1;
                         return (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <Tooltip label={`Applies to · ${list[0]}`}><span className="clm-badge clm-badge-teal">{list[0]}</span></Tooltip>
+                            <Tooltip label={`Applies to Â· ${list[0]}`}><span className="clm-badge clm-badge-teal">{list[0]}</span></Tooltip>
                             {extra > 0 && (
                               <Tooltip label="View all applicable parties">
                                 <button
@@ -492,7 +498,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                       })()}
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      {/* Draft PDF preview — the complete combined document
+                      {/* Draft PDF preview â€” the complete combined document
                           (branded header + content + footer), to see how the
                           finished trade document looks. */}
                       <Tooltip label="Download the complete draft as Doc or PDF">
@@ -501,7 +507,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                           {downloadingId === r.id ? (
                             <>
                               <svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                              Preparing…
+                              Preparingâ€¦
                             </>
                           ) : (
                             <>
@@ -517,7 +523,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                       <div className="clm-actions">
                         {(() => {
                           /* A signed draft is frozen. Edit / Delete must LOOK
-                             unavailable, not just fail on click — they used to
+                             unavailable, not just fail on click â€” they used to
                              render fully enabled and only explain the block in a
                              popup AFTER the click, which reads as a broken button
                              (QA #65). This mirrors the Trade Document Type table
@@ -534,12 +540,12 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                             <>
                               {/* Opening a draft fetches its content before the
                                   editor can show it, and a long document makes
-                                  that a visible wait — with the pencil sitting
+                                  that a visible wait â€” with the pencil sitting
                                   there unchanged the click read as ignored, so
                                   it was pressed again (CS-19). The button says
                                   what it is doing, the way Download Draft
                                   beside it already does. */}
-                              <Tooltip label={signed ? lockMsg('edited') : openingId === r.id ? 'Opening the draft…' : 'Edit'}>
+                              <Tooltip label={signed ? lockMsg('edited') : openingId === r.id ? 'Opening the draftâ€¦' : 'Edit'}>
                                 <button className="clm-act clm-act-edit" aria-label="Edit"
                                   disabled={signed || openingId !== null}
                                   style={signed ? dim : openingId !== null && openingId !== r.id ? { opacity: .45 } : undefined}
@@ -622,7 +628,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
         knownSegments={segments.map(s => ({ name: s.name, regulatory_status: s.regulatory_status }))}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
-        /* A type added from inside the wizard belongs in this page's list too —
+        /* A type added from inside the wizard belongs in this page's list too â€”
            without this it only appeared after a manual refresh. */
         onNamesChanged={reload}
       />
@@ -644,14 +650,14 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
         document.body
       )}
 
-      {/* Popup loader while a PDF/DOCX is generated — a big/table-rich trade doc
-          can take several seconds server-side. Shows a 0→100% ring. */}
+      {/* Popup loader while a PDF/DOCX is generated â€” a big/table-rich trade doc
+          can take several seconds server-side. Shows a 0â†’100% ring. */}
       {downloadingId !== null && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 3000000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.45)', backdropFilter: 'blur(3px)' }}>
           <div style={{ width: 300, background: '#fff', borderRadius: 18, padding: '26px 24px 22px', textAlign: 'center', boxShadow: '0 24px 60px rgba(8,40,60,.32)' }}>
             <TdProgressRing value={dlProgress} />
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#0c2c3a', marginTop: 14 }}>{dlKind === 'pdf' ? 'Generating PDF…' : 'Generating Word file…'}</div>
-            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#5e7888', marginTop: 6, lineHeight: 1.5 }}>Please wait — a large document can take a few seconds.</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#0c2c3a', marginTop: 14 }}>{dlKind === 'pdf' ? 'Generating PDFâ€¦' : 'Generating Word fileâ€¦'}</div>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#5e7888', marginTop: 6, lineHeight: 1.5 }}>Please wait â€” a large document can take a few seconds.</div>
           </div>
         </div>,
         document.body
@@ -660,7 +666,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
   );
 }
 
-/* Circular 0→100% progress ring for the generate/download popup. */
+/* Circular 0â†’100% progress ring for the generate/download popup. */
 function TdProgressRing({ value }: { value: number }) {
   const v = Math.max(0, Math.min(100, value));
   const R = 34, C = 2 * Math.PI * R;

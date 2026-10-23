@@ -309,12 +309,15 @@ export const CLM_CSS = `
 
 .clm-tab {
   display: inline-flex; align-items: center; gap: 7px;
-  /* The shared rail's geometry and type (components/ui/DataTable.css
-     .dt-tab), which HRMS and Customers already use: a 34px tab on 0 14px,
-     12.5px/700 with no inherited tracking, on a 1px border. CLM ran 13px/600
-     on 8px 16px with a 1.5px border, so its rail stood ~3px taller and read
-     differently from every other module's. */
-  padding: 0 14px; height: 34px; border-radius: 8px; box-sizing: border-box;
+  /* The shared rail's geometry and type: a 40px tab on 0 14px, 12.5px/700
+     with no inherited tracking, on a 1px border. CLM ran 13px/600 on 8px 16px
+     with a 1.5px border, so its rail read differently from every other
+     module's; it then sat at 34px, the DataTable .dt-tab default that HRMS
+     still uses, until Customers / Consignee / QPI moved the house tab to 40px
+     (f4ecf29f) and every CLM rail followed. Change it here and the master
+     pages follow; the five inline rails (Case to Case, Agreements We Sent,
+     Agreements To Approve, Buyer and Supplier Profile) carry their own copy. */
+  padding: 0 14px; height: 40px; border-radius: 8px; box-sizing: border-box;
   font-family: var(--font-sans);
   /* Painted like the Case to Case rail, in teal. The geometry was already the
      same; what differed was the paint — a flat white tab with slate text and a
@@ -1875,6 +1878,23 @@ export function paginate<T>(rows: T[], page: number, perPage: number = PER_PAGE)
  * `extraParams` (tab / filter values) are compared by value, so a new object
  * literal each render is safe; changing a value refetches from page 1.
  */
+/* The rows-per-page the viewport fitted last time, per list.
+ *
+ * Without it every one of these lists loads twice. The first fetch goes out
+ * at PER_PAGE because nothing has been measured yet; useAutoFitRows then
+ * measures the card, finds the viewport holds more, and sets a new size —
+ * which is a dependency of the fetch, so a second request follows
+ * immediately. Two round trips for one page view, on a server where each one
+ * carries a fixed cost.
+ *
+ * Remembering the fitted size means the FIRST fetch already asks for the
+ * right number and the measurement agrees, so nothing refetches. It is only
+ * a hint: a different window size just measures again, which is what happens
+ * today, so this is never worse than not having it. Module scope, so it
+ * lasts the session and not a page navigation.
+ */
+const fittedPageSize = new Map<string, number>();
+
 export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, reloadKey: number, extraParams: Record<string, string | number> = {}) {
   const toast = useToast();
   const paramsKey = JSON.stringify(extraParams);
@@ -1886,7 +1906,9 @@ export function usePagedList<T, M = Record<string, unknown>>(endpoint: string, r
   const [search, setSearch]   = useState('');
   const [debounced, setDebounced] = useState('');
   const [page, setPage] = useState(1);
-  const [rpp,  setRpp]  = useState(PER_PAGE);
+  // Start at the size this list fitted last time, so the first request is
+  // usually the only one. See fittedPageSize.
+  const [rpp,  setRpp]  = useState(() => fittedPageSize.get(endpoint) ?? PER_PAGE);
   /* Which query the rows in hand actually answer. Comparing it to the query
      being requested separates the two kinds of load, which need opposite
      feedback:
@@ -1945,6 +1967,10 @@ export function useAutoFitRows(
   autoFitRef: React.MutableRefObject<boolean>,
   setRpp: (fn: (prev: number) => number) => void,
   deps: unknown[],
+  /* The endpoint this list pages, so the fitted size can be remembered for
+     its next load. Omit it and nothing is remembered — the list simply keeps
+     measuring after its first fetch, as it did before. */
+  endpoint?: string,
 ) {
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   useEffect(() => {
@@ -1968,7 +1994,10 @@ export function useAutoFitRows(
       const THEAD = 40, ROW = 46, PAGER = 56;
       const avail = window.innerHeight - top - THEAD - PAGER - bottomReserve;
       const fit = Math.max(PER_PAGE, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) {
+        if (endpoint) fittedPageSize.set(endpoint, fit);
+        setRpp(prev => (prev === fit ? prev : fit));
+      }
 
       const fh = Math.max(0, window.innerHeight - top - bottomReserve);
       setFillH(prev => (prev === fh ? prev : fh));

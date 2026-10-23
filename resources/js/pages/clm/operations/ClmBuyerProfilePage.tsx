@@ -290,13 +290,19 @@ const BP_CSS = `
 .bref-item__desc{font-size:9.5px;font-weight:500;color:#94A3B8;line-height:1.4;}
 @media(max-width:1100px){.bref-box__body{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:700px){.bref-box__body{grid-template-columns:repeat(2,1fr)}}
-.bpa-seg{display:flex;align-items:center;background:rgba(255,255,255,.6);border:1.5px solid rgba(6,182,212,.25);border-radius:11px;padding:4px;gap:3px;box-shadow:0 2px 8px rgba(6,182,212,.12),inset 0 1px 0 rgba(255,255,255,.9);}
-.bpa-tab{position:relative;height:38px;padding:0 18px;border-radius:9px;border:none;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .2s cubic-bezier(.22,1,.36,1);letter-spacing:.01em;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
-.bpa-tab::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.2),transparent);border-radius:inherit;pointer-events:none;}
+/* The CLM tab, same as .clm-tab in clmShared.ts and the rails on Case to Case,
+   Agreements We Sent and Agreements To Approve: 34px on 0 14px, radius 8,
+   12.5px/700, a tinted inactive carrying the accent label, and a four-stop
+   active with a lit top edge, a sunk bottom one and a cast shadow. These tabs
+   ran 11.5px/700 on 0 18px at radius 9 and stood 38px tall on the Buyer page
+   and 40px on the Supplier one - the same control at three sizes inside one
+   module. */
+.bpa-seg{display:flex;align-items:center;background:rgba(255,255,255,.6);border:1px solid rgba(6,182,212,.28);border-radius:11px;padding:4px;gap:8px;}
+.bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
 .bpa-tab svg{flex-shrink:0;}
-.bpa-tab-active{background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%);color:#fff;box-shadow:0 3px 12px rgba(6,182,212,.4),0 1px 4px rgba(8,145,178,.3);}
-.bpa-tab-inactive{background:transparent;color:#0e7490;box-shadow:none;}
-.bpa-tab-inactive:hover{background:rgba(6,182,212,.1);color:#0891b2;}
+.bpa-tab-active{border:0;background:linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%);color:#fff;box-shadow:0 5px 14px rgba(6,182,212,.5),inset 0 1px 0 rgba(255,255,255,.4),inset 0 -2px 6px rgba(14,116,144,.3);text-shadow:0 1px 2px rgba(12,74,110,.4);}
+.bpa-tab-inactive{background:linear-gradient(135deg,#ecfeff,#cffafe);border:1px solid rgba(6,182,212,.25);color:#0e7490;box-shadow:none;}
+.bpa-tab-inactive:hover{background:linear-gradient(135deg,#e4fbff,#b7f3fb);border-color:rgba(6,182,212,.45);}
 .bpa-cards-wrap{overflow:hidden;transition:max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s;}
 .bp-buyer-row:hover{background:rgba(6,182,212,.05)!important;box-shadow:inset 3px 0 0 #0891b2;}
 
@@ -314,8 +320,8 @@ const BP_CSS = `
 [data-bs-theme="dark"] .bref-box__header-title { color: #e2e8f0 !important; }
 [data-bs-theme="dark"] .bref-box__header-sub   { color: #7dd3fc !important; }
 [data-bs-theme="dark"] .bref-box__header-sep   { background: rgba(6,182,212,.35) !important; }
-[data-bs-theme="dark"] .bpa-seg { background: rgba(255,255,255,.05) !important; }
-[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; }
+[data-bs-theme="dark"] .bpa-seg { background: rgba(6,182,212,.10) !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .bpa-tab-inactive { color: #67e8f9 !important; background: linear-gradient(135deg,rgba(6,182,212,.16),rgba(6,182,212,.10)) !important; border-color: rgba(6,182,212,.3) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(224, 249, 253)"],
 [data-bs-theme="dark"] .seg-page .bpx-9,
 [data-bs-theme="dark"] .seg-page [style*="rgb(206, 248, 255)"],
@@ -350,7 +356,6 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page [style*="rgba(255, 255, 255, 0.5)"] ,
 [data-bs-theme="dark"] .seg-page .bpx-12 { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
 [data-bs-theme="dark"] .bref-box__header::after { background: linear-gradient(180deg,rgba(255,255,255,.05),transparent) !important; }
-[data-bs-theme="dark"] .bpa-tab::before { background: linear-gradient(180deg,rgba(255,255,255,.04),transparent) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(238, 240, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(245, 246, 255)"],
 [data-bs-theme="dark"] .seg-page [style*="rgb(238, 242, 255)"],

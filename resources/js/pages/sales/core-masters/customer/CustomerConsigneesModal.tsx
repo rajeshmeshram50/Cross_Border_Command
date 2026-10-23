@@ -50,6 +50,9 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
   const [chooseOpen, setChooseOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [allConsignees, setAllConsignees] = useState<any[]>([]);
+  // True while /consignees is in flight, so the dropdown shows a loader instead
+  // of "No other consignees available" before the list has arrived.
+  const [consListLoading, setConsListLoading] = useState(false);
   const [mapSelectId, setMapSelectId] = useState('');
   const [mapping, setMapping] = useState(false);
   const [page, setPage] = useState(1);
@@ -102,10 +105,12 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
     setChooseOpen(false);
     setMapSelectId('');
     setMapOpen(true);
+    setConsListLoading(true);
     try {
       const r = await api.get('/consignees');
       setAllConsignees(Array.isArray(r.data?.data) ? r.data.data : []);
     } catch { setAllConsignees([]); }
+    finally { setConsListLoading(false); }
   };
 
   const doMap = async () => {
@@ -365,16 +370,18 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
       {mapOpen && createPortal(
         <div onMouseDown={() => !mapping && setMapOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: pk.card, borderRadius: 16, overflow: 'visible', boxShadow: '0 24px 60px rgba(0,0,0,.4)', fontFamily: 'var(--font-sans)' }}>
-            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #059669 100%)', color: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
-              <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: '-.2px' }}>Map Existing Consignee</div>
-              <div style={{ fontSize: 12, fontWeight: 500, opacity: .85, marginTop: 3 }}>Link a consignee to <strong>{customer.company}</strong> ({customer.id}). Its segments update with this customer's.</div>
+            <div className="ccm-map-head">
+              <div className="ccm-map-head-title">Map Existing Consignee</div>
+              <div className="ccm-map-head-sub">Link a consignee to <strong>{customer.company}</strong> ({customer.id}). Its segments update with this customer's.</div>
             </div>
             <div style={{ padding: 18 }}>
-              <label style={{ fontSize: 11.5, fontWeight: 700, color: pk.label, textTransform: 'uppercase', letterSpacing: .4, display: 'block', marginBottom: 6 }}>Consignee</label>
+              <label className="ccm-map-label">Consignee<span className="ccm-map-req">*</span></label>
               <MasterSelect
                 value={mapSelectId}
                 onChange={(v) => setMapSelectId(v)}
-                placeholder="Select a consignee to map…"
+                placeholder={consListLoading ? 'Loading consignees…' : 'Select a consignee to map…'}
+                loading={consListLoading}
+                disabled={consListLoading}
                 options={mappableConsignees.map(c => {
                   const country = (c.country ?? '').trim();
                   return {
@@ -388,35 +395,13 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                   };
                 })}
               />
-              {mappableConsignees.length === 0 && (
+              {!consListLoading && mappableConsignees.length === 0 && (
                 <div style={{ fontSize: 12, color: pk.textMuted, marginTop: 8 }}>No other consignees available to map.</div>
               )}
             </div>
             <div style={{ padding: '0 18px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" onClick={() => setMapOpen(false)} disabled={mapping} style={{ border: `1px solid ${pk.border}`, background: pk.btnBg, color: pk.text, borderRadius: 9, padding: '8px 16px', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button
-                type="button"
-                onClick={doMap}
-                disabled={!mapSelectId || mapping}
-                style={{
-                  border: 'none', borderRadius: 9, padding: '8px 18px',
-                  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700,
-                  ...(mapSelectId
-                    ? {
-                        background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                        color: '#fff',
-                        boxShadow: '0 4px 10px rgba(5,150,105,.30)',
-                        opacity: mapping ? 0.7 : 1,
-                        cursor: mapping ? 'wait' : 'pointer',
-                      }
-                    : {
-                        background: isDark ? 'rgba(255,255,255,.08)' : '#e5e7eb',
-                        color: isDark ? '#64748b' : '#9ca3af',
-                        boxShadow: 'none',
-                        cursor: 'not-allowed',
-                      }),
-                }}
-              >
+              <button type="button" className="ccm-map-btn-cancel" onClick={() => setMapOpen(false)} disabled={mapping}>Cancel</button>
+              <button type="button" className="ccm-map-btn-primary" onClick={doMap} disabled={!mapSelectId || mapping}>
                 {mapping ? 'Mapping…' : 'Map Consignee'}
               </button>
             </div>
@@ -543,36 +528,47 @@ const SCOPED_CSS = `
   background: #f0fdf9;
   border-bottom: 1px solid #e9d5ff;
 }
+/* Search, count and button sized like the Consignee list toolbar: a 40px search
+   that takes the free width, and the Add Consignee button (Add Supplier style). */
 .ccm-search {
-  flex: 1; max-width: 380px; position: relative;
+  flex: 1 1 auto; min-width: 240px; max-width: none; position: relative;
   display: flex; align-items: center;
 }
-.ccm-search svg { position: absolute; left: 12px; color: #9ca3af; }
+.ccm-search svg { position: absolute; left: 13px; color: #10b981; }
 .ccm-search input {
-  width: 100%;
-  padding: 8px 12px 8px 34px;
-  border: 1px solid #d1d5db; border-radius: 10px;
-  font-size: 13px; font-weight: 500; background: #fff;
+  width: 100%; height: 40px;
+  padding: 0 34px 0 36px;
+  border: 1px solid color-mix(in srgb, #10b981 22%, var(--vz-border-color, #e9ebec)); border-radius: 10px;
+  background: color-mix(in srgb, #10b981 4%, var(--vz-card-bg, #fff));
+  font-family: inherit; font-size: 13px; font-weight: 500; color: var(--vz-body-color, #495057);
+  transition: border-color .18s, box-shadow .18s, background .18s;
 }
-.ccm-search input:focus { outline: none; border-color: #059669; box-shadow: 0 0 0 3px rgba(5,150,105,.15); }
+.ccm-search input::placeholder { color: #94a3b8; font-weight: 400; }
+.ccm-search input:focus { outline: none; background: var(--vz-card-bg, #fff); border-color: #059669; box-shadow: 0 0 0 3px rgba(5,150,105,.15); }
 .ccm-toolbar-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .ccm-count {
   font-size: 11.5px; color: #047857; font-weight: 600;
   padding: 6px 12px;
-  background: #f5f3ff; border: 1px solid rgba(52,211,153,.40);
+  background: #ecfdf5; border: 1px solid rgba(52,211,153,.40);
   border-radius: 999px;
 }
 .ccm-add-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 16px;
-  background: linear-gradient(135deg, #059669 0%, #065f46 100%);
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; padding: 0 18px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
   color: #fff;
-  border: none; border-radius: 10px;
-  font-weight: 700; font-size: 11.5px;
-  cursor: pointer; transition: all .15s ease;
-  box-shadow: 0 4px 10px rgba(5,150,105,.30);
+  border: none; border-radius: 12px;
+  font-family: inherit; font-weight: 700; font-size: 11.5px; letter-spacing: .02em; white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  cursor: pointer; transition: background .2s, transform .2s, box-shadow .2s;
+  box-shadow: 0 4px 16px rgba(5, 150, 105, .5), 0 1px 3px rgba(4, 120, 87, .3), 0 1px 0 rgba(255, 255, 255, .2) inset;
 }
-.ccm-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(5,150,105,.40); }
+.ccm-add-btn:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 50%, #065f46 100%);
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 24px rgba(5, 150, 105, .6), 0 2px 6px rgba(4, 120, 87, .35), 0 1px 0 rgba(255, 255, 255, .2) inset;
+}
 
 .ccm-body { flex: 1; overflow: auto; padding: 0; background: #fafafd; }
 .ccm-tablecard {
@@ -837,10 +833,57 @@ const SCOPED_CSS = `
   .ccm-link-chip-name { max-width: 100%; }
   .ccm-close { position: absolute; top: 12px; right: 12px; }
   .ccm-toolbar { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px; }
-  .ccm-search { max-width: 100%; }
+  .ccm-search { max-width: 100%; min-width: 0; }
   .ccm-toolbar-right { width: 100%; justify-content: space-between; }
   .ccm-add-btn { flex: 0 0 auto; padding: 8px 14px; font-size: 12.5px; }
   .ccm-table { font-size: 11.5px; }
   .ccm-table thead th, .ccm-table tbody td { padding: 10px 8px; }
 }
+
+/* Map Existing Consignee popup — the Consignee form header (.acm-wiz-header),
+   form field label, and the Consignee form footer buttons. */
+.ccm-map-head {
+  position: relative; overflow: hidden;
+  padding: 15px 20px; color: #fff;
+  border-top-left-radius: 16px; border-top-right-radius: 16px;
+  background: linear-gradient(115deg, #115e59 0%, #0f766e 28%, #0d9488 55%, #14b8a6 80%, #2dd4bf 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
+}
+.ccm-map-head::before {
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(153,246,228,.4), transparent 45%);
+}
+.ccm-map-head::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+.ccm-map-head > * { position: relative; z-index: 1; }
+.ccm-map-head-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.ccm-map-head-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; line-height: 1.45; }
+.ccm-map-label { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; font-size: 11px; font-weight: 500; color: #134e4a; }
+.ccm-map-req { color: #f06548; font-weight: 600; }
+.ccm-map-btn-cancel,
+.ccm-map-btn-primary {
+  height: 40px; padding: 0 18px; border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
+}
+.ccm-map-btn-cancel { border: 1.5px solid #a7f3d0; background: #fff; color: #0d9488; }
+.ccm-map-btn-cancel:hover:not(:disabled) { background: #f0fdfa; border-color: #0d9488; color: #0f766e; }
+.ccm-map-btn-primary {
+  border: none; color: #fff;
+  background: linear-gradient(135deg, #14b8a6, #0d9488, #0f766e);
+  box-shadow: 0 6px 18px rgba(13,148,136,.45), 0 1px 0 rgba(255,255,255,.2) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.ccm-map-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(13,148,136,.55), 0 1px 0 rgba(255,255,255,.2) inset; }
+.ccm-map-btn-primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.ccm-map-btn-cancel:disabled { opacity: .6; cursor: not-allowed; }
+[data-bs-theme="dark"] .ccm-map-label { color: #6ee7b7; }
+[data-bs-theme="dark"] .ccm-map-btn-cancel { background: transparent; border-color: rgba(16,185,129,.35); color: #6ee7b7; }
+[data-bs-theme="dark"] .ccm-map-btn-cancel:hover:not(:disabled) { background: rgba(16,185,129,.12); }
 `;

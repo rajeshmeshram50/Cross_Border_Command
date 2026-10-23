@@ -4175,8 +4175,11 @@ const SCOPED_CSS = `
   display: flex; flex-direction: column;
 }
 .qpi-root *, .qpi-root *::before, .qpi-root *::after { box-sizing: border-box; }
-.qpi-root .frm-cstrip .frm-cstrip-title { font-size: 17px; font-weight: 700; }
-.qpi-root .dt-tabrail .dt-tab { height: 38px; }
+/* Title + subtitle sized like the Supplier Management header (.sup-fig .cstrip__title / __sub). */
+.qpi-root .frm-cstrip .frm-cstrip-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; }
+.qpi-root .frm-cstrip .frm-cstrip-sub { font-size: 10px; font-weight: 500; opacity: .85; margin-top: 2px; line-height: 1.3; }
+/* Tabs 40px / 12.5px; search, document-type filter and the table-bar button stand the same 40px. */
+.qpi-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
 .qpi-root .frm-cstrip.hr-cstrip > .dt-tabrail { position: relative; z-index: 1; }
 .qpi-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
 .qpi-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
@@ -4184,8 +4187,8 @@ const SCOPED_CSS = `
 .qpi-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
 .qpi-root .qpi-tablebar .dt-search,
 .qpi-root .qpi-tablebar .qpi-doctype-filter,
-.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle { height: 46px; }
-.qpi-root .qpi-tablebar .cstrip__action-btn { height: 46px; padding-top: 0; padding-bottom: 0; }
+.qpi-root .qpi-tablebar .qpi-doctype-filter .master-select-toggle { height: 40px; }
+.qpi-root .qpi-tablebar .cstrip__action-btn { height: 40px; padding-top: 0; padding-bottom: 0; }
 .qpi-root .qpi-card .qpi-tablebar .dt-search.dt-search {
   flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }

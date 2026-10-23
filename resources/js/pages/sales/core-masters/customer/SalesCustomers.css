@@ -1701,7 +1701,9 @@
 [data-bs-theme="dark"] .smc-filterpop-x { background: rgba(255,255,255,.08); color: #c4b5fd; }
 
 /* ── Aligned with the HRMS Employee list (same as Quotations V/S PI) ─────────── */
-.smc-root .frm-cstrip .frm-cstrip-title { font-size: 17px; font-weight: 700; }
+/* Title + subtitle sized like the Supplier Management header (.sup-fig .cstrip__title / __sub). */
+.smc-root .frm-cstrip .frm-cstrip-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; }
+.smc-root .frm-cstrip .frm-cstrip-sub { font-size: 10px; font-weight: 500; opacity: .85; margin-top: 2px; line-height: 1.3; }
 /* Left edges: header icon, banner icon and first tab all start 19px in
    (tab = 1 card border + 14 toolbar pad + 1 rail border + 3 rail pad). */
 .smc-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
@@ -1709,11 +1711,11 @@
 /* Right edges: header button, banner toggle and search all end 15px in. */
 .smc-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
 .smc-root .smc-toolbar { padding: 14px; gap: 14px; }
-/* Tabs 38px; everything else in the toolbar stands as tall as the rail (46px). */
-.smc-root .dt-tabrail .dt-tab { height: 38px; }
-.smc-root .smc-toolbar .dt-filter-btn { height: 46px; flex-shrink: 0; }
+/* Tabs 40px / 12.5px; the search bar and Filter button stand the same 40px. */
+.smc-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+.smc-root .smc-toolbar .dt-filter-btn { height: 40px; flex-shrink: 0; }
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search {
-  height: 46px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
+  height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
 /* One type size and weight for every data cell (HRMS body text: 11.5 / 500).
    Badges with a fixed design keep their own sizing. */
@@ -1734,15 +1736,19 @@
 }
 .smc-root .smc-table-wrap .table tbody td:not(:last-child) .seg-reg-badge.seg-reg-badge { font-size: 10px !important; font-weight: 600 !important; }
 .smc-root .smc-table-wrap .table tbody td:not(:last-child) .smc-seg-more.smc-seg-more { font-size: 10px !important; font-weight: 800 !important; }
-.smc-root .smc-table-wrap .table tbody td:not(:last-child) .smc-cons.smc-cons { font-size: 11px !important; font-weight: 800 !important; }/* Add Customer = the Create Quotation button exactly (Supplier action button at
-   the toolbar's 46px). app.css restyles every button inside an HRMS header strip
-   with !important (42px pill, 13px/600), so the button's own values are restated. */
+.smc-root .smc-table-wrap .table tbody td:not(:last-child) .smc-cons.smc-cons { font-size: 11px !important; font-weight: 800 !important; }/* Add Customer = the Add Supplier button (supplier-management.css .sup-fig .cstrip__action-btn).
+   app.css restyles every button inside an HRMS header strip with !important
+   (42px pill, 13px/600), so the button's own values are restated. */
 .smc-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn {
-  height: 46px !important;
+  /* 40px = the search bar / Filter / tabs below. */
+  height: 40px !important;
+  min-height: 0 !important;
   padding: 0 18px !important;
   border-radius: 12px !important;
   font-size: 11.5px !important;
   font-weight: 700 !important;
+  letter-spacing: .02em !important;
+  gap: 7px;
 }/* The search input stays type="search" (it keeps Chrome's autofill off), so
    hide the browser's own clear ✕ — the dt-search-clear button is the one. */
 .smc-toolbar .dt-search input[type="search"]::-webkit-search-cancel-button,
@@ -1755,18 +1761,19 @@
    back to the theme's Rubik. */
 .smc-seg-pop { font-family: var(--font-sans); }
 .smc-seg-pop .smc-seg-pop-title { font-size: 9.5px; font-weight: 800; letter-spacing: .07em; }
-.smc-seg-pop .smc-seg { font-size: 11.5px; font-weight: 500; }/* Add Customer takes the Add Employee button's colours (app.css
-   .hr-cstrip>.d-flex .btn-label); shape and size stay the Create Quotation one. */
+.smc-seg-pop .smc-seg { font-size: 11.5px; font-weight: 500; }/* Add Customer colours = Add Supplier. */
 .smc-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn {
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
-  background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 50%, #8b5cf6 100%);
-  box-shadow: 0 4px 14px rgba(124, 58, 237, .22), 0 1px 3px rgba(91, 33, 182, .16), inset 0 1px 0 rgba(255, 255, 255, .2);
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, .5), 0 1px 3px rgba(91, 33, 182, .3), 0 1px 0 rgba(255, 255, 255, .2) inset;
+  transition: background .2s, transform .2s, box-shadow .2s;
 }
 .smc-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn:hover {
   color: #fff;
-  background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 55%, #7c3aed 100%);
-  box-shadow: 0 8px 22px rgba(124, 58, 237, .28), 0 2px 5px rgba(91, 33, 182, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 50%, #4c1d95 100%);
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 24px rgba(124, 58, 237, .6), 0 2px 6px rgba(91, 33, 182, .35), 0 1px 0 rgba(255, 255, 255, .2) inset;
 }/* Filter Customers popup (PartyFilterModal, className smc-filter-modal): the
    list view's type, and Apply Filter = the Add Customer button. Prefixed with
    .lfm-backdrop because the shared LFM sheet is injected after this file. */

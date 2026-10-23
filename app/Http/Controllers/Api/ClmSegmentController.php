@@ -14,13 +14,56 @@ use Illuminate\Validation\Rule;
 
 class ClmSegmentController extends Controller
 {
+    /** Every table this controller may interrogate. Listing them lets the
+     *  column map be fetched in one query instead of one per table. */
+    private const USAGE_TABLES = [
+        'clm_segment_rules', 'customers', 'consignees', 'clm_tnc_library',
+        'vendors', 'products', 'master_vendor_directory', 'clm_agreement_library',
+    ];
+
     /** @var array<string, array<string, int>> table => flipped column list, per request */
     private array $columnCache = [];
 
-    // Memoized hasTable/hasColumn — one schema query per table instead of one per check.
+    /**
+     * Does `$table` exist, and (when given) have `$column`? Answered from ONE
+     * query for every table at once.
+     *
+     * These checks are defensive — the tables come from this app's own
+     * migrations, but a half-migrated environment should degrade rather than
+     * fatal. The cost was not: Schema::getColumnListing is a round trip to
+     * information_schema PER TABLE, this controller asks about eight of them,
+     * and the schema has 199 tables. That was eight queries per request spent
+     * asking Postgres whether the app's own tables exist — a third of what a
+     * segment list costs.
+     *
+     * Same approach ClmAuthorityController already takes. Static for the
+     * process, not cached: it must never be stale across a deployment, and
+     * one query is already cheap enough that caching it would add a failure
+     * mode for no gain. A table outside the list, or a failed lookup, falls
+     * back to the per-table read so nothing silently answers "no".
+     */
     private function schemaHas(string $table, ?string $column = null): bool
     {
-        $cols = $this->columnCache[$table] ??= array_flip(Schema::getColumnListing($table));
+        static $map = null;
+
+        if ($map === null) {
+            $map = [];
+            try {
+                $rows = DB::table('information_schema.columns')
+                    ->whereRaw('table_schema = current_schema()')
+                    ->whereIn('table_name', self::USAGE_TABLES)
+                    ->get(['table_name', 'column_name']);
+                foreach ($rows as $r) {
+                    $map[$r->table_name][$r->column_name] = 1;
+                }
+            } catch (\Throwable $e) {
+                $map = [];   // fall through to the per-table read below
+            }
+        }
+
+        $cols = $map[$table]
+            ?? ($this->columnCache[$table] ??= array_flip(Schema::getColumnListing($table)));
+
         return $column === null ? $cols !== [] : isset($cols[$column]);
     }
 
@@ -132,20 +175,40 @@ class ClmSegmentController extends Controller
                 $addById($sid, 'Segment Rules');
             }
         }
-        // Customers / consignees hold their segments as ids (segment_ids JSON).
-        foreach ([['customers', 'Customers'], ['consignees', 'Consignees']] as [$table, $label]) {
-            if ($this->schemaHas($table) && $this->schemaHas($table, 'segment_ids')) {
-                foreach ($ids as $sid) {
-                    if (DB::table($table)->whereNull('deleted_at')->whereJsonContains('segment_ids', (int) $sid)->exists()) {
-                        $addById($sid, $label);
-                    }
+        /* Customers / consignees / T&C hold their segments as ids in a JSON
+           column. This used to ask the question once PER SEGMENT —
+           `whereJsonContains(...)->exists()` in a loop — which is a full scan
+           of the table for every segment the page shows. At 38 segments that
+           was 114 queries across these three tables alone, and it is why
+           /clm/segments cost 129 queries to return 1.9 kB.
+
+           One pass per table instead: read the column, expand it in PHP.
+           Only NUMERIC elements count, which is what `@> '[4]'` did — a
+           stored "4" (string) never matched before and must not start to.
+           A malformed value is skipped rather than throwing, so one bad row
+           cannot take the whole list down. */
+        $referencedIds = function (string $table, bool $softDeletes) use ($ids): array {
+            $q = DB::table($table)->whereNotNull('segment_ids');
+            if ($softDeletes) $q->whereNull('deleted_at');
+            $seen = [];
+            foreach ($q->pluck('segment_ids') as $raw) {
+                $arr = is_array($raw) ? $raw : json_decode((string) $raw, true);
+                if (!is_array($arr)) continue;
+                foreach ($arr as $v) {
+                    if (!is_int($v)) continue;
+                    if (in_array($v, $ids, true)) $seen[$v] = true;
                 }
             }
-        }
-        if ($this->schemaHas('clm_tnc_library', 'segment_ids')) {
-            foreach ($ids as $sid) {
-                if (DB::table('clm_tnc_library')->whereJsonContains('segment_ids', (int) $sid)->exists()) $addById($sid, 'T&C Library');
-            }
+            return array_keys($seen);
+        };
+
+        foreach ([
+            ['customers', 'Customers', true],
+            ['consignees', 'Consignees', true],
+            ['clm_tnc_library', 'T&C Library', false],
+        ] as [$table, $label, $softDeletes]) {
+            if (!$this->schemaHas($table) || !$this->schemaHas($table, 'segment_ids')) continue;
+            foreach ($referencedIds($table, $softDeletes) as $sid) $addById($sid, $label);
         }
         foreach ([['vendors', 'Vendors'], ['products', 'Products']] as [$table, $label]) {
             if ($this->schemaHas($table) && $this->schemaHas($table, 'segment_id')) {

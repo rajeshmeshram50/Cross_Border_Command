@@ -1370,16 +1370,6 @@
    a band of its own -- the tint, the top border, the padding and the margin --
    and becomes the row's stretching left half. The footer's own border and
    background are the ones on screen. */
-.smcg-mapped-foot .wl-pager {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border-top: 0;
-  border-radius: 0;
-  background: none;
-}
-[data-bs-theme="dark"] .smcg-mapped-foot .wl-pager { background: none; }
 
 
 /* ── Unpinned: no room to fit the card to the viewport ──────────────────────
@@ -1511,17 +1501,20 @@
 [data-bs-theme="dark"] .smcg-filterpop-x { background: rgba(255,255,255,.08); color: #6ee7b7; }
 
 /* ── Aligned with the HRMS Employee list (same as the Customers list) ────────── */
-.smcg-root .frm-cstrip .frm-cstrip-title { font-size: 17px; font-weight: 700; }
+/* Title + subtitle sized like the Supplier Management header (.sup-fig .cstrip__title / __sub). */
+.smcg-root .frm-cstrip .frm-cstrip-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; }
+.smcg-root .frm-cstrip .frm-cstrip-sub { font-size: 10px; font-weight: 500; opacity: .85; margin-top: 2px; line-height: 1.3; }
 /* Left edges: header icon, banner icon and the toolbar's first control share
    one inset; right edges all end 15px in (1 border + 14 padding). */
 .smcg-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
 .smcg-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
 .smcg-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
 .smcg-root .smcg-toolbar { padding: 14px; gap: 14px; }
-/* Search and Filter stand 46px tall, as on the Customers toolbar. */
-.smcg-root .smcg-toolbar .dt-filter-btn { height: 46px; flex-shrink: 0; }
+/* Tabs 40px / 12.5px; the search bar and Filter button stand the same 40px (as on Customers). */
+.smcg-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+.smcg-root .smcg-toolbar .dt-filter-btn { height: 40px; flex-shrink: 0; }
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search {
-  height: 46px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
+  height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
 /* type="search" is kept (it keeps Chrome's autofill off); hide the browser's
    own clear so dt-search-clear is the only one. */
@@ -1532,24 +1525,30 @@
   display: none;
 }
 
-/* Add Consignee = the Create Quotation button shape (46px, 12px radius,
-   11.5/700) in the page's emerald. app.css restyles every button inside an
-   HRMS header strip with !important, so the button's own values are restated. */
+/* Add Consignee = the Add Supplier button (supplier-management.css .sup-fig .cstrip__action-btn)
+   in the page's emerald. app.css restyles every button inside an HRMS header
+   strip with !important, so the button's own values are restated. */
 .smcg-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn {
-  height: 46px !important;
+  /* 40px = the search bar / Filter / tabs below. */
+  height: 40px !important;
+  min-height: 0 !important;
   padding: 0 18px !important;
   border-radius: 12px !important;
   font-size: 11.5px !important;
   font-weight: 700 !important;
+  letter-spacing: .02em !important;
+  gap: 7px;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
-  background: linear-gradient(135deg, #065f46 0%, #059669 50%, #10b981 100%);
-  box-shadow: 0 4px 14px rgba(5, 150, 105, .24), 0 1px 3px rgba(4, 120, 87, .16), inset 0 1px 0 rgba(255, 255, 255, .2);
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  box-shadow: 0 4px 16px rgba(5, 150, 105, .5), 0 1px 3px rgba(4, 120, 87, .3), 0 1px 0 rgba(255, 255, 255, .2) inset;
+  transition: background .2s, transform .2s, box-shadow .2s;
 }
 .smcg-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn:hover {
   color: #fff;
-  background: linear-gradient(135deg, #064e3b 0%, #065f46 55%, #059669 100%);
-  box-shadow: 0 8px 22px rgba(5, 150, 105, .30), 0 2px 5px rgba(4, 120, 87, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
+  background: linear-gradient(135deg, #059669 0%, #047857 50%, #065f46 100%);
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 24px rgba(5, 150, 105, .6), 0 2px 6px rgba(4, 120, 87, .35), 0 1px 0 rgba(255, 255, 255, .2) inset;
 }
 
 /* Supplier step-card banner, recoloured from violet to the page's emerald. */
@@ -1667,3 +1666,200 @@
 }
 [data-bs-theme="dark"] .smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-title { color: #ecfdf5; }
 [data-bs-theme="dark"] .smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-sub { color: #6ee7b7; }
+/* Mapped Customers popup toolbar — same layout as the Consignees popup on the
+   Customers page: a 40px search that takes the free width, the count pill and
+   the action button on the right. Violet, because the rows are customers. */
+.smcg-mapped-toolbar { display: flex; align-items: center; gap: 12px; padding: 14px 18px 0; }
+.smcg-mapped-search { position: relative; flex: 1 1 auto; min-width: 240px; display: flex; align-items: center; }
+.smcg-mapped-search > i { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #8b5cf6; font-size: 15px; pointer-events: none; }
+.smcg-mapped-search input {
+  width: 100%; height: 40px; padding: 0 34px 0 36px;
+  border: 1px solid color-mix(in srgb, #a78bfa 22%, var(--vz-border-color, #e9ebec)); border-radius: 10px;
+  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff));
+  font-family: inherit; font-size: 13px; font-weight: 500; color: var(--vz-body-color, #495057);
+  outline: none; transition: border-color .18s, box-shadow .18s, background .18s;
+}
+.smcg-mapped-search input::placeholder { color: #94a3b8; font-weight: 400; }
+.smcg-mapped-search input:focus { background: var(--vz-card-bg, #fff); border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,.15); }
+.smcg-mapped-toolbar-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.smcg-mapped-count {
+  font-size: 11.5px; font-weight: 600; color: #6d28d9; white-space: nowrap;
+  padding: 6px 12px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 999px;
+}
+/* = the Add Customer button (Add Supplier style), 40px. */
+.smcg-mapped-add {
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; padding: 0 18px;
+  border: none; border-radius: 12px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
+  color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, .5), 0 1px 3px rgba(91, 33, 182, .3), 0 1px 0 rgba(255, 255, 255, .2) inset;
+  cursor: pointer; transition: background .2s, transform .2s, box-shadow .2s;
+}
+.smcg-mapped-add:hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 50%, #4c1d95 100%);
+  transform: translateY(-1.5px);
+  box-shadow: 0 8px 24px rgba(124, 58, 237, .6), 0 2px 6px rgba(91, 33, 182, .35), 0 1px 0 rgba(255, 255, 255, .2) inset;
+}
+.smcg-mapped-add[aria-disabled="true"] { opacity: .5; cursor: not-allowed; transform: none; }
+[data-bs-theme="dark"] .smcg-mapped-search input { background: #131c33; border-color: rgba(167,139,250,.35); color: #e2e8f0; }
+[data-bs-theme="dark"] .smcg-mapped-search > i { color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-mapped-count { background: rgba(124,58,237,.20); border-color: rgba(167,139,250,.35); color: #c4b5fd; }
+@media (max-width: 640px) {
+  .smcg-mapped-toolbar { flex-wrap: wrap; }
+  .smcg-mapped-search { flex: 1 1 100%; min-width: 0; }
+  .smcg-mapped-toolbar-right { width: 100%; justify-content: space-between; }
+}
+
+/* Mapped Customers popup — header = the Customer form header; table + pager =
+   the Consignees popup on the Customers page (.ccm-tablecard / .ccm-pag), violet. */
+.smcg-mapped-head {
+  position: relative; overflow: hidden; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 22px; color: #fff;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
+}
+.smcg-mapped-head::before {
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(216,180,254,.4), transparent 45%);
+}
+.smcg-mapped-head::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+.smcg-mapped-head > * { position: relative; z-index: 1; }
+.smcg-mapped-head-icon {
+  width: 38px; height: 38px; border-radius: 11px; flex: 0 0 auto;
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25);
+  display: flex; align-items: center; justify-content: center; color: #fff;
+}
+/* Same size/weight as the page header title (.frm-cstrip-title: Supplier Management sizes). */
+.smcg-mapped-head-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.smcg-mapped-head-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.smcg-mapped-close {
+  width: 32px; height: 32px; border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.12);
+  color: #fff; cursor: pointer; font-size: 16px; line-height: 1;
+  transition: background .15s, transform .12s;
+}
+.smcg-mapped-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+
+.smcg-mapped-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 12px 18px 18px; }
+.smcg-mapped-card {
+  display: flex; flex-direction: column; min-height: 0;
+  background: #fff; border: 1px solid #ece4fb; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 2px 12px rgba(109,40,217,.06);
+}
+/* The table is the Customers list's: dt-root.hr-dt (violet) + dt-table give the
+   header band, serial badge and ID chip. The wrapper only drops dt-root's own
+   card chrome, since .smcg-mapped-card already draws it. */
+.smcg-mapped-table-wrap.dt-root { display: block; border: 0; border-radius: 0; box-shadow: none; background: transparent; overflow: auto; max-height: 320px; }
+.smcg-mapped-table { width: 100%; min-width: 780px; }
+.smcg-mapped-table tbody tr:last-child td { border-bottom: none; }
+/* Cell type = the Customers list (.smc-table-wrap): 11.5 / 500, badges keep their own. */
+.smcg-mapped-table tbody td,
+.smcg-mapped-table tbody td *:not(i):not(svg):not(svg *) { font-size: 11.5px !important; font-weight: 500 !important; }
+.smcg-mapped-table tbody td .dt-serial.dt-serial { font-size: 11px !important; font-weight: 800 !important; }
+.smcg-mapped-table tbody td .dt-id-chip.dt-id-chip { font-family: 'JetBrains Mono', ui-monospace, monospace !important; font-size: 11px !important; font-weight: 600 !important; letter-spacing: .02em; }
+.smcg-mapped-table tbody td .seg-reg-badge.seg-reg-badge { font-size: 10px !important; font-weight: 600 !important; }
+.smcg-mapped-table tbody td .smc-seg-more.smc-seg-more { font-size: 10px !important; font-weight: 800 !important; }
+/* Segment pill + "+N" — the Customers list's .smc-seg rules (SalesCustomers.css
+   is not loaded on this page). */
+.smcg-mapped-table .smc-seg {
+  display: inline-block; vertical-align: middle;
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #5b21b6; background: #f3eeff;
+  border: 1px solid #ddd6fe; border-radius: 20px;
+  padding: 3px 10px;
+}
+.smcg-mapped-table .smc-seg--withbadge { display: inline-flex; align-items: center; gap: 5px; max-width: 210px; padding-right: 5px; }
+.smcg-mapped-table .smc-seg-name { display: inline-block; max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.smcg-mapped-table .smc-seg-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 20px;
+  border: 0; cursor: pointer; flex-shrink: 0;
+  color: #fff; font-family: inherit;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  box-shadow: 0 2px 8px rgba(124,58,237,.35);
+}
+.smcg-mapped-table .smc-seg-more:hover { filter: brightness(1.06); }
+[data-bs-theme="dark"] .smcg-mapped-table .smc-seg { color: #c4b5fd; background: rgba(124,58,237,0.18); border-color: rgba(167,139,250,.30); }
+
+/* Mapped Customers "+N" segment popover = the Customers list's (.smc-seg-pop),
+   portalled to <body>, so its pill rules are restated here. */
+.smc-seg-pop {
+  background: #fff; border: 1.5px solid #ddd6fe;
+  box-shadow: 0 16px 40px rgba(0,0,0,.18);
+}
+.smc-seg-pop-title {
+  font-size: 8px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: #6d28d9; padding: 4px 8px 7px;
+}
+.smc-seg-pop-row { display: flex; align-items: center; padding: 6px 8px; border-radius: 8px; }
+.smc-seg-pop-row.alt { background: #f7f4ff; }
+.smc-seg-pop .smc-seg {
+  display: inline-block; vertical-align: middle;
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11px; font-weight: 600; color: #5b21b6;
+  background: #f3eeff;
+  border: 1px solid #ddd6fe; border-radius: 20px;
+  padding: 3px 10px;
+}
+[data-bs-theme="dark"] .smc-seg-pop { background: #1c1438; border-color: rgba(124,58,237,.4); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .smc-seg-pop-title { color: #c4b5fd; }
+[data-bs-theme="dark"] .smc-seg-pop-row.alt { background: rgba(255,255,255,.04); }
+[data-bs-theme="dark"] .smc-seg-pop .smc-seg { color: #c4b5fd; background: rgba(124,58,237,0.18); border-color: rgba(167,139,250,.30); }
+.smcg-mapped-pag { display: flex; flex-shrink: 0; }
+.smcg-mapped-pag .wl-pager {
+  flex: 1; min-width: 0; margin: 0;
+  padding: 10px 14px;
+  border-top: 2px solid #ddd6fe; border-radius: 0;
+  background: linear-gradient(90deg, #faf8ff 0%, #f3effe 40%, #faf8ff 100%);
+  --tcwl-accent: #7c3aed;
+  --tcwl-text: #6d28d9;
+  --tcwl-border: #ddd6fe;
+  --tcwl-range-bg: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #6d28d9 100%);
+  --tcwl-glow: rgba(124, 58, 237, .4);
+}
+[data-bs-theme="dark"] .smcg-mapped-card { background: #1a2236; border-color: rgba(167,139,250,.22); }
+[data-bs-theme="dark"] .smcg-mapped-pag .wl-pager {
+  border-top-color: rgba(167,139,250,.32);
+  background: linear-gradient(90deg, rgba(124,58,237,.08), rgba(124,58,237,.14), rgba(124,58,237,.08));
+  --tcwl-text-dark: #c4b5fd;
+  --tcwl-border-dark: rgba(167,139,250,.35);
+  --tcwl-band-dark: none;
+}
+
+/* Map Customer popup — Customer form header (shares .smcg-mapped-head), form
+   field label, and the Customer form's footer buttons (Previous / Next). */
+.smcg-map-head { border-top-left-radius: 16px; border-top-right-radius: 16px; padding: 15px 20px; }
+.smcg-map-head-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; line-height: 1.45; }
+.smcg-map-label { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; font-size: 11px; font-weight: 500; color: #3b0764; }
+.smcg-map-req { color: #f06548; font-weight: 600; }
+.smcg-map-btn-cancel,
+.smcg-map-btn-primary {
+  height: 40px; padding: 0 18px; border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
+}
+.smcg-map-btn-cancel { border: 1.5px solid #ddd6fe; background: #fff; color: #7c3aed; }
+.smcg-map-btn-cancel:hover:not(:disabled) { background: #f5f1fe; border-color: #7c3aed; }
+.smcg-map-btn-primary {
+  border: none; color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  box-shadow: 0 6px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.2) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.smcg-map-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.6), 0 1px 0 rgba(255,255,255,.2) inset; }
+.smcg-map-btn-primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.smcg-map-btn-cancel:disabled { opacity: .6; cursor: not-allowed; }
+[data-bs-theme="dark"] .smcg-map-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-map-btn-cancel { background: transparent; border-color: rgba(167,139,250,.35); color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-map-btn-cancel:hover:not(:disabled) { background: rgba(167,139,250,.12); }
