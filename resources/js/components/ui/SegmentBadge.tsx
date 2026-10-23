@@ -74,25 +74,77 @@ export default function SegmentBadge({ status, name, full = false, style }: Prop
 
 /* ── Name-based lookup, for records that store the segment NAME (customer, consignee) ── */
 
-let nameMapPromise: Promise<Map<string, string | null>> | null = null;
-let nameMapAt = 0;
+type NameMap = Map<string, string | null>;
+
+const NAME_MAP_TTL_MS = 5 * 60_000;
+/* The last answer is also kept in localStorage, so a page refresh or a later
+   visit draws the badges at once instead of shimmering for a full round trip
+   (QA #1/#12: ~1.2 s on live). It is still refetched in the background and the
+   badges follow the fresh answer. Older than a day, it is not trusted at all. */
+const STORED_MAX_AGE_MS = 24 * 60 * 60_000;
+
+let nameMap: NameMap | null = null;
+let nameMapAt = 0;           // 0 = came from storage (or never loaded): refetch on next use
+let nameMapOwner = '';       // which user the in-memory map belongs to
+let nameMapInFlight: Promise<NameMap> | null = null;
+const nameMapListeners = new Set<(m: NameMap) => void>();
+
+/** Per user: segments are tenant- and branch-scoped, so one user's map must never feed another's badges. */
+function nameMapOwnerKey(): string {
+  try {
+    const u = JSON.parse(localStorage.getItem('cbc_user') || 'null');
+    return u?.id ? `cbc_seg_status_v1:${u.id}` : '';
+  } catch { return ''; }
+}
+
+function readStoredNameMap(owner: string): NameMap | null {
+  if (!owner) return null;
+  try {
+    const saved = JSON.parse(localStorage.getItem(owner) || 'null') as { at?: number; pairs?: [string, string | null][] } | null;
+    if (!saved?.at || !Array.isArray(saved.pairs) || Date.now() - saved.at > STORED_MAX_AGE_MS) return null;
+    return new Map(saved.pairs);
+  } catch { return null; }
+}
+
+/** The map this user may show right now (fresh, stale or from storage), or null when there is none yet. */
+function currentNameMap(): NameMap | null {
+  const owner = nameMapOwnerKey();
+  if (owner !== nameMapOwner) {
+    // Another user signed in on this tab: drop the previous user's map.
+    nameMapOwner = owner;
+    nameMap = readStoredNameMap(owner);
+    nameMapAt = 0;
+  }
+  return nameMap;
+}
+
+const nameMapIsFresh = () => !!nameMap && nameMapAt > 0 && Date.now() - nameMapAt < NAME_MAP_TTL_MS;
 
 /** lower(name) → status across all the user's branches; a name with both Reg-High and Reg-Low defaults to Reg-High. */
-function loadNameMap(): Promise<Map<string, string | null>> {
-  if (nameMapPromise && Date.now() - nameMapAt < 5 * 60_000) return nameMapPromise;
-  nameMapAt = Date.now();
-  nameMapPromise = api.get<{ data?: { name?: string; regulatory_status?: string }[] }>('/clm/segments', { params: { branch_id: 0, lite: 1 } })
+function fetchNameMap(): Promise<NameMap> {
+  if (nameMapInFlight) return nameMapInFlight;
+  const owner = nameMapOwnerKey();
+  nameMapInFlight = api.get<{ data?: { name?: string; regulatory_status?: string }[] }>('/clm/segments', { params: { branch_id: 0, lite: 1 } })
     .then(res => {
-      const m = new Map<string, string | null>();
+      const m: NameMap = new Map();
       for (const s of res.data?.data ?? []) {
         const k = (s.name ?? '').trim().toLowerCase();
         if (!k || !isStatus(s.regulatory_status)) continue;
         if (m.get(k) !== 'highly') m.set(k, s.regulatory_status);
       }
+      if (owner === nameMapOwnerKey()) {
+        nameMap = m;
+        nameMapAt = Date.now();
+        nameMapOwner = owner;
+        try { if (owner) localStorage.setItem(owner, JSON.stringify({ at: nameMapAt, pairs: [...m] })); } catch { /* storage full or blocked — memory still works */ }
+        nameMapListeners.forEach(l => l(m));
+      }
       return m;
     })
-    .catch(() => { nameMapPromise = null; return new Map<string, string | null>(); });
-  return nameMapPromise;
+    // Same as before on failure: keep whatever is showing, retry on the next use.
+    .catch(() => nameMap ?? new Map<string, string | null>())
+    .finally(() => { nameMapInFlight = null; });
+  return nameMapInFlight;
 }
 
 export function useSegmentStatusByName(): (name?: string | null) => string | null {
@@ -110,8 +162,16 @@ export function useSegmentStatusByNameState(): {
   statusOf: (name?: string | null) => string | null;
   loading: boolean;
 } {
-  const [map, setMap] = useState<Map<string, string | null> | null>(null);
-  useEffect(() => { let live = true; void loadNameMap().then(m => { if (live) setMap(m); }); return () => { live = false; }; }, []);
+  const [map, setMap] = useState<NameMap | null>(() => currentNameMap());
+  useEffect(() => {
+    let live = true;
+    const onFresh = (m: NameMap) => { if (live) setMap(m); };
+    nameMapListeners.add(onFresh);
+    const shown = currentNameMap();
+    if (shown) setMap(shown);
+    if (!nameMapIsFresh()) void fetchNameMap().then(onFresh);
+    return () => { live = false; nameMapListeners.delete(onFresh); };
+  }, []);
   return {
     statusOf: (name) => map?.get((name ?? '').trim().toLowerCase()) ?? null,
     loading: map === null,
