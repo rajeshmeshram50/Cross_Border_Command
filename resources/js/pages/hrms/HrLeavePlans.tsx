@@ -412,9 +412,11 @@ export default function HrLeavePlans() {
     // than snapping in instantly.
     setLoading(true);
     try {
-      const list = await leavePlansApi.list();
-      const settled = await Promise.allSettled(list.map(p => leavePlansApi.show(p.id)));
-      const detailed = settled.flatMap(s => s.status === 'fulfilled' ? [s.value] : []);
+      /* One request, detail included. This was a list() followed by a show()
+         per plan — 1+N round trips, each re-running the same heavy eager load
+         for a single row, which is what made this screen take ~12s with a
+         realistic number of plans. (QA #8) */
+      const detailed = await leavePlansApi.list(true);
       const mapped = detailed.map(apiPlanToFrontend);
       setPlans(mapped);
       const seeded: Record<string, LeaveTypeConfig> = {};

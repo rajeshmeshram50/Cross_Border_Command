@@ -765,6 +765,13 @@ class HrDocumentTemplateController extends Controller
             // just the lifecycle keyword ('onboarding' / 'exit') and we
             // LIKE-match against module_name.
             'trigger_keyword'     => 'sometimes|nullable|string|max:120',
+            /* Several lifecycle keywords in ONE request, comma separated.
+               The Evidence Vault needs onboarding + exit + promotion and was
+               asking for them with three separate calls that differ only by
+               this word — three round trips for one screen, which is what
+               makes it slow on a loaded server rather than the work itself
+               (measured: 9-54ms each locally). (QA #32) */
+            'trigger_keywords'    => 'sometimes|nullable|string|max:400',
         ]);
 
         $emp = Employee::with(['department:id,name', 'designation:id,name,level'])
@@ -801,19 +808,54 @@ class HrDocumentTemplateController extends Controller
         $keyword   = trim((string) $request->query('trigger_keyword', ''));
         $exactName = trim((string) $request->query('trigger_point_name', ''));
 
+        /* Batched form: one request, one group per keyword. Each group carries
+           exactly the payload a single-keyword call returns, so a caller can
+           read groups[word] wherever it used to read the whole response. The
+           single-keyword contract below is untouched. (QA #32) */
+        $many = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) $request->query('trigger_keywords', '')),
+        ), fn ($k) => $k !== ''));
+
+        if ($many) {
+            $meta = [
+                'employee_category' => $category,
+                'role_type'         => $level,
+                'department_name'   => $emp->department?->name,
+                'designation_name'  => $emp->designation?->name,
+            ];
+            $groups = [];
+            foreach (array_unique($many) as $kw) {
+                $groups[$kw] = $this->matchGroup($request, $emp, $kw, '', $meta);
+            }
+            return response()->json($meta + ['groups' => $groups]);
+        }
+
+        return response()->json($this->matchGroup($request, $emp, $keyword, $exactName, [
+            'employee_category' => $category,
+            'role_type'         => $level,
+            'department_name'   => $emp->department?->name,
+            'designation_name'  => $emp->designation?->name,
+        ]));
+    }
+
+    /**
+     * The applicable templates for ONE lifecycle keyword, stamped with whether
+     * this employee has already been sent each one. Extracted from
+     * matchForEmployee so ?trigger_keywords= can build several groups in a
+     * single request without a second copy of the logic. (QA #32)
+     */
+    private function matchGroup(Request $request, Employee $emp, string $keyword, string $exactName, array $meta): array
+    {
         // null = a keyword was asked for and no trigger point carries it, so
         // nothing can match. Return an empty list rather than an unfiltered one.
         $q = HrTemplateMatch::query($emp, $keyword, $exactName);
         if (!$q) {
-            return response()->json([
-                'employee_category'  => $category,
-                'role_type'          => $level,
-                'department_name'    => $emp->department?->name,
-                'designation_name'   => $emp->designation?->name,
+            return $meta + [
                 'trigger_point_name' => $exactName ?: null,
                 'trigger_keyword'    => $keyword ?: null,
                 'templates'          => [],
-            ]);
+            ];
         }
         $q->with(self::WITH);
 
@@ -849,17 +891,13 @@ class HrDocumentTemplateController extends Controller
             $t->setAttribute('is_sent', (bool) $run);
         });
 
-        return response()->json([
-            'employee_category'  => $category,
-            'role_type'          => $level,
-            'department_name'    => $emp->department?->name,
-            'designation_name'   => $emp->designation?->name,
+        return $meta + [
             'trigger_point_name' => $exactName ?: null,
             'trigger_keyword'    => $keyword ?: null,
             'templates'          => $templates,
             // Convenience for the caller that only wants "what is outstanding".
             'pending_count'      => $templates->where('is_sent', false)->count(),
-        ]);
+        ];
     }
 
     /**

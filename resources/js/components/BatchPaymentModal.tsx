@@ -78,7 +78,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
        status was never set. An exit still IN PROGRESS keeps status 'Active' and
        stays listed on purpose: outstanding expenses are usually settled on the
        way out, and hiding those people would block a legitimate payment. */
-    api.get('/employees', { params: { enabled: 1 } })
+    api.get('/employees', { params: { view: 'list', enabled: 1 } })
       .then(r => setEmployees(Array.isArray(r.data) ? r.data : []))
       .catch(() => setEmployees([]));
   }, [open]);

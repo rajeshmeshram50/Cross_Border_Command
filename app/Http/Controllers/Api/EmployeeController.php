@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\SendWelcomeCredentials;
 use App\Mail\EmployeeEmailChangedMail;
 use App\Mail\PasswordChangedMail;
 use App\Mail\WelcomeCredentialsMail;
@@ -2525,6 +2526,13 @@ class EmployeeController extends Controller
 
             // Re-run HOD wiring in case this save made the employee an HOD
             // (or changed their department) — idempotent when already applied.
+            /* unsetRelations first: refresh() reloads every relation currently
+               on the model, and resolveRow() arrived with the whole of
+               fullWith() on it. applyHodOnboarding reads four COLUMNS and no
+               relation, so that was a second full relation load for nothing —
+               and $row->load(fullWith()) below repopulates them regardless.
+               One of three identical loads per PUT; this drops it. (QA #7) */
+            $row->unsetRelations();
             $this->applyHodOnboarding($row->refresh(), $authId);
 
             // Keep the leave_plan_employees pivot in sync whenever the
@@ -2916,18 +2924,21 @@ class EmployeeController extends Controller
                     'password_encrypted' => Crypt::encryptString($rawPassword),
                 ])->save();
 
-                $clientName = \App\Models\Client::find($row->client_id)?->org_name ?? 'Your Organization';
-
-                Mail::to($row->user->email)->send(new WelcomeCredentialsMail(
-                    $row->user->name,
-                    $row->user->email,
-                    $rawPassword,
+                /* Queued, not sent inline. An SMTP conversation is ~3s locally
+                 * and 6-7s on production, and it was the whole reason THIS step
+                 * took 9-11s while Steps 1-3 were normal (QA #1). The save does
+                 * not depend on the mail having gone.
+                 *
+                 * The job carries only the user id — never the password, which
+                 * would be serialised into the `jobs` table in the clear. It
+                 * reads password_encrypted (written just above), decrypts,
+                 * sends, and clears it; so the clear now happens in the worker,
+                 * which is also what makes a failed send retryable. */
+                SendWelcomeCredentials::dispatch(
+                    (int) $row->user->id,
                     'employee',
-                    $clientName,
                     PasswordChangedMail::resolveLoginUrl($request),
-                ));
-
-                $row->user->forceFill(['password_encrypted' => null])->save();
+                )->afterCommit();
             } catch (\Throwable $e) {
                 Log::warning('Employee welcome mail (Step 4) failed', [
                     'employee_id' => $row->id,

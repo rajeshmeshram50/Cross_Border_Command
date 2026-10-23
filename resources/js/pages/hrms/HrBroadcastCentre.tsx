@@ -593,7 +593,7 @@ function CreateAnnouncementModal({
           api.get('/master/roles'),
           api.get('/master/designations'),
 
-          api.get('/employees', { params: { onboarded_only: true } }),
+          api.get('/employees', { params: { view: 'list', onboarded_only: true } }),
         ]);
         if (cancelled) return;
         const roleRows: any[]  = Array.isArray(rolesRes.data) ? rolesRes.data : [];

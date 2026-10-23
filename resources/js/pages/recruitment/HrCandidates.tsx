@@ -1325,7 +1325,7 @@ function CandidateFormModal({
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await api.get('/employees', { params: { onboarded_only: 1 } });
+        const { data } = await api.get('/employees', { params: { view: 'list', onboarded_only: 1 } });
         if (cancelled) return;
         const rows: any[] = Array.isArray(data) ? data : [];
         setEmployeeOpts(
