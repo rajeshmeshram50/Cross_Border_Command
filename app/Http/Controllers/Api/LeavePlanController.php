@@ -22,6 +22,31 @@ class LeavePlanController extends Controller
     // Plan-level CRUD
     // ─────────────────────────────────────────────────────────────────────
 
+    /** Relations the Leave Plans screen reads off a plan — the assigned
+     *  employees with the three lookups the roster shows. Shared by show() and
+     *  by index()'s ?with_detail=1, so the two cannot drift.
+     *  leaveTypes is NOT here: it needs an ordering closure, which a constant
+     *  cannot hold — detailWith() adds it. */
+    private const DETAIL_WITH = [
+        'employees:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,location',
+        'employees.department:id,name',
+        'employees.designation:id,name',
+        'employees.reportingManager:id,first_name,last_name,display_name',
+        /* Employee::$appends carries photo_url, whose accessor falls back to a
+           query of its own PER ROW when this relation is absent — 33 employees
+           meant 33 extra queries here. EmployeeController's LIST_WITH loads it
+           for the same reason. */
+        'employees.photoDocument:id,employee_id,document_key,file_path',
+    ];
+
+    /** DETAIL_WITH plus the name-ordered leaveTypes. */
+    private static function detailWith(): array
+    {
+        return array_merge(self::DETAIL_WITH, [
+            'leaveTypes' => fn ($q) => $q->orderBy('master_leave_types.name'),
+        ]);
+    }
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -31,6 +56,17 @@ class LeavePlanController extends Controller
         $q = LeavePlans::query()
             ->with(['client:id,org_name', 'branch:id,name'])
             ->withCount(['employees', 'leaveTypes']);
+
+        /* Opt-in detail. The Leave Plans screen needs every plan's types (with
+           their pivot config) and assigned employees, and was getting them by
+           calling show() once PER PLAN — 1+N HTTP round trips, each repeating
+           the same heavy eager load for one row. Here the relations batch into
+           one query apiece across all plans. Same list as show()'s, from one
+           constant, so the two cannot drift. (QA #8) */
+        if ($request->boolean('with_detail')) {
+            $q->with(self::detailWith());
+        }
+
         $this->applyScope($q, $user, $branchFilter);
 
         $rows = $q->orderByDesc('is_default')->orderBy('plan_name')->get();
@@ -64,17 +100,10 @@ class LeavePlanController extends Controller
         if (!$user) abort(401);
 
         $plan = $this->findPlanOrFail($user, $id);
-        $plan->load([
-            'client:id,org_name',
-            'branch:id,name',
-            'leaveTypes' => function ($q) {
-                $q->orderBy('master_leave_types.name');
-            },
-            'employees:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,location',
-            'employees.department:id,name',
-            'employees.designation:id,name',
-            'employees.reportingManager:id,first_name,last_name,display_name',
-        ]);
+        $plan->load(array_merge(
+            ['client:id,org_name', 'branch:id,name'],
+            self::detailWith(),
+        ));
 
         return response()->json(['data' => $plan]);
     }

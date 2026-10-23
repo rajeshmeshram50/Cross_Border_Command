@@ -68,8 +68,13 @@ export interface ApiPlanEmployee {
 }
 
 export const leavePlansApi = {
-  list: () =>
-    api.get<{ data: ApiLeavePlan[] }>('/leave-plans').then(r => r.data.data),
+  /* withDetail asks the index for each plan's types and employees, so the
+     Leave Plans screen needs ONE request instead of a list plus a show() per
+     plan. The relations batch server-side into one query apiece. (QA #8) */
+  list: (withDetail = false) =>
+    api.get<{ data: ApiLeavePlan[] }>('/leave-plans', {
+      params: withDetail ? { with_detail: 1 } : undefined,
+    }).then(r => r.data.data),
 
   show: (id: number) =>
     api.get<{ data: ApiLeavePlan }>(`/leave-plans/${id}`).then(r => r.data.data),

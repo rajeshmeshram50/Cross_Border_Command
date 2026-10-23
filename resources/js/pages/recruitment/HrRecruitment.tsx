@@ -2222,7 +2222,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
           api.get('/master/departments').catch(() => ({ data: [] })),
           api.get('/master/designations').catch(() => ({ data: [] })),
           api.get('/master/roles').catch(() => ({ data: [] })),
-          api.get('/employees', { params: { onboarded_only: 1 } }).catch(() => ({ data: [] })),
+          api.get('/employees', { params: { view: 'list', onboarded_only: 1 } }).catch(() => ({ data: [] })),
         ]);
         if (cancelled) return;
         const cache = buildRecMasters(deptRes.data, desigRes.data, roleRes.data, empRes.data);

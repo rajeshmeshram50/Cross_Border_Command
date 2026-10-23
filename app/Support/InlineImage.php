@@ -44,6 +44,12 @@ class InlineImage
 
     private const TTL = 3600;
 
+    /** How long a FAILURE is remembered. Short on purpose — see dataUri(). */
+    private const MISS_TTL = 300;
+
+    /** Cached stand-in for "there is no image here". See dataUri(). */
+    private const MISS = '';
+
     /**
      * Public-disk image path → data URI, or null when unreadable.
      */
@@ -52,23 +58,36 @@ class InlineImage
         $path = trim((string) $path);
         if ($path === '' || str_starts_with($path, 'data:')) return null;
 
-        return Cache::remember(
-            self::key($path, $maxWidth),
-            self::TTL,
-            function () use ($path, $maxWidth) {
-                try {
-                    /* get() only — NOT exists() + mimeType() + get(). Each of
-                       those is its own HTTPS round trip to blob storage, and the
-                       first two only answer questions the bytes answer anyway.
-                       A missing file throws, which is the same answer. */
-                    $raw = Storage::disk('public')->get($path);
-                    if (!is_string($raw) || $raw === '') return null;
-                    return self::encode($raw, $maxWidth);
-                } catch (\Throwable $e) {
-                    return null;
-                }
-            }
-        );
+        $key = self::key($path, $maxWidth);
+
+        /* Cache::remember cannot be used here: it treats a cached null as a
+           MISS, so an image that fails to load is looked up again on every
+           single request — and on the server the public disk is blob storage,
+           so each of those is a network round trip that fails the same way.
+           A document referencing a few dead images paid that cost on every
+           download, forever. Failures are cached as a sentinel instead. */
+        $hit = Cache::get($key);
+        if ($hit !== null) {
+            return $hit === self::MISS ? null : $hit;
+        }
+
+        try {
+            /* get() only — NOT exists() + mimeType() + get(). Each of those is
+               its own HTTPS round trip to blob storage, and the first two only
+               answer questions the bytes answer anyway. A missing file throws,
+               which is the same answer. */
+            $raw = Storage::disk('public')->get($path);
+            $uri = (is_string($raw) && $raw !== '') ? self::encode($raw, $maxWidth) : null;
+        } catch (Throwable $e) {
+            $uri = null;
+        }
+
+        /* A failure is remembered for five minutes, not an hour: the file may
+           be uploaded a moment later, and an image invisible for an hour
+           because it was briefly missing is its own bug. */
+        Cache::put($key, $uri ?? self::MISS, $uri === null ? self::MISS_TTL : self::TTL);
+
+        return $uri;
     }
 
     /** Drop a cached image — call after a logo is replaced. */

@@ -517,9 +517,11 @@ class AttendanceRegularizationController extends Controller
             ])
             ->orderByDesc('created_at');
 
-        if ($status && $status !== 'All') {
-            $q->where('status', $status);
-        }
+        /* The status clause is applied LATER, just before paging — see the
+           counts block near the end. Everything between here and there narrows
+           the set the tab strip counts across, so status has to go on last or
+           every count would itself be filtered by the open tab. Same ordering
+           LeaveRequestController::approvals uses. (QA #16) */
 
         /* Who sees the WHOLE queue is decided by the Attendance grant, not by
          * user_type. An employee login holding hr.attendance is acting as HR
@@ -622,7 +624,46 @@ class AttendanceRegularizationController extends Controller
             });
         }
 
-        $rows = $q->get();
+        /* Tab counts, from a copy of the query with every filter applied EXCEPT
+           status — which is what a tab strip asks: "how many would I see if I
+           clicked this one, under the search and filters I already have."
+           reorder() drops the orderByDesc; Postgres rejects an ORDER BY column
+           that is not in the GROUP BY, and ordering a count is meaningless.
+           All scoping above is SQL, so unlike the leave queue this can be
+           counted and paged in the database rather than in PHP. (QA #16) */
+        $counts = null;
+        if ($request->boolean('with_counts')) {
+            $byStatus = (clone $q)->reorder()
+                ->select('status', DB::raw('count(*) as n'))
+                ->groupBy('status')
+                ->pluck('n', 'status');
+            $counts = [
+                'All'      => (int) $byStatus->sum(),
+                'Pending'  => (int) ($byStatus['Pending']  ?? 0),
+                'Approved' => (int) ($byStatus['Approved'] ?? 0),
+                'Rejected' => (int) ($byStatus['Rejected'] ?? 0),
+                'Cancelled'=> (int) ($byStatus['Cancelled'] ?? 0),
+            ];
+        }
+
+        if ($status && $status !== 'All') {
+            $q->where('status', $status);
+        }
+
+        /* Paged only when asked. This queue returned EVERY row of every status
+           so the page could count the tabs client-side (#44) — with counts now
+           coming from SQL above, that reason is gone, and a caller that omits
+           per_page still gets the old full set. */
+        $perPage = (int) $request->integer('per_page');
+        $total   = null;
+        if ($perPage > 0) {
+            $perPage = min($perPage, 100);
+            $page    = max(1, (int) $request->integer('page'));
+            $total   = (clone $q)->reorder()->count();
+            $rows    = $q->forPage($page, $perPage)->get();
+        } else {
+            $rows = $q->get();
+        }
 
         /* Per-row "can the viewer act on this RIGHT NOW?" flag — Pending AND
          * (Attendance edit grant OR the requester's reporting manager). This
@@ -639,7 +680,13 @@ class AttendanceRegularizationController extends Controller
 
         $this->attachOriginalPunches($rows);
 
-        return response()->json(['data' => $rows]);
+        // total/counts only when asked for, so the old contract is byte-identical
+        // for callers that do not page.
+        return response()->json(
+            ['data' => $rows]
+            + ($total  !== null ? ['total'  => $total]  : [])
+            + ($counts !== null ? ['counts' => $counts] : [])
+        );
     }
 
     /**

@@ -578,9 +578,16 @@ class LeaveRequestController extends Controller
             ->with([
                 'employee:id,emp_code,first_name,last_name,display_name,department_id,reporting_manager_id,reporting_manager_user_id,branch_id,client_id',
                 'employee.department:id,name',
+                /* Employee::$appends carries photo_url, whose accessor queries
+                   employee_documents PER ROW when this relation is absent — 12
+                   extra queries for a 10-row page, and it grows with the page.
+                   Loaded on the reporting manager too: that is another Employee
+                   carrying the same accessor. (QA #28) */
+                'employee.photoDocument:id,employee_id,document_key,file_path',
                 // Reporting manager — may be an Employee row OR a login User
                 // (Client/Branch admin); load both so the name resolves either way.
                 'employee.reportingManager:id,first_name,middle_name,last_name,display_name',
+                'employee.reportingManager.photoDocument:id,employee_id,document_key,file_path',
                 'employee.reportingManagerUser:id,name',
                 'leaveType:id,name,short_code,type,paid_unpaid',
             ])

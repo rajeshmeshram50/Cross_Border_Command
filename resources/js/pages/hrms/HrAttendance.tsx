@@ -696,7 +696,15 @@ export default function HrAttendance() {
     }
     setRegOpen(false);
     setRegVersion(v => v + 1);
-    setAttVersion(v => v + 1);
+    /* No attVersion bump. That counter means "an APPROVED regularization
+       rewrote the day" — see the roster/detail effects. FILING one changes no
+       punch; it creates a Pending request, which the optimistic merge above
+       already puts on the card and regVersion puts in the list. The bump was
+       reloading daily-view for every employee — 184 KB — to refresh one pill
+       whose value we were holding. The panel still refreshes, silently,
+       because it renders the pending state; and today's roster is polled
+       quietly anyway, so nothing can sit stale. (QA #33) */
+    void loadDetail(true);
   };
   /* The detail request finished without producing a record for this employee.
      Kept distinct from "still loading": a stale panel under a spinner is a

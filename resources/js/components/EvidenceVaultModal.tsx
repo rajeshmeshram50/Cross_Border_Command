@@ -205,16 +205,27 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     let cancelled = false;
     setLoading(true);
     setTab(initialTab);
+    /* The three template-match calls are now ONE. They differed only by
+       trigger_keyword, so the screen was paying three round trips to answer
+       one question — and the work itself is 9-54ms, so the trips were the
+       cost. ?trigger_keywords= returns a group per word, each in the same
+       shape a single-keyword call returns. Six requests down to four. (QA #32) */
     Promise.allSettled([
       api.get(`/employees/${employee.id}/documents`),
-      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'onboarding' } }),
-      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'exit' } }),
+      api.get('/hr-document-templates/match', {
+        params: { employee_id: employee.id, trigger_keywords: 'onboarding,exit,promotion' },
+      }),
       api.get('/hr-document-signatures', { params: { employee_id: employee.id } }),
-      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'promotion' } }),
       api.get(`/employees/${employee.id}`),
     ]).then(results => {
       if (cancelled) return;
-      const [docsR, orgR, exitR, runsR, promoR, empR] = results;
+      const [docsR, matchR, runsR, empR] = results;
+      const groups = matchR.status === 'fulfilled' ? (matchR.value.data?.groups ?? {}) : {};
+      const groupTemplates = (k: string) =>
+        Array.isArray(groups?.[k]?.templates) ? groups[k].templates : [];
+      const orgR   = { status: 'fulfilled' as const, value: { data: { templates: groupTemplates('onboarding') } } };
+      const exitR  = { status: 'fulfilled' as const, value: { data: { templates: groupTemplates('exit') } } };
+      const promoR = { status: 'fulfilled' as const, value: { data: { templates: groupTemplates('promotion') } } };
       setEmpDocs(docsR.status === 'fulfilled' && Array.isArray(docsR.value.data) ? docsR.value.data : []);
       setOrgTemplates(orgR.status === 'fulfilled' && Array.isArray(orgR.value.data?.templates) ? orgR.value.data.templates : []);
       setExitTemplates(exitR.status === 'fulfilled' && Array.isArray(exitR.value.data?.templates) ? exitR.value.data.templates : []);
@@ -375,7 +386,15 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   /** In flight with the signers — nothing to do but wait. */
   const promoLocked = (run: VaultRun | null) => run?.status === 'Pending' || run?.status === 'In Progress';
 
-  const sendPromoDoc = async (tplId: number, name: string | null) => {
+  /**
+   * Send (or re-send) any template for this employee.
+   *
+   * Named sendPromoDoc when only the promotion block could reach it. It posts
+   * a template id and an employee id, which is the same request for an
+   * onboarding or exit document — and a rejected one of those needs it just
+   * as much.
+   */
+  const sendDocForSignature = async (tplId: number, name: string | null) => {
     if (!employee || sendingTplId) return;
     setSendingTplId(tplId);
     try {
@@ -909,7 +928,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                             </>
                           )}
                           <button type="button" className="ev-doc-btn ev-doc-btn--send"
-                            disabled={sendingTplId != null} onClick={() => sendPromoDoc(t.id, t.name)}>
+                            disabled={sendingTplId != null} onClick={() => sendDocForSignature(t.id, t.name)}>
                             {sendingTplId === t.id
                               ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Sending…</>
                               : <><i className="ri-send-plane-line" />{run ? 'Re-send' : 'Send'}</>}
@@ -986,6 +1005,22 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                             title="Out with the signers — nothing to do here yet">
                             <i className="ri-time-line" />Awaiting Sign
                           </span>
+                        )}
+                        {/* Refused or withdrawn — so it is settled, and the only
+                            way forward is to send it again.
+                            Only PROMOTION documents had this, because Re-send
+                            lived on the promo row and promo rows are built from
+                            promotion templates. A rejected onboarding or exit
+                            document reached this table instead and offered
+                            Track and View — nothing that moved it on. */}
+                        {(r.status === 'Rejected' || r.status === 'Cancelled') && (
+                          <button type="button" className="ev-doc-btn ev-doc-btn--send"
+                            disabled={sendingTplId != null}
+                            onClick={() => sendDocForSignature(r.template_id, r.template?.name ?? null)}>
+                            {sendingTplId === r.template_id
+                              ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Sending…</>
+                              : <><i className="ri-send-plane-line" />Re-send</>}
+                          </button>
                         )}
                         {r.status === 'Completed' && (
                           <button type="button" className="ev-doc-btn ev-doc-btn--download"

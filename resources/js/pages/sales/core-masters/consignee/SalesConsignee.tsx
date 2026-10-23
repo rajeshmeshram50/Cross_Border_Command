@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
-import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import { SegmentNameBadge, useSegmentStatusByName } from '../../../../components/ui/SegmentBadge';
 import '../../../../components/ui/DataTable.css';
 import '../../../p2p/p2p-master-management/supplier-management/supplier-management.css';
 import './SalesConsignee.css';
@@ -141,6 +141,11 @@ function SegmentPrimaryCell({ name }: { name: string }) {
 }
 
 export default function SalesConsignee() {
+  /* Start the regulatory-badge lookup with the page, not with the rows. The
+     row badges only asked for it once the consignee list had rendered, so the
+     badges trailed the rows by a full round trip (~1.3 s on live, QA #14).
+     Same shared, de-duplicated request the badges use — nothing extra is sent. */
+  useSegmentStatusByName();
   const toast = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();

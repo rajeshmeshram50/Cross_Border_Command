@@ -2522,7 +2522,12 @@ const validateStage1 = (): boolean => {
 
     
 
-const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = false): Promise<boolean> => {
+/* macroStage folds the onboarding_stage_completed bump into THIS save.
+   Stage 3 used to call saveStage1() and then bumpMacroStage(3), which was a
+   second full PUT /employees/{id} plus a second onSaved refetch — four
+   sequential round trips to save one stage. Stage 4 already carries its own
+   bump in the payload (below); this gives Stage 3 the same. (QA #7) */
+const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = false, macroStage?: number): Promise<boolean> => {
   if (!emp?.dbId || s1Saving) return false;
   if (!skipValidate && !validateStage1()) return false;
   setS1Saving(true);
@@ -2571,6 +2576,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     };
     delete payload.reporting_manager;
     if (markComplete) payload.wizard_step_completed = 4;
+    // Forward-only, the same guard bumpMacroStage applied.
+    if (macroStage && macroStage > Number(emp.raw?.onboarding_stage_completed ?? 0)) {
+      payload.onboarding_stage_completed = macroStage;
+    }
     try {
       await persistObBreakup(emp.dbId);
       await api.put(`/employees/${emp.dbId}`, payload);
@@ -4179,9 +4188,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           return;
         }
         setNextLoading(true);
-        const ok = await saveStage1(false, true);
+        // The macro bump rides along in this save — see saveStage1's macroStage.
+        const ok = await saveStage1(false, true, false, 3);
         if (!ok) { setNextLoading(false); return; }
-        await bumpMacroStage(3);
         setNextLoading(false);
         toast.success('Stage 3 saved', 'Provisioning & asset details persisted.');
       }
@@ -4946,17 +4955,30 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         const fd = new FormData();
         fd.append('file', file);
         fd.append('document_key', docKey);
-        await api.post(`/employees/${emp.dbId}/documents`, fd, {
+        const resp = await api.post(`/employees/${emp.dbId}/documents`, fd, {
           headers: { 'Content-Type': undefined as unknown as string },
         });
-        const fresh = await reloadDocs();
-        if (fresh && fresh[docKey]) {
+        /* The 201 already carries the saved row, in the same shape the list
+           returns — so merge it rather than refetching every document to find
+           the one we just sent. Two sequential round trips became one, and the
+           201 itself is the server's confirmation. Refetch stays as the
+           fallback for a response that somehow carries no row. (QA #6) */
+        const saved = (resp?.data?.document ?? null) as ApiDocument | null;
+        if (saved?.document_key) {
+          const next = { ...docsByKey, [saved.document_key]: saved };
+          setDocsByKey(next);
+          onDocsChanged?.(Object.values(next).map(d => ({ document_key: d.document_key, status: d.status })));
           toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
         } else {
-          toast.warning(
-            `${docName} sent, but not confirmed`,
-            'The upload went through — reload the stage to see it. If it is still missing, upload again.',
-          );
+          const fresh = await reloadDocs();
+          if (fresh && fresh[docKey]) {
+            toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
+          } else {
+            toast.warning(
+              `${docName} sent, but not confirmed`,
+              'The upload went through — reload the stage to see it. If it is still missing, upload again.',
+            );
+          }
         }
       } catch (err: any) {
         const msg = err?.response?.data?.message
