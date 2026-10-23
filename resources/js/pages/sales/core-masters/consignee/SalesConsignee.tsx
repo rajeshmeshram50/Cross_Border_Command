@@ -1,5 +1,7 @@
-import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
 import { SegmentNameBadge } from '../../../../components/ui/SegmentBadge';
+import '../../../../components/ui/DataTable.css';
+import '../../../p2p/p2p-master-management/supplier-management/supplier-management.css';
 import './SalesConsignee.css';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -254,7 +256,7 @@ export default function SalesConsignee() {
   useEffect(() => {
     const el = tableCardRef.current;
     if (!el) return;
-    const fit = () => {
+    const fit = (heightOnly = false) => {
       /* First, and unconditionally. tbody's max-height is
          `calc(100% - var(--smcg-thead-h))`, so this has to be published on every
          pass -- including the unpinned one, which returns early. Measured
@@ -311,7 +313,7 @@ export default function SalesConsignee() {
         el.style.maxHeight = next;
       }
 
-      if (manualSize) return;   // user chose a Rows-per-page value — don't override it
+      if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smcg-toolbar') as HTMLElement | null)?.offsetHeight || 0;
       // Filter-chips bar only exists when filters are active; leaving it out of
       // the subtraction pushed the last row under the pager (mirrors customer).
@@ -329,12 +331,13 @@ export default function SalesConsignee() {
       const rowsFit = Math.max(5, Math.floor(avail / rowH));
       setPageSize(rowsFit);
     };
+    const onResize = () => fit();
     fit();
-    const t = window.setTimeout(fit, 120);
-    window.addEventListener('resize', fit);
+    const t = window.setTimeout(onResize, 120);
+    window.addEventListener('resize', onResize);
     let ro: ResizeObserver | undefined;
     let roSettle: (() => void) | undefined;
-    const banner = document.querySelector('.smcg-wdh-body-wrap');
+    const banner = document.querySelector('.smcg-bref');
     if (banner && typeof ResizeObserver !== 'undefined') {
       /* HEIGHT only. This observer is here for one thing: the banner being
          expanded or collapsed. But a ResizeObserver reports WIDTH too, and
@@ -346,26 +349,27 @@ export default function SalesConsignee() {
          Ignoring width-only notifications breaks it: the scrollbar can come
          and go without re-running the measurement. */
       let lastH = (banner as HTMLElement).getBoundingClientRect().height;
-      /* Debounced, and that is the point.
-         This banner animates its max-height over .35s, so the observer fires
-         on every frame of the open/close -- roughly twenty times -- and each
-         firing wrote a new height onto the card. The card sprang around for
-         the length of the animation, which is the bouncing. Trailing by 180ms,
-         fit() runs once, after the banner has settled on its final height. */
+      /* The card's HEIGHT follows the banner on every frame of its open/close
+         animation, so banner + card always add up to the same page height. When
+         the card only caught up after the animation, the page was briefly taller
+         than the viewport: a scrollbar appeared for the length of the animation,
+         narrowed the page, and everything shook. The row count is the expensive,
+         visible part, so that still waits until the banner has settled. */
       let settle: number | undefined;
       ro = new ResizeObserver(entries => {
         const h = entries[0]?.contentRect.height ?? 0;
         if (Math.abs(h - lastH) < 1) return;
         lastH = h;
+        fit(true);
         window.clearTimeout(settle);
-        settle = window.setTimeout(fit, 180);
+        settle = window.setTimeout(onResize, 180);
       });
       ro.observe(banner);
       roSettle = () => window.clearTimeout(settle);
     }
     return () => {
       window.clearTimeout(t);
-      window.removeEventListener('resize', fit);
+      window.removeEventListener('resize', onResize);
       roSettle?.();
       ro?.disconnect();
     };
@@ -505,14 +509,14 @@ export default function SalesConsignee() {
       header: 'Sr No',
       id: '__sr',
       meta: { align: 'center' },
-      cell: (info: any) => <span className="smcg-srno">{info.row.index + 1}</span>,
+      cell: (info: any) => <span className="dt-serial">{info.row.index + 1}</span>,
       enableSorting: false,
     },
     {
       header: 'Consignee ID',
       accessorKey: 'id',
       meta: { align: 'center' },
-      cell: (info: any) => <span className="smcg-id-chip">{info.getValue()}</span>,
+      cell: (info: any) => <span className="dt-id-chip">{info.getValue()}</span>,
     },
     {
       header: 'Customer ID',
@@ -722,90 +726,73 @@ export default function SalesConsignee() {
   return (
     <div className="smcg-root">
 
-      <div className="smcg-cstrip">
-        <span className="smcg-cstrip__accent" />
-        <span className="smcg-cstrip__glow" />
-        <span className="smcg-cstrip__sheen" />
-        <div className="smcg-cstrip-left">
-          <div className="smcg-cstrip-icon">
-            <i className="ri-truck-line" />
-          </div>
-          <div>
-            <div className="smcg-cstrip-title">Consignee</div>
-            <div className="smcg-cstrip-sub">
+      {/* HRMS header strip (teal variant, the page's green) — same component the
+          Employee list uses. */}
+      <div className="frm-cstrip hr-cstrip hr-cstrip--teal">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-truck-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Consignee</div>
+            <div className="frm-cstrip-sub">
               Manage consignee identity, shipment delivery ownership, compliance readiness, and customer-linked destination mapping for export execution.
             </div>
           </div>
         </div>
         {canAdd && (
-          <button
-            type="button"
-            className="smcg-cstrip-add"
-            onClick={() => { setEditing(null); setAddOpen(true); }}
-          >
-            <i className="ri-add-line" />
-            Add Consignee
-          </button>
+          <span className="sup-fig" style={{ display: 'contents' }}>
+            <button
+              type="button"
+              className="cstrip__action-btn flex-shrink-0"
+              onClick={() => { setEditing(null); setAddOpen(true); }}
+            >
+              <span className="cstrip__action-btn-sheen" />
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              Add Consignee
+            </button>
+          </span>
         )}
       </div>
-      <div className={`smcg-wdh-card ${wdhOpen ? 'is-open' : ''}`}>
-        <button
-          type="button"
-          className="smcg-wdh-toggle-row"
-          onClick={() => setWdhOpen(o => !o)}
-        >
-          <div className="smcg-wdh-heading">
-            <span className="smcg-wdh-bulb">
-              <i className="ri-lightbulb-flash-line" />
-            </span>
-            <div>
-              <div className="smcg-wdh-title">Consignee — What we are doing here</div>
-              <small className="smcg-wdh-sub">4 steps to complete consignee setup</small>
+
+      {/* "What We Are Doing Here" — the Supplier list's step-card banner. */}
+      <div className="sup-fig">
+        <div className={`bref-box smcg-bref ${wdhOpen ? '' : 'is-collapsed'}`}>
+          <div className="bref-box__header" onClick={() => setWdhOpen(o => !o)} role="button">
+            <div className="bref-box__header-ico"><i className="ri-truck-line" style={{ fontSize: 15 }} /></div>
+            <div className="bref-box__header-mid">
+              <div className="bref-box__header-row">
+                <div className="bref-box__header-label">Consignee</div>
+                <div className="bref-box__header-sep" />
+                <div className="bref-box__header-title">What We Are Doing Here</div>
+              </div>
+              <div className="bref-box__header-sub">4 steps to complete consignee setup.</div>
+            </div>
+            <div className="bref-box__header-right">
+              <div className="bref-box__toggle">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              </div>
             </div>
           </div>
-          <span className={`smcg-wdh-chev ${wdhOpen ? 'is-open' : ''}`}>
-            <i className="ri-arrow-down-s-line" />
-          </span>
-        </button>
-
-        {/* A flat 600px let this banner add more height than the viewport had,
-            so opening it pushed the table below the fold and the whole page
-            had to scroll -- which is what everything on it then felt like it
-            was fighting. The cap is now the room actually left (see
-            --wdh-max); past that the banner scrolls inside itself and the
-            page does not grow. */}
-        <div className="smcg-wdh-body-wrap" style={{ maxHeight: wdhOpen ? 'var(--wdh-max)' : 0 }}>
-          <div className="smcg-wdh-body">
-            {STEPS.map((s, i) => {
-              const isLast = i === STEPS.length - 1;
-              return (
-                <Fragment key={s.n}>
-                  <div className="smcg-step" data-n={i}>
-                    <div className="smcg-step-head">
-                      <div className="smcg-step-num">{s.n}</div>
-                      <span className="smcg-step-name">{s.name}</span>
-                    </div>
-                    <p className="smcg-step-desc">{s.desc}</p>
-                    <div className="smcg-step-tag">
-                      <span className="smcg-step-tag-dot" />
-                      {s.tag}
-                    </div>
-                  </div>
-                  {!isLast && (
-                    <div className="smcg-step-arrow"><i className="ri-arrow-right-s-line" /></div>
-                  )}
-                </Fragment>
-              );
-            })}
+          <div className="bref-box__body">
+            {STEPS.map(s => (
+              <div className="bref-item" key={s.n}>
+                <div className="bref-item__top">
+                  <div className="bref-item__ico"><i className={s.icon} style={{ fontSize: 12 }} /></div>
+                  <span className="bref-item__num">Step {String(s.n).padStart(2, '0')}</span>
+                </div>
+                <div className="bref-item__title">{s.name}</div>
+                <div className="bref-item__desc">{s.desc}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      <div className="smcg-table-card" ref={tableCardRef}>
+      <div className="smcg-table-card dt-root hr-dt" data-accent="emerald" ref={tableCardRef}>
 
         <div className="smcg-toolbar">
-          <div className="smcg-search ui-search-abs">
-            <i className="ri-search-line smcg-search-icon" />
+          <div className="dt-search">
+            <i className="ri-search-line dt-search-icon" />
             <input
               type="search"
               name="consignee-list-search"
@@ -816,19 +803,23 @@ export default function SalesConsignee() {
               value={q}
               onChange={(e) => onSearch(e.target.value)}
             />
-            <SearchClear show={q} onClear={() => { setQ(''); }} />
+            {q && (
+              <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => setQ('')}>
+                <i className="ri-close-line" />
+              </button>
+            )}
           </div>
           {/* Filter — opens the same two-pane modal the Lead Worksheet and the
               Customer list use. The badge shows how many values are active, so
               a filtered table is never mistaken for an empty one. */}
           <button
             type="button"
-            className={`smcg-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
+            className={`dt-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
             onClick={() => setFilterOpen(true)}
           >
             <i className="ri-equalizer-line" />
             Filter
-            {activeFilterCount > 0 && <span className="smcg-filter-badge">{activeFilterCount}</span>}
+            {activeFilterCount > 0 && <span className="dt-filter-badge">{activeFilterCount}</span>}
           </button>
           {false && canAdd && (
             <button
@@ -856,7 +847,7 @@ export default function SalesConsignee() {
               data={filtered}
               isGlobalFilter={false}
               customPageSize={pageSize}
-              tableClass="table align-middle table-nowrap mb-0"
+              tableClass="table align-middle table-nowrap mb-0 dt-table"
               theadClass="table-light"
               divClass="table-responsive"
               SearchPlaceholder="Search consignees..."
@@ -896,6 +887,7 @@ export default function SalesConsignee() {
         title="Filter Consignees"
         typeLabel="Consignee Type"
         theme="emerald"
+        className="smcg-filter-modal"
       />
 
       {addOpen && (
@@ -1171,11 +1163,11 @@ export default function SalesConsignee() {
   );
 }
 
-const STEPS: { n: number; name: string; desc: string; tag: string }[] = [
-  { n: 1, name: 'Create Consignee',           desc: 'Add consignee company, address, country, and contact details.',                tag: 'Foundation Step' },
-  { n: 2, name: 'Customer & Trade Linkage',   desc: 'Map consignee with the correct customer and trade flow.',                       tag: 'Relationship Mapping' },
-  { n: 3, name: 'Compliance & Risk Details',  desc: 'Capture compliance, country risk, and required document details.',              tag: 'Risk & Compliance' },
-  { n: 4, name: 'Shipment & Export Readiness',desc: 'Prepare consignee for PI, shipment, export, and execution workflows.',          tag: 'Final Execution' },
+const STEPS: { n: number; name: string; desc: string; tag: string; icon: string }[] = [
+  { n: 1, name: 'Create Consignee',           desc: 'Add consignee company, address, country, and contact details.',                tag: 'Foundation Step',      icon: 'ri-truck-line' },
+  { n: 2, name: 'Customer & Trade Linkage',   desc: 'Map consignee with the correct customer and trade flow.',                       tag: 'Relationship Mapping', icon: 'ri-links-line' },
+  { n: 3, name: 'Compliance & Risk Details',  desc: 'Capture compliance, country risk, and required document details.',              tag: 'Risk & Compliance',    icon: 'ri-shield-check-line' },
+  { n: 4, name: 'Shipment & Export Readiness',desc: 'Prepare consignee for PI, shipment, export, and execution workflows.',          tag: 'Final Execution',      icon: 'ri-ship-line' },
 ];
 
 const IconTruck = () => (
