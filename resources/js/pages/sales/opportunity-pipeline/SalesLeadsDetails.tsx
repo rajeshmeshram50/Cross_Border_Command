@@ -5,6 +5,7 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useNavigateContext } from '../../../components/App';
 import SearchClear from '../../../components/ui/SearchClear';
+import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 
 type ServerLead = {
   id:                number;
@@ -160,7 +161,7 @@ export default function SalesLeadsDetails() {
           <div>
             <div className="ldd-header-title">Leads Details</div>
             <div className="ldd-header-sub">
-              {total} lead{total === 1 ? '' : 's'} found
+              {loading ? <Shimmer width={70} height={9} /> : <>{total} lead{total === 1 ? '' : 's'} found</>}
             </div>
           </div>
         </div>
@@ -174,7 +175,7 @@ export default function SalesLeadsDetails() {
             </span>
           )}
           <span className="ldd-meta-chip">
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             {spName}
           </span>
           {spMgr && (
@@ -187,7 +188,7 @@ export default function SalesLeadsDetails() {
         {/* Search + Back */}
         <div className="ldd-header-right">
           <div className="ldd-search ui-search-abs">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input
               type="text"
               autoComplete="off"
@@ -237,9 +238,8 @@ export default function SalesLeadsDetails() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr><td colSpan={11} className="ldd-status">Loading leads…</td></tr>
-              )}
+              {/* Shimmer rows while the salesperson's leads load (not a bare "Loading…" line). */}
+              {loading && <ShimmerTableRows rows={ROWS_PER_PAGE} cols={11} height={12} cellClassName="" keyPrefix="ldd-shim" />}
               {!loading && leads.length === 0 && (
                 <tr><td colSpan={11} className="ldd-status">No leads found</td></tr>
               )}
@@ -302,17 +302,14 @@ export default function SalesLeadsDetails() {
   );
 }
 
-/* ─── Styles — amber/orange palette mirrors the prototype card. ──── */
+/* ─── Styles — the cyan palette of Lead Distribution / My Workplace. ──── */
 const LDD_CSS = `
+/* Leads Details — the My Workplace / Lead Distribution cyan (banner, toolbar
+   button, table header, row tint, pager). Layout is unchanged. */
 .ldd-page {
   box-sizing: border-box;
   margin: -1rem -0.75rem;
-  background: #fffbeb;
-  /* Fixed available height (viewport minus the app header + horizontal menu)
-     so the page fills the screen, the table scrolls INSIDE the card, and the
-     header + pagination stay pinned — mirrors the Lead Distribution page
-     (.ldp-page) and the My Workplace worksheet (.lwp-root). Even padding keeps
-     the header clear of the navbar with equal spacing on all sides. */
+  background: linear-gradient(160deg, #f0fdfe 0%, #e8fafb 30%, #f5feff 60%, #ffffff 100%);
   height: calc(100vh - 130px);
   overflow: hidden;
   display: flex; flex-direction: column;
@@ -322,28 +319,35 @@ const LDD_CSS = `
 }
 @keyframes ldd-fade { from { opacity: 0; } to { opacity: 1; } }
 
-/* Header */
+/* Header — the My Workplace banner */
 .ldd-header {
-  background: linear-gradient(135deg, #fef9c3 0%, #fef3c7 100%);
-  border: 1px solid #fde68a;
-  border-radius: 12px;
-  padding: 9px 16px;
+  position: relative; overflow: hidden;
+  background: linear-gradient(110deg, #f0fdff 0%, #e6fafe 25%, #d0f5fb 55%, #bef0f8 85%, #a8eaf5 100%);
+  border: 1px solid #cef3f9;
+  border-radius: 16px;
+  min-height: 58px;
+  padding: 9px 14px 9px 18px;
   display: flex; align-items: center; justify-content: space-between;
   gap: 14px; flex-shrink: 0;
+  box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 4px 16px rgba(8,145,178,.1), 0 1px 4px rgba(0,0,0,.04);
 }
-.ldd-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ldd-header::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: linear-gradient(180deg, #06b6d4, #0891b2, #0e7490);
+}
+.ldd-header-left { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .ldd-header-icon {
-  width: 40px; height: 40px; border-radius: 10px;
-  background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;
+  width: 38px; height: 38px; border-radius: 12px;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%); color: #fff;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 10px rgba(245,158,11,.35);
+  box-shadow: 0 0 0 3px rgba(8,145,178,.25), 0 4px 14px rgba(14,116,144,.45);
   flex-shrink: 0;
 }
 .ldd-header-title {
-  font-size: 16px; font-weight: 800; color: #451a03;
+  font-size: 14.5px; font-weight: 700; color: #0c4a6e;
   letter-spacing: -.3px; line-height: 1.2;
 }
-.ldd-header-sub  { font-size: 10.5px; color: #b45309; margin-top: 1px; font-weight: 500; }
+.ldd-header-sub  { font-size: 10px; color: #0e7490; margin-top: 2px; font-weight: 500; opacity: .85; }
 
 .ldd-meta {
   display: flex; align-items: center; gap: 6px;
@@ -351,100 +355,121 @@ const LDD_CSS = `
 }
 .ldd-meta-chip {
   display: inline-flex; align-items: center; gap: 5px;
-  background: #fff; border: 1px solid #fde68a; border-radius: 20px;
-  padding: 4px 12px; font-size: 10.5px; font-weight: 700; color: #78350f;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc; border-radius: 20px;
+  padding: 4px 12px; font-size: 11px; font-weight: 600; color: #0e7490;
 }
 .ldd-meta-chip-dark {
-  background: rgba(255,255,255,.55); border-color: #fcd34d;
-  color: #92400e;
+  background: rgba(255,255,255,.55); border-color: #67e8f9;
+  color: #155e75;
 }
 
 .ldd-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .ldd-search {
   display: flex; align-items: center; gap: 7px;
-  background: #fff; border: 1.5px solid #fde68a; border-radius: 9px;
-  padding: 5px 12px; height: 34px;
-  transition: border-color .15s;
+  background: #fff; border: 1.5px solid #a5f3fc; border-radius: 10px;
+  padding: 0 12px; height: 40px;
+  transition: border-color .15s, box-shadow .15s;
 }
-.ldd-search:focus-within { border-color: #d97706; }
+.ldd-search:focus-within { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
 .ldd-search input {
   border: none; outline: none; background: transparent;
-  font-family: inherit; font-size: 11.5px; color: #451a03; width: 160px;
+  font-family: inherit; font-size: 12px; color: #0c4a6e; width: 260px;
 }
+.ldd-search input::placeholder { color: #94a3b8; }
+/* Back = the My Workplace toolbar button (.lwp-bact): cyan gradient, 40px, 11.5 / 700. */
 .ldd-back-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 34px; padding: 0 15px;
-  background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;
-  border: none; border-radius: 8px;
-  font-family: inherit; font-size: 11.5px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 40px; padding: 0 18px;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); color: #fff;
+  border: none; border-radius: 12px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
   cursor: pointer; white-space: nowrap;
-  box-shadow: 0 3px 10px rgba(245,158,11,.35);
-  transition: transform .15s;
+  text-shadow: 0 1px 2px rgba(0,0,0,.15);
+  box-shadow: 0 4px 16px rgba(6,182,212,.45), 0 2px 6px rgba(8,145,178,.25), 0 1px 0 rgba(255,255,255,.22) inset;
+  transition: all .22s;
 }
-.ldd-back-btn:hover { transform: translateY(-1px); }
+.ldd-back-btn:hover {
+  background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 55%, #0891b2 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(6,182,212,.55), 0 3px 8px rgba(8,145,178,.3), 0 1px 0 rgba(255,255,255,.22) inset;
+}
 
-/* Table card */
+/* Table card — the My Workplace table card */
 .ldd-table-card {
   background: #fff;
-  border: 1px solid #fde68a;
-  border-radius: 10px;
+  border: 1.5px solid #a5f3fc;
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(245,158,11,.1);
+  box-shadow: 0 4px 20px rgba(8,145,178,.1), 0 1px 4px rgba(0,0,0,.04);
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
 }
-.ldd-table-wrap { flex: 1; overflow: auto; }
+.ldd-table-wrap { flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
 .ldd-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
-.ldd-table thead {
-  position: sticky; top: 0; z-index: 2;
-}
+.ldd-table thead { position: sticky; top: 0; z-index: 2; }
 .ldd-table thead tr {
-  background: linear-gradient(90deg, #78350f 0%, #92400e 30%, #b45309 65%, #d97706 100%);
+  background: linear-gradient(90deg, #155e75 0%, #0e7490 25%, #0891b2 55%, #06b6d4 80%, #22d3ee 100%);
+  box-shadow: 0 2px 10px rgba(8,145,178,.3);
 }
 .ldd-table thead th {
-  color: rgba(255,255,255,.85);
+  color: #fff;
   font-size: 8px; font-weight: 700;
   padding: 11px 8px;
-  text-transform: uppercase; letter-spacing: .09em;
+  text-transform: uppercase; letter-spacing: .07em;
   text-align: left;
+  text-shadow: 0 1px 3px rgba(0,0,0,.2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ldd-table thead th:first-child { padding-left: 16px; }
-
-.ldd-table tbody tr {
-  border-bottom: 1px solid #fef9c3;
-  transition: background .1s;
-}
-.ldd-table tbody tr:nth-child(even) { background: #fffdf5; }
-.ldd-table tbody tr:hover           { background: #fffbeb; }
+.ldd-table tbody tr { border-bottom: 1px solid #ecfeff; transition: background .1s; }
+.ldd-table tbody tr:nth-child(even) { background: #f7fffe; }
+.ldd-table tbody tr:hover           { background: #ecfeff; }
 .ldd-table tbody td {
   padding: 0; height: 42px; vertical-align: middle;
-  font-size: 11.5px;
+  font-size: 11.5px; color: #475569;
   padding-left: 8px; padding-right: 8px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ldd-table tbody td:first-child { padding-left: 14px; }
 
+/* Sr No = the Customers list badge (.dt-serial): filled rounded square, white
+   number — in this page's cyan. */
 .ldd-sr {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 5px;
-  background: #fff7ed; color: #c2410c;
-  font-size: 10px; font-weight: 800;
-  border: 1px solid #fed7aa;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: linear-gradient(135deg, #0891b2, #155e75);
+  color: #fff;
+  font-size: 11px; font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(8,145,178,.30);
 }
 .ldd-type-badge {
   display: inline-flex; padding: 2px 8px; border-radius: 6px;
   font-size: 10px; font-weight: 700;
-  background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+  background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;
   white-space: nowrap;
 }
+/* Opp. ID as a chip — the Customers list ID chip (.dt-id-chip) shape, in cyan. */
 .ldd-opp {
-  font-family: 'Geist Mono', monospace;
-  font-size: 11px; font-weight: 700; color: #4f46e5;
+  display: inline-flex; align-items: center;
+  padding: 2px 8px; border-radius: 6px;
+  background: #ecfeff; border: 1px solid #a5f3fc; color: #0e7490;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  white-space: nowrap;
 }
 .ldd-muted  { color: #64748b; font-size: 11px; }
-.ldd-strong { font-weight: 700; color: #0f172a; }
+.ldd-strong { font-weight: 600; color: #0f172a; }
 .ldd-na     { color: #cbd5e1; font-style: italic; font-size: 11px; }
+/* Cell type = the Customers list (.smc-table-wrap): 11.5 / 500 for every data cell;
+   the badges / ID / status pill keep their own sizes. */
+.ldd-table tbody td,
+.ldd-table tbody td *:not(i):not(svg):not(svg *) { font-size: 11.5px !important; font-weight: 500 !important; }
+.ldd-table tbody td .ldd-sr.ldd-sr { font-size: 11px !important; font-weight: 800 !important; }
+.ldd-table tbody td .ldd-opp.ldd-opp { font-family: 'JetBrains Mono', ui-monospace, monospace !important; font-size: 10px !important; font-weight: 600 !important; letter-spacing: .02em; }
+.ldd-table tbody td .ldd-type-badge.ldd-type-badge { font-size: 10px !important; font-weight: 600 !important; }
+.ldd-table tbody td .ldd-status-badge.ldd-status-badge,
+.ldd-table tbody td .ldd-status-badge.ldd-status-badge * { font-size: 10px !important; font-weight: 700 !important; }
 
 .ldd-status-badge {
   display: inline-flex; align-items: center; gap: 3px;
@@ -456,93 +481,81 @@ const LDD_CSS = `
 .ldd-status-d { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
 .ldd-status-q .ldd-status-dot { background: #22c55e; }
 .ldd-status-d .ldd-status-dot { background: #ef4444; }
-.ldd-status-dot {
-  width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
-}
+.ldd-status-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 
 .ldd-status {
   text-align: center; padding: 40px 14px;
   color: #94a3b8; font-style: italic; font-size: 12px;
 }
 
-/* Pagination */
+/* Pagination — the My Workplace pager */
 .ldd-pag {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 16px;
-  border-top: 1.5px solid #fef3c7;
-  background: #fffbeb;
-  flex-wrap: wrap; gap: 6px;
+  padding: 10px 16px;
+  border-top: 2px solid #a5f3fc;
+  background: linear-gradient(90deg, #ecfeff 0%, #cffafe 40%, #ecfeff 100%);
+  flex-wrap: wrap; gap: 8px;
   flex-shrink: 0;
 }
 .ldd-pag-info {
-  font-size: 11px; font-weight: 600; color: #92400e;
-  background: #fff; border: 1.5px solid #fde68a;
-  padding: 3px 12px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 500; color: #0e7490;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  padding: 5px 14px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
-.ldd-pag-info strong { color: #4f46e5; font-weight: 700; }
-.ldd-pag-ctrl { display: flex; align-items: center; gap: 5px; }
+.ldd-pag-info strong { color: #0891b2; font-weight: 800; }
+.ldd-pag-ctrl { display: flex; align-items: center; gap: 6px; }
 .ldd-pag-range {
-  font-size: 11px; font-weight: 700; color: #78350f;
-  background: linear-gradient(135deg, #fef9c3, #fef3c7);
-  border: 1.5px solid #fde68a;
-  padding: 3px 12px; border-radius: 20px; white-space: nowrap;
+  font-size: 11.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  border: none;
+  padding: 5px 18px; border-radius: 20px; white-space: nowrap;
+  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 .ldd-pag-btn {
-  width: 27px; height: 27px; border-radius: 50%;
-  border: 1.5px solid #fde68a; background: #fff;
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid #a5f3fc; background: rgba(255,255,255,.8);
   display: flex; align-items: center; justify-content: center;
-  color: #d97706;
-  cursor: pointer; transition: background .15s, color .15s;
+  color: #0891b2;
+  cursor: pointer; transition: all .18s;
 }
-.ldd-pag-btn:hover:not(:disabled) { background: #d97706; color: #fff; }
-.ldd-pag-btn:disabled              { cursor: not-allowed; opacity: .45; }
+.ldd-pag-btn:hover:not(:disabled) { background: #fff; border-color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.25); }
+.ldd-pag-btn:disabled              { cursor: not-allowed; opacity: .4; }
 
-/* Dark mode */
-[data-bs-theme="dark"] .ldd-page         { background: #1c1410; }
-[data-bs-theme="dark"] .ldd-header       { background: linear-gradient(135deg, #422006 0%, #78350f 100%); border-color: #b45309; }
-[data-bs-theme="dark"] .ldd-header-title { color: #fef3c7; }
-[data-bs-theme="dark"] .ldd-header-sub   { color: #fcd34d; }
-[data-bs-theme="dark"] .ldd-meta-chip    { background: #1f1611; color: #fde68a; border-color: #b45309; }
-[data-bs-theme="dark"] .ldd-meta-chip-dark { background: rgba(0,0,0,.30); color: #fcd34d; border-color: #b45309; }
-[data-bs-theme="dark"] .ldd-search       { background: #1f1611; border-color: #422006; }
-[data-bs-theme="dark"] .ldd-search input { color: #fef3c7; }
-[data-bs-theme="dark"] .ldd-table-card   { background: #1f1611; border-color: #422006; }
-[data-bs-theme="dark"] .ldd-table tbody tr { border-color: #422006; }
-[data-bs-theme="dark"] .ldd-table tbody tr:nth-child(even) { background: #28190e; }
-[data-bs-theme="dark"] .ldd-table tbody tr:hover           { background: #422006; }
-[data-bs-theme="dark"] .ldd-table tbody td { color: #fef3c7; }
-[data-bs-theme="dark"] .ldd-muted        { color: #fde68a; }
-[data-bs-theme="dark"] .ldd-strong       { color: #fef3c7; }
-[data-bs-theme="dark"] .ldd-pag          { background: #1c1410; border-color: #422006; }
-[data-bs-theme="dark"] .ldd-pag-info     { background: #1f1611; color: #fde68a; border-color: #422006; }
-/* Remaining light-surfaced cell bits — badges, links, status pills and the
-   pagination controls — retuned for the dark #1c1410 surface so the page
-   reads cohesively instead of flashing light-mode tints. */
-[data-bs-theme="dark"] .ldd-sr {
-  background: #2a1d10; color: #fdba74; border-color: #7c2d12;
+/* Dark mode — the My Workplace dark cyan */
+[data-bs-theme="dark"] .ldd-page         { background: transparent; }
+[data-bs-theme="dark"] .ldd-header {
+  background:
+    radial-gradient(ellipse at top right, rgba(34,211,238,0.10), transparent 60%),
+    radial-gradient(ellipse at bottom left, rgba(14,165,233,0.08), transparent 60%),
+    linear-gradient(135deg, #0e2940 0%, #102a3a 50%, #0c1f2e 100%);
+  border-color: rgba(34,211,238,0.18);
+  box-shadow: 0 4px 16px rgba(0,0,0,.35);
 }
-[data-bs-theme="dark"] .ldd-type-badge {
-  background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.40);
-}
-[data-bs-theme="dark"] .ldd-opp { color: #a5b4fc; }
-[data-bs-theme="dark"] .ldd-na  { color: #78716c; }
-[data-bs-theme="dark"] .ldd-status   { color: #a8a29e; }
-[data-bs-theme="dark"] .ldd-status-q {
-  background: rgba(22,163,74,.18); color: #86efac; border-color: rgba(34,197,94,.40);
-}
-[data-bs-theme="dark"] .ldd-status-d {
-  background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(239,68,68,.40);
-}
-[data-bs-theme="dark"] .ldd-pag-info strong { color: #a5b4fc; }
-[data-bs-theme="dark"] .ldd-pag-range {
-  color: #fcd34d; background: linear-gradient(135deg, #28190e, #1f1611); border-color: #422006;
-}
-[data-bs-theme="dark"] .ldd-pag-btn {
-  background: #1f1611; border-color: #422006; color: #fcd34d;
-}
-[data-bs-theme="dark"] .ldd-pag-btn:hover:not(:disabled) {
-  background: #d97706; color: #1c1410; border-color: #d97706;
-}
+[data-bs-theme="dark"] .ldd-header-title { color: #f0f9ff; }
+[data-bs-theme="dark"] .ldd-header-sub   { color: #67e8f9; }
+[data-bs-theme="dark"] .ldd-meta-chip    { background: rgba(34,211,238,.10); color: #67e8f9; border-color: rgba(103,232,249,.35); }
+[data-bs-theme="dark"] .ldd-meta-chip-dark { background: rgba(0,0,0,.25); color: #a5f3fc; border-color: rgba(103,232,249,.35); }
+[data-bs-theme="dark"] .ldd-search       { background: #0f2233; border-color: rgba(103,232,249,.30); }
+[data-bs-theme="dark"] .ldd-search input { color: #e2e8f0; }
+[data-bs-theme="dark"] .ldd-table-card   { background: #0f2233; border-color: rgba(34,211,238,.25); box-shadow: 0 4px 20px rgba(0,0,0,.35); }
+[data-bs-theme="dark"] .ldd-table tbody tr { border-color: rgba(34,211,238,.10); }
+[data-bs-theme="dark"] .ldd-table tbody tr:nth-child(even) { background: rgba(8,145,178,.06); }
+[data-bs-theme="dark"] .ldd-table tbody tr:hover           { background: rgba(8,145,178,.14); }
+[data-bs-theme="dark"] .ldd-table tbody td { color: #cbd5e1; }
+[data-bs-theme="dark"] .ldd-muted        { color: #94a3b8; }
+[data-bs-theme="dark"] .ldd-strong       { color: #f0f9ff; }
+[data-bs-theme="dark"] .ldd-sr           { color: #e2e8f0; }
+[data-bs-theme="dark"] .ldd-type-badge   { background: rgba(3,105,161,.25); color: #7dd3fc; border-color: rgba(125,211,252,.35); }
+[data-bs-theme="dark"] .ldd-opp          { color: #67e8f9; background: rgba(8,145,178,.16); border-color: rgba(103,232,249,.35); }
+[data-bs-theme="dark"] .ldd-na           { color: #475569; }
+[data-bs-theme="dark"] .ldd-status       { color: #94a3b8; }
+[data-bs-theme="dark"] .ldd-status-q     { background: rgba(22,163,74,.18); color: #86efac; border-color: rgba(34,197,94,.40); }
+[data-bs-theme="dark"] .ldd-status-d     { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(239,68,68,.40); }
+[data-bs-theme="dark"] .ldd-pag          { background: rgba(8,145,178,.08); border-top-color: rgba(34,211,238,.25); }
+[data-bs-theme="dark"] .ldd-pag-info     { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
+[data-bs-theme="dark"] .ldd-pag-info strong { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldd-pag-btn      { background: rgba(15,34,51,.8); border-color: rgba(103,232,249,.30); color: #67e8f9; }
 
 /* Responsive */
 @media (max-width: 1100px) {
