@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
-import WorklistPager from '../../components/ui/WorklistPager';
 import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import '../../../css/recruitment.css';
@@ -412,20 +411,32 @@ export default function HrLeavePlans() {
      — reading the values through refs keeps it stable, so the many places that
      call loadPlans() after a save do not each need the page in their deps. */
   const [planPage, setPlanPage] = useState(1);
-  const [planPerPage, setPlanPerPage] = useState(10);
+  /** Page size for the infinite scroll — 10 at a time, as the other HR lists. */
+  const [planPerPage] = useState(10);
   const [planTotal, setPlanTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const planPageRef = useRef(1);
   const planPerPageRef = useRef(10);
   const planSearchRef = useRef('');
+  /* Mirrors of the two loading flags, read inside the IntersectionObserver.
+     The observer closes over its creation render, so reading the state
+     directly there would test a stale value and let a second page fire while
+     the first is still out. */
+  const loadingRef = useRef(false);
+  const loadingMoreRef = useRef(false);
   useEffect(() => { planPageRef.current = planPage; }, [planPage]);
   useEffect(() => { planPerPageRef.current = planPerPage; }, [planPerPage]);
+  useEffect(() => { loadingRef.current = loading; }, [loading]);
+  useEffect(() => { loadingMoreRef.current = loadingMore; }, [loadingMore]);
 
   const loadPlans = useCallback(async () => {
     // Drive the body shimmer for the FULL reload lifecycle (list + per-plan
     // detail fetches) so every dataset refresh — including the one right after
     // creating a new plan — shows the skeleton until the data is ready, rather
     // than snapping in instantly.
-    setLoading(true);
+    /* The body shimmer is for a FIRST page only. Appending page 2 must not
+       blank the plan already open on the right — it is a scroll, not a reload. */
+    if (planPageRef.current <= 1) setLoading(true); else setLoadingMore(true);
     try {
       /* One request, detail included. This was a list() followed by a show()
          per plan — 1+N round trips, each re-running the same heavy eager load
@@ -435,7 +446,15 @@ export default function HrLeavePlans() {
         planPageRef.current, planPerPageRef.current, true, planSearchRef.current,
       );
       const mapped = detailed.map(apiPlanToFrontend);
-      setPlans(mapped);
+      /* APPEND when loading a later page, replace otherwise.
+         Keyed by id rather than concatenated blindly: a plan created or renamed
+         between two pages shifts the ordering, and the same row can arrive
+         twice. (QA #8) */
+      setPlans(prev => {
+        if (planPageRef.current <= 1) return mapped;
+        const seen = new Set(prev.map(p => p.id));
+        return [...prev, ...mapped.filter(p => !seen.has(p.id))];
+      });
       setPlanTotal(total);
       const seeded: Record<string, LeaveTypeConfig> = {};
       detailed.forEach(p => {
@@ -456,8 +475,31 @@ export default function HrLeavePlans() {
       console.warn('[HrLeavePlans] failed to load plans', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, []);
+
+  /* Infinite scroll for the plan list.
+     A sentinel at the bottom of .lp-plan-list (which already scrolls inside the
+     sidebar, max-height 390px) tells us when the operator has reached the end;
+     the next page is then appended. IntersectionObserver rather than a scroll
+     handler so nothing runs on frames where nothing changed. */
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const hasMorePlans = plans.length < planTotal;
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !hasMorePlans) return;
+    const io = new IntersectionObserver((entries) => {
+      if (!entries[0]?.isIntersecting) return;
+      // Guard against a second trigger while the first page is still in flight.
+      if (loadingRef.current || loadingMoreRef.current) return;
+      planPageRef.current += 1;
+      setPlanPage(planPageRef.current);
+      loadPlans();
+    }, { root: node.parentElement, rootMargin: '80px' });
+    io.observe(node);
+    return () => io.disconnect();
+  }, [hasMorePlans, loadPlans]);
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -813,24 +855,26 @@ export default function HrLeavePlans() {
                         </div>
                       </button>
                     ))}
+                    {/* The sentinel lives INSIDE the scrolling list, so the
+                        observer's root is the list itself. rootMargin pulls the
+                        next page in 80px early — the rows are there before the
+                        scroll reaches the end, rather than after a visible stop.
+                        (QA #8) */}
+                    {hasMorePlans && (
+                      <div ref={loadMoreRef} className="lp-plan-more">
+                        {loadingMore
+                          ? <><span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />Loading more…</>
+                          : `${plans.length} of ${planTotal}`}
+                      </div>
+                    )}
                   </div>
-                  {/* Server-side pager — the list above is one page, not the
-                      whole set. Hidden when everything fits, so a short list
-                      does not carry a "1 / 1" and two dead arrows. (QA #8) */}
-                  <WorklistPager
-                    total={planTotal}
-                    page={planPage}
-                    pageSize={planPerPage}
-                    hideNavWhenSinglePage
-                    onPage={(p) => { planPageRef.current = p; setPlanPage(p); loadPlans(); }}
-                    onPageSize={(n) => {
-                      planPerPageRef.current = n;
-                      planPageRef.current = 1;
-                      setPlanPerPage(n);
-                      setPlanPage(1);
-                      loadPlans();
-                    }}
-                  />
+                  {/* Only once the whole set is in hand — a count that keeps
+                      changing while more loads is noise. */}
+                  {!hasMorePlans && planTotal > 0 && (
+                    <div className="lp-plan-count-note">
+                      {planTotal} {planTotal === 1 ? 'plan' : 'plans'}
+                    </div>
+                  )}
                   {canAdd && (
                     <button
                       type="button"
