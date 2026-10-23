@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import '../../../components/ui/DataTable.css';
+import '../../p2p/p2p-master-management/supplier-management/supplier-management.css';
 import './SalesTodo.css';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
@@ -264,17 +266,17 @@ export default function SalesTodo() {
       if (!autoFitRef.current) return;
       const avail = el.clientHeight;
       if (avail <= 0) return;
-      const THEAD = 36, ROW = 40;   // todo table header + row heights (px)
-      const fit = Math.max(1, Math.floor((avail - THEAD) / ROW));
-      // The dropdown always offers the same FIXED options (5 / 10 / 25 — QA #21).
-      // Auto-fit still fills the screen: it snaps the computed fit to the
-      // NEAREST fixed option, so the selected value is always one that's in the
-      // list (never an odd 7) AND the table fills without a big gap.
-      const snapped = ROWS_OPTIONS.reduce(
-        (best, o) => (Math.abs(o - fit) < Math.abs(best - fit) ? o : best),
-        ROWS_OPTIONS[0],
-      );
-      setRpp(prev => (prev === snapped ? prev : snapped));
+      /* Measured, not guessed (same fix as the other Sales lists): the real header
+         row and body row heights. +2 so sub-pixel rows don't cost a whole row. */
+      const THEAD = (el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 36;
+      const rowEl = el.querySelector('tbody td:not(.td-empty)')?.closest('tr') as HTMLElement | null;
+      const ROW   = rowEl?.getBoundingClientRect().height || 40;
+      /* EXACT fit, like the Customers / Consignee lists: as many rows as the space
+         holds, so a last row that fits is shown instead of left as a gap. (This
+         replaced snapping to the nearest fixed option — QA #21 — at the user's
+         request.) Floor of 5 avoids a 1–2-row page on a very short window. */
+      const fit = Math.max(5, Math.floor((avail - THEAD + 2) / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
     };
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
@@ -952,27 +954,35 @@ export default function SalesTodo() {
     <div className="td-root">
       
 
-      {/* ── Header with tabs ── */}
-      <div className="td-header">
-        <span className="td-header-glow" />
-        <div className="td-header-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
-            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-          </svg>
-        </div>
-        <div className="td-header-text">
-          <div className="td-header-title">Productivity Tracker</div>
-          <div className="td-header-sub">Manage your tasks, meetings and daily reminders</div>
-        </div>
-        <div className="td-tabs">
-          <button
-            className={`td-tab ${tab === 'reminder' ? 'td-tab-active' : ''}`}
-            onClick={() => switchTab('reminder')}
-          >Reminder</button>
-          <button
-            className={`td-tab ${tab === 'meeting' ? 'td-tab-active' : ''}`}
-            onClick={() => switchTab('meeting')}
-          >Meeting</button>
+      {/* ── Header — the Supplier list header (.sup-fig .cstrip) in the page's teal, with
+              Reminder / Meeting as the list tab rail (as on Quotations V/S PI). ── */}
+      <div className="sup-fig">
+        <div className="cstrip">
+          <span className="cstrip__accent" />
+          <span className="cstrip__glow" />
+          <span className="cstrip__sheen" />
+          <div className="cstrip__left">
+            <div className="cstrip__avatar-wrap">
+              <div className="cstrip__avatar">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
+                  <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                </svg>
+              </div>
+              <span className="cstrip__online-dot" />
+            </div>
+            <div className="min-w-0">
+              <div className="cstrip__title">Productivity Tracker</div>
+              <div className="cstrip__sub">Manage your tasks, meetings and daily reminders</div>
+            </div>
+          </div>
+          <div className="cstrip__right">
+            <div className="dt-tabrail hr-dt flex-shrink-0">
+              <div className="dt-tabs" role="tablist">
+                <button type="button" role="tab" aria-selected={tab === 'reminder'} className={`dt-tab ${tab === 'reminder' ? 'on' : 'off'}`} onClick={() => switchTab('reminder')}>Reminder</button>
+                <button type="button" role="tab" aria-selected={tab === 'meeting'} className={`dt-tab ${tab === 'meeting' ? 'on' : 'off'}`} onClick={() => switchTab('meeting')}>Meeting</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -981,68 +991,89 @@ export default function SalesTodo() {
         <div className="td-toolbar-row">
           <div className="td-filters">
             {tab === 'reminder' ? (
-              REMINDER_FILTERS.map(f => {
-                const active = reminderFilter === f.key;
-                return (
-                  <button
-                    key={f.key}
-                    className={`td-sf ${active ? 'active' : ''}`}
-                    onClick={() => { setReminderFilter(f.key); setPage(1); }}
-                  >
-                    {f.icon}
-                    {f.label}
-                    <span className={`td-sf-count ${active ? 'td-sf-count-active' : ''}`}>{reminderCounts[f.key]}</span>
-                  </button>
-                );
-              })
+              <div className="dt-tabrail hr-dt flex-shrink-0">
+                <div className="dt-tabs" role="tablist">
+                  {REMINDER_FILTERS.map(f => {
+                    const active = reminderFilter === f.key;
+                    return (
+                      <button
+                        key={f.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        className={`dt-tab ${active ? 'on' : 'off'}`}
+                        onClick={() => { setReminderFilter(f.key); setPage(1); }}
+                      >
+                        {f.icon}
+                        {f.label}
+                        <span className="dt-tab-count">{reminderCounts[f.key]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ) : (
-              <>
-                <button
-                  className={`td-meeting-pill ${meetingSub === 'virtual' ? 'active' : ''}`}
-                  onClick={() => { setMeetingSub('virtual'); setMeetingFilter('In Progress'); setPage(1); }}
-                >
-                  <IconCam />
-                  Virtual Meetings
-                  <span className={`td-pill-count ${meetingSub === 'virtual' ? 'td-pill-count-active' : ''}`}>{meetingTypeCounts.virtual}</span>
-                </button>
-                <button
-                  className={`td-meeting-pill ${meetingSub === 'physical' ? 'active' : ''}`}
-                  onClick={() => { setMeetingSub('physical'); setMeetingFilter('In Progress'); setPage(1); }}
-                >
-                  <IconPin />
-                  Physical Meetings
-                  <span className={`td-pill-count ${meetingSub === 'physical' ? 'td-pill-count-active' : ''}`}>{meetingTypeCounts.physical}</span>
-                </button>
-              </>
+              <div className="dt-tabrail hr-dt flex-shrink-0">
+                <div className="dt-tabs" role="tablist">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={meetingSub === 'virtual'}
+                    className={`dt-tab ${meetingSub === 'virtual' ? 'on' : 'off'}`}
+                    onClick={() => { setMeetingSub('virtual'); setMeetingFilter('In Progress'); setPage(1); }}
+                  >
+                    <IconCam />
+                    Virtual Meetings
+                    <span className="dt-tab-count">{meetingTypeCounts.virtual}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={meetingSub === 'physical'}
+                    className={`dt-tab ${meetingSub === 'physical' ? 'on' : 'off'}`}
+                    onClick={() => { setMeetingSub('physical'); setMeetingFilter('In Progress'); setPage(1); }}
+                  >
+                    <IconPin />
+                    Physical Meetings
+                    <span className="dt-tab-count">{meetingTypeCounts.physical}</span>
+                  </button>
+                </div>
+              </div>
             )}
             {/* View toggle inline with the filters for both tabs (matches Figma) */}
-            <div className="td-view-toggle">
-              <button
-                className={`td-view-btn ${view === 'list' ? 'active' : ''}`}
-                title="List View"
-                onClick={() => setView('list')}
-              >
-                <IconList />
-                List
-              </button>
-              <button
-                className={`td-view-btn ${view === 'calendar' ? 'active' : ''}`}
-                title="Calendar View"
-                onClick={() => { setView('calendar'); setPopover(null); }}
-              >
-                <IconCal />
-                Calendar
-              </button>
+            <div className="dt-tabrail hr-dt flex-shrink-0">
+              <div className="dt-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'list'}
+                  className={`dt-tab ${view === 'list' ? 'on' : 'off'}`}
+                  title="List View"
+                  onClick={() => setView('list')}
+                >
+                  <IconList />
+                  List
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'calendar'}
+                  className={`dt-tab ${view === 'calendar' ? 'on' : 'off'}`}
+                  title="Calendar View"
+                  onClick={() => { setView('calendar'); setPopover(null); }}
+                >
+                  <IconCal />
+                  Calendar
+                </button>
+              </div>
             </div>
           </div>
           {/* Search sits right after the filters (and the inline view
               toggle for the Meeting tab) so it lands next to the
               List/Calendar control. The Add button is the only thing in
               the right corner of the row. */}
-          <div className="td-search-wrap ui-search-abs">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#99c9c4" strokeWidth="2.3">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-            </svg>
+          <div className="dt-search ui-search-abs">
+            <i className="ri-search-line dt-search-icon" />
             <input
               type="text"
               autoComplete="off"
@@ -1054,10 +1085,14 @@ export default function SalesTodo() {
           </div>
           <div className="td-toolbar-right">
             {canAdd && (
-              <button className="td-add-btn" onClick={openAdd}>
-                <IconPlus />
-                {tab === 'reminder' ? 'Add Reminder' : 'Add Meeting'}
-              </button>
+              /* The Supplier header's Add button (.sup-fig .cstrip__action-btn), in teal. */
+              <span className="sup-fig" style={{ display: 'contents' }}>
+                <button type="button" className="cstrip__action-btn" onClick={openAdd}>
+                  <span className="cstrip__action-btn-sheen" />
+                  <IconPlus />
+                  {tab === 'reminder' ? 'Add Reminder' : 'Add Meeting'}
+                </button>
+              </span>
             )}
           </div>
         </div>
@@ -1068,21 +1103,27 @@ export default function SalesTodo() {
             <span className="td-meeting-status-label">
               {meetingSub === 'virtual' ? '💻 VIRTUAL —' : '🏢 PHYSICAL —'}
             </span>
-            {MEETING_FILTERS.map(f => {
-              const active = meetingFilter === f.key;
-              return (
-                <button
-                  key={f.key}
-                  className={`td-sf ${active ? 'active' : ''}`}
-                  style={{ height: 34 }}
-                  onClick={() => { setMeetingFilter(f.key); setPage(1); }}
-                >
-                  {f.icon}
-                  {f.label}
-                  <span className={`td-sf-count td-sf-count-sm ${active ? 'td-sf-count-active' : ''}`}>{meetingStatusCounts[f.key]}</span>
-                </button>
-              );
-            })}
+            <div className="dt-tabrail hr-dt flex-shrink-0">
+              <div className="dt-tabs" role="tablist">
+                {MEETING_FILTERS.map(f => {
+                  const active = meetingFilter === f.key;
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      className={`dt-tab ${active ? 'on' : 'off'}`}
+                      onClick={() => { setMeetingFilter(f.key); setPage(1); }}
+                    >
+                      {f.icon}
+                      {f.label}
+                      <span className="dt-tab-count">{meetingStatusCounts[f.key]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1123,10 +1164,10 @@ export default function SalesTodo() {
 
       {/* ── Table ── */}
       {view === 'list' && (
-      <div className="td-table-card">
+      <div className="td-table-card dt-root hr-dt">
         <div className="td-table-wrap" ref={wrapRef}>
           {tab === 'reminder' ? (
-            <table className="td-table" style={{ tableLayout: 'fixed' }}>
+            <table className="td-table dt-table" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>
                   <th style={{ width: '5%' }}>Sr No</th>
@@ -1146,8 +1187,8 @@ export default function SalesTodo() {
                   const today = isToday(r.setDate) && r.status === 'In Progress';
                   return (
                     <tr key={r.id} className={today ? 'td-today-row' : ''}>
-                      <td><span className="td-sr-pill">{startIdx + i + 1}</span></td>
-                      <td><span className="td-opp-id">{r.oppId}</span></td>
+                      <td><span className="dt-serial">{startIdx + i + 1}</span></td>
+                      <td><span className="dt-id-chip">{r.oppId}</span></td>
                       <td className="td-cell-subject" style={{ fontWeight: 500 }}>
                         <span className="td-subject-text" title={r.subject}>{r.subject}</span>
                       </td>
@@ -1164,21 +1205,21 @@ export default function SalesTodo() {
                               row can be inspected without entering edit mode
                               (QA bug 31). */}
                           <Tooltip label="View details">
-                            <button type="button" className="td-ab td-ab-view" aria-label="View" onClick={() => setViewReminder(r)}><IconEye /></button>
+                            <button type="button" className="smc-act smc-act-info" aria-label="View" onClick={() => setViewReminder(r)}><IconEye /></button>
                           </Tooltip>
                           {canEdit && r.status !== 'Done' && (
                             <Tooltip label="Edit">
-                              <button type="button" className="td-ab td-ab-edit" aria-label="Edit" onClick={() => openEdit(r)}><IconEdit /></button>
+                              <button type="button" className="smc-act smc-act-edit" aria-label="Edit" onClick={() => openEdit(r)}><IconEdit /></button>
                             </Tooltip>
                           )}
                           {canEdit && r.status === 'Done' && (
                             <Tooltip label="Completed reminders are read-only">
-                              <button type="button" aria-disabled="true" className="td-ab td-ab-edit td-ab-muted" aria-label="Edit (disabled)"><IconEdit /></button>
+                              <button type="button" aria-disabled="true" className="smc-act smc-act-edit td-ab-muted" aria-label="Edit (disabled)"><IconEdit /></button>
                             </Tooltip>
                           )}
                           {r.status !== 'Done' && canEdit && (
                             <Tooltip label="Mark Done">
-                              <button type="button" className="td-ab td-ab-done" aria-label="Mark Done" onClick={() => setMark(r, 'Done')}><IconCheck /></button>
+                              <button type="button" className="smc-act smc-act-map" aria-label="Mark Done" onClick={() => setMark(r, 'Done')}><IconCheck /></button>
                             </Tooltip>
                           )}
                           {/* Done rows keep the slot rather than dropping the
@@ -1192,12 +1233,12 @@ export default function SalesTodo() {
                               nothing left to do on a completed reminder. */}
                           {r.status === 'Done' && canEdit && (
                             <Tooltip label="Already completed">
-                              <button type="button" aria-disabled="true" className="td-ab td-ab-done td-ab-muted" aria-label="Already completed"><IconCheck /></button>
+                              <button type="button" aria-disabled="true" className="smc-act smc-act-map td-ab-muted" aria-label="Already completed"><IconCheck /></button>
                             </Tooltip>
                           )}
                           {canDel && (
                             <Tooltip label="Delete">
-                              <button className="td-ab td-ab-del" aria-label="Delete" onClick={() => del(r)}><IconTrash /></button>
+                              <button className="smc-act smc-act-del" aria-label="Delete" onClick={() => del(r)}><IconTrash /></button>
                             </Tooltip>
                           )}
                         </div>
@@ -1208,7 +1249,7 @@ export default function SalesTodo() {
               </tbody>
             </table>
           ) : (
-            <table className="td-table td-table-mtg">
+            <table className="td-table td-table-mtg dt-table">
               <thead>
                 <tr>
                   <th style={{ width: 60 }}>Sr No</th>
@@ -1233,14 +1274,14 @@ export default function SalesTodo() {
                   const isPhys = m.type === 'physical';
                   return (
                     <tr key={m.id}>
-                      <td><span className="td-sr-pill">{startIdx + i + 1}</span></td>
+                      <td><span className="dt-serial">{startIdx + i + 1}</span></td>
                       <td>
-                        <span className="td-opp-id">{m.code}</span>
+                        <span className="dt-id-chip">{m.code}</span>
                         <span className={`td-mtg-type ${isPhys ? 'td-mtg-type-phys' : 'td-mtg-type-virt'}`}>
                           {isPhys ? 'Physical' : 'Virtual'}
                         </span>
                       </td>
-                      <td><span className="td-opp-id">{m.oppId}</span></td>
+                      <td><span className="dt-id-chip">{m.oppId}</span></td>
                       <td className="td-cell-strong">{m.customer}</td>
                       <td className="td-cell-muted td-cell-sm">{m.email}</td>
                       <td className="td-cell-muted">{m.contact}</td>
@@ -1268,14 +1309,14 @@ export default function SalesTodo() {
                                   href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(m.venue)}`}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="td-ab td-ab-loc"
+                                  className="smc-act smc-act-warn"
                                   aria-label="View on Maps"
                                 ><IconLocation /></a>
                               </Tooltip>
                             ) : (
                               <Tooltip label="No venue">
                                 <button
-                                  className="td-ab td-ab-loc"
+                                  className="smc-act smc-act-warn"
                                   aria-label="No venue captured"
                                   onClick={() => toast.info('No venue', 'This meeting doesn’t have a venue captured.')}
                                 ><IconLocation /></button>
@@ -1290,7 +1331,7 @@ export default function SalesTodo() {
                               <Tooltip label={`Join disabled — meeting ${m.status.toLowerCase()}`}>
                                 <button
                                   type="button"
-                                  className="td-ab td-ab-join"
+                                  className="smc-act smc-act-map"
                                   aria-label={`Join disabled — meeting ${m.status.toLowerCase()}`}
                                   disabled
                                   style={{ opacity: 0.4, cursor: 'not-allowed' }}
@@ -1298,7 +1339,7 @@ export default function SalesTodo() {
                               </Tooltip>
                             ) : (
                               <Tooltip label="Join Meeting">
-                                <a href={m.link} target="_blank" rel="noreferrer" className="td-ab td-ab-join" aria-label="Join Meeting"><IconVideo /></a>
+                                <a href={m.link} target="_blank" rel="noreferrer" className="smc-act smc-act-map" aria-label="Join Meeting"><IconVideo /></a>
                               </Tooltip>
                             )
                           ))}
@@ -1311,7 +1352,7 @@ export default function SalesTodo() {
                               <Tooltip label={`Editing disabled — meeting ${m.status.toLowerCase()}`}>
                                 <button
                                   type="button"
-                                  className="td-ab td-ab-edit"
+                                  className="smc-act smc-act-edit"
                                   aria-label={`Edit disabled — meeting ${m.status.toLowerCase()}`}
                                   disabled
                                   style={{ opacity: 0.4, cursor: 'not-allowed' }}
@@ -1319,20 +1360,20 @@ export default function SalesTodo() {
                               </Tooltip>
                             ) : (
                               <Tooltip label="Edit">
-                                <button className="td-ab td-ab-edit" aria-label="Edit" onClick={() => openEdit(m)}><IconEdit /></button>
+                                <button className="smc-act smc-act-edit" aria-label="Edit" onClick={() => openEdit(m)}><IconEdit /></button>
                               </Tooltip>
                             )
                           )}
                           {m.status === 'In Progress' && canEdit && (
                             <>
                               <Tooltip label="Mark Done">
-                                <button className="td-ab td-ab-done" aria-label="Mark Done" onClick={() => setMark(m, 'Done')}><IconCheck /></button>
+                                <button className="smc-act smc-act-map" aria-label="Mark Done" onClick={() => setMark(m, 'Done')}><IconCheck /></button>
                               </Tooltip>
                               <Tooltip label="Postpone">
-                                <button className="td-ab td-ab-post" aria-label="Postpone" onClick={() => setMark(m, 'Postponed')}><IconClock /></button>
+                                <button className="smc-act smc-act-warn" aria-label="Postpone" onClick={() => setMark(m, 'Postponed')}><IconClock /></button>
                               </Tooltip>
                               <Tooltip label="Cancel">
-                                <button className="td-ab td-ab-del" aria-label="Cancel" onClick={() => setMark(m, 'Cancelled')}><IconX /></button>
+                                <button className="smc-act smc-act-del" aria-label="Cancel" onClick={() => setMark(m, 'Cancelled')}><IconX /></button>
                               </Tooltip>
                             </>
                           )}
@@ -1342,7 +1383,7 @@ export default function SalesTodo() {
                               34). */}
                           {m.status !== 'In Progress' && canEdit && (
                             <Tooltip label="Revert to In Progress">
-                              <button className="td-ab td-ab-revert" aria-label="Revert to In Progress" onClick={() => setMark(m, 'In Progress')}><IconRevert /></button>
+                              <button className="smc-act smc-act-vault" aria-label="Revert to In Progress" onClick={() => setMark(m, 'In Progress')}><IconRevert /></button>
                             </Tooltip>
                           )}
                         </div>
@@ -1355,27 +1396,34 @@ export default function SalesTodo() {
           )}
         </div>
 
-        {/* Pagination — matches screenshot: Showing pill on left, Rows + 1/1 + chevrons on right */}
-        <div className="td-pagination">
-          <span className="td-pag-info">
+        {/* Pagination — the worklist pager (.tc-wl-*) used by the Customers / Lead Ack lists. */}
+        <div className="tc-wl-pag">
+          <span className="tc-wl-info">
             {total === 0
-              ? 'Showing 0 of 0'
-              : <>Showing <strong>{startIdx + 1}–{Math.min(startIdx + rpp, total)}</strong> of <strong>{total}</strong></>}
+              ? 'No records'
+              : <>Showing <span className="tc-wl-hl">{startIdx + 1}–{Math.min(startIdx + rpp, total)}</span> of <span className="tc-wl-hl">{total}</span></>}
           </span>
-          <div className="td-pag-btns">
-            <span className="td-pag-rows">
-              Rows:
-              <select value={rpp} onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
-                {ROWS_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+          <div className="tc-wl-right">
+            <span className="tc-wl-rows">
+              Rows per page:
+              <select
+                value={rpp}
+                onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}
+                aria-label="Rows per page"
+              >
+                {/* The fixed options plus the auto-fit value, so the current page size is always listed. */}
+                {[...new Set([rpp, ...ROWS_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </span>
-            <span className="td-pag-range">{safePage} / {pages}</span>
-            <button className="td-pg-btn-icon" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
-            </button>
-            <button className="td-pg-btn-icon" disabled={safePage >= pages || total === 0} onClick={() => setPage(p => Math.min(pages, p + 1))} aria-label="Next page">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6" /></svg>
-            </button>
+            <span className="tc-wl-range">{safePage} / {pages}</span>
+            <div className="tc-wl-nav">
+              <button type="button" className="tc-wl-btn" disabled={safePage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                <i className="ri-arrow-left-s-line"></i>
+              </button>
+              <button type="button" className="tc-wl-btn" disabled={safePage >= pages || total === 0} onClick={() => setPage(p => Math.min(pages, p + 1))} aria-label="Next page">
+                <i className="ri-arrow-right-s-line"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>

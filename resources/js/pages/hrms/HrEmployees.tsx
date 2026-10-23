@@ -3136,13 +3136,20 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setSaving(true);
     try {
       if (empStep === 1) {
-        const emailOk = await checkEmailUnique(eWorkEmail);
+        /* Both at once. They ask different questions of different tables and
+           neither depends on the other, but awaiting them in turn made Step 1 →
+           Step 2 three sequential round trips before the save even started —
+           and on the server a round trip is the expensive part. Email is still
+           reported first when both clash, so the message order is unchanged. */
+        const [emailOk, mobileOk] = await Promise.all([
+          checkEmailUnique(eWorkEmail),
+          checkMobileUnique(eMobile),
+        ]);
         if (!emailOk) {
           toast.error('Duplicate email address', 'This email is already used somewhere in the system. Each address can be used only once.');
           scrollToFirstError();
           return;
         }
-        const mobileOk = await checkMobileUnique(eMobile);
         if (!mobileOk) {
           toast.error('Duplicate mobile number', 'This mobile is already in use by another employee.');
           return;

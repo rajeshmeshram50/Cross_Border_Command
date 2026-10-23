@@ -1,0 +1,175 @@
+{
+  "info": {
+    "name": "Inventory · SPI Put-away Scan (handheld)",
+    "description": "The handheld put-away flow in the order the device walks it: session → scan box → scan zone/rack/shelf → confirm → complete.\n\nAUTH — these routes carry NO user session.\nThe floor does not log in per carton, so the credential installed at enrolment IS the credential, and the person who logged in to enrol authors every scan the device makes.\n  · Production — the front door (Apache / proxy) verifies the client certificate and passes its CN, having stripped any client-sent copy. The device sends no token.\n  · Testing / fallback — send `X-Scan-Device: <token>`.\nThe tenant (client_id / branch_id) is read off the DEVICE row, never off the request body.\n\nLABEL FORMATS accepted by `scanned_value` — all three still exist on labels in the building:\n  1. Signed sticker   CBC1|<tenant>|<TYPE>|<id>|<nonce>|<sig>    TYPE = BOX | SHELF | RACK | ZONE\n  2. Short form       SH:41   RC:7   ZN:3\n  3. Bare number      16                                          (oldest box stickers — box only)\n\nEvery scan writes an activity row, pass or fail. A refusal is the one thing the log exists to remember.\n\nThrottle: 120 requests / minute — a put-away is several calls and a bad scan is retried immediately by someone standing at a rack.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api" },
+    { "key": "device_token", "value": "" },
+    { "key": "task_id", "value": "" },
+    { "key": "box_value", "value": "16" },
+    { "key": "shelf_value", "value": "SH:1" },
+    { "key": "rack_value", "value": "RC:1" },
+    { "key": "zone_value", "value": "ZN:1" }
+  ],
+  "auth": { "type": "noauth" },
+  "item": [
+    {
+      "name": "01 · Session — who is this handheld, and what is open",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "pm.test('device accepted', () => pm.expect(b.status).to.eql(true));",
+              "if (b.data && b.data.open && b.data.open.length) {",
+              "    pm.collectionVariables.set('task_id', String(b.data.open[0].id));",
+              "    console.log('open tasks:', b.data.count, '| task_id =', b.data.open[0].id);",
+              "} else {",
+              "    console.log('no open tasks for this device\\u2019s client');",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "X-Scan-Device", "value": "{{device_token}}", "description": "Omit when the client certificate is presented." }
+        ],
+        "url": { "raw": "{{base_url}}/scan/putaway/session", "host": ["{{base_url}}"], "path": ["scan", "putaway", "session"] },
+        "description": "The FIRST call the page makes. A device that is not enrolled, suspended or retired is told so here rather than halfway through a put-away.\n\nRETURNS\n  data.device              the enrolled handheld\n  data.open[]              up to 50 open tasks, oldest issued first\n      id, task_code\n      box_code, spi_code\n      step, step_label      where that task stands now\n      destination           the full address in words\n  data.count\n\n401 rejected_unauthorized_device — not enrolled, or the token / certificate did not match."
+      }
+    },
+    {
+      "name": "02 · Scan — BOX",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "if (b.data && b.data.task) {",
+              "    pm.collectionVariables.set('task_id', String(b.data.task.id));",
+              "    console.log('step:', b.data.task.step_label, '| next level:', b.data.task.next_level);",
+              "}",
+              "if (b.status === false) { console.log('REFUSED:', b.code, '-', b.message); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Scan-Device", "value": "{{device_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"scanned_value\": \"{{box_value}}\"\n}" },
+        "url": { "raw": "{{base_url}}/scan/putaway/scan", "host": ["{{base_url}}"], "path": ["scan", "putaway", "scan"] },
+        "description": "The server decides what the barcode WAS and whether it belongs here. The handheld is never trusted to know which step it is on — it posts what the imager read, nothing more.\n\nBODY\n  scanned_value     required — the box label, in any accepted shape\n  task_id           optional — omit on the first box scan; the server finds the task from the box\n  staged_location   optional int — a location scanned BEFORE the box (see 03b)\n  staged_kind       optional — shelf | zone | rack. Re-proved server-side; it is a client value.\n\nRETURNS the state payload — see request 06 for the full field list.\n\nREFUSALS (status:false + code)\n  box_not_packed        the box resolves to no supplier invoice\n  device_wrong_client   the box belongs to another tenant\n  device_wrong_branch   another branch of the same tenant\n  already_placed        a put-away already exists for this box"
+      }
+    },
+    {
+      "name": "03a · Scan — SHELF (ticks zone + rack + shelf at once)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const b = pm.response.json();",
+              "if (b.data && b.data.task) { console.log('ready_to_complete:', b.data.task.ready_to_complete); }",
+              "if (b.data && b.data.location) { console.log('already in this slot:', (b.data.location.boxes || []).length, 'box(es)'); }",
+              "if (b.status === false) { console.log('REFUSED:', b.code, '-', b.message); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Scan-Device", "value": "{{device_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"scanned_value\": \"{{shelf_value}}\",\n  \"task_id\": {{task_id}}\n}" },
+        "url": { "raw": "{{base_url}}/scan/putaway/scan", "host": ["{{base_url}}"], "path": ["scan", "putaway", "scan"] },
+        "description": "Scanning the SHELF satisfies the whole address — task.chain comes back with zone, rack and shelf all ticked in one go. Scan the zone or rack instead (03c) when the operator walks the chain down level by level.\n\nThe reply also carries what is ALREADY in that slot, so the screen can warn before the carton goes down:\n  location.name\n  location.boxes[]        box_code, spi_code, placed_at\n  location.occupancy_pct\n\nREFUSAL\n  'No <kind> on this account matches that label' — the id is real but belongs to another tenant, or does not exist."
+      }
+    },
+    {
+      "name": "03b · Scan — LOCATION FIRST, box second (staged)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Scan-Device", "value": "{{device_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"scanned_value\": \"{{box_value}}\",\n  \"staged_location\": 1,\n  \"staged_kind\": \"shelf\"\n}" },
+        "url": { "raw": "{{base_url}}/scan/putaway/scan", "host": ["{{base_url}}"], "path": ["scan", "putaway", "scan"] },
+        "description": "Real floors scan the shelf first and the carton second. The page HOLDS that location and hands it back with the box scan as staged_location + staged_kind.\n\nThe server re-proves both — they are client values and are never trusted as sent."
+      }
+    },
+    {
+      "name": "03c · Scan — ZONE or RACK (walking the chain down)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Scan-Device", "value": "{{device_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"scanned_value\": \"{{zone_value}}\",\n  \"task_id\": {{task_id}}\n}" },
+        "url": { "raw": "{{base_url}}/scan/putaway/scan", "host": ["{{base_url}}"], "path": ["scan", "putaway", "scan"] },
+        "description": "task.next_level says which level the server wants next; task.chain shows how far down the operator has got. Swap {{zone_value}} for {{rack_value}} for the rack step."
+      }
+    },
+    {
+      "name": "04 · Confirm — the operator agrees with what is on screen",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Scan-Device", "value": "{{device_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"slot\": \"box\"\n}" },
+        "url": { "raw": "{{base_url}}/scan/putaway/{{task_id}}/confirm", "host": ["{{base_url}}"], "path": ["scan", "putaway", "{{task_id}}", "confirm"] },
+        "description": "BODY\n  slot    required — box | shelf | zone\n\nStamps box_confirmed_at / shelf_confirmed_at. Kept separate from the scan so the screen can show the carton's contents and have the operator agree before anything is committed.\n\nReturns the same state payload."
+      }
+    },
+    {
+      "name": "05 · Complete — commit the put-away",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Scan-Device", "value": "{{device_token}}" }
+        ],
+        "body": { "mode": "raw", "raw": "{}" },
+        "url": { "raw": "{{base_url}}/scan/putaway/{{task_id}}/complete", "host": ["{{base_url}}"], "path": ["scan", "putaway", "{{task_id}}", "complete"] },
+        "description": "Only passes once task.ready_to_complete is true. Writes the p2p_spi_putaways row carrying the location, the device serial, and the enrolling user as author."
+      }
+    },
+    {
+      "name": "06 · Show — state for a page refresh",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "X-Scan-Device", "value": "{{device_token}}" }
+        ],
+        "url": { "raw": "{{base_url}}/scan/putaway/{{task_id}}", "host": ["{{base_url}}"], "path": ["scan", "putaway", "{{task_id}}"] },
+        "description": "Read-only, so a FINISHED task may be looked at — only the calls that WRITE require it to still be open.\n\nIf the task sat idle past inventory.scan_stale_minutes (5), the half-walked scans are dropped and the reply carries:\n  stale_reset: true\n  notice: 'That put-away was left too long — scan the box again to restart it.'\n\n=== STATE PAYLOAD — returned by 02, 03, 04, 05 and 06 ===\n\ndata.device                  the enrolled handheld\n\ndata.task\n  id, task_code, status\n  step, step_label           where the operator is, in words\n  expected                   what the server wants scanned next\n  location_slot              which level this task is addressed to\n  chain[]                    kind, id, name — zone → rack → shelf, each ticked or not\n  next_level                 the level still owed\n  required_scans, completed_scans\n  fail_count, attempts_left\n  box_scan_at, box_confirmed_at\n  shelf_scan_at, shelf_confirmed_at\n  ready_to_complete\n  last_activity_at           the idle clock\n  idle_after_minutes         5, from config — the page owns no threshold of its own\n  idle_seconds_left          a DURATION, not a deadline: a handheld's clock is not trusted\n  issued_at, expires_at\n\ndata.box\n  id, box_code\n  putaway_code               PUT-<box_code>\n  spi_code\n  scenario, scenario_label   s1 = 1 product → 1 box | s2 = 1 product → many boxes | s3 = many products → 1 box\n  condition, is_stackable\n  length_cm, width_cm, height_cm, dimensions_cm\n  weight_kg, net_weight_kg, gross_weight_kg\n  vol_weight_kg              L × W × H ÷ 5000 — a light, bulky carton is charged on this\n  temp_min_c, temp_max_c\n  flags[]                    handling warnings\n  products[]                 what is inside the carton\n\ndata.destination\n  full                       the address in words\n  warehouse, zone, rack, shelf          codes\n  zone_id, rack_id, shelf_id            ids"
+      }
+    }
+  ]
+}

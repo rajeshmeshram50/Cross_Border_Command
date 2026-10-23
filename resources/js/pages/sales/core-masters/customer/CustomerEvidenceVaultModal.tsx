@@ -677,7 +677,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                   onClick={() => { setOverview(g.key); setOvShip(null); }}
                   title="View all documents in one list"
                 >
-                  <i className="ri-list-check-2" aria-hidden /> {g.overview}
+                  <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.3} strokeLinecap="round" strokeLinejoin="round" aria-hidden><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg> {g.overview}
                 </button>
               </div>
             ))}

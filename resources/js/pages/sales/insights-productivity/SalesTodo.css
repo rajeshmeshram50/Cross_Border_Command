@@ -18,60 +18,6 @@
 .td-no-access-title { font-size:16px; font-weight:800; color:#0d9488; }
 .td-no-access-sub   { font-size:12px; color:#64748b; margin-top:8px; max-width:540px; margin-left:auto; margin-right:auto; line-height:1.55; }
 
-/* Header */
-.td-root .td-header {
-  background: linear-gradient(100deg, #f0fdfa 0%, #ccfbf1 60%, #99f6e4 100%);
-  border: 1px solid #5eead4; border-radius: 12px;
-  padding: 0 16px 0 20px;
-  display: flex; align-items: center; gap: 14px;
-  min-height: 58px;
-  position: relative; overflow: hidden;
-  box-shadow: 0 2px 12px rgba(20,184,166,.15);
-}
-/* Left accent strip — same 4px gradient bar the other Sales Matrix hero
-   strips carry, in the Productivity Tracker's teal hue. */
-.td-root .td-header::before {
-  content: "";
-  position: absolute; left: 0; top: 0; bottom: 0;
-  width: 4px;
-  background: linear-gradient(180deg, #5eead4, #14b8a6, #0d9488);
-  border-radius: 12px 0 0 12px;
-  z-index: 2;
-}
-.td-root .td-header-glow {
-  position: absolute; right: -20px; top: -20px;
-  width: 100px; height: 100px; border-radius: 50%;
-  background: rgba(20,184,166,.08); pointer-events: none;
-}
-.td-root .td-header-icon {
-  width: 40px; height: 40px; border-radius: 11px;
-  background: linear-gradient(135deg, #14b8a6, #0d9488);
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  box-shadow: 0 3px 10px rgba(13,148,136,.35);
-}
-.td-root .td-header-title {
-  font-size:15px; font-weight:800; letter-spacing:-.3px; line-height:1.2;
-  color: #065f46;
-}
-.td-root .td-header-sub   { font-size:11px; color:#0d9488; margin-top:2px; font-weight:500; opacity:.85; }
-.td-root .td-header-text  { flex: 1; }
-.td-root .td-tabs {
-  margin-left:auto; display:flex; align-items:center; gap:3px;
-  background: rgba(255,255,255,.55); padding: 3px;
-  border-radius: 9px; border: 1px solid rgba(20,184,166,.3); z-index: 1;
-}
-.td-root .td-tab {
-  padding: 9px 20px; border-radius: 8px; font-size:12.5px; font-weight:600;
-  cursor: pointer; background: transparent; color: #0f766e;
-  border: none; transition: all .15s; white-space: nowrap; font-family: inherit;
-}
-/* Hover only affects the INACTIVE tab — otherwise it overrode the active tab's
-   green gradient (higher specificity than .td-tab-active) and washed it white. */
-.td-root .td-tab:not(.td-tab-active):hover { color:#0d9488; background: rgba(20,184,166,.1); }
-.td-root .td-tab-active { background: linear-gradient(135deg, #14b8a6, #0d9488); color: #fff; box-shadow: 0 2px 8px rgba(13,148,136,.35); }
-/* Active tab stays green on hover, just a touch brighter for feedback. */
-.td-root .td-tab-active:hover { background: linear-gradient(135deg, #14b8a6, #0d9488); color: #fff; filter: brightness(1.06); }
-
 /* Toolbar */
 .td-root .td-toolbar { display:flex; flex-direction:column; gap:8px; }
 /* Keep the whole toolbar on a single line — Virtual / Physical / List /
@@ -83,56 +29,10 @@
 }
 /* Search + Add button group anchors to the right together (Figma): the
    search-wrap takes the auto margin so it sits beside the Add button. */
-.td-root .td-toolbar-row .td-search-wrap { margin-left: auto; }
 @media (max-width: 900px) {
   .td-root .td-toolbar-row { flex-wrap: wrap; }
-  .td-root .td-toolbar-row .td-search-wrap { margin-left: 0; }
 }
 .td-root .td-filters { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; min-width: 0; }
-.td-root .td-sf {
-  padding:5px 14px; border-radius:20px; font-size:11.5px; font-weight:600;
-  cursor:pointer; border:1.5px solid #99f6e4; background:#f0fdfa; color:#0d9488;
-  font-family:inherit; transition:all .15s;
-  display:inline-flex; align-items:center; gap:5px;
-}
-.td-root .td-sf:hover { border-color:#14b8a6; background:#ccfbf1; color:#065f46; }
-.td-root .td-sf.active { background: linear-gradient(135deg, #0d9488, #065f46); color:#fff; border-color:#065f46; box-shadow: 0 2px 8px rgba(13,148,136,.3); }
-
-/* Filter chip count badge */
-.td-root .td-sf-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px;
-  border-radius: 20px; font-size: 9.5px; font-weight: 800;
-  background: #ccfbf1; color: #0d9488;
-  margin-left: 2px;
-}
-.td-root .td-sf-count-sm { min-width: 16px; height: 16px; padding: 0 4px; font-size: 9px; background: rgba(13,148,136,.12); }
-.td-root .td-sf-count-active { background: rgba(255,255,255,.25); color: #fff; }
-
-/* Big Virtual/Physical pill buttons (primary filter for Meeting tab) */
-.td-root .td-meeting-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 20px; border-radius: 8px; border: 1.5px solid #99f6e4;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
-  background: #fff; color: #0d9488;
-  cursor: pointer; transition: all .18s;
-  height: 40px;
-}
-.td-root .td-meeting-pill:hover { background: #f0fdfa; }
-.td-root .td-meeting-pill.active {
-  background: linear-gradient(135deg, #0d9488, #065f46);
-  color: #fff; border-color: #065f46;
-  box-shadow: 0 2px 10px rgba(13,148,136,.3);
-}
-.td-root .td-pill-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 20px; padding: 0 5px;
-  border-radius: 20px; font-size: 10px; font-weight: 800;
-  background: #f0fdfa; color: #0d9488;
-  margin-left: 2px;
-}
-.td-root .td-pill-count-active { background: rgba(255,255,255,.25); color: #fff; }
-
 /* View toggle row (Reminder tab, screenshot 1 — view toggle alone below filters) */
 .td-root .td-reminder-view-row {
   display: flex; align-items: center; gap: 6px;
@@ -157,60 +57,10 @@
   margin-right: 4px; white-space: nowrap;
 }
 
-.td-root .td-view-toggle {
-  display:flex; align-items:center; gap:2px;
-  background: rgba(255,255,255,.7); padding:3px;
-  border-radius: 8px; border: 1.5px solid #99f6e4; flex-shrink: 0;
-}
-.td-root .td-view-btn {
-  display:inline-flex; align-items:center; gap:5px;
-  padding:6px 12px; border-radius:6px; border:none;
-  font-family:inherit; font-size:11.5px; font-weight:600;
-  cursor:pointer; transition: all .15s;
-  background: transparent; color: #0d9488;
-}
-.td-root .td-view-btn.active {
-  background: linear-gradient(135deg, #0d9488, #065f46); color:#fff;
-  box-shadow: 0 1px 4px rgba(13,148,136,.3);
-}
-
 .td-root .td-toolbar-right { display:flex; align-items:center; gap:8px; flex-shrink:0; flex-wrap: nowrap; }
 @media (max-width: 900px) {
   .td-root .td-toolbar-right { flex-wrap: wrap; }
 }
-.td-root .td-search-wrap {
-  display: flex; align-items: center;
-  background: #fff;
-  border: 1.5px solid #99f6e4;
-  border-radius: 9px; padding: 7px 12px;
-  gap: 7px; max-width: 280px; width: 100%;
-  box-shadow: 0 1px 4px rgba(20,184,166,.07);
-  transition: border-color .15s, box-shadow .15s;
-}
-.td-root .td-search-wrap:focus-within {
-  border-color: #14b8a6;
-  box-shadow: 0 0 0 3px rgba(20,184,166,.1);
-}
-/* The magnifier only. A bare `svg` also catches the x inside the shared
-   clear button and outranks that button's own colour, so the x stops
-   matching every other search bar in the app. */
-.td-root .td-search-wrap>svg { flex-shrink: 0; }
-.td-root .td-search-wrap input {
-  border: none; background: transparent;
-  font-family: inherit; font-size: 11.5px;
-  color: #1e293b; outline: none; width: 100%;
-}
-.td-root .td-search-wrap input::placeholder { color:#99c9c4; }
-.td-root .td-add-btn {
-  display:inline-flex; align-items:center; gap:6px;
-  padding:11px 20px; border-radius:8px; border:none;
-  background: linear-gradient(135deg, #14b8a6, #0d9488); color:#fff;
-  font-family:inherit; font-size:12.5px; font-weight:700;
-  cursor:pointer; box-shadow: 0 2px 8px rgba(13,148,136,.35);
-  flex-shrink:0; transition: all .15s;
-}
-.td-root .td-add-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(13,148,136,.45); }
-
 /* Meeting sub-tab */
 .td-root .td-meeting-sub {
   display: flex; gap: 6px;
@@ -280,20 +130,6 @@
 .td-root .td-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; color: #0d9488; font-weight: 600; font-size: 10.5px; }
 .td-root .td-cust-sub { color: #94a3b8; font-size: 10px; margin-top: 2px; }
 
-/* Sr No pill (rounded teal square) */
-.td-root .td-sr-pill {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 6px;
-  background: #ccfbf1; color: #0d9488;
-  font-size: 10.5px; font-weight: 700;
-}
-.td-root .td-today-row .td-sr-pill { color: #065f46; }
-
-/* Opportunity / Meeting code label */
-.td-root .td-opp-id {
-  color: #0d9488; font-weight: 600;
-}
-
 /* TODAY indicator pill in Set Date column — amber matches screenshot */
 .td-root .td-today-pill {
   display: inline-block; margin-left: 6px;
@@ -337,91 +173,6 @@
 .td-root .td-cancel { background:#fee2e2; color:#dc2626; border:1px solid #fecaca; }
 
 .td-root .td-actions { display:flex; gap:5px; justify-content:center; align-items: center; }
-.td-root .td-ab {
-  width:26px; height:26px; border-radius:6px; border:none;
-  cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
-  transition: all .15s; text-decoration: none;
-}
-.td-root .td-ab-edit { background:#ccfbf1; color:#0d9488; }
-.td-root .td-ab-edit:hover { background:#0d9488; color:#fff; }
-.td-root .td-ab-view { background:#dbeafe; color:#1d4ed8; }
-.td-root .td-ab-view:hover { background:#1d4ed8; color:#fff; }
-.td-root .td-ab-revert { background:#ede9fe; color:#7c3aed; }
-.td-root .td-ab-revert:hover { background:#7c3aed; color:#fff; }
-.td-root .td-ab-del  { background:#fff1f2; color:#f43f5e; }
-.td-root .td-ab-del:hover { background:#f43f5e; color:#fff; }
-.td-root .td-ab-join { background:#dcfce7; color:#15803d; }
-.td-root .td-ab-join:hover { background:#15803d; color:#fff; }
-.td-root .td-ab-done { background:#d1fae5; color:#059669; }
-.td-root .td-ab-done:hover { background:#059669; color:#fff; }
-.td-root .td-ab-post { background:#fef3c7; color:#d97706; }
-.td-root .td-ab-post:hover { background:#d97706; color:#fff; }
-.td-root .td-ab-loc  { background:#fef3c7; color:#d97706; }
-.td-root .td-ab-loc:hover  { background:#d97706; color:#fff; }
-
-/* Pagination */
-.td-root .td-pagination {
-  display:flex; align-items:center; justify-content:space-between;
-  padding:10px 16px; border-top:1px solid #f0fdfa;
-  background: #f8fffe;
-  font-size: 11.5px; color: #64748b;
-  flex-wrap: wrap; gap: 8px;
-}
-.td-root .td-pag-info {
-  display: inline-flex; align-items: center;
-  padding: 5px 14px; border-radius: 99px;
-  background: #ccfbf1; border: 1.5px solid #5eead4;
-  font-size: 11.5px; color: #0d9488; font-weight: 700;
-}
-.td-root .td-pag-info strong { color: #065f46; font-weight: 800; font-size: 11.5px; margin: 0 2px; }
-.td-root .td-pag-btns { display:flex; align-items:center; gap:8px; }
-.td-root .td-pag-rows {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 12px; border-radius: 99px;
-  background: #fff; border: 1.5px solid #99f6e4;
-  color: #0d9488; font-family: inherit;
-  font-size: 11.5px; font-weight: 700;
-}
-.td-root .td-pag-rows select {
-  border: none; background: transparent;
-  font-family: inherit; font-size: 11.5px;
-  color: #0d9488; font-weight: 800;
-  cursor: pointer; outline: none;
-}
-.td-root .td-pag-range {
-  display: inline-flex; align-items: center;
-  padding: 4px 14px; border-radius: 99px;
-  background: #fff; border: 1.5px solid #99f6e4;
-  color: #0d9488; font-weight: 800; font-size: 11.5px;
-  white-space: nowrap;
-}
-.td-root .td-pg-btn-icon {
-  width: 28px; height: 28px; border-radius: 50%;
-  border: 1.5px solid #99f6e4; background: #fff;
-  color: #0d9488; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: all .15s;
-}
-.td-root .td-pg-btn-icon:hover:not(:disabled) { background:#f0fdfa; border-color:#14b8a6; transform: translateY(-1px); }
-.td-root .td-pg-btn-icon:disabled { opacity:.4; cursor:not-allowed; }
-
-/* Rows-per-page selector (lives in the toolbar) */
-.td-root .td-rows-sel {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 11.5px; color: #0d9488; font-weight: 500;
-  background: #fff; border: 1.5px solid #99f6e4;
-  padding: 4px 12px; border-radius: 20px;
-  box-shadow: 0 1px 4px rgba(20,184,166,.08);
-  flex-shrink: 0;
-}
-.td-root .td-rows-sel select {
-  border: none; background: transparent;
-  font-family: inherit; font-size: 11.5px;
-  color: #0d9488; font-weight: 700;
-  cursor: pointer; outline: none;
-}
-
-/* Modal */
 .td-overlay {
   position: fixed; inset: 0; z-index: 9500;
   background: rgba(15,23,42,.45);
@@ -1151,59 +902,6 @@
   background: linear-gradient(160deg, #0b1220 0%, #0f1e2b 50%, #0a1620 100%);
   color: #e2e8f0;
 }
-[data-bs-theme="dark"] .td-root .td-header {
-  background: linear-gradient(110deg, #0e2730 0%, #0d3b48 50%, #0f4c5c 100%);
-  border-color: rgba(94,234,212,.28);
-  box-shadow: 0 2px 14px rgba(20,184,166,.25);
-}
-[data-bs-theme="dark"] .td-root .td-header-title { color: #5eead4; }
-[data-bs-theme="dark"] .td-root .td-header-sub { color: #5eead4; opacity: .9; }
-[data-bs-theme="dark"] .td-root .td-tabs {
-  background: rgba(15,23,42,.55);
-  border-color: rgba(94,234,212,.30);
-}
-[data-bs-theme="dark"] .td-root .td-tab { color: #5eead4; }
-[data-bs-theme="dark"] .td-root .td-tab:not(.td-tab-active):hover { background: rgba(20,184,166,.15); color: #99f6e4; }
-
-/* Filter pills */
-[data-bs-theme="dark"] .td-root .td-sf {
-  background: rgba(15,23,42,.55); color: #5eead4;
-  border-color: rgba(94,234,212,.30);
-}
-[data-bs-theme="dark"] .td-root .td-sf:hover {
-  background: rgba(20,184,166,.18); color: #99f6e4; border-color: rgba(94,234,212,.45);
-}
-[data-bs-theme="dark"] .td-root .td-sf-count { background: rgba(20,184,166,.22); color: #5eead4; }
-[data-bs-theme="dark"] .td-root .td-meeting-pill {
-  background: rgba(15,23,42,.55); color: #5eead4;
-  border-color: rgba(94,234,212,.30);
-}
-[data-bs-theme="dark"] .td-root .td-meeting-pill:hover { background: rgba(20,184,166,.18); }
-[data-bs-theme="dark"] .td-root .td-pill-count { background: rgba(15,23,42,.7); color: #5eead4; }
-
-/* View toggle + meeting status row */
-[data-bs-theme="dark"] .td-root .td-view-toggle {
-  background: rgba(15,23,42,.55); border-color: rgba(94,234,212,.30);
-}
-[data-bs-theme="dark"] .td-root .td-view-btn { color: #5eead4; }
-[data-bs-theme="dark"] .td-root .td-reminder-view-row .td-view-toggle {
-  background: rgba(15,23,42,.55);
-}
-[data-bs-theme="dark"] .td-root .td-meeting-status-row {
-  background: linear-gradient(90deg, rgba(15,23,42,.6), rgba(20,30,45,.55));
-  border-color: rgba(94,234,212,.20);
-}
-[data-bs-theme="dark"] .td-root .td-meeting-status-label { color: #5eead4; }
-
-/* Search input + Add button */
-[data-bs-theme="dark"] .td-root .td-search-wrap {
-  background: #11182a; border-color: rgba(94,234,212,.30);
-  box-shadow: 0 1px 4px rgba(0,0,0,.25);
-}
-[data-bs-theme="dark"] .td-root .td-search-wrap input { color: #e2e8f0; }
-[data-bs-theme="dark"] .td-root .td-search-wrap input::placeholder { color: #475569; }
-[data-bs-theme="dark"] .td-root .td-search-wrap>svg { stroke: #5eead4; }
-
 /* Table card */
 [data-bs-theme="dark"] .td-root .td-table-card {
   background: #11182a; border-color: rgba(94,234,212,.25);
@@ -1221,44 +919,6 @@
 [data-bs-theme="dark"] .td-root .td-post   { background: rgba(245,158,11,.20); color: #fcd34d; border-color: rgba(245,158,11,.35); }
 [data-bs-theme="dark"] .td-root .td-cancel { background: rgba(239,68,68,.20);  color: #fca5a5; border-color: rgba(239,68,68,.35); }
 [data-bs-theme="dark"] .td-root .td-empty { color: #64748b; }
-[data-bs-theme="dark"] .td-root .td-sr-pill { background: rgba(20,184,166,.18); color: #5eead4; }
-[data-bs-theme="dark"] .td-root .td-opp-id { color: #5eead4; }
-
-/* Pagination footer */
-[data-bs-theme="dark"] .td-root .td-pagination {
-  background: rgba(15,23,42,.55); border-top-color: rgba(255,255,255,.06);
-}
-[data-bs-theme="dark"] .td-root .td-pag-info {
-  background: rgba(20,184,166,.18); color: #5eead4; border-color: rgba(94,234,212,.32);
-}
-[data-bs-theme="dark"] .td-root .td-pag-info strong { color: #99f6e4; }
-[data-bs-theme="dark"] .td-root .td-pag-rows,
-[data-bs-theme="dark"] .td-root .td-pag-range {
-  background: rgba(15,23,42,.7); color: #5eead4; border-color: rgba(94,234,212,.30);
-}
-[data-bs-theme="dark"] .td-root .td-pag-rows select { color: #99f6e4; }
-[data-bs-theme="dark"] .td-root .td-pg-btn-icon {
-  background: rgba(15,23,42,.7); color: #5eead4; border-color: rgba(94,234,212,.30);
-}
-[data-bs-theme="dark"] .td-root .td-pg-btn-icon:hover:not(:disabled) { background: rgba(20,184,166,.20); }
-
-/* Action buttons — keep teal accent but tint backgrounds for dark */
-[data-bs-theme="dark"] .td-root .td-ab-edit { background: rgba(20,184,166,.18); color: #5eead4; }
-[data-bs-theme="dark"] .td-root .td-ab-edit:hover { background: #14b8a6; color: #0f172a; }
-[data-bs-theme="dark"] .td-root .td-ab-done { background: rgba(16,185,129,.18); color: #6ee7b7; }
-[data-bs-theme="dark"] .td-root .td-ab-done:hover { background: #10b981; color: #0f172a; }
-[data-bs-theme="dark"] .td-root .td-ab-post { background: rgba(245,158,11,.18); color: #fcd34d; }
-[data-bs-theme="dark"] .td-root .td-ab-post:hover { background: #f59e0b; color: #0f172a; }
-[data-bs-theme="dark"] .td-root .td-ab-del  { background: rgba(244,63,94,.18); color: #fda4af; }
-[data-bs-theme="dark"] .td-root .td-ab-del:hover  { background: #f43f5e; color: #fff; }
-[data-bs-theme="dark"] .td-root .td-ab-join { background: rgba(34,197,94,.18); color: #86efac; }
-[data-bs-theme="dark"] .td-root .td-ab-join:hover { background: #16a34a; color: #fff; }
-[data-bs-theme="dark"] .td-root .td-ab-loc { background: rgba(245,158,11,.18); color: #fcd34d; }
-[data-bs-theme="dark"] .td-root .td-ab-loc:hover { background: #d97706; color: #fff; }
-[data-bs-theme="dark"] .td-root .td-ab-view { background: rgba(59,130,246,.20); color: #93c5fd; }
-[data-bs-theme="dark"] .td-root .td-ab-view:hover { background: #3b82f6; color: #fff; }
-[data-bs-theme="dark"] .td-root .td-ab-revert { background: rgba(124,58,237,.20); color: #c4b5fd; }
-[data-bs-theme="dark"] .td-root .td-ab-revert:hover { background: #7c3aed; color: #fff; }
 
 /* Modal */
 [data-bs-theme="dark"] .td-modal { background: #0e1726; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
@@ -1303,21 +963,6 @@
   color: #0f172a !important;
   font-weight: 800;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.20), 0 4px 14px rgba(20,184,166,.40);
-}
-/* Filter pill — active state needed a stronger, brighter background in dark mode
-   so the selected filter stands out instead of just glowing slightly. */
-[data-bs-theme="dark"] .td-root .td-sf.active,
-[data-bs-theme="dark"] .td-root .td-meeting-pill.active {
-  background: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 60%, #0d9488 100%) !important;
-  color: #052e2b !important;
-  border-color: #5eead4 !important;
-  font-weight: 800;
-  box-shadow: 0 6px 20px rgba(45,212,191,.35), inset 0 0 0 1px rgba(255,255,255,.22);
-}
-[data-bs-theme="dark"] .td-root .td-sf-count-active,
-[data-bs-theme="dark"] .td-root .td-pill-count-active {
-  background: rgba(15,23,42,.40);
-  color: #f0fdfa;
 }
 [data-bs-theme="dark"] .td-file-drop { background: rgba(15,23,42,.55); border-color: rgba(94,234,212,.30); }
 [data-bs-theme="dark"] .td-file-drop:hover { background: rgba(20,184,166,.12); border-color: #14b8a6; }
@@ -1444,34 +1089,18 @@
 }
 @media (max-width: 720px) {
   .td-root { padding: 10px 10px 16px; }
-  .td-root .td-header {
-    /* Keep the icon + title/subtitle together on one row (icon left, text
-       right); only the tabs wrap to a second full-width line below. */
-    flex-direction: row; flex-wrap: wrap; align-items: center; gap: 10px 12px;
-    padding: 12px 14px; min-height: 0;
-  }
-  .td-root .td-header-text { flex: 1 1 auto; min-width: 0; }
-  .td-root .td-tabs { flex-basis: 100%; margin-left: 0; width: 100%; justify-content: stretch; }
-  .td-root .td-tab { flex: 1; padding: 8px 14px; }
   .td-root .td-toolbar-row { flex-direction: column; align-items: stretch; }
   .td-root .td-filters {
     flex-wrap: wrap; gap: 6px;
     overflow-x: auto;
   }
   .td-root .td-toolbar-right { width: 100%; gap: 6px; }
-  .td-root .td-search-wrap { max-width: none; flex: 1; }
-  .td-root .td-add-btn { padding: 11px 16px; font-size: 12px; }
+  .td-root .td-toolbar .dt-tabrail { max-width: 100%; overflow-x: auto; }
   .td-root .td-table-wrap { overflow-x: auto; }
   .td-root .td-table { min-width: 720px; }
   .td-root .td-meeting-status-row { overflow-x: auto; }
-  .td-root .td-pagination { flex-wrap: wrap; gap: 10px; padding: 10px 12px; }
 }
 @media (max-width: 480px) {
-  .td-root .td-header-title { font-size: 14px; }
-  .td-root .td-header-sub { font-size: 10px; }
-  .td-root .td-add-btn { padding: 10px 12px; }
-  .td-root .td-add-btn span,
-  .td-root .td-add-btn { font-size: 11.5px; }
   .td-modal { width: calc(100vw - 24px); }
   .td-form-row, .td-form-row-3 { grid-template-columns: 1fr !important; gap: 8px; }
   .td-modal-header { padding: 12px 14px; }
@@ -1479,3 +1108,149 @@
   .td-modal-footer { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
   .td-footer-actions { width: 100%; justify-content: flex-end; }
 }
+
+/* ═══ List-page alignment (Customers / Consignee / Quotations V/S PI / Lead Ack) ═══ */
+
+/* The page's own teal for the shared list pieces (tab rails, search track, table
+   header band, pager). DataTable's "teal" accent is cyan, not this page's teal. */
+.td-root,
+.td-root .dt-tabrail.dt-tabrail,
+.td-root .dt-root.dt-root {
+  --dt-a-50: #f0fdfa; --dt-a-100: #ccfbf1; --dt-a-150: #b5f5ea; --dt-a-200: #99f6e4;
+  --dt-a-300: #5eead4; --dt-a-400: #2dd4bf; --dt-a-500: #14b8a6; --dt-a-600: #0d9488;
+  --dt-a-700: #0f766e; --dt-a-800: #115e59; --dt-a-rgb: 13, 148, 136;
+}
+
+/* Page: transparent like the other lists, 8px between the strips. */
+.td-root { background: transparent; padding: 14px 0 22px; margin: -1rem 0 0; gap: 8px; }
+[data-bs-theme="dark"] .td-root { background: transparent; }
+
+/* Header — the Supplier list header (.sup-fig .cstrip) in teal. Edges as on the
+   Customers list: icon starts 19px in, the tab rail ends 15px in. */
+.td-root .sup-fig { flex-shrink: 0; }
+.td-root .sup-fig .cstrip {
+  padding-left: 18px; padding-right: 14px;
+  border-color: #99f6e4;
+  background: linear-gradient(110deg, #f0fdfa 0%, #e6fcf8 25%, #ccfbf1 55%, #b5f5ea 85%, #99f6e4 100%);
+  box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(13,148,136,.16), 0 2px 8px rgba(0,0,0,.06);
+}
+.td-root .sup-fig .cstrip__left { padding-left: 0; }
+.td-root .sup-fig .cstrip__accent { background: linear-gradient(180deg, #5eead4, #14b8a6, #0d9488); }
+.td-root .sup-fig .cstrip__glow { background-image: radial-gradient(ellipse at 10% 50%, rgba(153,246,228,.45) 0%, transparent 50%), radial-gradient(ellipse at 90% 50%, rgba(45,212,191,.22) 0%, transparent 55%); }
+.td-root .sup-fig .cstrip__avatar {
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 55%, #0f766e 100%);
+  box-shadow: 0 0 0 3px rgba(20,184,166,.25), 0 4px 14px rgba(13,148,136,.40);
+}
+.td-root .sup-fig .cstrip__online-dot { border-color: #f0fdfa; }
+.td-root .sup-fig .cstrip__title { color: #115e59; }
+.td-root .sup-fig .cstrip__sub { color: #0f766e; }
+[data-bs-theme="dark"] .td-root .sup-fig .cstrip {
+  border-color: rgba(45,212,191,.30);
+  background: radial-gradient(130% 130% at 0% 50%, rgba(13,148,136,.20), transparent 55%), linear-gradient(165deg, rgba(255,255,255,.045), rgba(255,255,255,0) 60%), var(--vz-card-bg);
+  box-shadow: 0 8px 28px rgba(0,0,0,.35);
+}
+[data-bs-theme="dark"] .td-root .sup-fig .cstrip__sheen { background: none; }
+[data-bs-theme="dark"] .td-root .sup-fig .cstrip__title { color: #ccfbf1; }
+[data-bs-theme="dark"] .td-root .sup-fig .cstrip__sub { color: #5eead4; }
+
+/* Every tab rail on the page: the list size (40px / 12.5px). */
+.td-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+.td-root .dt-tabrail .dt-tab svg { flex-shrink: 0; }
+
+/* Toolbar — the Customers list toolbar band (its own card here, since it serves
+   both the list and the calendar view). First control starts 19px in. */
+.td-root .td-toolbar {
+  flex-shrink: 0; gap: 10px;
+  padding: 14px;
+  background: linear-gradient(110deg, #f5fefc 0%, #ecfdf9 35%, #dcfbf3 70%, #ccfbf1 100%);
+  border: 1px solid #ccf3ea; border-radius: 16px;
+  box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(13,148,136,.08), 0 2px 8px rgba(0,0,0,.04);
+}
+.td-root .td-toolbar-row { gap: 14px; align-items: stretch; }
+.td-root .td-filters { gap: 14px; align-items: stretch; }
+.td-root .td-toolbar-right { align-items: stretch; }
+.td-root .td-meeting-status-row { padding: 0; background: transparent; border: 0; border-radius: 0; gap: 10px; align-items: center; }
+[data-bs-theme="dark"] .td-root .td-toolbar { background: rgba(20,184,166,.06); border-color: rgba(45,212,191,.18); box-shadow: 0 8px 28px rgba(0,0,0,.30); }
+[data-bs-theme="dark"] .td-root .td-meeting-status-row { background: transparent; }
+
+/* Search — full width, drawn as the tab rail's track (1px border, 3px padding,
+   tint) with the 40px field inside it; same as the other Sales lists. */
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search {
+  position: relative; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
+  height: auto; min-height: 48px;
+  padding: 3px 14px 3px 38px;
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  border-radius: 11px; box-shadow: none;
+}
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search::before {
+  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
+  border-radius: 8px;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
+  transition: border-color .16s, box-shadow .16s;
+}
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search > * { position: relative; z-index: 1; }
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search .dt-search-icon { position: absolute; left: 16px; color: var(--dt-a-400); }
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search > .ui-search-clear { position: absolute; right: 11px; }
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search input { font-size: 13px; }
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.td-root .td-toolbar .td-toolbar-row .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
+[data-bs-theme="dark"] .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .td-root .td-toolbar .td-toolbar-row .dt-search.dt-search::before { background: rgba(255,255,255,.03); border-color: rgba(var(--dt-a-rgb), .25); }
+
+/* Add — the Supplier header's own button, in teal, as tall as the rails beside it. */
+.td-root .td-toolbar .cstrip__action-btn {
+  height: auto; min-height: 40px; padding-top: 0; padding-bottom: 0;
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%);
+  box-shadow: 0 4px 16px rgba(13,148,136,.5), 0 1px 3px rgba(15,118,110,.3), 0 1px 0 rgba(255,255,255,.2) inset;
+}
+.td-root .td-toolbar .cstrip__action-btn:hover {
+  background: linear-gradient(135deg, #0d9488 0%, #0f766e 50%, #115e59 100%);
+  box-shadow: 0 8px 24px rgba(13,148,136,.6), 0 2px 6px rgba(15,118,110,.35), 0 1px 0 rgba(255,255,255,.2) inset;
+}
+
+/* Table — the list header band comes from DataTable (.dt-root.hr-dt .dt-table);
+   the old solid teal bar is dropped. */
+.td-root .td-table-card .td-table.dt-table thead tr { background: transparent; box-shadow: none; }
+.td-root .td-table-card .tc-wl-pag { margin: 0; }
+/* Status pills at the Customers list pill size (.smc-wa). */
+.td-root .td-badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+
+/* Action buttons — the Customers list .smc-act buttons (SalesCustomers.css isn't
+   loaded here, so restated), plus del / warn / info for this page's actions. */
+.td-root .td-table .smc-act {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; padding: 0; text-decoration: none;
+  transition: all .18s cubic-bezier(.22,1,.36,1);
+  border: 1.5px solid;
+}
+.td-root .td-table .smc-act svg { width: 14px; height: 14px; }
+.td-root .td-table .smc-act-edit  { border-color: #93c5fd; background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1d4ed8; }
+.td-root .td-table .smc-act-map   { border-color: #6ee7b7; background: linear-gradient(135deg, #ecfdf5, #d1fae5); color: #047857; }
+.td-root .td-table .smc-act-vault { border-color: #d8b4fe; background: linear-gradient(135deg, #faf5ff, #ede9fe); color: #7c3aed; }
+.td-root .td-table .smc-act-info  { border-color: #a5f3fc; background: linear-gradient(135deg, #ecfeff, #cffafe); color: #0e7490; }
+.td-root .td-table .smc-act-warn  { border-color: #fcd34d; background: linear-gradient(135deg, #fffbeb, #fef3c7); color: #b45309; }
+.td-root .td-table .smc-act-del   { border-color: #fca5a5; background: linear-gradient(135deg, #fef2f2, #fee2e2); color: #dc2626; }
+.td-root .td-table .smc-act:not(.td-ab-muted):not(:disabled):hover { color: #fff; border-color: transparent; transform: translateY(-2px) scale(1.08); }
+.td-root .td-table .smc-act-edit:not(.td-ab-muted):not(:disabled):hover  { background: linear-gradient(135deg, #3b82f6, #1d4ed8); box-shadow: 0 4px 14px rgba(29,78,216,.4); }
+.td-root .td-table .smc-act-map:not(.td-ab-muted):not(:disabled):hover   { background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 4px 14px rgba(5,150,105,.4); }
+.td-root .td-table .smc-act-vault:not(.td-ab-muted):not(:disabled):hover { background: linear-gradient(135deg, #a855f7, #6d28d9); box-shadow: 0 4px 14px rgba(109,40,217,.5); }
+.td-root .td-table .smc-act-info:not(.td-ab-muted):not(:disabled):hover  { background: linear-gradient(135deg, #22d3ee, #0891b2); box-shadow: 0 4px 14px rgba(8,145,178,.4); }
+.td-root .td-table .smc-act-warn:not(.td-ab-muted):not(:disabled):hover  { background: linear-gradient(135deg, #fbbf24, #d97706); box-shadow: 0 4px 14px rgba(217,119,6,.4); }
+.td-root .td-table .smc-act-del:not(.td-ab-muted):not(:disabled):hover   { background: linear-gradient(135deg, #f87171, #dc2626); box-shadow: 0 4px 14px rgba(220,38,38,.4); }
+.td-root .td-actions { gap: 8px; }
+[data-bs-theme="dark"] .td-root .td-table .smc-act-edit  { border-color: rgba(96,165,250,.35);  background: rgba(59,130,246,.10);  color: #93c5fd; }
+[data-bs-theme="dark"] .td-root .td-table .smc-act-map   { border-color: rgba(52,211,153,.35);  background: rgba(16,185,129,.10);  color: #6ee7b7; }
+[data-bs-theme="dark"] .td-root .td-table .smc-act-vault { border-color: rgba(167,139,250,.35); background: rgba(124,58,237,.12);  color: #c4b5fd; }
+[data-bs-theme="dark"] .td-root .td-table .smc-act-info  { border-color: rgba(103,232,249,.35); background: rgba(8,145,178,.12);   color: #67e8f9; }
+[data-bs-theme="dark"] .td-root .td-table .smc-act-warn  { border-color: rgba(252,211,77,.35);  background: rgba(245,158,11,.12);  color: #fcd34d; }
+[data-bs-theme="dark"] .td-root .td-table .smc-act-del   { border-color: rgba(248,113,113,.35); background: rgba(239,68,68,.10);   color: #fca5a5; }
+
+/* Empty state ("No reminders found" / "No meetings found"): the table stretches to
+   the scroll area and the empty row takes the spare height, so the message sits in
+   the middle of the table instead of just under the header. */
+.td-root .td-table:has(.td-empty) { height: 100%; }
+.td-root .td-table:has(.td-empty) tbody tr:has(.td-empty) { height: 100%; }
+.td-root .td-table .td-empty { vertical-align: middle; border-bottom: 0; }

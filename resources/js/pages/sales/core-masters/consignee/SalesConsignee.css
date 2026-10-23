@@ -5,10 +5,10 @@
   background: transparent;
   padding: 0;
   margin: 0;
-  /* No gap: with the HRMS header (.frm-cstrip.hr-cstrip) as a direct child,
-     app.css gives every strip here an 8px margin-bottom, which is the spacing.
-     A gap on top of it doubled each distance to 16px. */
-  display: flex; flex-direction: column;
+  /* The header is the Supplier list's (.sup-fig .cstrip), not the HRMS strip,
+     so app.css's 8px margin-bottom for pages with .frm-cstrip.hr-cstrip no
+     longer applies — the 8px between the header block and the table is this gap. */
+  display: flex; flex-direction: column; gap: 8px;
   color: var(--vz-body-color);
 }
 .smcg-root *, .smcg-root *::before, .smcg-root *::after { box-sizing: border-box; }
@@ -1500,21 +1500,21 @@
 [data-bs-theme="dark"] .smcg-filterpop-lbl { color: #6ee7b7; }
 [data-bs-theme="dark"] .smcg-filterpop-x { background: rgba(255,255,255,.08); color: #6ee7b7; }
 
-/* ── Aligned with the HRMS Employee list (same as the Customers list) ────────── */
-/* Title + subtitle sized like the Supplier Management header (.sup-fig .cstrip__title / __sub). */
-.smcg-root .frm-cstrip .frm-cstrip-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; }
-.smcg-root .frm-cstrip .frm-cstrip-sub { font-size: 10px; font-weight: 500; opacity: .85; margin-top: 2px; line-height: 1.3; }
-/* Left edges: header icon, banner icon and the toolbar's first control share
-   one inset; right edges all end 15px in (1 border + 14 padding). */
-.smcg-root .frm-cstrip.hr-cstrip .frm-cstrip-left { padding-left: 0; }
-.smcg-root .frm-cstrip.hr-cstrip { padding-right: 14px; }
+/* ── Same layout as the Customers list ───────────────────────────────────────── */
+/* Left edges: header icon, banner icon and the toolbar's first control start 19px in
+   (1px border + 18px); right edges all end 15px in (1 border + 14 padding). */
+.smcg-root .sup-fig .cstrip { padding-left: 18px; padding-right: 14px; }
+.smcg-root .sup-fig .cstrip__left { padding-left: 0; }
 .smcg-root .sup-fig .bref-box__header { padding-left: 18px; padding-right: 14px; }
 .smcg-root .smcg-toolbar { padding: 14px; gap: 14px; }
 /* Tabs 40px / 12.5px; the search bar and Filter button stand the same 40px (as on Customers). */
 .smcg-root .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
-.smcg-root .smcg-toolbar .dt-filter-btn { height: 40px; flex-shrink: 0; }
+/* Search and Filter stretch to the tab rail's full height (40px tabs + the rail's padding and
+   border) so every control in the row is the same height; 40px floor for a wrapped row. */
+.smcg-root .smcg-toolbar { align-items: stretch; }
+.smcg-root .smcg-toolbar .dt-filter-btn { height: auto; min-height: 40px; flex-shrink: 0; }
 .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search {
-  height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
+  height: auto; min-height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }
 /* type="search" is kept (it keeps Chrome's autofill off); hide the browser's
    own clear so dt-search-clear is the only one. */
@@ -1525,29 +1525,15 @@
   display: none;
 }
 
-/* Add Consignee = the Add Supplier button (supplier-management.css .sup-fig .cstrip__action-btn)
-   in the page's emerald. app.css restyles every button inside an HRMS header
-   strip with !important, so the button's own values are restated. */
-.smcg-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn {
-  /* 40px = the search bar / Filter / tabs below. */
-  height: 40px !important;
-  min-height: 0 !important;
-  padding: 0 18px !important;
-  border-radius: 12px !important;
-  font-size: 11.5px !important;
-  font-weight: 700 !important;
-  letter-spacing: .02em !important;
-  gap: 7px;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+/* Add Consignee = the Supplier header's own Add button (.sup-fig .cstrip__action-btn),
+   held at 40px to match the search bar / Filter / tabs, in the page's emerald. */
+.smcg-root .sup-fig .cstrip__action-btn {
+  height: 40px; padding-top: 0; padding-bottom: 0;
   background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
   box-shadow: 0 4px 16px rgba(5, 150, 105, .5), 0 1px 3px rgba(4, 120, 87, .3), 0 1px 0 rgba(255, 255, 255, .2) inset;
-  transition: background .2s, transform .2s, box-shadow .2s;
 }
-.smcg-root .frm-cstrip.hr-cstrip .sup-fig .cstrip__action-btn.cstrip__action-btn.cstrip__action-btn:hover {
-  color: #fff;
+.smcg-root .sup-fig .cstrip__action-btn:hover {
   background: linear-gradient(135deg, #059669 0%, #047857 50%, #065f46 100%);
-  transform: translateY(-1.5px);
   box-shadow: 0 8px 24px rgba(5, 150, 105, .6), 0 2px 6px rgba(4, 120, 87, .35), 0 1px 0 rgba(255, 255, 255, .2) inset;
 }
 
@@ -1626,46 +1612,33 @@
   background: linear-gradient(135deg, #064e3b 0%, #065f46 55%, #059669 100%);
   box-shadow: 0 8px 22px rgba(5, 150, 105, .30), 0 2px 5px rgba(4, 120, 87, .18), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
-/* The HRMS strip paints a full-size ::after wash over itself; the title block
-   is lifted above it (z-index 1) but this button was not, so the wash sat on
-   top and greyed its white text. */
-.smcg-root .frm-cstrip.hr-cstrip .cstrip__action-btn { position: relative; z-index: 1; }
-/* Header strip in the same emerald as the banner, toolbar and table. The HRMS
-   strip's green variant (hr-cstrip--teal) is teal (#14b8a6 / #0d9488), a
-   different shade from everything else on this page. */
-.smcg-root .frm-cstrip.hr-cstrip.hr-cstrip--teal {
+/* Header strip (Supplier .cstrip) in the same emerald as the banner, toolbar and table. */
+.smcg-root .sup-fig .cstrip {
   border-color: #a7f3d0;
   background: linear-gradient(110deg, #f0fdf9 0%, #e7fbf3 25%, #d1fae5 55%, #bdf0da 85%, #a7f3d0 100%);
   box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 8px 28px rgba(5, 150, 105, .16), 0 2px 8px rgba(0, 0, 0, .06);
 }
-.smcg-root .frm-cstrip.hr-cstrip.hr-cstrip--teal::after {
-  background-image:
-    linear-gradient(180deg, rgba(255, 255, 255, .5) 0%, transparent 50%),
-    radial-gradient(ellipse at 10% 50%, rgba(167, 243, 208, .45) 0%, transparent 50%),
-    radial-gradient(ellipse at 90% 50%, rgba(52, 211, 153, .22) 0%, transparent 55%);
-}
-.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-icon {
+.smcg-root .sup-fig .cstrip__accent { background: linear-gradient(180deg, #34d399, #059669, #065f46); }
+.smcg-root .sup-fig .cstrip__glow { background-image: radial-gradient(ellipse at 10% 50%, rgba(167, 243, 208, .45) 0%, transparent 50%), radial-gradient(ellipse at 90% 50%, rgba(52, 211, 153, .22) 0%, transparent 55%); }
+.smcg-root .sup-fig .cstrip__avatar {
   background: linear-gradient(135deg, #10b981 0%, #059669 55%, #065f46 100%);
   box-shadow: 0 0 0 3px rgba(16, 185, 129, .25), 0 4px 14px rgba(5, 150, 105, .40);
 }
-.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-icon::after { border-color: #ecfdf5; }
-.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-title { color: #064e3b; }
-.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-sub { color: #047857; }
-.smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-accent { background: linear-gradient(180deg, #34d399, #059669, #065f46); }
-[data-bs-theme="dark"] .smcg-root .frm-cstrip.hr-cstrip.hr-cstrip--teal {
+.smcg-root .sup-fig .cstrip__online-dot { border-color: #ecfdf5; }
+.smcg-root .sup-fig .cstrip__title { color: #064e3b; }
+.smcg-root .sup-fig .cstrip__sub { color: #047857; }
+[data-bs-theme="dark"] .smcg-root .sup-fig .cstrip {
   border-color: rgba(52, 211, 153, .30);
   background:
     radial-gradient(130% 130% at 0% 50%, rgba(5, 150, 105, .20), transparent 55%),
     linear-gradient(165deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, 0) 60%),
     var(--vz-card-bg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .35);
 }
-[data-bs-theme="dark"] .smcg-root .frm-cstrip.hr-cstrip.hr-cstrip--teal::after {
-  background-image:
-    radial-gradient(ellipse at 10% 50%, rgba(52, 211, 153, .16) 0%, transparent 55%),
-    radial-gradient(ellipse at 90% 50%, rgba(16, 185, 129, .12) 0%, transparent 60%);
-}
-[data-bs-theme="dark"] .smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-title { color: #ecfdf5; }
-[data-bs-theme="dark"] .smcg-root .hr-cstrip.hr-cstrip--teal .frm-cstrip-sub { color: #6ee7b7; }
+[data-bs-theme="dark"] .smcg-root .sup-fig .cstrip__glow { background-image: radial-gradient(ellipse at 10% 50%, rgba(52, 211, 153, .16) 0%, transparent 55%), radial-gradient(ellipse at 90% 50%, rgba(16, 185, 129, .12) 0%, transparent 60%); }
+[data-bs-theme="dark"] .smcg-root .sup-fig .cstrip__sheen { background: none; }
+[data-bs-theme="dark"] .smcg-root .sup-fig .cstrip__title { color: #ecfdf5; }
+[data-bs-theme="dark"] .smcg-root .sup-fig .cstrip__sub { color: #6ee7b7; }
 /* Mapped Customers popup toolbar — same layout as the Consignees popup on the
    Customers page: a 40px search that takes the free width, the count pill and
    the action button on the right. Violet, because the rows are customers. */
@@ -1739,7 +1712,7 @@
   background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25);
   display: flex; align-items: center; justify-content: center; color: #fff;
 }
-/* Same size/weight as the page header title (.frm-cstrip-title: Supplier Management sizes). */
+/* Same size/weight as the page header title (.cstrip__title: Supplier Management sizes). */
 .smcg-mapped-head-title { font-size: 14.5px; font-weight: 700; letter-spacing: -.3px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
 .smcg-mapped-head-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .smcg-mapped-close {
@@ -1835,3 +1808,57 @@
   --tcwl-border-dark: rgba(167,139,250,.35);
   --tcwl-band-dark: none;
 }
+
+/* Map Customer popup — Customer form header (shares .smcg-mapped-head), form
+   field label, and the Customer form's footer buttons (Previous / Next). */
+.smcg-map-head { border-top-left-radius: 16px; border-top-right-radius: 16px; padding: 15px 20px; }
+.smcg-map-head-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; line-height: 1.45; }
+.smcg-map-label { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 6px; font-size: 11px; font-weight: 500; color: #3b0764; }
+.smcg-map-req { color: #f06548; font-weight: 600; }
+.smcg-map-btn-cancel,
+.smcg-map-btn-primary {
+  height: 40px; padding: 0 18px; border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
+}
+.smcg-map-btn-cancel { border: 1.5px solid #ddd6fe; background: #fff; color: #7c3aed; }
+.smcg-map-btn-cancel:hover:not(:disabled) { background: #f5f1fe; border-color: #7c3aed; }
+.smcg-map-btn-primary {
+  border: none; color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  box-shadow: 0 6px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.2) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.smcg-map-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.6), 0 1px 0 rgba(255,255,255,.2) inset; }
+.smcg-map-btn-primary:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.smcg-map-btn-cancel:disabled { opacity: .6; cursor: not-allowed; }
+[data-bs-theme="dark"] .smcg-map-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-map-btn-cancel { background: transparent; border-color: rgba(167,139,250,.35); color: #c4b5fd; }
+[data-bs-theme="dark"] .smcg-map-btn-cancel:hover:not(:disabled) { background: rgba(167,139,250,.12); }
+
+/* Search = the tab rail's track: the same 1px border, 3px padding and tint as
+   .dt-tabs (so both stand 48px), with the 40px field drawn inside it by ::before
+   — the icon, input and clear button all sit inside that field. */
+.smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search {
+  position: relative;
+  min-height: 48px;
+  padding: 3px 14px 3px 38px;
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  border-radius: 11px;
+  box-shadow: none;
+}
+.smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search::before {
+  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
+  border-radius: 8px;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
+  transition: border-color .16s, box-shadow .16s;
+}
+.smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search > * { position: relative; z-index: 1; }
+.smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search .dt-search-icon { position: absolute; }
+.smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search:focus-within { border-color: color-mix(in srgb, var(--dt-a-200) 60%, #fff); box-shadow: none; }
+.smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search:focus-within::before { border-color: var(--dt-a-400); box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .14); }
+[data-bs-theme="dark"] .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .smcg-root .smcg-table-card .smcg-toolbar .dt-search.dt-search::before { background: rgba(255, 255, 255, .03); border-color: rgba(var(--dt-a-rgb), .25); }
