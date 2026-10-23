@@ -1021,7 +1021,8 @@ export default function AddVendorModal(props: {
             .catch(() => ({}))
         )
       ),
-      api.get('/clm/trade-doc-library/for-party/supplier')
+      // view=list — only `code` and `name` are read; see AddCustomerModal.
+      api.get('/clm/trade-doc-library/for-party/supplier', { params: { view: 'list' } })
         .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
         .catch(() => [] as Array<{ code: string; name: string }>),
     ]).then(([results, partyDocs]) => {

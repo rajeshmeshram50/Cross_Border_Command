@@ -1368,7 +1368,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       /* Party filter for the consignee form: only trade docs whose
        * `party` CSV mentions "Consignee" reach the td bucket. We
        * intersect with segment-rule td below. */
-      api.get('/clm/trade-doc-library/for-party/consignee')
+      // view=list — only `code` is read from these rows; see AddCustomerModal.
+      api.get('/clm/trade-doc-library/for-party/consignee', { params: { view: 'list' } })
         .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
         .catch(() => [] as Array<{ code: string }>),
     ]).then(([results, partyDocs]) => {

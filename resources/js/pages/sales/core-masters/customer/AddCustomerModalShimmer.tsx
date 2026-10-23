@@ -8,69 +8,61 @@ export const ACM_SHELL_CSS = `
   position: fixed; inset: 0; z-index: 10000;
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
-  background: rgba(15, 23, 42, 0.55);
-  -webkit-backdrop-filter: blur(4px);
-          backdrop-filter: blur(4px);
+  background: rgba(40, 44, 52, .42);
+  -webkit-backdrop-filter: blur(7px) saturate(118%);
+          backdrop-filter: blur(7px) saturate(118%);
   font-family: var(--font-sans);
   animation: acmFadeIn .25s ease;
 }
 @keyframes acmFadeIn { from { opacity: 0; } to { opacity: 1; } }
 .acm-root *, .acm-root *::before, .acm-root *::after { box-sizing: border-box; }
 .acm-card {
-  /* Stable card size: width caps at 1224 (≈85% of the prior 1440 cap,
-     matches what the form looked like at 85% browser zoom), height pins
-     at 92vh so the modal doesn't reflow each time the user switches
-     between Stage 1 sub-tabs. Clean white body (was a heavy lavender
-     wash that made everything look blurred together) with a defined
-     violet border. */
   width: 100%; max-width: 1224px;
   height: min(92vh, calc(100vh - 24px));
-  background: #ffffff;
-  border: 1px solid #d6c5ff;
-  border-radius: 20px;
-  box-shadow: 0 32px 80px -20px rgba(76,29,149,.40), 0 12px 30px rgba(15,5,40,.18);
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(196,181,253,.25), transparent 45%),
+    radial-gradient(ellipse at 100% 8%, rgba(167,139,250,.22), transparent 50%),
+    linear-gradient(180deg, #fbf9ff 0%, #f5f1fe 55%, #efe9fd 100%);
+  border: 1.5px solid rgba(255, 255, 255, .65);
+  border-radius: 22px;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
+  color: #1e1b4b;
   overflow: hidden; display: flex; flex-direction: column;
-  position: relative;   /* positioning context for the saving lock overlay */
+  position: relative;
   animation: acmSlideUp .35s cubic-bezier(.34,1.56,.64,1);
 }
 .acm-header {
   position: relative;
-  background: linear-gradient(
-135deg, #2e1065 0%, #4c1d95 30%, #6d28d9 65%, #7c3aed 100%);
-  padding: 18px 24px;
-  display: flex; align-items: center; justify-content: space-between;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
+  padding: 14px 22px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
   overflow: hidden;
   flex-shrink: 0;
 }
 .acm-header::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    /* Three stacked layers:
-         1. white dot-grid texture (the polka-dot effect)
-         2 + 3. soft brand glows left/right for depth. */
-    background-image:
-      radial-gradient(rgba(255, 255, 255, .20) 1.1px, transparent 1.6px),
-      radial-gradient(circle at 15% 50%, rgba(167, 139, 250, .32) 0%, transparent 55%),
-      radial-gradient(ellipse at 85% 50%, rgba(139, 92, 246, .22) 0%, transparent 55%);
-    background-size: 18px 18px, auto, auto;
-    background-position: 0 0, 0 0, 0 0;
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(216,180,254,.4), transparent 45%);
 }
-.acm-header-left { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
+.acm-header::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+.acm-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; position: relative; z-index: 1; }
 .acm-header-icon {
-  width: 42px; height: 42px; border-radius: 12px;
-  background: rgba(255,255,255,0.18);
-  border: 1.5px solid rgba(255,255,255,0.30);
+  width: 38px; height: 38px; border-radius: 11px;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.25);
   color: #fff;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
 }
-.acm-title { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
-.acm-subtitle { font-size: 12px; color: rgba(255,255,255,0.80); margin-top: 3px; }
+.acm-title { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.4px; line-height: 1.1; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.acm-subtitle { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; }
 .acm-top-progress {
   position: relative; height: 3px;
   background: rgba(124,58,237,.10);
@@ -86,19 +78,32 @@ export const ACM_SHELL_CSS = `
   0%   { left: -35%; }
   100% { left: 100%; }
 }
-.acm-stepper { padding: 16px 22px 14px; display: flex; align-items: center; gap: 0; flex-shrink: 0; background: linear-gradient(110deg,#faf5ff 0%,#f0ebff 100%); }
-.acm-step-connector { flex: 0 0 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 0; }
-.acm-step { flex: 1; padding: 11px 14px; border-radius: 14px; display: flex; align-items: center; gap: 12px; position: relative; overflow: hidden; transition: all .25s; cursor: pointer; min-width: 0; }
-.acm-step-badge-wrap { position: relative; flex-shrink: 0; width: 40px; height: 40px; }
+.acm-stepper { padding: 14px 18px 2px; display: flex; align-items: stretch; gap: 0; flex-shrink: 0; background: transparent; }
+.acm-step-connector { flex: 0 0 26px; align-self: center; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.acm-step {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 13px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255,255,255,.7), rgba(245,241,254,.55));
+  border: 1.5px solid rgba(196,181,253,.5); border-radius: 15px;
+  box-shadow: 0 1px 3px rgba(124,58,237,.05);
+  position: relative; cursor: pointer;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.acm-step-badge-wrap { position: relative; flex-shrink: 0; width: 38px; height: 38px; }
 .acm-step-text { min-width: 0; flex: 1; }
-.acm-step-pending { background: #f8fafc; border: 1.5px solid #e2e8f0; cursor: not-allowed; opacity: .75; }
-.acm-tabs { padding: 14px 22px 14px; display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; background: linear-gradient(110deg,#faf5ff 0%,#f0ebff 100%); border-bottom: 1px solid #ede9fe; }
-.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fff; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; display: flex; flex-direction: column; }
-.acm-section { background: #fff; border: 1.5px solid #e0d9f7; border-radius: 14px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 2px 12px rgba(109,40,217,.06); }
+.acm-step-pending { cursor: not-allowed; }
+.acm-tabs { margin: 12px 22px 0; padding: 0; display: flex; gap: 6px; flex-shrink: 0; background: transparent; border-bottom: 1.5px solid #e2d4fa; }
+.acm-body { flex: 1; overflow-y: auto; scrollbar-gutter: stable; padding: 12px 22px 14px; background: transparent; scrollbar-width: thin; scrollbar-color: #ddd6fe transparent; display: flex; flex-direction: column; }
+.acm-section { position: relative; background: #fff; border: 1px solid #ece4fb; border-radius: 14px; margin-bottom: 8px; overflow: hidden; }
+.acm-section::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; z-index: 1;
+  width: 4px; opacity: .85; pointer-events: none;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+}
 .acm-section:last-child { margin-bottom: 0; }
-.acm-section-purple { border-top: 3px solid #7c3aed; }
-.acm-section-head { padding: 11px 16px; background: linear-gradient(110deg,#faf5ff 0%,#f0ebff 100%); display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #ede9fe; }
-.acm-section-body { padding: 16px; }
+.acm-section-head { padding: 7px 14px; background: #fff; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #f1ecfb; }
+.acm-section-body { padding: 8px 14px 10px; }
 .acm-row { display: grid; gap: 14px; margin-bottom: 14px; }
 .acm-row:last-child { margin-bottom: 0; }
 .acm-row-2 { grid-template-columns: 1fr 2fr; }
@@ -144,7 +149,6 @@ export const ACM_SHELL_CSS = `
   border-color: rgba(167,139,250,0.35);
   box-shadow: 0 6px 22px rgba(0,0,0,0.50), inset 0 1px 0 rgba(255,255,255,0.06);
 }
-[data-bs-theme="dark"] .acm-section-purple { border-top-color: #a78bfa; }
 [data-bs-theme="dark"] .acm-section-head {
   background: linear-gradient(110deg, rgba(124,58,237,0.22) 0%, rgba(167,139,250,0.10) 100%);
   border-bottom-color: rgba(167,139,250,0.28);
@@ -160,18 +164,18 @@ export const ACM_SHELL_CSS = `
 export function StepperShimmer() {
   return (
     <div className="acm-stepper acm-stepper-shimmer">
-      {[0, 1, 2].map((i) => (
+      {[0, 1].map((i) => (
         <Fragment key={i}>
           <div className="acm-step acm-step-pending" style={{ pointerEvents: 'none' }}>
             <div className="acm-step-badge-wrap">
-              <Shimmer width={40} height={40} radius={10} />
+              <Shimmer width={38} height={38} radius={12} />
             </div>
             <div className="acm-step-text" style={{ flex: 1 }}>
               <Shimmer height={11} width="70%" radius={4} style={{ marginBottom: 6 }} />
               <Shimmer height={9}  width="55%" radius={4} />
             </div>
           </div>
-          {i < 2 && (
+          {i < 1 && (
             <div className="acm-step-connector">
               <Shimmer height={2} width="100%" radius={2} />
             </div>
@@ -188,24 +192,25 @@ export function StepperShimmer() {
  * inputs flickering into populated state. Layout mirrors the actual
  * Stage 1 form (Basic Company Details + Primary Address & Contact). */
 export function Stage1FormShimmer() {
-  const FieldShim = () => (
+  const FieldShim = ({ short }: { short?: boolean }) => (
     <div className="acm-field">
-      <Shimmer height={10} width="40%" radius={4} style={{ marginBottom: 7 }} />
-      <Shimmer height={36} radius={9} />
+      <Shimmer height={10} width={short ? 110 : '40%'} radius={4} style={{ marginBottom: 5 }} />
+      {short ? <Shimmer height={14} width={110} radius={4} style={{ margin: '11px 0' }} /> : <Shimmer height={36} radius={9} />}
     </div>
   );
-  const Section = ({ rows }: { rows: { cols: number }[] }) => (
-    <div className="acm-section acm-section-purple" style={{ marginBottom: 16 }}>
+  // `n` = fields actually in the row (Basic Company Details' 2nd row has 3 in a 4-col grid); `short` = the WhatsApp radio row.
+  const Section = ({ rows }: { rows: { cols: number; n?: number; short?: boolean }[] }) => (
+    <div className="acm-section acm-section-purple">
       <div className="acm-section-head">
-        <Shimmer width={28} height={28} radius={8} />
+        <Shimmer width={25} height={25} radius={8} />
         <div style={{ flex: 1, marginLeft: 10 }}>
           <Shimmer height={11} width="35%" radius={4} />
         </div>
       </div>
       <div className="acm-section-body">
         {rows.map((r, i) => (
-          <div key={i} className={`acm-row acm-row-${r.cols}`} style={{ marginBottom: i < rows.length - 1 ? 14 : 0 }}>
-            {Array.from({ length: r.cols }).map((_, j) => <FieldShim key={j} />)}
+          <div key={i} className={`acm-row acm-row-${r.cols}`}>
+            {Array.from({ length: r.n ?? r.cols }).map((_, j) => <FieldShim key={j} short={r.short} />)}
           </div>
         ))}
       </div>
@@ -213,8 +218,8 @@ export function Stage1FormShimmer() {
   );
   return (
     <div>
-      <Section rows={[{ cols: 3 }, { cols: 4 }]} />
-      <Section rows={[{ cols: 2 }, { cols: 4 }, { cols: 4 }, { cols: 1 }]} />
+      <Section rows={[{ cols: 4 }, { cols: 4, n: 3 }]} />
+      <Section rows={[{ cols: 2 }, { cols: 3 }, { cols: 3 }, { cols: 4 }, { cols: 1, short: true }]} />
     </div>
   );
 }
@@ -233,8 +238,8 @@ export default function AddCustomerModalShimmer({ title }: { title: string }) {
         <div className="acm-top-progress" role="progressbar" aria-label="Loading"><span /></div>
         <StepperShimmer />
         <div className="acm-tabs">
-          <Shimmer height={36} width={180} radius={999} />
-          <Shimmer height={36} width={200} radius={999} />
+          <Shimmer height={14} width={170} radius={4} style={{ margin: '0 14px 10px' }} />
+          <Shimmer height={14} width={190} radius={4} style={{ margin: '0 14px 10px' }} />
         </div>
         <div className="acm-body"><Stage1FormShimmer /></div>
       </div>
