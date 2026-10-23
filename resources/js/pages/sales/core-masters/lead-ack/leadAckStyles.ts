@@ -202,7 +202,14 @@ export const LEAD_ACK_CSS = `
 .lam-empty {
   text-align: center; padding: 38px 16px !important;
   color: #94a3b8; font-style: italic; font-size: 13px;
+  vertical-align: middle;
 }
+/* Empty state: the table stretches to the scroll area and the empty row takes
+   the spare height, so the message sits in the middle of the table (same as the
+   Productivity Tracker / My Workplace). */
+.lam-table:has(.lam-empty) { height: 100%; }
+.lam-table:has(.lam-empty) tbody tr:has(.lam-empty) { height: 100%; }
+.lam-table:has(.lam-empty) tbody tr:has(.lam-empty) td { background: transparent; border-bottom: 0; }
 .lam-empty-icon {
   display: inline-flex; width: 42px; height: 42px; border-radius: 50%;
   align-items: center; justify-content: center;
