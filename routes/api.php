@@ -1021,6 +1021,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     /* Roster-wide KPI tiles + tab badges. Declared BEFORE the apiResource so
        'stats' is not swallowed by /recruitments/{recruitment}. */
     Route::get   ('/recruitments/stats',     [RecruitmentController::class, 'stats']);
+    // The screen's four reads in one trip — see RecruitmentBundleController.
+    Route::get   ('/recruitments/overview',  [\App\Http\Controllers\Api\RecruitmentBundleController::class, 'overview']);
     /* Ids of hiring requests already converted — the Hiring Requests modal's
        Pending / Created split. Its own route so the modal stops downloading
        the whole recruitments list to pluck one column. */
