@@ -5,6 +5,12 @@ import api from '../../../api';
 import { ShimmerClmMaster, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, loadFailed, usePagedList, useAutoFitRows } from '../shared/clmShared';
+
+/* Named once so the list and its row-fitting agree on the key the fitted page
+   size is remembered under — a mismatch would quietly cost the extra fetch
+   the memory exists to avoid. */
+const CLAUSE_TYPES_URL   = '/clm/clause-types';
+const CLAUSE_LIBRARY_URL = '/clm/clause-library';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { DeleteConf } from '../shared/clmCommon';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
@@ -131,7 +137,7 @@ export default function ClmClauseLibraryPage() {
 function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => void }) {
   const toast = useToast();
   const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp } =
-    usePagedList<ClType>('/clm/clause-types', reloadKey);
+    usePagedList<ClType>(CLAUSE_TYPES_URL, reloadKey);
   const [editing, setEditing] = useState<ClType | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ClType | null>(null);
@@ -151,7 +157,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
   const safePage  = page;
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
-  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total]);
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], CLAUSE_TYPES_URL);
 
   /* Highest code seen on page 1, kept for the Add modal's code preview.
      The list is ordered newest-first, so page 1 carries the highest code —
@@ -308,7 +314,7 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
 function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey: number; reload: () => void }) {
   const toast = useToast();
   const { rows, total, loading, replacing, search, setSearch, page, setPage, rpp, setRpp } =
-    usePagedList<ClLib>('/clm/clause-library', reloadKey);
+    usePagedList<ClLib>(CLAUSE_LIBRARY_URL, reloadKey);
   const [editing, setEditing] = useState<ClLib | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ClLib | null>(null);
@@ -323,7 +329,7 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   const safePage   = page;
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
-  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total]);
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total], CLAUSE_LIBRARY_URL);
 
   /* Code preview for the Add modal — page 1 carries the highest codes because
      the list is newest-first. See the note in TypesPane. */

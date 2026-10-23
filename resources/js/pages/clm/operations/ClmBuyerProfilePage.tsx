@@ -298,7 +298,7 @@ const BP_CSS = `
    and 40px on the Supplier one - the same control at three sizes inside one
    module. */
 .bpa-seg{display:flex;align-items:center;background:rgba(255,255,255,.6);border:1px solid rgba(6,182,212,.28);border-radius:11px;padding:4px;gap:8px;}
-.bpa-tab{position:relative;height:34px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
+.bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
 .bpa-tab svg{flex-shrink:0;}
 .bpa-tab-active{border:0;background:linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%);color:#fff;box-shadow:0 5px 14px rgba(6,182,212,.5),inset 0 1px 0 rgba(255,255,255,.4),inset 0 -2px 6px rgba(14,116,144,.3);text-shadow:0 1px 2px rgba(12,74,110,.4);}
 .bpa-tab-inactive{background:linear-gradient(135deg,#ecfeff,#cffafe);border:1px solid rgba(6,182,212,.25);color:#0e7490;box-shadow:none;}

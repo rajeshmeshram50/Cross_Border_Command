@@ -324,7 +324,7 @@ export default function ClmAgreementsToApprovePage() {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 34, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
                     ...(active
                       ? { border: 0, background: 'linear-gradient(135deg, #22d3ee 0%, #06b6d4 35%, #0891b2 68%, #0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(14,116,144,.3) inset', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
                       : { background: t.dark ? 'linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10))' : 'linear-gradient(135deg, #ecfeff, #cffafe)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.3)' : 'rgba(6,182,212,.25)'}`, color: t.dark ? '#67e8f9' : '#0e7490' }) }}>

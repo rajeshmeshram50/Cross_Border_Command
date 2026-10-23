@@ -14,13 +14,56 @@ use Illuminate\Validation\Rule;
 
 class ClmSegmentController extends Controller
 {
+    /** Every table this controller may interrogate. Listing them lets the
+     *  column map be fetched in one query instead of one per table. */
+    private const USAGE_TABLES = [
+        'clm_segment_rules', 'customers', 'consignees', 'clm_tnc_library',
+        'vendors', 'products', 'master_vendor_directory', 'clm_agreement_library',
+    ];
+
     /** @var array<string, array<string, int>> table => flipped column list, per request */
     private array $columnCache = [];
 
-    // Memoized hasTable/hasColumn — one schema query per table instead of one per check.
+    /**
+     * Does `$table` exist, and (when given) have `$column`? Answered from ONE
+     * query for every table at once.
+     *
+     * These checks are defensive — the tables come from this app's own
+     * migrations, but a half-migrated environment should degrade rather than
+     * fatal. The cost was not: Schema::getColumnListing is a round trip to
+     * information_schema PER TABLE, this controller asks about eight of them,
+     * and the schema has 199 tables. That was eight queries per request spent
+     * asking Postgres whether the app's own tables exist — a third of what a
+     * segment list costs.
+     *
+     * Same approach ClmAuthorityController already takes. Static for the
+     * process, not cached: it must never be stale across a deployment, and
+     * one query is already cheap enough that caching it would add a failure
+     * mode for no gain. A table outside the list, or a failed lookup, falls
+     * back to the per-table read so nothing silently answers "no".
+     */
     private function schemaHas(string $table, ?string $column = null): bool
     {
-        $cols = $this->columnCache[$table] ??= array_flip(Schema::getColumnListing($table));
+        static $map = null;
+
+        if ($map === null) {
+            $map = [];
+            try {
+                $rows = DB::table('information_schema.columns')
+                    ->whereRaw('table_schema = current_schema()')
+                    ->whereIn('table_name', self::USAGE_TABLES)
+                    ->get(['table_name', 'column_name']);
+                foreach ($rows as $r) {
+                    $map[$r->table_name][$r->column_name] = 1;
+                }
+            } catch (\Throwable $e) {
+                $map = [];   // fall through to the per-table read below
+            }
+        }
+
+        $cols = $map[$table]
+            ?? ($this->columnCache[$table] ??= array_flip(Schema::getColumnListing($table)));
+
         return $column === null ? $cols !== [] : isset($cols[$column]);
     }
 

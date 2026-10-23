@@ -93,7 +93,7 @@ export default function ClmSegmentPage() {
   const start      = (page - 1) * rpp;
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
-  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total, tab]);
+  const fillH      = useAutoFitRows(scrollRef, autoFitRef, setRpp, [total, tab], '/clm/segments');
 
   const topCodesRef = useRef<{ code: string }[]>([]);
   useEffect(() => {
