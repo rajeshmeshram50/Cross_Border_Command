@@ -322,6 +322,14 @@
   /* The render's band for Login, but a shorter form (Forgot, OTP, Reset) only
      needs its own height, and no card needs to be taller than the window. */
   min-height: min(calc(790 * var(--u)), calc(100vh - 32px));
+  /* min-height alone let a TALL form grow past the window, and .kx-card's
+     own overflow:hidden then clipped it with nowhere to scroll — Reset
+     Password has the most content of the four steps (two fields, the
+     strength meter and the requirement list), so it is the one that broke
+     out of the band and read as overlapping the background (#59). Capped
+     here, the card stays framed where the photo paints it; the body below
+     takes the scroll instead. */
+  max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
   padding: calc(59.6 * var(--u)) calc(52.5 * var(--u)) calc(60 * var(--u));
@@ -433,7 +441,15 @@
    on a shorter step to the body, so the strip and closing line stay at the foot. */
 /* flex: 1 + centred: the height the render's Login/SSO switch used is shared
    above and below the form, so the strip and closing line sit at the foot. */
-.kx-card-body { position: relative; z-index: 1; flex: 1 0 auto; display: flex; flex-direction: column; justify-content: center; margin-top: calc(20 * var(--u)); }
+.kx-card-body {
+  position: relative; z-index: 1;
+  /* 1 1 auto + min-height:0, not 1 0 auto: a flex item cannot shrink below
+     its content without both, so the body used to force the card past the
+     cap above instead of scrolling inside it. */
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; justify-content: center;
+  margin-top: calc(20 * var(--u));
+}
 
 /* Signature strip, closing line, and the wave lines along the card's foot */
 .kx-tri {

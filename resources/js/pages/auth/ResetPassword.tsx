@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import AuthLayout from '../../layouts/AuthLayout';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import SuccessModal from '../../components/ui/SuccessModal';
-import { AlertCircle, Loader2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { AlertCircle, Loader2, ArrowLeft, Eye, EyeOff, Lock } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import AuthCardLayout from '@/layouts/AuthCardLayout';
@@ -135,9 +134,13 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
           </div>
         </div>
       )}
+      {/* icon too — Forgot and Verify OTP both pass one, and the layout
+          renders it inline with the title, so without it this step's heading
+          sat differently from the rest of the flow. */}
       <AuthCardLayout
         title="Set a new password"
         subtitle="Your new password must be different from previous ones."
+        icon={<Lock size={18} />}
       >
         <form onSubmit={handleSubmit} className="space-y-4 mb-6">
           <div className="flex flex-col gap-1">
