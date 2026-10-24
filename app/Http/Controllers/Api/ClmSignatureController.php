@@ -2479,6 +2479,26 @@ class ClmSignatureController extends Controller
         // enabled and the View / Download icons disabled forever.
         if ($request->boolean('sync') && $this->zoho->isConfigured()) {
             $changed = false;
+
+            /* Ask Zoho about every still-open request AT ONCE, before the loop.
+               This used to call getRequest() inside the loop, so the response
+               the browser was waiting on carried one serial Zoho round-trip per
+               open request — measured at ~295ms each, which is why a party with
+               several agreements out for signature took seconds to list (QA #7,
+               and the Evidence Vault's own open, which calls this with sync=1).
+               The calls are independent GETs on one cached token, so pooling
+               them costs the slowest call instead of the sum. Nothing is
+               skipped or deferred: the loop below is unchanged, it just reads
+               the details it already has. */
+            $syncable = $rows->filter(function (ClmSignatureRequest $row) {
+                if (!$row->zoho_request_id) return false;
+                return $row->status === 'inprogress'
+                    || ($row->status === 'completed' && empty($row->signed_document_paths));
+            });
+            $batch = $syncable->isEmpty()
+                ? []
+                : $this->zoho->getRequestsBatch($syncable->pluck('zoho_request_id')->all());
+
             foreach ($rows as $row) {
                 if (!$row->zoho_request_id) continue;
 
@@ -2488,7 +2508,14 @@ class ClmSignatureController extends Controller
                 if (!$isInProgress && !$isCompletedNoFile) continue;
 
                 try {
-                    $details = $this->zoho->getRequest($row->zoho_request_id);
+                    /* Pre-fetched above. A key that is present but null means
+                       Zoho was asked and refused (a dead request id, say) —
+                       skip the row exactly as the old catch did, rather than
+                       asking again. Only a MISSING key falls back to a single
+                       call, which is the "never attempted" case. */
+                    $key = (string) $row->zoho_request_id;
+                    if (array_key_exists($key, $batch) && $batch[$key] === null) continue;
+                    $details = $batch[$key] ?? $this->zoho->getRequest($row->zoho_request_id);
                     // Capture per-signer Viewed / Signed activity from Zoho's
                     // action_status so the Signing Tracker can show "Viewed on …".
                     if ($this->syncSignerActivity($row, $details)) $changed = true;

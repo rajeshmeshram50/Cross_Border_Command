@@ -54,7 +54,12 @@ export const OPS_SEARCH_CSS = `
 .ops-search {
   display: flex; align-items: center; gap: 8px;
   box-sizing: border-box;
-  height: 48px; padding: 0 14px;   /* the tab RAIL's height — see .clm-search */
+  /* 43.5px, set by eye and used across the whole module — this rule covers
+     Case to Case, Agreements We Sent, Agreements To Approve and the two
+     profile pages, and .clm-search carries the same number for the master
+     pages. It used to state 48, "the tab RAIL's height", so the field grew
+     and shrank with whatever the rail happened to be. */
+  height: 43.5px; padding: 0 14px;
   border: 1.5px solid var(--ops-edge);
   border-radius: 11px;
   background: var(--ops-fill);

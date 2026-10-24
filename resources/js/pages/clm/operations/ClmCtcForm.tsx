@@ -3297,13 +3297,40 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,5,40,.42)', backdropFilter: 'blur(6px)' }} />
-      <div style={{ position: 'relative', zIndex: 1, width: pending ? 440 : 460, maxWidth: 'calc(100vw - 32px)', background: t.surface, borderRadius: 16, boxShadow: '0 10px 48px rgba(109,40,217,.32)', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
-        <div style={{ background: 'linear-gradient(118deg,#4C1D95,#6D28D9,#8B5CF6)', padding: '12px 14px 11px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{pending ? `Confirm CP ${slot}` : `Add Counter Party ${slot}`}</div>
-          <button onClick={onClose} style={{ width: 24, height: 24, borderRadius: 7, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+      <div style={{ position: 'relative', zIndex: 1, /* One width for both steps. It used to be 460 for the list and 440 for the
+             confirm panel, so the box jumped 20px sideways the moment a party was
+             picked. 640 also stops the long company names in the list from
+             ellipsing: at 460 a name had roughly 300px left once the avatar, the
+             code chip and the gutters were taken out. */
+          width: 640, maxWidth: 'calc(100vw - 32px)', background: t.surface, borderRadius: 16, boxShadow: '0 10px 48px rgba(109,40,217,.32)', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
+        {/* The house modal head — .clm-modal-head in clmShared.ts, read off the
+            violet ramp: a 46px translucent icon tile, a 16px/500 title over a
+            10.5px sub, and a 32px close. It used to be a bare gradient strip
+            carrying a 12.5px bold label and a 24px cross, which read as a
+            coloured bar rather than a modal header beside the rest of the app.
+            The sheen and the soft corner disc are ::before / ::after in
+            CTC_FORM_CSS, as they are on .clm-modal-head. */}
+        <div className="ctc-cp-head">
+          <div className="ctc-cp-head-left">
+            <div className="ctc-cp-head-ico">
+              {pending
+                ? <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                : <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              {/* "Confirm CP 1" spelt out. The list step said "Counter Party"
+                  and the confirm step said "CP", so the same thing had two
+                  names one click apart. */}
+              <div className="ctc-cp-head-title">{pending ? `Confirm Counter Party ${slot}` : `Add Counter Party ${slot}`}</div>
+              <div className="ctc-cp-head-sub">{pending ? 'Check the name this party is referred as inside the agreement.' : 'Pick the company that signs this agreement as this counter party.'}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="ctc-cp-close" aria-label="Close">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
         {!pending ? (
-          <div style={{ padding: '10px 12px 12px' }}>
+          <div style={{ padding: '12px 16px 16px' }}>
             <div style={{ display: 'flex', gap: 3, background: t.dark ? 'rgba(255,255,255,.05)' : '#F3F0FD', borderRadius: 9, padding: 3, marginBottom: 9 }}>
               {(['buyer', 'consignee', 'supplier'] as const).map(tb => {
                 const isUsed = used.has(tb);
@@ -3321,27 +3348,44 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
               <input autoComplete="off" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" style={{ width: '100%', padding: '10px 12px 10px 32px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box' }} />
               <SearchClear show={search} onClear={() => { setSearch(''); }} />
             </div>
-            <div style={{ overflowY: 'auto', maxHeight: 'min(60vh, 440px)', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {/* Five rows, then scroll. A row stands 58px — a 38px avatar inside
+                10px of padding top and bottom, which is taller than the name +
+                e-mail stack beside it — and the rows sit 1px apart, so five of
+                them come to 5 x 58 + 4 x 1 = 294. The vh guard stays, for a
+                short window where even five would push the card off screen;
+                there it simply shows fewer. It used to cap at 440, which is
+                seven and a half rows. */}
+            <div style={{ overflowY: 'auto', maxHeight: 'min(60vh, 294px)', display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {/* The row reads left to right now: who they are on the left,
+                  where they are on the right. The country pill used to sit on a
+                  second line under the name, which left the right half of a
+                  640px row empty, and the e-mail — already carried on the
+                  entry, and shown on the confirm step — was not shown at all.
+                  Hover is CSS (.ctc-cp-row:hover) rather than two inline
+                  handlers writing style.background. */}
               {list.map(p => (
-                <div key={p.id} onClick={() => { setPending(p); setReferred(p.name); }} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '10px 11px', borderRadius: 10, cursor: 'pointer' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <div key={p.id} className="ctc-cp-row" onClick={() => { setPending(p); setReferred(p.name); }}>
                   <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${p.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{p.initials}</span></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                       <span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 9.5, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 7px', borderRadius: 6, letterSpacing: '.02em' }}>{p.id}</span>
                       <Tooltip label={p.name} position="top" zIndex={10000001} disabled={!p.name || p.name === '—'}><span style={{ fontSize: 13, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span></Tooltip>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
+                    <Tooltip label={p.email} position="bottom" zIndex={10000001} disabled={!p.email || p.email === '—'}>
+                      <div style={{ fontSize: 10.5, fontWeight: 500, color: t.textMuted, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.email && p.email !== '—' ? p.email : 'No e-mail on record'}</div>
+                    </Tooltip>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
                       {/* Tab already says the party type (Customer/Consignee/Supplier),
                           so the redundant type badge is dropped — show the country
                           in the badge instead. */}
                       {p.country && p.country !== '—'
-                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 9.5, fontWeight: 700, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 9px', borderRadius: 20, maxWidth: '100%', overflow: 'hidden' }}>
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 9.5, fontWeight: 700, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '3px 10px', borderRadius: 20, maxWidth: 160, overflow: 'hidden' }}>
                             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" /></svg>
                             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.country}</span>
                           </span>
                         : <span style={{ fontSize: 10, color: t.textMuted }}>No country</span>}
-                    </div>
+                      <svg className="ctc-cp-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                   </div>
                 </div>
               ))}
@@ -3365,16 +3409,23 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
             </div>
           </div>
         ) : (
-          <div style={{ padding: '12px 14px 14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 9, background: `linear-gradient(135deg,${pending.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{pending.initials}</span></div>
-              <div style={{ minWidth: 0, flex: 1 }}><div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}><span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 7, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 5 }}>{pending.id}</span><Tooltip label={pending.name} position="top" zIndex={10000001} disabled={!pending.name}><span style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.name}</span></Tooltip></div><Tooltip label={pending.email} position="bottom" zIndex={10000001} disabled={!pending.email || pending.email === '—'}><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.email}</div></Tooltip></div>
+          /* The confirm panel is read at the same scale as the list behind it.
+             It used to run its own much smaller type — a 7px code chip and
+             label, an 11px name, an 8px email, a 10.5px input — against the
+             list's 9.5 / 13 / 12.5, so picking a party shrank everything. The
+             values below are the list's, so the two steps agree.
+             A braced JSX comment cannot stand here: this branch of the ternary
+             has to BE the element, and a JSX comment is not an expression. */
+          <div style={{ padding: '14px 18px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 13 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${pending.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{pending.initials}</span></div>
+              <div style={{ minWidth: 0, flex: 1 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}><span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 9.5, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 7px', borderRadius: 6, letterSpacing: '.02em' }}>{pending.id}</span><Tooltip label={pending.name} position="top" zIndex={10000001} disabled={!pending.name}><span style={{ fontSize: 13, fontWeight: 700, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.name}</span></Tooltip></div><Tooltip label={pending.email} position="bottom" zIndex={10000001} disabled={!pending.email || pending.email === '—'}><div style={{ fontSize: 10.5, color: t.textMuted, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.email}</div></Tooltip></div>
             </div>
-            <label style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
-            <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '7px 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10.5, lineHeight: 1.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 4 }} />
-            <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
-              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id, sourceDbId: pending.dbId })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
-              <button onClick={() => setPending(null)} style={{ padding: '8px 13px', borderRadius: 8, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 600, color: t.textSub }}>Back</button>
+            <label style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
+            <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 12.5, lineHeight: 1.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 5 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 13 }}>
+              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id, sourceDbId: pending.dbId })} style={{ flex: 1, padding: '11px 0', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
+              <button onClick={() => setPending(null)} style={{ padding: '11px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 600, color: t.textSub }}>Back</button>
             </div>
           </div>
         )}
@@ -3384,6 +3435,71 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
 }
 
 const CTC_FORM_CSS = `
+/* ── Add Counter Party picker ──────────────────────────────────────────────
+   The head is .clm-modal-head from clmShared.ts, read off the violet ramp
+   instead of the teal one: same 14px 18px padding, same 46px translucent icon
+   tile, same 16px/500 title over a 10.5px/.7 sub, same 32px close, and the
+   same two decorations - a sheen across the top 55% and a soft disc tucked
+   into the bottom-right corner. The picker used to draw a bare gradient strip
+   with a 12.5px bold label and a 24px cross, so it was the one modal in CLM
+   that did not look like the others. */
+.ctc-cp-head {
+  position: relative; overflow: hidden; flex-shrink: 0;
+  background: linear-gradient(110deg, #4C1D95 0%, #6D28D9 48%, #8B5CF6 100%);
+  padding: 14px 18px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+}
+.ctc-cp-head::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 55%;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+  pointer-events: none;
+}
+.ctc-cp-head::after {
+  content: ''; position: absolute; bottom: -30px; right: -30px;
+  width: 120px; height: 120px; border-radius: 50%;
+  background: rgba(255,255,255,.05); pointer-events: none;
+}
+.ctc-cp-head-left { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; min-width: 0; }
+.ctc-cp-head-ico {
+  width: 46px; height: 46px; border-radius: 13px; flex-shrink: 0;
+  background: rgba(255,255,255,.15);
+  border: 1.5px solid rgba(255,255,255,.28);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15), inset 0 1px 0 rgba(255,255,255,.2);
+}
+.ctc-cp-head-title { font-size: 16px; font-weight: 500; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
+.ctc-cp-head-sub {
+  font-size: 10.5px; font-weight: 500; color: rgba(255,255,255,.7);
+  margin-top: 4px; line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ctc-cp-close {
+  position: relative; z-index: 1; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 9px;
+  background: rgba(255,255,255,.12);
+  border: 1.5px solid rgba(255,255,255,.25);
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,.9); cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.ctc-cp-close:hover { background: rgba(255,255,255,.22); border-color: rgba(255,255,255,.45); color: #fff; }
+
+.ctc-cp-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: 10px; cursor: pointer;
+  background: transparent;
+  transition: background .14s ease;
+}
+.ctc-cp-row:hover { background: #F5F0FF; }
+[data-bs-theme="dark"] .ctc-cp-row:hover { background: rgba(124,58,237,.14); }
+/* The chevron is the only thing that says a row is clickable; it rides in on
+   hover so a still list stays quiet. */
+.ctc-cp-chev {
+  color: #7C3AED; opacity: 0;
+  transition: opacity .14s ease, transform .14s ease;
+}
+.ctc-cp-row:hover .ctc-cp-chev { opacity: 1; transform: translateX(2px); }
+[data-bs-theme="dark"] .ctc-cp-chev { color: #c4b5fd; }
 /* ── Mobile / narrow-screen layout ─────────────────────────────────────────
    The workspace is a desktop-first 3-panel flex row locked to 100vh. Below
    820px that crushes each panel to ~1/3 width (unusable), so here we: unlock
