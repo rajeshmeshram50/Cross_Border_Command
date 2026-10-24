@@ -332,6 +332,19 @@ export type PutawayTask = {
   failed_reason?: string | null;
 };
 
+export type PutawayRow = {
+  id: number;
+  box_id: number;
+  zone_id: number | null;
+  rack_id: number | null;
+  shelf_id: number | null;
+  status: string;
+  destination: string | null;
+  assigned_at: string | null;
+  confirmed_at: string | null;
+  verify_method: string | null;
+};
+
 export type PutawayLocations = {
   box: PutawayNeed;
   modes: { rack: number; norack: number };
@@ -439,6 +452,13 @@ export const spiApi = {
   putawayCancelTask: (taskId: number, reason?: string) =>
     call('Cancel Zebra task', () => api.post(`/putaway/tasks/${taskId}/cancel`, { reason: reason || undefined }),
       () => true),
+
+  submit: (spiId: number) =>
+    call('Map Invoice', () => api.put(`/p2p/spi/${spiId}/submit`), () => true),
+
+  putawayRows: (spiId: number) =>
+    call('Putaway rows', () => api.get(`/p2p/spi/${spiId}/putaway`),
+      (b) => ((b as { data?: { rows?: PutawayRow[] } } | null)?.data?.rows ?? [])),
 
   putawayBoard: (spiId: number) =>
     call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),

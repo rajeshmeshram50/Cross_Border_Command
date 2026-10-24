@@ -835,7 +835,7 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     document.body);
 }
 
-export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false }: {
+export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false, onProgress }: {
   draft: InvoiceDraft;
   boxes: SpiBox[];
   lines?: ProductLine[];
@@ -848,6 +848,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   /** This invoice's own number, shown on the scan task's header. */
   spiCode?: string | null;
   readOnly?: boolean;
+  onProgress?: (placed: number, total: number) => void;
 }) {
   const [tab, setTab] = useState<'all' | Disposition>('all');
   const [selected, setSelected] = useState<string | null>(null);
@@ -925,6 +926,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       };
     });
   };
+
+  useEffect(() => {
+    if (board) onProgress?.(board.counts.placed, board.counts.total);
+  }, [board?.counts.placed, board?.counts.total]);
 
   const againstPo = !!draft.poNumber;
   const all = useMemo(
@@ -1316,6 +1321,42 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       setCancelBusy(false);
     }
   };
+
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!spiId || !box || !board || restoredFor.current === box.code) return;
+    const br = board.boxes.find(r => r.box_id === box.id);
+    if (!br) return;
+    restoredFor.current = box.code;
+    if (br.status === 'pending' || !br.putaway_id) return;
+    let live = true;
+    const boxId = box.id;
+    spiApi.putawayRows(spiId)
+      .then(async rows => {
+        const row = rows.find(r => r.box_id === boxId);
+        if (!live || !row || !row.zone_id) return;
+        const mode: 'rack' | 'norack' = row.shelf_id ? 'rack' : 'norack';
+        const place = row.shelf_id ?? row.zone_id;
+        const data = await spiApi.putawayLocations(spiId, boxId, mode);
+        if (!live) return;
+        setPutMode(mode);
+        setLoc({ loading: false, data, error: null });
+        setSpot(place);
+        setAssigned({ boxId, spot: place, putawayId: row.id });
+        if (br.task) {
+          scanDoneRef.current = false;
+          setScanSteps(Math.min(2, br.task.scans.done));
+          setScanTask({ id: br.task.task_code, at: row.assigned_at ?? new Date().toISOString(), apiId: br.task.id });
+        }
+        if (br.status === 'placed') {
+          setPlacedAt(row.confirmed_at ?? new Date().toISOString());
+          setPlacedVia(row.verify_method === 'manual' ? null : { via: 'Using Zebra Device', allocation: putId(box.code) });
+        }
+        setLcStep(2);
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [spiId, box?.code, board]);
 
   const finishFromTask = (code: string) => {
     if (!box || scanDoneRef.current) return;

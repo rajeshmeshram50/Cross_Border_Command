@@ -73,6 +73,8 @@ export default function InvoiceForm({
   const [spiId, setSpiId] = useState<number | null>(null);
   const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
   const [saving, setSaving] = useState(false);
+  const [putaway, setPutaway] = useState<{ placed: number; total: number } | null>(null);
+  const onPutawayProgress = useCallback((placed: number, total: number) => setPutaway({ placed, total }), []);
   const [boxes, setBoxes] = useState<SpiBox[]>([]);
   const [flagMaster, setFlagMaster] = useState<ProductFlagOption[]>([]);
   const [boxesLoading, setBoxesLoading] = useState(false);
@@ -386,7 +388,7 @@ export default function InvoiceForm({
       if (stage >= STAGES.length - 1) onClose(); else advance();
       return;
     }
-    if (stage >= STAGES.length - 1) return;
+    if (stage >= STAGES.length - 1) { void mapInvoice(); return; }
     if (stage === 0) { void saveStage1(); return; }
     if (stage === 1) { void saveStage2(); return; }
     if (stage === 2) {
@@ -401,7 +403,29 @@ export default function InvoiceForm({
     }
     advance();
   };
-  const nextBlocked = viewOnly ? poLoading : saving || (stage === 0 && (poLoading || !!poError)) || (stage === 2 && boxesLoading);
+  const allPlaced = !!putaway && putaway.total > 0 && putaway.placed >= putaway.total;
+  const mapBlocked = !viewOnly && stage === STAGES.length - 1 && !allPlaced;
+  const mapHint = mapBlocked
+    ? (putaway && putaway.total > 0
+        ? `Put away every box first — ${putaway.placed} of ${putaway.total} placed`
+        : 'Put away every box first')
+    : undefined;
+
+  const mapInvoice = async () => {
+    if (!spiId || saving || !allPlaced) return;
+    setSaving(true);
+    try {
+      await spiApi.submit(spiId);
+      toast.success(`${spiCode ?? 'Invoice'} mapped`, 'Every box is put away and the invoice is closed for Stage 04.');
+      onClose();
+    } catch (e) {
+      toast.error('Could not map the invoice', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || (stage === 0 && (poLoading || !!poError)) || (stage === 2 && boxesLoading);
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
@@ -512,6 +536,7 @@ export default function InvoiceForm({
                     flagMaster={flagMaster} spiId={spiId}
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
                     spiCode={spiCode}
+                    onProgress={onPutawayProgress}
                     warehouseInfo={{
                       code: warehouseRow?.wh_code ?? input.storage.warehouse?.code ?? null,
                       since: warehouseRow?.created_at ?? null,
@@ -554,6 +579,7 @@ export default function InvoiceForm({
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
               disabled={nextBlocked}
+              title={mapHint}
               aria-busy={saving}
             >
               {/* "Saving…" on its own is a word change on a button that has
