@@ -24,6 +24,54 @@ import SearchClear from '../../../components/ui/SearchClear';
 
 type CtcTab = 'all' | 'signed' | 'inprogress' | 'rejected';
 
+/* The tab rail's icons.
+ *
+ * These replace three coloured dots — green / amber / red discs that said
+ * nothing a reader could name, and did not appear anywhere else in the app.
+ * The shape is the P2P convention (SCOPE_TABS in InvoiceList.tsx): a 15px
+ * glyph on a 24-unit grid at strokeWidth 2.1, round caps and joins, and
+ * stroke="currentColor" so the icon takes the tab's own colour — white when
+ * selected, violet when not — instead of each state hard-coding a hex.
+ *
+ * "All Contracts" keeps the list glyph P2P uses for its own All tab, so the
+ * two modules read the same way. */
+const CTC_TAB_ICO = (d: React.ReactNode) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{d}</svg>
+);
+
+const CTC_TABS: Array<{ key: CtcTab; label: string; icon: React.ReactNode }> = [
+  {
+    key: 'all', label: 'All Contracts',
+    icon: CTC_TAB_ICO(<>
+      <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+    </>),
+  },
+  {
+    /* A nib over a ruled line — signing, rather than a generic tick. */
+    key: 'signed', label: 'Signed Contracts',
+    icon: CTC_TAB_ICO(<>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </>),
+  },
+  {
+    key: 'inprogress', label: 'In Progress',
+    icon: CTC_TAB_ICO(<>
+      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+    </>),
+  },
+  {
+    key: 'rejected', label: 'Rejected / Unapproved',
+    icon: CTC_TAB_ICO(<>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+    </>),
+  },
+];
+
 const ORG_GRAD: Record<string, string> = {
   'IGC-Healthcare': '#0369A1,#0284C7',
   'IGC-Agrotech':   '#047857,#059669',
@@ -74,6 +122,17 @@ const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-
  * Built like the SR badge beside it: the same 135° violet gradient, white
  * initials, a top sheen and a short shadow of its own colour. 24px with 8.5px
  * initials leaves the two letters about 6px of bearing on each side.
+ *
+ * One step lighter than it was, and deliberately only one. Light mode ran
+ * #7C3AED → #5B21B6 (violet-600 → violet-900), which is white-on-violet at
+ * 5.7:1 rising to 9.0:1 — three marks a row over ten rows made the table read
+ * heavy. It is #8B5CF6 → #6D28D9 now, 4.2:1 to 7.1:1. That is still above the
+ * 3:1 floor for bold text at this size, so the initials stay legible; the next
+ * stop up, #A78BFA, falls to 2.7:1 and is where "lighter" turns into the
+ * smudge the pale-lilac attempt above produced. The outer shadow is softened
+ * too, since a dark halo reads as more ink even when the fill has not changed.
+ *
+ * Both themes share the ramp now — dark was already on these two stops.
  */
 function Mark({ text, dark }: { text: string; dark: boolean }) {
   return (
@@ -85,12 +144,10 @@ function Mark({ text, dark }: { text: string; dark: boolean }) {
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 8.5, fontWeight: 800, letterSpacing: '.01em', lineHeight: 1,
         color: '#fff',
-        background: dark
-          ? 'linear-gradient(135deg,#8B5CF6,#6D28D9)'
-          : 'linear-gradient(135deg,#7C3AED,#5B21B6)',
+        background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)',
         boxShadow: dark
           ? 'inset 0 1px 0 rgba(255,255,255,.16)'
-          : '0 2px 5px rgba(109,40,217,.28), inset 0 1px 0 rgba(255,255,255,.18)',
+          : '0 1px 3px rgba(109,40,217,.16), inset 0 1px 0 rgba(255,255,255,.18)',
       }}
     >
       {/* The same top-half sheen the active tab and the +N pill carry, so the
@@ -420,12 +477,7 @@ export default function ClmCaseToCasePage() {
               CTC_CSS; see the note there for what changed and why.
               On small screens it wraps to full width (QA #42). */}
           <div className="ctc-tabrail">
-            {([
-              ['all', 'All Contracts', null, true],
-              ['signed', 'Signed Contracts', '#10B981', false],
-              ['inprogress', 'In Progress', '#F59E0B', false],
-              ['rejected', 'Rejected / Unapproved', '#EF4444', false],
-            ] as [CtcTab, string, string | null, boolean][]).map(([key, label, dot, hasIcon]) => {
+            {CTC_TABS.map(({ key, label, icon }) => {
               const active = tab === key;
               return (
                 <button key={key} disabled={lifecycleBusy !== null} onClick={() => { setTab(key); setPage(1); }}
@@ -433,9 +485,7 @@ export default function ClmCaseToCasePage() {
                   /* Paint is in CTC_CSS. Only the busy state stays inline, since
                      it is driven by a prop and not by the active tab. */
                   style={{ cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null && !active ? .6 : 1 }}>
-                  {hasIcon
-                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#c4b5fd' : '#6d28d9')} strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                    : <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#10B981'), flexShrink: 0 }} />}
+                  {icon}
                   <span>{label}</span>
                   <span className="ctc-tab-count">{counts[key]}</span>
                 </button>
@@ -681,14 +731,17 @@ const CTC_CSS = `
   font-size: 12.5px; font-weight: 700; letter-spacing: 0; white-space: nowrap;
   cursor: pointer;
   background: linear-gradient(135deg, #f5f1fe, #ede9fe);
-  border: 1px solid rgba(139,92,246,.2);
+  /* No outline on the tabs — the rail already encloses them, so a border on
+     each one drew a box inside a box. Transparent rather than removed so the
+     tab keeps its width and the rail does not move when one is selected (the
+     active rule below counts on the same 1px being there). */
+  border: 1px solid transparent;
   color: #6d28d9;
   overflow: hidden; position: relative; z-index: 1;
   transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
 }
 .ctc-tabrail > button:hover:not(.active) {
   background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  border-color: rgba(139,92,246,.35);
   color: #5b21b6;
 }
 /* Customers drops the border here (border: 0), which leaves its selected tab

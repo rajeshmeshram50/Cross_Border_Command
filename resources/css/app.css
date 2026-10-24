@@ -111,12 +111,14 @@ body,
    the search box moved 10px with it on every keystroke. That is the page
    "shaking" as you type.
 
-   .main-content is where it matters — this layout puts `overflow: hidden` on
-   html (see the idims-active rule below), so the document itself never
-   scrolls and a gutter there would do nothing. html carries it anyway for the
-   screens outside that layout, where the document IS the scroller. The cost
-   is one strip of reserved page on a screen that never scrolls. */
-html,
+   Only .main-content, which is the box that actually gains and loses a
+   scrollbar.
+
+   NOT html. This rule carried html too, on the reasoning that the idims
+   layout puts `overflow: hidden` there so a gutter could not matter — which
+   is wrong: `hidden` still makes an element a scroll container, so the gutter
+   was reserved on a box that never shows a scrollbar and the page carried a
+   strip of dead space down its right edge, on top of the card's own 8px. */
 .main-content {
   scrollbar-gutter: stable;
 }
