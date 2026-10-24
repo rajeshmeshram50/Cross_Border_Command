@@ -316,6 +316,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
               value={buyingPlan}
               onChange={setBuyingPlan}
               placeholder="dd-mm-yyyy"
+              popupClassName="smd-cal"
               minDate={(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })()}
             />
           </Field>

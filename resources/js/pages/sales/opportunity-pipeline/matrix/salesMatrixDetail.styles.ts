@@ -1043,6 +1043,31 @@ export const SALES_MATRIX_DETAIL_CSS = `
   background: #ede9fe;
 }
 .smd-deal-form .master-datepicker-placeholder { color: #a78bfa; }
+.smd-deal-form .master-datepicker-toggle.open {
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15), 0 4px 12px rgba(124,58,237,.12);
+}
+.smd-deal-form .master-datepicker-toggle:hover:not([aria-disabled="true"]) { border-color: #8b5cf6; }
+.smd-deal-form .master-datepicker-icon { color: #7c3aed; }
+
+/* Buying Plan calendar popup — violet instead of the picker's default cyan.
+   The popup portals to <body>, so it is targeted through the picker's own
+   popupClassName hook (smd-cal) rather than the .smd-deal-form scope. */
+.master-datepicker-popup.smd-cal .master-datepicker-nav:hover { background: rgba(124,58,237,.10); color: #7c3aed; border-color: rgba(124,58,237,.30); }
+.master-datepicker-popup.smd-cal .master-datepicker-title-btn.is-clickable { background: rgba(124,58,237,.08); border-color: rgba(124,58,237,.20); color: #7c3aed; }
+.master-datepicker-popup.smd-cal .master-datepicker-title-btn.is-clickable:hover { background: rgba(124,58,237,.16); border-color: rgba(124,58,237,.40); color: #6d28d9; }
+.master-datepicker-popup.smd-cal .master-datepicker-day:hover:not(:disabled):not(.is-selected),
+.master-datepicker-popup.smd-cal .master-datepicker-cell:hover:not(.is-selected) { background: rgba(124,58,237,.10); color: #7c3aed; }
+.master-datepicker-popup.smd-cal .master-datepicker-day.is-today,
+.master-datepicker-popup.smd-cal .master-datepicker-cell.is-today { background: rgba(124,58,237,.12); color: #7c3aed; }
+.master-datepicker-popup.smd-cal .master-datepicker-day.is-selected,
+.master-datepicker-popup.smd-cal .master-datepicker-cell.is-selected { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.30); }
+.master-datepicker-popup.smd-cal .master-datepicker-footer .today-btn { color: #7c3aed; }
+[data-bs-theme="dark"] .master-datepicker-popup.smd-cal { border-color: rgba(139,92,246,.45); box-shadow: 0 0 0 1px rgba(139,92,246,.18), 0 18px 40px rgba(0,0,0,.55); }
+[data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-title-btn.is-clickable { background: rgba(139,92,246,.18); border-color: rgba(139,92,246,.35); color: #c4b5fd; }
+[data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-title-btn.is-clickable:hover { background: rgba(139,92,246,.28); border-color: rgba(139,92,246,.55); color: #ede9fe; }
+[data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-day.is-today,
+[data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-cell.is-today,
+[data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-footer .today-btn { color: #c4b5fd; }
 
 /* ── Stage card (middle column shell) — 4px rainbow accent on top ── */
 .smd-stage-card {
