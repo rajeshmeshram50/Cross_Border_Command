@@ -139,7 +139,8 @@ export const SALES_MATRIX_DETAIL_CSS = `
    slightly deeper green + small status dot. */
 .smd-hdr-wa {
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 6px 14px 6px 6px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 14px 0 6px;
   border: none; cursor: pointer;
   border-radius: 999px;
   background: linear-gradient(135deg, #22c55e 0%, #16a34a 55%, #15803d 100%);
@@ -192,7 +193,8 @@ export const SALES_MATRIX_DETAIL_CSS = `
 /* Glass pill — translucent with blur */
 .smd-meta {
   display: flex; align-items: center; gap: 9px;
-  padding: 7px 14px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 14px;
   /* Near-opaque instead of translucent + backdrop-blur — see .smd-cust-tag:
      the blur was re-composited every scroll frame and made the page shaky. */
   background: rgba(255,255,255,.92);
@@ -238,7 +240,8 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-back-btn {
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 18px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 18px;
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
   border: none; border-radius: 12px;
   color: #fff;
