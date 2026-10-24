@@ -184,8 +184,10 @@ export default function ClmSegmentPage() {
         }
         .clm-root .seg-filter-ms { flex: 0 0 auto; }
         .clm-root .seg-filter-ms .master-select-toggle {
-          /* 40px, the height of the tabs and the search it shares the row with. */
-          height: 48px; padding: 0 12px;
+          /* 43.5px, the height of the search it shares the row with. The
+             comment said 40 and the value said 48; the search is the reference
+             either way, and it is 43.5 now. */
+          height: 43.5px; padding: 0 12px;
           border: 1.5px solid rgba(6,182,212,.22); border-radius: 8px;
           background: #fff; color: #0c4a6e; font-size: 12px; font-weight: 600;
           box-shadow: 0 1px 4px rgba(6,182,212,.07);

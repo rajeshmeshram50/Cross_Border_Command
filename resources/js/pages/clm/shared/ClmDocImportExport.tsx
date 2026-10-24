@@ -193,8 +193,10 @@ export default function ClmDocImportExport(props: Props) {
 }
 
 const CLM_IE_CSS = `
+/* 43.5px — the search height, which is what every control on a CLM toolbar
+   row states now. These buttons sat at 36 beside a 43.5 search. */
 .clm-root .clm-ie-btn {
-  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px;
+  display: inline-flex; align-items: center; gap: 6px; height: 43.5px; padding: 0 12px;
   border: 1px solid rgba(8,145,178,.35); border-radius: 8px; background: #fff;
   color: #0e7490; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }

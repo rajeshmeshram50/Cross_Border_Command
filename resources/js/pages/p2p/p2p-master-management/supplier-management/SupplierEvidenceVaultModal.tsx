@@ -659,8 +659,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       if (issueDate) fd.append('issue_date', issueDate);
       if (expiryDate) fd.append('expiry_date', expiryDate);
       fd.append('attachment', f);
-      await api.post(`/segment-uploads/supplier/${supplier.db_id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      await reloadVault();
+      /* The upload response carries the recomputed vault, so the second request
+         is gone. Falls back to reloadVault if the key is not there. */
+      const res = await api.post(`/segment-uploads/supplier/${supplier.db_id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const vault = res.data?.vault as VaultData | null | undefined;
+      if (vault) setVaultLive(vault); else await reloadVault();
       toast.success('Document uploaded', `${f.name} has been attached.`);
       setOvUpload(null);
     } catch (e: any) {
