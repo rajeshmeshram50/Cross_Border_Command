@@ -103,25 +103,6 @@ body,
   min-height: 100%;
 }
 
-/* Keep the scrollbar's lane reserved whether or not a scrollbar is there.
-   Filtering a list shortens the page; the scrollbar then disappears, the
-   scroller gains its width back, and everything inside slides sideways by it.
-   Measured on CLM Case to Case at 1366x700 while typing a query:
-   .main-content went from scrolling to not, its client width 1346 -> 1356, and
-   the search box moved 10px with it on every keystroke. That is the page
-   "shaking" as you type.
-
-   Only .main-content, which is the box that actually gains and loses a
-   scrollbar.
-
-   NOT html. This rule carried html too, on the reasoning that the idims
-   layout puts `overflow: hidden` there so a gutter could not matter — which
-   is wrong: `hidden` still makes an element a scroll container, so the gutter
-   was reserved on a box that never shows a scrollbar and the page carried a
-   strip of dead space down its right edge, on top of the card's own 8px. */
-.main-content {
-  scrollbar-gutter: stable;
-}
 
 body {
   overflow-x: hidden;
