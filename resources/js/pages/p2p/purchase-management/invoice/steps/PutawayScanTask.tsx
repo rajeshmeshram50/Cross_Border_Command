@@ -93,7 +93,7 @@ const F = ({ k, v, na }: { k: string; v: ReactNode; na?: boolean }) => (
 
 export default function PutawayScanTask({
   taskId, allocRef = null, spiCode = null, createdAt, box, spot, reservedPct,
-  onClose, onComplete, onCancelTask, onScan,
+  onClose, onComplete, onCancelTask, onScan, serverScans = 0,
 }: {
   taskId: string;
   /** What the allocation is locked under once both scans pass. */
@@ -111,11 +111,16 @@ export default function PutawayScanTask({
   onCancelTask?: () => void;
   /** Each leg as it resolves, so the stage can write it into the scan logs. */
   onScan?: (leg: 'box' | 'loc', ok: boolean) => void;
+  serverScans?: number;
 }) {
   const [proto, setProto] = useState(false);
   const [qr, setQr] = useState<Leg>({ state: 'idle' });
   const [sh, setSh] = useState<Leg>({ state: 'idle' });
 
+  useEffect(() => {
+    if (serverScans >= 1) setQr(l => (l.state === 'ok' ? l : { state: 'ok', at: clock() }));
+    if (serverScans >= 2) setSh(l => (l.state === 'ok' ? l : { state: 'ok', at: clock() }));
+  }, [serverScans]);
   const done = qr.state === 'ok' && sh.state === 'ok';
   const failed = qr.state === 'fail' || sh.state === 'fail';
   /* "Putaway Completed", not "Device Verified · 2/2". Once both legs pass the

@@ -210,6 +210,7 @@ export default function Step3BoxPackaging({
       scenarioNo: SCN_LABEL[b.scenario][0],
       scenario: SCN_LABEL[b.scenario][1],
       subLabel: subLabelOf(b),
+      packedOn: packedOn(b),
       dims: { l: num(b.length_cm), w: num(b.width_cm), h: num(b.height_cm) },
       netWt: num(b.net_weight_kg),
       grossWt: num(b.gross_weight_kg),
