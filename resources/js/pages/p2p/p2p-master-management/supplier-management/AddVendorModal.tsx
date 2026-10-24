@@ -3004,7 +3004,7 @@ export default function AddVendorModal(props: {
               )}
 
               {idTab === 'identification' && (
-                <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
+                <SectionCard tone="violet" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
                   {/* Single full-width address field — no separate Address Type
                       dropdown; the primary address is the registered office. */}
                   <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}>
@@ -4246,7 +4246,7 @@ function Step1IdentitySkeleton() {
           {[52, 62, 46, 50, 58, 40, 56, 60, 64].map((w, i) => <SkelField key={i} label={w} />)}
         </div>
       </SectionCard>
-      <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
+      <SectionCard tone="violet" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
         {/* Full-width Registered Office Address, then Country / State / State
             Code / City across four, then the two-up row below it. */}
         <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}><SkelField label={28} /></div>

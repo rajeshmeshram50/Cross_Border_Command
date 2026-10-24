@@ -135,7 +135,7 @@ class VendorController extends Controller
                 ])
                 ->orderBy('company_name')
                 ->get(['id', 'vendor_code', 'company_name', 'primary_email'])
-                ->map(fn (Vendor $v) => [
+                ->map(fn(Vendor $v) => [
                     'id'            => $v->id,
                     'db_id'         => $v->id,
                     'vendor_code'   => $v->vendor_code,
@@ -215,26 +215,26 @@ class VendorController extends Controller
 
             $q->where(function ($w) use ($search, $catTerm) {
                 $w->where('company_name', 'ilike', "%{$search}%")
-                  ->orWhere('legal_name',   'ilike', "%{$search}%")
-                  ->orWhere('vendor_code',  'ilike', "%{$search}%")
-                  ->orWhere('primary_email','ilike', "%{$search}%")
-                  ->orWhere('gst_number',   'ilike', "%{$search}%")
-                  ->orWhere('supplier_category', 'ilike', "%{$catTerm}%")
-                  ->orWhereHas('addresses', function ($a) use ($search) {
-                      $a->where('contact_name', 'ilike', "%{$search}%")
-                        ->orWhere('contact_no', 'ilike', "%{$search}%")
-                        ->orWhere('email',      'ilike', "%{$search}%")
-                        ->orWhere('city',       'ilike', "%{$search}%")
-                        ->orWhere('state_code', 'ilike', "%{$search}%");
-                  })
-                  ->orWhereHas('primaryAddress.state',   fn ($s) => $s->where('name', 'ilike', "%{$search}%"))
-                  // Country, Supplier Type and Segment are all COLUMNS on the
-                  // list, so they have to be searchable or the box is lying
-                  // about what it covers. Segment is the pivot, not the legacy
-                  // scalar, because that is what the column renders.
-                  ->orWhereHas('primaryAddress.country', fn ($c) => $c->where('name', 'ilike', "%{$search}%"))
-                  ->orWhereHas('vendorType',             fn ($t) => $t->where('name', 'ilike', "%{$search}%"))
-                  ->orWhereHas('segments',               fn ($g) => $g->where('name', 'ilike', "%{$search}%"));
+                    ->orWhere('legal_name',   'ilike', "%{$search}%")
+                    ->orWhere('vendor_code',  'ilike', "%{$search}%")
+                    ->orWhere('primary_email', 'ilike', "%{$search}%")
+                    ->orWhere('gst_number',   'ilike', "%{$search}%")
+                    ->orWhere('supplier_category', 'ilike', "%{$catTerm}%")
+                    ->orWhereHas('addresses', function ($a) use ($search) {
+                        $a->where('contact_name', 'ilike', "%{$search}%")
+                            ->orWhere('contact_no', 'ilike', "%{$search}%")
+                            ->orWhere('email',      'ilike', "%{$search}%")
+                            ->orWhere('city',       'ilike', "%{$search}%")
+                            ->orWhere('state_code', 'ilike', "%{$search}%");
+                    })
+                    ->orWhereHas('primaryAddress.state',   fn($s) => $s->where('name', 'ilike', "%{$search}%"))
+                    // Country, Supplier Type and Segment are all COLUMNS on the
+                    // list, so they have to be searchable or the box is lying
+                    // about what it covers. Segment is the pivot, not the legacy
+                    // scalar, because that is what the column renders.
+                    ->orWhereHas('primaryAddress.country', fn($c) => $c->where('name', 'ilike', "%{$search}%"))
+                    ->orWhereHas('vendorType',             fn($t) => $t->where('name', 'ilike', "%{$search}%"))
+                    ->orWhereHas('segments',               fn($g) => $g->where('name', 'ilike', "%{$search}%"));
             });
         }
         if ($status = $request->query('status')) {
@@ -250,16 +250,28 @@ class VendorController extends Controller
          * the client-side rule did — with no "All" tab left, a row that appears
          * under neither is a row nobody ever finds again. */
         $scope = $request->query('scope');
-        if ($scope === 'domestic' || $scope === 'international') {
-            $india = fn ($a) => $a->whereHas('country', fn ($c) => $c->whereRaw('LOWER(name) = ?', ['india']));
-            if ($scope === 'domestic') {
-                $q->where(fn ($w) => $w->whereHas('primaryAddress', $india)
+        $applyScope = function ($b, string $sc) {
+            $india = fn($a) => $a->whereHas('country', fn($c) => $c->whereRaw('LOWER(name) = ?', ['india']));
+            if ($sc === 'domestic') {
+                $b->where(fn($w) => $w->whereHas('primaryAddress', $india)
                     ->orWhereDoesntHave('primaryAddress')
-                    ->orWhereHas('primaryAddress', fn ($a) => $a->whereNull('country_id')));
+                    ->orWhereHas('primaryAddress', fn($a) => $a->whereNull('country_id')));
             } else {
-                $q->whereHas('primaryAddress', fn ($a) => $a->whereNotNull('country_id')
-                    ->whereHas('country', fn ($c) => $c->whereRaw('LOWER(name) <> ?', ['india'])));
+                $b->whereHas('primaryAddress', fn($a) => $a->whereNotNull('country_id')
+                    ->whereHas('country', fn($c) => $c->whereRaw('LOWER(name) <> ?', ['india'])));
             }
+            return $b;
+        };
+        $scopeCount = function (string $sc) use ($q, $applyScope) {
+            $b = clone $q;
+            $b->setEagerLoads([]);
+            $b->reorder();
+            $b->getQuery()->columns = null;
+            return $applyScope($b, $sc)->count();
+        };
+        $scopeCounts = ['domestic' => $scopeCount('domestic'), 'international' => $scopeCount('international')];
+        if ($scope === 'domestic' || $scope === 'international') {
+            $applyScope($q, $scope);
         }
 
         /* Fresh / Recurring. opportunity_count is hardcoded to 0 above until the
@@ -314,7 +326,7 @@ class VendorController extends Controller
          * Evaluated over the WHOLE scoped set, not the page, because the facet
          * counts have to cover every supplier the filters could return. One
          * bulk call, a fixed number of queries — never one per row. */
-        $scopedIds = $facet()->pluck('vendors.id')->map(fn ($x) => (int) $x)->all();
+        $scopedIds = $facet()->pluck('vendors.id')->map(fn($x) => (int) $x)->all();
         $complianceById = SupplierCompliance::statuses(
             $scopedIds,
             (int) ($user->client_id ?? optional($user->branch ?? null)->client_id ?? 0)
@@ -330,7 +342,7 @@ class VendorController extends Controller
         $nonCompliantCount = count($nonCompliantIds);
 
         /* Selected facets. Empty means "no narrowing" — never "nothing matches". */
-        $csv = fn (string $key) => array_values(array_filter(array_map(
+        $csv = fn(string $key) => array_values(array_filter(array_map(
             'trim',
             explode(',', (string) $request->query($key, ''))
         )));
@@ -363,6 +375,7 @@ class VendorController extends Controller
         return response()->json(array_merge($page->toArray(), [
             'facets' => [
                 'grand_total' => $grandTotal,
+                'scope'       => $scopeCounts,
                 'category' => [
                     'star'        => (int) ($catCounts['star'] ?? 0),
                     'general'     => (int) ($catCounts['general'] ?? 0),
@@ -406,7 +419,7 @@ class VendorController extends Controller
             ])
             ->orderBy('id')
             ->get()
-            ->map(fn (VendorProductMapping $m) => [
+            ->map(fn(VendorProductMapping $m) => [
                 'id'               => $m->id,
                 'product_id'       => $m->product_id,
                 'product_code'     => $m->product?->product_code,
@@ -457,7 +470,7 @@ class VendorController extends Controller
          * break the whole show response.
          */
         $segmentUploads = $this->safeDelegate(
-            fn () => (new \App\Http\Controllers\Api\SegmentDocUploadController())->index($request, 'supplier', $id)
+            fn() => (new \App\Http\Controllers\Api\SegmentDocUploadController())->index($request, 'supplier', $id)
         );
 
         // Per-segment lock: the segments whose product appears on an issued
@@ -499,12 +512,12 @@ class VendorController extends Controller
         $allNames = array_values(array_unique(array_merge($poNames, $spiNames, $prodNames)));
         $rows = empty($allNames) ? collect() : DB::table('clm_segments')
             ->whereIn('name', $allNames)
-            ->where(fn ($q) => $q->where('client_id', $vendor->client_id)->orWhereNull('client_id'))
+            ->where(fn($q) => $q->where('client_id', $vendor->client_id)->orWhereNull('client_id'))
             ->get(['id', 'name']);
         $idsFor = function (array $names) use ($rows) {
-            $want = array_map(fn ($n) => mb_strtolower(trim((string) $n)), $names);
-            return $rows->filter(fn ($r) => in_array(mb_strtolower(trim((string) $r->name)), $want, true))
-                ->pluck('id')->map(fn ($i) => (string) $i)->values()->all();
+            $want = array_map(fn($n) => mb_strtolower(trim((string) $n)), $names);
+            return $rows->filter(fn($r) => in_array(mb_strtolower(trim((string) $r->name)), $want, true))
+                ->pluck('id')->map(fn($i) => (string) $i)->values()->all();
         };
         $poIds   = $idsFor($poNames);
         $spiIds  = $idsFor($spiNames);
@@ -515,9 +528,15 @@ class VendorController extends Controller
          * Invoice, then a bare product mapping (which the user can clear
          * themselves). Assigned last-wins, so the writes run weakest → strongest. */
         $reasons = [];
-        foreach ($prodIds as $i) { $reasons[$i] = 'product'; }
-        foreach ($spiIds  as $i) { $reasons[$i] = 'spi'; }
-        foreach ($poIds   as $i) { $reasons[$i] = 'po'; }
+        foreach ($prodIds as $i) {
+            $reasons[$i] = 'product';
+        }
+        foreach ($spiIds  as $i) {
+            $reasons[$i] = 'spi';
+        }
+        foreach ($poIds   as $i) {
+            $reasons[$i] = 'po';
+        }
         $data['locked_segment_reasons'] = $reasons;
 
         // Once this supplier is mapped to a Purchase Order, its STATE is baked into
@@ -653,7 +672,10 @@ class VendorController extends Controller
             'address.state_code'       => 'nullable|string|max:32',
             'address.city'             => 'nullable|string|max:128',
             'address.pincode'          => 'nullable|string|max:16',
-            'address.google_location'  => ['nullable', 'string', 'max:1000',
+            'address.google_location'  => [
+                'nullable',
+                'string',
+                'max:1000',
                 // Any http(s) URL — Google hands out several shapes
                 // (maps.app.goo.gl short links, /maps/place/…, ?q=lat,lng)
                 // and pinning the pattern to one of them would reject the
@@ -848,7 +870,7 @@ class VendorController extends Controller
                     return response()->json([
                         'requires_doc_confirmation' => true,
                         'message' => 'Removing this segment will delete ' . $orphanUploads->count() . ' document(s) used only by it. Shared documents are kept. Confirm to proceed.',
-                        'orphan_documents' => $orphanUploads->map(fn ($d) => [
+                        'orphan_documents' => $orphanUploads->map(fn($d) => [
                             'id'       => $d->id,
                             'name'     => $d->attachment_name ?: ($d->doc_name ?: ('Document #' . $d->id)),
                             'category' => $d->category,
@@ -895,7 +917,10 @@ class VendorController extends Controller
             if ($confirmDocRemoval && $orphanUploads->isNotEmpty()) {
                 foreach ($orphanUploads as $u) {
                     if ($u->attachment_path) {
-                        try { \Illuminate\Support\Facades\Storage::disk('public')->delete($u->attachment_path); } catch (\Throwable $e) { /* best-effort */ }
+                        try {
+                            \Illuminate\Support\Facades\Storage::disk('public')->delete($u->attachment_path);
+                        } catch (\Throwable $e) { /* best-effort */
+                        }
                     }
                     $u->delete();
                 }
@@ -905,7 +930,7 @@ class VendorController extends Controller
             // WITHOUT touching the contact fields — so the address survives saving
             // the Identification & Address tab, independent of the contacts step
             // (which later fills in the primary contact person on the same row).
-            if (is_array($address) && array_filter($address, fn ($v) => $v !== null && $v !== '')) {
+            if (is_array($address) && array_filter($address, fn($v) => $v !== null && $v !== '')) {
                 $addrFields = [
                     'address_line' => $address['address_line'] ?? null,
                     'country_id'   => $address['country_id']   ?? null,
@@ -953,8 +978,8 @@ class VendorController extends Controller
     private function normalizeSegmentIds($raw, $fallbackId = null, ?int $clientId = null): array
     {
         $ids = collect(is_array($raw) ? $raw : (is_string($raw) ? explode(',', $raw) : []))
-            ->map(fn ($v) => (int) trim((string) $v))
-            ->filter(fn ($v) => $v > 0);
+            ->map(fn($v) => (int) trim((string) $v))
+            ->filter(fn($v) => $v > 0);
 
         if ($ids->isEmpty() && $fallbackId) {
             $ids = collect([(int) $fallbackId]);
@@ -967,9 +992,9 @@ class VendorController extends Controller
         // per-tenant); preserve the caller's order.
         $existing = DB::table('clm_segments')
             ->whereIn('id', $ids->all())
-            ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
+            ->when($clientId, fn($q) => $q->where('client_id', $clientId))
             ->pluck('id')->flip();
-        return $ids->filter(fn ($id) => $existing->has($id))->values()->all();
+        return $ids->filter(fn($id) => $existing->has($id))->values()->all();
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -997,7 +1022,10 @@ class VendorController extends Controller
             'primary_address.state_code'               => 'nullable|string|max:32',
             'primary_address.city'                     => 'nullable|string|max:128',
             'primary_address.pincode'                  => 'nullable|string|max:16',
-            'primary_address.google_location'          => ['nullable', 'string', 'max:1000',
+            'primary_address.google_location'          => [
+                'nullable',
+                'string',
+                'max:1000',
                 // Any http(s) URL — Google hands out several shapes
                 // (maps.app.goo.gl short links, /maps/place/…, ?q=lat,lng)
                 // and pinning the pattern to one of them would reject the
@@ -1057,7 +1085,10 @@ class VendorController extends Controller
 
             // Best-effort: drop the replaced business card from disk.
             if ($oldPrimaryAttachment && $oldPrimaryAttachment !== $primaryAttachment) {
-                try { Storage::disk('public')->delete($oldPrimaryAttachment); } catch (\Throwable $e) { /* swallow */ }
+                try {
+                    Storage::disk('public')->delete($oldPrimaryAttachment);
+                } catch (\Throwable $e) { /* swallow */
+                }
             }
         });
 
@@ -1130,7 +1161,10 @@ class VendorController extends Controller
         ]);
 
         if ($old && $old !== $path) {
-            try { Storage::disk('public')->delete($old); } catch (\Throwable $e) { /* swallow */ }
+            try {
+                Storage::disk('public')->delete($old);
+            } catch (\Throwable $e) { /* swallow */
+            }
         }
 
         return response()->json(['data' => $this->shapeContact($row->fresh())]);
@@ -1151,7 +1185,10 @@ class VendorController extends Controller
         $old = $row->attachment_path;
         $row->delete();
         if ($old) {
-            try { Storage::disk('public')->delete($old); } catch (\Throwable $e) { /* swallow */ }
+            try {
+                Storage::disk('public')->delete($old);
+            } catch (\Throwable $e) { /* swallow */
+            }
         }
 
         return response()->json(['message' => 'Contact deleted']);
@@ -1217,8 +1254,9 @@ class VendorController extends Controller
         // No duplicate account number for this supplier (account number uniquely
         // identifies a bank account; the same one can't be added twice).
         if (VendorBankAccount::where('vendor_id', $vendor->id)
-                ->where('account_number', $data['account_number'])
-                ->exists()) {
+            ->where('account_number', $data['account_number'])
+            ->exists()
+        ) {
             return response()->json([
                 'message' => 'This account number is already added for this supplier.',
                 'errors'  => ['account_number' => ['This account number is already added for this supplier.']],
@@ -1254,9 +1292,10 @@ class VendorController extends Controller
 
         // No duplicate account number for this supplier (excluding this row).
         if (VendorBankAccount::where('vendor_id', $vendor->id)
-                ->where('account_number', $data['account_number'])
-                ->where('id', '!=', $row->id)
-                ->exists()) {
+            ->where('account_number', $data['account_number'])
+            ->where('id', '!=', $row->id)
+            ->exists()
+        ) {
             return response()->json([
                 'message' => 'This account number is already added for this supplier.',
                 'errors'  => ['account_number' => ['This account number is already added for this supplier.']],
@@ -1276,7 +1315,10 @@ class VendorController extends Controller
         ]);
 
         if ($old && $old !== $path) {
-            try { Storage::disk('public')->delete($old); } catch (\Throwable $e) { /* swallow */ }
+            try {
+                Storage::disk('public')->delete($old);
+            } catch (\Throwable $e) { /* swallow */
+            }
         }
 
         return response()->json(['data' => $this->shapeBank($row->fresh())]);
@@ -1294,7 +1336,10 @@ class VendorController extends Controller
         $old = $row->cheque_path;
         $row->forceDelete();
         if ($old) {
-            try { Storage::disk('public')->delete($old); } catch (\Throwable $e) { /* swallow */ }
+            try {
+                Storage::disk('public')->delete($old);
+            } catch (\Throwable $e) { /* swallow */
+            }
         }
 
         return response()->json(['message' => 'Bank account deleted']);
@@ -1475,13 +1520,13 @@ class VendorController extends Controller
         $onVendor = Vendor::query()
             ->where('client_id', $clientId)
             ->where('gst_number', $gst)
-            ->when($exceptVendorId, fn ($q) => $q->where('id', '!=', $exceptVendorId))
+            ->when($exceptVendorId, fn($q) => $q->where('id', '!=', $exceptVendorId))
             ->exists();
 
         $onScrutiny = VendorGstScrutiny::query()
             ->where('gst_number', $gst)
-            ->when($exceptVendorId, fn ($q) => $q->where('vendor_id', '!=', $exceptVendorId))
-            ->whereHas('vendor', fn ($q) => $q->where('client_id', $clientId))
+            ->when($exceptVendorId, fn($q) => $q->where('vendor_id', '!=', $exceptVendorId))
+            ->whereHas('vendor', fn($q) => $q->where('client_id', $clientId))
             ->exists();
 
         if ($onVendor || $onScrutiny) {
@@ -1746,7 +1791,6 @@ class VendorController extends Controller
                         'map_date'       => now()->toDateString(),
                     ])
                 );
-
             }
 
             // Flip every mapped product to Active / step 4 in ONE query —
@@ -1763,7 +1807,7 @@ class VendorController extends Controller
             // vendor but aren't in the current submit, so the two
             // tables stay symmetric.
             \App\Models\ProductVendorMap::where('vendor_id', $vendor->id)
-                ->when(!empty($nowMappedProductIds), fn ($q) => $q->whereNotIn('product_id', $nowMappedProductIds))
+                ->when(!empty($nowMappedProductIds), fn($q) => $q->whereNotIn('product_id', $nowMappedProductIds))
                 ->delete();
 
             // Only mark the vendor fully onboarded when it actually has at least
@@ -1805,8 +1849,8 @@ class VendorController extends Controller
             // compiles to `= NULL`, which matches nothing.
             ->when(
                 $branchId === null,
-                fn ($q) => $q->whereNull('branch_id'),
-                fn ($q) => $q->where('branch_id', $branchId)
+                fn($q) => $q->whereNull('branch_id'),
+                fn($q) => $q->where('branch_id', $branchId)
             )
             ->pluck('vendor_code');
 
@@ -1859,7 +1903,10 @@ class VendorController extends Controller
             ->filter()
             ->unique();
         foreach ($paths as $p) {
-            try { Storage::disk('public')->delete($p); } catch (\Throwable $e) { /* swallow */ }
+            try {
+                Storage::disk('public')->delete($p);
+            } catch (\Throwable $e) { /* swallow */
+            }
         }
     }
 
@@ -1900,11 +1947,11 @@ class VendorController extends Controller
                 ? $v->segments->pluck('id')->all()
                 : array_values(array_filter([$v->segment_id])),
             'segments'                 => $v->segments->isNotEmpty()
-                ? $v->segments->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->all()
+                ? $v->segments->map(fn($s) => ['id' => $s->id, 'name' => $s->name])->all()
                 : ($v->segment_id ? [['id' => $v->segment_id, 'name' => optional($v->segment)->title]] : []),
             'compliance_behaviour_id'  => $v->compliance_behaviour_id,
             'supplier_category'        => $v->supplier_category,
-            'compliance_behaviour_name'=> optional($v->complianceBehaviour)->name,
+            'compliance_behaviour_name' => optional($v->complianceBehaviour)->name,
             'classification_id'        => $v->classification_id,
             'classification_name'      => optional($v->classification)->name,
 
@@ -1927,7 +1974,7 @@ class VendorController extends Controller
                 'attachment_url'    => file_url($primary->attachment_path),
             ] : null,
 
-            'extra_contacts' => $v->addresses->reject(fn ($a) => $a->is_primary)->values()->map(fn ($a) => [
+            'extra_contacts' => $v->addresses->reject(fn($a) => $a->is_primary)->values()->map(fn($a) => [
                 'id'                => $a->id,
                 'contact_name'      => $a->contact_name,
                 'designation'       => $a->designation,
@@ -1938,7 +1985,7 @@ class VendorController extends Controller
                 'attachment_url'    => file_url($a->attachment_path),
             ])->all(),
 
-            'due_diligence' => $v->documents->where('kind', 'dd')->values()->map(fn ($d) => [
+            'due_diligence' => $v->documents->where('kind', 'dd')->values()->map(fn($d) => [
                 'id'                => $d->id,
                 'code'              => $d->code,
                 'document_name'     => $d->document_name,
@@ -1949,7 +1996,7 @@ class VendorController extends Controller
                 'attachment_url'    => file_url($d->attachment_path),
             ])->all(),
 
-            'trade_licenses' => $v->documents->where('kind', 'tl')->values()->map(fn ($d) => [
+            'trade_licenses' => $v->documents->where('kind', 'tl')->values()->map(fn($d) => [
                 'id'                  => $d->id,
                 'code'                => $d->code,
                 'license_type_id'     => $d->license_type_id,
@@ -1962,7 +2009,7 @@ class VendorController extends Controller
                 'attachment_url'      => file_url($d->attachment_path),
             ])->all(),
 
-            'owner_kyc' => $v->owners->map(fn ($o) => [
+            'owner_kyc' => $v->owners->map(fn($o) => [
                 'id'                => $o->id,
                 'code'              => $o->code,
                 'document_name'     => $o->document_name,
@@ -1975,7 +2022,7 @@ class VendorController extends Controller
                 'attachment_url'    => file_url($o->attachment_path),
             ])->all(),
 
-            'bank_accounts' => $v->bankAccounts->map(fn ($b) => [
+            'bank_accounts' => $v->bankAccounts->map(fn($b) => [
                 'id'             => $b->id,
                 'bank_name'      => $b->bank_name,
                 'branch_name'    => $b->branch_name,
@@ -1986,7 +2033,7 @@ class VendorController extends Controller
                 'cheque_url'     => file_url($b->cheque_path),
             ])->all(),
 
-            'gst_scrutiny' => $v->gstScrutiny->map(fn ($g) => [
+            'gst_scrutiny' => $v->gstScrutiny->map(fn($g) => [
                 'id'                       => $g->id,
                 'gst_number'               => $g->gst_number,
                 'status'                   => $g->status,
@@ -1996,7 +2043,7 @@ class VendorController extends Controller
                 'red_flags'                => $g->red_flags,
             ])->all(),
 
-            'product_mappings' => $v->productMappings->map(fn ($m) => [
+            'product_mappings' => $v->productMappings->map(fn($m) => [
                 'id'                => $m->id,
                 'product_id'        => $m->product_id,
                 'product_code'      => optional($m->product)->product_code,
@@ -2025,7 +2072,7 @@ class VendorController extends Controller
             // canonical endpoint. Without this a client_admin of Client A
             // would see Client B's tenant-scoped master rows via the bundle.
             // Per-user cache key is a second line of defence.
-            $scope = fn ($q) => MasterVisibility::applyReadScope($q, $user);
+            $scope = fn($q) => MasterVisibility::applyReadScope($q, $user);
 
             $active = function (string $modelClass, array $cols) use ($scope) {
                 return $modelClass::query()
@@ -2062,4 +2109,3 @@ class VendorController extends Controller
         return response()->json($bundle);
     }
 }
- 

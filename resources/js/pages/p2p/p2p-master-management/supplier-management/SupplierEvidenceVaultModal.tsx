@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import type JSZipType from 'jszip';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
+import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -777,11 +778,19 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   const type = (supplier.type ?? '').trim();
 
                   const showType = !!type && !/^(pending|-|—|n\/a)$/i.test(type);
-                  const risk = (supplier.risk ?? 'Low').replace(/\s*risk$/i, '');
+                  const risk = (supplier.risk ?? '').replace(/\s*risk$/i, '').trim();
+                  /* Same chips, same order as the Customer vault (QA #46):
+                     Contact · City · Type · Segment · Country · Risk. */
                   return (
                     <div className="cev-header-chips">
-
-                      {supplier.customerId && <span className="cev-chip cev-chip-link">↳ {supplier.customerId}</span>}
+                      {supplier.contact && (
+                        <span className="cev-chip cev-chip-contact">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                          {supplier.contact}
+                        </span>
+                      )}
+                      {supplier.contactCity && <span className="cev-chip cev-chip-city">{supplier.contactCity}</span>}
+                      {showType && <span className="cev-chip cev-chip-type">{type}</span>}
                       {/* One badge rather than a chip plus a separate "+N more"
                           button, as the Customer vault has it: the named segment
                           carries the count inline and opens the full list. */}
@@ -802,11 +811,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                           </Tooltip>
                         );
                       })()}
-                      {showType && <span className="cev-chip cev-chip-type">{type}</span>}
-                      {supplier.contact && <span className="cev-chip cev-chip-contact">{supplier.contact}</span>}
-                      {supplier.contactCity && <span className="cev-chip cev-chip-city">{supplier.contactCity}</span>}
                       {supplier.country && <span className="cev-chip cev-chip-country">{supplier.country}</span>}
-                      <span className="cev-chip cev-chip-risk" data-risk={risk.toLowerCase()}>{risk} Risk</span>
+                      {supplier.customerId && <span className="cev-chip cev-chip-link">↳ {supplier.customerId}</span>}
+                      {risk && <span className="cev-chip cev-chip-risk" data-risk={risk.toLowerCase()}>{risk} Risk</span>}
                     </div>
                   );
                 })()}
@@ -1188,105 +1195,153 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   )}
                 </div>
               ) : deal ? (
+                /* The Customer vault's per-shipment panel (ShipmentDocPanel):
+                   same bordered card, teal header row, columns, type tag under
+                   the name, Required pill, status pill and .cev-sdp-act buttons. */
                 <div className="cev-ov-body" style={{ position: 'relative' }}>
                   {ovBusy && <div className="cev-busy-veil" aria-hidden />}
-                  <table className="cev-ov-table sev-ov-c2c">
-                    <thead>
-                      <tr>
-                        <th style={{ width: 44 }}>
-                          <input
-                            type="checkbox"
-                            aria-label="Select all documents"
-                            disabled={sendable.length === 0}
-                            checked={sendable.length > 0 && picked.length === sendable.length}
-                            onChange={(e) => setOvPicked(e.target.checked ? sendable.map(r => r.key) : [])}
-                          />
-                        </th>
-                        <th style={{ width: 62 }}>Sr No</th>
-                        <th>Document Name</th>
-                        <th style={{ width: 128 }}>Status</th>
-                        <th style={{ width: 250 }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {keyed.length === 0 ? (
-                        <tr><td colSpan={5} className="cev-ov-empty">No trade documents or agreements on this deal yet.</td></tr>
-                      ) : keyed.map((r, i) => {
-                        const d = r.doc;
-                        /* Already out for signature? Then the action is a
-                           reminder, not a second envelope; signed is done. */
-                        const canSend  = !viewOnly && (!!d.db_id || isPoRow(d))
-                          && !isOutForSign(d) && !isSignedRow(d);
-                        const canRemind = !!d.signature_request_id && isOutForSign(d);
-                        const canTrack  = !!d.signature_request_id;
-                        const sendLabel = d.signature_request_id ? 'Resend' : 'Send';
-                        const rowName   = d.name || '';
-                        const rowSub    = isPoRow(d) ? (d.po_code || d.doc_code || '') : (d.doc_code || '');
-                        return (
-                          <tr key={r.key} className={ovBusy === `ov:${r.key}` ? 'cev-row-working' : undefined}>
-                            <td>
-                              <input
-                                type="checkbox"
-                                aria-label={`Select ${d.name}`}
-                                disabled={!canSend}
-                                checked={ovPicked.includes(r.key)}
-                                onChange={(e) => setOvPicked(prev => e.target.checked ? [...prev, r.key] : prev.filter(k => k !== r.key))}
-                              />
-                            </td>
-                            <td className="cev-ov-num">{i + 1}</td>
-                            {/* A shipment can carry several purchase orders, and each
-                                one's PO reads "Purchase Order" — the number tells them apart. */}
-                            <Tooltip label={rowName} disabled={rowName.length <= 40}>
-                              <td className="cev-ov-name">
-                                {rowName.length > 40 ? rowName.slice(0, 40) + '…' : rowName}
-                                {rowSub && <div className="sev-ov-name-sub">{rowSub}</div>}
-                              </td>
-                            </Tooltip>
-                            <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
-                            <td>
-                              <div className="sev-ov-acts">
-                                <Tooltip label={canSend
-                                  ? (sendLabel === 'Send' ? 'Send this document for signature' : 'Send this document for signature again')
-                                  : (isSignedRow(d) ? 'Already signed'
-                                    : isOutForSign(d) ? 'Already out for signature — use Remind to chase it'
-                                    : 'Available once the document is saved against this deal')}>
-                                  <button type="button" className="sev-ov-act sev-ov-act-send" disabled={!canSend} onClick={() => void runOv(`ov:${r.key}`, () => sendDocs([r]))}>
-                                    <Glyph d={VAULT_GLYPHS.send} size={11} /> {sendLabel}
-                                  </button>
+                  <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
+                    {keyed.length === 0 ? (
+                      <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No trade documents or agreements on this deal yet.</div>
+                    ) : (
+                      <div style={{ background: '#fff', border: '1px solid #d6eef5', borderRadius: 10, overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                          <thead>
+                            <tr style={{ background: 'linear-gradient(90deg,#0e7490,#0891b2)', color: '#fff' }}>
+                              <th style={{ padding: '8px 10px', width: 34, textAlign: 'center' }}>
+                                <Tooltip label={sendable.length === 0 ? 'Nothing on this deal is awaiting a send' : (picked.length === sendable.length ? 'Clear selection' : 'Select every document that can be sent')}>
+                                  <input
+                                    type="checkbox"
+                                    className="cev-sdp-check"
+                                    aria-label="Select all documents"
+                                    disabled={sendable.length === 0}
+                                    checked={sendable.length > 0 && picked.length === sendable.length}
+                                    onChange={(e) => setOvPicked(e.target.checked ? sendable.map(r => r.key) : [])}
+                                  />
                                 </Tooltip>
-                                {canRemind && (
-                                  <Tooltip label="Remind the signer to sign this document">
-                                    <button type="button" className="sev-ov-act sev-ov-act-remind" onClick={() => void runOv(`ov:${r.key}`, () => handleRemind(d))}>
-                                      <Glyph d={VAULT_GLYPHS.bell} size={11} /> Remind
-                                    </button>
+                              </th>
+                              {['Sr No', 'Document Name', 'Required', 'Status', 'Actions'].map((h) => (
+                                <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Document Name' ? 'left' : 'center', fontSize: 9, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {keyed.map((r, i) => {
+                              const d = r.doc;
+                              /* Already out for signature? Then the action is a
+                                 reminder, not a second envelope; signed is done. */
+                              const canSend  = !viewOnly && (!!d.db_id || isPoRow(d))
+                                && !isOutForSign(d) && !isSignedRow(d);
+                              const canRemind = !!d.signature_request_id && isOutForSign(d);
+                              const canTrack  = !!d.signature_request_id;
+                              const sendLabel = d.signature_request_id ? 'Resend' : 'Send';
+                              const rowName   = d.name || '';
+                              /* A shipment can carry several purchase orders, and each
+                                 one's PO reads "Purchase Order" — the number tells them apart. */
+                              const rowSub    = isPoRow(d) ? (d.po_code || d.doc_code || '') : (d.doc_code || '');
+                              const isAgr     = r.cat === 'agreement';
+                              return (
+                                <tr key={r.key} className={ovBusy === `ov:${r.key}` ? 'cev-row-working' : undefined} style={{ borderBottom: '1px solid #ecfeff' }}>
+                                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                    <Tooltip label={canSend ? 'Select for bulk send' : (isSignedRow(d) ? 'Already signed' : isOutForSign(d) ? 'Already out for signature' : 'Available once the document is saved against this deal')}>
+                                      {/* The span keeps the tooltip alive over a disabled input. */}
+                                      <span style={{ display: 'inline-flex' }}>
+                                        <input
+                                          type="checkbox"
+                                          className="cev-sdp-check"
+                                          aria-label={`Select ${d.name}`}
+                                          disabled={!canSend}
+                                          checked={ovPicked.includes(r.key)}
+                                          onChange={(e) => setOvPicked(prev => e.target.checked ? [...prev, r.key] : prev.filter(k => k !== r.key))}
+                                        />
+                                      </span>
+                                    </Tooltip>
+                                  </td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>{i + 1}</td>
+                                  <Tooltip label={rowName} disabled={rowName.length <= 35}>
+                                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>
+                                      {rowName.length > 35 ? rowName.slice(0, 35) + '…' : rowName}
+                                      <span style={{ display: 'block', marginTop: 2, fontSize: 9, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: isAgr ? '#b45309' : '#0e7490' }}>
+                                        {isAgr ? 'Agreement' : (isPoRow(d) ? 'Purchase Order' : 'Trade Document')}{rowSub ? ` · ${rowSub}` : ''}
+                                      </span>
+                                    </td>
                                   </Tooltip>
-                                )}
-                                <Tooltip label={canTrack ? 'Signing activity tracker' : 'Nothing has been sent for signature yet'}>
-                                  <button
-                                    type="button"
-                                    className="sev-ov-act sev-ov-act-track"
-                                    disabled={!canTrack}
-                                    onClick={() => setOvTrack({ id: d.signature_request_id as number, code: d.doc_code || d.name || deal.label })}
-                                  >
-                                    <Glyph d={VAULT_GLYPHS.clock} size={11} /> Track
-                                  </button>
-                                </Tooltip>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                                    {d.requirement === 'O'
+                                      ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                                      : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
+                                  </td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'center' }}><DealStatusPill s={evEffectiveStatus(d)} /></td>
+                                  <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                    {d.attachment_url && isSignedRow(d) && (
+                                      <Tooltip label="View signed document">
+                                        <button type="button" aria-label="View" onClick={() => window.open(resolveFileUrl(d.attachment_url!), '_blank', 'noopener')} className="cev-sdp-act cev-sdp-act-view"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> View</button>
+                                      </Tooltip>
+                                    )}
+                                    {canSend && (
+                                      <Tooltip label={sendLabel === 'Send' ? 'Send for signature' : 'Send this document for signature again'}>
+                                        <button type="button" aria-label={sendLabel} className="cev-sdp-act cev-sdp-act-send" onClick={() => void runOv(`ov:${r.key}`, () => sendDocs([r]))}>
+                                          {sendLabel === 'Send'
+                                            ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+                                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>}
+                                          {' '}{sendLabel}
+                                        </button>
+                                      </Tooltip>
+                                    )}
+                                    {canRemind && (
+                                      <Tooltip label="Send reminder to the signer">
+                                        <button type="button" aria-label="Send Reminder" className="cev-sdp-act cev-sdp-act-remind" onClick={() => void runOv(`ov:${r.key}`, () => handleRemind(d))}>
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg> Remind
+                                        </button>
+                                      </Tooltip>
+                                    )}
+                                    {canTrack && (
+                                      <Tooltip label="View signing timeline">
+                                        <button
+                                          type="button"
+                                          aria-label="Signing activity tracker"
+                                          className="cev-sdp-act cev-sdp-act-track"
+                                          onClick={() => setOvTrack({ id: d.signature_request_id as number, code: d.doc_code || d.name || deal.label })}
+                                        >
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></svg> Track
+                                        </button>
+                                      </Tooltip>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {/* Bulk send under the table, as the Customer vault has it: the row
+                        ticked last is nearest the button, and the table never shifts. */}
+                    {picked.length > 0 && (
+                      <div className="cev-sdp-bulk">
+                        <span className="cev-sdp-bulk-count">{picked.length} of {sendable.length} selected</span>
+                        <button type="button" className="cev-sdp-bulk-clear" onClick={() => setOvPicked([])}>Clear</button>
+                        <Tooltip label={canBulk
+                          ? `Send the ${picked.length} selected document${picked.length > 1 ? 's' : ''} for signature in one envelope`
+                          : (!libSaved
+                            ? 'One of the ticked rows is not saved against this deal yet'
+                            : 'One envelope carries one purchase order — tick just the one')}>
+                          <button type="button" className="cev-sdp-bulk-send" disabled={!canBulk}
+                                  onClick={() => void runOv('ov:bulk', () => sendDocs(picked))}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+                            {picked.every(r => !r.doc.signature_request_id) ? 'Send' : 'Resend'} {picked.length} for Signature
+                          </button>
+                        </Tooltip>
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className="cev-ov-body">
-                  {/* Issued Date / Expired At, as the Customer and Consignee
-                      overviews list them — the same facts as the tab tables. */}
-                  <table className="cev-ov-table sev-ov-std">
-                    {/* Action holds two buttons (Download + Upload / Re-upload),
-                        so it takes the room the date columns give back. */}
-                    <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 104 }}>Issued Date</th><th style={{ width: 104 }}>Expired At</th><th style={{ width: 120 }}>Status</th><th style={{ width: 210 }}>Action</th></tr></thead>
+                  {/* The Customer vault's standard overview table: same headers,
+                      widths, status pill and Download / Upload pair. */}
+                  <table className="cev-ov-table">
+                    <thead><tr><th style={{ width: 58 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 116 }}>ISSUED DATE</th><th style={{ width: 116 }}>EXPIRED AT</th><th style={{ width: 118 }}>STATUS</th><th style={{ width: 190 }}>ACTION</th></tr></thead>
                     <tbody>
                       {docs.length === 0 ? (
                         <tr><td colSpan={6} className="cev-ov-empty">No documents available.</td></tr>
@@ -1302,12 +1357,14 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                         return (
                           <tr key={`${overview}-${absIdx}`}>
                             <td className="cev-ov-num">{absIdx + 1}</td>
-                            <td className="cev-ov-name">{d.name}</td>
+                            <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
+                              <td className="cev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
+                            </Tooltip>
                             <td><VaultDateBadge value={d.issue_date} /></td>
                             {/* `expiry`, as the tab table beside it reads — the
                                 two lists must not disagree about one document. */}
                             <td><VaultDateBadge value={d.expiry} kind="expiry" /></td>
-                            <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
+                            <td><StdStatusPill s={evEffectiveStatus(d)} /></td>
                             <td>
                               {/* Download and Upload / Re-upload side by side, as
                                   the Customer and Consignee overviews have them.
@@ -1356,25 +1413,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                       })}
                     </tbody>
                   </table>
-                </div>
-              )}
-              {/* Bulk send under the table, as the Customer vault has it: the row
-                  ticked last is nearest the button, and the table never shifts. */}
-              {deal && picked.length > 0 && (
-                <div className="cev-sdp-bulk">
-                  <span className="cev-sdp-bulk-count">{picked.length} of {sendable.length} selected</span>
-                  <button type="button" className="cev-sdp-bulk-clear" onClick={() => setOvPicked([])}>Clear</button>
-                  <Tooltip label={canBulk
-                    ? `Send the ${picked.length} selected document${picked.length > 1 ? 's' : ''} for signature in one envelope`
-                    : (!libSaved
-                      ? 'One of the ticked rows is not saved against this deal yet'
-                      : 'One envelope carries one purchase order — tick just the one')}>
-                    <button type="button" className="cev-sdp-bulk-send" disabled={!canBulk}
-                            onClick={() => void runOv('ov:bulk', () => sendDocs(picked))}>
-                      <Glyph d={VAULT_GLYPHS.send} size={12} />
-                      {picked.every(r => !r.doc.signature_request_id) ? 'Send' : 'Resend'} {picked.length} for Signature
-                    </button>
-                  </Tooltip>
                 </div>
               )}
             </div>
@@ -1502,6 +1540,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
 
   const codeLbl = tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-documents' ? 'Reference' : 'License / Number';
+  const [chipBusy, setChipBusy] = useState<string | null>(null);
 
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   return (
@@ -1511,19 +1550,17 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
       <table className="cev-table">
         <thead>
           <tr>
-            <th style={{ width: 40 }}>Sr No</th>
-
-            <th style={{ width: 220 }}>Document Name</th>
+            {/* The Customer vault's DocsTable headings and widths. */}
+            <th style={{ width: 56 }}>Sr No</th>
+            <th>Document Name</th>
             <th>{codeLbl}</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>
-            {/* Issue Date beside Expiry — the document's validity window, as
-                the Customer and Consignee vaults show it. */}
-            <th>Issue Date</th>
-            <th>Expiry</th>
-            <th>Attachment</th>
+            <th style={{ width: 116 }}>Issued Date</th>
+            <th style={{ width: 116 }}>Expired At</th>
+            <th style={{ width: 170 }}>Attachment</th>
             <th>Status</th>
-            <th style={{ width: 190 }}>Actions</th>
+            <th style={{ width: 172 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -1532,23 +1569,50 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
           ) : rows.map((d, i) => (
             <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
               <td>{i + 1}</td>
-              <td className="cev-doc-name">{d.name}</td>
+              <Tooltip label={d.name} disabled={(d.name || '').length <= 25}>
+                <td className="cev-doc-name">{(d.name || '').length > 25 ? (d.name || '').slice(0, 25) + '…' : d.name}</td>
+              </Tooltip>
               <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
-              <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
+              <td><AuthorityBadges value={d.authority} /></td>
               <td>
                 {d.requirement === 'M' ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                  <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
                 ) : (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                  <span className="cev-req cev-req-o" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
               <td><VaultDateBadge value={d.issue_date} /></td>
               <td><VaultDateBadge value={d.expiry} kind="expiry" /></td>
               <td>
-                {d.attachment_url ? (
-                  <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach"><i className="ri-download-2-line" /> {d.attachment || 'View'}</a>
-                ) : d.attachment ? (
-                  <span className="cev-attach cev-attach-muted"><i className="ri-file-line" /> {d.attachment}</span>
+                {/* The Customer vault's attachment chip: downloads in place with
+                    a spinner, name ellipsised in .cev-attach-name, shared Tooltip. */}
+                {d.attachment_url ? (() => {
+                  const key = String(d.db_id ?? d.doc_code ?? d.name ?? '');
+                  const busy = chipBusy === key;
+                  return (
+                    <Tooltip label={busy ? 'Downloading…' : `Download ${d.attachment || 'attachment'}`}>
+                      <a
+                        href={d.attachment_url}
+                        rel="noreferrer"
+                        className="cev-attach"
+                        aria-busy={busy}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          if (busy) return;
+                          setChipBusy(key);
+                          try { await downloadFile(d.attachment_url!, d.attachment ?? undefined); }
+                          finally { setChipBusy(null); }
+                        }}
+                      >
+                        <i className={busy ? 'ri-loader-4-line cev-spin' : 'ri-download-2-line'} />{' '}
+                        <span className="cev-attach-name">{d.attachment || 'Download'}</span>
+                      </a>
+                    </Tooltip>
+                  );
+                })() : d.attachment ? (
+                  <Tooltip label={d.attachment}>
+                    <span className="cev-attach cev-attach-muted"><i className="ri-file-line" /> <span className="cev-attach-name">{d.attachment}</span></span>
+                  </Tooltip>
                 ) : <span style={{ color: '#9ca3af' }}>—</span>}
               </td>
               <td><VaultStatusPill status={evEffectiveStatus(d)} /></td>
@@ -1845,17 +1909,25 @@ export function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit, cla
 }
 
 
-function OvStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
-  const tone = s === 'Verified' || s === 'Signed' ? ['#ecfdf5', '#059669', '#6ee7b7', '#10b981']
-    : s === 'Expiring' ? ['#fffbeb', '#d97706', '#fcd34d', '#f59e0b']
-    : ['#fef2f2', '#dc2626', '#fecaca', '#ef4444'];
+/* The Customer vault's status pills: StatusPill for the standard rows and
+   ShipmentStatusPill for the per-deal rows — same colours, same shape. */
+function StdStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
+  const tone =
+    s === 'Verified' ? { bg: '#ecfdf5', fg: '#059669' }
+    : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af' }
+    : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e' }
+    :                    { bg: '#fef2f2', fg: '#dc2626' };
+  return <span className="cev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg }}>{s}</span>;
+}
+function DealStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
+  const tone = (s === 'Signed' || s === 'Verified')
+    ? { fg: '#059669', bg: '#ecfdf5', bd: '#a7f3d0' }
+    : (String(s) === 'Declined' || s === 'Expired')
+      ? { fg: '#dc2626', bg: '#fef2f2', bd: '#fecaca' }
+      : { fg: '#d97706', bg: '#fffbeb', bd: '#fde68a' };
   return (
-    <span
-      className="sev-ov-pill"
-      style={{ background: `linear-gradient(135deg, ${tone[0]}, #fff)`, color: tone[1], border: `1px solid ${tone[2]}` }}
-    >
-      <span className="sev-ov-pill-dot" style={{ background: tone[3] }} />
-      {s}
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>
+      ● {s}
     </span>
   );
 }
@@ -2130,37 +2202,22 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-const DEAL_TH: React.CSSProperties = { padding: '10px 8px', fontSize: 7, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.65)', textTransform: 'uppercase' };
-const DEAL_THC: React.CSSProperties = { ...DEAL_TH, textAlign: 'center' };
-const DEAL_AV_GRADS = [
-  'linear-gradient(135deg,#06b6d4,#22d3ee)',
-  'linear-gradient(135deg,#0e7490,#22d3ee)',
-  'linear-gradient(135deg,#0891b2,#06b6d4)',
-  'linear-gradient(135deg,#083344,#0891b2)',
-];
 
+/* The Customer vault's Ratio cell (d/t over its percentage), fed from the
+   deal's {d, t} counts. */
 function dealFrac(c?: DealCount) {
-
   const d = c?.d ?? 0, t = c?.t ?? 0;
   const pct = t > 0 ? Math.round((d / t) * 100) : 0;
-  const col = pct === 100 ? '#059669' : pct > 0 ? '#d97706' : '#dc2626';
-  return (
-    <div style={{ lineHeight: 1.3 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: col }}>{d}/{t}</div>
-      <div style={{ fontSize: 8, fontWeight: 600, color: col, opacity: 0.7 }}>{pct}%</div>
-    </div>
-  );
+  return <Ratio r={{ ratio: `${d}/${t}`, pct }} />;
 }
 
-function DealAvatar({ name, grad, tag }: { name: string; grad: string; tag?: string }) {
+/* The Customer vault's party cell (.cev-cust-cell): monogram + name. */
+function DealAvatar({ name, grad }: { name: string; grad: string; tag?: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ width: 34, height: 34, borderRadius: 10, background: grad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#fff', flexShrink: 0, boxShadow: '0 2px 8px rgba(6,182,212,.3)' }}>{(name || '—').charAt(0).toUpperCase()}</div>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--dl-ink, #083344)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>{name || '—'}</div>
-        {tag && <div style={{ marginTop: 2 }}><span style={{ fontSize: 8, background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{tag}</span></div>}
-      </div>
-    </div>
+    <span className="cev-cust-cell">
+      <span className="cev-cust-mono" style={{ background: grad }}>{(name || '—').charAt(0)}</span>
+      {name || '—'}
+    </span>
   );
 }
 
@@ -2171,17 +2228,15 @@ const dealDmy = (iso?: string | null) => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+/* The Customer vault's id chip (.cev-chip-pill). */
 function DealIdPill({ text }: { text: string }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9.5, fontWeight: 700, padding: '4px 9px', borderRadius: 20, border: '1.5px solid #a5f3fc', background: '#ecfeff', color: '#0e7490', whiteSpace: 'nowrap' }}>
-      <span style={{ width: 13, height: 13, borderRadius: '50%', border: '1.5px solid #a5f3fc', background: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-      </span>{text}
-    </span>
-  );
+  return <span className="cev-chip-pill">● {text}</span>;
 }
 
-const DEAL_SUB_TH: React.CSSProperties = { padding: '8px 12px', fontSize: 6.5, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.65)', textTransform: 'uppercase' };
+/* The Customer vault's ShipmentDocPanel header cell and row. */
+const DEAL_SUB_TH: React.CSSProperties = { padding: '8px 10px', fontSize: 9, fontWeight: 800, letterSpacing: '.06em', color: '#fff', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+const DEAL_SUB_HEAD: React.CSSProperties = { background: 'linear-gradient(90deg,#0e7490,#0891b2)', color: '#fff' };
+const DEAL_SUB_TD: React.CSSProperties = { padding: '8px 10px' };
 
 function dealDocState(d: VaultDoc): { label: string; c: [string, string, string, string] } {
   if (d.sig_state === 'completed' || d.status === 'Signed') return { label: 'Signed', c: ['#ecfdf5', '#059669', '#a7f3d0', '#10b981'] };
@@ -2232,17 +2287,19 @@ function DealPoSubTable({ pos, docKind, ownerId, onReload, onSendTradeDoc, onRem
   const money = (n?: number, ccy?: string | null) =>
     n == null ? '—' : `${ccy && ccy !== 'INR' ? ccy + ' ' : '₹'}${Math.round(n).toLocaleString('en-IN')}`;
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
+    <div style={{ background: '#fff', border: '1px solid #d6eef5', borderRadius: 10, overflow: 'hidden' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
       <thead>
-        <tr style={{ background: 'linear-gradient(110deg,#0c4a6e,#0891b2)' }}>
-          <th style={{ ...DEAL_SUB_TH, paddingLeft: 26, width: 36 }} />
+        <tr style={DEAL_SUB_HEAD}>
+          <th style={{ ...DEAL_SUB_TH, width: 34 }} />
           <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>Procurement ID</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>PO ID</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>PO Date</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>Status</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>PO Value</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Trade Docs</th>
-          <th style={{ ...DEAL_SUB_TH, textAlign: 'center', paddingRight: 20 }}>Agreements</th>
+          <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Agreements</th>
         </tr>
       </thead>
       <tbody>
@@ -2252,28 +2309,28 @@ function DealPoSubTable({ pos, docKind, ownerId, onReload, onSendTradeDoc, onRem
           const nAgr = (po.agreements ?? []).length;
           return (
             <Fragment key={po.po_code}>
-              <tr style={{ background: isOpen ? 'var(--dl-hover)' : 'transparent', borderBottom: '1px solid var(--dl-border)', cursor: 'pointer' }}
+              <tr className="cev-ship-row" style={{ borderBottom: '1px solid #ecfeff', cursor: 'pointer' }}
                   onClick={() => toggle(i, po)}>
-                <td style={{ padding: '10px 8px 10px 26px', width: 36 }}>
-                  <span style={{ fontSize: 8, color: nDocs + nAgr ? '#0e7490' : 'var(--dl-muted)', userSelect: 'none' }}>
-                    {nDocs + nAgr === 0 ? '–' : isOpen ? '▼' : '▶'}
-                  </span>
+                <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>
+                  {nDocs + nAgr === 0
+                    ? <span style={{ color: '#94a3b8', fontWeight: 800 }}>–</span>
+                    : <span style={{ display: 'inline-block', transition: 'transform .18s', transform: isOpen ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span>}
                 </td>
-                <td style={{ padding: '10px 8px' }}>
+                <td style={DEAL_SUB_TD}>
                   {po.procurement_id
                     ? <DealIdPill text={po.procurement_id} />
                     : <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--dl-muted)' }}>N/A</span>}
                 </td>
-                <td style={{ padding: '10px 8px' }}><DealIdPill text={po.po_code} /></td>
-                <td style={{ padding: '10px 8px', fontSize: 11, fontWeight: 700, color: 'var(--dl-text)' }}>{dealDmy(po.po_date) || '—'}</td>
-                <td style={{ padding: '10px 8px' }}><DealPoStatus status={po.po_status} /></td>
-                <td style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, fontWeight: 800, color: 'var(--dl-text)' }}>{money(po.po_total, po.currency)}</td>
-                <td style={{ padding: '10px 8px', textAlign: 'center' }}>{dealFrac({ d: (po.docs ?? []).filter(d => d.status === 'Signed').length, t: nDocs })}</td>
-                <td style={{ padding: '10px 20px 10px 8px', textAlign: 'center' }}>{dealFrac({ d: (po.agreements ?? []).filter(d => d.status === 'Signed').length, t: nAgr })}</td>
+                <td style={DEAL_SUB_TD}><DealIdPill text={po.po_code} /></td>
+                <td style={{ ...DEAL_SUB_TD, color: '#475569' }}>{dealDmy(po.po_date) || '—'}</td>
+                <td style={DEAL_SUB_TD}><DealPoStatus status={po.po_status} /></td>
+                <td style={{ ...DEAL_SUB_TD, textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{money(po.po_total, po.currency)}</td>
+                <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>{dealFrac({ d: (po.docs ?? []).filter(d => d.status === 'Signed').length, t: nDocs })}</td>
+                <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>{dealFrac({ d: (po.agreements ?? []).filter(d => d.status === 'Signed').length, t: nAgr })}</td>
               </tr>
               {isOpen && (
-                <tr>
-                  <td colSpan={8} style={{ padding: 0, background: 'var(--dl-panel)', borderBottom: '1.5px solid var(--dl-line)' }}>
+                <tr className="cev-ship-expand">
+                  <td colSpan={8} style={{ padding: 0, background: '#f0fdff' }}>
                     <DealDocsSubTable
                       rows={[
                         ...(docKind === 'agreement' ? [] : (po.docs ?? []).map(d => ({ doc: d, category: 'td' as const }))),
@@ -2293,6 +2350,8 @@ function DealPoSubTable({ pos, docKind, ownerId, onReload, onSendTradeDoc, onRem
         })}
       </tbody>
     </table>
+    </div>
+    </div>
   );
 }
 
@@ -2358,14 +2417,15 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
   }, [rows]);
 
   return (
-    <div ref={boxRef} style={{ overflowY: 'auto', position: 'relative' }}>
+    <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
+    <div ref={boxRef} style={{ overflowY: 'auto', position: 'relative', background: '#fff', border: '1px solid #d6eef5', borderRadius: 10 }}>
     {/* Swallows every click while an action is in flight, so the table cannot
         be worked on until the row it belongs to has settled. */}
     {lock.busy && <div className="cev-busy-veil" aria-hidden />}
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
       <thead>
         {/* One row, one gradient — and it stays put while the documents scroll. */}
-        <tr style={{ background: 'linear-gradient(110deg,#083344,#0e7490)', position: 'sticky', top: 0, zIndex: 2 }}>
+        <tr style={{ ...DEAL_SUB_HEAD, position: 'sticky', top: 0, zIndex: 2 }}>
           {bulkOn && (
             <th style={{ ...DEAL_SUB_TH, width: 34, textAlign: 'center' }}>
               <Tooltip label={pickable.length === 0 ? 'Nothing here is waiting to be sent' : allPicked ? 'Clear selection' : 'Select everything not yet sent'}>
@@ -2377,7 +2437,7 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
               </Tooltip>
             </th>
           )}
-          <th style={{ ...DEAL_SUB_TH, width: 32, textAlign: 'center' }}>#</th>
+          <th style={{ ...DEAL_SUB_TH, width: 46, textAlign: 'center' }}>Sr No</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'left' }}>Document Name</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Required</th>
           <th style={{ ...DEAL_SUB_TH, textAlign: 'center' }}>Uploaded On</th>
@@ -2388,7 +2448,7 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
       </thead>
       <tbody>
         {rows.length === 0 ? (
-          <tr><td colSpan={bulkOn ? 8 : 7} style={{ padding: 18, textAlign: 'center', color: 'var(--dl-muted)', fontSize: 11, background: 'var(--dl-docrow)' }}>{emptyLabel}</td></tr>
+          <tr><td colSpan={bulkOn ? 8 : 7} style={{ padding: 18, textAlign: 'center', color: '#64748b', fontSize: 12 }}>{emptyLabel}</td></tr>
         ) : rows.map(({ doc: d, category }, di) => {
           const st = dealDocState(d);
           /* Falls back to the library name so an agreement with no reference
@@ -2397,9 +2457,9 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
           return (
             <tr key={`${category}-${d.doc_code ?? 'doc'}-${di}`}
                 className={lock.active === `row:${category}:${d.id}` ? 'cev-row-working' : undefined}
-                style={{ background: 'var(--dl-docrow)', borderBottom: '1px solid var(--dl-docline)' }}>
+                style={{ borderBottom: '1px solid #ecfeff' }}>
               {bulkOn && (
-                <td style={{ padding: '11px 12px', textAlign: 'center' }}>
+                <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>
                   <Tooltip label={canPick(d) ? 'Select for bulk send'
                     : isSignedRow(d) ? 'Already signed'
                     : isOutForSign(d) ? 'Already out for signature'
@@ -2414,20 +2474,34 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
                   </Tooltip>
                 </td>
               )}
-              <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 10.5, fontWeight: 700, color: '#0e7490' }}>{di + 1}</td>
-              <td style={{ padding: '11px 12px' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--dl-ink, #083344)' }}>{d.name}</div>
-                {sub && <div style={{ fontSize: 9, color: 'var(--dl-muted)', marginTop: 2 }}>{sub}</div>}
+              <td style={{ ...DEAL_SUB_TD, textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>{di + 1}</td>
+              <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
+                <td style={{ ...DEAL_SUB_TD, fontWeight: 700, color: '#0f172a' }}>
+                  {(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}
+                  <span style={{ display: 'block', marginTop: 2, fontSize: 9, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: category === 'agreement' ? '#b45309' : '#0e7490' }}>
+                    {category === 'agreement' ? 'Agreement' : (isPoRow(d) ? 'Purchase Order' : 'Trade Document')}{sub && sub !== 'Agreement' ? ` · ${sub}` : ''}
+                  </span>
+                </td>
+              </Tooltip>
+              <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>
+                {d.requirement === 'O'
+                  ? <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                  : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
               </td>
-              <td style={{ padding: '11px 12px', textAlign: 'center' }}>
-                <span style={{ fontSize: 8.5, fontWeight: 800, padding: '2.5px 8px', borderRadius: 5, ...(d.requirement === 'O' ? { background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0' } : { background: 'linear-gradient(135deg,#fef3c7,#fde68a)', color: '#92400e', border: '1px solid #fcd34d' }) }}>{d.requirement === 'O' ? 'OPT' : 'REQ'}</span>
+              <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}><VaultDateBadge value={d.issue_date} /></td>
+              <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}><VaultDateBadge value={d.expiry} kind="expiry" /></td>
+              <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>
+                {/* The Customer vault's ShipmentStatusPill colours. */}
+                {(() => {
+                  const tone = (st.label === 'Signed' || st.label === 'Verified')
+                    ? { fg: '#059669', bg: '#ecfdf5', bd: '#a7f3d0' }
+                    : st.label === 'Declined'
+                      ? { fg: '#dc2626', bg: '#fef2f2', bd: '#fecaca' }
+                      : { fg: '#d97706', bg: '#fffbeb', bd: '#fde68a' };
+                  return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`, whiteSpace: 'nowrap' }}>● {st.label}</span>;
+                })()}
               </td>
-              <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 10.5, color: 'var(--dl-sub)' }}>{d.issue_date || '—'}</td>
-              <td style={{ padding: '11px 12px', textAlign: 'center', fontSize: 10.5, color: 'var(--dl-sub)' }}>{d.expiry || '—'}</td>
-              <td style={{ padding: '11px 12px', textAlign: 'center' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 700, padding: '3px 9px', borderRadius: 6, background: st.c[0], color: st.c[1], border: `1px solid ${st.c[2]}` }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: st.c[3], display: 'inline-block' }} />{st.label}</span>
-              </td>
-              <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+              <td style={{ ...DEAL_SUB_TD, textAlign: 'center' }}>
                 <VaultRowActions doc={d} ownerType="supplier" ownerId={ownerId} category={category} onReload={onReload}
                                  onSendTradeDoc={onSendTradeDoc ? (sd) => onSendTradeDoc(sd, category) : undefined}
                                  onRemindTradeDoc={onRemindTradeDoc} onSendPoDoc={onSendPoDoc} />
@@ -2437,6 +2511,7 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
         })}
       </tbody>
     </table>
+    </div>
     {/* Under the table, as the Customer vault has it: the row ticked last is
         nearest the button, and the table never shifts as the bar appears. */}
     {bulkOn && chosen.length > 0 && (
@@ -2486,76 +2561,71 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
     setOpen(open === i ? null : i);
   };
   return (
-    <div className="cev-deal" style={{ margin: 0, border: '1.5px solid var(--dl-line)', borderRadius: 8, overflow: 'hidden' }}>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: mode === 'with' ? 920 : 660 }}>
+    /* The Customer vault's ShipmentTable: .cev-table rows, the rotating ▸,
+       .cev-chip-pill ids, the .cev-cust-cell party and Ratio cells. */
+    <div className="cev-table-wrap">
+      <div className="cev-table-scroll">
+        <table className="cev-table" style={{ minWidth: mode === 'with' ? 920 : 760 }}>
           <thead>
-            <tr style={{ background: 'linear-gradient(110deg,#083344 0%,#0c4a6e 55%,#0e7490 100%)' }}>
-              <th style={{ ...DEAL_TH, paddingLeft: 14, width: 40 }} />
-              <th style={{ ...DEAL_TH, textAlign: 'left' }}>SR</th>
-              <th style={{ ...DEAL_TH, textAlign: 'left' }}>{mode === 'with' ? 'Shipment ID' : 'Procurement ID'}</th>
+            <tr>
+              <th style={{ width: 34 }} />
+              <th style={{ width: 46 }}>SR</th>
+              <th>{mode === 'with' ? 'Shipment ID' : 'Procurement ID'}</th>
               {mode === 'with'
-                ? <th style={DEAL_THC}>Purchase Orders</th>
-                : <><th style={{ ...DEAL_TH, textAlign: 'left' }}>PO ID</th><th style={{ ...DEAL_TH, textAlign: 'left' }}>PO Date</th></>}
+                ? <th style={{ textAlign: 'center' }}>Purchase Orders</th>
+                : <><th>PO ID</th><th>PO Date</th></>}
               {/* Customer and Consignee columns removed: a supplier vault
                   does not name the buyer side (QA #40). */}
-              <th style={{ ...DEAL_TH, textAlign: 'left' }}>Supplier</th>
-              <th style={DEAL_THC}>KYC</th>
-              <th style={DEAL_THC}>Due Dil.</th>
-              <th style={DEAL_THC}>Trade Lic.</th>
-              <th style={DEAL_THC}>Trade Docs</th>
-              <th style={{ ...DEAL_THC, paddingRight: 14 }}>Agreements</th>
+              <th>Supplier</th>
+              <th style={DEAL_RATIO_COL}>KYC</th>
+              <th style={DEAL_RATIO_COL}>Due Dil.</th>
+              <th style={DEAL_RATIO_COL}>Trade Lic.</th>
+              <th style={DEAL_RATIO_COL}>Trade Docs</th>
+              <th style={DEAL_RATIO_COL}>Agreements</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={span} style={{ padding: 34, textAlign: 'center', color: 'var(--dl-muted)', fontSize: 12, background: 'var(--dl-panel)' }}>
+              <tr><td colSpan={span} className="cev-empty">
                 {mode === 'with' ? 'No purchase orders against a shipment for this supplier yet.' : 'No other purchase orders for this supplier yet.'}
               </td></tr>
             ) : rows.map((r, idx) => {
-              const bg = idx % 2 === 0 ? 'var(--dl-row)' : 'var(--dl-zebra)';
               const isOpen = open === idx;
               return (
                 <Fragment key={`${r.sr}-${r.shipment_id ?? r.po_code ?? r.procurement_id}`}>
-                  <tr style={{ background: isOpen ? 'var(--dl-hover)' : bg, borderBottom: '1.5px solid var(--dl-border)', cursor: 'pointer' }}
-                      onClick={() => press(idx, r)}
-                      onMouseEnter={(e) => { if (!isOpen) e.currentTarget.style.background = 'var(--dl-hover)'; }}
-                      onMouseLeave={(e) => { if (!isOpen) e.currentTarget.style.background = bg; }}>
-                    <td style={{ padding: '13px 8px 13px 14px', verticalAlign: 'middle', width: 40 }}>
-                      <span style={{ fontSize: 9, color: '#0e7490', userSelect: 'none' }}>{isOpen ? '▼' : '▶'}</span>
+                  <tr className="cev-ship-row" style={{ cursor: 'pointer' }} onClick={() => press(idx, r)}>
+                    <td style={{ textAlign: 'center' }}>
+                      <span style={{ display: 'inline-block', transition: 'transform .18s', transform: isOpen ? 'rotate(90deg)' : 'none', color: '#0891b2', fontWeight: 800 }}>▸</span>
                     </td>
-                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', fontSize: 11, fontWeight: 700, color: '#0e7490' }}>{r.sr}</td>
-                    <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}>
+                    <td>{r.sr}</td>
+                    <td>
                       {mode === 'with'
                         ? <DealIdPill text={r.shipment_id ?? '—'} />
                         : (r.procurement_id
                           ? <DealIdPill text={r.procurement_id} />
-                          : <span style={{ fontSize: 10, fontWeight: 800, color: 'var(--dl-muted)' }}>N/A</span>)}
+                          : <span style={{ color: '#9ca3af' }}>—</span>)}
                     </td>
                     {mode === 'with' ? (
-                      <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: '#0e7490' }}>{r.po_count ?? (r.pos ?? []).length}</span>
-                      </td>
+                      <td style={{ textAlign: 'center' }}><span className="cev-chip-pill cev-chip-pill-warm">{r.po_count ?? (r.pos ?? []).length}</span></td>
                     ) : (
                       <>
-                        <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealIdPill text={r.po_code ?? '—'} /></td>
-                        <td style={{ padding: '13px 8px', verticalAlign: 'middle', fontSize: 11, fontWeight: 700, color: 'var(--dl-text)' }}>
+                        <td><DealIdPill text={r.po_code ?? '—'} /></td>
+                        <td>
                           {dealDmy(r.po_date) || '—'}
                           {r.po_status ? <span style={{ marginLeft: 8 }}><DealPoStatus status={r.po_status} /></span> : null}
                         </td>
                       </>
                     )}
-                    <td style={{ padding: '13px 8px', verticalAlign: 'middle' }}><DealAvatar name={r.supplier} grad="linear-gradient(135deg,#0891b2,#06b6d4)" /></td>
-                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.kyc)}</td>
-                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.dd)}</td>
-                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.tl)}</td>
-                    <td style={{ padding: '13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.td)}</td>
-                    <td style={{ padding: '13px 14px 13px 8px', verticalAlign: 'middle', textAlign: 'center' }}>{dealFrac(r.ratios?.agr)}</td>
+                    <td><DealAvatar name={r.supplier} grad="linear-gradient(135deg,#0891b2,#06b6d4)" /></td>
+                    <td style={DEAL_RATIO_COL}>{dealFrac(r.ratios?.kyc)}</td>
+                    <td style={DEAL_RATIO_COL}>{dealFrac(r.ratios?.dd)}</td>
+                    <td style={DEAL_RATIO_COL}>{dealFrac(r.ratios?.tl)}</td>
+                    <td style={DEAL_RATIO_COL}>{dealFrac(r.ratios?.td)}</td>
+                    <td style={DEAL_RATIO_COL}>{dealFrac(r.ratios?.agr)}</td>
                   </tr>
                   {isOpen && (
-                    <tr>
-                      <td colSpan={span} style={{ padding: 0, background: 'var(--dl-panel)', borderTop: '1.5px solid var(--dl-line)', borderBottom: '1.5px solid var(--dl-line)' }}>
-
+                    <tr className="cev-ship-expand">
+                      <td colSpan={span} style={{ padding: 0, background: '#f0fdff' }}>
                         {mode === 'with' ? (
                           <DealPoSubTable pos={r.pos ?? []} docKind={docKind} ownerId={ownerId}
                                           onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onSendPoDoc={onSendPoDoc} />
@@ -2581,6 +2651,9 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
     </div>
   );
 }
+
+/* The Customer vault's RATIO_COL. */
+const DEAL_RATIO_COL: React.CSSProperties = { width: 132, textAlign: 'center', whiteSpace: 'normal' };
 
 function ShipmentTable({ rows }: { rows: VaultShipmentRow[] }) {
   const filtered = rows;

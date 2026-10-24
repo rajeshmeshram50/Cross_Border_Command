@@ -3,6 +3,7 @@ import SegmentBadge, { segmentLabel } from '../../../../components/ui/SegmentBad
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
+import { useIsClipped } from '../../../../components/ui/DataTable';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
@@ -16,7 +17,9 @@ import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
 } from './vendorBundleCache';
+import '../../../../components/ui/DataTable.css';   // .dt-tabrail / .dt-tab — the Customer list's tab rail
 import './supplier-management.css';
+import '../../../sales/core-masters/customer/SalesCustomers.css';   // .smc-* - the Customer list's classes
 import { lazyPage } from '../../../../utils/lazyPage';
 
 const AddVendorModal = lazyPage(() => import('./AddVendorModal'));
@@ -58,6 +61,8 @@ export type Vendor = {
 
 export type SupplierFacets = {
   grand_total: number;
+  /** Rows each Domestic / International tab would list (before the scope). */
+  scope?: { domestic: number; international: number };
   category: { star: number; general: number; high_risk: number; blacklisted: number };
   compliance: { compliant: number; non_compliant: number };
 };
@@ -121,6 +126,25 @@ type ApiVendor = {
  *   logistics → cyan, services → amber, everything else → purple (material).
  * Matching is loose so variants like "Logistic" / "Service Provider" land
  * on the right colour. */
+/* A text cell that shows its full value on hover only when it is really cut -
+   the Customer list's TruncatedCell, measured from the DOM. */
+function ClipCell({ value, className }: { value?: string | null; className?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const v = (value ?? '').trim();
+  const clipped = useIsClipped(ref, v);
+  if (!v || v === '—') return <span className="text-muted">—</span>;
+  const inner = <span ref={ref} className={className} style={{ maxWidth: '100%', display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{v}</span>;
+  return clipped ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+}
+
+/* Supplier Type pill colours - the Customer list's .smc-type-pill takes its
+   colours inline per value the same way. */
+const TYPE_PILL: Record<'material' | 'logistics' | 'services', { bg: string; color: string; border: string }> = {
+  material:  { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)' },
+  logistics: { bg: 'rgba(13,148,136,0.16)', color: '#0d9488', border: 'rgba(13,148,136,0.40)' },
+  services:  { bg: 'rgba(245,158,11,0.16)', color: '#d97706', border: 'rgba(245,158,11,0.40)' },
+};
+
 function typeKind(type: string): 'material' | 'logistics' | 'services' {
   const t = (type || '').toLowerCase();
   /* Movement-of-goods types all take the teal pill Figma gives Logistics.
@@ -349,6 +373,7 @@ function RefineSuppliers(props: {
     <div className="sl-refine" ref={wrapRef}>
       <button
         type="button"
+        /* The Supplier list's own filled Filter button, at the right end of the toolbar. */
         className={`sl-refine-btn${open ? ' is-open' : ''}${props.active ? ' has-active' : ''}`}
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
@@ -739,7 +764,11 @@ export default function Vendors() {
       if (window.innerWidth <= 820) { el.style.minHeight = ''; return; }
 
       const top = el.getBoundingClientRect().top;
-      const THEAD = 42, ROW = 54, PAGER = 56;
+      /* Measured, not assumed: the rows are the Customer list's (.smc-table-wrap)
+         now, shorter than the old 54px. Fallbacks cover the shimmer pass. */
+      const THEAD = (el.querySelector('thead') as HTMLElement | null)?.offsetHeight || 40;
+      const ROW = (el.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 41;
+      const PAGER = 56;
       const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
       const footerH = footerEl?.offsetHeight ?? 0;
       const bottomReserve = footerH > 0 ? footerH + 8 : 15;
@@ -768,7 +797,7 @@ export default function Vendors() {
     window.addEventListener('resize', recomputeDebounced);
     return () => { if (settleTimer) clearTimeout(settleTimer); window.removeEventListener('resize', recomputeDebounced); cancelAnimationFrame(raf); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, search, loading, brefOpen, rpp]);
+  }, [tab, search, loading, swapping, brefOpen, rpp, vendors.length > 0]);
 useEffect(() => {
   if (!allowed) return;
 
@@ -843,9 +872,12 @@ useEffect(() => {
     <>
       <Row>
         <Col xs={12}>
-         <div className="sup-fig" ref={rootRef}>
-          {loading ? <ShimmerClmMaster cols={7} rows={8} twoTab /> : (<>
+         {/* The Customer list's layout (.smc-root): header block in .sup-fig,
+             then the .smc-table-card list - same classes, same overrides. */}
+         <div className="smc-root sup-list" ref={rootRef}>
+          {loading ? <div className="sup-fig"><ShimmerClmMaster cols={7} rows={8} twoTab /></div> : (<>
 
+          <div className="sup-fig">
           <div className="cstrip">
             <span className="cstrip__accent" />
             <span className="cstrip__glow" />
@@ -871,7 +903,7 @@ useEffect(() => {
             </div>
           </div>
 
-          <div className={`bref-box ${brefOpen ? '' : 'is-collapsed'}`}>
+          <div className={`bref-box smc-bref ${brefOpen ? '' : 'is-collapsed'}`}>
             <div className="bref-box__header" onClick={() => setBrefOpen(o => !o)}>
               <div className="bref-box__header-ico">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
@@ -926,28 +958,31 @@ useEffect(() => {
             </div>
           </div>
 
-          <div className="sl-wrap">
-            <div className="sl-toolbar">
-              <div className="sup-scope sl-scope">
-                <button
-                  type="button"
-                  className={`sup-scope__tab ${scopeTab === 'domestic' ? 'is-active' : ''}`}
-                  onClick={() => setScopeTab('domestic')}
-                >
-                  <i className="ri-home-4-line" />Domestic<span className="sup-scope__word"> Supplier</span>
-                </button>
-                <button
-                  type="button"
-                  className={`sup-scope__tab ${scopeTab === 'international' ? 'is-active' : ''}`}
-                  onClick={() => setScopeTab('international')}
-                >
-                  <i className="ri-global-line" />International<span className="sup-scope__word"> Supplier</span>
-                </button>
+          </div>
+
+          {/* .sup-fig stays the ancestor: the category / compliance pills and
+              the Refine panel are styled under it. */}
+          <div className="sup-fig">
+          <div className="smc-table-card dt-root hr-dt" data-accent="violet">
+            <div className="smc-toolbar">
+              {/* The Customer list's tab rail (QA #47) — same component, same
+                  violet HR-style pills, a count on each tab. */}
+              <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+                <div className="dt-tabs" role="tablist">
+                  <button type="button" role="tab" aria-selected={scopeTab === 'domestic'} className={`dt-tab ${scopeTab === 'domestic' ? 'on' : 'off'}`} onClick={() => setScopeTab('domestic')}>
+                    <i className="ri-home-4-line" /> Domestic Supplier
+                    {facets?.scope && <span className="dt-tab-count">{facets.scope.domestic}</span>}
+                  </button>
+                  <button type="button" role="tab" aria-selected={scopeTab === 'international'} className={`dt-tab ${scopeTab === 'international' ? 'on' : 'off'}`} onClick={() => setScopeTab('international')}>
+                    <i className="ri-global-line" /> International Supplier
+                    {facets?.scope && <span className="dt-tab-count">{facets.scope.international}</span>}
+                  </button>
+                </div>
               </div>
-              <div className="sl-search">
-                <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <div className="dt-search">
+                <i className="ri-search-line dt-search-icon" />
                 <input
-                  type="text"
+                  type="search"
                   name="supplier-list-search"
                   autoComplete="new-password"
                   data-lpignore="true"
@@ -957,12 +992,11 @@ useEffect(() => {
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 {search && (
-                  <button type="button" className="sl-search-clear" title="Clear search" onClick={() => setSearch('')}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => setSearch('')}>
+                    <i className="ri-close-line" />
                   </button>
                 )}
               </div>
-
               <RefineSuppliers
                 open={filterOpen}
                 onOpenChange={setFilterOpen}
@@ -976,98 +1010,92 @@ useEffect(() => {
                 onClear={() => { setCatSel([]); setCompSel([]); }}
               />
             </div>
+            <div className="smc-table-wrap sup-table-wrap">
             {loading || swapping ? (
-              <div className="p-3"><ShimmerTable rows={Math.min(rpp, 12)} cols={isIntlScope ? 14 : 15} /></div>
+              <ShimmerTable rows={Math.min(rpp, 12)} cols={isIntlScope ? 14 : 15} />
             ) : (
-              <>             
-                <div className={`sl-table-scroll${refetching ? ' is-refetching' : ''}`} ref={scrollRef}>
-                  <table className="sl-table">
-                    <thead>
+              <>
+                <div className={`table-responsive${refetching ? ' is-refetching' : ''}`} ref={scrollRef}>
+                  <table className={`table align-middle table-nowrap mb-0 dt-table${isIntlScope ? ' is-intl' : ''}`}>
+                    <thead className="table-light">
                       <tr>
-                        <th className="sl-th-2line sl-col-c"><span>Sr</span><span>No</span></th>
-                        <th className="sl-th-2line sl-col-c"><span>Supplier</span><span>Code</span></th>
+                        <th style={{ textAlign: 'center' }}>Sr No</th>
+                        <th style={{ textAlign: 'center' }}>Supplier Code</th>
                         <th>Supplier Name</th>
-                        <th className="sl-col-c">Supplier Type</th>
-                        <th className="sl-th-left">Segment</th>
-                        <th className="sl-col-c">Country</th>
-                        <th className="sl-col-c">State</th>
-                        {!isIntlScope && (
-                          <th className="sl-th-2line sl-col-c"><span>GST State</span><span>Code</span></th>
-                        )}
-                        <th className="sl-th-left">Contact Person</th>
-                        <th className="sl-col-c">Contact No</th>
-                        <th className="sl-th-email">Email</th>
+                        <th>Supplier Type</th>
+                        <th>Segment</th>
+                        <th style={{ textAlign: 'center' }}>Country</th>
+                        <th>State</th>
+                        {!isIntlScope && <th style={{ textAlign: 'center' }}>GST State Code</th>}
+                        <th>Contact Person</th>
+                        <th>Contact No</th>
+                        <th>Email</th>
                         <th>Supplier Category</th>
-                        <th>Compliant Status</th>
-                        <th className="sl-th-2line sl-col-c"><span>Mapped</span><span>Products</span></th>
-                        <th>Actions</th>
+                        <th style={{ textAlign: 'center' }}>Compliant Status</th>
+                        <th style={{ textAlign: 'center' }}>Mapped Products</th>
+                        <th style={{ textAlign: 'center' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {pageRows.length === 0 ? (
-                        <tr><td colSpan={isIntlScope ? 14 : 15} className="sl-empty">No suppliers found.</td></tr>
-                      ) : pageRows.map((v, i) => {
+                      {pageRows.map((v, i) => {
                         const kind = typeKind(v.type);
+                        const tp = TYPE_PILL[kind];
                         const flag = supplierCategory(v.category);
                         const compliance = complianceTone(v.compliance);
                         return (
                           <tr key={v.id}>
-                            <td className="sl-col-c"><span className="sl-sr">{start + i + 1}</span></td>
-                            <td className="sl-col-c"><span className="sl-code">{v.code}</span></td>
-                            <td><Tooltip label={v.companyName}><span className="sl-name sl-trunc">{v.companyName}</span></Tooltip></td>
-                            <td className="sl-col-c"><span className={`sl-pill sl-pill--${kind}`}><span className="sl-pill-dot" />{v.type}</span></td>
+                            <td style={{ textAlign: 'center' }}><span className="dt-serial">{start + i + 1}</span></td>
+                            <td style={{ textAlign: 'center' }}><span className="dt-id-chip">{v.code}</span></td>
+                            <td><ClipCell value={v.companyName} className="smc-company" /></td>
                             <td>
-                              <span className="sl-seg-wrap">
-                                {v.segmentItems && v.segmentItems.length > 0 ? (
-                                  <>
-                                    <Tooltip label={v.segments?.[0] ?? v.segmentItems[0].name}>
-                                      <span className="sl-seg sl-trunc sl-seg--withbadge">
-                                        <span className="sl-seg-name">{v.segmentItems[0].name}</span>
-                                        <SegmentBadge status={v.segmentItems[0].reg} style={{ flexShrink: 0 }} />
-                                      </span>
-                                    </Tooltip>
-                                    {v.segmentItems.length > 1 && (
-                                      <Tooltip label={`View all ${v.segmentItems.length} segments`}>
+                              {v.type && v.type !== 'Pending'
+                                ? <span className="smc-type-pill" style={{ background: tp.bg, color: tp.color, borderColor: tp.border }}>{v.type}</span>
+                                : <span className="text-muted">—</span>}
+                            </td>
+                            <td>
+                              {v.segmentItems && v.segmentItems.length > 0 ? (
+                                <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+                                  <Tooltip label={v.segments?.[0] ?? v.segmentItems[0].name}>
+                                    <span className="smc-seg smc-seg--withbadge">
+                                      <span className="smc-seg-name">{v.segmentItems[0].name}</span>
+                                      <SegmentBadge status={v.segmentItems[0].reg} style={{ marginLeft: 0, flexShrink: 0 }} />
+                                    </span>
+                                  </Tooltip>
+                                  {v.segmentItems.length > 1 && (
+                                    <Tooltip label={`View ${v.segmentItems.length - 1} more`}>
                                       <button
                                         type="button"
-                                        className="sl-seg-more"
+                                        className="smc-seg-more"
                                         onClick={(e) => {
                                           const r = e.currentTarget.getBoundingClientRect();
                                           setSegPop({ segments: v.segmentItems ?? [], x: r.left, y: r.bottom + 6, top: r.top });
                                         }}
-                                      >
-                                        +{v.segmentItems.length - 1}
-                                      </button>
-                                      </Tooltip>
-                                    )}
-                                  </>
-                                ) : <span className="sl-seg">—</span>}
-                              </span>
+                                      >+{v.segmentItems.length - 1}</button>
+                                    </Tooltip>
+                                  )}
+                                </span>
+                              ) : <span className="text-muted">—</span>}
                             </td>
-                            <td className="sl-col-c"><span className="sl-country">{v.country || '—'}</span></td>
-                            <td className="sl-col-c"><span className="sl-state">{v.state}</span></td>
+                            <td style={{ textAlign: 'center' }}><ClipCell value={v.country} className="smc-country" /></td>
+                            <td><ClipCell value={v.state} className="smc-country" /></td>
                             {!isIntlScope && (
-                              <td className="sl-col-c">{v.stateCode ? <span className="sl-gstcode">{v.stateCode}</span> : <span className="sl-state">—</span>}</td>
+                              <td style={{ textAlign: 'center' }}>{v.stateCode ? <span className="smc-mono">{v.stateCode}</span> : <span className="text-muted">—</span>}</td>
                             )}
                             <td>
-                              <span className="sl-contact-wrap">
-                                <Tooltip label={v.contactName}><span className="sl-contact sl-trunc">{v.contactName}</span></Tooltip>
+                              <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+                                <ClipCell value={v.contactName} className="smc-contact" />
                                 {v.contacts.length > 1 && (
                                   <Tooltip label={`View all ${v.contacts.length} contacts`}>
-                                  <button
-                                    type="button"
-                                    className="sl-contact-more"
-                                    onClick={() => setContactsTarget(v)}
-                                  >
-                                    +{v.contacts.length - 1}
-                                  </button>
+                                    <button type="button" className="smc-seg-more" onClick={() => setContactsTarget(v)}>
+                                      +{v.contacts.length - 1}
+                                    </button>
                                   </Tooltip>
                                 )}
                               </span>
                             </td>
-                            <td className="sl-col-c"><span className="sl-phone">{v.phone}</span></td>
-                            <td className="sl-td-email"><Tooltip label={v.email}><a className="sl-email sl-trunc" href={`mailto:${v.email}`}>{v.email}</a></Tooltip></td>
-                            <td className="sl-col-cat">
+                            <td><span className="smc-mono">{v.phone || '—'}</span></td>
+                            <td><ClipCell value={v.email} className="smc-email" /></td>
+                            <td>
                               {flag
                                 ? (
                                   <span className={`sl-cat ${flag.cls}`}>
@@ -1075,9 +1103,9 @@ useEffect(() => {
                                     {flag.label}
                                   </span>
                                 )
-                                : <Tooltip label="No category set on this supplier yet"><span className="sl-state">—</span></Tooltip>}
+                                : <Tooltip label="No category set on this supplier yet"><span className="text-muted">—</span></Tooltip>}
                             </td>
-                            <td className="sl-col-c">
+                            <td style={{ textAlign: 'center' }}>
                               {compliance
                                 ? (
                                   <span className={`sl-compliant ${compliance.cls}`}>
@@ -1089,57 +1117,56 @@ useEffect(() => {
                                     {compliance.label}
                                   </span>
                                 )
-                                : <Tooltip label="No compliance behaviour set on this supplier yet"><span className="sl-state">—</span></Tooltip>}
+                                : <Tooltip label="No compliance behaviour set on this supplier yet"><span className="text-muted">—</span></Tooltip>}
                             </td>
-                            <td className="sl-col-c">
+                            <td style={{ textAlign: 'center' }}>
                               {v.mappedProducts > 0 ? (
                                 <Tooltip label="View mapped products">
-                                  <button
-                                    type="button"
-                                    className="sl-prodcount"
-                                    onClick={() => setMappedTarget(v)}
-                                  >
+                                  <button type="button" className="smc-cons sup-cons-btn" onClick={() => setMappedTarget(v)}>
                                     {v.mappedProducts}
                                   </button>
                                 </Tooltip>
                               ) : (
                                 <Tooltip label="No products mapped to this supplier yet">
-                                  <span className="sl-prodcount sl-prodcount--zero">0</span>
+                                  <span className="smc-cons sup-cons-zero">0</span>
                                 </Tooltip>
                               )}
                             </td>
-                            <td>
-                              <div className="sl-actions">
+                            <td style={{ textAlign: 'center' }}>
+                              <div className="d-inline-flex align-items-center gap-2 justify-content-center">
                                 <Tooltip label="Edit Supplier">
-                                <button
-                                  type="button"
-                                  className="sl-act-btn sl-act-btn--edit"
-                                  onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }}
-                                >
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-                                </button>
+                                  <button
+                                    type="button"
+                                    aria-label="Edit Supplier"
+                                    className="smc-act smc-act-edit d-inline-flex align-items-center justify-content-center"
+                                    onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }}
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                                  </button>
                                 </Tooltip>
-                                <button
-                                  type="button"
-                                  className="sl-evault-btn"
-                                  onClick={() => setVaultTarget({
-                                    id: v.code,
-                                    db_id: v.id,
-                                    company: v.companyName,
-                                    risk: v.risk,
-                                    segment: v.segment,
-                                    segments: v.segments,
-                                    segmentItems: v.segmentItems,
-                                    country: v.country,
-                                    type: v.type,
-                                    contact: v.contactName,
-                                    contactCity: v.city,
-                                    email: v.email && v.email !== '—' ? v.email : undefined,
-                                  })}
-                                >
-                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg>
-                                  <span>Evidence Vault</span>
-                                </button>
+                                <Tooltip label="Supplier Evidence Vault">
+                                  <button
+                                    type="button"
+                                    aria-label="Supplier Evidence Vault"
+                                    className="smc-act smc-act-vault d-inline-flex align-items-center justify-content-center"
+                                    onClick={() => setVaultTarget({
+                                      id: v.code,
+                                      db_id: v.id,
+                                      company: v.companyName,
+                                      risk: v.risk,
+                                      segment: v.segment,
+                                      segments: v.segments,
+                                      segmentItems: v.segmentItems,
+                                      country: v.country,
+                                      type: v.type,
+                                      contact: v.contactName,
+                                      contactCity: v.city,
+                                      email: v.email && v.email !== '—' ? v.email : undefined,
+                                    })}
+                                  >
+                                    <i className="ri-file-shield-line fs-14" />
+                                  </button>
+                                </Tooltip>
                               </div>
                             </td>
                           </tr>
@@ -1147,12 +1174,13 @@ useEffect(() => {
                       })}
                     </tbody>
                   </table>
+                  {pageRows.length === 0 && <div className="smc-empty py-4">No suppliers found</div>}
                 </div>
-                {/* Outside the scroller: inside it the native horizontal
-                    scrollbar drew under the footer, outside the card. */}
-                <WorklistPager className={refetching ? 'is-refetching' : undefined} total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[10, 25, 50]} />
+                <WorklistPager className={`tc-wl-pag${refetching ? ' is-refetching' : ''}`} total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[10, 25, 50]} />
               </>
             )}
+            </div>
+          </div>
           </div>
           </>)}
          </div>

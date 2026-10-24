@@ -839,3 +839,80 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   border-bottom:1px solid rgba(196,181,253,.22);
   background:#1f0a4a;
 }
+
+/* ── Supplier list on the Customer list's classes (.smc-root / .smc-table-card /
+   .smc-table-wrap / .dt-table). Only what differs from the Customer list lives
+   here: its column budget, the Filter panel's wrapper and the pager. ───────── */
+
+/* Filter sits in .sl-refine (it anchors the Refine panel) — stretch it to the
+   rail height like the Customer list's bare Filter button. */
+/* The search bar's visible field is 40px (drawn 4px inside its 48px track),
+   so Filter stands 44px and centres on it. */
+.smc-root .smc-toolbar .sl-refine { display: flex; align-items: center; flex-shrink: 0; }
+.smc-root .smc-toolbar .sl-refine > .sl-refine-btn { height: 44px; min-height: 44px; }
+
+/* 15 columns (14 on International — no GST State Code), not the Customer
+   list's 13, so its nth-child budget is restated. Sums to 100 either way. */
+.sup-fig .smc-table-wrap.sup-table-wrap .table { min-width: 1640px; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(1),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(1)  { width: 3.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(2),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(2)  { width: 5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(3),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(3)  { width: 8.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(4),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(4)  { width: 8.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(5),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(5)  { width: 11%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(6),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(6)  { width: 5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(7),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(7)  { width: 5.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(8),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(8)  { width: 4.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(9),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(9)  { width: 7%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(10), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(10) { width: 6.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(11), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(11) { width: 7%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(12), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(12) { width: 9%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(13), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(13) { width: 8%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(14), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(14) { width: 5.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(15), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(15) { width: 5.5%; }
+/* International: GST's 4.5 goes to State and Email. */
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(1),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(1)  { width: 3.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(2),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(2)  { width: 5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(3),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(3)  { width: 8.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(4),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(4)  { width: 8.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(5),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(5)  { width: 11%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(6),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(6)  { width: 5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(7),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(7)  { width: 7.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(8),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(8)  { width: 7%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(9),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(9)  { width: 6.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(10), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(10) { width: 9.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(11), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(11) { width: 9%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(12), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(12) { width: 8%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(13), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(13) { width: 5.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(14), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(14) { width: 5.5%; }
+
+/* Mapped Products: the Customer list's Consignees count pill, as a button
+   when there is something to open; a zero is greyed rather than violet. */
+.sup-fig .smc-cons.sup-cons-btn { border: 0; cursor: pointer; font-family: inherit; transition: filter .15s, transform .15s; }
+.sup-fig .smc-cons.sup-cons-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.sup-fig .smc-cons.sup-cons-zero { background: #f1f5f9; color: #94a3b8; box-shadow: none; border: 1px solid #e2e8f0; }
+[data-bs-theme="dark"] .sup-fig .smc-cons.sup-cons-zero { background: rgba(255,255,255,.06); color: #94a3b8; border-color: rgba(255,255,255,.12); }
+
+/* Pager inside the card, as the Customer table's worklist footer sits. */
+.sup-fig .smc-table-wrap > .wl-pager { margin: 0; border-radius: 0; flex-shrink: 0; }
+.sup-fig .smc-table-wrap .table-responsive.is-refetching { opacity: .5; pointer-events: none; transition: opacity .14s ease; }
+
+/* Supplier Type / Segment fit (badge check): the type pill ellipsises instead
+   of running into its edge, and the segment NAME gives way so the Reg badge
+   always stays inside the cell — the name's fixed 130px cap pushed the badge
+   past the column on a long name ("Food grade ethanol"). */
+.sup-fig .sup-table-wrap .table tbody td .smc-type-pill {
+  display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
+}
+.sup-fig .sup-table-wrap .table tbody td .smc-seg.smc-seg--withbadge { max-width: 100%; min-width: 0; flex: 0 1 auto; }
+.sup-fig .sup-table-wrap .table tbody td .smc-seg--withbadge .smc-seg-name { max-width: none; min-width: 0; flex: 0 1 auto; }
+.sup-fig .sup-table-wrap .table tbody td .smc-seg--withbadge .seg-reg-badge { flex-shrink: 0; }
+
+/* Category / Compliant pills: a pill wider than its cell showed the CELL's
+   ellipsis as a stray "..." after it. Pill cells clip instead, and the pill
+   itself stays within the cell. Headers wrap to two lines rather than being
+   cut ("MAPPED PRODUCT"). */
+.sup-fig .sup-table-wrap .table tbody td:has(> .sl-cat),
+.sup-fig .sup-table-wrap .table tbody td:has(> .sl-compliant) { text-overflow: clip; }
+.sup-fig .sup-table-wrap .table tbody td > .sl-cat,
+.sup-fig .sup-table-wrap .table tbody td > .sl-compliant { max-width: 100%; overflow: hidden; white-space: nowrap; vertical-align: middle; }
+.sup-fig .sup-table-wrap .table thead.table-light th { white-space: normal; }
