@@ -291,7 +291,9 @@ class HrDocumentSignatureController extends Controller
                 ->first();
             if ($existing) {
                 $existing->load(self::WITH);
-                return response()->json($existing, 200);
+                // Same shape as index(), so the caller can use this row
+                // directly instead of re-fetching the list.
+                return response()->json($this->fillSignerDesignations(collect([$existing]))->first(), 200);
             }
 
             // Resolve workflow signers against real users at SEND time so a
@@ -438,7 +440,7 @@ class HrDocumentSignatureController extends Controller
             $askNow = $this->isParallel($row) ? $resolved : array_slice($resolved, 0, 1);
             $this->notifySignersOfTurn($row, array_column($askNow, 'user_id'), $user?->name);
 
-            return response()->json($row, 201);
+            return response()->json($this->fillSignerDesignations(collect([$row]))->first(), 201);
         });
     }
 

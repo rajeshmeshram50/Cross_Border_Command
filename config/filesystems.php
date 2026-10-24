@@ -17,6 +17,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Document Disk
+    |--------------------------------------------------------------------------
+    |
+    | Where business documents are WRITTEN — box photos, invoice and e-way
+    | attachments, vault uploads. Read it with config('filesystems.documents')
+    | rather than naming a disk at the call site, so one env var moves every
+    | upload instead of a hundred edits.
+    |
+    | It does NOT default to 'default'. That resolves to 'local' when
+    | FILESYSTEM_DISK is unset, and 'local' (storage/app) is not served over
+    | HTTP — photos written there would store fine and then 404 in the
+    | browser. 'public' is the one that is served, and it already switches
+    | its own driver to azure-storage-blob when FILESYSTEM_DISK=azure, so the
+    | cloud case is covered without changing this value at all.
+    |
+    | Reads do not depend on it: P2pFileController::diskHolding() probes this
+    | disk, then 'public', then 'local', so changing it never strands files
+    | already written somewhere else.
+    |
+    */
+
+    'documents' => env('DOCUMENT_DISK', 'public'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |

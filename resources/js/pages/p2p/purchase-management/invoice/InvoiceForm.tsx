@@ -110,7 +110,20 @@ export default function InvoiceForm({
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
           setSpiBranchId(existing.branch_id ?? null);
-          setReached(Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1));
+          /* Resume where the work stopped.
+
+             stage_completed counts FINISHED stages, so it is also the index
+             of the first unfinished one: 2 finished means index 2, Box
+             Packaging. Clamped to the last stage for a submitted invoice
+             (stage_completed 4), which has no index 4 to land on.
+
+             Both pieces of state are set from it on purpose — `reached` is
+             how far the user MAY jump, `stage` is where they ARE. Only the
+             first was restored, so every reopen started at Supplier Details
+             however much had been done. */
+          const resumeAt = Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1);
+          setReached(resumeAt);
+          setStage(resumeAt);
         }
         if (!poId) {
           setPoError('This invoice is not linked to a purchase order.');

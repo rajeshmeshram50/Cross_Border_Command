@@ -157,8 +157,9 @@ class P2pFileController extends Controller
     private function diskHolding(string $path): ?string
     {
         $candidates = array_values(array_unique(array_filter([
+            config('filesystems.documents'),   // where we write today
             config('filesystems.default'),
-            'public',
+            'public',                          // where we wrote before it was configurable
             'local',
         ])));
 

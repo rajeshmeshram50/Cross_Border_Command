@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Api\P2p;
 
 use App\Http\Controllers\Controller;
 use App\Models\P2p\SpiBox;
+use App\Models\P2p\SpiBoxAttachment;
 use App\Models\P2p\SpiBoxItem;
 use App\Models\P2p\SupplierInvoice;
 use App\Services\Inventory\StickerKey;
 use App\Services\P2p\SupplierInvoiceService;
 use Barryvdh\DomPDF\Facade\Pdf;
+use chillerlan\QRCode\Common\EccLevel;
+use chillerlan\QRCode\Output\QRGdImagePNG;
 use chillerlan\QRCode\QRCode;
 use chillerlan\QRCode\QROptions;
 use Illuminate\Http\Request;
@@ -180,10 +183,12 @@ class SpiBoxController extends Controller
             ]);
 
             $this->writeItems($box, $data['items']);
+            $this->storePhotos($request, $box, (int) $user->id);
             $this->svc->log($spi, 'box_created', ['box_id' => $box->id, 'new_value' => $box->box_code, 'stage' => 3]);
 
-            $box->load('items');
+            $box->load(['items', 'attachments']);
             $rows = $this->svc->packingSummary($spi->id);
+            $stage = $this->svc->syncPackingStage($spi);
 
             DB::commit();
 
@@ -191,6 +196,7 @@ class SpiBoxController extends Controller
                 'box'             => $box->toArray() + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
                 'packing_summary' => $rows,
                 'totals'          => $this->svc->packingTotals($rows),
+                'stage_completed' => $stage,
             ]], 201);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -225,10 +231,16 @@ class SpiBoxController extends Controller
             $box->items()->delete();
             $this->writeItems($box, $data['items']);
 
+            /* Photos APPEND — contents above are replaced wholesale, but a
+               re-save must not make the browser re-upload pictures it
+               already sent. Removing one is its own DELETE. */
+            $this->storePhotos($request, $box, (int) $user->id);
+
             $this->svc->log($spi, 'box_updated', ['box_id' => $box->id, 'new_value' => $box->box_code, 'stage' => 3]);
 
-            $box->refresh()->load('items');
+            $box->refresh()->load(['items', 'attachments']);
             $rows = $this->svc->packingSummary($spi->id);
+            $stage = $this->svc->syncPackingStage($spi);
 
             DB::commit();
 
@@ -236,6 +248,7 @@ class SpiBoxController extends Controller
                 'box'             => $box->toArray() + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
                 'packing_summary' => $rows,
                 'totals'          => $this->svc->packingTotals($rows),
+                'stage_completed' => $stage,
             ]], 200);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -273,6 +286,8 @@ class SpiBoxController extends Controller
                row still holds its box_code, so renaming B-004 to B-003 hit
                a constraint violation. */
             $rows = $this->svc->packingSummary($spi->id);
+            // Removing a carton can un-finish stage 3 — the column follows.
+            $stage = $this->svc->syncPackingStage($spi);
 
             DB::commit();
 
@@ -280,6 +295,7 @@ class SpiBoxController extends Controller
                 'deleted_box_id'  => $boxId,
                 'packing_summary' => $rows,
                 'totals'          => $this->svc->packingTotals($rows),
+                'stage_completed' => $stage,
             ]], 200);
         } catch (\Throwable $e) {
             DB::rollBack();
@@ -347,8 +363,12 @@ class SpiBoxController extends Controller
             $spi = $this->findSpi($id);
             $box = $this->findBox($id, $boxId);
 
-            $box->load('items.invoiceItem');
-            $spi->loadMissing('vendor:id,vendor_code,company_name,legal_name');
+            $box->load(['items.invoiceItem', 'putaway']);
+            $spi->loadMissing([
+                'client:id,org_name',
+                'vendor:id,vendor_code,company_name,legal_name',
+                'purchaseOrder:id,code,po_date,procurement_request_code,created_at',
+            ]);
 
             if (!$box->sticker_printed_at) {
                 $box->forceFill(['sticker_printed_at' => now()])->save();
@@ -358,8 +378,9 @@ class SpiBoxController extends Controller
             }
 
             $pdf = Pdf::loadView('pdf.spi-box-sticker', $this->stickerData($spi, $box))
-                // Points, because the blade is laid out in points: 4in x 6in.
-                ->setPaper([0, 0, 288, 432]);
+                // A4 portrait. The blade is budgeted to ~775pt of the 841.9pt
+                // sheet, one page — see its header before changing anything.
+                ->setPaper("a4", "portrait");
 
             DB::commit();
 
@@ -370,72 +391,338 @@ class SpiBoxController extends Controller
         }
     }
 
+    /**
+     * DELETE /p2p/spi/{id}/boxes/{box}/attachments/{attachment}
+     *
+     * Soft delete, and the file stays on disk: a packing photo is evidence
+     * of the condition a carton arrived in, and a dispute can outlive the
+     * row. Scoped through the box so one invoice cannot delete another's.
+     */
+    public function destroyAttachment(Request $request, int $id, int $boxId, int $attachmentId)
+    {
+        $this->tenantUser($request);
+        $spi = $this->findSpi($id);
+        $box = $this->findBox($id, $boxId);
+
+        if (!$spi->isEditable()) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => "{$spi->code} is {$spi->status} and can no longer be packed.",
+            ], 422));
+        }
+
+        $row = SpiBoxAttachment::where('box_id', $box->id)->find($attachmentId);
+        if (!$row) {
+            abort(response()->json(['status' => false, 'message' => 'No such attachment on this box.'], 404));
+        }
+
+        $row->delete();
+        $this->svc->log($spi, 'box_updated', [
+            'box_id' => $box->id, 'old_value' => $row->file_name, 'stage' => 3,
+        ]);
+
+        return response()->json(['status' => true, 'data' => $box->attachments()->get()], 200);
+    }
+
     /* ══════════════════════════ HELPERS ══════════════════════════ */
+
+    /**
+     * Persist whatever came in as photos[] against this box.
+     *
+     * box_item_id stays NULL: the drawer photographs the CARTON, and the
+     * model reads a null there as exactly that. Per-product shots are what
+     * the column is for when a screen starts capturing them.
+     *
+     * The disk comes from config, never a literal — see
+     * config/filesystems.php 'documents'. Hardcoding 'public' works today
+     * only because that disk swaps its own driver for Azure; it would not
+     * survive anyone pointing FILESYSTEM_DISK at s3.
+     */
+    private function storePhotos(Request $request, SpiBox $box, int $userId): int
+    {
+        $files = $request->file('photos');
+        if (!$files) return 0;
+
+        $request->validate([
+            'photos'   => ['array', 'max:12'],
+            'photos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
+        ]);
+
+        $disk  = config('filesystems.documents');
+        $dir   = "p2p/spi/{$box->supplier_invoice_id}/boxes/{$box->id}";
+        $saved = 0;
+
+        foreach ((array) $files as $file) {
+            if (!$file || !$file->isValid()) continue;
+
+            SpiBoxAttachment::create([
+                'box_id'      => $box->id,
+                'box_item_id' => null,
+                'file_path'   => $file->store($dir, $disk),
+                'file_name'   => $file->getClientOriginalName(),
+                'uploaded_by' => $userId,
+            ]);
+            $saved++;
+        }
+
+        return $saved;
+    }
 
     /** Everything the sticker blade renders, resolved once. */
     private function stickerData(SupplierInvoice $spi, SpiBox $box): array
     {
         $items = $box->items;
-
-        // One product reads as itself; several read as a count, because the
-        // carton has no single name.
-        $first    = $items->first()?->invoiceItem?->description;
-        $headline = $items->count() > 1
-            ? $items->count() . ' products'
-            : ($first ?: 'Mixed carton');
-
-        // Capped: a sticker that spills onto page 2 is useless on a carton.
-        $lines = $items->take(6)->map(fn ($i) => [
-            'description' => Str::limit((string) ($i->invoiceItem?->description ?: '—'), 48),
-            'batch'       => $i->batch_no ?: ($i->lot_no ?: '—'),
-            'qty'         => rtrim(rtrim(number_format((float) $i->quantity, 3, '.', ''), '0'), '.'),
-            'uom'         => $i->invoiceItem?->uom ?: '',
-        ])->all();
+        $po    = $spi->purchaseOrder;
 
         $dims = $box->length_cm && $box->width_cm && $box->height_cm
-            ? sprintf('%s x %s x %s cm', (float) $box->length_cm, (float) $box->width_cm, (float) $box->height_cm)
+            ? sprintf('%s x %s x %s', $this->num($box->length_cm), $this->num($box->width_cm), $this->num($box->height_cm))
             : null;
 
+        /* The box's place in its invoice — "1 / 5" on the sticker. Ordered by
+           code so the sequence a packer reads matches the sequence printed. */
+        $codes = $spi->boxes()->orderBy('box_code')->pluck('box_code')->all();
+        $seq   = array_search($box->box_code, $codes, true);
+
+        $put = $box->putaway;
+
         return [
-            'spi'           => $spi,
-            'box'           => $box,
-            'headline'      => $headline,
-            'supplier'      => $spi->vendor?->legal_name ?: $spi->vendor?->company_name,
+            'spi'   => $spi,
+            'box'   => $box,
+            'logo'  => $this->brandLogo(),
+            'brand' => $spi->client?->org_name,
+
+            /* A reprint is not the same label: the floor needs to know which
+               copy it is holding when two are stuck to one carton. */
+            'printNo'   => $this->printCount($box) + 1,
+            'printedOn' => now()->format('d/m/Y H:i'),
+
+            /* ── Business reference ──────────────────────────────────────
+               Three codes, each with its date: where the demand came from,
+               what was ordered against it, and what arrived. A domestic PO
+               has no procurement request, so that slot degrades to a dash
+               rather than vanishing — the label keeps one shape either way. */
+            'refs' => [
+                'procurement' => ['code' => $po?->procurement_request_code, 'date' => $this->day($po?->created_at)],
+                'po'          => ['code' => $po?->code,                     'date' => $this->day($po?->po_date)],
+                'spi'         => ['code' => $spi->code,                     'date' => $this->day($spi->invoice_date)],
+            ],
+
+            /* ── Box condition & product flags ───────────────────────────── */
+            'putawayCode'   => 'PUT-' . $box->box_code,
             'scenarioLabel' => match ($box->scenario) {
-                's1'    => 'One product / one box',
-                's2'    => 'One product / many boxes',
-                's3'    => 'Many products / one box',
+                's1'    => '1 Product → 1 Box',
+                's2'    => '1 Product → Multiple Boxes',
+                's3'    => 'Multiple Products → 1 Box',
                 default => (string) $box->scenario,
             },
-            'lines'      => $lines,
-            'hidden'     => max(0, $items->count() - 6),
-            'totalQty'   => rtrim(rtrim(number_format((float) $items->sum('quantity'), 3, '.', ''), '0'), '.'),
-            'volumetric' => $box->volumetricWeightKg(),
-            'dims'       => $dims,
-            'packedOn'   => $box->created_at?->format('d M Y'),
-            'printedOn'  => now()->format('d M Y H:i'),
+            'boxQty'    => $this->num($items->sum('quantity')) . ' ' . ($items->first()?->invoiceItem?->uom ?: 'PCS'),
+            'dims'      => $dims,
+            'netWeight' => $box->net_weight_kg   ? $this->num($box->net_weight_kg) . ' kg'   : null,
+            'grossWeight' => $box->gross_weight_kg ? $this->num($box->gross_weight_kg) . ' kg' : null,
+            'conditionLabel' => match ($box->condition) {
+                'perfect' => 'Perfect Condition',
+                'minor'   => 'Minor Damage',
+                'major'   => 'Major Damage',
+                'severe'  => 'Severe Damage',
+                default   => ucfirst((string) $box->condition),
+            },
+            'flags' => $this->boxFlags($box),
+
+            /* ── Box location details ────────────────────────────────────── */
+            'place' => $this->placement($put),
+
+            /* ── Receiving check ────────────────────────────────────────── */
+            'receiving' => $this->receiving($spi, $box),
+
+            'boxNo'      => $seq === false ? 1 : $seq + 1,
+            'totalBoxes' => count($codes) ?: 1,
+
             /* A signed URL, not bare text — the same payload the Inventory
                labels carry, so one scanner reads every label in the building.
                A stranger's camera OPENS it and meets "Device blocked"; a bare
                id would just be shown to them. Carries the box ID, because
                B-001 exists on almost every SPI. */
-            'qr'         => $this->qr($url = StickerKey::url('BOX', $box->id, $spi->client_id)),
-            'qrUrl'      => $url,
+            'qr'    => $this->qr($url = StickerKey::url('BOX', $box->id, $spi->client_id)),
+            'qrUrl' => $url,
         ];
     }
 
-    /** A base64 PNG dompdf can embed. Null when it cannot be built — the
-     *  sticker still prints, with the code in text, rather than failing. */
+    /** Trailing zeros off a decimal column: 5.000 reads as 5, 5.600 as 5.6. */
+    private function num($v): string
+    {
+        return rtrim(rtrim(number_format((float) $v, 3, '.', ''), '0'), '.') ?: '0';
+    }
+
+    private function day($v): ?string
+    {
+        if (!$v) return null;
+
+        return ($v instanceof \DateTimeInterface ? \Carbon\Carbon::instance($v) : \Carbon\Carbon::parse($v))->format('d/m/Y');
+    }
+
+    /** Which copy of this label is being printed. */
+    private function printCount(SpiBox $box): int
+    {
+        return (int) DB::table('p2p_spi_activities')
+            ->where('box_id', $box->id)
+            ->where('event', 'sticker_printed')
+            ->count();
+    }
+
+    /**
+     * Cold chain / hazardous / stacking, as the floor has to act on them.
+     *
+     * The flags live per ITEM, not per box, so the box carries a flag if any
+     * item in it does — a carton with one hazardous product is a hazardous
+     * carton. Stacking is the opposite: every item must allow it.
+     */
+    private function boxFlags(SpiBox $box): array
+    {
+        $ids = $box->items
+            ->flatMap(fn ($i) => is_array($i->flags) ? $i->flags : (array) json_decode((string) $i->flags, true))
+            ->filter()->unique()->values();
+
+        $behaviours = $ids->isEmpty() ? collect() : DB::table('inventory_product_flags')
+            ->whereIn('id', $ids)->pluck('behaviour');
+
+        $cold = $behaviours->contains('cold_chain') || $box->temp_min_c !== null || $box->temp_max_c !== null;
+        $temp = $box->temp_min_c !== null && $box->temp_max_c !== null
+            ? sprintf('%s to %s °C', $this->num($box->temp_min_c), $this->num($box->temp_max_c))
+            : null;
+
+        $stackable = $box->is_stackable !== null
+            ? (bool) $box->is_stackable
+            : !$box->items->contains(fn ($i) => !$i->is_stackable);
+
+        return [
+            /* Named for what the storeman does with it, not for the flag that
+               set it: a box with no cold-chain product still needs a shelf,
+               and "No" told him nothing about which one. */
+            'storage'   => $cold ? ('COLD CHAIN' . ($temp ? ' / ' . $temp : '')) : 'AMBIENT / NORMAL STORAGE',
+            'hazardous' => $behaviours->contains('hazardous') ? 'Yes' : 'No',
+            'stacking'  => $stackable ? 'Stackable' : 'Do Not Stack',
+            'fragile'   => $behaviours->contains('fragile'),
+        ];
+    }
+
+    /** The allocated location, named the way the Inventory labels name it. */
+    private function placement($put): array
+    {
+        $empty = ['warehouse' => null, 'whName' => null, 'whType' => null, 'zone' => null,
+                  'rack' => null, 'shelf' => null, 'path' => null, 'allocatedOn' => null];
+
+        if (!$put || !$put->warehouse_id) return $empty;
+
+        $wh   = DB::table('inventory_warehouses')->where('id', $put->warehouse_id)->first(['code', 'wh_name', 'wh_type']);
+        $zone = $put->zone_id ? DB::table('inventory_zones')->where('id', $put->zone_id)->value('code') : null;
+        $rack = $put->rack_id ? DB::table('inventory_racks')->where('id', $put->rack_id)->value('code') : null;
+
+        // A shelf has no code column — it is its rack's code plus the level.
+        $shelf = null;
+        if ($put->shelf_id) {
+            $level = DB::table('inventory_shelves')->where('id', $put->shelf_id)->value('level_no');
+            $shelf = $level === null ? null : ($rack ?: 'RC-???') . '-SH-' . str_pad((string) $level, 2, '0', STR_PAD_LEFT);
+        }
+
+        return [
+            'warehouse'   => $wh?->code,
+            'whName'      => $wh?->wh_name,
+            'whType'      => $wh?->wh_type ? strtoupper($wh->wh_type) : null,
+            'zone'        => $zone,
+            'rack'        => $rack,
+            'shelf'       => $shelf,
+            'path'        => implode(' / ', array_filter([$zone, $rack, $shelf])) ?: null,
+            'allocatedOn' => $this->day($put->assigned_at ?: $put->created_at),
+        ];
+    }
+
+    /**
+     * What the gate recorded when this carton came in.
+     *
+     * There is no GRN table yet, so each line is derived from what packing
+     * already wrote: when and by whom the box was raised, whether what was
+     * packed tallies with the invoice, and the condition the packer set.
+     * NEXT STAGE is fixed at GRN because that is the only stage after
+     * put-away — revisit when the GRN module lands.
+     */
+    private function receiving(SupplierInvoice $spi, SpiBox $box): array
+    {
+        $by = $box->created_by
+            ? DB::table('users')->where('id', $box->created_by)->value('employee_code')
+            : null;
+
+        /* Packed against invoiced, per line. Over-packing is the variance
+           that matters — it means the carton holds stock the invoice never
+           billed, which is what a GRN would reject. */
+        $invoiced = $box->items->pluck('supplier_invoice_item_id')->filter()->unique();
+        $matched  = true;
+        if ($invoiced->isNotEmpty()) {
+            $billed = DB::table('p2p_supplier_invoice_items')->whereIn('id', $invoiced)->pluck('qty_spi', 'id');
+            foreach ($box->items as $i) {
+                $cap = (float) ($billed[$i->supplier_invoice_item_id] ?? 0);
+                if ($cap > 0 && (float) $i->quantity > $cap) { $matched = false; break; }
+            }
+        }
+
+        return [
+            'onDate'   => $this->day($box->created_at),
+            'onTime'   => $box->created_at?->format('H:i'),
+            'by'       => $by,
+            'spiCheck' => $matched ? 'MATCHED' : 'VARIANCE',
+            'physical' => $box->condition === 'perfect' ? 'NO DAMAGE' : strtoupper($this->conditionWord($box->condition)),
+            'next'     => 'GRN',
+        ];
+    }
+
+    private function conditionWord(?string $c): string
+    {
+        return match ($c) {
+            'minor'  => 'Minor Damage',
+            'major'  => 'Major Damage',
+            'severe' => 'Severe Damage',
+            default  => (string) $c,
+        };
+    }
+
+    /** The printed brand mark, inlined because dompdf cannot fetch a URL. */
+    private function brandLogo(): ?string
+    {
+        try {
+            $path = public_path('images/igc-logo-invoice.png');
+
+            return is_file($path)
+                ? 'data:image/png;base64,' . base64_encode(file_get_contents($path))
+                : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * A base64 PNG dompdf can embed. Null when it cannot be built — the
+     * sticker still prints, with the code in text, rather than failing.
+     *
+     * The option NAMES matter: php-qrcode v6 reads outputInterface and
+     * outputBase64, and QROptions silently drops keys it does not know. The
+     * v5 spelling ('outputType' => 'png', 'imageBase64' => true) therefore
+     * produced an SVG, which dompdf cannot size — the sticker ran to three
+     * pages until this was caught. If you change this, check the rendered
+     * payload still starts with 'data:image/png'.
+     *
+     * Scale 6 is deliberate oversampling: 342px shown at 116pt is ~212 DPI,
+     * which matches a thermal head. Rendering at display size instead would
+     * halve that and the modules blur.
+     */
     private function qr(?string $value): ?string
     {
         if (!$value) return null;
 
         try {
             return (new QRCode(new QROptions([
-                'eccLevel'    => 3,        // H — a scuffed carton label still reads
-                'scale'       => 6,
-                'imageBase64' => true,
-                'outputType'  => 'png',
+                'eccLevel'        => EccLevel::H,   // a scuffed carton label still reads
+                'scale'           => 6,
+                'outputInterface' => QRGdImagePNG::class,
+                'outputBase64'    => true,
             ])))->render($value);
         } catch (\Throwable) {
             return null;

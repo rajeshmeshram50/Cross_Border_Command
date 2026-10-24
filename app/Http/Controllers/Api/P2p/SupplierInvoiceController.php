@@ -9,6 +9,7 @@ use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiPoFulfilment;
 use App\Models\P2p\SpiPutaway;
 use App\Models\P2p\SupplierInvoice;
+use App\Models\P2p\SupplierInvoiceItem;
 use App\Services\P2p\SupplierInvoiceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -554,7 +555,7 @@ class SupplierInvoiceController extends Controller
     {
         foreach ($files as $key => $path) {
             if (!str_ends_with($key, '_path') || !$path) continue;
-            try { Storage::disk('public')->delete($path); } catch (\Throwable) { /* nothing to do */ }
+            try { Storage::disk(config('filesystems.documents'))->delete($path); } catch (\Throwable) { /* nothing to do */ }
         }
     }
 
@@ -1296,17 +1297,81 @@ class SupplierInvoiceController extends Controller
      * rather than a list. A new upload therefore replaces the old one; the
      * caller removes what it replaced once the save has committed.
      */
+    /**
+     * PUT /p2p/spi/{id}/stage-3 — packing is finished.
+     *
+     * Stage 3 is the one stage whose work happens over MANY requests (a box
+     * at a time), so unlike stages 1 and 2 there is no natural save to hang
+     * the stamp on. Hanging it on the box save instead would be wrong twice:
+     * saving box 3 of 10 does not finish the stage, and deleting a box would
+     * then have to walk the stamp back.
+     *
+     * The completeness rule is enforced HERE and not only in the wizard: the
+     * browser's check is a courtesy, this is the one that holds when the call
+     * arrives from anywhere else.
+     *
+     * max(), never a plain 3 — a re-visit from stage 4 must not demote an
+     * invoice that is already further along.
+     */
+    public function completeStage3(Request $request, int $id)
+    {
+        $user = $this->tenantUser($request);
+        $spi  = $this->findSpi($id);
+
+        $rows   = $this->svc->packingSummary($spi->id);
+        $totals = $this->svc->packingTotals($rows);
+
+        // An invoice with no lines is not "fully packed", it is empty —
+        // every() is true over nothing, so say so before trusting it.
+        if (!$rows) {
+            abort(response()->json([
+                'status'  => false,
+                'message' => "{$spi->code} has no products to pack.",
+            ], 422));
+        }
+
+        if (!$totals['fully_packed']) {
+            $short = collect($rows)->filter(fn ($r) => (float) $r['qty_pending'] > 0.001)->values();
+            $names = SupplierInvoiceItem::whereIn('id', $short->pluck('supplier_invoice_item_id'))
+                ->pluck('description', 'id');
+            $list  = $short->take(5)
+                ->map(fn ($r) => $names[$r['supplier_invoice_item_id']] ?? "item #{$r['supplier_invoice_item_id']}")
+                ->implode(', ');
+
+            abort(response()->json([
+                'status'  => false,
+                'message' => $short->count() === 1
+                    ? "{$list} is not fully boxed. Box every unit before moving on."
+                    : $short->count() . ' products are not fully boxed: ' . $list
+                        . ($short->count() > 5 ? ' …' : '') . '.',
+                'pending' => $short->all(),
+            ], 422));
+        }
+
+        /* The box saves already moved the column — this endpoint exists so
+           Next has something to await and something to be refused by, not
+           because the stamp depends on it. Same rule either way. */
+        if ($this->svc->syncPackingStage($spi) === 3 && !$spi->wasRecentlyCreated) {
+            $spi->forceFill(['updated_by' => $user->id])->save();
+            $this->svc->log($spi, 'packed', ['stage' => 3]);
+        }
+
+        return response()->json(['status' => true, 'data' => $spi->refresh()], 200);
+    }
+
     private function storeAttachments(Request $request, SupplierInvoice $spi): array
     {
         $dir  = "p2p/spi/{$spi->id}";
         $data = [];
 
+        $disk = config('filesystems.documents');
+
         if ($f = $request->file('invoice_file')) {
-            $data['invoice_file_path'] = $f->store($dir, 'public');
+            $data['invoice_file_path'] = $f->store($dir, $disk);
             $data['invoice_file_name'] = $f->getClientOriginalName();
         }
         if ($f = $request->file('eway_file')) {
-            $data['eway_file_path'] = $f->store($dir, 'public');
+            $data['eway_file_path'] = $f->store($dir, $disk);
             $data['eway_file_name'] = $f->getClientOriginalName();
         }
 
