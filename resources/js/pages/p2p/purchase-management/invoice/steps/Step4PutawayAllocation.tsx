@@ -630,7 +630,8 @@ const coreOf = (b: SpiBox | undefined) => {
 
 /** The note the packer left, if any. */
 const noteOf = (b: SpiBox | undefined): string | null => {
-  const t = String(b?.items?.[0]?.remark_note ?? '').trim();
+  const t = String(b?.items?.[0]?.remark_note ?? '')
+    .split(' · ').filter(p => !p.trim().startsWith('Cold chain')).join(' · ').trim();
   return t && t !== '—' ? t : null;
 };
 
