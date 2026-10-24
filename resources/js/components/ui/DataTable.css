@@ -445,11 +445,17 @@
 /* Toolbars with NO right-hand actions group — Employee, Leave, Attendance.
    `.dt-toolbar-actions` is what normally claims the right edge via
    margin-left:auto; with no actions present nothing did, so the search sat
-   glued to the tabs with a wide dead band after it. The search takes that role
-   instead — and since the Filter button now follows it, the auto margin on the
-   search pushes the whole search + Filter pair right as one group. */
-.dt-toolbar:not(:has(.dt-toolbar-actions)) .dt-search {
+   glued to the tabs with a wide dead band after it. Whichever of the right-hand
+   group comes FIRST takes that role — Filter, else the filter selects, else
+   the search — and the later ones give the margin back, so the group travels
+   as one block instead of the button staying pinned to the tabs while the
+   search floats off to the right edge (Leave Management). */
+.dt-toolbar:not(:has(.dt-toolbar-actions)) :is(.dt-filter-btn, .dt-toolbar-filters, .dt-search) {
   margin-left: auto;
+}
+.dt-toolbar .dt-filter-btn ~ :is(.dt-toolbar-filters, .dt-search),
+.dt-toolbar .dt-toolbar-filters ~ .dt-search {
+  margin-left: 0;
 }
 .dt-search:focus-within {
   border-color: var(--dt-a-400);
@@ -1240,6 +1246,88 @@
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-sort { opacity: .55; }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-sort.on { opacity: 1; color: var(--dt-a-600); }
+/* A 12-column row when the toolbar carries a TITLE and no tabs:
+ *
+ *   |------------ 6 ------------|------ 3 ------|-------- 9 --------|
+ *   | title + subtitle          | filter        | search            |
+ *
+ * The right half is itself split 3/9, so the filter is a quarter of it and the
+ * search the rest — 12.5% and 37.5% of the whole row. Percentages rather than
+ * a grid because the toolbar is still a flex row on the tabbed pages, and one
+ * layout mode for both would mean two sets of rules to keep in step.
+ *
+ * Gaps: the row's column-gap is 10px and there are two of them, so each column
+ * gives back its share.
+ *
+ * Scoped with :has() to toolbars WITHOUT tabs — where tabs are present they
+ * own the left side and the old elastic behaviour is right. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) {
+  flex-wrap: nowrap;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-title {
+  flex: 0 0 calc(50% - 10px);
+  min-width: 0;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-toolbar-filters {
+  flex: 0 0 calc(12.5% - 5px);
+  min-width: 0;
+  margin-left: 0;
+}
+/* The select fills its three columns instead of its own inline min-width. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-toolbar-filters > div {
+  flex: 1 1 auto; min-width: 0 !important;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-search {
+  flex: 1 1 auto;
+  max-width: none;
+  margin-left: 0;
+}
+
+/* The toolbar's title block, matched to the page header strip above it:
+   14.5px title over a 10px subtitle, the same pair .cstrip__title and
+   .cstrip__sub use. It ran 17px, which read as a second page heading
+   competing with the real one a few pixels higher. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-title-main { font-size: 14.5px; }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-title-sub { font-size: 10px; }
+
+/* 10px between toolbar controls. The base is `gap: 10px 12px`, so the column
+   gap was 12 — close enough to pass unnoticed, far enough to read as a
+   different spacing from the 10px everywhere else in the row. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar { column-gap: 10px; }
+
+/* The search, and any filters sitting beside it, hug the RIGHT; the title block
+   or tabs keep the left. Whichever of the two comes first takes the auto
+   margin — the sibling rule cancels it on the search when filters precede it,
+   so the pair stays together instead of splitting across the row. */
+.dt-toolbar-filters { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+.dt-search { margin-left: auto; }
+.dt-toolbar-filters ~ .dt-search { margin-left: 0; }
+/* One 40px control height across the HRMS toolbars.
+ *
+ * The row held three at once: 34px tabs in a 42px rail, a 42px search, and
+ * 37px buttons. Scoped to the HRMS selector already used in this file, so
+ * Sales, CLM and P2P keep the base sizes until they are asked for.
+ *
+ * Vertical padding is zeroed wherever a control sized itself by padding —
+ * height alone does not win against it. The rail is 48px: 40px of tab plus its
+ * own 3px inset and 1px border on each side. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab {
+  height: 40px; padding-top: 0; padding-bottom: 0;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabrail {
+  min-height: 48px; align-items: center;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search {
+  height: 40px; min-height: 40px;
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-filter-btn,
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar .master-select-toggle,
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar-actions > button,
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar-actions > .btn,
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar-actions > .dropdown > button {
+  height: 40px; min-height: 40px;
+  padding-top: 0; padding-bottom: 0;
+}
 /* The search field is 42px for every module now, on the base rule — it used to
    be 42px here only when an actions group or Filter button was present, and
    37px otherwise, so a plain tabs-and-search toolbar sat 5px short of its own

@@ -2856,6 +2856,10 @@
 .cand-pill-btn {
   display: inline-flex; align-items: center; gap: 7px;
 
+  /* border-box so the 1px border is INSIDE the 40px. Without it the border is
+     added on top and the button renders 42px — 2px taller than the tabs and
+     toolbar controls it sits beside. */
+  box-sizing: border-box;
   height: 40px;
   padding: 0 16px;
   border-radius: 10px;
@@ -8951,14 +8955,22 @@
 
 .att-date-nav {
   display: inline-flex; align-items: center; gap: 4px;
+  /* 48 outside, 40 inside — the same pair the tab rail uses. 48 less 3px of
+     padding and 1px of border on each side is exactly 40, so the controls
+     fill it with no slack. The wrapper is pinned too: the picker's toggle
+     was already fixed, but the element around it was not, which is what
+     pushed the box to 50. */
+  box-sizing: border-box;
+  height: 48px;
   padding: 3px;
   border-radius: 10px;
   background: #ffffff;
   border: 1px solid #e5e7eb;
 }
+.att-date-nav .master-datepicker-wrap { height: 40px; min-height: 40px; display: inline-flex; align-items: center; }
 [data-bs-theme="dark"] .att-date-nav { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.10); }
 .att-date-nav-btn {
-  width: 30px; height: 32px;
+  width: 34px; height: 40px;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 8px;
   background: transparent; border: 0;
@@ -8971,8 +8983,8 @@
 .att-date-nav-btn i { font-size: 16px; }
 .att-date-nav-pick { min-width: 168px; }
 .att-date-nav-pick .master-datepicker-toggle {
-  min-height: 32px !important;
-  height: 32px !important;
+  min-height: 40px !important;
+  height: 40px !important;
 
   padding: 4px 12px !important;
   gap: 6px !important;

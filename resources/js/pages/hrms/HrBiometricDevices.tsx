@@ -308,16 +308,22 @@ export default function HrBiometricDevices() {
               </div>
             </div>
           </div>
+          <div className="cand-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+            <button type="button" className="cand-pill-btn cand-pill-btn--violet" onClick={openImport}>
+              <i className="ri-upload-2-line" />Import Punches
+            </button>
+            <button type="button" className="cand-pill-btn cand-pill-btn--primary" onClick={openNew}>
+              <i className="ri-add-line" />Add Device
+            </button>
+          </div>
         </div>
 
         {/* Shared list table (components/ui/DataTable) — search, sortable
-            headers and the rows-per-page pager come from the component; the
-            Import / Add buttons ride in its toolbar and use the module-standard
-            .rec-btn-ghost / .rec-btn-primary pair (same as Holiday's Import
-            Excel + Add Holiday) rather than reactstrap's blue soft-primary
-            pills, which were the odd one out across HRMS. Search stays
-            controlled because /device-terminals filters server-side. */}
+            headers and the rows-per-page pager come from the component. Search
+            stays controlled because /device-terminals filters server-side. */}
         <DataTable<Terminal>
+          title="Biometric Devices"
+          subtitle="Enrolled devices and their sync state"
           data={items}
           columns={columns}
           serial
@@ -333,16 +339,6 @@ export default function HrBiometricDevices() {
             <>
               <i className="ri-fingerprint-line display-6 d-block mb-2" style={{ opacity: .4 }} />
               No biometric devices registered yet
-            </>
-          }
-          toolbarActions={
-            <>
-              <button type="button" className="rec-btn-ghost" onClick={openImport}>
-                <i className="ri-upload-2-line" />Import Punches
-              </button>
-              <button type="button" className="rec-btn-primary" onClick={openNew}>
-                <i className="ri-add-line" />Add Device
-              </button>
             </>
           }
         />

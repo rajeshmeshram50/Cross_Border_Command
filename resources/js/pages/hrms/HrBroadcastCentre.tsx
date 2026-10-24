@@ -401,10 +401,7 @@ export default function HrBroadcastCentre() {
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-send-plane-line" /></div>
                 <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <span className="frm-cstrip-title">Broadcast Centre</span>
-                    <span className="rec-pill" style={{ background: 'rgba(124,58,237,0.16)', color: '#0284c7', fontSize: 11 }}>Communication</span>
-                  </div>
+                  <span className="frm-cstrip-title">Broadcast Centre</span>
                   <div className="frm-cstrip-sub">
                     Create, schedule and manage company-wide announcements with audience targeting and acknowledgement tracking
                   </div>
@@ -439,6 +436,8 @@ export default function HrBroadcastCentre() {
             </Row>
 
             <DataTable<AnnRow>
+              title="All Announcements"
+              subtitle="Company-wide announcements and their reach"
               data={rows}
               columns={columns}
               serial
@@ -466,13 +465,11 @@ export default function HrBroadcastCentre() {
                     : 'No announcements yet — click New Announcement to add one'}
                 </>
               }
-              toolbarActions={
-                <>
-                  <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
-                  <div style={{ minWidth: 130 }}>
-                    <MasterSelect value={typeFilter} onChange={applyFilter(setTypeFilter)} options={[{ value: 'All', label: 'All Types' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All Types" />
-                  </div>
-                </>
+              toolbarFilters={
+                <div style={{ minWidth: 130 }}>
+                  {/* Four fixed options — the in-menu search had nothing to narrow. */}
+                  <MasterSelect searchable={false} value={typeFilter} onChange={applyFilter(setTypeFilter)} options={[{ value: 'All', label: 'All' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All" />
+                </div>
               }
             />
           </div>

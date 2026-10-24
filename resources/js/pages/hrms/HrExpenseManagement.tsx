@@ -1075,12 +1075,7 @@ export default function HrExpenseManagement() {
           <div className="frm-cstrip-left">
             <div className="frm-cstrip-icon"><i className="ri-bank-card-2-line" /></div>
             <div className="min-w-0">
-              <div className="d-flex align-items-center gap-2 flex-wrap">
-                <span className="frm-cstrip-title">Expense Management</span>
-                <span className="hrexp-hero-pill">
-                  <span className="dot" />Live
-                </span>
-              </div>
+              <span className="frm-cstrip-title">Expense Management</span>
               <div className="frm-cstrip-sub">
                 Employee expense claims, approvals, and reimbursements
               </div>
