@@ -23,6 +23,58 @@ type SentRow = AwsContract & { dbId: number; approver: string; clarifications: C
 
 type AwsTab = 'all' | 'approved' | 'pending' | 'rejected' | 'clarify';
 
+/* The tab rail's icons — the same change Case to Case got, on this page's five
+ * tabs. Four coloured dots (green / amber / red / violet) named nothing a
+ * reader could say out loud, and the violet one was the odd member of a cyan
+ * page. Built to the P2P convention (SCOPE_TABS in InvoiceList.tsx): a 15px
+ * glyph on a 24-unit grid at strokeWidth 2.1, round caps and joins, and
+ * stroke="currentColor" so each icon takes its tab's own colour — white when
+ * selected, cyan when not — rather than every state naming a hex.
+ *
+ * "All Contracts" carries the list glyph P2P uses for its own All tab, so the
+ * modules read the same way. */
+const AWS_TAB_ICO = (d: React.ReactNode) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{d}</svg>
+);
+
+const AWS_TABS: Array<{ key: AwsTab; label: string; icon: React.ReactNode }> = [
+  {
+    key: 'all', label: 'All Contracts',
+    icon: AWS_TAB_ICO(<>
+      <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+    </>),
+  },
+  {
+    key: 'approved', label: 'Approved Contracts',
+    icon: AWS_TAB_ICO(<>
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+    </>),
+  },
+  {
+    key: 'pending', label: 'Pending Contracts',
+    icon: AWS_TAB_ICO(<>
+      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+    </>),
+  },
+  {
+    key: 'rejected', label: 'Rejected Contracts',
+    icon: AWS_TAB_ICO(<>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+    </>),
+  },
+  {
+    /* A speech bubble: a clarification is a question asked back, not a state. */
+    key: 'clarify', label: 'Clarifications',
+    icon: AWS_TAB_ICO(<>
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
+    </>),
+  },
+];
+
 const rowSearchText = (c: SentRow): string => {
   const out: string[] = [];
   const walk = (v: unknown) => {
@@ -44,7 +96,12 @@ const matchesSearch = (c: SentRow, q: string): boolean => {
 };
 
 const AP_CFG = {
-  approved: { label: 'Approved', bg: '#E0F7FA', border: '#A7F3D0', color: '#0891b2', dot: '#06b6d4' },
+  /* Green, the same set Agreements To Approve uses (ATA_ST.approved) and the
+     same green the Approved Agreements KPI card above this table is accented
+     with. It used to be a half-conversion — cyan fill and cyan text already
+     carrying the green border — so Approved read as "just another cyan thing"
+     on a cyan page while Pending and Rejected carried their own colour. */
+  approved: { label: 'Approved', bg: '#ECFDF5', border: '#A7F3D0', color: '#059669', dot: '#10B981' },
   pending:  { label: 'Pending',  bg: '#FFFBEB', border: '#FDE68A', color: '#D97706', dot: '#F59E0B' },
   rejected: { label: 'Rejected', bg: '#FEF2F2', border: '#FECACA', color: '#DC2626', dot: '#EF4444' },
 } as const;
@@ -275,7 +332,8 @@ export default function ClmAgreementsSentPage() {
       </div>
 
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
-        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '10px 12px', padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
+        {/* gap 8, the CLM toolbar band — see .clm-tabs-bar in clmShared.ts. */}
+        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
           {/* The employee list's rail — its `hr-dt` skin, not the base .dt-tabs
               rule — on the teal ramp. See the longer note on Case to Case.
               3px of padding puts the rail at 42, which is .ops-search. */}
@@ -283,26 +341,29 @@ export default function ClmAgreementsSentPage() {
             ...(t.dark
               ? { background: 'rgba(8,145,178,.08)', border: '1px solid rgba(8,145,178,.22)' }
               : { background: 'linear-gradient(180deg, #f6feff, #f0fdff)', border: '1px solid #c9f8fd' }) }}>
-            {([
-              ['all', 'All Contracts', null],
-              ['approved', 'Approved Contracts', '#10B981'],
-              ['pending', 'Pending Contracts', '#F59E0B'],
-              ['rejected', 'Rejected Contracts', '#EF4444'],
-              ['clarify', 'Clarifications', '#8B5CF6'],
-            ] as [AwsTab, string, string | null][]).map(([key, label, dot]) => {
+            {AWS_TABS.map(({ key, label, icon }) => {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
+                  /* Hover, which this rail had none of — the tabs are
+                     inline-styled, so a CSS :hover would lose to the inline
+                     background and the only feedback was the cursor. Same wash
+                     Case to Case gets from .ctc-tabrail > button:hover. The
+                     selected tab is skipped: it is already filled, and washing
+                     it would mean restoring a gradient on the way out. */
+                  onMouseEnter={e => { if (active) return; e.currentTarget.style.background = t.dark ? 'rgba(6,182,212,.16)' : 'rgba(6,182,212,.08)'; e.currentTarget.style.color = t.dark ? '#a5f3fc' : '#0891b2'; }}
+                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; }}
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40,
                     border: 0, borderRadius: 8,
                     fontFamily: 'var(--font-sans)', fontSize: 12.5, fontWeight: 650, letterSpacing: 0,
                     cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s',
                     ...(active
-                      ? { background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.25)' }
+                      /* Lift only, no inset. The inset 0 1px 0 rgba(255,255,255,.25)
+                         drew a crisp white line along the tab's top edge, which
+                         reads as a border the selected tab should not have. */
+                      ? { background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(8,145,178,.55)' }
                       : { background: 'transparent', boxShadow: '0 1px 2px rgba(16,24,40,.05)', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
-                  {key === 'all'
-                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#67e8f9' : '#0e7490')} strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                    : <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#94A3B8'), flexShrink: 0 }} />}
+                  {icon}
                   <span>{label}</span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 28, height: 18, padding: '0 6px', borderRadius: 999, fontSize: 10, fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums', border: '1px solid',
                     ...(active
@@ -415,15 +476,28 @@ function SummaryCard({ t, accent, value, label, icon }: {
  * 24px on radius 8, white initials, the top-half sheen as the first background
  * layer, and a short shadow in the accent.
  */
+/**
+ * The initials beside a name in Our Organisation, Counterparties and Created By.
+ *
+ * A pale chip with cyan letters, not white letters on solid cyan. It was
+ * #0891b2 → #0e7490 under a sheen and a drop shadow, which put three dark
+ * blocks on every row and made the table read heavier than the data in it.
+ * This is Case to Case's chip translated to the teal ramp: a 12° gradient
+ * running dark at the bottom, deep-cyan initials, no border and no shadow.
+ *
+ * Measured, because the ramp is not flat: the letters sit on roughly #A3E9F4
+ * at the centre of the box, which is 4.0:1 against #0E7490 — above the 3:1
+ * floor for bold text at this size, and with more headroom than the violet
+ * version on Case to Case (3.6:1). The darkest corner is still 3.7:1.
+ */
 function Avatar({ name }: { name: string }) {
   return (
     <div style={{
-      width: 24, height: 24, borderRadius: 8, flexShrink: 0,
+      width: 24, height: 24, borderRadius: 8, flexShrink: 0, boxSizing: 'border-box',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent 50%), linear-gradient(135deg,#0891b2,#0e7490)',
-      boxShadow: '0 2px 5px rgba(8,145,178,.28), inset 0 1px 0 rgba(255,255,255,.18)',
+      background: 'linear-gradient(12deg,#67E8F9,#DFF9FD)',
     }}>
-      <span style={{ fontSize: 8.5, fontWeight: 800, color: '#fff', letterSpacing: '.01em', lineHeight: 1 }}>{inits(name)}</span>
+      <span style={{ fontSize: 9, fontWeight: 700, color: '#0E7490', letterSpacing: '.01em', lineHeight: 1 }}>{inits(name)}</span>
     </div>
   );
 }
@@ -431,7 +505,7 @@ function Avatar({ name }: { name: string }) {
 function ApprovalBadge({ ap }: { ap: 'approved' | 'pending' | 'rejected' }) {
   const t = useOpsTheme('cyan');
   const c = AP_CFG[ap];
-  const dk = ap === 'approved' ? { bg: 'rgba(8,145,178,.18)', border: 'rgba(6,182,212,.42)', text: '#67e8f9' }
+  const dk = ap === 'approved' ? { bg: 'rgba(16,185,129,.16)', border: 'rgba(16,185,129,.42)', text: '#6ee7b7' }
     : ap === 'pending' ? { bg: 'rgba(245,158,11,.16)', border: 'rgba(245,158,11,.42)', text: '#fcd34d' }
     : { bg: 'rgba(239,68,68,.16)', border: 'rgba(239,68,68,.42)', text: '#fca5a5' };
   const b = t.dark ? dk : { bg: c.bg, border: c.border, text: c.color };
@@ -574,10 +648,10 @@ function StandardTable({ searching, rows, page, setPage, pageSize, onPageSize, t
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <Avatar name={c.cp[0]} />
                           <Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
-                          {extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}
+                          {extra > 0 && <Tooltip label="View all counterparties"><button className="aws-more" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }}>+{extra}</button></Tooltip>}
                         </div>
                       </td>
-                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A7F3D0,#7DD3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #B2EBF2' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0891b2' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_C}><ApprovalBadge ap={ap} /></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
@@ -644,7 +718,7 @@ function RejectedTable({ searching, rows, ata, page, setPage, pageSize, onPageSi
                       <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                       <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                       <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 650, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>{c.title}</div></Tooltip></td>
-                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                      <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FCA5A5,#EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(rej.by)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.dark ? '#fca5a5' : '#7F1D1D', whiteSpace: 'nowrap' }}>{rej.by}</span></div></td>
                       {/* The marker is the bare glyph, not a chip. It used to be
                           a 9px cross inside a 16px filled disc: at that size the
@@ -707,8 +781,8 @@ function ClarifyTable({ rows, searching, page, setPage, pageSize, onPageSize, on
                   <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                   <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 185 }}>{c.title}</div></Tooltip></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(c.approver)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.approver} /><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.approver}</span></div></td>
                   <td style={{ ...TD_L, maxWidth: 210 }}>
                     {round > 1 && <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 20, background: '#F5F0FF', border: '1px solid #DDD6FE', fontSize: 7.5, fontWeight: 700, color: '#7C3AED', marginBottom: 3 }}>Round {round}</span>}
                     <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 210 }}>{latest?.query ?? '—'}</div></Tooltip>
@@ -939,6 +1013,32 @@ const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist 
 const AWS_CSS = `
 @keyframes awsSlideUp { from { opacity:0; transform:translateY(24px) scale(.96); } to { opacity:1; transform:none; } }
 @keyframes awsSpin { to { transform: rotate(360deg); } }
+
+/* ── "+2 more counterparties" ──
+   A solid #0891b2 to #0e7490 disc in white, built to sit beside an initials
+   chip that was also solid cyan. With the chip now pale, the +N was the
+   darkest thing in the row - a secondary "there are more" affordance shouting
+   over the name it belongs to.
+
+   Same family as the chip: cyan-100 fill, the chip's #0E7490 letters, the
+   chip's 8px corner instead of a 20px pill. 7.0:1, and 6.1:1 on hover.
+
+   20px tall against the chip's 24, so it stays subordinate rather than reading
+   as a second avatar. It is a button and had neither hover nor focus ring -
+   the only feedback was the cursor - so both are here. */
+.aws-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 20px; padding: 0 6px; box-sizing: border-box;
+  border: 0; border-radius: 8px;
+  background: #CFFAFE; color: #0E7490;
+  font-family: inherit; font-size: 9px; font-weight: 700; line-height: 1;
+  flex-shrink: 0; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.aws-more:hover { background: #A5F3FC; }
+.aws-more:focus-visible { outline: 2px solid rgba(8,145,178,.55); outline-offset: 1px; }
+[data-bs-theme="dark"] .aws-more { background: rgba(8,145,178,.22); color: #67e8f9; }
+[data-bs-theme="dark"] .aws-more:hover { background: rgba(8,145,178,.32); color: #a5f3fc; }
 
 .aws-thread { scrollbar-width: thin; scrollbar-color: rgba(124,58,237,.34) transparent; }
 .aws-thread::-webkit-scrollbar { width: 5px; }

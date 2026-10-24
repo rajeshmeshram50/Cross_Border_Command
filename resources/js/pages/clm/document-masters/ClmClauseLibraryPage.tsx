@@ -11,7 +11,7 @@ import { CLM_CSS, loadFailed, usePagedList, useAutoFitRows } from '../shared/clm
    the memory exists to avoid. */
 const CLAUSE_TYPES_URL   = '/clm/clause-types';
 const CLAUSE_LIBRARY_URL = '/clm/clause-library';
-import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
+import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
 import { DeleteConf } from '../shared/clmCommon';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -195,11 +195,8 @@ function TypesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></div>
-          <div className="clm-total-lbl">Total Clause Types</div>
-          <div className="clm-total-num">{total}</div>
-        </div>
+        <ClmSubHead title="Clause Types" count={total}
+          sub="The groups reusable legal clauses are filed under." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search clause types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -370,11 +367,8 @@ function LibraryPane({ types, reloadKey, reload }: { types: ClType[]; reloadKey:
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
-          <div className="clm-total-lbl">Total Clauses</div>
-          <div className="clm-total-num">{total}</div>
-        </div>
+        <ClmSubHead title="Clause Library" count={total}
+          sub="Reusable legal clauses that agreement generation draws from." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search clause library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />

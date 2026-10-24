@@ -6,7 +6,7 @@ import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
-import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
+import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import SearchClear from '../../../components/ui/SearchClear';
@@ -19,6 +19,7 @@ import {
   findClmDuplicate,
   useScrollLock,
   ClmSkeletonRows,
+  TruncCell,
 } from '../shared/clmCommon';
 
 /* Central CLM → Authority Master. 3-card faithful port of the prototype. */
@@ -240,10 +241,10 @@ export default function ClmAuthorityPage() {
            search bar never shifts position when it gains or loses focus. */
         @media (max-width: 1280px) { .clm-root .clm-tabs-bar .auth-search { width: 360px; } }
         @media (max-width: 760px)  { .clm-root .clm-tabs-bar .auth-search { width: 100%; } }
-        /* 43.5px — the search height. This is a local copy of .clm-ie-btn
-           (ClmDocImportExport.tsx), so it has to be raised here too. */
+        /* 40px — a tab's height, matching .clm-ie-btn
+           (ClmDocImportExport.tsx), of which this is a local copy. */
         .clm-root .auth-xl-btn {
-          display: inline-flex; align-items: center; gap: 6px; height: 43.5px; padding: 0 12px;
+          display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px;
           border: 1px solid rgba(8,145,178,.35); border-radius: 8px; background: #fff;
           color: #0e7490; font-size: 13px; font-weight: 600; cursor: pointer;
         }
@@ -274,16 +275,20 @@ export default function ClmAuthorityPage() {
 
       {/* ── Card 3: Toolbar + Table ── */}
       <div className="clm-page-card">
-        {/* One group on the left — the count, then Sample Sheet / Import /
-            Export — and the search alone on the right. The count opens the
-            group where Sample Sheet used to start; it was written last. */}
-        <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div className="clm-total">
-            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg></div>
-            <div className="clm-total-lbl">Total Authorities</div>
-            <div className="clm-total-num">{count}</div>
+        {/* Heading on the left, then the search, then the actions — in that
+            order. Sample Sheet / Import / Export used to sit in the heading's
+            own group, so they ran up against the subtitle and split the row
+            into three. Past the search they read as what they are: things you
+            do to the list, at the end of the bar. */}
+        <div className="clm-tabs-bar">
+          <ClmSubHead title="Issuing Authorities" count={count}
+            sub="Certifying and regulatory bodies used across contracts and compliance." />
+          <div className="clm-search auth-search">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input autoComplete="off" type="text" placeholder="Search by authority name, ID or description…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
             onChange={e => { const f = e.target.files?.[0]; if (f) void onImportFile(f); }} />
           <button type="button" className="auth-xl-btn" onClick={downloadSample}>
@@ -299,27 +304,22 @@ export default function ClmAuthorityPage() {
             {exporting ? 'Exporting…' : 'Export'}
           </button>
           </div>
-          <div className="clm-search auth-search">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input autoComplete="off" type="text" placeholder="Search by authority name, ID or description…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
-          </div>
         </div>
 
-        {/* The table card is PINNED to the viewport and the rows scroll inside
-            it — the behaviour DataTable gives HR Holiday under `fitToViewport`.
-            It was `minHeight: fillH`, which is only a floor: the card grew past
-            the screen and the PAGE scrolled, so the pager walked off the bottom
-            and the header row scrolled away with it. Pinning with
-            height + maxHeight and giving the rows their own scroll box keeps
-            the head and the pager still while the rows move. */}
+        {/* minHeight, a floor, which is what every other CLM list uses.
+            This card was PINNED instead (height + maxHeight) with the rows in
+            their own .clm-rows-scroll box, to keep the head and pager still
+            while the rows moved. The cost was a second scrollbar inside the
+            card whenever the rows did not quite fit, and only three pages in
+            the module behaved that way — this one, KYC and DD — so the module
+            read as two different kinds of table. If the pinned behaviour is
+            wanted back, it belongs on every CLM list at once, not on three. */}
         <div className="clm-tab-body has-data">
             <div
               className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`}
               ref={scrollRef}
-              style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}
+              style={{ minHeight: fillH }}
             >
-              <div className="clm-rows-scroll" style={isEmpty ? { flex: '0 0 auto' } : undefined}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -334,7 +334,7 @@ export default function ClmAuthorityPage() {
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
+                      <TruncCell value={r.name} />
                       <td className="clm-td-desc">{r.description}</td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
@@ -363,7 +363,6 @@ export default function ClmAuthorityPage() {
                   ))}
                 </tbody>
               </table>
-              </div>
               {isEmpty && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bShield}</div>

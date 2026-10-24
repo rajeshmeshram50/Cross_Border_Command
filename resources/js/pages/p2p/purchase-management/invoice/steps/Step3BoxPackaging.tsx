@@ -12,7 +12,7 @@ import type { InvoiceDraft } from '../invoice-draft';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
-import type { ProductFlagOption, SpiBox, SpiBoxBody, SpiBoxItem } from '../spi-api';
+import { putId, type ProductFlagOption, type SpiBox, type SpiBoxBody, type SpiBoxItem } from '../spi-api';
 
 const BOX_TABLE_COLUMNS = 11;
 
@@ -589,7 +589,7 @@ export default function Step3BoxPackaging({
     }
     const resolvable = box.items.some(i => codeOfItem.has(i.supplier_invoice_item_id));
     if (!resolvable) {
-      toast.warning('Cannot open this box', `${box.box_code} holds products that are no longer on this invoice.`);
+      toast.warning('Cannot open this box', `${putId(box.box_code)} holds products that are no longer on this invoice.`);
       return;
     }
     setDropped([]);
@@ -622,7 +622,7 @@ export default function Step3BoxPackaging({
   const saveEdit = async (data: BoxSaveData) => {
     if (!editingBox || !onUpdateBox) return;
     if (!editContents.length) {
-      toast.warning('A box cannot be empty', `Delete ${editingBox.box_code} instead of taking everything out of it.`);
+      toast.warning('A box cannot be empty', `Delete ${putId(editingBox.box_code)} instead of taking everything out of it.`);
       return;
     }
     const err = validate(editingBox.scenario, data, editContents, editingBox);
@@ -645,17 +645,17 @@ export default function Step3BoxPackaging({
   const dropFromBox = async (code: string) => {
     if (!editingBox) return;
     if (editContents.length <= 1) {
-      toast.warning('A box cannot be empty', `Delete ${editingBox.box_code} instead of taking everything out of it.`);
+      toast.warning('A box cannot be empty', `Delete ${putId(editingBox.box_code)} instead of taking everything out of it.`);
       return;
     }
     if (editingBox.scenario === 's3' && editContents.length <= 2) {
       toast.warning('A mixed carton needs two products',
-        `${editingBox.box_code} would be left with one product. Delete the box and pack that product on its own instead.`);
+        `${putId(editingBox.box_code)} would be left with one product. Delete the box and pack that product on its own instead.`);
       return;
     }
     const line = lines.find(l => l.code === code);
     const ok = await confirm({
-      title: `Take ${line?.spiName ?? code} out of ${editingBox.box_code}?`,
+      title: `Take ${line?.spiName ?? code} out of ${putId(editingBox.box_code)}?`,
       message: 'It goes back to Pending and can be packed again. The box keeps its code and the rest of its contents.',
       tone: 'danger',
       confirmLabel: 'Take it out',

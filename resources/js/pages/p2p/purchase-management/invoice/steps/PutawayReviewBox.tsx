@@ -17,6 +17,7 @@
  */
 import type { ReactNode } from 'react';
 import { IcoBox, IcoLines, IcoCheck } from '../../../icons';
+import { putId } from '../spi-api';
 
 export interface ReviewProduct {
   code: string;
@@ -178,7 +179,7 @@ export default function PutawayReviewBox({
           <div className="s4rv-hks">
             <div className="s4rv-hk">
               <span>Box ID</span>
-              <b className="s4rv-mono">{boxId}</b>
+              <b className="s4rv-mono">{putId(boxId)}</b>
             </div>
             <div className="s4rv-hk">
               <span>Box Packaging Scenario</span>
@@ -201,7 +202,7 @@ export default function PutawayReviewBox({
           <div className="s4rv-stkwrap">
             <span className="s4rv-stklbl">Box Sticker</span>
             <button type="button" className="s4rv-stk" onClick={onSticker}>
-              <IcoPrinter /> {boxId} Sticker
+              <IcoPrinter /> {putId(boxId)} Sticker
             </button>
           </div>
         </div>

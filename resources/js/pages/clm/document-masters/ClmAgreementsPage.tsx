@@ -5,8 +5,8 @@ import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
-import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
-import { ClmSkeletonRows, DeleteConf, SimpleDescModal } from '../shared/clmCommon';
+import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
+import { ClmSkeletonRows, DeleteConf, SimpleDescModal, TruncCell } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
 import { saveApiBlob } from '../../../utils/downloadFile';
 import ClmAgreementWizardModal from './ClmAgreementWizardModal';
@@ -171,11 +171,8 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></div>
-          <div className="clm-total-lbl">Total Agreement Types</div>
-          <div className="clm-total-num">{rows.length}</div>
-        </div>
+        <ClmSubHead title="Agreement Types" count={rows.length}
+          sub="The kinds of agreement templates are written against." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search agreement types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -205,12 +202,8 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <Tooltip label={r.name}>
-                      <td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td>
-                    </Tooltip>
-                    <Tooltip label={r.description}>
-                      <td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.description}</div></td>
-                    </Tooltip>
+                    <TruncCell value={r.name} />
+                    <TruncCell value={r.description} cellClass="clm-td-desc" />
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         {r.in_use ? (
@@ -412,11 +405,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-          <div className="clm-total-lbl">Total Agreements</div>
-          <div className="clm-total-num">{rows.length}</div>
-        </div>
+        <ClmSubHead title="Agreement Library" count={rows.length}
+          sub="Reusable agreement templates and masters for trade and CLM workflows." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search agreement library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -455,12 +445,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           <span className="clm-code-pill">{r.code}</span>
                         </Tooltip>
                       </td>
-                      <Tooltip label={r.title}>
-                        <td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.title}</div></td>
-                      </Tooltip>
-                      <Tooltip label={r.agreement_type}>
-                        <td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.agreement_type}</div></td>
-                      </Tooltip>
+                      <TruncCell value={r.title} />
+                      <TruncCell value={r.agreement_type} cellClass="clm-td-desc" />
                       <td style={{ textAlign: 'center' }}>
                         <Tooltip label={isHigh ? 'Highly Regulated — needs segment-specific compliance' : 'Less Regulated — applies to all standard segments'}>
                           <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-emerald'}`}>

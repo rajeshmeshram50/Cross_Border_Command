@@ -537,10 +537,10 @@ const SCOPED_CSS = `
 .dr-search svg { position:absolute; left:14px; width:16px; height:16px; stroke:#22d3ee; }
 /* 40px — the tab height, as every CLM search. The padding-built box came out
    at 35px on radius 9 with a 12px input. */
-/* 43.5px, the module-wide search height - .ops-search in useOpsTheme.ts and
-   .clm-search in clmShared.ts. This page builds its own field instead of using
-   either, so it kept the old 48 and stood taller than every other CLM search. */
-.dr-search input { width:100%; height:43.5px; box-sizing:border-box; padding:0 14px 0 38px; border:1.5px solid #cef8fd; border-radius:11px; font-family:inherit; font-size:13px; font-weight:500; color:#0c4a6e; background:linear-gradient(180deg,#f6feff,#f0fdff); outline:none; }
+/* 48px, the module-wide toolbar height - .ops-search in useOpsTheme.ts and
+   .clm-search in clmShared.ts state the same. This page builds its own field
+   rather than using either, so the number has to be repeated here. */
+.dr-search input { width:100%; height:48px; box-sizing:border-box; padding:0 14px 0 38px; border:1.5px solid #cef8fd; border-radius:11px; font-family:inherit; font-size:13px; font-weight:500; color:#0c4a6e; background:linear-gradient(180deg,#f6feff,#f0fdff); outline:none; }
 .dr-search input::placeholder { color:#50c0d8; font-weight:500; }
 .dr-search input:focus { border-color:#0891b2; box-shadow:0 0 0 3px rgba(8,145,178,.14); }
 .dr-rec-badge { font-size:10px; font-weight:700; color:#0e7490; background:rgba(6,182,212,.12); border:1px solid rgba(6,182,212,.28); border-radius:20px; padding:5px 12px; white-space:nowrap; }

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { TooltipPill, placeTip, type Position } from './ui/Tooltip';
+import { TooltipPill, placeTip, visibleTextRect, type Position } from './ui/Tooltip';
 
 /**
  * Every native `title` in the app, drawn as the app's own tooltip.
@@ -43,7 +43,13 @@ export default function NativeTitleTooltips() {
 
   useLayoutEffect(() => {
     if (!tip) { setCoords(null); return; }
-    const trig = triggerRef.current?.getBoundingClientRect();
+    /* visibleTextRect for the same reason Tooltip uses it: a truncating cell's
+       box fills its column, so centring the pill on the box points it at the
+       middle of the column rather than at a short value sitting on the left.
+       Shared with Tooltip rather than copied — the two place the same pill and
+       would otherwise drift apart. */
+    const el = triggerRef.current;
+    const trig = el ? (visibleTextRect(el) ?? el.getBoundingClientRect()) : undefined;
     const pill = pillRef.current?.getBoundingClientRect();
     if (trig && pill) setCoords(placeTip(trig, pill, tip.position, 8));
   }, [tip]);

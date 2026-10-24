@@ -8,10 +8,10 @@ import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import AuthorityBadges from './AuthorityBadges';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
-import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
+import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
-import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
+import { ClmSkeletonRows, TruncCell, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
 import { lazyPage } from '../../../utils/lazyPage';
 
@@ -143,12 +143,16 @@ export default function ClmDdPage() {
       />
 
       <div className="clm-page-card">
-        <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div className="clm-total">
-            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-            <div className="clm-total-lbl">Total DD Documents</div>
-            <div className="clm-total-num">{count}</div>
+        {/* Heading, then the search, then the actions. Sample Sheet / Import /
+            Export used to share the heading's wrapper, so they ran up against
+            the subtitle and split the row into three. */}
+        <div className="clm-tabs-bar">
+          <ClmSubHead title="Due Diligence Documents" count={count}
+            sub="Risk verification records and the checks each party has to clear." />
+          <div className="clm-search clm-search-fixed">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input autoComplete="off" type="text" placeholder="Search DD documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
           <ClmDocImportExport
             endpoint="/clm/dd-documents"
@@ -160,17 +164,14 @@ export default function ClmDdPage() {
             search={debouncedSearch}
             onImported={reload}
           />
-          </div>
-          <div className="clm-search clm-search-fixed">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input autoComplete="off" type="text" placeholder="Search DD documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
-          </div>
         </div>
 
         <div className="clm-tab-body has-data">
-            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ height: fillH, maxHeight: fillH, overflow: 'hidden' }}>
-              <div className="clm-rows-scroll" style={isEmpty ? { flex: '0 0 auto' } : undefined}>
+            {/* minHeight, the same floor every other CLM list uses — see the
+                note on the KYC master. The pinned card plus an inner
+                .clm-rows-scroll gave the rows a second scrollbar that no other
+                CLM list has. */}
+            <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
               <table className="clm-table">
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -185,7 +186,7 @@ export default function ClmDdPage() {
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
+                      <TruncCell value={r.name} />
                       <td className="clm-td-desc"><AuthorityBadges value={r.authority_names} /></td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
@@ -197,7 +198,6 @@ export default function ClmDdPage() {
                   ))}
                 </tbody>
               </table>
-              </div>
               {isEmpty && (
                 <div className="clm-empty" style={{ flex: 1 }}>
                   <div className="clm-empty-ico">{ICO.bDoc}</div>

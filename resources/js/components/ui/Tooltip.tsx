@@ -58,6 +58,49 @@ export function placeTip(trig: DOMRect, tip: DOMRect, position: Position, offset
 }
 
 /**
+ * Where the trigger's TEXT actually is, when the trigger is a plain text
+ * element — otherwise null, and the caller falls back to the element's box.
+ *
+ * A truncating table cell is written as a block-level div with a maxWidth, so
+ * its box fills the column whatever the text says. Centring the pill on that
+ * box put it over the middle of the column while a short value sat at the far
+ * left: hovering "test" in a 190px Agreement Title cell drew the tooltip some
+ * 80px to its right, apparently pointing at nothing.
+ *
+ * A Range over the element's contents measures the glyphs rather than the box.
+ * It is then intersected with the box, because a Range reports the FULL text
+ * width even where overflow:hidden is showing only part of it — without the
+ * clamp a long, ellipsised value would push the pill off past the cell.
+ *
+ * Only for an element whose entire content is one text node: anything with
+ * child elements (an icon button, a chip with a dot) keeps its box, which is
+ * what should be pointed at there.
+ */
+export function visibleTextRect(el: HTMLElement): DOMRect | null {
+  try {
+    if (el.childNodes.length !== 1 || el.firstChild?.nodeType !== 3) return null;
+    const text = (el.textContent ?? '').trim();
+    if (!text) return null;
+
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const t = range.getBoundingClientRect();
+    range.detach?.();
+    if (!t.width || !t.height) return null;
+
+    const box = el.getBoundingClientRect();
+    const left = Math.max(box.left, t.left);
+    const right = Math.min(box.right, t.right);
+    if (right - left < 1) return null;
+
+    return new DOMRect(left, t.top, right - left, t.height);
+  } catch {
+    /* Range unsupported, or a detached node — the box is a fine fallback. */
+    return null;
+  }
+}
+
+/**
  * The pill itself — everything this component looks like, and nothing about
  * what triggers it. `Tooltip` below renders it for a React child; the
  * native-title bridge renders the same one for any element on the page, so
@@ -284,10 +327,11 @@ export default function Tooltip({
   // tooltip's own measured size (so it's centred precisely along the
   // chosen edge). Re-runs on open and on scroll/resize while open.
   const place = () => {
-    const trig = triggerRef.current?.getBoundingClientRect();
+    const el = triggerRef.current;
+    const trig = el?.getBoundingClientRect();
     const tip = tipRef.current?.getBoundingClientRect();
-    if (!trig || !tip) return;
-    setCoords(placeTip(trig, tip, position, offset));
+    if (!el || !trig || !tip) return;
+    setCoords(placeTip(visibleTextRect(el) ?? trig, tip, position, offset));
   };
 
   /* useLayoutEffect, not useEffect: the tooltip renders at -9999 until

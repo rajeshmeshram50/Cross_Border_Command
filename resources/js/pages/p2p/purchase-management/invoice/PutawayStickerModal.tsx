@@ -8,6 +8,7 @@ import type { InvoiceRow } from './types';
 import { useToast } from '../../../../contexts/ToastContext';
 
 import './putaway-sticker.css';
+import { putId } from './spi-api';
 
 const ic = {
   viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2,
@@ -108,7 +109,7 @@ export default function PutawayStickerModal({ box, row, onClose }: {
             <div className="gsm-strip">
               <div className="gsm-strip-l">
                 <span className="gsm-strip-ll">Box ID</span>
-                <span className="gsm-strip-v">{box.id}</span>
+                <span className="gsm-strip-v">{putId(box.id)}</span>
               </div>
               <div className="gsm-strip-r">
                 <span className="gsm-strip-ll">SPI Number</span>

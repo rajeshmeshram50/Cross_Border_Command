@@ -10,6 +10,7 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { bustAllMasterBundles } from '../../../utils/bustMasterBundles';
 import { CLM_CSS, PER_PAGE, paginate, useAutoFitRows } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
+import { TruncCell } from '../shared/clmCommon';
 import BaseTooltip from '../../../components/ui/Tooltip';
 const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import { MasterSelect } from '../../../components/ui/MasterSelect';
@@ -85,7 +86,11 @@ function authsForSegment(segCode: string, allAuths: Authority[]): Authority[] {
 }
 
 const DCP_TABS_CSS = `
-.dcp-pre-table { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 16px 18px 0; margin-bottom: 14px; }
+/* 8 on every side and an 8px gap, the CLM toolbar band — see .clm-tabs-bar in
+   clmShared.ts. This was the loosest of them: 16px 18px 0 with a 14px bottom
+   margin on top of that, so the rail here sat in noticeably more room than the
+   same rail on every other CLM page. */
+.dcp-pre-table { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px; margin-bottom: 0; }
 /* .dcp-pills / .dcp-pill lived here and are gone: the rail is .clm-tabrail
    from clmShared now, so this page has no tab paint of its own to drift. */
 .dcp-pre-table > .clm-tabrail { flex-shrink: 0; }
@@ -108,10 +113,9 @@ const DCP_TABS_CSS = `
 [data-bs-theme="dark"] .clm-table-fill.dcp-fill-empty { background: #0f172a; }
 .dcp-filter-btn {
   display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
-  /* 43.5px and radius 11 — the height of the search beside it. The comment
-     here said 40 and the value said 48; it is the search's number either way,
-     and that number is now 43.5. */
-  height: 43.5px; padding: 0 20px; border-radius: 11px;
+  /* 48px and radius 11 — the height of the tab rail and the search it shares
+     this row with, which is the one toolbar height across CLM. */
+  height: 48px; padding: 0 20px; border-radius: 11px;
   font-size: 12.5px; font-weight: 600; cursor: pointer;
   color: #fff;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
@@ -393,17 +397,19 @@ export default function ClmDcpPage() {
               count spelled into the label as "(16)", no dot and no count pill.
               A count in brackets reads as part of the name; the pill is what
               every other list uses to say how many. */}
+          {/* Icons, not coloured dots — the same glyphs the Segment rail and
+              Case to Case use, so the three rails read alike. */}
           <div className="clm-tabrail">
             <button type="button" className={`clm-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
               All Segments <span className="clm-tab-count">{tierCounts.all}</span>
             </button>
             <button type="button" className={`clm-tab ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
-              <span className="clm-tab-dot" style={{ background: '#ef4444', boxShadow: '0 0 5px rgba(239,68,68,.5)' }} />
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
               Highly Regulated <span className="clm-tab-count">{tierCounts.highly}</span>
             </button>
             <button type="button" className={`clm-tab ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
-              <span className="clm-tab-dot" style={{ background: '#0d9488', boxShadow: '0 0 5px rgba(13,148,136,.5)' }} />
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg>
               Less Regulated <span className="clm-tab-count">{tierCounts.less}</span>
             </button>
           </div>
@@ -477,13 +483,7 @@ export default function ClmDcpPage() {
                       <tr key={r.id || `seg-${r.segment_code}`}>
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.segment_code}</span></td>
-                        <td className="clm-td-name">
-                          <Tooltip label={seg?.name ?? r.segment_code} position="top">
-                            <span style={{ display: 'block', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {seg?.name ?? r.segment_code}
-                            </span>
-                          </Tooltip>
-                        </td>
+                        <TruncCell value={seg?.name ?? r.segment_code} style={{ maxWidth: 200 }} />
                         <td style={{ textAlign: 'center' }}>
                           <SegmentBadge status={isHigh ? 'highly' : 'less'} />
                         </td>
@@ -958,7 +958,7 @@ function SegmentRuleModal(props: {
                         onClick={() => setDocSearch(prev => ({ ...prev, [activeCat]: '' }))}>×</button>
                     )}
                   </div>
-                  <button type="button" onClick={openAddDoc} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, padding: '5px 13px', borderRadius: 8, background: '#fff', color: '#0e7490', border: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)' }}>
+                  <button type="button" onClick={openAddDoc} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexShrink: 0, height: 34, padding: '0 14px', boxSizing: 'border-box', borderRadius: 8, background: '#fff', color: '#0e7490', border: 'none', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)' }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Add {CAT_SHORT[activeCat]}
                   </button>
@@ -1024,11 +1024,7 @@ function SegmentRuleModal(props: {
                             {(() => {
                               const full = String(d.title || d.name || '');
                               const shown = full.length > 25 ? `${full.slice(0, 25)}…` : full;
-                              return (
-                                <Tooltip label={full} disabled={full === shown}>
-                                  <td className="clm-td-name">{shown}</td>
-                                </Tooltip>
-                              );
+                              return <TruncCell value={full} shown={shown} />;
                             })()}
                             <td className="clm-td-desc">{d.authority || d.issued_by || '—'}</td>
                             <td style={{ width: 200, textAlign: 'right' }}>
@@ -1097,10 +1093,16 @@ function SegmentRuleModal(props: {
 }
 
 const DCP_PAGE_CSS = `
+/* The search and the Add button sit on the same dark band and were two
+   different heights - 30px here against the button's 5px of padding, about 26 -
+   so the row read as two unrelated controls. Both are 34px now, on the same
+   8px radius, with the 12.5px type every other CLM control uses. Fixed width
+   rather than flexible: the band's left block wraps as the dialog narrows, and
+   a shrinking search made the two controls drift apart. */
 .dcp-doc-search {
-  display: flex; align-items: center; gap: 7px;
-  flex: 0 1 300px; min-width: 150px;
-  height: 30px; padding: 0 10px;
+  display: flex; align-items: center; gap: 8px;
+  flex: 0 0 300px; max-width: 100%; min-width: 0;
+  height: 34px; padding: 0 12px;
   border-radius: 8px;
   background: rgba(255,255,255,.16);
   border: 1.5px solid rgba(255,255,255,.30);
@@ -1115,7 +1117,7 @@ const DCP_PAGE_CSS = `
 .dcp-doc-search input {
   flex: 1; min-width: 0;
   border: none; outline: none; background: transparent;
-  font-family: inherit; font-size: 11.5px; color: #fff;
+  font-family: inherit; font-size: 12.5px; font-weight: 500; color: #fff;
 }
 .dcp-doc-search input::placeholder { color: rgba(255,255,255,.62); }
 .dcp-doc-search-clear {

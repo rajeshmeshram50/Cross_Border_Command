@@ -18,7 +18,7 @@ import { draftFromPo, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi } from '../order/api/po-api';
 import { legalFromVault } from '../order/create-po/supplier-checks';
 import { useToast } from '../../../../contexts/ToastContext';
-import { spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
+import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
   DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, itemsPayload, linesFromPo, taxModeFor,
@@ -338,7 +338,7 @@ export default function InvoiceForm({
     try {
       const box = await spiApi.createBox(spiId, body);
       await reloadBoxes(spiId);
-      toast.success(`${box.box_code} saved`, `${body.items.length} product${body.items.length === 1 ? '' : 's'} packed in this box.`);
+      toast.success(`${putId(box.box_code)} saved`, `${body.items.length} product${body.items.length === 1 ? '' : 's'} packed in this box.`);
       return box;
     } catch (e) {
       toast.error('Could not save the box', boxError(e, body));
@@ -351,7 +351,7 @@ export default function InvoiceForm({
     try {
       const box = await spiApi.updateBox(spiId, boxId, body);
       await reloadBoxes(spiId);
-      toast.success(`${box.box_code} updated`, `It now holds ${body.items.length} product${body.items.length === 1 ? '' : 's'}.`);
+      toast.success(`${putId(box.box_code)} updated`, `It now holds ${body.items.length} product${body.items.length === 1 ? '' : 's'}.`);
       return box;
     } catch (e) {
       toast.error('Could not update the box', boxError(e, body));

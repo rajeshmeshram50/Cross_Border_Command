@@ -764,12 +764,11 @@ const SUB_BAR: CSSProperties = { display: 'flex', alignItems: 'center', padding:
  * one was 36px at radius 9 with a 13px icon at 70% and an 11.5px input: the
  * shortest search in the module. */
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  // 43.5px and capped at 500, the module-wide search box — .ops-search in
-  // useOpsTheme.ts. This copy stated 48 (the old "tab rail height") and let
-  // max-width run to 100%, so it stood taller and wider than the same field on
-  // Case to Case.
+  // 48px and capped at 500, the module-wide search box — .ops-search in
+  // useOpsTheme.ts states the same. 48 is the tab rail's height: a rail is a
+  // 40px tab inside 3px of padding and a 1px border each side.
   return (
-    <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '43.5px', padding: '0 14px', borderRadius: '11px', background: 'linear-gradient(180deg,#f6feff,#f0fdff)', border: '1.5px solid #cef8fd', flex: '0 0 500px', maxWidth: '500px', minWidth: 0, boxSizing: 'border-box' }}>
+    <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '48px', padding: '0 14px', borderRadius: '11px', background: 'linear-gradient(180deg,#f6feff,#f0fdff)', border: '1.5px solid #cef8fd', flex: '0 0 500px', maxWidth: '500px', minWidth: 0, boxSizing: 'border-box' }}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
       <input type="text" autoComplete="off" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: '13px', fontWeight: 500, fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
       {/* Inside the box, not beside it: SearchBox owns its own flex row, so a

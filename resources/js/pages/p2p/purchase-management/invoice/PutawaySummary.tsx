@@ -33,6 +33,7 @@ const ICON_SHELF = (
 
 import '../../p2p-detail.css';
 import './putaway-summary.css';
+import { putId } from './spi-api';
 
 const shortDate = (iso?: string) => {
   const [y, m, d] = (iso || '').split('-');
@@ -150,7 +151,7 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
         <span className="pts-box__n">{index + 1}</span>
         <span className="pts-box__ico"><IcoBox /></span>
         <span className="pts-box__f pts-box__f--id">
-          <i>Box ID</i><b className="pts-mono">{box.id}</b>
+          <i>Box ID</i><b className="pts-mono">{putId(box.id)}</b>
         </span>
         <span className="pts-box__f pts-box__f--scn">
           <i>Scenario</i><b>{box.scenario}</b>
@@ -169,7 +170,7 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
         </span>
         <span className="pts-box__act" onClick={e => e.stopPropagation()}>
           <button type="button" className="pts-sticker"
-            title={box.apiId ? `Preview the temporary putaway sticker for ${box.id}` : 'This box could not be matched to its sticker'}
+            title={box.apiId ? `Preview the temporary putaway sticker for ${putId(box.id)}` : 'This box could not be matched to its sticker'}
             disabled={!box.apiId}
             onClick={() => setSticker(true)}>
             <IcoTag /> Temporary Putaway Sticker
@@ -182,7 +183,7 @@ function BoxRow({ box, row, index }: { box: PutawayBox; row: InvoiceRow; index: 
         <div className="pts-box__body">
           <div className="pts-box__bt">
             <span className="pts-box__bico"><IcoBox /></span>
-            <span className="pts-box__btxt">Products in {box.id}</span>
+            <span className="pts-box__btxt">Products in {putId(box.id)}</span>
             <span className="pts-count">{box.products.length} Items</span>
           </div>
           <div className="pts-tblwrap">
@@ -399,7 +400,7 @@ export default function PutawaySummary({ row, onClose }: { row: InvoiceRow; onCl
                   ) : boxes.map((b, i) => (
                     <tr key={b.id}>
                       <td><span className="pts-sr">{i + 1}</span></td>
-                      <td><span className="pts-chip pts-chip--code">{b.id}</span></td>
+                      <td><span className="pts-chip pts-chip--code">{putId(b.id)}</span></td>
                       <td className="pts-l">{b.scenario}</td>
                       <td className="pts-l">
                         <span className="pts-whcell" title={whName}>

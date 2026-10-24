@@ -10,10 +10,10 @@ import AuthCardLayout from '@/layouts/AuthCardLayout';
 interface ResetPasswordProps {
   email: string;
   onPasswordReset?: () => void;
-  onBackToVerifyOTP: () => void;
+  onBackToLogin: () => void;
 }
 
-export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOTP }: ResetPasswordProps) {
+export default function ResetPassword({ email, onPasswordReset, onBackToLogin }: ResetPasswordProps) {
   const toast = useToast();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -239,11 +239,11 @@ export default function ResetPassword({ email, onPasswordReset, onBackToVerifyOT
 
         <button
           type="button"
-          onClick={onBackToVerifyOTP}
+          onClick={onBackToLogin}
           className="flex items-center justify-center gap-2 w-full text-[13px] font-bold text-primary hover:underline transition-all duration-200"
         >
           <ArrowLeft size={16} />
-          Back
+          Back to Login
         </button>
       </AuthCardLayout>
     </>

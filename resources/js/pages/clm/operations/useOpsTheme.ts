@@ -54,12 +54,14 @@ export const OPS_SEARCH_CSS = `
 .ops-search {
   display: flex; align-items: center; gap: 8px;
   box-sizing: border-box;
-  /* 43.5px, set by eye and used across the whole module — this rule covers
-     Case to Case, Agreements We Sent, Agreements To Approve and the two
-     profile pages, and .clm-search carries the same number for the master
-     pages. It used to state 48, "the tab RAIL's height", so the field grew
-     and shrank with whatever the rail happened to be. */
-  height: 43.5px; padding: 0 14px;
+  /* 48px, the height of the tab rail it sits beside — and now the one number
+     every toolbar control in CLM states. A rail is a 40px tab inside 3px of
+     padding and a 1px border on each side, so 48 is the only height a visible
+     capsule can have while the tab stays 40. This rule covers Case to Case,
+     Agreements We Sent, Agreements To Approve and Supplier Profile;
+     .clm-search carries the same 48 for the master pages. It was briefly
+     43.5, which left every rail standing 4.5px proud of its own search. */
+  height: 48px; padding: 0 14px;
   border: 1.5px solid var(--ops-edge);
   border-radius: 11px;
   background: var(--ops-fill);
@@ -69,13 +71,28 @@ export const OPS_SEARCH_CSS = `
      a starting width, not a promise - only a 0 shrink factor keeps the box
      still. The spacer beside it absorbs the difference. */
   flex: 0 0 500px; max-width: 500px; min-width: 0;
-  box-shadow: none;
+  /* Gloss, not lift — the same treatment .clm-search carries, so the two
+     halves of the module match. Almost all of it is inset: a bright hairline
+     along the top edge where a lit surface catches the light, a faint accent
+     line along the bottom where it falls away, and an outer shadow small
+     enough (1px contact, 3px blur pulled back by -4) to seat the field on the
+     toolbar rather than raise it off. Flat before this. */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.95),
+    inset 0 -1px 0 rgba(var(--ops-a), .07),
+    0 1px 2px rgba(var(--ops-a), .06),
+    0 3px 8px -4px rgba(var(--ops-a), .14);
   /* Only the focus chrome eases — never the width. As a flex item this bar
      resizes when the page gains a scrollbar on data load, and animating that
      made the bar settle visibly on every load. Same reasoning as .clm-search. */
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-.ops-search:focus-within { border-color: var(--ops-ico); box-shadow: 0 0 0 3px rgba(var(--ops-a), .14); }
+/* The focus ring replaces the whole box-shadow, so the top highlight has to be
+   restated or the field goes flat at the moment it is being used. */
+.ops-search:focus-within {
+  border-color: var(--ops-ico);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 0 0 3px rgba(var(--ops-a), .14);
+}
 .ops-search > svg { width: 16px; height: 16px; flex-shrink: 0; stroke: var(--ops-ico); }
 .ops-search input {
   flex: 1; min-width: 0;
@@ -88,15 +105,21 @@ export const OPS_SEARCH_CSS = `
    -400 #a78bfa — put through the same mixes .dt-search uses, so Case to Case's
    field is pixel-for-pixel the employee list's. The cyan set is those mixes on
    CLM's teal ramp (#f0fdff / #a5f3fc / #22d3ee). */
+/* Both fills start at pure white and travel to the accent-50, matching
+   .clm-search in clmShared.ts — which is the field on Segment Master, the one
+   these are being measured against. They each ran two near-identical tints
+   before (#f6feff to #f0fdff is six values apart; #fcf9ff to #faf5ff is
+   three), which is flat enough that the inset highlight on the rule above had
+   almost nothing to sit against and the field still read as painted on. */
 .ops-search--cyan {
   --ops-a: 6,182,212;  --ops-search-text: #0c4a6e;
-  --ops-fill: linear-gradient(180deg, #f6feff, #f0fdff);
+  --ops-fill: linear-gradient(180deg, #ffffff 0%, #f4fdff 48%, #e8fbff 100%);
   --ops-edge: #cef8fd; --ops-ico: #22d3ee; --ops-ph: #50c0d8;
   --ops-fill-flat: #f6feff;
 }
 .ops-search--violet {
   --ops-a: 124,58,237; --ops-search-text: #1e1050;
-  --ops-fill: linear-gradient(180deg, #fcf9ff, #faf5ff);
+  --ops-fill: linear-gradient(180deg, #ffffff 0%, #fbf8ff 48%, #f4efff 100%);
   --ops-edge: #ece8fe; --ops-ico: #a78bfa; --ops-ph: #9f95e0;
   --ops-fill-flat: #fcf9ff;
 }
@@ -104,10 +127,13 @@ export const OPS_SEARCH_CSS = `
    panel colour — these pages sit on a violet-black card (#161226) instead of
    the slate the rest of CLM uses, and a tint reads correctly on either. */
 [data-bs-theme="dark"] .ops-search,
+/* Dark keeps the lit top edge but at a fraction of the strength — a .95 white
+   hairline over a dark panel is a glare line, not a highlight — and drops the
+   outer shadow, which does nothing against a dark surface anyway. */
 [data-layout-mode="dark"] .ops-search {
   background: rgba(var(--ops-a), .10);
   border-color: rgba(var(--ops-a), .26);
-  box-shadow: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
 }
 [data-bs-theme="dark"] .ops-search input,
 [data-layout-mode="dark"] .ops-search input { color: #e2e8f0; }

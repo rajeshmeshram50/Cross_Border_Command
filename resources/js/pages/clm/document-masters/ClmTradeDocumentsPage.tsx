@@ -11,8 +11,8 @@ import { CLM_CSS, usePagedList, useAutoFitRows } from '../shared/clmShared';
    fetch the memory exists to avoid. */
 const TD_NAMES_URL   = '/clm/trade-doc-names';
 const TD_LIBRARY_URL = '/clm/trade-doc-library';
-import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
-import { ClmSkeletonRows, DeleteConf, SimpleNameModal } from '../shared/clmCommon';
+import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
+import { ClmSkeletonRows, DeleteConf, SimpleNameModal, TruncCell } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 import { saveApiBlob } from '../../../utils/downloadFile';
@@ -159,11 +159,8 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
           button, both pushed right, and the whole left half of the card read as
           a blank band. */}
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></div>
-          <div className="clm-total-lbl">Total Document Types</div>
-          <div className="clm-total-num">{total}</div>
-        </div>
+        <ClmSubHead title="Trade Document Types" count={total}
+          sub="The kinds of declaration and undertaking templates are written against." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search trade document types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -190,7 +187,7 @@ function NamesPane({ reloadKey, reload }: { reloadKey: number; reload: () => voi
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
+                    <TruncCell value={r.name} />
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         {(() => {
@@ -382,11 +379,8 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
         [data-bs-theme="dark"] .tdl-dl-item:hover { background: rgba(148,163,184,.14); }
       `}</style>
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-          <div className="clm-total-lbl">Total Trade Documents</div>
-          <div className="clm-total-num">{total}</div>
-        </div>
+        <ClmSubHead title="Trade Document Library" count={total}
+          sub="Reusable declarations, undertakings and trade paper templates." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search trade document drafts…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -419,9 +413,9 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <Tooltip label={r.title}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.title}</div></td></Tooltip>
+                    <TruncCell value={r.title} />
                     {r.name
-                      ? <Tooltip label={r.name}><td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
+                      ? <TruncCell value={r.name} cellClass="clm-td-desc" />
                       : <td><span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>—</span></td>}
                     <td style={{ textAlign: 'center' }}>
                       {(() => {
@@ -466,7 +460,7 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                         );
                       })()}
                     </td>
-                    <Tooltip label={r.purpose}><td className="clm-td-trunc-cell"><div className="clm-td-trunc">{r.purpose}</div></td></Tooltip>
+                    <TruncCell value={r.purpose} cellClass="" textClass="clm-td-trunc" />
                     <td>
                       {(() => {
                         const list = partyLabels(r.party);
