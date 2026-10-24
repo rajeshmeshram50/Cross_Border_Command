@@ -435,7 +435,7 @@ const LDD_CSS = `
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
 }
-.ldd-table-wrap { flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
+.ldd-table-wrap { position: relative; flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
 .ldd-table { width: 100%; border-collapse: collapse; font-size: 11.5px; table-layout: fixed; }
 .ldd-table thead { position: sticky; top: 0; z-index: 2; }
 .ldd-table thead tr {
@@ -514,8 +514,10 @@ const LDD_CSS = `
 .ldd-status-d .ldd-status-dot { background: #ef4444; }
 .ldd-status-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
 
-.ldd-status {
-  text-align: center; padding: 40px 14px;
+/* Empty state centred in the whole table body, not pinned under the header. */
+.ldd-table tbody td.ldd-status {
+  position: absolute; inset: 0; height: auto; display: flex; align-items: center; justify-content: center;
+  padding: 0 14px; border: none; background: transparent;
   color: #94a3b8; font-style: italic; font-size: 12px;
 }
 
