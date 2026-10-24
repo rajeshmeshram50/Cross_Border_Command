@@ -382,8 +382,12 @@ export default function ClmAgreementsToApprovePage() {
 
       {/* FILTER TABS + TABLE */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}`, boxShadow: '0 1px 4px rgba(6,182,212,.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
-          {/* The CLM rail: a hairline capsule holding 34px tabs on radius 8,
+        {/* 8px on every side, the toolbar padding Case to Case uses. It was
+            10px 14px, so the rail sat further from the card's edge here than
+            on the page beside it. */}
+        {/* gap 8, the CLM toolbar band — see .clm-tabs-bar in clmShared.ts. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
+          {/* The CLM rail: a hairline capsule holding 40px tabs on radius 8,
               as Agreements We Sent and Case to Case have it and as .clm-tab
               renders on the master pages. This was a radius-30 capsule of
               radius-25 lozenges with no border and an inset shadow — a
@@ -393,6 +397,15 @@ export default function ClmAgreementsToApprovePage() {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
+                  /* Hover, which this rail had none of — the tabs are
+                     inline-styled, so a CSS :hover would lose to the inline
+                     background and the only feedback was the cursor. Case to
+                     Case gets the same wash from .ctc-tabrail > button:hover;
+                     this sets it directly. The selected tab is skipped: it is
+                     already filled, and washing it would mean restoring a
+                     gradient on the way out. */
+                  onMouseEnter={e => { if (active) return; e.currentTarget.style.background = t.dark ? 'rgba(6,182,212,.16)' : 'rgba(6,182,212,.08)'; e.currentTarget.style.color = t.dark ? '#a5f3fc' : '#0891b2'; }}
+                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; }}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
                     /* No border on either state, and no insets on the selected
                        one — the same two fixes Case to Case needed.

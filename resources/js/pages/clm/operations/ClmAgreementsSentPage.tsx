@@ -332,7 +332,8 @@ export default function ClmAgreementsSentPage() {
       </div>
 
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
-        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '10px 12px', padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
+        {/* gap 8, the CLM toolbar band — see .clm-tabs-bar in clmShared.ts. */}
+        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
           {/* The employee list's rail — its `hr-dt` skin, not the base .dt-tabs
               rule — on the teal ramp. See the longer note on Case to Case.
               3px of padding puts the rail at 42, which is .ops-search. */}
@@ -344,6 +345,14 @@ export default function ClmAgreementsSentPage() {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
+                  /* Hover, which this rail had none of — the tabs are
+                     inline-styled, so a CSS :hover would lose to the inline
+                     background and the only feedback was the cursor. Same wash
+                     Case to Case gets from .ctc-tabrail > button:hover. The
+                     selected tab is skipped: it is already filled, and washing
+                     it would mean restoring a gradient on the way out. */
+                  onMouseEnter={e => { if (active) return; e.currentTarget.style.background = t.dark ? 'rgba(6,182,212,.16)' : 'rgba(6,182,212,.08)'; e.currentTarget.style.color = t.dark ? '#a5f3fc' : '#0891b2'; }}
+                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; }}
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40,
                     border: 0, borderRadius: 8,
                     fontFamily: 'var(--font-sans)', fontSize: 12.5, fontWeight: 650, letterSpacing: 0,

@@ -206,7 +206,7 @@ const BP_CSS = `
    flex 0 0 500px, not flex 1: typing filters the table, which changes the
    counts in the tabs, and a shrinkable field grew back toward its basis as you
    typed (QA #107). A fixed basis with a 0 shrink factor keeps the box still. */
-:where(.bpx-43) { display: flex !important; align-items: center !important; gap: 8px !important; height: 43.5px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg, #f6feff, #f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; transition: border-color .15s ease, box-shadow .15s ease !important; flex: 0 0 500px !important; max-width: 500px !important; min-width: 0 !important; box-sizing: border-box !important; }
+:where(.bpx-43) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg, #f6feff, #f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; transition: border-color .15s ease, box-shadow .15s ease !important; flex: 0 0 500px !important; max-width: 500px !important; min-width: 0 !important; box-sizing: border-box !important; }
 :where(.bpx-43):focus-within { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(6,182,212,.14) !important; }
 :where(.bpx-44) { width: 16px !important; height: 16px !important; flex-shrink: 0 !important; stroke: #22d3ee !important; }
 :where(.bpx-45) { border: none !important; outline: none !important; font-size: 13px !important; font-weight: 500 !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; background: transparent !important; min-width: 0 !important; }
@@ -230,10 +230,10 @@ const BP_CSS = `
 /* The CLM search box (.clm-search): 42px on radius 11, a tinted accent wash
    rather than flat white, a soft accent hairline, and the 16px accent
    magnifier. This ran 38px on radius 9 with an 11.5px input. */
-/* 43.5px, the module-wide search height — .ops-search in useOpsTheme.ts and
+/* 48px, the module-wide toolbar height — .ops-search in useOpsTheme.ts and
    .clm-search in clmShared.ts carry the same number. This box is a local copy
    rather than .ops-search, so it has to be set here too. */
-:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 43.5px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg,#f6feff,#f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; flex: 0 0 500px !important; max-width: 500px !important; min-width: 0 !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
+:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg,#f6feff,#f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; flex: 0 0 500px !important; max-width: 500px !important; min-width: 0 !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
 :where(.bpx-62) > svg { width: 16px !important; height: 16px !important; stroke: #22d3ee !important; flex-shrink: 0 !important; }
 :where(.bpx-62):focus-within { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(6,182,212,.14) !important; }
 :where(.bpx-63) { border: none !important; outline: none !important; font-size: 13px !important; font-weight: 500 !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; min-width: 0 !important; background: transparent !important; }
@@ -530,7 +530,11 @@ const BP_CSS = `
 
 @media (max-width: 820px) {
   .seg-page .bpa-seg { flex-wrap: wrap; }
-  .seg-page .bpa-tab { height: 34px; padding: 0 14px; font-size: 11px; }
+  /* 40px, the module's inner tab height. This override held it at 34 — the only
+   CLM tab that was not 40, inside a .bpa-seg rail of the same 48 as everywhere
+   else. The 11px label stays: that is this view's own smaller type, not a
+   height. */
+.seg-page .bpa-tab { height: 40px; padding: 0 14px; font-size: 11px; }
   .seg-page input[type="text"] { width: auto !important; flex: 1 1 120px; min-width: 0; }
 }
 @media (max-width: 560px) {

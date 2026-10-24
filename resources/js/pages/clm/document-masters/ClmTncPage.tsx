@@ -5,8 +5,8 @@ import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, loadFailed, PER_PAGE, paginate } from '../shared/clmShared';
-import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
-import { ClmSkeletonRows, DeleteConf } from '../shared/clmCommon';
+import { ClmPageHeader, ClmBrefBox, ClmSubHead as SubHead, ICO } from '../shared/ClmPageShell';
+import { ClmSkeletonRows, DeleteConf, TruncCell } from '../shared/clmCommon';
 import ClmTncWizardModal from './ClmTncWizardModal';
 import Tooltip from '../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
@@ -20,6 +20,7 @@ import useDismissPopover from '../shared/useDismissPopover';
 /* The backend still requires a non-null short_code (12-char column) even
  * though the figma-aligned UI no longer exposes it. Derive a sensible
  * abbreviation client-side so saves don't 422. */
+
 export function deriveShortCode(name: string): string {
   const cleaned = (name ?? '').trim();
   if (!cleaned) return 'CAT';
@@ -186,11 +187,8 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></div>
-          <div className="clm-total-lbl">Total Categories</div>
-          <div className="clm-total-num">{rows.length}</div>
-        </div>
+        <SubHead title="Document Categories" count={rows.length}
+          sub="The kinds of document that Terms &amp; Conditions are written against." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search categories…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
@@ -268,7 +266,38 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
     if (!q) return written;
     return written.filter((r) => `${r.category} ${r.code ?? ''} ${r.content ?? ''}`.toLowerCase().includes(q));
   }, [written, search]);
-  const isEmpty = !loading && filtered.length === 0;
+
+  /* Paged like its two sibling tabs. This pane had no footer at all, on the
+     reasoning that the list is capped at one entry per document category and
+     so would never need paging. True today, but it left the third tab of one
+     master with no "Showing x of y" where the other two have one — the row
+     count is the first thing the footer is for, and it is worth having even
+     when every row fits. */
+  const [page, setPage]   = useState(1);
+  const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
+  const scrollRef         = useRef<HTMLDivElement | null>(null);
+  const { slice, start, safePage } = paginate(filtered, page, rpp);
+  const isEmpty = !loading && slice.length === 0;
+
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
+      const fh = Math.max(0, window.innerHeight - top - 64);
+      setFillH(prev => (prev === fh ? prev : fh));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    window.addEventListener('resize', recompute);
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [filtered.length]);
 
   // A global entry exists per document category and no further: once all six are
   // written there is nothing to add, only the existing entry to change.
@@ -296,12 +325,11 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
 
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
-          <div className="clm-total-lbl">Total Global T&C</div>
           {/* `written`, not `rows`: the table lists the categories that HAVE a
               global T&C, while rows is every category. The badge read 6 over a
               list of 4. */}
-          <div className="clm-total-num">{written.length}</div>
+          <SubHead title="Global T&amp;C" count={written.length}
+            sub="One set of terms per category, applied to every document of that category." />
         </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -321,12 +349,13 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
       </div>
 
       <div className="clm-tab-body has-data">
-        {/* The stretch (.clm-table-fill) is only for the EMPTY state here. On
-            the paged panes it exists to push the pager to the bottom of a
-            part-full card; this pane has no pager, so with rows present a
-            stretched wrap would just leave a band of nothing under the last
-            row (QA #30). With rows it is content height. */}
-        <div className={`clm-table-wrap ${isEmpty ? 'clm-table-fill clm-fill-empty' : ''}`}>
+        {/* Stretches now, as the sibling panes do: the pane has a pager, and
+            .clm-table-fill is what pushes it to the bottom of a part-full
+            card. The old note here said the stretch was for the empty state
+            only "because this pane has no pager" — it has one now, so the
+            band of nothing under the last row that worried QA #30 is the
+            pager's seat. */}
+        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
           <table className="clm-table">
             <thead><tr>
               <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -337,11 +366,11 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
             </tr></thead>
             <tbody>
               {loading && <ClmSkeletonRows cols={5} />}
-              {!loading && filtered.map((r, i) => {
+              {!loading && slice.map((r, i) => {
                 const plain = tncPreviewText(r.content);
                 return (
                   <tr key={r.category_id}>
-                    <td className="clm-td-num">{i + 1}</td>
+                    <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}>
                       {r.code
                         ? <Tooltip label={`Auto-generated T&C ID · ${r.code}`}><span className="clm-code-pill">{r.code}</span></Tooltip>
@@ -375,6 +404,9 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
               <div className="clm-empty-title">{search.trim() ? 'No matching global T&C' : 'No global T&C yet'}</div>
               <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Add one per document category — it prints on every document of that category.'}</div>
             </div>
+          )}
+          {!loading && filtered.length > 0 && (
+            <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
           )}
         </div>
       </div>
@@ -466,17 +498,20 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <div className="clm-total">
-          <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
-          <div className="clm-total-lbl">Total T&C Entries</div>
-          <div className="clm-total-num">{rows.length}</div>
-        </div>
+        <SubHead title="T&amp;C Entries" count={rows.length}
+          sub="Segment-wise Terms &amp; Conditions, matched to a product's segment." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input autoComplete="off" type="text" placeholder="Search T&C library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
-        <div style={{ width: 190, flex: '0 0 auto' }}>
+        {/* 214, not 190: the funnel takes about 22px of the label's room and
+            "Highly Regulatory" needs all of it. */}
+        <div className="clm-filter-ms" style={{ width: 214, flex: '0 0 auto' }}>
+          <svg className="clm-filter-ico" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+          </svg>
           <MasterSelect
             value={statusFilter}
             placeholder="Status"
@@ -561,11 +596,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                         <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>
                       )}
                     </td>
-                    <td className="clm-td-name">
-                      <Tooltip label={r.category}>
-                        <span>{r.category}</span>
-                      </Tooltip>
-                    </td>
+                    <TruncCell value={r.category} />
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         <Tooltip label={`Edit T&C — ${r.category}`}>

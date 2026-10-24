@@ -290,12 +290,18 @@ export const CLM_CSS = `
  * TABS WRAP + TABS BAR — table card top section.
  * ────────────────────────────────────────────────────────── */
 .clm-tabs-wrap { background: #fff; overflow: visible; }
+/* 8px, the one number for the band a tab rail sits in, everywhere in CLM.
+   Measured across the module this was 10px 14px here, 16px 18px 0 plus a 14px
+   bottom margin on the Document Control Panel, and 8px on the three operations
+   pages — the same rail with three different amounts of room around it. The
+   gap goes to 8 as well; it was 6 here, 12 on DCP, 10/12 on Case to Case and
+   Agreements We Sent, 6 on Agreements To Approve. */
 .clm-tabs-bar {
   display: flex; align-items: center;
-  padding: 10px 14px;
+  padding: 8px;
   background: #fff;
   border-bottom: 1px solid rgba(6,182,212,.12);
-  gap: 6px; position: relative;
+  gap: 8px; position: relative;
   flex-wrap: wrap;
 }
 /* The capsule the tabs sit in. Case to Case, Agreements We Sent and Agreements
@@ -417,7 +423,11 @@ export const CLM_CSS = `
 .clm-pill {
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 20px; border-radius: 10px;
+  /* 40px stated, the same inner height as .clm-tab, inside the same 48px
+     group. It ran on 9px of vertical padding instead, which came out around
+     33 — a shorter control than every other tab in the module, sitting in a
+     rail of the identical 48. */
+  height: 40px; padding: 0 20px; box-sizing: border-box; border-radius: 10px;
   font-family: inherit; font-size: 12.5px; font-weight: 600;
   cursor: pointer; border: none; background: transparent;
   color: #0891b2; box-shadow: none;
@@ -466,14 +476,19 @@ export const CLM_CSS = `
      ramp (#f0fdff / #a5f3fc / #22d3ee) that CLM already uses.
      42px, the toolbar height the shared .dt-search uses — CLM's 34px box
      sat visibly shallower than the same bar on HRMS. */
-  /* 43.5px, set by eye and used across the whole module — .ops-search in
-     useOpsTheme.ts carries the same number for the five operations pages.
-     It chased the tab rail before this: 48 (the rail's height), and 42 before
-     that (DataTable's number from when the tab was 34), so the field moved
-     every time the rail did. */
-  padding: 0 14px; height: 43.5px;
+  /* 48px — the tab rail's height, and the one number every toolbar control in
+     CLM states. A rail is a 40px tab inside 3px of padding and a 1px border
+     each side, so 48 is the only height a visible capsule can have while the
+     tab stays 40. .ops-search in useOpsTheme.ts carries the same 48 for the
+     operations pages. It was briefly 43.5, which left every rail standing
+     4.5px proud of its own search. */
+  padding: 0 14px; height: 48px;
   border: 1.5px solid #cef8fd; border-radius: 11px;
-  background: linear-gradient(180deg, #f6feff, #f0fdff);
+  /* Three stops from white, not two near-identical tints. #f6feff to #f0fdff
+     is a six-value difference — flat enough that the field read as a painted
+     rectangle. Starting at pure white and ending on the accent-50 gives the
+     surface somewhere to travel, which is what makes it look lit. */
+  background: linear-gradient(180deg, #ffffff 0%, #f4fdff 48%, #e8fbff 100%);
   /* Fixed, for the same reason as .ops-search (QA #107): a growable search
      resizes itself as the tab counts beside it change. The page-level
      modifiers below (.clm-search-fixed / -grow) already pin a width; this is
@@ -484,12 +499,26 @@ export const CLM_CSS = `
      a scrollbar on data load, and animating that reflow made the search bar
      (and the controls beside it) flicker/settle on every load. */
   transition: border-color .15s ease, box-shadow .15s ease;
-  /* No drop shadow — the tint is what separates the field from the toolbar now,
-     as on HRMS. The old 4px teal shadow under a flat white box read as a raised
-     card rather than an input. */
-  box-shadow: none;
+  /* Gloss, not lift. The old 4px teal drop shadow under a flat white box read
+     as a raised card rather than an input, so it was removed — but with
+     nothing in its place the field went dead flat.
+     What is here instead is almost all INSET: a bright hairline along the top
+     edge, where a lit surface catches the light, and a faint accent line along
+     the bottom where it falls away. The outer shadow is deliberately tiny — 1px
+     of contact and a 3px blur pulled back by -4 — enough to seat the field on
+     the toolbar without lifting it off. */
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.95),
+    inset 0 -1px 0 rgba(6,182,212,.07),
+    0 1px 2px rgba(8,145,178,.06),
+    0 3px 8px -4px rgba(8,145,178,.14);
 }
-.clm-search:focus-within { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(6,182,212,.14); }
+/* The focus ring replaces the whole box-shadow, so the top highlight has to be
+   restated or the field goes flat at the moment it is being used. */
+.clm-search:focus-within {
+  border-color: #22d3ee;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 0 0 3px rgba(6,182,212,.14);
+}
 .clm-search input { flex: 1; min-width: 0; border: none; outline: none; font-size: 13px; font-weight: 500; background: transparent; color: #0c4a6e; font-family: inherit; }
 /* The magnifier. Every CLM page writes its own inline <svg> at width="13" with
    a hard-coded stroke — some slate, some teal — so size and colour are set
@@ -559,38 +588,78 @@ export const CLM_CSS = `
   .clm-tabs-bar .clm-search { flex: 0 0 auto; width: 100%; min-width: 0; }
 }
 
-/* Compound Total badge — icon block + label + count number */
+/* ──────────────────────────────────────────────────────────
+ * Toolbar section heading  (.clm-total — see ClmSubHead)
+ *
+ * This used to be a compound "Total" badge: a 48px gradient icon tile, a
+ * filled teal label and a white number, all welded into one slab. It sat at
+ * the left of an otherwise empty toolbar row and was the heaviest thing on
+ * pages whose job is to list a handful of short names — a count given the
+ * visual weight of a primary control, saying nothing the column headers below
+ * it did not already say.
+ *
+ * It is a section heading now: the name of what the table holds, a count chip,
+ * and a line underneath describing it. The class name stays .clm-total so the
+ * toolbar's own layout rules (.clm-tabs-bar .clm-total, and the stacking
+ * breakpoint above) keep working untouched.
+ * ────────────────────────────────────────────────────────── */
 .clm-total {
-  display: inline-flex; align-items: center; gap: 0;
-  border-radius: 12px; overflow: hidden;
-  border: 1.5px solid rgba(8,145,178,.6);
-  box-shadow: 0 4px 14px rgba(8,145,178,.32), inset 0 1px 0 rgba(255,255,255,.15);
-  flex-shrink: 0;
-}
-/* 43.5px across all three segments — the height of the search and the
-   Import / Export buttons it shares the toolbar with. The pill ran 36, so the
-   row stepped down from the search to the count and back up again. */
-.clm-total-ico {
-  display: flex; align-items: center; justify-content: center;
-  width: 43.5px; height: 43.5px;
-  background: linear-gradient(135deg, #0e7490, #0891b2);
-  color: #fff; flex-shrink: 0;
-  border-right: 1px solid rgba(255,255,255,.15);
-}
-.clm-total-lbl {
-  padding: 0 12px; height: 43.5px;
   display: flex; align-items: center;
-  background: linear-gradient(135deg, #0891b2, #0e7490);
-  font-size: 12px; font-weight: 600; color: rgba(255,255,255,.92);
-  white-space: nowrap; letter-spacing: .01em;
+  height: auto; min-height: 48px; box-sizing: border-box;
+  background: none; border: 0; border-radius: 0; box-shadow: none;
+  overflow: visible; flex-shrink: 0;
 }
-.clm-total-num {
-  padding: 0 14px; height: 43.5px;
-  display: flex; align-items: center; justify-content: center;
-  background: #fff;
-  border-left: 1.5px solid rgba(8,145,178,.25);
-  font-size: 13px; font-weight: 500; color: #0891b2;
-  letter-spacing: -.3px; min-width: 16px; text-align: center;
+/* align-items MUST be stated on the text column. .clm-total is a row with
+   align-items:center; a column that inherits that value centres its children
+   horizontally, which left the title — narrower than its subtitle — indented
+   by half the difference instead of sharing its left edge. */
+.clm-subhead-text {
+  display: flex; flex-direction: column; align-items: flex-start;
+  justify-content: center; gap: 2px; min-width: 0;
+}
+/* 14.5px/800 at -.3px over 10px/500 — the page header strip's own title and
+   sub sizes (.clm-head-strip-title / -sub), so a toolbar heading reads as the
+   same kind of thing one level down rather than a third scale on the page. */
+.clm-subhead-title {
+  display: inline-flex; align-items: center; gap: 9px;
+  color: #0c4a6e;
+  font-size: 14.5px; font-weight: 800; letter-spacing: -.3px; line-height: 1.2;
+  white-space: nowrap;
+}
+.clm-subhead-sub {
+  color: #0e7490; opacity: .85;
+  font-size: 10px; font-weight: 500; line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The count, as the tab rail's own chip (.clm-tab-count) renders it: a pale
+   accent disc on an accent hairline, tabular so the row does not breathe when
+   the number changes width. */
+.clm-subhead-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 20px; padding: 0 7px;
+  background: #cffafe; color: #0e7490;
+  border: 1px solid rgba(6,182,212,.30);
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 800; line-height: 1; letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+/* The toolbar row the heading sits in. Taking the slab out left the title
+   alone on a sheet of white with the search far to the right and nothing
+   between — it read as a deletion rather than a heading. This is the wash the
+   table header below already uses, so heading, count and table read as one
+   block instead of a white gap between the info strip and the column names. */
+.clm-tabs-bar:has(.clm-total) {
+  background: linear-gradient(180deg, #f6feff, #f0fdff);
+  border-bottom: 1px solid #cdf3fa;
+}
+[data-bs-theme="dark"] .clm-subhead-title { color: #e2e8f0; }
+[data-bs-theme="dark"] .clm-subhead-sub   { color: #7dd3fc; }
+[data-bs-theme="dark"] .clm-subhead-count {
+  background: rgba(6,182,212,.18); color: #67e8f9; border-color: rgba(34,211,238,.30);
+}
+[data-bs-theme="dark"] .clm-tabs-bar:has(.clm-total) {
+  background: rgba(6,182,212,.07);
+  border-bottom-color: rgba(6,182,212,.20);
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -616,15 +685,33 @@ export const CLM_CSS = `
    The card carries height + maxHeight (see useAutoFitRows' fillH) and
    overflow:hidden; this takes the space left after the pager and scrolls the
    rows alone, so the sticky <thead> and the pager below both stay put.
-   min-height:0 is what actually lets a flex child shrink enough to scroll —
-   without it the box grows to its content and the pin does nothing.
-   overflow-x carries a wide table sideways, as .clm-table-wrap did before. */
-/* Reserve the scrollbar's lane. This box scrolls its own rows, so filtering
-   the list takes its scrollbar away and the table under it jumps sideways by
-   the scrollbar's width — measured 1318 -> 1328 on KYC while typing. Same
-   reasoning as .main-content in app.css. */
-.clm-rows-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; scrollbar-gutter: stable; }
-.clm-rows-scroll .clm-table thead th { position: sticky; top: 0; z-index: 2; }
+/* A filter <select> carrying a funnel, for any CLM toolbar that has one.
+   Without the glyph the control is a bare box of text beside a search that
+   does carry one, so two halves of the same toolbar row do not read as the
+   same kind of thing.
+
+   The icon is a child of the wrapper sitting OVER the toggle, so it has to
+   stay out of the click path — otherwise it swallows the first press on the
+   left edge of its own control. 34px of padding on the toggle is 12 of gutter
+   + the 14px glyph + 8 of gap, the rhythm .clm-search uses between its
+   magnifier and its text.
+
+   Note the glyph eats about 22px of the label's room, so a control sized to
+   fit its longest option before gaining an icon needs widening by that much
+   or the option truncates. */
+.clm-filter-ms { position: relative; }
+.clm-filter-ms .clm-filter-ico {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  color: #22d3ee; pointer-events: none; z-index: 2;
+}
+.clm-filter-ms .master-select-toggle { padding-left: 34px; }
+[data-bs-theme="dark"] .clm-filter-ms .clm-filter-ico { color: #67e8f9; }
+
+/* .clm-rows-scroll is gone. It gave the rows their own scroll box inside a
+   pinned card, which only Authority / KYC / DD ever used, and it put a second
+   scrollbar inside those three tables when the rows did not quite fit. It was
+   also the last scrollbar-gutter: stable left in CLM. All three lists now use
+   the plain minHeight floor the rest of the module uses. */
 .clm-table-fill { display: flex; flex-direction: column; background: linear-gradient(180deg, #fafeff, #f3fafc); }
 .clm-table-fill > .clm-table { background: #fff; }
 .clm-table-fill.clm-fill-empty { background: #fff; }
@@ -676,8 +763,13 @@ export const CLM_CSS = `
 .clm-td-trunc-cell { max-width: 260px; }
 /* Single-line ellipsis for the (bold) Trade Document Title — keeps its
    .clm-td-name weight/colour but stops long titles wrapping like Purpose. */
-.clm-td-name-trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.clm-td-trunc { font-size: 12px; color: #475569; text-transform: capitalize; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* inline-block, so the text box is as wide as its text and no wider. As a
+   block it filled the cell, and TruncCell anchors its tooltip to this element
+   — on a full-width cell that put the pill in the middle of empty space
+   instead of over the name. max-width: 100% keeps the ellipsis working: the
+   box still stops at the cell's cap and clips there. */
+.clm-td-name-trunc { display: inline-block; max-width: 100%; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clm-td-trunc { display: inline-block; max-width: 260px; vertical-align: middle; font-size: 12px; color: #475569; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clm-td-trunc::first-letter { text-transform: uppercase; }
 
 /* Code chip */
@@ -1555,7 +1647,16 @@ body > .dropdown-menu.master-select-menu,
 /* Dark: the same idea inverted, and the same values HRMS uses — a translucent
    wash of the accent rather than a flat panel colour, so the field reads as a
    tint of the surface it sits on instead of a lighter box on top of it. */
-[data-bs-theme="dark"] .clm-search { background: rgba(6,182,212,.08); border-color: rgba(6,182,212,.22); }
+/* Dark keeps the lit top edge but at a fraction of the strength — a .95 white
+   hairline over a dark panel is a glare line, not a highlight — and drops the
+   outer shadow, which does nothing against a dark surface anyway. */
+[data-bs-theme="dark"] .clm-search {
+  background: rgba(6,182,212,.08); border-color: rgba(6,182,212,.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+[data-bs-theme="dark"] .clm-search:focus-within {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 3px rgba(6,182,212,.20);
+}
 [data-bs-theme="dark"] .clm-search input { color: #e2e8f0; }
 [data-bs-theme="dark"] .clm-search > svg { stroke: #67e8f9; }
 [data-bs-theme="dark"] .clm-search input::placeholder { color: #5b8ca3; }
@@ -1575,7 +1676,6 @@ body > .dropdown-menu.master-select-menu,
   box-shadow: 0 0 0 1000px #1e293b inset !important;
   transition: background-color 9999s ease-in-out 0s;
 }
-[data-bs-theme="dark"] .clm-total-num { background: #1e293b; color: #67e8f9; }
 [data-bs-theme="dark"] .clm-table-wrap { background: #0f172a; }
 /* Same idea in dark: the filler under a short page lifts slightly off the card
    instead of matching it exactly, so the empty space still reads as surface. */
@@ -1883,11 +1983,15 @@ body > .dropdown-menu.master-select-menu,
   .clm-bref-head { padding: 7px 10px; gap: 8px; }
   .clm-bref-ico { width: 32px; height: 32px; }
   .clm-bref-body { grid-template-columns: repeat(2, 1fr); }
-  .clm-tabs-bar { flex-direction: column; align-items: stretch; padding: 10px 12px; }
+  /* Stacks on a phone, but the band keeps its 8. */
+  .clm-tabs-bar { flex-direction: column; align-items: stretch; padding: 8px; }
   .clm-tab { justify-content: center; }
   .clm-search { width: 100%; }
   .clm-total { align-self: stretch; }
-  .clm-total-lbl { flex: 1; }
+  /* The heading's own column takes the width on a stacked toolbar, so its
+     subtitle can ellipsis instead of forcing the row wider. (.clm-total-lbl
+     here before, which was the old slab's filled label.) */
+  .clm-subhead-text { flex: 1; }
   .clm-modal { max-width: 100%; max-height: 100vh; border-radius: 0; }
   .clm-modal-wide { max-width: 100%; }
   .clm-pag { flex-direction: column; align-items: stretch; gap: 8px; }

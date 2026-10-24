@@ -7,10 +7,10 @@ import ClmDocImportExport from '../shared/ClmDocImportExport';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, useAutoFitRows } from '../shared/clmShared';
-import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
+import { ClmPageHeader, ClmBrefBox, ClmSubHead, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
-import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
+import { ClmSkeletonRows, TruncCell, useScrollLock } from '../shared/clmCommon';
 import SearchClear from '../../../components/ui/SearchClear';
 import { lazyPage } from '../../../utils/lazyPage';
 import AuthorityBadges from './AuthorityBadges';
@@ -129,12 +129,16 @@ export default function ClmTradeLicensesPage() {
       />
 
       <div className="clm-page-card">
-        <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div className="clm-total">
-            <div className="clm-total-ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="12" y2="13"/></svg></div>
-            <div className="clm-total-lbl">Total Trade Licences</div>
-            <div className="clm-total-num">{count}</div>
+        {/* Heading, then the search, then the actions. Sample Sheet / Import /
+            Export used to share the heading's wrapper, so they ran up against
+            the subtitle and split the row into three. */}
+        <div className="clm-tabs-bar">
+          <ClmSubHead title="Trade Licences" count={count}
+            sub="Statutory and operational licences, and the authority that issues each." />
+          <div className="clm-search clm-search-fixed">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input autoComplete="off" type="text" placeholder="Search trade licences…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
           <ClmDocImportExport
             endpoint="/clm/trade-licenses"
@@ -146,12 +150,6 @@ export default function ClmTradeLicensesPage() {
             search={debouncedSearch}
             onImported={reload}
           />
-          </div>
-          <div className="clm-search clm-search-fixed">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input autoComplete="off" type="text" placeholder="Search trade licences…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
-            <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
-          </div>
         </div>
 
         <div className="clm-tab-body has-data">
@@ -176,7 +174,7 @@ export default function ClmTradeLicensesPage() {
                           read depended on the window. The cell keeps its CSS
                           truncation as the narrow-window fallback, and the
                           Tooltip still carries the full name. */}
-                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name.length > 41 ? `${r.name.slice(0, 40).trimEnd()}…` : r.name}</div></td></Tooltip>
+                      <TruncCell value={r.name} shown={r.name.length > 41 ? `${r.name.slice(0, 40).trimEnd()}…` : r.name} />
                       <td className="clm-td-desc"><AuthorityBadges value={r.authority_names} /></td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">

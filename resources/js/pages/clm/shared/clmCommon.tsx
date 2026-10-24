@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
+import Tooltip from '../../../components/ui/Tooltip';
 
 /* Locks scroll while a modal is mounted so the page behind the overlay can't
  * scroll-chain. Locks BOTH <html> and <body> — the viewport scroll is owned by
@@ -83,6 +84,59 @@ export function useScrollLock(active: boolean) {
  */
 export const clip = (s: string, n = 40): string =>
   (s && s.length > n ? s.slice(0, n).trimEnd() + '…' : s);
+
+/**
+ * A truncating table cell whose tooltip behaves.
+ *
+ * Every CLM list used to write this by hand as
+ *   <Tooltip label={r.name}><td …><div …>{r.name}</div></td></Tooltip>
+ * and that shape has two faults, in all eleven places it appeared:
+ *
+ * 1. The TRIGGER was the whole <td>. A tooltip centres itself on its trigger,
+ *    so the pill appeared in the middle of the cell — on Segment Master, where
+ *    the cell overrides the 260px cap and runs the width of the column, that
+ *    put it roughly 200px to the right of the name it was describing, floating
+ *    over the header row with nothing under it. Anchoring to the text element
+ *    instead puts the pill over the text.
+ *
+ * 2. It fired on EVERY row, truncated or not. Hovering anywhere in the cell —
+ *    including the empty space after a six-letter name — popped a box
+ *    repeating a word already fully on screen. A tooltip is for what you
+ *    cannot see; here it is suppressed unless the value is really cut off.
+ *
+ * Cut off means either of two things, because CLM uses both: the CSS ellipsis
+ * (measured, scrollWidth past clientWidth) or a value a page already shortened
+ * in JS before rendering (clip() / slice()). Pass the shortened string as
+ * `shown` and the whole one as `value`, and both cases are covered.
+ */
+export function TruncCell({
+  value, shown, cellClass = 'clm-td-name', textClass = 'clm-td-name-trunc', style, colSpan,
+}: {
+  value: string;
+  shown?: string;
+  cellClass?: string;
+  textClass?: string;
+  style?: React.CSSProperties;
+  colSpan?: number;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [overflows, setOverflows] = useState(false);
+  const text = shown ?? value;
+  /* Layout effect, not a passive one: measured before paint, so a cell never
+     renders one frame with the wrong answer. 1px of slack absorbs the
+     sub-pixel difference a fractional font width leaves behind. */
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) setOverflows(el.scrollWidth - el.clientWidth > 1);
+  }, [text]);
+  return (
+    <td className={`${cellClass} clm-td-trunc-cell`} style={style} colSpan={colSpan}>
+      <Tooltip label={value} disabled={!overflows && text === value}>
+        <div ref={ref} className={textClass}>{text}</div>
+      </Tooltip>
+    </td>
+  );
+}
 
 export const CLM_NAME_MAX = 100;
 export const CLM_DESC_MAX = 255;

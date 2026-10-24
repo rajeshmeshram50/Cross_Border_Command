@@ -11,7 +11,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
-import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
+import { ClmSkeletonRows, TruncCell, useScrollLock } from '../shared/clmCommon';
 import { bustCustomerMasterBundle } from '../../sales/core-masters/customer/customerBundleCache';
 import { bustProductMasterBundle } from '../../p2p/p2p-master-management/product-management/productBundleCache';
 import { bustVendorMasterBundle } from '../../p2p/p2p-master-management/supplier-management/vendorBundleCache';
@@ -88,8 +88,22 @@ export default function ClmSegmentPage() {
   const [booted, setBooted] = useState(false);
   useEffect(() => { if (!loading) setBooted(true); }, [loading]);
 
-  const firstLoad  = loading && (rows.length === 0 || replacing);
-  const refreshing = loading && !firstLoad;
+  /* Which tab the rows on screen actually answer. usePagedList decides
+     "replacing" by comparing its own applied query to the requested one, and
+     the tab IS part of that query — but only once the request is in flight and
+     only until it resolves, so a fast switch could land in a frame where the
+     rows are from the old tab yet nothing counts as replacing. The table then
+     fell through to the refresh branch, which dims it to 0.5: a washed-out
+     list, no shimmer, which is QA #29's "white blurred screen". Tracking the
+     tab the rows belong to closes that window. */
+  const answeredTab = useRef(tab);
+  useEffect(() => { if (!loading) answeredTab.current = tab; }, [loading, tab]);
+
+  const firstLoad  = loading && (rows.length === 0 || replacing || answeredTab.current !== tab);
+  /* There is deliberately no "refreshing" dim any more. A half-faded table
+     reads as a rendering fault rather than a load, and it was what showed when
+     the skeleton condition missed. Every in-flight state here shows the
+     skeleton. */
   const start      = (page - 1) * rpp;
   const autoFitRef = useRef(true);
   const scrollRef  = useRef<HTMLDivElement | null>(null);
@@ -182,13 +196,24 @@ export default function ClmSegmentPage() {
           flex: 0 0 auto; width: 500px; max-width: 100%;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
-        .clm-root .seg-filter-ms { flex: 0 0 auto; }
+        /* The funnel, its placement and the toggle's left padding all come
+           from .clm-filter-ms in clmShared.ts, shared with the T&C status
+           filter. Only this page's own paint lives here. */
+        /* align-self so the shorter control centres on the row instead of
+           stretching back to the row's height. */
+        .clm-root .seg-filter-ms { flex: 0 0 auto; align-self: center; }
         .clm-root .seg-filter-ms .master-select-toggle {
-          /* 43.5px, the height of the search it shares the row with. The
-             comment said 40 and the value said 48; the search is the reference
-             either way, and it is 43.5 now. */
-          height: 43.5px; padding: 0 12px;
-          border: 1.5px solid rgba(6,182,212,.22); border-radius: 8px;
+          /* 42, against the search's 48. It used to be 48 too — the same box,
+             measured top 256 bottom 304 on both — but it read as the bigger of
+             the two because it carries more weight: tighter corners (8 against
+             11) and a solid white fill where the search is a pale gradient
+             that sinks into the toolbar. Equal height on unequal weight does
+             not look equal. Dropping 6px and opening the corners to 10 puts
+             the search first, which is the right order: you search here far
+             more often than you filter.
+             The 500px search is untouched. */
+          height: 42px; padding-right: 12px;
+          border: 1.5px solid rgba(6,182,212,.22); border-radius: 10px;
           background: #fff; color: #0c4a6e; font-size: 12px; font-weight: 600;
           box-shadow: 0 1px 4px rgba(6,182,212,.07);
           transition: border-color .15s ease, box-shadow .15s ease;
@@ -259,7 +284,15 @@ export default function ClmSegmentPage() {
             </button>
             </div>
               <div className="seg-toolbar">
-                <div className="seg-filter-ms" style={{ width: 216 }}>
+                {/* 240, not 216: the funnel takes 22px of the label's room and
+                    at the old width "Customer ≠ Consignee: All" lost its "All"
+                    to an ellipsis — the selected value is the one thing this
+                    control has to say. */}
+                <div className="seg-filter-ms clm-filter-ms" style={{ width: 240 }}>
+                  <svg className="clm-filter-ico" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+                  </svg>
                   <MasterSelect
                     value={bcFilter}
                     placeholder="Customer ≠ Consignee"
@@ -283,7 +316,7 @@ export default function ClmSegmentPage() {
 
           <div className="clm-tab-body has-data">
               <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
-                <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%', opacity: refreshing ? 0.5 : 1, transition: 'opacity .15s ease' }}>
+                <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead><tr>
                     <th style={{ width: '6%', textAlign: 'center' }}>SR. NO</th>
                     <th style={{ width: '12%', textAlign: 'center' }}>SEGMENT ID</th>
@@ -298,7 +331,7 @@ export default function ClmSegmentPage() {
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                        <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell" style={{ maxWidth: 'none' }}><div className="clm-td-name-trunc">{clipName(r.name, 35)}</div></td></Tooltip>
+                        <TruncCell value={r.name} shown={clipName(r.name, 35)} style={{ maxWidth: 'none' }} />
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${r.regulatory_status === 'highly' ? 'clm-badge-red' : 'clm-badge-emerald'}`}>
                             <span className="clm-badge-dot" />

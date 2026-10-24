@@ -10,6 +10,7 @@ import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcS
 import { Shimmer } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 import SearchClear from '../../../components/ui/SearchClear';
+import RowsPerPageSelect from '../../../components/ui/RowsPerPageSelect';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Case to Case Contracts.
@@ -416,10 +417,17 @@ export default function ClmCaseToCasePage() {
 
       {/* CARD 1 — HEADER STRIP */}
       <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 22%,#DDD6FE 50%,#C4B5FD 78%,#A78BFA 100%)', borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.2)'}`, boxShadow: '0 2px 12px rgba(109,40,217,.1)', overflow: 'hidden' }}>
-        <div className="ctc-header-strip" style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 58 }}>
+        {/* 8px on both sides. It was 20, so the Create button sat well inside
+            the card's right edge while the icon, which also carried 10px of its
+            own, sat 30px from the left — the strip read as two things floating
+            in the middle rather than a bar with contents. */}
+        <div className="ctc-header-strip" style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 8px', minHeight: 58 }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: t.dark ? 'linear-gradient(180deg,rgba(255,255,255,.04),transparent)' : 'linear-gradient(180deg,rgba(255,255,255,.55),transparent)', pointerEvents: 'none' }} />
-          <div className="ctc-header-titlewrap" style={{ display: 'flex', alignItems: 'center', gap: 13, zIndex: 1, paddingLeft: 10 }}>
+          {/* 5px, the width of the accent stripe behind it. With the strip's
+              own 8px that puts the icon 8px clear of the stripe, matching the
+              8px the button has on the right. */}
+          <div className="ctc-header-titlewrap" style={{ display: 'flex', alignItems: 'center', gap: 13, zIndex: 1, paddingLeft: 5 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <div style={{ width: 38, height: 38, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 0 0 3px rgba(124,58,237,.22),0 4px 12px rgba(91,33,182,.42)' }}>
                 <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
@@ -436,7 +444,14 @@ export default function ClmCaseToCasePage() {
               <div className="ctc-header-sub" style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .85, marginTop: 2, lineHeight: 1.3 }}>Manage one-time operational agreements and contract approval workflows.</div>
             </div>
           </div>
-          <button onClick={() => { setEditing(null); setFormOpen(true); }} disabled={lifecycleBusy !== null} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', border: 'none', borderRadius: 10, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null ? .6 : 1, zIndex: 1, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 4px 14px rgba(91,33,182,.44),inset 0 1px 0 rgba(255,255,255,.18)' }}>
+          {/* 40px, stated — the height of a tab in the rail below it, which is
+              the tallest control the eye compares it to. It was 9px of padding
+              around a 12px label, which came out around 34, so the header's
+              only button sat shorter than every tab under it. */}
+          <button onClick={() => { setEditing(null); setFormOpen(true); }} disabled={lifecycleBusy !== null} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 40, padding: '0 18px', boxSizing: 'border-box', border: 'none', borderRadius: 10, fontFamily: 'inherit',
+            /* 12.5/700, the tab's type. It read 12 — a half-step under every
+               tab in the rail below, which is the thing it is compared to. */
+            fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null ? .6 : 1, zIndex: 1, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 4px 14px rgba(91,33,182,.44),inset 0 1px 0 rgba(255,255,255,.18)' }}>
             <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '10px 10px 0 0', pointerEvents: 'none' }} />
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Create CTC Agreement
@@ -485,7 +500,9 @@ export default function ClmCaseToCasePage() {
 
       {/* CARD 3 — CONTRACTS LIST */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
-        <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '10px 12px', padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
+        {/* gap 8, the CLM toolbar band — see .clm-tabs-bar in clmShared.ts.
+            Padding was already 8 here; the gap was 10 down / 12 across. */}
+        <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
           {/* Tab rail — the CLM master rail (.clm-tabrail / .clm-tab in
               clmShared.ts) on this page's violet ramp. The paint lives in
               CTC_CSS; see the note there for what changed and why.
@@ -630,9 +647,19 @@ export default function ClmCaseToCasePage() {
                 <div className="tc-wl-right">
                   <span className="tc-wl-rows">
                     Rows per page:
-                    <select value={pageSize} onChange={e => { setManualSize(true); setPageSize(parseInt(e.target.value, 10)); setPage(1); }}>
-                      {[...new Set([pageSize, ...PAGE_SIZE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
+                    {/* The app's picker, not a native <select>. A native one
+                        draws its list with the OS widget — system blue
+                        highlight, system font, opening wherever the platform
+                        decides — so this single footer looked like it came
+                        from another product while every other CLM pager (and
+                        the SPI pager this follows) used the styled control.
+                        RowsPerPageSelect is theme-neutral and accents with
+                        currentColor, so it takes this pager's violet. */}
+                    <RowsPerPageSelect
+                      value={pageSize}
+                      options={PAGE_SIZE_OPTIONS}
+                      onChange={n => { setManualSize(true); setPageSize(n); setPage(1); }}
+                    />
                   </span>
                   <span className="tc-wl-range">{safe} / {totalPages}</span>
                   <div className="tc-wl-nav">
@@ -790,7 +817,16 @@ const CTC_CSS = `
   border: 1px solid transparent;
   color: #6d28d9;
   overflow: hidden; position: relative; z-index: 1;
-  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
+  /* background-COLOR, not the background shorthand. The shorthand also
+     transitions background-image, and gradient <-> none is not interpolable,
+     so CSS swaps it discretely at the HALFWAY point of the duration.
+     That produced the white flash on tab switch: you click a tab while the
+     pointer is on it, so it starts from the white hover fill, and for the
+     first 80ms it held that white with the active gradient not yet painted.
+     Naming background-color leaves background-image to change instantly, so
+     the gradient is there on frame one and covers the white underneath it
+     while that fades. */
+  transition: background-color .16s, color .16s, box-shadow .16s, border-color .16s;
 }
 /* Hover is now the ONLY thing that gives an unselected tab a shape, so it has
    to be unmistakable: solid white against the rail's translucent white, lifted
@@ -860,10 +896,9 @@ const CTC_CSS = `
    thing on screen and the eye goes to the counter instead of the data. */
 [data-bs-theme="dark"] .ctc-tabrail > button.active .ctc-tab-count { background: rgba(0,0,0,.28); color: #fff; border-color: rgba(255,255,255,.22); }
 
-/* No height override for the search. The rail is back to 48, and .ops-search
-   in useOpsTheme.ts already states 48 - "the tab RAIL's height" - so the two
-   line up on the shared value, the same way they do on the other four
-   operations pages. */
+/* No height override for the search any more. .ops-search states 48 itself
+   now, and so does .clm-search, so every rail and every search in CLM are the
+   same box - this page no longer needs to say it on its own. */
 
 /* ── Responsive layout (QA #42) ──
    On narrow screens: the header title + Create button stack; the stage cards

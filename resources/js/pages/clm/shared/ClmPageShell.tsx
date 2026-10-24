@@ -120,6 +120,35 @@ export function ClmBrefBox({ label, sub, steps, icon, defaultCollapsed = true }:
 
 /* ── Small icons used across pages ── */
 
+/**
+ * The toolbar's section heading: the name of what the table holds, its count,
+ * and a line saying what that is.
+ *
+ * Replaces the "Total X · N" slab every master page used to open its toolbar
+ * with — a 48px block of gradient tile, filled label and white number that
+ * announced a count with the weight of a primary control and then left the
+ * rest of the row empty. A heading on its own did not work either: one short
+ * label on a bare row read as something deleted. The subtitle is what earns
+ * the space, because it says something the column names do not.
+ *
+ * Styling is .clm-total / .clm-subhead-* in clmShared.ts, and the class name
+ * stays .clm-total so the toolbar's existing layout rules — including the
+ * narrow-screen stacking breakpoint — keep applying without change.
+ */
+export function ClmSubHead({ title, sub, count }: { title: string; sub: string; count: number }) {
+  return (
+    <div className="clm-total">
+      <div className="clm-subhead-text">
+        <div className="clm-subhead-title">
+          {title}
+          <span className="clm-subhead-count">{count}</span>
+        </div>
+        <div className="clm-subhead-sub">{sub}</div>
+      </div>
+    </div>
+  );
+}
+
 export const ICO = {
   /* Steps icons — render inline with currentColor */
   grid:       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
