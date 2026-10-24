@@ -3004,7 +3004,7 @@ export default function AddVendorModal(props: {
               )}
 
               {idTab === 'identification' && (
-                <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
+                <SectionCard tone="violet" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
                   {/* Single full-width address field — no separate Address Type
                       dropdown; the primary address is the registered office. */}
                   <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}>
@@ -4246,7 +4246,7 @@ function Step1IdentitySkeleton() {
           {[52, 62, 46, 50, 58, 40, 56, 60, 64].map((w, i) => <SkelField key={i} label={w} />)}
         </div>
       </SectionCard>
-      <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
+      <SectionCard tone="violet" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
         {/* Full-width Registered Office Address, then Country / State / State
             Code / City across four, then the two-up row below it. */}
         <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}><SkelField label={28} /></div>
@@ -5356,6 +5356,127 @@ function MappedProductsPopup(props: {
 }
 
 
+/* The Mapped Products popup body, laid out as the Consignee list's Mapped
+   Customers popup: the search, a count pill and Map New Product in a row ABOVE
+   the card, and the card holding only the table and its pager. The table is
+   the Supplier list's (.dt-root.hr-dt + .dt-table, serial badge, id chip,
+   segment chip, 28px edit icon). */
+function MappedProductsListCard(props: {
+  paging: ReturnType<typeof useMappedProductsPaging>;
+  total: number;
+  onAdd: () => void;
+  addDisabled?: boolean;
+  onEdit: (id: string) => void;
+  busy?: boolean;
+  empty?: ReactNode;
+}) {
+  const { paging } = props;
+  return (
+    <div className="smp-wrap">
+      <div className="smp-toolbar">
+        <div className="ui-search-abs smp-search">
+          <i className="ri-search-line" />
+          <input
+            type="search"
+            name="mapped-products-search"
+            autoComplete="new-password"
+            data-lpignore="true"
+            data-form-type="other"
+            placeholder="Search product, code, HSN/SAC, segment…"
+            value={paging.search}
+            disabled={props.total === 0}
+            onChange={e => paging.setSearch(e.target.value)}
+            aria-label="Search mapped products"
+          />
+          <SearchClear show={paging.search} onClear={() => paging.setSearch('')} />
+        </div>
+        <div className="smp-toolbar-right">
+          <span className="smp-count">{props.total} {props.total === 1 ? 'product' : 'products'}</span>
+          <button type="button" className="smp-add" onClick={props.onAdd} disabled={props.addDisabled}>
+            <i className="ri-add-line" /> Map New Product
+          </button>
+        </div>
+      </div>
+      <div className="smp-card">
+        {props.empty ? (
+          <div className="smp-empty">{props.empty}</div>
+        ) : paging.filtered.length === 0 ? (
+          <div className="smp-empty">No mapped products match "{paging.search.trim()}".</div>
+        ) : (
+          <>
+            <div className="smp-table-wrap dt-root hr-dt" data-accent="violet">
+              <table className="smp-table dt-table">
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'center' }}>SR NO</th>
+                    <th>PRODUCT</th>
+                    <th>CODE</th>
+                    <th>HSN/SAC</th>
+                    <th>SEGMENT</th>
+                    <th style={{ textAlign: 'right' }}>PRICE (₹)</th>
+                    <th style={{ textAlign: 'right' }}>GST %</th>
+                    <th style={{ textAlign: 'right' }}>GST (₹)</th>
+                    <th style={{ textAlign: 'right' }}>TOTAL (₹)</th>
+                    <th style={{ textAlign: 'center' }}>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paging.pageRows.map((r, i) => {
+                    const segName = r.segment ? r.segment.split(' · ')[0] : '';
+                    return (
+                      <tr key={r.id}>
+                        <td style={{ textAlign: 'center' }}><span className="dt-serial">{paging.start + i + 1}</span></td>
+                        <td>{r.productName}</td>
+                        <td><span className="dt-id-chip">{formatProductCode(r.productCode) || r.productCode || '—'}</span></td>
+                        <td>{r.hsnSacCode || '—'}</td>
+                        <td>
+                          {segName ? (
+                            <span className="smc-seg smc-seg--withbadge">
+                              <span className="smc-seg-name">{segName}</span>
+                              {r.segmentReg ? <SegmentBadge status={r.segmentReg} style={{ marginLeft: 0, flexShrink: 0 }} /> : <SegmentNameBadge name={segName} style={{ marginLeft: 0, flexShrink: 0 }} />}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>₹{r.purchasePrice.toFixed(2)}</td>
+                        {/* 0% is a value, not a blank (CS-168) — only a bad parse reads as a dash. */}
+                        <td style={{ textAlign: 'right' }}>{Number.isFinite(r.gstPercentage) ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
+                        <td style={{ textAlign: 'right' }}>₹{r.gstAmount.toFixed(2)}</td>
+                        <td style={{ textAlign: 'right' }}>₹{r.totalAmount.toFixed(2)}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          {/* Edit only (CS-168): unmapping stays in the supplier form. */}
+                          <Tooltip label="Edit product">
+                            <button
+                              type="button"
+                              aria-label="Edit product"
+                              className="smc-act smc-act-edit d-inline-flex align-items-center justify-content-center"
+                              onClick={() => props.onEdit(r.id)}
+                              disabled={props.busy}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                            </button>
+                          </Tooltip>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="smp-pag">
+              <WorklistPager
+                total={paging.filtered.length}
+                page={paging.page}
+                pageSize={MAPPED_PAGE_SIZE}
+                onPage={paging.setPage}
+              />
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function MappedProductsViewPopup(props: {
   vendorId: number;
   code: string;
@@ -5614,33 +5735,28 @@ export function MappedProductsViewPopup(props: {
          form is up it holds unsaved input, so a stray click must not bin it. */
       dismissOnBackdrop={!mapOpen}
       busy={saving}
-      /* In the header rather than beside the search: the header has room for
-         it, and the search row then only appears once there are rows to search. */
-      headerAction={
-        <button className="avm-cp-head-btn" onClick={openMapForm} disabled={saving || rows === null}>
-          <i className="ri-add-line" /> Map New Product
-        </button>
-      }
-      footer={<button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Close</button>}
+      /* No footer: the header's × closes it. Map New Product lives in the
+         list card's toolbar, beside the search, as on the Supplier list. */
     >
       {rows === null ? (
         <ShimmerTable rows={MAPPED_PAGE_SIZE} cols={9} />
-      ) : failed ? (
-        <div className="avm-empty avm-empty-accent">Could not load the mapped products. Close and try again.</div>
-      ) : rows.length === 0 ? (
-        <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map New Product" to begin.</div>
       ) : (
         /* Edit is offered here (CS-168); unmapping is not.
            They are not the same risk: correcting a price or a GST rate is a
            revision of the row you are looking at, while removing the mapping
            destroys saved data from a popup opened to READ it. Removal stays in
            the supplier form, one deliberate step further in. */
-        <>
-          <div className="avm-mapped-toolbar">
-            <MappedProductsSearch value={paging.search} onChange={paging.setSearch} />
-          </div>
-          <PagedMappingTable paging={paging} onEdit={openEditForm} onRemove={() => {}} busy={saving} />
-        </>
+        <MappedProductsListCard
+          paging={paging}
+          total={rows.length}
+          onAdd={openMapForm}
+          addDisabled={saving}
+          onEdit={openEditForm}
+          busy={saving}
+          empty={failed
+            ? 'Could not load the mapped products. Close and try again.'
+            : rows.length === 0 ? 'No products mapped yet. Click "Map New Product" to begin.' : null}
+        />
       )}
     </PopupChrome>
 
@@ -5715,7 +5831,8 @@ function PopupChrome(props: {
   dismissOnBackdrop?: boolean;
   /** Rendered in the header beside Close — a primary action the popup owns. */
   headerAction?: ReactNode;
-  footer: ReactNode;
+  /** Omitted, the popup has no footer band — the header's × closes it. */
+  footer?: ReactNode;
   children: ReactNode;
 }) {
   const amber = props.tone === 'amber';
@@ -5747,7 +5864,7 @@ function PopupChrome(props: {
           {props.children}
           {busy && <div className="avm-cp-saving-veil" aria-hidden />}
         </div>
-        <div className="avm-cp-foot">{props.footer}</div>
+        {props.footer != null && <div className="avm-cp-foot">{props.footer}</div>}
       </div>
     </div>
   ), document.body);

@@ -151,7 +151,11 @@ const CSS = `
 .bpa-seg{display:flex;align-items:center;height:48px;box-sizing:border-box;background:linear-gradient(180deg, #f6feff, #f0fdff);border:1px solid #c9f8fd;border-radius:11px;padding:3px;gap:8px;}
 .bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:650;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
 .bpa-tab svg{flex-shrink:0;}
-.bpa-tab-active{border:1px solid transparent;background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);color:#fff;box-shadow:0 6px 16px -5px rgba(6,182,212,.55),inset 0 1px 0 rgba(255,255,255,.25);}
+/* background-origin, because the border is transparent - see the same rule in
+   ClmBuyerProfilePage. A background sits against the padding box by default,
+   so the strip under the border took the ramp's lightest stop and drew a pale
+   line along the left and top edges of the selected tab. */
+.bpa-tab-active{border:1px solid transparent;background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);background-origin:border-box;color:#fff;box-shadow:0 6px 16px -5px rgba(6,182,212,.55),inset 0 1px 0 rgba(255,255,255,.25);}
 .bpa-tab-inactive{background:transparent;border:1px solid transparent;color:#0e7490;box-shadow:0 1px 2px rgba(16,24,40,.05);}
 .bpa-tab-inactive:hover{background:rgba(6,182,212,.06);color:#0891b2;}
 
@@ -760,8 +764,12 @@ const SUB_BAR: CSSProperties = { display: 'flex', alignItems: 'center', padding:
  * one was 36px at radius 9 with a 13px icon at 70% and an 11.5px input: the
  * shortest search in the module. */
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  // 43.5px and capped at 500, the module-wide search box — .ops-search in
+  // useOpsTheme.ts. This copy stated 48 (the old "tab rail height") and let
+  // max-width run to 100%, so it stood taller and wider than the same field on
+  // Case to Case.
   return (
-    <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '48px', padding: '0 14px', borderRadius: '11px', background: 'linear-gradient(180deg,#f6feff,#f0fdff)', border: '1.5px solid #cef8fd', flex: '0 0 500px', maxWidth: '100%', boxSizing: 'border-box' }}>
+    <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '43.5px', padding: '0 14px', borderRadius: '11px', background: 'linear-gradient(180deg,#f6feff,#f0fdff)', border: '1.5px solid #cef8fd', flex: '0 0 500px', maxWidth: '500px', minWidth: 0, boxSizing: 'border-box' }}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
       <input type="text" autoComplete="off" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: '13px', fontWeight: 500, fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
       {/* Inside the box, not beside it: SearchBox owns its own flex row, so a

@@ -156,7 +156,6 @@ const VIRTUAL_PLATFORMS  = ['Zoom', 'Google Meet', 'Microsoft Teams', 'Webex', '
 const PHYSICAL_PLATFORMS = ['Office Visit', 'Client Site', 'Trade Fair', 'Conference', 'Factory Visit', 'Port Visit', 'Other'];
 // Common ISD dialing codes for the Contact No dropdown. India first since it's
 // the primary market; the rest cover the app's frequent trade corridors.
-const COUNTRY_CODES = ['+91', '+1', '+44', '+971', '+65', '+86', '+81', '+49', '+33', '+61', '+92', '+880', '+94', '+27'];
 // FIXED rows-per-page options — the dropdown always offers exactly these
 // (QA #21: options must not change dynamically). The auto-fit snaps to one of
 // these so the selected value is always a listed option.
@@ -191,8 +190,6 @@ type FormShape = {
   email?: string;
   contact?: string;
   // Country dialing code shown in a dropdown beside the Contact No input.
-  // The stored `contact` is rebuilt as "<countryCode> <localNumber>" on save.
-  countryCode?: string;
   platform?: string;
   // Free-text platform name, only used when `platform === 'Other'`.
   platformOther?: string;
@@ -568,7 +565,7 @@ export default function SalesTodo() {
       // platform left empty intentionally — pre-filling "Zoom" silently
       // satisfied the required validation, so the user could save without
       // ever opening the dropdown. Forcing an active selection.
-      : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', countryCode:'+91', platform:'', platformOther:'', date: TODAY_STR, startTime:'', endTime:'', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
+      : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', platform:'', platformOther:'', date: TODAY_STR, startTime:'', endTime:'', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
     setFormErrors([]);
     setMtgErr({});
     setModalOpen(true);
@@ -582,19 +579,14 @@ export default function SalesTodo() {
       toast.info('Read-only', 'Completed reminders cannot be edited.');
       return;
     }
-    // For meetings, split the stored "<code> <number>" contact back into a
-    // country-code + local-number pair so the dropdown re-selects correctly,
-    // and map an unrecognised platform onto the "Other" + free-text inputs.
+    // For meetings, map an unrecognised platform onto the "Other" + free-text inputs.
     if ('code' in record) {
       const m = record as Meeting;
-      const { code, local } = splitContact(m.contact);
       const known = (m.type === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS);
       const isOther = !!m.platform && !known.includes(m.platform);
       setForm({
         ...m,
         editId: m.id,
-        countryCode: code,
-        contact: local,
         platform: isOther ? 'Other' : m.platform,
         platformOther: isOther ? m.platform : '',
       });
@@ -818,13 +810,10 @@ export default function SalesTodo() {
         }
       }
 
-      // Contact number — REQUIRED. Combine the selected country code with the
-      // local number, then enforce 10–15 total digits (10 covers India's
-      // standard mobile length; 15 is the ITU-T E.164 maximum).
-      const localNum  = (form.contact || '').trim();
-      const ccode     = (form.countryCode || '+91').trim();
-      const contactRaw = localNum ? `${ccode} ${localNum}`.trim() : '';
-      if (!localNum) {
+      // Contact number — REQUIRED, stored as typed. Enforce 10–15 digits (10
+      // covers India's standard mobile length; 15 is the ITU-T E.164 maximum).
+      const contactRaw = (form.contact || '').trim();
+      if (!contactRaw) {
         set('contact', 'Contact Number is required.');
       } else {
         const digits = contactRaw.replace(/\D/g, '');
@@ -1667,14 +1656,14 @@ export default function SalesTodo() {
                       className={`td-mtg-toggle-btn ${meetingSub === 'virtual' ? 'active' : ''}`}
                       onClick={() => { setMeetingSub('virtual'); setForm(p => ({ ...p, type: 'virtual', platform: '', platformOther: '' })); setMtgErr({}); }}
                     >
-                      <IconCam /> 💻 Virtual Meeting
+                      <IconCam /> Virtual Meeting
                     </button>
                     <button
                       type="button"
                       className={`td-mtg-toggle-btn ${meetingSub === 'physical' ? 'active' : ''}`}
                       onClick={() => { setMeetingSub('physical'); setForm(p => ({ ...p, type: 'physical', platform: '', platformOther: '' })); setMtgErr({}); }}
                     >
-                      <IconPin /> 🏢 Physical Meeting
+                      <IconPin /> Physical Meeting
                     </button>
                   </div>
 
@@ -1693,19 +1682,16 @@ export default function SalesTodo() {
                           const name  = oppCustomerFor(v);
                           const email = oppEmailFor(v);
                           const phone = oppContactFor(v);
-                          const cp    = splitContact(phone);
                           // Auto-fill the opportunity's PRIMARY CONTACT PERSON —
-                          // name, email AND phone (split into country-code +
-                          // number). Keep any manually-typed value when the
-                          // contact person is missing that field.
+                          // name, email AND phone. Keep any manually-typed value
+                          // when the contact person is missing that field.
                           setForm(p => ({
                             ...p,
                             oppId: v,
                             oppDate: oppDateFor(v),
                             customer:    name || p.customer,
                             email:       email || p.email,
-                            contact:     phone ? cp.local : p.contact,
-                            countryCode: phone ? cp.code : (p.countryCode || '+91'),
+                            contact:     phone || p.contact,
                           }));
                           // Clear the inline error on any field we just filled.
                           setMtgErr(e => ({
@@ -1744,33 +1730,22 @@ export default function SalesTodo() {
                   </div>
                   <div className="td-form-row">
                     <Field label="Contact No" required error={mtgErr.contact}>
-                      {/* Country code dropdown + local number. The two combine
-                          into a single stored contact on save (QA bug 34). */}
-                      <div className="td-contact-row">
-                        <select
-                          className="td-inp td-cc-select"
-                          value={form.countryCode || '+91'}
-                          onChange={e => setForm(p => ({ ...p, countryCode: e.target.value }))}
-                          aria-label="Country code"
-                        >
-                          {COUNTRY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <input
-                          className={`td-inp ${mtgErr.contact ? 'td-inp-err' : ''}`}
-                          type="tel"
-                          inputMode="tel"
-                          maxLength={15}
-                          value={form.contact || ''}
-                          onChange={e => {
-                            // Local number only — digits, spaces and dashes.
-                            // The country code lives in the dropdown beside it.
-                            const cleaned = e.target.value.replace(/[^\d\s\-]/g, '');
-                            setForm(p => ({ ...p, contact: cleaned }));
-                            clearMtgErr('contact');
-                          }}
-                          placeholder="e.g. 98765 43210"
-                        />
-                      </div>
+                      <input
+                        className={`td-inp ${mtgErr.contact ? 'td-inp-err' : ''}`}
+                        type="tel"
+                        inputMode="tel"
+                        maxLength={20}
+                        value={form.contact || ''}
+                        onChange={e => {
+                          // Digits, spaces, dashes and one leading +.
+                          const cleaned = e.target.value
+                            .replace(/[^\d\s+\-]/g, '')
+                            .replace(/(?!^)\+/g, '');
+                          setForm(p => ({ ...p, contact: cleaned }));
+                          clearMtgErr('contact');
+                        }}
+                        placeholder="e.g. +91 98765 43210"
+                      />
                     </Field>
                     <Field label={meetingSub === 'physical' ? 'Meeting Type / Format' : 'Platform'} required error={mtgErr.platform}>
                       <MasterSelect
@@ -2281,16 +2256,6 @@ function fromInputDate(d?: string) {
   const p = d.split('-');
   if (p.length !== 3) return '';
   return `${p[2]}/${p[1]}/${p[0]}`;
-}
-
-/* Split a stored contact string ("<code> <number>") into its dialing-code
- * and local-number parts so the edit form can re-hydrate the country-code
- * dropdown. Falls back to +91 when no leading code is present. */
-function splitContact(raw?: string): { code: string; local: string } {
-  const v = (raw || '').trim();
-  const m = /^(\+\d{1,4})[\s-]+(.+)$/.exec(v);
-  if (m) return { code: m[1], local: m[2].trim() };
-  return { code: '+91', local: v };
 }
 
 /* ─── TdSelect — themed dropdown that matches the rest of the form.

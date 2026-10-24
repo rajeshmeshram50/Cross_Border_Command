@@ -262,10 +262,17 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       if (opts?.issueDate)  fd.append('issue_date', opts.issueDate);
       if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
       fd.append('attachment', file);
-      await api.post(`/segment-uploads/customer/${customer.db_id}`, fd, {
+      /* The upload response carries the recomputed vault, so there is no second
+         request. This used to POST and then GET the whole vault again, which
+         made one upload cost two round trips — the server work for the vault is
+         single-digit milliseconds, but the round trip is not. If the key is
+         missing (older server, or the payload could not be built) fall back to
+         the reload, so nothing depends on it being there. */
+      const res = await api.post(`/segment-uploads/customer/${customer.db_id}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      await reloadVault();
+      const vault = res.data?.vault as VaultData | null | undefined;
+      if (vault) setVaultLive(vault); else await reloadVault();
       toast.success('Document uploaded', `${file.name} has been attached.`);
       return true;
     } catch (e: any) {

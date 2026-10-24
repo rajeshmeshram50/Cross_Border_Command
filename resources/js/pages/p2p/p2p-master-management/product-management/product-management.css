@@ -8503,3 +8503,24 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   background: rgba(255, 255, 255, .03);
   border-top-color: rgba(167, 139, 250, .16);
 }
+
+/* Toolbar heights = the Supplier list's (QA #83–85): the tab rail stands 48px
+   (40px tabs inside 3px padding + 1px border), the search matches the rail at
+   48px, and Filter stands 44px centred on it, as on the Supplier toolbar. */
+.prd-tabs { padding: 3px; }
+.prd-tab { height: 40px; padding-top: 0; padding-bottom: 0; }
+.prd-search { height: 48px; }
+.prd-filter-btn { height: 44px; }
+
+/* Reset frozen while no filter is applied (QA #86). */
+.prd-fbtn:disabled,
+.prd-fbtn.ghost:disabled:hover {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+  background: #fff;
+  color: #a1a1aa;
+  border-color: #e4e4e7;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .prd-fbtn:disabled { background: transparent; color: #71717a; border-color: rgba(255,255,255,.12); }

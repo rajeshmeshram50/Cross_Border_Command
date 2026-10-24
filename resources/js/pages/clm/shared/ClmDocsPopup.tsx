@@ -18,6 +18,36 @@ import type { VaultData, VaultDoc, VaultStatus } from '../../sales/core-masters/
  * so the rows stay in sync with the vault.
  * ────────────────────────────────────────────────────────────────────────── */
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * One payload per owner, shared by all five cells.
+ *
+ * KYC, DD, Trade Licences, Trade Documents and Agreements are five cells on
+ * the same row, and every one of them opens this popup and GETs the SAME
+ * vault — so reading a row's documents cost four or five identical requests,
+ * each paid for in full. That is what the "takes time to open" reports are
+ * measuring: the reported call was 0.9 kB and took 3.06s, and the trivial
+ * unread-count beside it in the same waterfall took 1.47s, so the time is
+ * per-request latency on the server, not payload or query work (the handler
+ * measures ~6ms). Nothing is won by sending less; what wins is not sending it
+ * again.
+ *
+ * Stale-while-revalidate, not a plain cache: a hit renders immediately AND
+ * still refetches behind the popup, so the second open is instant and the
+ * numbers are never older than one open. The window is deliberately short —
+ * this is for "I clicked KYC, now I'm clicking DD", not for holding documents
+ * across a working session — and uploads anywhere refresh it through
+ * invalidateDocsCache below.
+ * ────────────────────────────────────────────────────────────────────────── */
+const VAULT_TTL_MS = 60_000;
+const vaultCache = new Map<string, { at: number; data: VaultData | null }>();
+const cacheKey = (ownerType: string, ownerId: number) => `${ownerType}:${ownerId}`;
+
+/** Drop a cached payload after an upload / verify / delete touches that owner. */
+export function invalidateDocsCache(ownerType?: string, ownerId?: number) {
+  if (ownerType && ownerId) vaultCache.delete(cacheKey(ownerType, ownerId));
+  else vaultCache.clear();
+}
+
 export type DocCategory = 'kyc' | 'dd' | 'tl' | 'td' | 'agr';
 
 /** Normalised list-row shape the card renders, regardless of source bucket. */
@@ -145,14 +175,28 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  /* Fetch the vault payload when opened for an owner. */
+  /* Fetch the vault payload when opened for an owner — from cache first.
+     A fresh entry paints the rows with no spinner at all; the request still
+     goes out behind it so what you are looking at is at most one open old. */
   useEffect(() => {
     if (!open || !ownerId) { setVault(null); return; }
     let cancelled = false;
-    setLoading(true);
+
+    const key = cacheKey(ownerType, ownerId);
+    const hit = vaultCache.get(key);
+    const fresh = hit && Date.now() - hit.at < VAULT_TTL_MS;
+    if (fresh) { setVault(hit!.data); setLoading(false); }
+    else { setVault(null); setLoading(true); }
+
     api.get(`/segment-uploads/${ownerType}/${ownerId}/vault`)
-      .then((r) => { if (!cancelled) setVault((r.data?.data ?? null) as VaultData | null); })
-      .catch(() => { if (!cancelled) setVault(null); })
+      .then((r) => {
+        const data = (r.data?.data ?? null) as VaultData | null;
+        vaultCache.set(key, { at: Date.now(), data });
+        if (!cancelled) setVault(data);
+      })
+      /* A failed revalidation leaves a cached payload on screen rather than
+         blanking rows the user is reading; only a cold open shows nothing. */
+      .catch(() => { if (!cancelled && !fresh) setVault(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [open, ownerType, ownerId]);

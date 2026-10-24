@@ -108,8 +108,10 @@ const DCP_TABS_CSS = `
 [data-bs-theme="dark"] .clm-table-fill.dcp-fill-empty { background: #0f172a; }
 .dcp-filter-btn {
   display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
-  /* 40px and radius 11, the height of the search beside it. */
-  height: 48px; padding: 0 20px; border-radius: 11px;
+  /* 43.5px and radius 11 — the height of the search beside it. The comment
+     here said 40 and the value said 48; it is the search's number either way,
+     and that number is now 43.5. */
+  height: 43.5px; padding: 0 20px; border-radius: 11px;
   font-size: 12.5px; font-weight: 600; cursor: pointer;
   color: #fff;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);

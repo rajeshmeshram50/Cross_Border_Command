@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, typ
 import SegmentBadge, { SegmentNameBadge, segmentLabel, useSegmentStatusByName } from '../../../../components/ui/SegmentBadge';
 import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
 import './product-management.css';
+import '../supplier-management/supplier-management.css';   // .sup-fig .cstrip / .bref-box — the shared list header
+import '../../../sales/core-masters/customer/SalesCustomers.css';   // .smc-root header overrides
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -494,49 +496,56 @@ export default function Products() {
   return (
     <div className="prd-root">
 
-      <div className="prd-hero">
-        <span className="prd-hero-accent" />
-        <span className="prd-hero-glow" />
-        <span className="prd-hero-sheen" />
-        <div className="prd-hero-left">
-          <div className="prd-hero-avatar-wrap">
-            <div className="prd-hero-avatar">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+      {/* Header strip + "What We Are Doing Here" — the same markup and classes
+          the Customer, Consignee and Supplier lists use (.sup-fig .cstrip and
+          .bref-box, inside .smc-root for their shared edge/height overrides). */}
+      <div className="smc-root">
+      <div className="sup-fig">
+        <div className="cstrip">
+          <span className="cstrip__accent" />
+          <span className="cstrip__glow" />
+          <span className="cstrip__sheen" />
+          <div className="cstrip__left">
+            <div className="cstrip__avatar-wrap">
+              <div className="cstrip__avatar">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
+              </div>
+              <span className="cstrip__online-dot" />
             </div>
-            <span className="prd-hero-dot" />
+            <div className="min-w-0">
+              <div className="cstrip__title">Product Management</div>
+              <div className="cstrip__sub">Create and manage products with pricing, compliance, quality controls, and supplier mapping for procurement and sales readiness.</div>
+            </div>
           </div>
-          <div className="min-w-0">
-            <div className="prd-hero-title">Product Management</div>
-            <div className="prd-hero-sub">Create and manage products with pricing, compliance, quality controls, and supplier mapping for procurement and sales readiness.</div>
+          <div className="cstrip__right">
+            <button type="button" className="cstrip__action-btn" onClick={() => { setEditingId(null); setAddOpen(true); }}>
+              <span className="cstrip__action-btn-sheen" />
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              Add Product
+            </button>
           </div>
         </div>
-        <button type="button" className="prd-hero-btn" onClick={() => { setEditingId(null); setAddOpen(true); }}>
-          <span className="prd-hero-btn-sheen" />
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Add Product
-        </button>
-      </div>
 
-      <div className={`prd-bref ${brefOpen ? '' : 'is-collapsed'}`}>
-        <div className="prd-bref-head" onClick={() => setBrefOpen(o => !o)}>
-          <div className="prd-bref-head-ico">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
-          </div>
-          <div className="prd-bref-head-mid">
-            <div className="prd-bref-head-row">
-              <div className="prd-bref-head-label">Product Management</div>
-              <div className="prd-bref-head-sep" />
-              <div className="prd-bref-head-title">What We Are Doing Here</div>
+        <div className={`bref-box smc-bref ${brefOpen ? '' : 'is-collapsed'}`}>
+          <div className="bref-box__header" onClick={() => setBrefOpen(o => !o)} role="button">
+            <div className="bref-box__header-ico">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg>
             </div>
-            <div className="prd-bref-head-sub">Manage product master records, pricing, compliance requirements, quality standards, and supplier mapping to ensure procurement, sales, and operational readiness.</div>
-          </div>
-          <div className="prd-bref-head-right">
-            <div className="prd-bref-toggle">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            <div className="bref-box__header-mid">
+              <div className="bref-box__header-row">
+                <div className="bref-box__header-label">Product Management</div>
+                <div className="bref-box__header-sep" />
+                <div className="bref-box__header-title">What We Are Doing Here</div>
+              </div>
+              <div className="bref-box__header-sub">Manage product master records, pricing, compliance requirements, quality standards, and supplier mapping to ensure procurement, sales, and operational readiness.</div>
+            </div>
+            <div className="bref-box__header-right">
+              <div className="bref-box__toggle">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+              </div>
             </div>
           </div>
-        </div>
-        <div className="prd-bref-body">
+          <div className="bref-box__body">
           {[
             { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, num: 'Step 01', title: 'Product Registration',          desc: 'Create and manage product master records.' },
             { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>, num: 'Step 02', title: 'Pricing & Sales Configuration',  desc: 'Configure pricing, GST, and sales details.' },
@@ -544,16 +553,18 @@ export default function Products() {
             { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>, num: 'Step 04', title: 'Supplier Mapping & Sourcing',     desc: 'Link products with approved suppliers.' },
             { svg: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>, num: 'Step 05', title: 'Product Readiness & Activation',  desc: 'Approve products for operational use.' },
           ].map((s) => (
-            <div className="prd-bref-item" key={s.num}>
-              <div className="prd-bref-item-top">
-                <div className="prd-bref-item-ico">{s.svg}</div>
-                <span className="prd-bref-item-num">{s.num}</span>
+              <div className="bref-item" key={s.num}>
+                <div className="bref-item__top">
+                  <div className="bref-item__ico">{s.svg}</div>
+                  <span className="bref-item__num">{s.num}</span>
+                </div>
+                <div className="bref-item__title">{s.title}</div>
+                <div className="bref-item__desc">{s.desc}</div>
               </div>
-              <div className="prd-bref-item-title">{s.title}</div>
-              <div className="prd-bref-item-desc">{s.desc}</div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
+      </div>
       </div>
 
       <div className="prd-panel">
@@ -950,7 +961,8 @@ export default function Products() {
         })()}
 
         <div className="prd-filter-footer">
-          <button className="prd-fbtn ghost" onClick={resetFilters}>
+          {/* Frozen with nothing to reset (QA #86), as the header's clear is. */}
+          <button className="prd-fbtn ghost" onClick={resetFilters} disabled={activeFilterCount === 0}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
             Reset
           </button>

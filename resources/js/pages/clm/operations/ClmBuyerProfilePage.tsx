@@ -196,9 +196,21 @@ const BP_CSS = `
 :where(.bpx-40) { font-size: 13px !important; font-weight: 800 !important; color: #0c4a6e !important; letter-spacing: -.2px !important; }
 :where(.bpx-41) { font-size: 8px !important; font-weight: 700 !important; color: #0891b2 !important; background: rgba(6,182,212,.1) !important; border: 1px solid rgba(6,182,212,.25) !important; padding: 2px 7px !important; border-radius: 20px !important; white-space: nowrap !important; }
 :where(.bpx-42) { font-size: 10px !important; font-weight: 500 !important; color: #0891b2 !important; margin-top: 2px !important; }
-:where(.bpx-43) { display: flex !important; align-items: center !important; gap: 8px !important; height: 36px !important; padding: 0 14px !important; border-radius: 9px !important; background: #fff !important; border: 1.5px solid #A5F3FC !important; box-shadow: 0 1px 4px rgba(6,182,212,.08) !important; transition: border-color .15s,box-shadow .15s !important; flex: 1 !important; max-width: 680px !important; }
-:where(.bpx-44) { flex-shrink: 0 !important; opacity: 0.7 !important; }
-:where(.bpx-45) { border: none !important; outline: none !important; font-size: 11.5px !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; background: transparent !important; min-width: 0 !important; }
+/* The transaction search is .ops-search --cyan (useOpsTheme.ts:54), value for
+   value, because it sits in the same module as Case to Case and was reading as
+   a different control: 36px high on a 9px radius, flat white under a #A5F3FC
+   hairline with a drop shadow, an 11.5px input and a dimmed icon, stretching to
+   680px. That is a copy of .ops-search rather than .ops-search itself, so the
+   numbers have to be stated here.
+
+   flex 0 0 500px, not flex 1: typing filters the table, which changes the
+   counts in the tabs, and a shrinkable field grew back toward its basis as you
+   typed (QA #107). A fixed basis with a 0 shrink factor keeps the box still. */
+:where(.bpx-43) { display: flex !important; align-items: center !important; gap: 8px !important; height: 43.5px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg, #f6feff, #f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; transition: border-color .15s ease, box-shadow .15s ease !important; flex: 0 0 500px !important; max-width: 500px !important; min-width: 0 !important; box-sizing: border-box !important; }
+:where(.bpx-43):focus-within { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(6,182,212,.14) !important; }
+:where(.bpx-44) { width: 16px !important; height: 16px !important; flex-shrink: 0 !important; stroke: #22d3ee !important; }
+:where(.bpx-45) { border: none !important; outline: none !important; font-size: 13px !important; font-weight: 500 !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; background: transparent !important; min-width: 0 !important; }
+:where(.bpx-45)::placeholder { color: #50c0d8 !important; font-weight: 500 !important; }
 :where(.bpx-46) { display: flex !important; flex-direction: column !important; flex: 1 !important; min-height: 0 !important; background: linear-gradient(180deg,#f0fdff,#f8feff) !important; }
 :where(.bpx-47) { display: flex !important; align-items: center !important; padding: 8px 16px 0 16px !important; gap: 0 !important; border-bottom: 1.5px solid rgba(6,182,212,.15) !important; background: linear-gradient(110deg,#f0fdff,#e8fbfd) !important; flex-shrink: 0 !important; }
 :where(.bpx-48) { overflow: auto !important; flex: 1 !important; min-height: 0 !important; display: flex !important; flex-direction: column !important; }
@@ -221,7 +233,7 @@ const BP_CSS = `
 /* 43.5px, the module-wide search height — .ops-search in useOpsTheme.ts and
    .clm-search in clmShared.ts carry the same number. This box is a local copy
    rather than .ops-search, so it has to be set here too. */
-:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 43.5px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg,#f6feff,#f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; width: 380px !important; max-width: 100% !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
+:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 43.5px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg,#f6feff,#f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; flex: 0 0 500px !important; max-width: 500px !important; min-width: 0 !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
 :where(.bpx-62) > svg { width: 16px !important; height: 16px !important; stroke: #22d3ee !important; flex-shrink: 0 !important; }
 :where(.bpx-62):focus-within { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(6,182,212,.14) !important; }
 :where(.bpx-63) { border: none !important; outline: none !important; font-size: 13px !important; font-weight: 500 !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; min-width: 0 !important; background: transparent !important; }
@@ -319,7 +331,13 @@ const BP_CSS = `
 .bpa-seg{display:flex;align-items:center;height:48px;box-sizing:border-box;background:linear-gradient(180deg, #f6feff, #f0fdff);border:1px solid #c9f8fd;border-radius:11px;padding:3px;gap:8px;}
 .bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:650;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
 .bpa-tab svg{flex-shrink:0;}
-.bpa-tab-active{border:1px solid transparent;background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);color:#fff;box-shadow:0 6px 16px -5px rgba(6,182,212,.55),inset 0 1px 0 rgba(255,255,255,.25);}
+/* background-origin, because the border is transparent: a background is placed
+   against the PADDING box by default, so the 1px strip under that border gets
+   the ramp's edge colour extended outward - on a 135deg ramp the lightest stop
+   - and it draws a pale line down the left and across the top of the selected
+   tab. Against the border box the ramp runs to the edge. The border itself has
+   to stay, or the selected tab goes 2px narrower than the others. */
+.bpa-tab-active{border:1px solid transparent;background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);background-origin:border-box;color:#fff;box-shadow:0 6px 16px -5px rgba(6,182,212,.55),inset 0 1px 0 rgba(255,255,255,.25);}
 .bpa-tab-inactive{background:transparent;border:1px solid transparent;color:#0e7490;box-shadow:0 1px 2px rgba(16,24,40,.05);}
 .bpa-tab-inactive:hover{background:rgba(6,182,212,.06);color:#0891b2;}
 .bpa-cards-wrap{overflow:hidden;transition:max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s;}

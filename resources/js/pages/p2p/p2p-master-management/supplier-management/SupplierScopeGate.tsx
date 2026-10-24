@@ -30,6 +30,9 @@ type Props = {
 
 const SCOPED_CSS = `
 .supch-ov {
+  /* The Add Customer popup's font (.acm-root). This overlay renders outside
+     the page wrapper, so "inherit" fell back to the theme's heavier Rubik. */
+  font-family: var(--font-sans);
   position: fixed; inset: 0; z-index: 1090;
   display: flex; align-items: center; justify-content: center;
   padding: 20px; box-sizing: border-box;
@@ -71,8 +74,8 @@ const SCOPED_CSS = `
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   box-shadow: 0 4px 14px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.35);
 }
-.supch-title { font-family: inherit; font-size: 19px; font-weight: 800; color: #fff; letter-spacing: -.3px; margin: 0; line-height: 1.2; }
-.supch-sub { font-family: inherit; font-size: 12px; color: rgba(255,255,255,.8); font-weight: 500; margin: 3px 0 0; }
+.supch-title { font-family: inherit; font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.4px; margin: 0; line-height: 1.1; }
+.supch-sub { font-family: inherit; font-size: 11.5px; color: rgba(255,255,255,.85); font-weight: 500; margin: 3px 0 0; }
 .supch-close {
   width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
   background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.2);
@@ -132,13 +135,13 @@ const SCOPED_CSS = `
   transition: transform .22s cubic-bezier(.34,1.56,.64,1);
 }
 .supch-card:hover .supch-iconbox, .supch-card.is-selected .supch-iconbox { transform: scale(1.08) rotate(-3deg); }
-.supch-card-title { font-family: inherit; font-size: 14.5px; font-weight: 800; color: #1e1b3a; letter-spacing: -.2px; }
-.supch-card-desc { font-family: inherit; font-size: 11px; color: #6b6485; font-weight: 500; line-height: 1.4; margin-top: -4px; }
+.supch-card-title { font-family: inherit; font-size: 13.5px; font-weight: 600; color: #1e1b4b; letter-spacing: -0.01em; }
+.supch-card-desc { font-family: inherit; font-size: 11.5px; color: #6b6485; font-weight: 500; line-height: 1.4; margin-top: -4px; }
 .supch-divider { height: 1px; margin: 2px 0; background: linear-gradient(90deg, transparent, #e9e4fb, transparent); }
 .supch-pills { display: flex; gap: 5px; flex-wrap: wrap; }
 .supch-pill {
   display: inline-flex; align-items: center; gap: 3px;
-  font-family: inherit; font-size: 9.5px; font-weight: 700;
+  font-family: inherit; font-size: 10px; font-weight: 600;
   padding: 4px 9px; border-radius: 999px;
   background: #f5f3ff; color: #7c3aed; border: 1px solid #ddd6fe;
 }
@@ -146,16 +149,16 @@ const SCOPED_CSS = `
 /* ── Footer ── */
 .supch-footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px 22px; background: #fbfaff; }
 .supch-btn-cancel {
-  font-family: inherit; font-size: 12.5px; font-weight: 700; color: #6b6485;
+  font-family: inherit; font-size: 13px; font-weight: 600; color: #6b6485;
   background: #fff; border: 1.5px solid #e5e0f5; border-radius: 10px;
-  padding: 10px 20px; cursor: pointer; transition: all .15s;
+  height: 40px; padding: 0 18px; cursor: pointer; transition: all .15s;
 }
 .supch-btn-cancel:hover { background: #f5f3ff; border-color: #ddd6fe; }
 .supch-btn-continue {
   display: inline-flex; align-items: center; gap: 7px;
-  font-family: inherit; font-size: 12.5px; font-weight: 800; color: #fff;
+  font-family: inherit; font-size: 13px; font-weight: 600; color: #fff;
   background: linear-gradient(135deg,#a78bfa,#7c3aed 60%,#6d28d9);
-  border: none; border-radius: 10px; padding: 10px 22px; cursor: pointer;
+  border: none; border-radius: 10px; height: 40px; padding: 0 18px; cursor: pointer;
   transition: all .18s; box-shadow: 0 6px 18px -4px rgba(124,58,237,.5);
 }
 .supch-btn-continue:hover { box-shadow: 0 8px 22px -4px rgba(124,58,237,.6); transform: translateY(-1px); }

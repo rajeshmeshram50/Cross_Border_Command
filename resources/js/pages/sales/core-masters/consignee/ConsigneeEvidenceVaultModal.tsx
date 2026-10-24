@@ -1623,11 +1623,15 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
               // empty string fails their `date` check.
               if (opts?.issueDate) fd.append('issue_date', opts.issueDate);
               if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
-              await api.post(`/segment-uploads/consignee/${consignee.db_id}`, fd, {
+              /* The upload response carries the recomputed vault, so the second
+                 request is gone. Falls back to reloadVault if the key is not
+                 there, so nothing depends on it. */
+              const res = await api.post(`/segment-uploads/consignee/${consignee.db_id}`, fd, {
                 headers: { 'Content-Type': 'multipart/form-data' },
               });
               setOvUpload(null);
-              await reloadVault();
+              const vault = res.data?.vault as VaultData | null | undefined;
+              if (vault) setVaultLive(vault); else await reloadVault();
               toast.success(f ? 'Document uploaded' : 'Dates saved', f ? `${f.name} has been attached.` : 'The issue and expiry dates were updated.');
             } catch (e: any) {
               toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');

@@ -454,8 +454,43 @@ export default function SalesCustomerSendForSignatureModal({
     const seed = contentOverrides[activeDocId] ?? (docs.find(d => d.id === activeDocId)?.content ?? '');
     editor.innerHTML = seed ?? '';
     contentLastRangeRef.current = null;
+  /* The active doc's content is a dependency because the body now arrives
+     after the list does (see the on-demand fetch below) — without it the
+     editor would stay empty on the first open. It is the doc's content, not
+     contentOverrides: typing changes only the overrides, so this still never
+     re-seeds mid-edit and wipes the caret. And if the user did type before the
+     body landed, contentOverrides wins on the line above, so nothing is lost. */
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingShell, activeDocId]);
+  }, [editingShell, activeDocId, docs.find(d => d.id === activeDocId)?.content]);
+
+  /* Pull the body for the one document being edited, the first time its editor
+     is opened. The picker list is fetched without bodies, so this is what keeps
+     the editor working — and it costs one small request instead of shipping
+     every document's HTML up front. */
+  const [bodyFetched, setBodyFetched] = useState<Record<number, true>>({});
+  useEffect(() => {
+    if (!editingShell || !activeDocId) return;
+    if (contentOverrides[activeDocId] !== undefined) return;   // already edited
+    if (bodyFetched[activeDocId]) return;                       // already tried
+    const doc = docs.find(d => d.id === activeDocId);
+    if (!doc || doc.content != null) return;                    // already have it
+    let cancelled = false;
+    api.get(`/clm/trade-doc-library/${activeDocId}`)
+      .then(r => {
+        if (cancelled) return;
+        const full = r.data?.data;
+        setDocs(prev => prev.map(d => d.id === activeDocId ? {
+          ...d,
+          content:       full?.content       ?? '',
+          header_config: full?.header_config ?? d.header_config,
+          footer_config: full?.footer_config ?? d.footer_config,
+        } : d));
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setBodyFetched(prev => ({ ...prev, [activeDocId]: true })); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingShell, activeDocId, docs, contentOverrides, bodyFetched]);
 
   /* Drop HTML / a placeholder token at the stashed caret in the body
    * editor, then push the new innerHTML into contentOverrides so the
@@ -710,7 +745,12 @@ export default function SalesCustomerSendForSignatureModal({
       return;
     }
     setDocsLoading(true);
-    api.get(`/clm/trade-doc-library/for-party/${partyFilter}`)
+    /* view=list drops content / header_config / footer_config from every row.
+       The picker only needs code, name, type and party; the bodies made this
+       one request 1.79 MB for a customer (1.45 MB consignee, 218 KB supplier)
+       against 7 KB for the list, and the modal reads a body only for the single
+       document whose editor is opened. That one is fetched on demand below. */
+    api.get(`/clm/trade-doc-library/for-party/${partyFilter}`, { params: { view: 'list' } })
       .then(r => setDocs(Array.isArray(r.data?.data) ? r.data.data : []))
       .catch(() => setDocs([]))
       .finally(() => setDocsLoading(false));

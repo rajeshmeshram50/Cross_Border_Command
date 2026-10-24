@@ -32,14 +32,6 @@ function toIsoDate(input: string | undefined | null): string | undefined {
   return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : undefined;
 }
 
-/* Display format for the read-only OPP DATE chip. */
-function toDisplayDate(input: string | undefined | null): string {
-  const iso = toIsoDate(input);
-  if (!iso) return '—';
-  const [y, m, d] = iso.split('-');
-  return `${d}-${m}-${y}`;
-}
-
 type Props = {
   open:    boolean;
   oppId:   string | undefined;
@@ -179,52 +171,54 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
     }
   };
 
+  /* Same markup and classes as the Productivity Tracker's Add Reminder form
+     (SalesTodo.tsx / SalesTodo.css), so the two dialogs look identical. */
   return createPortal((
-    <div className="rfl-backdrop">
-      <style>{RFL_CSS}</style>
-      <div className="rfl-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="rfl-head">
-          <div className="rfl-head-left">
-            <div className="rfl-head-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+    <div className="td-overlay" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="td-modal">
+        <div className="td-modal-header">
+          <div className="td-modal-header-left">
+            <div className="td-modal-header-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
             </div>
             <div>
-              <div className="rfl-head-row">
-                <span className="rfl-head-title">Add Reminder</span>
-                <span className="rfl-head-tag">REMINDER</span>
+              <div className="td-modal-title-row">
+                <span className="td-modal-title">Add Reminder</span>
+                <span className="td-modal-pill">REMINDER</span>
               </div>
-              <div className="rfl-head-sub">Reminder</div>
+              <div className="td-modal-sub">Reminder</div>
             </div>
           </div>
-          <button className="rfl-close" onClick={onClose} aria-label="Close">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <button className="td-modal-close" onClick={onClose} aria-label="Close">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
 
-        <div className="rfl-body">
-          <div className="rfl-grid">
-            <div className="rfl-fld">
-              <div className="rfl-lbl-row">
-                <label className="rfl-lbl">OPPORTUNITY ID <span className="rfl-req">*</span></label>
-                <span className="rfl-pill rfl-pill-fetched"><span className="rfl-pill-dot" /> AUTO-FETCHED</span>
-              </div>
-              <input className="rfl-input rfl-input-ro" value={oppId ?? ''} readOnly />
+        <div className="td-modal-body">
+          <div className="td-form-row">
+            <div className="td-field">
+              <label className="td-label">Opportunity ID</label>
+              <input className="td-inp" value={oppId ?? ''} readOnly disabled />
             </div>
-            <div className="rfl-fld">
-              <div className="rfl-lbl-row">
-                <label className="rfl-lbl">OPPORTUNITY DATE <span className="rfl-req">*</span></label>
-                <span className="rfl-pill rfl-pill-fetched"><span className="rfl-pill-dot" /> AUTO-FETCHED</span>
-              </div>
-              <input className="rfl-input rfl-input-ro" value={toDisplayDate(oppDate)} readOnly />
+            <div className="td-field">
+              <label className="td-label">Opportunity Date</label>
+              <MasterDatePicker
+                value={toIsoDate(oppDate) ?? ''}
+                onChange={() => { /* derived from the opportunity — not user-editable */ }}
+                placeholder="Auto-filled from opportunity"
+                disabled
+              />
             </div>
+          </div>
 
-            <div className="rfl-fld">
-              <label className="rfl-lbl">STATUS</label>
+          <div className="td-form-row">
+            <div className="td-field">
+              <label className="td-label">Status</label>
               {/* Add-only form, so "In Progress" is the only status on offer.
                   A reminder that is Done the moment it is created is a
                   contradiction — nothing was ever chased — and offering it here
@@ -241,19 +235,21 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
                 placeholder="Select status"
               />
             </div>
-            <div className="rfl-fld">
-              <label className="rfl-lbl">REMINDER SUBJECT <span className="rfl-req">*</span></label>
+            <div className="td-field">
+              <label className="td-label">Reminder Subject <span className="td-req">*</span></label>
               <input
-                className={`rfl-input${errors.subject ? ' is-invalid' : ''}`}
+                className={`td-inp${errors.subject ? ' td-inp-invalid' : ''}`}
                 placeholder="Subject"
                 value={subject}
                 onChange={e => { setSubject(e.target.value); if (errors.subject) setErrors(p => ({ ...p, subject: undefined })); }}
               />
-              {errors.subject && <div className="rfl-err">{errors.subject}</div>}
+              {errors.subject && <div className="td-field-err">{errors.subject}</div>}
             </div>
+          </div>
 
-            <div className="rfl-fld">
-              <label className="rfl-lbl">REMINDER SET DATE <span className="rfl-req">*</span></label>
+          <div className="td-form-row">
+            <div className="td-field">
+              <label className="td-label">Reminder Set Date <span className="td-req">*</span></label>
               <MasterDatePicker
                 value={setDate}
                 onChange={(v) => { setSetDate(v); if (errors.setDate) setErrors(p => ({ ...p, setDate: undefined })); }}
@@ -261,10 +257,10 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
                 placeholder="dd-mm-yyyy"
                 invalid={!!errors.setDate}
               />
-              {errors.setDate && <div className="rfl-err">{errors.setDate}</div>}
+              {errors.setDate && <div className="td-field-err">{errors.setDate}</div>}
             </div>
-            <div className="rfl-fld">
-              <label className="rfl-lbl">TAT <span className="rfl-req">*</span></label>
+            <div className="td-field">
+              <label className="td-label">TAT <span className="td-req">*</span></label>
               <MasterSelect
                 value={tat}
                 onChange={(v) => { setTat(v); if (errors.tat) setErrors(p => ({ ...p, tat: undefined })); }}
@@ -278,11 +274,13 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
                 ]}
                 placeholder="Select TAT"
               />
-              {errors.tat && <div className="rfl-err">{errors.tat}</div>}
+              {errors.tat && <div className="td-field-err">{errors.tat}</div>}
             </div>
+          </div>
 
-            <div className="rfl-fld">
-              <label className="rfl-lbl">ATTACHMENT</label>
+          <div className="td-form-row">
+            <div className="td-field">
+              <label className="td-label">Attachment</label>
               <input
                 ref={fileRef}
                 type="file"
@@ -290,428 +288,68 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
                 onChange={onFileChange}
                 style={{ display: 'none' }}
               />
-              {picked ? (
-                <div className="rfl-file-chip" title={picked.name}>
-                  <svg className="rfl-file-chip-ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                  </svg>
-                  <span className="rfl-file-chip-name">{picked.name}</span>
-                  <button type="button" className="rfl-file-chip-x" onClick={clearPicked} aria-label="Remove">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              ) : (
-                <button type="button" className="rfl-file-btn" onClick={onPickFile}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                  </svg>
-                  Choose file...
-                </button>
-              )}
-              {errors.attachment && <div className="rfl-err">{errors.attachment}</div>}
+              <label className="td-file-drop" onClick={(e) => { e.preventDefault(); onPickFile(); }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2.2" style={{ flexShrink: 0 }}>
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                </svg>
+                <span className="td-file-label">{picked?.name || 'Choose file…'}</span>
+                {picked && (
+                  <button
+                    type="button"
+                    className="td-file-clear"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); clearPicked(); }}
+                    title="Clear selection"
+                  >×</button>
+                )}
+              </label>
+              {errors.attachment && <div className="td-field-err">{errors.attachment}</div>}
             </div>
-            <div className="rfl-fld">
-              <label className="rfl-lbl">REMARK</label>
+            <div className="td-field">
+              <label className="td-label">Remark</label>
               <textarea
-                className="rfl-input rfl-textarea"
+                className="td-inp"
                 rows={3}
+                maxLength={2000}
                 placeholder="Add a remark or note…"
                 value={remark}
                 onChange={e => setRemark(e.target.value)}
+                style={{ resize: 'none', height: 76 }}
               />
+              <span className="td-char-count">{remark.length}/2000</span>
             </div>
           </div>
         </div>
 
-        <div className="rfl-foot">
-          <div className="rfl-foot-note">
-            <span className="rfl-foot-dot" /> Fields marked <span className="rfl-req">*</span> are required
+        <div className="td-modal-footer">
+          <div className="td-footer-hint">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+            Fields marked <span className="td-req">*</span> are required
           </div>
-          <div className="rfl-foot-actions">
-            <button className="rfl-btn rfl-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-            <button className="rfl-btn rfl-btn-primary" onClick={() => void save()} disabled={saving || !oppId}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                <polyline points="17 21 17 13 7 13 7 21" />
-                <polyline points="7 3 7 8 15 8" />
-              </svg>
-              {saving ? 'Saving…' : 'Save'}
+          <div className="td-footer-actions">
+            <button type="button" className="td-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="button" className="td-btn-save" onClick={() => void save()} disabled={saving || !oppId}>
+              {saving ? (
+                <>
+                  <span className="td-spinner" aria-hidden />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /></svg>
+                  Save
+                </>
+              )}
             </button>
           </div>
         </div>
+        {/* While saving, blanket the whole modal so no field/button can be touched. */}
+        {saving && (
+          <div className="td-form-lock" aria-live="polite" aria-busy="true">
+            <span className="td-form-lock-spinner" />
+            <span className="td-form-lock-text">Saving…</span>
+          </div>
+        )}
       </div>
     </div>
   ), document.body);
 }
-
-const RFL_CSS = `
-.rfl-backdrop {
-  position: fixed; inset: 0; z-index: 1080;
-  background: rgba(15, 23, 42, .55);
-  backdrop-filter: blur(3px);
-  display: flex; align-items: center; justify-content: center;
-  padding: 16px;
-  animation: rfl-fade .15s ease-out;
-}
-@keyframes rfl-fade { from { opacity: 0; } to { opacity: 1; } }
-
-.rfl-modal {
-  width: min(720px, 100%); max-height: 92vh;
-  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
-  border-radius: 14px;
-  box-shadow: 0 18px 48px rgba(15, 23, 42, .28);
-  overflow: hidden;
-  display: flex; flex-direction: column;
-  animation: rfl-pop .18s ease-out;
-}
-@keyframes rfl-pop {
-  from { transform: scale(.96); opacity: 0; }
-  to   { transform: scale(1);   opacity: 1; }
-}
-
-/* ─── Header (teal gradient) ───
-   Prototype spec: 135° sweep from deep emerald through dark teal to
-   bright teal. Same layout properties as the other matrix popups so
-   the header stays in a single row at any width. */
-.rfl-head {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px;
-  padding: 14px 22px;
-  background: linear-gradient(135deg, #065F46 0%, #0F766E 55%, #14B8A6 100%);
-  color: #fff;
-}
-.rfl-head::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
-  pointer-events: none;
-}
-.rfl-head-left { position: relative; z-index: 1; display: flex; align-items: center; gap: 13px; }
-.rfl-head-icon {
-  width: 42px; height: 42px; border-radius: 11px;
-  background: rgba(255, 255, 255, .22);
-  border: 1px solid rgba(255, 255, 255, .30);
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, .15);
-  flex-shrink: 0;
-}
-.rfl-head-row { display: inline-flex; align-items: center; gap: 8px; }
-.rfl-head-title { font-size: 17px; font-weight: 800; line-height: 1.2; letter-spacing: -.2px; }
-.rfl-head-tag {
-  font-size: 9px; font-weight: 800; letter-spacing: .12em;
-  padding: 3px 9px; border-radius: 999px;
-  background: rgba(255, 255, 255, .22);
-  border: 1px solid rgba(255, 255, 255, .35);
-  color: #fff;
-  text-transform: uppercase;
-}
-.rfl-head-sub { font-size: 11.5px; color: rgba(255, 255, 255, .85); margin-top: 2px; font-weight: 500; }
-.rfl-close {
-  position: relative; z-index: 1;
-  width: 30px; height: 30px; border: none; cursor: pointer;
-  background: rgba(255, 255, 255, .20);
-  color: #fff; border-radius: 9px;
-  display: flex; align-items: center; justify-content: center;
-  transition: background .15s;
-}
-.rfl-close:hover { background: rgba(255, 255, 255, .35); }
-
-/* ─── Body ─── */
-.rfl-body {
-  padding: 18px 22px;
-  background: #F0FDFA;
-  flex: 1; overflow-y: auto;
-}
-.rfl-body::-webkit-scrollbar { width: 5px; }
-.rfl-body::-webkit-scrollbar-thumb { background: rgba(20, 184, 166, .35); border-radius: 999px; }
-
-.rfl-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px 18px;
-}
-
-.rfl-fld {
-  display: flex; flex-direction: column; gap: 6px;
-  min-width: 0;
-}
-.rfl-lbl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.rfl-lbl {
-  font-size: 11px; font-weight: 600; letter-spacing: .08em;
-  color: #0f766e; text-transform: uppercase;
-}
-.rfl-req { color: #ef4444; }
-
-/* AUTO-FETCHED chip */
-.rfl-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px 9px; border-radius: 999px;
-  font-size: 8.5px; font-weight: 800; letter-spacing: .08em;
-  text-transform: uppercase;
-}
-.rfl-pill-fetched {
-  background: rgba(20, 184, 166, .12);
-  border: 1px solid rgba(20, 184, 166, .40);
-  color: #0f766e;
-}
-.rfl-pill-dot {
-  width: 5px; height: 5px; border-radius: 50%;
-  background: #14b8a6;
-  box-shadow: 0 0 6px rgba(20, 184, 166, .55);
-  animation: rfl-pulse 1.4s ease-in-out infinite;
-}
-@keyframes rfl-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: .5; transform: scale(.7); }
-}
-
-/* Inputs */
-.rfl-input {
-  width: 100%;
-  padding: 9px 12px;
-  border: 1.5px solid rgba(20, 184, 166, .35);
-  border-radius: 9px;
-  background: #fff;
-  font-family: inherit;
-  font-size: 13px; font-weight: 500; color: #0f172a;
-  outline: none;
-  transition: border-color .15s, box-shadow .15s;
-}
-.rfl-input::placeholder { color: #94a3b8; font-weight: 400; }
-.rfl-input:focus {
-  border-color: #0d9488;
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, .18);
-}
-/* Required-field error state — red border on the box + a small red message
-   below it. Matches the inline-validation pattern used in the Customer /
-   Consignee modals so the user gets feedback at the field, not just a toast. */
-.rfl-input.is-invalid {
-  border-color: #ef4444;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, .15);
-}
-.rfl-err {
-  margin-top: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #ef4444;
-  line-height: 1.3;
-}
-
-/* MasterSelect + MasterDatePicker triggers — re-skin to match the rest
- * of the modal's inputs. Default ones use var(--vz-card-bg) which
- * resolves transparent against the mint body. */
-.rfl-modal .master-select-toggle,
-.rfl-modal .master-datepicker-toggle {
-  height: 40px;
-  background: #fff !important;
-  border: 1.5px solid rgba(20, 184, 166, .35) !important;
-  border-radius: 9px !important;
-  color: #0f172a !important;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 7px 12px;
-  box-shadow: none !important;
-}
-.rfl-modal .master-select-toggle:hover:not(:disabled),
-.rfl-modal .master-datepicker-toggle:hover:not(:disabled) {
-  border-color: rgba(20, 184, 166, .55) !important;
-}
-.rfl-modal .master-select-wrap.show .master-select-toggle,
-.rfl-modal .master-datepicker-toggle.open {
-  border-color: #0d9488 !important;
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, .18) !important;
-}
-/* Invalid state for the MasterDatePicker trigger. The toggle re-skin above
-   sets border + box-shadow with !important, so the picker's own
-   .master-datepicker-wrap.invalid rule (non-important) never won and the
-   required-date field never turned red. Re-assert the error styling here
-   with !important so the highlight actually shows. */
-.rfl-modal .master-datepicker-wrap.invalid .master-datepicker-toggle {
-  border-color: #ef4444 !important;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, .15) !important;
-}
-.rfl-modal .master-select-placeholder,
-.rfl-modal .master-datepicker-placeholder {
-  color: #94a3b8 !important;
-  opacity: 1 !important;
-  font-weight: 400 !important;
-}
-.rfl-modal .master-datepicker-icon,
-.rfl-modal .master-select-caret { color: #0d9488; }
-.rfl-input-ro {
-  background: rgba(20, 184, 166, .08);
-  color: #0f766e;
-  font-weight: 400;
-  cursor: not-allowed;
-}
-.rfl-textarea {
-  /* Locked to the exact same height as the ATTACHMENT box. Resize is disabled
-     so dragging the handle can't desync the two fields — they stay identical.
-     box-sizing keeps the 76px total (border + padding) matched to the box. */
-  resize: none;
-  box-sizing: border-box;
-  height: 76px;
-  min-height: 76px;
-}
-
-/* File picker */
-.rfl-file-btn {
-  display: inline-flex; align-items: flex-start; gap: 8px;
-  width: 100%;
-  /* Exact same height as the REMARK textarea so the two fields stay identical. */
-  box-sizing: border-box;
-  height: 76px;
-  padding: 9px 12px;
-  border: 1.5px dashed rgba(20, 184, 166, .50);
-  border-radius: 9px;
-  background: rgba(20, 184, 166, .06);
-  color: #0f766e;
-  font-family: inherit;
-  font-size: 13px; font-weight: 600;
-  cursor: pointer;
-  transition: all .15s;
-  text-align: left;
-}
-.rfl-file-btn:hover { background: rgba(20, 184, 166, .12); border-color: #0d9488; }
-
-.rfl-file-chip {
-  display: flex; align-items: center; gap: 6px;
-  width: 100%;
-  padding: 6px 8px 6px 10px;
-  border: 1.5px solid rgba(20, 184, 166, .40);
-  border-radius: 9px;
-  background: #fff;
-  /* Same height as the file button + REMARK textarea so swapping in the
-     picked-file chip doesn't shrink the row. */
-  box-sizing: border-box;
-  height: 76px;
-}
-.rfl-file-chip-ico { color: #0d9488; flex-shrink: 0; }
-.rfl-file-chip-name {
-  flex: 1; min-width: 0;
-  font-size: 12px; font-weight: 600; color: #0f766e;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.rfl-file-chip-x {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 6px;
-  background: transparent; border: 1.5px solid rgba(20, 184, 166, .30);
-  color: #ef4444; cursor: pointer; padding: 0; flex-shrink: 0;
-  transition: background .15s, border-color .15s;
-}
-.rfl-file-chip-x:hover { background: rgba(239, 68, 68, .08); border-color: #ef4444; }
-
-/* ─── Footer ─── */
-.rfl-foot {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px;
-  padding: 14px 20px;
-  background: #fff;
-  border-top: 1px solid rgba(20, 184, 166, .20);
-}
-.rfl-foot-note {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 12px; color: #475569; font-weight: 500;
-}
-.rfl-foot-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: #14b8a6;
-  box-shadow: 0 0 4px rgba(20, 184, 166, .55);
-}
-.rfl-foot-actions { display: flex; align-items: center; gap: 8px; }
-
-.rfl-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  border: 1.5px solid transparent;
-  font-family: inherit;
-  font-size: 12.5px; font-weight: 700;
-  cursor: pointer;
-  transition: all .15s;
-}
-.rfl-btn:disabled { opacity: .55; cursor: not-allowed; }
-.rfl-btn-ghost {
-  background: #fff;
-  border-color: #cbd5e1;
-  color: #0f172a;
-}
-.rfl-btn-ghost:hover:not(:disabled) { background: #f8fafc; border-color: #94a3b8; }
-.rfl-btn-primary {
-  background: linear-gradient(135deg, #14b8a6, #0d9488);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(20, 184, 166, .35);
-}
-.rfl-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #0d9488, #0f766e);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(20, 184, 166, .45);
-}
-
-/* ─── Dark mode ─── */
-[data-bs-theme="dark"] .rfl-modal {
-  background: linear-gradient(180deg, #0c2620 0%, #0a1a17 100%);
-}
-[data-bs-theme="dark"] .rfl-body { background: #0a1f1b; color: #d1fae5; }
-[data-bs-theme="dark"] .rfl-lbl  { color: #5eead4; }
-[data-bs-theme="dark"] .rfl-input {
-  background: #0f1f1c;
-  border-color: rgba(20, 184, 166, .35);
-  color: #ecfdf5;
-}
-[data-bs-theme="dark"] .rfl-input::placeholder { color: #475569; }
-[data-bs-theme="dark"] .rfl-input:focus {
-  border-color: #14b8a6;
-  box-shadow: 0 0 0 3px rgba(20, 184, 166, .25);
-}
-[data-bs-theme="dark"] .rfl-modal .master-select-toggle,
-[data-bs-theme="dark"] .rfl-modal .master-datepicker-toggle {
-  background: #0f1f1c !important;
-  border-color: rgba(20, 184, 166, .35) !important;
-  color: #ecfdf5 !important;
-}
-[data-bs-theme="dark"] .rfl-modal .master-select-placeholder,
-[data-bs-theme="dark"] .rfl-modal .master-datepicker-placeholder {
-  color: rgba(94, 234, 212, .50) !important;
-}
-[data-bs-theme="dark"] .rfl-input-ro {
-  background: rgba(20, 184, 166, .12);
-  color: #5eead4;
-}
-[data-bs-theme="dark"] .rfl-file-btn {
-  background: rgba(20, 184, 166, .10);
-  border-color: rgba(20, 184, 166, .40);
-  color: #5eead4;
-}
-[data-bs-theme="dark"] .rfl-file-btn:hover { background: rgba(20, 184, 166, .18); }
-[data-bs-theme="dark"] .rfl-file-chip {
-  background: #0f1f1c;
-  border-color: rgba(20, 184, 166, .35);
-}
-[data-bs-theme="dark"] .rfl-file-chip-name { color: #5eead4; }
-[data-bs-theme="dark"] .rfl-pill-fetched {
-  background: rgba(20, 184, 166, .18);
-  border-color: rgba(20, 184, 166, .45);
-  color: #5eead4;
-}
-[data-bs-theme="dark"] .rfl-foot {
-  background: #0f1f1c;
-  border-top-color: rgba(20, 184, 166, .25);
-}
-[data-bs-theme="dark"] .rfl-foot-note { color: #94a3b8; }
-[data-bs-theme="dark"] .rfl-btn-ghost {
-  background: #1e293b;
-  border-color: rgba(20, 184, 166, .30);
-  color: #d1fae5;
-}
-[data-bs-theme="dark"] .rfl-btn-ghost:hover:not(:disabled) { background: #243b3a; }
-
-@media (max-width: 720px) {
-  .rfl-grid { grid-template-columns: 1fr; }
-  .rfl-foot { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
-  .rfl-foot-actions { width: 100%; }
-  .rfl-foot-actions .rfl-btn { flex: 1; justify-content: center; }
-}
-`;

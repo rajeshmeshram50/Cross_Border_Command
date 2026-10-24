@@ -365,6 +365,13 @@ export const CLM_CSS = `
    lettering that thickens on click is what made the rail look like it moved. */
 .clm-tab.active {
   background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  /* The border stays 1px and turns transparent, so the tab keeps its width on
+     selection. But a background is placed against the PADDING box by default,
+     which paints the strip under that transparent border with the ramp's edge
+     colour extended outward - the lightest stop, on a 135deg ramp - and that
+     reads as a pale line down the left and across the top of the selected tab.
+     Against the border box the ramp simply runs to the edge. */
+  background-origin: border-box;
   color: #fff; border-color: transparent;
   box-shadow: 0 6px 16px -5px rgba(6,182,212,.55), inset 0 1px 0 rgba(255,255,255,.25);
   text-shadow: 0 1px 2px rgba(14,116,144,.4);
@@ -560,22 +567,25 @@ export const CLM_CSS = `
   box-shadow: 0 4px 14px rgba(8,145,178,.32), inset 0 1px 0 rgba(255,255,255,.15);
   flex-shrink: 0;
 }
+/* 43.5px across all three segments — the height of the search and the
+   Import / Export buttons it shares the toolbar with. The pill ran 36, so the
+   row stepped down from the search to the count and back up again. */
 .clm-total-ico {
   display: flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px;
+  width: 43.5px; height: 43.5px;
   background: linear-gradient(135deg, #0e7490, #0891b2);
   color: #fff; flex-shrink: 0;
   border-right: 1px solid rgba(255,255,255,.15);
 }
 .clm-total-lbl {
-  padding: 0 12px; height: 36px;
+  padding: 0 12px; height: 43.5px;
   display: flex; align-items: center;
   background: linear-gradient(135deg, #0891b2, #0e7490);
   font-size: 12px; font-weight: 600; color: rgba(255,255,255,.92);
   white-space: nowrap; letter-spacing: .01em;
 }
 .clm-total-num {
-  padding: 0 14px; height: 36px;
+  padding: 0 14px; height: 43.5px;
   display: flex; align-items: center; justify-content: center;
   background: #fff;
   border-left: 1.5px solid rgba(8,145,178,.25);
@@ -864,6 +874,10 @@ export const CLM_CSS = `
 .clm-pag-btn:disabled { opacity: 0.40; cursor: not-allowed; }
 .clm-pag-btn.on {
   background: linear-gradient(135deg, #06b6d4, #0891b2 60%, #0e7490);
+  /* Same as .clm-tab.active: the border goes transparent rather than away, so
+     against the padding box the ramp's lightest stop smeared into that 1px and
+     outlined the current page button. */
+  background-origin: border-box;
   border-color: transparent; color: #fff;
   box-shadow: 0 3px 10px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
   cursor: default;
@@ -1632,6 +1646,10 @@ body > .dropdown-menu.master-select-menu,
 }
 [data-bs-theme="dark"] .clm-pag-btn.on {
   background: linear-gradient(135deg, #06b6d4, #0891b2 60%, #0e7490);
+  /* Restated, because background is a shorthand and resets background-origin
+     to padding-box - without this line the pale outline the light rule fixes
+     would come straight back in dark mode. */
+  background-origin: border-box;
   color: #fff; border-color: transparent;
 }
 [data-bs-theme="dark"] .clm-modal { background: #0f172a; }

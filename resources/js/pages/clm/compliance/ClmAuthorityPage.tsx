@@ -240,8 +240,10 @@ export default function ClmAuthorityPage() {
            search bar never shifts position when it gains or loses focus. */
         @media (max-width: 1280px) { .clm-root .clm-tabs-bar .auth-search { width: 360px; } }
         @media (max-width: 760px)  { .clm-root .clm-tabs-bar .auth-search { width: 100%; } }
+        /* 43.5px — the search height. This is a local copy of .clm-ie-btn
+           (ClmDocImportExport.tsx), so it has to be raised here too. */
         .clm-root .auth-xl-btn {
-          display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px;
+          display: inline-flex; align-items: center; gap: 6px; height: 43.5px; padding: 0 12px;
           border: 1px solid rgba(8,145,178,.35); border-radius: 8px; background: #fff;
           color: #0e7490; font-size: 13px; font-weight: 600; cursor: pointer;
         }
