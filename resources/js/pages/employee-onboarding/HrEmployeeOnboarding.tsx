@@ -1702,7 +1702,10 @@ function InitiateOnboardingModal({
         // The doc-set endpoint is the single source: ticked docs + finalise +
         // per-document signed state. Total = ticked count, Signed = ticked &
         // signed. A ticked doc retired before it was sent is dropped server-side.
-        const { data } = await api.get(`/employees/${emp.dbId}/onboarding-doc-set`);
+        /* Falls back to the request when the bootstrap has not landed yet or
+           skipped the key — it is only included when an employee_id is passed. */
+        const data = bootstrapDocSetRef.current
+          ?? (await api.get(`/employees/${emp.dbId}/onboarding-doc-set`)).data;
         if (cancelled) return;
         const rows: any[] = Array.isArray(data?.templates) ? data.templates : [];
         const sel = rows.filter(t => t.selected);
@@ -1782,6 +1785,7 @@ function InitiateOnboardingModal({
 
       applyMasters(d.masters);
       bootstrapSalaryRef.current = d.salary_structures ?? null;
+      bootstrapDocSetRef.current = d.doc_set ?? null;
 
       setMLegalEntities(Array.isArray(d.legal_entities?.legal_entities) ? d.legal_entities.legal_entities : []);
 
@@ -1904,6 +1908,10 @@ function InitiateOnboardingModal({
      the bootstrap has returned, so this was a THIRD serial round trip for a
      payload already in hand. */
   const bootstrapSalaryRef = useRef<any>(null);
+  /* Same for the document set — the bootstrap returns it, so the stage-5
+     counters below do not need a round trip of their own (1.82s on the
+     server for 0.7 kB). */
+  const bootstrapDocSetRef = useRef<any>(null);
   useEffect(() => {
     stage1SavedSigRef.current = null;
     stage4SavedSigRef.current = null;

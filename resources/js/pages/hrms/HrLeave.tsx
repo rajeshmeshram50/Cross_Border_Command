@@ -854,13 +854,7 @@ export default function HrLeave() {
               <div className="frm-cstrip-left">
                 <div className="frm-cstrip-icon"><i className="ri-calendar-2-line" /></div>
                 <div className="min-w-0">
-                  <div className="d-flex align-items-center gap-2 flex-wrap">
-                    <span className="frm-cstrip-title">Leave Management</span>
-                    <span className="onb-hero-pill">
-                      <span className="dot" />
-                      FY 2025–26
-                    </span>
-                  </div>
+                  <span className="frm-cstrip-title">Leave Management</span>
                   <div className="frm-cstrip-sub">
                     Leave requests, balances, and approval pipeline across all employees
                   </div>

@@ -2129,17 +2129,7 @@ export default function HrPayroll() {
         <div className="frm-cstrip-left">
           <div className="frm-cstrip-icon"><i className="ri-coins-line" /></div>
           <div className="min-w-0">
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <span className="frm-cstrip-title">Payroll</span>
-              <span className="onb-hero-pill">
-                <span className="dot" />{cycle.label}
-              </span>
-              {financialYearOf(cycle.month, cycle.year) && (
-                <span className="onb-hero-pill" title="Financial year (Apr–Mar)">
-                  <span className="dot" />FY {financialYearOf(cycle.month, cycle.year)}
-                </span>
-              )}
-            </div>
+            <span className="frm-cstrip-title">Payroll</span>
             <div className="frm-cstrip-sub">
               Monthly payroll engine — biometric → run payroll → payslips & bank advice
             </div>

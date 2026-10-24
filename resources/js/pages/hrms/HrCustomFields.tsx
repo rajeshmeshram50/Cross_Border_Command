@@ -451,10 +451,16 @@ export default function HrCustomFields() {
                 </div>
               </div>
             </div>
-            <button type="button" className="frm-cstrip-back flex-shrink-0" onClick={goBack}>
-              <i className="ri-arrow-left-line" />
-              Back
-            </button>
+            <div className="cand-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+              <button type="button" className="cand-pill-btn cand-pill-btn--primary"
+                onClick={() => { setEditing(null); setPrefillName(''); setModalOpen(true); }}>
+                <i className="ri-add-line" />Add Custom Field
+              </button>
+              <button type="button" className="frm-cstrip-back flex-shrink-0" onClick={goBack}>
+                <i className="ri-arrow-left-line" />
+                Back
+              </button>
+            </div>
           </div>
 
           {/* KPI strip — uses the shared .rec-page-kpis / .rec-kpi-card
@@ -492,6 +498,8 @@ export default function HrCustomFields() {
               filter and the Add button ride in its toolbar, which is why the
               separate filter card above is gone. */}
           <DataTable<CustomFieldRow>
+            title="All Custom Fields"
+            subtitle="Defined variables and the templates using them"
             data={filtered}
             columns={columns}
             serial
@@ -512,28 +520,22 @@ export default function HrCustomFields() {
                 No custom fields match these filters. Click <strong>+ Add Custom Field</strong> to create one.
               </>
             }
-            toolbarActions={
-              <>
-                <div style={{ minWidth: 160 }}>
-                  <MasterSelect
-                    value={typeFilter}
-                    onChange={setTypeFilter}
-                    options={[
-                      { value: '',         label: 'All Types' },
-                      { value: 'text',     label: 'Text' },
-                      { value: 'date',     label: 'Date' },
-                      { value: 'number',   label: 'Number' },
-                      { value: 'textarea', label: 'Textarea' },
-                    ]}
-                    placeholder="All Types"
-                  />
-                </div>
-                <button type="button"
-                  onClick={() => { setEditing(null); setPrefillName(''); setModalOpen(true); }}
-                  style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', whiteSpace: 'nowrap' }}>
-                  <i className="ri-add-line me-1" /> Add Custom Field
-                </button>
-              </>
+            toolbarFilters={
+              <div style={{ minWidth: 150 }}>
+                <MasterSelect
+                  searchable={false}
+                  value={typeFilter}
+                  onChange={setTypeFilter}
+                  options={[
+                    { value: '',         label: 'All Types' },
+                    { value: 'text',     label: 'Text' },
+                    { value: 'date',     label: 'Date' },
+                    { value: 'number',   label: 'Number' },
+                    { value: 'textarea', label: 'Textarea' },
+                  ]}
+                  placeholder="All Types"
+                />
+              </div>
             }
           />
         </div>

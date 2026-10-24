@@ -190,8 +190,8 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               finishes. (QA #112) */}
           {saving && (
             <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'var(--bpw-veil)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-              <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--bpw-teal-fg)' }}>Processing payment…</div>
+              <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7c5cfc" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--bpw-accent-fg)' }}>Processing payment…</div>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--bpw-muted)' }}>Please don’t close this window.</div>
             </div>
           )}
@@ -200,19 +200,22 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <span style={heroIco}><i className="ri-stack-line" /></span>
               <div>
-                <div style={{ fontSize: 10, letterSpacing: .8, opacity: .75, textTransform: 'uppercase', fontWeight: 700 }}>HRMS · Expense Management</div>
                 <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
                 <div style={{ fontSize: 11, opacity: .85, marginTop: 1 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
               </div>
             </div>
-            <button onClick={onClose} style={xBtn} aria-label="Close"><i className="ri-close-line" /></button>
+            {/* The page action sits in the header, ahead of the close button —
+               it belongs to the dialog, not to the list below it. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+              <button style={headerCta} onClick={() => { resetForm(); setView('select'); }}><i className="ri-add-line" />Make New Payment</button>
+              <button onClick={onClose} style={xBtn} aria-label="Close"><i className="ri-close-line" /></button>
+            </div>
           </div>
 
           {/* HISTORY is the base popup's only content. */}
           <div className="bpw-body" style={body}>
             <div style={rowBetween}>
               <div style={{ fontWeight: 700, color: 'var(--bpw-text)', fontSize: 15 }}>Previous batch payments</div>
-              <button style={primaryBtn} onClick={() => { resetForm(); setView('select'); }}><i className="ri-add-line" />Make New Payment</button>
             </div>
             <div style={tableWrap}>
               <table style={table}>
@@ -228,10 +231,16 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                           <td style={td}><ExpenseIds nos={b.exp_nos} /></td>
                           <td style={td}>{b.payment_type}</td>
                           <td style={{ ...td, fontFamily: 'monospace' }}>{b.reference_number}</td>
-                          <td style={{ ...td, fontWeight: 700 }}>{inr(b.total_amount)}</td>
+                          <td style={{ ...td, fontWeight: 600 }}>{inr(b.total_amount)}</td>
                           <td style={{ ...td, maxWidth: 150, color: 'var(--bpw-muted)' }} title={b.note ?? ''}>{b.note || '—'}</td>
-                          <td style={td}>{b.zoho_status === 'synced' && b.zoho_url
-                            ? <a href={b.zoho_url} target="_blank" rel="noreferrer" style={link}>View</a>
+                          {/* Synced rows report their STATE, not an action — a "View"
+                             link read as something still to do. The badge keeps the
+                             link when Zoho gave us a url, so nothing is lost; without
+                             one it is plain text. Unsynced rows keep the button. */}
+                          <td style={td}>{b.zoho_status === 'synced'
+                            ? (b.zoho_url
+                                ? <a href={b.zoho_url} target="_blank" rel="noreferrer" style={syncedBadge} title="Open in Zoho"><i className="ri-checkbox-circle-fill" />Synced</a>
+                                : <span style={syncedBadge}><i className="ri-checkbox-circle-fill" />Synced</span>)
                             : <button style={{ ...syncBtn, opacity: syncingId === b.id ? .6 : 1 }} disabled={syncingId === b.id} onClick={() => syncZoho(b.id)}>{syncingId === b.id ? 'Syncing…' : 'Zoho Sync'}</button>}</td>
                           <td style={td}>{b.proof_url ? <a href={tokenUrl(resolveFileUrl(b.proof_url))} target="_blank" rel="noreferrer" style={link}>File</a> : '—'}</td>
                         </tr>
@@ -256,8 +265,8 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
           <div className="bpw-root" style={{ ...card, position: 'relative' }} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
             {saving && (
               <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'var(--bpw-veil)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-                <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--bpw-teal-fg)' }}>Processing payment…</div>
+                <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#7c5cfc" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--bpw-accent-fg)' }}>Processing payment…</div>
                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--bpw-muted)' }}>Please don’t close this window.</div>
               </div>
             )}
@@ -265,8 +274,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <span style={heroIco}><i className="ri-stack-line" /></span>
                 <div>
-                  <div style={{ fontSize: 10, letterSpacing: .8, opacity: .75, textTransform: 'uppercase', fontWeight: 700 }}>HRMS · Expense Management</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>Pay Multiple Claims</div>
                   <div style={{ fontSize: 11, opacity: .85, marginTop: 1 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
                 </div>
               </div>
@@ -338,7 +346,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                                 <td style={td}>{c.category_name || '—'}</td>
                                 <td style={td}><div style={noteCell} title={c.note ?? ''}>{c.note || c.title}</div></td>
                                 <td style={td}>{c.attachments || 0}</td>
-                                <td style={{ ...td, fontWeight: 700 }}>{inr(c.amount)}</td>
+                                <td style={{ ...td, fontWeight: 600 }}>{inr(c.amount)}</td>
                                 <td style={td}>{pillStatus(c)}</td>
                                 <td style={td}>{c.payable
                                   ? <button style={ghostSm} onClick={() => setViewId(c.id)}>View</button>
@@ -417,7 +425,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                     {proof ? (
                       <div style={proofBox}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                          <i className="ri-file-text-line" style={{ fontSize: 18, color: 'var(--bpw-teal-fg)', flexShrink: 0 }} />
+                          <i className="ri-file-text-line" style={{ fontSize: 18, color: 'var(--bpw-accent-fg)', flexShrink: 0 }} />
                           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, color: 'var(--bpw-text)' }}>{proof.name}</span>
                         </span>
                         <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -495,7 +503,12 @@ function ExpenseIds({ nos }: { nos: string[] }) {
   );
 }
 
-/* — inline styles (self-contained; teal surface matches the Record Payment modal) — */
+/* — inline styles (self-contained) —
+   Violet, matching the rest of Expense Management: the approval dialogs, the
+   Batch Payment / Export pills on the page behind, and .hrexp-cta. It was
+   teal, which made this the only Expense surface in a different colour.
+   Every stop was swapped at the SAME lightness, so the gradients, tints and
+   shadows keep their shape and only the hue moved. */
 const backdrop: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,23,42,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 };
 const card: React.CSSProperties = {
   /* maxHeight 100%, not 92vh. The backdrop is a flex container with padding:20,
@@ -515,50 +528,65 @@ const card: React.CSSProperties = {
   ['--vz-secondary-bg' as any]: 'var(--bpw-surface-2)',
   ['--vz-body-color' as any]: 'var(--bpw-text)',
   ['--vz-secondary-color' as any]: 'var(--bpw-muted)',
-  ['--vz-primary' as any]: 'var(--bpw-teal-fg)',
-  ['--vz-primary-bg-subtle' as any]: 'rgba(14,116,144,.10)',
+  ['--vz-primary' as any]: 'var(--bpw-accent-fg)',
+  ['--vz-primary-bg-subtle' as any]: 'rgba(109,40,217,.10)',
 };
 /* Teal kept deliberately — this dialog is colour-coded for payments. What
    changes is the SCALE: it ran a 23px/800 title and a 44px chip against the
    15px/700 and 32px .rec-form-header uses everywhere else, which is what
    read as a different typeface (#61). No font-family was ever set here. */
-const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 22px 12px', background: 'linear-gradient(120deg,#0e7490,#0891b2 55%,#06b6d4)', color: '#fff', flexShrink: 0 };
+const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 22px 12px', background: 'linear-gradient(120deg,#6d28d9,#7c5cfc 55%,#a78bfa)', color: '#fff', flexShrink: 0 };
 const heroIco: React.CSSProperties = { width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 };
 const rail: React.CSSProperties = { display: 'flex', gap: 28, padding: '12px 26px', borderBottom: '1px solid var(--bpw-border)', background: 'var(--bpw-surface-2)', flexShrink: 0 };
-const selChip: React.CSSProperties = { background: '#0e7490', color: '#fff', borderRadius: 999, padding: '6px 14px', fontWeight: 700, fontSize: 13 };
+const selChip: React.CSSProperties = { background: '#6d28d9', color: '#fff', borderRadius: 999, padding: '6px 14px', fontWeight: 700, fontSize: 13 };
 // flex-grow 0 so the body sizes to its content (never stretches to fill the
 // card, which produced a spurious vertical scrollbar when everything already
 // fit — QA #126). flex-shrink 1 + overflowY:auto still lets genuinely tall
 // content scroll within the 92vh cap.
 const body: React.CSSProperties = { padding: 22, overflowY: 'auto', flex: '0 1 auto', minHeight: 0 };
 const footer: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 26px', borderTop: '1px solid var(--bpw-border-soft)', background: 'var(--bpw-surface-2)', flexShrink: 0 };
+/* The CTA as it sits ON the header gradient: a filled pill would fight the
+   band it is painted on, so it takes the same translucent-white treatment
+   as the close button beside it. */
+const headerCta: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 34, padding: '0 14px', background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.30)', color: '#fff', borderRadius: 999, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' };
 const xBtn: React.CSSProperties = { background: 'rgba(255,255,255,.18)', color: '#fff', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 17, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const rowBetween: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 };
 const tableWrap: React.CSSProperties = { overflowX: 'auto', border: '1px solid var(--bpw-border)', borderRadius: 12 };
 const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
-const th: React.CSSProperties = { textAlign: 'left', padding: '11px 12px', background: '#0e7490', color: '#fff', fontSize: 11, letterSpacing: .3, textTransform: 'uppercase', whiteSpace: 'nowrap' };
-const td: React.CSSProperties = { padding: '10px 12px', borderTop: '1px solid var(--bpw-border-soft)', verticalAlign: 'middle' };
+/* Matched to .cpay-cols--head on the SPI Payment History table: 8.5px / 800 /
+   .05em, uppercase, over a soft vertical wash. The colour is the violet
+   equivalent of that table's #6b8a97 — muted, not the saturated violet it
+   used before, which at this size and weight read as a second heading rather
+   than a column label. */
+const th: React.CSSProperties = { textAlign: 'left', padding: '9px 12px', background: 'var(--bpw-th-bg)', color: 'var(--bpw-th-fg)', borderBottom: '1px solid var(--bpw-accent-border)', fontSize: 8.5, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+/* 500 body / 600 emphasis, the same two weights .dt-table uses on the page
+   behind this dialog — it carried no weight at all, so cells fell to the
+   body default while the amounts ran at 700 and read heavier than anything
+   outside. Size stays 13px: this is a focused dialog, not the dense list. */
+const td: React.CSSProperties = { padding: '10px 12px', borderTop: '1px solid var(--bpw-border-soft)', verticalAlign: 'middle', fontWeight: 500 };
 const emptyTd: React.CSSProperties = { padding: 26, textAlign: 'center', color: 'var(--bpw-muted-2)' };
 const lbl: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--bpw-label)', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 5 };
 const req: React.CSSProperties = { color: '#ef4444' };
 const input: React.CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid var(--bpw-input-border)', borderRadius: 9, fontSize: 14, background: 'var(--bpw-surface)', boxSizing: 'border-box' };
 const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 };
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 14 };
-/* Mirrors .hrexp-cta — the violet pill on the Expense page that OPENS this
-   dialog (Batch Payment / Export). Same gradient, radius, shadow and type,
-   so the action reads as the same control once the modal is open (#61).
-   The header keeps its teal; that is the dialog's identity, the buttons are
-   the app's. */
-const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 18px', background: 'linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%)', color: '#fff', border: 'none', borderRadius: 999, boxShadow: '0 8px 18px rgba(91,63,209,0.30)', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
+/* Teal, drawn from the header gradient above (#6d28d9 -> #7c5cfc -> #a78bfa)
+   so the primary action belongs to this dialog rather than looking borrowed
+   from the page behind it (#61). Geometry still matches .hrexp-cta — the
+   pill that opens this modal — so only the hue differs. */
+const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 18px', background: 'linear-gradient(135deg,#a78bfa 0%,#7c5cfc 55%,#6d28d9 100%)', color: '#fff', border: 'none', borderRadius: 999, boxShadow: '0 8px 18px rgba(109,40,217,0.32)', fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
 const ghostBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '10px 18px', background: 'var(--bpw-surface)', color: 'var(--bpw-text)', border: '1px solid var(--bpw-input-border)', borderRadius: 999, fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
-const ghostSm: React.CSSProperties = { background: 'var(--bpw-surface)', color: 'var(--bpw-teal-fg)', border: '1px solid var(--bpw-teal-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
+const ghostSm: React.CSSProperties = { background: 'var(--bpw-surface)', color: 'var(--bpw-accent-fg)', border: '1px solid var(--bpw-accent-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
 const warnSm: React.CSSProperties = { background: 'var(--bpw-warn-bg)', color: 'var(--bpw-warn-fg)', border: '1px solid var(--bpw-warn-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 const disabledSm: React.CSSProperties = { background: 'var(--bpw-surface-2)', color: 'var(--bpw-muted-2)', border: '1px solid var(--bpw-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'not-allowed', whiteSpace: 'nowrap' };
 const noteCell: React.CSSProperties = { maxWidth: 220, color: 'var(--bpw-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
-const attachZone: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 14px', border: '1.5px dashed var(--bpw-accent-dash)', borderRadius: 10, background: 'var(--bpw-accent-soft)', color: 'var(--bpw-teal-fg)', cursor: 'pointer', fontSize: 13 };
+const attachZone: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 14px', border: '1.5px dashed var(--bpw-accent-dash)', borderRadius: 10, background: 'var(--bpw-accent-soft)', color: 'var(--bpw-accent-fg)', cursor: 'pointer', fontSize: 13 };
 const proofBox: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', border: '1px solid var(--bpw-input-border)', borderRadius: 10, background: 'var(--bpw-surface-2)' };
-const proofBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bpw-surface)', color: 'var(--bpw-teal-fg)', border: '1px solid var(--bpw-teal-border)', borderRadius: 7, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
-const syncBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#0891b2', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
+const proofBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bpw-surface)', color: 'var(--bpw-accent-fg)', border: '1px solid var(--bpw-accent-border)', borderRadius: 7, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
+const syncBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#7c5cfc', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
+/* Reuses --bpw-ok-*, which already has a dark-mode pair, so the badge does
+   not need its own colours maintained. */
+const syncedBadge: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5, background: 'var(--bpw-ok-bg)', color: 'var(--bpw-ok-fg)', border: 'none', borderRadius: 999, padding: '4px 10px', fontWeight: 700, fontSize: 11.5, whiteSpace: 'nowrap', textDecoration: 'none' };
 const link: React.CSSProperties = { color: 'var(--bpw-link)', fontWeight: 600, textDecoration: 'none' };
 const chip: React.CSSProperties = { display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontWeight: 700, fontSize: 11 };
 const idPill: React.CSSProperties = { display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: 'var(--bpw-pill-bg)', color: 'var(--bpw-pill-fg)', fontWeight: 700, fontSize: 11.5, whiteSpace: 'nowrap' };
@@ -567,7 +595,7 @@ const popover: React.CSSProperties = { position: 'fixed', zIndex: 9100, minWidth
 const popTitle: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: .5, color: 'var(--bpw-muted)', textTransform: 'uppercase', marginBottom: 8 };
 const chipDark: React.CSSProperties = { display: 'inline-block', padding: '3px 9px', borderRadius: 999, background: 'rgba(255,255,255,.2)', color: '#fff', fontWeight: 700, fontSize: 11.5 };
 
-/* Boxed wizard stepper — mirrors the Return-payment flow's stepper, teal-themed. */
+/* Boxed wizard stepper — mirrors the Return-payment flow's stepper. */
 const BPW_CSS = `
 /* THEME TOKENS (QA #176). The modal was authored with its surfaces written as
    literal hexes, so in dark mode the card stayed white while the rest of the
@@ -587,16 +615,18 @@ const BPW_CSS = `
   --bpw-muted:#64748b;
   --bpw-muted-2:#94a3b8;
   --bpw-veil:rgba(255,255,255,.72);
-  --bpw-row-sel:#ecfeff;
-  --bpw-accent-soft:#f0fbfe;
-  --bpw-accent-dash:#94d8e6;
+  --bpw-row-sel:#f5f3ff;
+  --bpw-accent-soft:#f5f3ff;
+  --bpw-accent-dash:#c4b5fd;
   --bpw-warn-bg:#fffbeb;
-  --bpw-pill-bg:#e0f2fe;
-  --bpw-pill-fg:#0369a1;
+  --bpw-pill-bg:#ede9fe;
+  --bpw-pill-fg:#6d28d9;
+  --bpw-th-bg:linear-gradient(180deg,#f1edfe,#faf8ff);
+  --bpw-th-fg:#7d75a0;
   --bpw-step-pending-bg:#f8fafc;
-  --bpw-teal-fg:#0e7490;
-  --bpw-teal-border:#99f6e4;
-  --bpw-link:#0891b2;
+  --bpw-accent-fg:#6d28d9;
+  --bpw-accent-border:#ddd6fe;
+  --bpw-link:#7c5cfc;
   --bpw-warn-fg:#a16207;
   --bpw-warn-border:#fde68a;
   --bpw-warn-bg-2:#fef3c7;
@@ -615,16 +645,18 @@ const BPW_CSS = `
   --bpw-muted:#adb5bd;
   --bpw-muted-2:#8d959d;
   --bpw-veil:rgba(33,37,41,.78);
-  --bpw-row-sel:rgba(6,182,212,.16);
-  --bpw-accent-soft:rgba(8,145,178,.14);
-  --bpw-accent-dash:#3f8ea3;
+  --bpw-row-sel:rgba(167,139,250,.16);
+  --bpw-accent-soft:rgba(124,92,252,.14);
+  --bpw-accent-dash:#7c5cfc;
   --bpw-warn-bg:rgba(161,98,7,.18);
   --bpw-pill-bg:rgba(3,105,161,.30);
-  --bpw-pill-fg:#7dd3fc;
+  --bpw-pill-fg:#c4b5fd;
+  --bpw-th-bg:linear-gradient(180deg,rgba(124,92,252,.18),rgba(124,92,252,.10));
+  --bpw-th-fg:#a79bc4;
   --bpw-step-pending-bg:rgba(255,255,255,.04);
-  --bpw-teal-fg:#67e8f9;
-  --bpw-teal-border:rgba(103,232,249,.38);
-  --bpw-link:#22d3ee;
+  --bpw-accent-fg:#c4b5fd;
+  --bpw-accent-border:rgba(196,181,253,.38);
+  --bpw-link:#c4b5fd;
   --bpw-warn-fg:#fbbf24;
   --bpw-warn-border:rgba(251,191,36,.40);
   --bpw-warn-bg-2:rgba(161,98,7,.28);
@@ -669,11 +701,11 @@ const BPW_CSS = `
 .bpw-text{min-width:0;flex:1;}
 .bpw-title{font-size:12.5px;font-weight:800;letter-spacing:-.2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bpw-sub{font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.bpw-step-active{background:linear-gradient(135deg,#e0f7fb 0%,#cbeef6 100%);border:2px solid #22d3ee;box-shadow:0 6px 20px rgba(8,145,178,.18);}
-.bpw-step-active .bpw-badge{background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;box-shadow:0 5px 14px rgba(14,116,144,.48);}
-.bpw-step-active .bpw-num{background:linear-gradient(135deg,#0e7490,#155e75);color:#fff;}
-.bpw-step-active .bpw-title{color:#083344;}
-.bpw-step-active .bpw-sub{color:#0e7490;}
+.bpw-step-active{background:linear-gradient(135deg,#ede9fe 0%,#ddd6fe 100%);border:2px solid #c4b5fd;box-shadow:0 6px 20px rgba(124,92,252,.18);}
+.bpw-step-active .bpw-badge{background:linear-gradient(135deg,#7c5cfc,#6d28d9);color:#fff;box-shadow:0 5px 14px rgba(109,40,217,.48);}
+.bpw-step-active .bpw-num{background:linear-gradient(135deg,#6d28d9,#5b21b6);color:#fff;}
+.bpw-step-active .bpw-title{color:#2e1065;}
+.bpw-step-active .bpw-sub{color:#6d28d9;}
 .bpw-step-done{background:linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%);border:2px solid #34d399;box-shadow:0 6px 20px rgba(16,185,129,.18);}
 .bpw-step-done .bpw-badge{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;box-shadow:0 5px 12px rgba(22,163,74,.42);}
 .bpw-step-done .bpw-num{background:#fff;color:#16a34a;box-shadow:0 1px 3px rgba(22,163,74,.30);}
@@ -685,4 +717,4 @@ const BPW_CSS = `
 .bpw-step-pending .bpw-title{color:var(--bpw-muted-2);}
 .bpw-step-pending .bpw-sub{color:var(--bpw-muted-2);}
 `;
-const totalBanner: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, background: 'linear-gradient(120deg,#0e7490,#0891b2 60%,#06b6d4)', color: '#fff', borderRadius: 14, padding: '18px 22px', marginBottom: 18, flexWrap: 'wrap' };
+const totalBanner: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, background: 'linear-gradient(120deg,#6d28d9,#7c5cfc 60%,#a78bfa)', color: '#fff', borderRadius: 14, padding: '18px 22px', marginBottom: 18, flexWrap: 'wrap' };
