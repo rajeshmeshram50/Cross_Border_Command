@@ -474,10 +474,6 @@ const LDP_CSS = `
 
 .ldp-shell {
   width: 100%;
-  background: #f5feff;
-  border-radius: 14px;
-  border: 1px solid #cef3f9;
-  box-shadow: 0 4px 16px rgba(8,145,178,.08);
   overflow: hidden;
   display: flex; flex-direction: column; flex: 1; min-height: 0;
 }
@@ -573,7 +569,7 @@ const LDP_CSS = `
 /* ── KPI cards ── */
 .ldp-stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-  padding: 12px 18px 4px;
+  padding: 0 0 4px;
   flex-shrink: 0;
 }
 .ldp-stat {
@@ -651,7 +647,7 @@ const LDP_CSS = `
 
 /* ── Table — the My Workplace table card (.lwp-table-card / .lwp-table) ── */
 .ldp-table-wrap {
-  margin: 14px 18px 18px;
+  margin: 8px 0 0;
   background: #fff; border: 1.5px solid #a5f3fc; border-radius: 14px;
   box-shadow: 0 4px 20px rgba(8,145,178,.1), 0 1px 4px rgba(0,0,0,.04);
   overflow: hidden;
@@ -722,16 +718,18 @@ const LDP_CSS = `
 .ldp-view-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 12px; border-radius: 8px;
-  background: #ffffff; border: 1.5px solid #a5f3fc; color: #0891b2;
+  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
+  border: none; color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.15);
+  box-shadow: 0 3px 10px rgba(6,182,212,.35), 0 1px 0 rgba(255,255,255,.22) inset;
   font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
   transition: background .15s, color .15s, border-color .15s, transform .12s, box-shadow .15s;
   white-space: nowrap;
 }
 .ldp-view-btn:hover {
-  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
-  border-color: transparent; color: #fff;
+  background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 55%, #0891b2 100%);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(8,145,178,.35);
+  box-shadow: 0 6px 16px rgba(6,182,212,.5), 0 1px 0 rgba(255,255,255,.22) inset;
 }
 .ldp-view-btn:active { transform: translateY(0); }
 
@@ -817,7 +815,6 @@ const LDP_CSS = `
 
 /* ── Dark mode — the My Workplace dark cyan ── */
 [data-bs-theme="dark"] .ldp-page { background: transparent; }
-[data-bs-theme="dark"] .ldp-shell { background: #0c1f2e; border-color: rgba(34,211,238,.18); }
 [data-bs-theme="dark"] .ldp-header-card {
   background:
     radial-gradient(ellipse at top right, rgba(34,211,238,0.10), transparent 60%),
@@ -864,7 +861,6 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-chip-inactive  { background: rgba(75,85,99,.35); color: #d1d5db; border-color: rgba(209,213,219,.3); }
 [data-bs-theme="dark"] .ldp-chip-primary   { background: rgba(3,105,161,.25); color: #7dd3fc; border-color: rgba(125,211,252,.35); }
 [data-bs-theme="dark"] .ldp-chip-ancillary { background: rgba(15,118,110,.25); color: #5eead4; border-color: rgba(94,234,212,.35); }
-[data-bs-theme="dark"] .ldp-view-btn      { background: transparent; border-color: rgba(103,232,249,.35); color: #67e8f9; }
 [data-bs-theme="dark"] .ldp-total         { background: transparent; color: #67e8f9; border-color: rgba(103,232,249,.35); }
 [data-bs-theme="dark"] .ldp-sr-badge      { color: #e2e8f0; }
 [data-bs-theme="dark"] .ldp-skel { background: linear-gradient(100deg, #10293a 30%, #15384d 50%, #10293a 70%); background-size: 200% 100%; }
@@ -885,13 +881,12 @@ const LDP_CSS = `
 @media (max-width: 640px) {
   .ldp-page { padding: 0; }
   .ldp-header-card { border-radius: 0; border-left: none; border-right: none; margin-bottom: 10px; }
-  .ldp-shell { width: 100%; border-radius: 0; border-left: none; border-right: none; }
   .ldp-header { padding: 14px 16px; gap: 12px; flex-direction: column; align-items: flex-start; }
   .ldp-header-left { gap: 10px; }
   .ldp-header-right { flex-wrap: wrap; gap: 8px; }
   .ldp-header-right .ldp-back-btn { flex: 1; justify-content: center; }
   .ldp-hp { flex: 1; justify-content: center; }
-  .ldp-stats { grid-template-columns: 1fr; padding: 14px 16px 4px; gap: 10px; }
+  .ldp-stats { grid-template-columns: 1fr; padding: 0 16px 4px; gap: 10px; }
   .ldp-stat-value { font-size: 24px; }
   .ldp-table-wrap { margin: 12px 16px 16px; }
   .ldp-pagination { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
