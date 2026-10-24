@@ -92,7 +92,12 @@
           border-color: rgba(124,92,252,0.32);
         }
         .onb-checklist-cta {
-          padding: 10px 18px;
+          /* 40px flat, to match the other header actions. It was sized by
+             10px of vertical padding and came out 42 — height alone would not
+             win against that, so the padding is zeroed with it. */
+          box-sizing: border-box;
+          height: 40px; min-height: 40px;
+          padding: 0 18px;
           font-size: 13px; font-weight: 700;
           color: #fff !important;
           background: linear-gradient(135deg,#7c5cfc 0%,#5a3fd1 100%) !important;

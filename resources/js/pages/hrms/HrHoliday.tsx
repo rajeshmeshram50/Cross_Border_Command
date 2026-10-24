@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
 import * as XLSX from 'xlsx';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -8,6 +10,7 @@ import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import TruncText from '../../components/ui/TruncText';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import SearchClear from '../../components/ui/SearchClear';
 import '../../../css/recruitment.css';
 
 type HolidayType = 'Public' | 'Restricted' | 'Company' | 'Regional' | 'Optional';
@@ -81,6 +84,11 @@ export default function HrHoliday() {
   const [typeFilter, setTypeFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
   const [groupFilter, setGroupFilter] = useState('All');
+  // Group / Type / Year moved out of the toolbar into one Filter popup, the
+  // Leave Management pattern. Three selects were the whole reason this
+  // toolbar could not hold a single line.
+  const [filterOpen, setFilterOpen] = useState(false);
+  const activeFilterCount = [groupFilter, typeFilter, yearFilter].filter(v => v !== 'All').length;
 
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState<number>(() => {
@@ -494,6 +502,8 @@ export default function HrHoliday() {
             </div>
 
             <DataTable<HolidayRow>
+              title="Holiday List"
+              subtitle="Holidays in the selected groups and year"
               data={rows}
               columns={columns}
               serial
@@ -521,36 +531,8 @@ export default function HrHoliday() {
                     : 'No holidays yet — click Add Holiday or Import Excel to get started'}
                 </>
               }
-              toolbarActions={
-                <>
-                  {/* No standalone GROUP / TYPE / YEAR labels.
-                      Each sat beside a select that already reads "All Groups"
-                      / "All Types" / "All Years", so the wording was on screen
-                      twice — and that duplication was 123px, measured, which
-                      is the whole reason this toolbar could not hold one line
-                      and had to wrap (see .holiday-page .dt-toolbar). The
-                      title keeps the name reachable on hover for when a
-                      filter is set and the select shows a value instead. */}
-                  <div className="hol-filter d-flex align-items-center gap-2" title="Filter by holiday group">
-                    <div className="hol-filter-sel" style={{ minWidth: 160 }}>
-                      <MasterSelect value={groupFilter} onChange={applyFilter(setGroupFilter)}
-                        options={[{ value: 'All', label: 'All Groups' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} placeholder="All Groups" />
-                    </div>
-                  </div>
-                  <div className="hol-filter d-flex align-items-center gap-2" title="Filter by holiday type">
-                    <div className="hol-filter-sel" style={{ minWidth: 130 }}>
-                      <MasterSelect value={typeFilter} onChange={applyFilter(setTypeFilter)}
-                        options={[{ value: 'All', label: 'All Types' }, ...TYPE_OPTIONS]} placeholder="All Types" />
-                    </div>
-                  </div>
-                  <div className="hol-filter d-flex align-items-center gap-2" title="Filter by year">
-                    <div className="hol-filter-sel" style={{ minWidth: 95 }}>
-                      <MasterSelect value={yearFilter} onChange={applyFilter(setYearFilter)}
-                        options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />
-                    </div>
-                  </div>
-                </>
-              }
+              activeFilterCount={activeFilterCount}
+              onFilterClick={() => setFilterOpen(true)}
             />
           </div>
         </Col>
@@ -570,6 +552,16 @@ export default function HrHoliday() {
         groups={groups}
         onClose={() => setManageGroupsOpen(false)}
         onChanged={refreshAll}
+      />
+
+      <HolidayFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        initial={{ group: groupFilter, type: typeFilter, year: yearFilter }}
+        groupOptions={groups.map(g => ({ value: String(g.id), label: g.name }))}
+        typeOptions={TYPE_OPTIONS.map(t => ({ value: t.value, label: t.label }))}
+        yearOptions={years.map(y => ({ value: y, label: y }))}
+        onApply={(f) => { setGroupFilter(f.group); setTypeFilter(f.type); setYearFilter(f.year); setPage(0); }}
       />
     </>
   );
@@ -977,4 +969,199 @@ function ManageGroupsModal({
       </ModalBody>
     </Modal>
   );
+}
+
+/* ── Filter popup ─────────────────────────────────────────────────────────
+ * Same two-pane shell as Leave Management's Filter Leaves (left menu picks a
+ * facet, right pane lists its options), on the shared LFM_CSS sheet. Facets:
+ * Group / Type / Year, each single-select, where "no selection" means All.
+ * Commits a draft on Apply so the list reloads once, not once per select. */
+type HolidayFacetKey = 'group' | 'type' | 'year';
+type HolidayFilterValues = { group: string; type: string; year: string };
+
+const HOLIDAY_FACET_ICONS: Record<HolidayFacetKey, ReactNode> = {
+  group: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  ),
+  type: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="3" /><polyline points="8 12 11 15 16 9" />
+    </svg>
+  ),
+  year: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="17" rx="2.5" /><line x1="3" y1="9" x2="21" y2="9" />
+      <line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" />
+    </svg>
+  ),
+};
+
+function HolidayFilterModal({
+  open, onClose, onApply, initial, groupOptions, typeOptions, yearOptions,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onApply: (f: HolidayFilterValues) => void;
+  initial: HolidayFilterValues;
+  groupOptions: { value: string; label: string }[];
+  typeOptions: { value: string; label: string }[];
+  yearOptions: { value: string; label: string }[];
+}) {
+  const [active, setActive] = useState<HolidayFacetKey>('group');
+  const [search, setSearch] = useState('');
+  const [draft, setDraft] = useState<HolidayFilterValues>(initial);
+
+  useEffect(() => {
+    if (open) { setDraft(initial); setActive('group'); setSearch(''); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial]);
+
+  // Scroll lock on both <html> and <body> while open.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const FACETS: { key: HolidayFacetKey; label: string }[] = [
+    { key: 'group', label: 'Group' },
+    { key: 'type',  label: 'Type' },
+    { key: 'year',  label: 'Year' },
+  ];
+  const optsFor = (k: HolidayFacetKey) =>
+    (k === 'group' ? groupOptions : k === 'type' ? typeOptions : yearOptions)
+      // Drop any 'All' sentinel — an empty selection already means All.
+      .filter(o => o.value !== 'All');
+
+  const facetCount = (k: HolidayFacetKey) => (draft[k] !== 'All' ? 1 : 0);
+  const selectedCount = FACETS.reduce((n, f) => n + facetCount(f.key), 0);
+  const isChecked = (value: string) => draft[active] === value;
+  // Re-clicking the chosen option clears it back to All.
+  const pick = (value: string) => setDraft(prev => ({ ...prev, [active]: prev[active] === value ? 'All' : value }));
+
+  const currentList = optsFor(active);
+  const searched = search.trim()
+    ? currentList.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
+    : currentList;
+
+  const onApplyClick = () => { onApply(draft); onClose(); };
+  const onReset = () => {
+    const cleared: HolidayFilterValues = { group: 'All', type: 'All', year: 'All' };
+    setDraft(cleared);
+    onApply(cleared);
+  };
+
+  return createPortal((
+    <div className="lfm-backdrop lfm-purple">
+      <style>{LFM_CSS}</style>
+      <div className="lfm-modal">
+        <div className="lfm-head">
+          <div className="lfm-head-left">
+            <div className="lfm-head-ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="6" x2="20" y2="6" /><line x1="6" y1="12" x2="18" y2="12" /><line x1="9" y1="18" x2="15" y2="18" />
+              </svg>
+            </div>
+            <div>
+              <div className="lfm-head-title">Filter Holidays</div>
+              <div className="lfm-head-sub">Select filters to narrow down results</div>
+            </div>
+          </div>
+          {selectedCount > 0 && <span className="lfm-head-count">{selectedCount} selected</span>}
+          <button className="lfm-close" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="lfm-body">
+          <div className="lfm-left">
+            <div className="lfm-left-label">FILTER BY</div>
+            <div className="lfm-menu">
+              {FACETS.map(f => {
+                const count = facetCount(f.key);
+                return (
+                  <button
+                    type="button"
+                    key={f.key}
+                    className={`lfm-menu-item ${active === f.key ? 'on' : ''}`}
+                    onClick={() => { setActive(f.key); setSearch(''); }}
+                  >
+                    <span className="lfm-menu-ico">{HOLIDAY_FACET_ICONS[f.key]}</span>
+                    <span className="lfm-menu-label">{f.label}</span>
+                    {count > 0 && <span className="lfm-menu-count" aria-hidden="true">{count}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="lfm-left-foot">
+              <button className="lfm-btn lfm-btn-primary" onClick={onApplyClick}>Apply Filter</button>
+              <button className="lfm-btn-reset" onClick={onReset}>Reset All</button>
+            </div>
+          </div>
+
+          <div className="lfm-right">
+            <div className="lfm-search-wrap ui-search-abs">
+              <svg className="lfm-search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                className="lfm-search"
+                autoComplete="off"
+                placeholder={`Search ${FACETS.find(f => f.key === active)?.label.toLowerCase()}…`}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              <SearchClear show={search} onClear={() => { setSearch(''); }} />
+            </div>
+
+            <div className="lfm-options">
+              {searched.length === 0 ? (
+                <div className="lfm-empty">No options available</div>
+              ) : (
+                searched.map(opt => {
+                  const checked = isChecked(opt.value);
+                  return (
+                    <label key={opt.value} className={`lfm-card ${checked ? 'on' : ''}`}>
+                      <input
+                        type="radio"
+                        name={`holiday-facet-${active}`}
+                        checked={checked}
+                        readOnly
+                        onClick={() => pick(opt.value)}
+                      />
+                      <span className="lfm-check lfm-check-round" aria-hidden="true">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </span>
+                      <span className="lfm-card-label">
+                        <span className="lfm-card-name">{opt.label}</span>
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  ), document.body);
 }

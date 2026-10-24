@@ -103,18 +103,6 @@ body,
   min-height: 100%;
 }
 
-/* The scrollbar's lane is NOT reserved.
-
-   scrollbar-gutter: stable was tried here, to stop the page sliding sideways
-   when filtering a list shortens it and .main-content loses its scrollbar.
-   It does fix that, but it reserves the lane on every page - and on a page
-   that never scrolls (Consignee, for one) that is 10px of empty strip down
-   the right edge, against the card's 8px on the left. Equal spacing won.
-
-   If the sideways shift comes back, fix it at the source instead: it only
-   happens because the card's height changes as rows filter out, which is what
-   makes the scrollbar come and go. Hold the card's height and the scrollbar
-   never toggles. */
 body {
   overflow-x: hidden;
 }
@@ -1777,6 +1765,12 @@ tbody tr:nth-child(10) {
   color: #2e1065;
 }
 
+/* 14.5px, matching .cstrip__title on the Supplier strip. Size only — the
+   band keeps its 70px and the icon its 46px. */
+.frm-cstrip.hr-cstrip .frm-cstrip-title {
+  font-size: 14.5px;
+}
+
 .hr-cstrip .frm-cstrip-sub {
   font-size: 12px;
   font-weight: 500;
@@ -1986,6 +1980,19 @@ tbody tr:nth-child(10) {
 
 .frm-cstrip-back i {
   font-size: 15px;
+}
+
+/* On the HRMS strips, Back joins the 40px control height everything else
+   in that row uses. It was 44 with no box-sizing, so its border rendered it
+   at 46 — 6px taller than the action pill beside it, which is the gap
+   visible on Custom Fields. Scoped to .hr-cstrip; the non-HRMS strips keep
+   the larger button. */
+.frm-cstrip.hr-cstrip .frm-cstrip-back {
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 12.5px;
 }
 
 [data-bs-theme="dark"] .frm-cstrip {

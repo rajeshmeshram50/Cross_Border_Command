@@ -123,23 +123,45 @@ export default function CustomFieldModal(props: {
       <style>{`
         @keyframes cfm-fade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes cfm-pop  { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+        /* Backdrop, frame, header and buttons all take their numbers from the
+           shared violet popup (LFM_CSS .lfm-purple) so this form reads as the
+           same component family as Filter Leaves / Filter Holidays. */
         .cfm-overlay {
           position: fixed; inset: 0; z-index: 1060;
           display: flex; align-items: center; justify-content: center; padding: 20px;
-          background: rgba(15, 23, 42, 0.45);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
+          background: rgba(15, 23, 42, 0.55);
+          backdrop-filter: blur(3px);
+          -webkit-backdrop-filter: blur(3px);
           animation: cfm-fade .18s ease both;
         }
         .cfm-popup {
-          width: 100%; max-width: 640px; background: #fff; border-radius: 16px;
-          overflow: hidden; box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+          width: 100%; max-width: 640px; background: #fff; border-radius: 22px;
+          overflow: hidden;
+          box-shadow: 0 24px 60px rgba(139,92,246,.18), 0 8px 24px rgba(15,23,42,.20);
           animation: cfm-pop .22s cubic-bezier(.22,1,.36,1) both;
         }
+        /* Decorative orbs clipped by the header — the same two the shared
+           popup carries. */
+        .cfm-head { position: relative; overflow: hidden; }
+        .cfm-head::before {
+          content: ''; position: absolute; right: -35px; top: -35px;
+          width: 130px; height: 130px; border-radius: 50%;
+          background: rgba(255,255,255,.06); pointer-events: none;
+        }
+        .cfm-head::after {
+          content: ''; position: absolute; right: 70px; bottom: -45px;
+          width: 90px; height: 90px; border-radius: 50%;
+          background: rgba(255,255,255,.04); pointer-events: none;
+        }
+        .cfm-head > * { position: relative; z-index: 1; }
+        .cfm-input:focus {
+          border-color: #a78bfa; outline: none;
+          box-shadow: 0 0 0 3px rgba(139,92,246,.16);
+        }
         .cfm-type-tile { transition: transform 140ms ease, border-color 140ms ease, background 140ms ease; }
-        .cfm-type-tile:hover:not(.is-active) { border-color: #c7d2fe !important; background: #fafaff !important; }
+        .cfm-type-tile:hover:not(.is-active) { border-color: #ddd6fe !important; background: #faf8ff !important; }
         /* Save Field + Close (X) hover feedback (BUG-108 / BUG-109). */
-        .cfm-save-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
+        .cfm-save-btn:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 7px 20px rgba(139,92,246,0.45) !important; }
         .cfm-save-btn:active:not(:disabled) { transform: translateY(0); }
         .cfm-close-x:hover { background: rgba(255,255,255,0.32) !important; }
         /* BUG-108: loading spinner shown inside the Save button while persisting. */
@@ -196,21 +218,21 @@ export default function CustomFieldModal(props: {
         }
         [data-bs-theme="dark"] .cfm-type-tile.is-active,
         [data-layout-mode="dark"] .cfm-type-tile.is-active {
-          background: rgba(99,102,241,0.18) !important;
-          border-color: #818cf8 !important;
+          background: rgba(139,92,246,0.18) !important;
+          border-color: #a78bfa !important;
         }
         [data-bs-theme="dark"] .cfm-type-tile .cfm-type-icon,
         [data-layout-mode="dark"] .cfm-type-tile .cfm-type-icon { color: rgba(255,255,255,0.55) !important; }
         [data-bs-theme="dark"] .cfm-type-tile.is-active .cfm-type-icon,
-        [data-layout-mode="dark"] .cfm-type-tile.is-active .cfm-type-icon { color: #c7d2fe !important; }
+        [data-layout-mode="dark"] .cfm-type-tile.is-active .cfm-type-icon { color: #ddd6fe !important; }
         [data-bs-theme="dark"] .cfm-type-tile .cfm-type-label,
         [data-layout-mode="dark"] .cfm-type-tile .cfm-type-label { color: rgba(255,255,255,0.78) !important; }
         [data-bs-theme="dark"] .cfm-type-tile.is-active .cfm-type-label,
-        [data-layout-mode="dark"] .cfm-type-tile.is-active .cfm-type-label { color: #e0e7ff !important; }
+        [data-layout-mode="dark"] .cfm-type-tile.is-active .cfm-type-label { color: #ede9fe !important; }
         [data-bs-theme="dark"] .cfm-type-tile:hover:not(.is-active),
         [data-layout-mode="dark"] .cfm-type-tile:hover:not(.is-active) {
-          background: rgba(99,102,241,0.08) !important;
-          border-color: rgba(99,102,241,0.35) !important;
+          background: rgba(139,92,246,0.08) !important;
+          border-color: rgba(139,92,246,0.35) !important;
         }
         [data-bs-theme="dark"] .cfm-info,
         [data-layout-mode="dark"] .cfm-info {
@@ -233,18 +255,18 @@ export default function CustomFieldModal(props: {
       <div className="cfm-overlay">
         <div className="cfm-popup" onClick={e => e.stopPropagation()}>
           {/* Gradient header */}
-          <div style={{ padding: '13px 22px', background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 60%,#a855f7 100%)', display: 'flex', alignItems: 'center', gap: 14, userSelect: 'none', cursor: 'default' }}>
-            <span style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-              <i className="ri-star-fill" style={{ fontSize: 22, color: '#fff' }} />
+          <div className="cfm-head" style={{ padding: '14px 20px', background: 'linear-gradient(135deg,#6d28d9 0%,#8b5cf6 60%,#a78bfa 100%)', display: 'flex', alignItems: 'center', gap: 14, userSelect: 'none', cursor: 'default' }}>
+            <span style={{ width: 38, height: 38, borderRadius: 11, flexShrink: 0, background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.28)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <i className="ri-star-fill" style={{ fontSize: 18, color: '#fff' }} />
             </span>
-            <div className="me-auto">
-              <h5 className="mb-0 fw-bold" style={{ color: '#fff' }}>{initial?.id ? 'Edit Custom Field' : 'Add Custom Field'}</h5>
-              <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.9)' }}>Variables used in templates — filled at document generation time</div>
+            <div className="me-auto" style={{ minWidth: 0 }}>
+              <div style={{ color: '#fff', fontSize: 17, fontWeight: 700, letterSpacing: '-.2px', lineHeight: 1.2 }}>{initial?.id ? 'Edit Custom Field' : 'Add Custom Field'}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>Variables used in templates — filled at document generation time</div>
             </div>
             {/* Closing mid-save would leave the request in flight with no modal
                 to report back to — the same reason Cancel is disabled. (#10) */}
             <button type="button" onClick={onClose} disabled={saving} className="cfm-close-x"
-              style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.5 : 1, transition: 'background .15s ease' }}>
+              style={{ width: 32, height: 32, borderRadius: 9, flexShrink: 0, background: 'rgba(255,255,255,0.16)', border: 0, color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.5 : 1, transition: 'background .15s ease' }}>
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
           </div>
@@ -281,12 +303,13 @@ export default function CustomFieldModal(props: {
                     <div key={opt.value} className="col-3">
                       <button type="button" onClick={() => setType(opt.value)}
                         className={`cfm-type-tile${active ? ' is-active' : ''}`}
-                        style={{ width: '100%', padding: '12px 6px', borderRadius: 10,
-                          border: '2px solid ' + (active ? '#6366f1' : '#e5e7eb'),
-                          background: active ? '#eef2ff' : '#fff',
+                        style={{ width: '100%', padding: '12px 6px', borderRadius: 10, boxSizing: 'border-box',
+                          border: '1.5px solid ' + (active ? '#8b5cf6' : '#e5e7eb'),
+                          background: active ? '#f5f1fe' : '#fff',
+                          boxShadow: active ? '0 0 0 3px rgba(139,92,246,.12)' : 'none',
                           cursor: 'pointer', textAlign: 'center' }}>
-                        <i className={`${opt.icon} cfm-type-icon`} style={{ fontSize: 18, color: active ? '#4338ca' : '#6b7280', display: 'block', marginBottom: 4 }} />
-                        <div className="cfm-type-label" style={{ fontSize: 12, fontWeight: 700, color: active ? '#4338ca' : '#374151' }}>{opt.label}</div>
+                        <i className={`${opt.icon} cfm-type-icon`} style={{ fontSize: 18, color: active ? '#6d28d9' : '#6b7280', display: 'block', marginBottom: 4 }} />
+                        <div className="cfm-type-label" style={{ fontSize: 12, fontWeight: 700, color: active ? '#6d28d9' : '#374151' }}>{opt.label}</div>
                       </button>
                     </div>
                   );
@@ -330,13 +353,13 @@ export default function CustomFieldModal(props: {
           </fieldset>
 
           {/* Footer */}
-          <div className="cfm-footer" style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div className="cfm-footer" style={{ padding: '14px 22px', borderTop: '1px solid #eef2f7', background: '#f8fafc', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <button type="button" onClick={onClose} disabled={saving} className="cfm-cancel"
-              style={{ padding: '8px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: 12.5, fontWeight: 700, color: '#475569', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
               Cancel
             </button>
             <button type="button" onClick={submit} disabled={saving} className="cfm-save-btn"
-              style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: saving ? 'progress' : 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease', opacity: saving ? 0.85 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: 'linear-gradient(135deg,#a78bfa 0%,#8b5cf6 55%,#6d28d9 100%)', border: 0, borderRadius: 10, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'progress' : 'pointer', boxShadow: '0 4px 14px rgba(139,92,246,.35), 0 1px 0 rgba(255,255,255,.18) inset', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease', opacity: saving ? 0.85 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               {saving && <span className="cfm-spinner" />}
               {saving ? 'Saving…' : 'Save Field'}
             </button>
@@ -351,9 +374,10 @@ const fieldLabel: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, lette
 const req: React.CSSProperties = { color: '#ef4444' };
 function inputStyle(error: boolean): React.CSSProperties {
   return {
-    width: '100%', padding: '8px 12px', borderRadius: 8,
-    border: '1px solid ' + (error ? '#ef4444' : '#e5e7eb'),
+    width: '100%', padding: '10px 12px', borderRadius: 10, boxSizing: 'border-box',
+    border: '1px solid ' + (error ? '#ef4444' : '#e2e8f0'),
     fontSize: 13.5, background: '#fff', lineHeight: 1.4,
+    transition: 'border-color .15s, box-shadow .15s',
   };
 }
 const errMsg: React.CSSProperties = { fontSize: 11.5, color: '#ef4444', marginTop: 4 };

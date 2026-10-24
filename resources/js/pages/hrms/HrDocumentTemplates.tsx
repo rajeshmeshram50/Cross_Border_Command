@@ -606,12 +606,7 @@ export default function HrDocumentTemplates() {
             <div className="frm-cstrip-left">
               <div className="frm-cstrip-icon"><i className="ri-file-text-line" /></div>
               <div className="min-w-0">
-                <div className="d-flex align-items-center gap-2 flex-wrap">
-                  <span className="frm-cstrip-title">Document Template Management</span>
-                  <span className="dtm-active-badge" style={{ fontSize: 11.5, color: '#15803d', background: '#dcfce7', padding: '3px 10px', borderRadius: 999, fontWeight: 700 }}>
-                    <i className="ri-checkbox-circle-fill me-1" style={{ fontSize: 12 }} />Active
-                  </span>
-                </div>
+                <span className="frm-cstrip-title">Document Template Management</span>
                 <div className="frm-cstrip-sub">Role-based document templates — versions, variables &amp; approval flows</div>
               </div>
             </div>
@@ -729,29 +724,32 @@ export default function HrDocumentTemplates() {
                 No templates yet for {category} · {roleType}. Click <strong>+ Add Template</strong> to create one.
               </>
             }
+            /* Refine sits in toolbarFilters, which renders BEFORE the
+               search — the toolbar convention across HRMS. In
+               toolbarActions it landed on the far side of the field.
+               Compact: with six role tabs the rail needs every pixel. */
+            toolbarFilters={
+              <RefineTemplates
+                open={filterOpen}
+                onOpenChange={setFilterOpen}
+                triggerPoints={triggerPoints}
+                triggerCounts={triggerCounts}
+                statusCounts={statusCounts}
+                triggerFilter={triggerFilter}
+                statusFilter={statusFilter}
+                onTrigger={setTriggerFilter}
+                onStatus={setStatusFilter}
+                onClear={() => { setTriggerFilter(''); setStatusFilter(''); }}
+                active={activeFilterCount}
+                shown={filtered.length}
+                total={facetBase.length}
+              />
+            }
             toolbarActions={
               <>
-                {/* Compact: with six role tabs the rail needs every pixel, and
-                    a 170px-wide "All" dropdown plus a roomy button pushed the
-                    last tab onto a second line inside the rail. */}
-                <RefineTemplates
-                  open={filterOpen}
-                  onOpenChange={setFilterOpen}
-                  triggerPoints={triggerPoints}
-                  triggerCounts={triggerCounts}
-                  statusCounts={statusCounts}
-                  triggerFilter={triggerFilter}
-                  statusFilter={statusFilter}
-                  onTrigger={setTriggerFilter}
-                  onStatus={setStatusFilter}
-                  onClear={() => { setTriggerFilter(''); setStatusFilter(''); }}
-                  active={activeFilterCount}
-                  shown={filtered.length}
-                  total={facetBase.length}
-                />
-                {/* Next to the filter control, at the right end of the toolbar.
-                    The header strip already carries the category tabs, and the
-                    two together crowded the first row. */}
+                {/* Right end of the toolbar. The header strip already
+                    carries the category tabs, and the two together
+                    crowded the first row. */}
                 <button type="button" className="cand-pill-btn cand-pill-btn--primary flex-shrink-0" onClick={() => navigate('/hr/doc-templates/new')}>
                   <i className="ri-add-line" />Add Template
                 </button>
@@ -1513,6 +1511,9 @@ function DtmDarkStyles() {
          rail was always wider than the card: it clipped the active tab mid-word
          and hid the third one off the right edge, with no scrollbar to say so.
          Three tabs wrap onto a second line perfectly well. */
+      /* Rail 48, tabs 40 — the 4px either side is the rail's own inset. */
+      .dtm-page .frm-cstrip .dt-tabrail { height: 48px; align-items: center; }
+      .dtm-page .frm-cstrip .dt-tab { height: 40px; padding-top: 0; padding-bottom: 0; display: inline-flex; align-items: center; }
       .dtm-page .frm-cstrip .dt-tabrail { overflow-x: visible; max-width: 100%; }
       .dtm-page .frm-cstrip .dt-tabs { flex-wrap: wrap; }
       .dtm-page .frm-cstrip .dt-tab { white-space: normal; text-align: left; }
@@ -1692,10 +1693,6 @@ function DtmDarkStyles() {
       [data-bs-theme="dark"] .dtm-page .dtm-header-icon,
       [data-layout-mode="dark"] .dtm-page .dtm-header-icon{
         background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.25)) !important;
-      }
-      [data-bs-theme="dark"] .dtm-page .dtm-active-badge,
-      [data-layout-mode="dark"] .dtm-page .dtm-active-badge{
-        background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
       }
       [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile,
       [data-layout-mode="dark"] .dtm-page .dtm-kpi-tile{

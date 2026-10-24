@@ -63,6 +63,11 @@ export interface DataTableProps<T> {
   filterChips?: DataTableChip[];
   onClearFilters?: () => void;
   toolbarActions?: ReactNode;
+  /** Rendered just BEFORE the search field, at the right-hand end of the
+   *  toolbar. Filters belong here; `toolbarActions` renders after the search
+   *  and is for buttons that act on the list. Pages were putting selects in
+   *  toolbarActions, which pushed them past the search to the far edge. */
+  toolbarFilters?: ReactNode;
   /** Rendered at the START of the toolbar, BEFORE the tabs (e.g. a date-range
    *  filter that should sit to the left of the status tabs). */
   leadingToolbar?: ReactNode;
@@ -221,6 +226,7 @@ export default function DataTable<T extends object>({
   filterChips,
   onClearFilters,
   toolbarActions,
+  toolbarFilters,
   leadingToolbar,
   title,
   subtitle,
@@ -796,12 +802,12 @@ export default function DataTable<T extends object>({
             </div>
           )}
 
-          {/* Search first, then Filter. The button reads as an action ON the
-              search results, so it belongs after the field it narrows — and
-              with the search elastic, leading with the button left it stranded
-              in the middle of the row. */}
-          {searchInToolbar && searchBox}
-
+          {/* Filter first, then Search. It used to be the other way round, on
+              the reasoning that the button acts ON the results so it should
+              follow the field — but with the search elastic that pushed the
+              button to the far right, a different place on every page
+              depending on how much room the search took. Leading with it pins
+              it to a fixed spot beside the field on every list. */}
           {onFilterClick && (
             <button
               type="button"
@@ -813,6 +819,10 @@ export default function DataTable<T extends object>({
               {activeFilterCount > 0 && <span className="dt-filter-badge">{activeFilterCount}</span>}
             </button>
           )}
+
+          {toolbarFilters && <div className="dt-toolbar-filters">{toolbarFilters}</div>}
+
+          {searchInToolbar && searchBox}
 
           {toolbarActions && <div className="dt-toolbar-actions">{toolbarActions}</div>}
         </div>

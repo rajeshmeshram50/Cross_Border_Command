@@ -3,6 +3,7 @@ import { formatDmy } from '../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { FitTip } from '../../p2p/purchase-management/order/create-po/form-fields';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Lead Distribution → KPI popup.
@@ -109,6 +110,7 @@ export default function LeadsKpiModal(props: {
   const [leads, setLeads]     = useState<Lead[]>([]);
   const [total, setTotal]     = useState(0);
   const [page, setPage]       = useState(1);
+  const [pageSize, setPageSize] = useState(ROWS_PER_PAGE);
   const [loading, setLoading] = useState(false);
 
   // Serialise the filter so the effect re-runs when the caller switches
@@ -134,7 +136,7 @@ export default function LeadsKpiModal(props: {
     const params: Record<string, unknown> = {
       status: 'all',
       page,
-      per_page: ROWS_PER_PAGE,
+      per_page: pageSize,
       with_counts: 0,
     };
     if (filter.assigned !== undefined) params.assigned = filter.assigned ? 1 : 0;
@@ -153,11 +155,11 @@ export default function LeadsKpiModal(props: {
         setLeads([]); setTotal(0);
       })
       .finally(() => setLoading(false));
-  }, [open, filterKey, page, toast]);
+  }, [open, filterKey, page, pageSize, toast]);
 
-  const pages    = Math.max(1, Math.ceil(total / ROWS_PER_PAGE));
+  const pages    = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pages);
-  const startIdx = (safePage - 1) * ROWS_PER_PAGE;
+  const startIdx = (safePage - 1) * pageSize;
   const endIdx   = Math.min(startIdx + leads.length, total);
 
   // Lock background scroll while the overlay is open.
@@ -225,7 +227,7 @@ export default function LeadsKpiModal(props: {
               </tr>
             </thead>
             <tbody>
-              {loading && Array.from({ length: ROWS_PER_PAGE }).map((_, i) => (
+              {loading && Array.from({ length: pageSize }).map((_, i) => (
                 <tr key={`sk-${i}`} className="lkm-skel-row">
                   <td><span className="lkm-skel lkm-skel-sr" /></td>
                   <td><span className="lkm-skel lkm-skel-chip" /></td>
@@ -249,9 +251,9 @@ export default function LeadsKpiModal(props: {
                   <td><span className="lkm-type-badge">{r.type}</span></td>
                   <td className="lkm-muted">{r.date}</td>
                   <td className="lkm-muted">{r.source}</td>
-                  <td className="lkm-strong">{r.assigned}</td>
+                  <td className="lkm-strong"><FitTip label={r.assigned}><span className="lkm-fit">{r.assigned}</span></FitTip></td>
                   <td><span className="lkm-opp">{r.oppId}</span></td>
-                  <td className="lkm-strong">{r.customer}</td>
+                  <td className="lkm-strong"><FitTip label={r.customer}><span className="lkm-fit">{r.customer}</span></FitTip></td>
                   <td className={r.shipment === 'N/A' ? 'lkm-na' : 'lkm-muted'}>{r.shipment}</td>
                   <td className={r.piNumber === 'N/A' ? 'lkm-na' : 'lkm-muted'}>{r.piNumber}</td>
                   <td className="lkm-muted">{r.country}</td>
@@ -278,7 +280,16 @@ export default function LeadsKpiModal(props: {
                 : <>Showing <strong>{startIdx + 1}–{endIdx}</strong> of <strong>{total}</strong></>}
           </span>
           <div className="lkm-pag-ctrl">
-            <span className="lkm-pag-range">{safePage} / {pages}</span>
+            <label className="lkm-rows-per-page">
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+              >
+                {[10, 15, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+            <span className="lkm-pag-range">{safePage}/{pages}</span>
             <button
               className="lkm-pag-btn"
               disabled={safePage <= 1}
@@ -371,7 +382,8 @@ const LKM_CSS = `
 .lkm-table tbody tr:nth-child(even) { background: #f7fffe; }
 .lkm-table tbody tr:hover           { background: #ecfeff; }
 .lkm-table tbody td {
-  height: 42px; vertical-align: middle; font-size: 11.5px;
+  height: 42px; vertical-align: middle; font-size: 11.5px; font-weight: 500;
+  color: #475569; line-height: 1.45;
   padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lkm-table tbody td:first-child { padding-left: 14px; }
@@ -398,16 +410,17 @@ const LKM_CSS = `
 }
 .lkm-table tbody td,
 .lkm-table tbody td *:not(i):not(svg):not(svg *) { font-size: 11.5px !important; font-weight: 500 !important; }
-.lkm-table tbody td .lkm-sr.lkm-sr { font-size: 11px !important; font-weight: 800 !important; }
-.lkm-table tbody td .lkm-opp.lkm-opp { font-size: 10px !important; font-weight: 600 !important; }
-.lkm-table tbody td .lkm-type-badge.lkm-type-badge { font-size: 10px !important; font-weight: 600 !important; }
+.lkm-table tbody td .lkm-sr.lkm-sr { font-size: 11px !important; font-weight: 500 !important; }
+.lkm-table tbody td .lkm-opp.lkm-opp { font-size: 11px !important; font-weight: 500 !important; }
+.lkm-table tbody td .lkm-type-badge.lkm-type-badge { font-size: 10px !important; font-weight: 500 !important; }
 .lkm-table tbody td .lkm-status-badge.lkm-status-badge,
-.lkm-table tbody td .lkm-status-badge.lkm-status-badge * { font-size: 10px !important; font-weight: 700 !important; }
-.lkm-muted  { color: #64748b; font-size: 11px; }
-/* Dark/strong fields (Assigned To, Customer) — softened from near-black
-   #0f172a to slate-700 so the table reads less heavy, kept at weight 700. */
-.lkm-strong { font-weight: 700; color: #334155; }
-.lkm-na     { color: #cbd5e1; font-style: italic; font-size: 11px; }
+.lkm-table tbody td .lkm-status-badge.lkm-status-badge * { font-size: 10px !important; font-weight: 500 !important; }
+/* Every data cell reads like the Customers list (.smc-table-wrap): one colour,
+   11.5 / 500 — no muted / strong split between columns. */
+.lkm-muted, .lkm-strong { color: inherit; }
+/* Long names end in "…" and show whole in the app tooltip (FitTip, only when cut). */
+.lkm-fit { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lkm-na     { color: #cbd5e1; font-style: italic; }
 
 .lkm-status-badge {
   display: inline-flex; align-items: center; gap: 3px;
@@ -443,30 +456,48 @@ const LKM_CSS = `
 }
 
 /* Pagination */
+/* Pager = the Leads Details / Lead Distribution footer: info pill, rows per
+   page, filled page indicator, round prev / next. */
 .lkm-pag {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px; border-top: 1.5px solid #cffafe; background: #ecfeff;
-  flex-wrap: wrap; gap: 6px; flex-shrink: 0;
+  padding: 10px 16px;
+  border-top: 2px solid #a5f3fc;
+  background: linear-gradient(90deg, #ecfeff 0%, #cffafe 40%, #ecfeff 100%);
+  flex-wrap: wrap; gap: 8px; flex-shrink: 0;
 }
 .lkm-pag-info {
-  font-size: 11px; font-weight: 600; color: #155e75;
-  background: #fff; border: 1.5px solid #a5f3fc; padding: 3px 12px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 500; color: #0e7490;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  padding: 5px 14px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
 }
-.lkm-pag-info strong { color: #0891b2; font-weight: 700; }
-.lkm-pag-ctrl { display: flex; align-items: center; gap: 5px; }
+.lkm-pag-info strong { color: #0891b2; font-weight: 800; }
+.lkm-pag-ctrl { display: flex; align-items: center; gap: 6px; }
+.lkm-rows-per-page {
+  display: inline-flex; align-items: center; gap: 5px; margin: 0 2px 0 0;
+  font-size: 11.5px; color: #0e7490; font-weight: 500;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  padding: 4px 12px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
+}
+.lkm-rows-per-page select {
+  border: none; background: transparent; font-family: inherit;
+  font-size: 11.5px; color: #0891b2; font-weight: 700; cursor: pointer; outline: none;
+}
 .lkm-pag-range {
-  font-size: 11px; font-weight: 700; color: #0c4a6e;
-  background: linear-gradient(135deg, #f0fdff, #cffafe);
-  border: 1.5px solid #a5f3fc; padding: 3px 12px; border-radius: 20px; white-space: nowrap;
+  font-size: 11.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  padding: 5px 18px; border-radius: 20px; white-space: nowrap;
+  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 .lkm-pag-btn {
-  width: 27px; height: 27px; border-radius: 50%;
-  border: 1.5px solid #a5f3fc; background: #fff;
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1.5px solid #a5f3fc; background: rgba(255,255,255,.8);
   display: flex; align-items: center; justify-content: center; color: #0891b2;
-  cursor: pointer; transition: background .15s, color .15s;
+  cursor: pointer; transition: all .18s;
 }
-.lkm-pag-btn:hover:not(:disabled) { background: #0891b2; color: #fff; }
-.lkm-pag-btn:disabled { cursor: not-allowed; opacity: .45; }
+.lkm-pag-btn:hover:not(:disabled) { background: #fff; border-color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.25); }
+.lkm-pag-btn:disabled { cursor: not-allowed; opacity: .4; }
 
 /* Dark mode */
 [data-bs-theme="dark"] .lkm-modal     { background: #0c1f2e; border-color: #164e63; }
@@ -477,11 +508,8 @@ const LKM_CSS = `
 [data-bs-theme="dark"] .lkm-table tbody tr { border-color: #164e63; }
 [data-bs-theme="dark"] .lkm-table tbody tr:nth-child(even) { background: #10293a; }
 [data-bs-theme="dark"] .lkm-table tbody tr:hover           { background: #164e63; }
-[data-bs-theme="dark"] .lkm-table tbody td { color: #cffafe; }
-[data-bs-theme="dark"] .lkm-muted     { color: #a5f3fc; }
-[data-bs-theme="dark"] .lkm-strong    { color: #cffafe; }
-[data-bs-theme="dark"] .lkm-pag       { background: #0c1f2e; border-color: #164e63; }
-[data-bs-theme="dark"] .lkm-pag-info  { background: #0f2233; color: #a5f3fc; border-color: #164e63; }
+[data-bs-theme="dark"] .lkm-pag       { background: rgba(8,145,178,.08); border-top-color: rgba(34,211,238,.25); }
+[data-bs-theme="dark"] .lkm-pag-info  { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
 /* Remaining light-surfaced cell bits — badges, links, status pills and the
    pagination controls — retuned so the whole popup reads cohesively against
    the dark #0c1f2e surface instead of flashing light-mode tints. */
@@ -490,6 +518,7 @@ const LKM_CSS = `
   background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.40);
 }
 [data-bs-theme="dark"] .lkm-opp { background: rgba(6,182,212,.12); border-color: rgba(103,232,249,.30); color: #67e8f9; }
+[data-bs-theme="dark"] .lkm-table tbody td { color: #cbd5e1; }
 [data-bs-theme="dark"] .lkm-na  { color: #64748b; }
 [data-bs-theme="dark"] .lkm-status   { color: #94a3b8; }
 [data-bs-theme="dark"] .lkm-status-q {
@@ -499,14 +528,10 @@ const LKM_CSS = `
   background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(239,68,68,.40);
 }
 [data-bs-theme="dark"] .lkm-pag-info strong { color: #67e8f9; }
-[data-bs-theme="dark"] .lkm-pag-range {
-  color: #67e8f9; background: linear-gradient(135deg, #10293a, #0f2233); border-color: #164e63;
-}
+[data-bs-theme="dark"] .lkm-rows-per-page { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
+[data-bs-theme="dark"] .lkm-rows-per-page select { color: #a5f3fc; }
 [data-bs-theme="dark"] .lkm-pag-btn {
-  background: #0f2233; border-color: #164e63; color: #67e8f9;
-}
-[data-bs-theme="dark"] .lkm-pag-btn:hover:not(:disabled) {
-  background: #0891b2; color: #0c1f2e; border-color: #0891b2;
+  background: rgba(15,34,51,.8); border-color: rgba(103,232,249,.30); color: #67e8f9;
 }
 
 @media (max-width: 640px) {

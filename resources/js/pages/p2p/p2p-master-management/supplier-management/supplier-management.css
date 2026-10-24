@@ -855,35 +855,35 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
    list's 13, so its nth-child budget is restated. Sums to 100 either way. */
 .sup-fig .smc-table-wrap.sup-table-wrap .table { min-width: 1640px; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(1),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(1)  { width: 3.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(2),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(2)  { width: 5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(3),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(3)  { width: 8.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(2),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(2)  { width: 4.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(3),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(3)  { width: 8%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(4),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(4)  { width: 8.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(5),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(5)  { width: 11%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(6),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(6)  { width: 5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(7),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(7)  { width: 5.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(5),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(5)  { width: 10.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(6),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(6)  { width: 4.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(7),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(7)  { width: 5%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(8),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(8)  { width: 4.5%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(9),  .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(9)  { width: 7%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(10), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(10) { width: 6.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(11), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(11) { width: 7%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(12), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(12) { width: 9%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(13), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(13) { width: 8%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(11), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(11) { width: 6.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(12), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(12) { width: 8.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(13), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(13) { width: 7.5%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(14), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(14) { width: 5.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(15), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(15) { width: 5.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) th:nth-child(15), .sup-fig .smc-table-wrap.sup-table-wrap .table:not(.is-intl) td:nth-child(15) { width: 9.5%; }
 /* International: GST's 4.5 goes to State and Email. */
 .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(1),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(1)  { width: 3.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(2),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(2)  { width: 5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(3),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(3)  { width: 8.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(2),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(2)  { width: 4.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(3),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(3)  { width: 8%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(4),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(4)  { width: 8.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(5),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(5)  { width: 11%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(6),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(6)  { width: 5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(7),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(7)  { width: 7.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(5),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(5)  { width: 10.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(6),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(6)  { width: 4.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(7),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(7)  { width: 7%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(8),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(8)  { width: 7%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(9),  .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(9)  { width: 6.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(10), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(10) { width: 9.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(11), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(11) { width: 9%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(12), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(12) { width: 8%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(10), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(10) { width: 9%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(11), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(11) { width: 8.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(12), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(12) { width: 7.5%; }
 .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(13), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(13) { width: 5.5%; }
-.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(14), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(14) { width: 5.5%; }
+.sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl th:nth-child(14), .sup-fig .smc-table-wrap.sup-table-wrap .table.is-intl td:nth-child(14) { width: 9.5%; }
 
 /* Mapped Products: the Customer list's Consignees count pill, as a button
    when there is something to open; a zero is greyed rather than violet. */
@@ -1004,3 +1004,10 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
   .smp-search { flex: 1 1 100%; min-width: 0; }
   .smp-toolbar-right { width: 100%; justify-content: space-between; }
 }
+
+/* Actions keeps the Supplier list's own pair (edit square + Evidence Vault),
+   centred under its heading. */
+.sup-fig .sup-table-wrap .table tbody td .sl-actions { justify-content: center; }
+/* Mapped Products keeps its old count button — restate its own type, which the
+   Customer table's blanket 11.5 / 500 cell rule would otherwise flatten. */
+.smc-root .smc-table-wrap .table tbody td:not(:last-child) .sl-prodcount.sl-prodcount { font-size: 12px !important; font-weight: 800 !important; }

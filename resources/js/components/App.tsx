@@ -536,7 +536,7 @@ function AuthRoutes() {
       <Route path="/reset-password" element={
         <ResetPassword
           email={resetEmail}
-          onBackToVerifyOTP={() => navigate('/verify-otp', { state: { email: resetEmail } })}
+          onBackToLogin={() => navigate('/login')}
           onPasswordReset={() => navigate('/login')}
         />
       } />
