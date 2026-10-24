@@ -577,6 +577,15 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/{id}/evidence-vault',      [SupplierInvoiceController::class, 'evidenceVault'])->whereNumber('id');
         Route::post  ('/{id}/boxes',               [SpiBoxController::class, 'store'])->whereNumber('id');
         Route::put   ('/{id}/boxes/{box}',         [SpiBoxController::class, 'update'])->whereNumber('id')->whereNumber('box');
+        /* Same handler as the PUT above. A second verb exists because PHP
+           does not populate $_FILES on a PUT, so a box edit that carries
+           photos has to arrive as POST — the same reason stage 02's save is
+           a POST. Without files, either verb works. */
+        Route::post  ('/{id}/boxes/{box}',         [SpiBoxController::class, 'update'])->whereNumber('id')->whereNumber('box');
+        Route::delete('/{id}/boxes/{box}/attachments/{attachment}', [SpiBoxController::class, 'destroyAttachment'])
+            ->whereNumber('id')->whereNumber('box')->whereNumber('attachment');
+        // Stage 03 is finished — the one call the wizard's Next was missing.
+        Route::put   ('/{id}/stage-3',             [SupplierInvoiceController::class, 'completeStage3'])->whereNumber('id');
         Route::delete('/{id}/boxes/{box}',         [SpiBoxController::class, 'destroy'])->whereNumber('id')->whereNumber('box');
         Route::post  ('/{id}/boxes/{box}/sticker', [SpiBoxController::class, 'printSticker'])->whereNumber('id')->whereNumber('box');
         // The label itself, as a 4x6in PDF. GET so the browser can download it

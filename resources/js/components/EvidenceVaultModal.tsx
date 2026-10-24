@@ -405,6 +405,28 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
    * onboarding or exit document — and a rejected one of those needs it just
    * as much.
    */
+  /**
+   * Fold a just-created run into what is already on screen.
+   *
+   * This reproduces exactly what re-opening the modal would produce: the
+   * run joins the list, and the template it came from picks up the four
+   * signature_* attributes /hr-document-templates/match stamps on it. The
+   * other three opening requests cannot change on a send, so re-running
+   * them only bought a second round trip — 4 seconds of it on the server.
+   */
+  const applySentRun = (run: any) => {
+    if (!run?.id) { setReloadKey(k => k + 1); return; }   // shape we don't know — fall back
+
+    setSigningRuns(prev => [run, ...prev.filter((r: any) => Number(r.id) !== Number(run.id))]);
+
+    const stamp = (list: any[]) => list.map(t => Number(t.id) === Number(run.template_id)
+      ? { ...t, signature_status: run.status, signature_id: run.id, signature_code: run.code, is_sent: true }
+      : t);
+    setOrgTemplates(stamp);
+    setExitTemplates(stamp);
+    setPromoTemplates(stamp);
+  };
+
   const sendDocForSignature = async (tplId: number, name: string | null) => {
     if (!employee || sendingTplId) return;
     setSendingTplId(tplId);
@@ -414,7 +436,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
         employee_id: employee.id,
       });
       toast.success('Sent for signing', `${data?.code || name || 'Document'} entered the workflow.`);
-      setReloadKey(k => k + 1);
+      applySentRun(data);
     } catch (err: any) {
       toast.error('Could not send', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {

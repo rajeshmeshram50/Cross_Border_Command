@@ -187,6 +187,41 @@ class SupplierInvoiceService
         ];
     }
 
+    /**
+     * Keep stage_completed honest about packing.
+     *
+     * Stage 3 is the only stage whose work spans many requests, so there is
+     * no single save to stamp. Deriving it from the boxes instead means the
+     * column is right even when the wizard's Next is never pressed — someone
+     * who packs the last carton and closes the drawer has finished stage 3,
+     * whether or not the browser said so.
+     *
+     * It walks BACK too: delete a box from a packed invoice and stage 3 is no
+     * longer done. Only ever between 2 and 3 — 4 means submitted, and submit
+     * already refuses while anything is unplaced, so nothing above 3 is this
+     * method's business.
+     *
+     * Returns the stage it settled on, so a caller can report it without
+     * re-reading the row.
+     */
+    public function syncPackingStage(SupplierInvoice $spi): int
+    {
+        $current = (int) $spi->stage_completed;
+        if ($current < 2 || $current > 3) return $current;
+
+        $rows = $this->packingSummary($spi->id);
+        // every() is true over nothing: an invoice with no lines is empty,
+        // not packed.
+        $packed = $rows && $this->packingTotals($rows)['fully_packed'];
+        $target = $packed ? 3 : 2;
+
+        if ($target !== $current) {
+            $spi->forceFill(['stage_completed' => $target])->save();
+        }
+
+        return $target;
+    }
+
     public function rollupTotals(SupplierInvoice $spi): void
     {
         $t = SupplierInvoiceItem::where('supplier_invoice_id', $spi->id)

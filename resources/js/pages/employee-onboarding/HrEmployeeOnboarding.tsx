@@ -6559,7 +6559,11 @@ function Stage5Policies({ emp, onProgress }: {
       });
       toast.success('Sent for signing', `${data?.code || tpl.code || 'Document'} entered the signing workflow.`);
       setSendForTpl(null);
-      await fetchRuns();
+      /* The POST returns the whole run, and runByTemplateId keys on
+         template_id keeping the highest id — so dropping it in is the
+         same result fetchRuns() would have cost a round trip for. */
+      if (data?.id) setRuns(prev => [data, ...prev.filter(r => Number(r.id) !== Number(data.id))]);
+      else await fetchRuns();
     } catch (err: any) {
       toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
     } finally {
