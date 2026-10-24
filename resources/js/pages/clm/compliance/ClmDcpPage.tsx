@@ -393,17 +393,19 @@ export default function ClmDcpPage() {
               count spelled into the label as "(16)", no dot and no count pill.
               A count in brackets reads as part of the name; the pill is what
               every other list uses to say how many. */}
+          {/* Icons, not coloured dots — the same glyphs the Segment rail and
+              Case to Case use, so the three rails read alike. */}
           <div className="clm-tabrail">
             <button type="button" className={`clm-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
               All Segments <span className="clm-tab-count">{tierCounts.all}</span>
             </button>
             <button type="button" className={`clm-tab ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
-              <span className="clm-tab-dot" style={{ background: '#ef4444', boxShadow: '0 0 5px rgba(239,68,68,.5)' }} />
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
               Highly Regulated <span className="clm-tab-count">{tierCounts.highly}</span>
             </button>
             <button type="button" className={`clm-tab ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
-              <span className="clm-tab-dot" style={{ background: '#0d9488', boxShadow: '0 0 5px rgba(13,148,136,.5)' }} />
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg>
               Less Regulated <span className="clm-tab-count">{tierCounts.less}</span>
             </button>
           </div>
@@ -958,7 +960,7 @@ function SegmentRuleModal(props: {
                         onClick={() => setDocSearch(prev => ({ ...prev, [activeCat]: '' }))}>×</button>
                     )}
                   </div>
-                  <button type="button" onClick={openAddDoc} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, padding: '5px 13px', borderRadius: 8, background: '#fff', color: '#0e7490', border: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)' }}>
+                  <button type="button" onClick={openAddDoc} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, flexShrink: 0, height: 34, padding: '0 14px', boxSizing: 'border-box', borderRadius: 8, background: '#fff', color: '#0e7490', border: 'none', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)' }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Add {CAT_SHORT[activeCat]}
                   </button>
@@ -1097,10 +1099,16 @@ function SegmentRuleModal(props: {
 }
 
 const DCP_PAGE_CSS = `
+/* The search and the Add button sit on the same dark band and were two
+   different heights - 30px here against the button's 5px of padding, about 26 -
+   so the row read as two unrelated controls. Both are 34px now, on the same
+   8px radius, with the 12.5px type every other CLM control uses. Fixed width
+   rather than flexible: the band's left block wraps as the dialog narrows, and
+   a shrinking search made the two controls drift apart. */
 .dcp-doc-search {
-  display: flex; align-items: center; gap: 7px;
-  flex: 0 1 300px; min-width: 150px;
-  height: 30px; padding: 0 10px;
+  display: flex; align-items: center; gap: 8px;
+  flex: 0 0 300px; max-width: 100%; min-width: 0;
+  height: 34px; padding: 0 12px;
   border-radius: 8px;
   background: rgba(255,255,255,.16);
   border: 1.5px solid rgba(255,255,255,.30);
@@ -1115,7 +1123,7 @@ const DCP_PAGE_CSS = `
 .dcp-doc-search input {
   flex: 1; min-width: 0;
   border: none; outline: none; background: transparent;
-  font-family: inherit; font-size: 11.5px; color: #fff;
+  font-family: inherit; font-size: 12.5px; font-weight: 500; color: #fff;
 }
 .dcp-doc-search input::placeholder { color: rgba(255,255,255,.62); }
 .dcp-doc-search-clear {
