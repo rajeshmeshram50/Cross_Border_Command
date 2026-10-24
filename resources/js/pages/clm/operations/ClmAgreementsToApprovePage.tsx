@@ -314,7 +314,7 @@ export default function ClmAgreementsToApprovePage() {
               renders on the master pages. This was a radius-30 capsule of
               radius-25 lozenges with no border and an inset shadow — a
               different control in the same module. */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(6,182,212,.10)' : 'rgba(255,255,255,.6)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.22)' : 'rgba(6,182,212,.28)'}`, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(6,182,212,.10)' : 'linear-gradient(180deg, #f6feff, #f0fdff)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.22)' : '#c9f8fd'}`, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box' }}>
             {([
               ['all', 'All Agreements', null],
               ['pending', 'Pending Approval', null],
@@ -327,17 +327,17 @@ export default function ClmAgreementsToApprovePage() {
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
                     ...(active
-                      ? { border: 0, background: 'linear-gradient(135deg, #22d3ee 0%, #06b6d4 35%, #0891b2 68%, #0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(14,116,144,.3) inset', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
-                      : { background: t.dark ? 'linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10))' : 'linear-gradient(135deg, #ecfeff, #cffafe)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.3)' : 'rgba(6,182,212,.25)'}`, color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
+                      ? { border: '1px solid transparent', background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(6,182,212,.55), inset 0 1px 0 rgba(255,255,255,.25)' }
+                      : { background: 'transparent', border: '1px solid transparent', boxShadow: '0 1px 2px rgba(16,24,40,.05)', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
                   {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', borderRadius: '8px 8px 0 0', pointerEvents: 'none' }} />}
                   {dot && <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : dot, flexShrink: 0, boxShadow: active ? 'none' : `0 0 0 2px ${dot}40` }} />}
                   <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
                   {/* Raw count, not pad2 — "1" as on every other CLM rail and
                       on the KPI tiles above, rather than "01". */}
-                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 800, lineHeight: 1,
+                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 28, height: 18, padding: '0 6px', borderRadius: 999, fontSize: 10, fontWeight: 800, lineHeight: 1, fontVariantNumeric: 'tabular-nums',
                     ...(active
-                      ? { color: '#fff', background: 'rgba(255,255,255,.24)', border: '1px solid rgba(255,255,255,.4)' }
-                      : (t.dark ? { color: '#67e8f9', background: 'rgba(6,182,212,.18)', border: '1px solid rgba(6,182,212,.35)' } : { color: '#0891b2', background: '#fff', border: '1px solid #a5f3fc' })) }}>{counts[key]}</span>
+                      ? { color: '#155e75', background: 'rgba(255,255,255,.9)', border: '1px solid rgba(255,255,255,.75)' }
+                      : (t.dark ? { color: '#67e8f9', background: 'rgba(6,182,212,.18)', border: '1px solid rgba(6,182,212,.35)' } : { color: '#0e7490', background: '#ccfbf1', border: '1px solid #a5f3fc' })) }}>{counts[key]}</span>
                 </button>
               );
             })}

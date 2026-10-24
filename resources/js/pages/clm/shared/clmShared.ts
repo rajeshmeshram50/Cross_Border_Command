@@ -313,8 +313,12 @@ export const CLM_CSS = `
      now; see .clm-search. */
   height: 48px; box-sizing: border-box;
   padding: 3px; border-radius: 11px;
-  background: rgba(255,255,255,.6);
-  border: 1px solid rgba(6,182,212,.28);
+  /* The Customers capsule: a pale accent wash under an accent hairline
+     (DataTable.css:1152, color-mix resolved). CLM had white .6 on a .28
+     accent border, which reads as a box drawn round the tabs rather than
+     a track they stand in. */
+  background: linear-gradient(180deg, #f6feff, #f0fdff);
+  border: 1px solid #c9f8fd;
 }
 [data-bs-theme="dark"] .clm-tabrail { background: rgba(6,182,212,.10); border-color: rgba(6,182,212,.22); }
 
@@ -330,18 +334,20 @@ export const CLM_CSS = `
      Agreements To Approve, Buyer and Supplier Profile) carry their own copy. */
   padding: 0 14px; height: 40px; border-radius: 8px; box-sizing: border-box;
   font-family: var(--font-sans);
-  /* Painted like the Case to Case rail, in teal. The geometry was already the
-     same; what differed was the paint — a flat white tab with slate text and a
-     grey count pill, next to CTC's tinted tab with an accent label and an
-     accent count. Inactive is now an accent-50 → accent-150 wash (#f0fdff →
-     #cffafe) carrying the accent label, which is CTC's #f5f1fe → #ede9fe with
-     #6d28d9 read off the teal ramp. */
-  /* 650, not 700 — the weight Customers and HRMS render (DataTable.css line
-     1166; DM Sans is a variable face, so it is a real weight). A tab lettered
-     in the accent on a tinted track carries more ink at 700. */
+  /* The Customers rail, measured, in teal. An inactive tab there is NOT a
+     tinted chip: it is transparent with the accent as its ink and a hairline
+     lift, so only the selected tab carries fill. CLM had it the other way
+     round — every tab a filled chip — which is why the two rails read as
+     different controls even at identical geometry.
+     650, not 700, is the weight Customers and HRMS render (DataTable.css:1166;
+     DM Sans is a variable face, so it is a real weight). */
   font-size: 12.5px; font-weight: 650; color: #0e7490;
-  cursor: pointer; border: 1px solid rgba(6,182,212,.22);
-  background: linear-gradient(135deg, #f0fdff, #cffafe);
+  cursor: pointer;
+  /* Transparent rather than absent, so selecting a tab does not move the rail
+     by a pixel. */
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: 0 1px 2px rgba(16,24,40,.05);
   overflow: hidden;
   /* Neither colour nor background eases — same reason as .clm-pill. The
      active tab's background is a gradient, which snaps the instant the class
@@ -351,21 +357,16 @@ export const CLM_CSS = `
   transition: box-shadow .22s ease, border-color .15s ease;
   white-space: nowrap; letter-spacing: 0; position: relative; z-index: 1;
 }
-.clm-tab:hover { background: linear-gradient(135deg, #e4fbff, #b7f3fb); border-color: rgba(6,182,212,.45); }
-/* Four stops, not three, plus a lit top edge and a sunk bottom one — the same
-   build as CTC's active tab. The old 3-stop gradient under a single 18% inset
-   read flat beside it. */
-/* The sheen is the FIRST background layer, not an overlay. CTC draws it as a
-   child <span> and has to lift the label above it with z-index; as a layer it
-   paints behind the text for free, and no page's markup has to change. An
-   absolutely-positioned ::before would have sat on top of the label and washed
-   the upper half of every glyph. */
+.clm-tab:hover { background: rgba(6,182,212,.06); border-color: rgba(6,182,212,.22); color: #0891b2; }
+/* The selected tab, measured off Customers: three stops a-400 → a-600 at 55%
+   → a-700, one lifted shadow and a lit top edge. CLM ran four stops under a
+   0 5px 14px .5 shadow with a sunk bottom inset as well, which sat heavier
+   than the same tab on Sales. The weight does NOT change with selection —
+   lettering that thickens on click is what made the rail look like it moved. */
 .clm-tab.active {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,.18), transparent 50%),
-    linear-gradient(135deg, #22d3ee 0%, #06b6d4 35%, #0891b2 68%, #0e7490 100%);
-  color: #fff; font-weight: 700; border-color: transparent;
-  box-shadow: 0 5px 14px rgba(8,145,178,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3);
+  background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  color: #fff; border-color: transparent;
+  box-shadow: 0 6px 16px -5px rgba(6,182,212,.55), inset 0 1px 0 rgba(255,255,255,.25);
   text-shadow: 0 1px 2px rgba(14,116,144,.4);
 }
 .clm-tab.active:hover { opacity: .95; }
@@ -373,29 +374,38 @@ export const CLM_CSS = `
 .clm-tab.active .clm-tab-dot { background: rgba(255,255,255,.9) !important; box-shadow: none !important; }
 .clm-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 18px; border-radius: 999px; padding: 0 7px;
+  /* Wide enough for two digits, and tabular so every digit is the same
+     width. The count changes as you type - "All Contracts 50" becomes "3" -
+     and a chip that sizes to its content made the whole rail resize on each
+     keystroke (measured: 728px to 722px on Case to Case, 666 to 653 on
+     Segment). The rail breathing is what reads as the page jumping. */
+  min-width: 28px; height: 18px; border-radius: 999px; padding: 0 6px;
   font-size: 10px; font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 .clm-tab.active .clm-tab-count {
-  background: rgba(255,255,255,.24); color: #fff;
-  border: 1px solid rgba(255,255,255,.4);
+  background: rgba(255,255,255,.9); color: #155e75;
+  border: 1px solid rgba(255,255,255,.75);
 }
-/* White disc, accent hairline, accent numeral — CTC's count. The grey-on-grey
-   chip it replaces disappeared into the tab it sat on. */
+/* Accent-100 disc with an accent-200 hairline and the accent numeral — the
+   Customers count. A white disc needed the tab under it to be tinted; on a
+   transparent tab it vanished into the toolbar. */
 .clm-tab:not(.active) .clm-tab-count {
-  background: #fff; color: #0891b2;
-  border: 1px solid rgba(6,182,212,.30);
+  background: #ccfbf1; color: #0e7490;
+  border: 1px solid #a5f3fc;
 }
 
 /* Premium pill switcher for 2-tab header strips (TD/TNC/AGR/CL) */
 .clm-pill-group {
   display: flex; align-items: center; gap: 0; flex-shrink: 0;
   height: 48px; box-sizing: border-box;
-  background: rgba(255,255,255,.55);
-  backdrop-filter: blur(8px);
-  border-radius: 14px; padding: 4px;
-  border: 1.5px solid rgba(255,255,255,.8);
-  box-shadow: 0 4px 20px rgba(8,145,178,.18), inset 0 1px 0 rgba(255,255,255,.9);
+  /* The same track as .clm-tabrail — a pale accent wash under an accent
+     hairline. This was a frosted white capsule on a 1.5px white border with a
+     20px shadow, which is a different object again on pages that sit next to
+     the ones using the rail. */
+  background: linear-gradient(180deg, #f6feff, #f0fdff);
+  border-radius: 11px; padding: 3px;
+  border: 1px solid #c9f8fd;
 }
 .clm-pill {
   position: relative; overflow: hidden;
@@ -449,11 +459,12 @@ export const CLM_CSS = `
      ramp (#f0fdff / #a5f3fc / #22d3ee) that CLM already uses.
      42px, the toolbar height the shared .dt-search uses — CLM's 34px box
      sat visibly shallower than the same bar on HRMS. */
-  /* 48px — the height of the tab RAIL beside it, not of the tab. 40 matched
-     the tab, but the tab sits inside a rail that adds 3px of padding and a 1px
-     border on each side, and it is the two boxes that the eye compares. It was
-     42 before that, DataTable's number from when the tab was 34. */
-  padding: 0 14px; height: 48px;
+  /* 43.5px, set by eye and used across the whole module — .ops-search in
+     useOpsTheme.ts carries the same number for the five operations pages.
+     It chased the tab rail before this: 48 (the rail's height), and 42 before
+     that (DataTable's number from when the tab was 34), so the field moved
+     every time the rail did. */
+  padding: 0 14px; height: 43.5px;
   border: 1.5px solid #cef8fd; border-radius: 11px;
   background: linear-gradient(180deg, #f6feff, #f0fdff);
   /* Fixed, for the same reason as .ops-search (QA #107): a growable search
@@ -598,7 +609,11 @@ export const CLM_CSS = `
    min-height:0 is what actually lets a flex child shrink enough to scroll —
    without it the box grows to its content and the pin does nothing.
    overflow-x carries a wide table sideways, as .clm-table-wrap did before. */
-.clm-rows-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; }
+/* Reserve the scrollbar's lane. This box scrolls its own rows, so filtering
+   the list takes its scrollbar away and the table under it jumps sideways by
+   the scrollbar's width — measured 1318 -> 1328 on KYC while typing. Same
+   reasoning as .main-content in app.css. */
+.clm-rows-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; scrollbar-gutter: stable; }
 .clm-rows-scroll .clm-table thead th { position: sticky; top: 0; z-index: 2; }
 .clm-table-fill { display: flex; flex-direction: column; background: linear-gradient(180deg, #fafeff, #f3fafc); }
 .clm-table-fill > .clm-table { background: #fff; }

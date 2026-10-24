@@ -415,25 +415,11 @@ export default function ClmCaseToCasePage() {
       {/* CARD 3 — CONTRACTS LIST */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: '10px 12px', padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
-          {/* Tab rail — the employee list's .dt-tabs / .dt-tab, to the pixel, on
-              the violet ramp. Values are copied rather than imported because
-              this toolbar is inline-styled and has no .dt-root above it to
-              inherit the accent variables from.
-
-              Specifically the `hr-dt` skin (DataTable.css ~1152), NOT the base
-              .dt-tabs rule: the employee list carries .hr-dt, so what is on
-              screen there is a PALE recessed track with every tab lettered in
-              the accent and only the active one filled. The base rule — tinted
-              trough, white resting tabs — belongs to Customers and is a
-              different object.
-
-              3px of padding: 34 (tab) + 3 x 2 + 1 x 2 (border) = 42, which is
-              .ops-search beside it. At 4 the rail stood 2px proud.
+          {/* Tab rail — the CLM master rail (.clm-tabrail / .clm-tab in
+              clmShared.ts) on this page's violet ramp. The paint lives in
+              CTC_CSS; see the note there for what changed and why.
               On small screens it wraps to full width (QA #42). */}
-          <div className="ctc-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box',
-            ...(t.dark
-              ? { background: 'rgba(124,58,237,.08)', border: '1px solid rgba(124,58,237,.22)' }
-              : { background: 'linear-gradient(180deg, color-mix(in srgb, #faf5ff 60%, #fff), #faf5ff)', border: '1px solid color-mix(in srgb, #ddd6fe 60%, #fff)' }) }}>
+          <div className="ctc-tabrail">
             {([
               ['all', 'All Contracts', null, true],
               ['signed', 'Signed Contracts', '#10B981', false],
@@ -443,41 +429,15 @@ export default function ClmCaseToCasePage() {
               const active = tab === key;
               return (
                 <button key={key} disabled={lifecycleBusy !== null} onClick={() => { setTab(key); setPage(1); }}
-                  /* 40px — the house tab height, set on Customers, Consignee
-                     and QPI in f4ecf29f and carried across every CLM rail with
-                     it. It was 34, which is what HRMS still uses. */
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40,
-                    /* Transparent on the active tab rather than absent, so
-                       switching tabs does not move the rail by a pixel. */
-                    border: 0, borderRadius: 8,
-                    /* The app's face, not `inherit`: Velzon puts Rubik on the
-                       body, and Rubik carries more ink than DM Sans at the same
-                       size — which is why this rail always read bolder than the
-                       employee list's.
-                       650, not 700: HRMS's one deliberate weight exception. A
-                       tab lettered in the accent on a pale track carries more
-                       ink than the same weight on a tinted one. DM Sans is a
-                       variable face (300..800), so this is a real weight. */
-                    fontFamily: 'var(--font-sans)', fontSize: 12.5, fontWeight: 650, letterSpacing: 0,
-                    cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null && !active ? .6 : 1, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s',
-                    ...(active
-                      ? { background: 'linear-gradient(135deg, #a78bfa, #7c3aed 55%, #6d28d9)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(124,58,237,.55), inset 0 1px 0 rgba(255,255,255,.25)' }
-                      : { background: 'transparent', color: t.dark ? '#c4b5fd' : '#6d28d9' }) }}>
+                  className={active ? 'active' : undefined}
+                  /* Paint is in CTC_CSS. Only the busy state stays inline, since
+                     it is driven by a prop and not by the active tab. */
+                  style={{ cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null && !active ? .6 : 1 }}>
                   {hasIcon
                     ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#c4b5fd' : '#6d28d9')} strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                     : <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#10B981'), flexShrink: 0 }} />}
                   <span>{label}</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, lineHeight: 1, border: '1px solid',
-                    ...(active
-                      ? (t.dark
-                        /* Recessed, not 90% white: on a dark page a near-white
-                           disc is the brightest thing on screen and the eye
-                           goes to the counter instead of the data. */
-                        ? { background: 'rgba(0,0,0,.28)', borderColor: 'rgba(255,255,255,.22)', color: '#fff' }
-                        : { background: 'rgba(255,255,255,.9)', borderColor: 'rgba(255,255,255,.75)', color: '#5b21b6' })
-                      : (t.dark
-                        ? { background: 'rgba(124,58,237,.14)', borderColor: 'rgba(124,58,237,.30)', color: '#c4b5fd' }
-                        : { background: '#f3e8ff', borderColor: '#ddd6fe', color: '#6d28d9' })) }}>{counts[key]}</span>
+                  <span className="ctc-tab-count">{counts[key]}</span>
                 </button>
               );
             })}
@@ -678,6 +638,110 @@ function ActBtn({ t, tone, title, onClick, children, busy, busyLabel, disabled, 
 const CTC_CSS = `
 @keyframes ctcFade { from { opacity:0 } to { opacity:1 } }
 @keyframes ctcSpin { to { transform: rotate(360deg) } }
+
+/* ── Tab rail ──
+   The CLM master rail — .clm-tabrail / .clm-tab in clmShared.ts — on this
+   page's violet ramp instead of teal.
+
+   It used to carry the HRMS employee list's hr-dt skin: transparent tabs
+   with no border on a pale recessed track. Beside the master pages, whose
+   tabs are tinted and bordered with a four-stop active ramp, that read as a
+   different control on the same module. The geometry already agreed — 48px
+   rail on 3px of padding, 40px tab on 0 14px, 12.5px/650, 7px gap — so only
+   the paint moved here.
+
+   Teal to violet, stop for stop: #f0fdff/#cffafe to #f5f1fe/#ede9fe, label
+   #0e7490 to #6d28d9, rgba(6,182,212,x) to rgba(124,58,237,x), and the active
+   ramp's four stops read off the violet scale. */
+/* Customers' rail, value for value: .smc-pill-group and .smc-pill in
+   SalesCustomers.css:500-558. The translucent-white capsule on a violet
+   hairline, the pale lilac unselected chip with its own hairline, the
+   four-stop selected ramp with a lit top edge and a sunk bottom, 12.5px/700.
+
+   Two numbers are ours, and only two:
+   · the tab is 40 high where Customers runs 34, which is the height this
+     toolbar was asked for;
+   · 3px of padding, not their 4. Their group states no height, so it renders
+     34 + 4x2 + 1x2 = 44 beside a 42px search and stands 2px proud. At 3px a
+     40px tab makes a 48px rail, which is exactly what .ops-search beside it
+     already is. */
+.ctc-tabrail {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 48px; box-sizing: border-box;
+  padding: 3px; border-radius: 11px;
+  background: rgba(255,255,255,.55);
+  border: 1px solid rgba(139,92,246,.22);
+}
+.ctc-tabrail > button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 0 14px; height: 40px; border-radius: 8px; box-sizing: border-box;
+  /* The app's face, not inherit: Velzon puts Rubik on the body, and Rubik
+     carries more ink than DM Sans at the same size. */
+  font-family: var(--font-sans);
+  font-size: 12.5px; font-weight: 700; letter-spacing: 0; white-space: nowrap;
+  cursor: pointer;
+  background: linear-gradient(135deg, #f5f1fe, #ede9fe);
+  border: 1px solid rgba(139,92,246,.2);
+  color: #6d28d9;
+  overflow: hidden; position: relative; z-index: 1;
+  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
+}
+.ctc-tabrail > button:hover:not(.active) {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border-color: rgba(139,92,246,.35);
+  color: #5b21b6;
+}
+/* Customers drops the border here (border: 0), which leaves its selected tab
+   2px narrower than the rest and nudges the row on every click. A transparent
+   border of the same width holds the geometry instead. background-origin is
+   what stops that 1px showing: a background is placed against the PADDING box
+   by default, so the strip under a transparent border gets the ramp's edge
+   colour smeared outward - on a 135deg ramp the lightest stop - which draws a
+   pale outline around the tab. Against the border box the ramp just runs to
+   the edge. */
+.ctc-tabrail > button.active {
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%);
+  background-origin: border-box;
+  border: 1px solid transparent;
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(124,58,237,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(91,33,182,.3);
+  text-shadow: 0 1px 2px rgba(76,29,149,.4);
+}
+/* Customers' count disc (.smc-pill-count), with one change kept from this
+   rail: 28px wide and tabular figures. The count changes as you type - "All
+   Contracts 50" becomes "3" - and a chip that sizes to its content resized the
+   whole rail on each keystroke (measured 728px to 722px here). */
+.ctc-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 18px; padding: 0 6px; border-radius: 999px;
+  font-size: 10px; font-weight: 800; line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #7c3aed; background: #fff; border: 1px solid #ddd0f7;
+}
+.ctc-tabrail > button.active .ctc-tab-count {
+  color: #fff; background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.4);
+}
+[data-bs-theme="dark"] .ctc-tabrail { background: rgba(124,58,237,.10); border-color: rgba(124,58,237,.22); }
+[data-bs-theme="dark"] .ctc-tabrail > button {
+  color: #c4b5fd;
+  background: linear-gradient(135deg, rgba(124,58,237,.16), rgba(124,58,237,.10));
+  border-color: rgba(124,58,237,.28);
+}
+[data-bs-theme="dark"] .ctc-tabrail > button:hover:not(.active) {
+  color: #ddd6fe;
+  background: linear-gradient(135deg, rgba(124,58,237,.24), rgba(124,58,237,.16));
+  border-color: rgba(124,58,237,.5);
+}
+[data-bs-theme="dark"] .ctc-tabrail > button.active { color: #fff; border-color: transparent; }
+[data-bs-theme="dark"] .ctc-tab-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.30); }
+/* Recessed, not 90% white: on a dark page a near-white disc is the brightest
+   thing on screen and the eye goes to the counter instead of the data. */
+[data-bs-theme="dark"] .ctc-tabrail > button.active .ctc-tab-count { background: rgba(0,0,0,.28); color: #fff; border-color: rgba(255,255,255,.22); }
+
+/* No height override for the search. The rail is back to 48, and .ops-search
+   in useOpsTheme.ts already states 48 - "the tab RAIL's height" - so the two
+   line up on the shared value, the same way they do on the other four
+   operations pages. */
 
 /* ── Responsive layout (QA #42) ──
    On narrow screens: the header title + Create button stack; the stage cards

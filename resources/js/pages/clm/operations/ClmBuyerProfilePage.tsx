@@ -187,7 +187,7 @@ const BP_CSS = `
 :where(.bpx-34) .bpx-64 { order: -1 !important; }
 /* The same rail as .bpx-64 — the transaction-wise scope switch is the same
    control as the party-wise one and was 4px shorter on a different track. */
-:where(.bpx-35) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; box-sizing: border-box !important; padding: 3px !important; border-radius: 11px !important; background: rgba(255,255,255,.6) !important; border: 1px solid rgba(6,182,212,.28) !important; }
+:where(.bpx-35) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; box-sizing: border-box !important; padding: 3px !important; border-radius: 11px !important; background: linear-gradient(180deg, #f6feff, #f0fdff) !important; border: 1px solid #c9f8fd !important; }
 :where(.bpx-36) { width: 26px !important; height: 26px !important; border-radius: 7px !important; background: rgba(255,255,255,.75) !important; border: 1.5px solid rgba(8,145,178,.22) !important; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; color: #0891b2 !important; transition: all .15s !important; flex-shrink: 0 !important; }
 :where(.bpx-37) { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)) !important; gap: 8px !important; }
 :where(.bpx-38) { display: flex !important; align-items: flex-start !important; justify-content: space-between !important; gap: 10px !important; margin-bottom: 0 !important; }
@@ -218,7 +218,10 @@ const BP_CSS = `
 /* The CLM search box (.clm-search): 42px on radius 11, a tinted accent wash
    rather than flat white, a soft accent hairline, and the 16px accent
    magnifier. This ran 38px on radius 9 with an 11.5px input. */
-:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg,#f6feff,#f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; width: 380px !important; max-width: 100% !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
+/* 43.5px, the module-wide search height — .ops-search in useOpsTheme.ts and
+   .clm-search in clmShared.ts carry the same number. This box is a local copy
+   rather than .ops-search, so it has to be set here too. */
+:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 43.5px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg,#f6feff,#f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; width: 380px !important; max-width: 100% !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
 :where(.bpx-62) > svg { width: 16px !important; height: 16px !important; stroke: #22d3ee !important; flex-shrink: 0 !important; }
 :where(.bpx-62):focus-within { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(6,182,212,.14) !important; }
 :where(.bpx-63) { border: none !important; outline: none !important; font-size: 13px !important; font-weight: 500 !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; min-width: 0 !important; background: transparent !important; }
@@ -226,7 +229,7 @@ const BP_CSS = `
 /* The CLM tab rail: gap 8 on 3px of padding, radius 11, a 1px accent
    hairline over a white wash, and no fixed height - the 40px tabs give it its
    48px. It was a 38px trough at gap 3 on a 1.5px border. */
-:where(.bpx-64) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; box-sizing: border-box !important; padding: 3px !important; border-radius: 11px !important; background: rgba(255,255,255,.6) !important; border: 1px solid rgba(6,182,212,.28) !important; }
+:where(.bpx-64) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; box-sizing: border-box !important; padding: 3px !important; border-radius: 11px !important; background: linear-gradient(180deg, #f6feff, #f0fdff) !important; border: 1px solid #c9f8fd !important; }
 :where(.bpx-65) { overflow: auto !important; flex: 1 !important; min-height: 0 !important; }
 :where(.bpx-66) { padding: 9px 12px !important; text-align: center !important; }
 :where(.bpx-67) { font-size: 11px !important; font-weight: 700 !important; color: #0891b2 !important; }
@@ -313,12 +316,12 @@ const BP_CSS = `
    ran 11.5px/700 on 0 18px at radius 9 and stood 38px tall on the Buyer page
    and 40px on the Supplier one - the same control at three sizes inside one
    module. */
-.bpa-seg{display:flex;align-items:center;height:48px;box-sizing:border-box;background:rgba(255,255,255,.6);border:1px solid rgba(6,182,212,.28);border-radius:11px;padding:3px;gap:8px;}
+.bpa-seg{display:flex;align-items:center;height:48px;box-sizing:border-box;background:linear-gradient(180deg, #f6feff, #f0fdff);border:1px solid #c9f8fd;border-radius:11px;padding:3px;gap:8px;}
 .bpa-tab{position:relative;height:40px;padding:0 14px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:650;cursor:pointer;transition:background .16s,color .16s,box-shadow .16s,border-color .16s;letter-spacing:0;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;box-sizing:border-box;}
 .bpa-tab svg{flex-shrink:0;}
-.bpa-tab-active{border:0;background:linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%);color:#fff;box-shadow:0 5px 14px rgba(6,182,212,.5),inset 0 1px 0 rgba(255,255,255,.4),inset 0 -2px 6px rgba(14,116,144,.3);text-shadow:0 1px 2px rgba(12,74,110,.4);}
-.bpa-tab-inactive{background:linear-gradient(135deg,#ecfeff,#cffafe);border:1px solid rgba(6,182,212,.25);color:#0e7490;box-shadow:none;}
-.bpa-tab-inactive:hover{background:linear-gradient(135deg,#e4fbff,#b7f3fb);border-color:rgba(6,182,212,.45);}
+.bpa-tab-active{border:1px solid transparent;background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);color:#fff;box-shadow:0 6px 16px -5px rgba(6,182,212,.55),inset 0 1px 0 rgba(255,255,255,.25);}
+.bpa-tab-inactive{background:transparent;border:1px solid transparent;color:#0e7490;box-shadow:0 1px 2px rgba(16,24,40,.05);}
+.bpa-tab-inactive:hover{background:rgba(6,182,212,.06);color:#0891b2;}
 .bpa-cards-wrap{overflow:hidden;transition:max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s;}
 .bp-buyer-row:hover{background:rgba(6,182,212,.05)!important;box-shadow:inset 3px 0 0 #0891b2;}
 

@@ -282,7 +282,7 @@ export default function ClmAgreementsSentPage() {
           <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box',
             ...(t.dark
               ? { background: 'rgba(8,145,178,.08)', border: '1px solid rgba(8,145,178,.22)' }
-              : { background: 'linear-gradient(180deg, color-mix(in srgb, #f0fdfa 60%, #fff), #f0fdfa)', border: '1px solid color-mix(in srgb, #a5e8f5 60%, #fff)' }) }}>
+              : { background: 'linear-gradient(180deg, #f6feff, #f0fdff)', border: '1px solid #c9f8fd' }) }}>
             {([
               ['all', 'All Contracts', null],
               ['approved', 'Approved Contracts', '#10B981'],
@@ -299,12 +299,12 @@ export default function ClmAgreementsSentPage() {
                     cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s',
                     ...(active
                       ? { background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.25)' }
-                      : { background: 'transparent', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
+                      : { background: 'transparent', boxShadow: '0 1px 2px rgba(16,24,40,.05)', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
                   {key === 'all'
                     ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#67e8f9' : '#0e7490')} strokeWidth="2.4" strokeLinecap="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                     : <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#94A3B8'), flexShrink: 0 }} />}
                   <span>{label}</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 700, lineHeight: 1, border: '1px solid',
+                  <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 28, height: 18, padding: '0 6px', borderRadius: 999, fontSize: 10, fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums', border: '1px solid',
                     ...(active
                       ? (t.dark
                         ? { background: 'rgba(0,0,0,.28)', borderColor: 'rgba(255,255,255,.22)', color: '#fff' }

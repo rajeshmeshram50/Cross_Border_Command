@@ -2,9 +2,12 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -353,6 +356,72 @@ class ZohoSignService
     public function getRequest(string $requestId): array
     {
         return $this->makeRequest('GET', "requests/{$requestId}");
+    }
+
+    /**
+     * The details of SEVERAL requests, fetched concurrently.
+     *
+     * The signature list polls Zoho once per still-open request, in a loop, on
+     * a request the browser is waiting on. Measured locally at ~295ms per
+     * round-trip: three open requests cost 887ms of a 1056ms response, and a
+     * party with a dozen agreements out for signature costs seconds (QA #7).
+     *
+     * They are independent GETs that share one cached bearer token, so there
+     * is nothing to serialise: a pool makes the wall time that of the slowest
+     * call rather than the sum of all of them. Same data, same freshness — no
+     * row is skipped or deferred.
+     *
+     * Returns [zohoRequestId => details|null] for EVERY id it attempted — null
+     * where that call failed. The key is present either way on purpose: a
+     * caller can tell "Zoho said no" from "not asked" and skip the row instead
+     * of asking a second time. (A dead id — a request deleted at Zoho's end —
+     * otherwise costs two failing round-trips per poll instead of one.)
+     *
+     * @param  string[]  $requestIds
+     * @return array<string, array|null>
+     */
+    public function getRequestsBatch(array $requestIds): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('strval', $requestIds), 'strlen')));
+        if (!$ids) return [];
+
+        $token   = $this->getAccessToken();
+        $headers = ['Authorization' => 'Zoho-oauthtoken ' . $token];
+        $base    = "{$this->baseUrl}/api/{$this->apiVersion}/requests/";
+
+        $responses = Http::pool(fn (Pool $pool) => array_map(
+            fn (string $id) => $pool->as($id)->withHeaders($headers)->get($base . $id),
+            $ids,
+        ));
+
+        $out = [];
+        $unauthorised = false;
+        foreach ($ids as $id) {
+            $resp = $responses[$id] ?? null;
+            // A pooled call that threw comes back as the exception itself.
+            if (!$resp instanceof Response) {
+                Log::warning('Zoho batch call failed for request ' . $id . ': '
+                    . ($resp instanceof \Throwable ? $resp->getMessage() : 'no response'));
+                $out[$id] = null;
+                continue;
+            }
+            if (!$resp->successful()) {
+                if ($resp->status() === 401) $unauthorised = true;
+                Log::warning('Zoho batch call returned ' . $resp->status() . ' for request ' . $id
+                    . ': ' . Str::limit((string) $resp->body(), 200));
+                $out[$id] = null;
+                continue;
+            }
+            $out[$id] = $resp->json() ?? [];
+        }
+        /* The pool carries ONE token for the whole batch, taken before the
+           calls go out; makeRequest's own refresh-and-retry cannot reach
+           inside it. Dropping the cached token on a 401 means the next poll
+           re-authenticates instead of repeating the whole batch unauthorised.
+           The token is cached 10 minutes short of Zoho's stated expiry, so
+           this is the rare case, not the normal one. */
+        if ($unauthorised) Cache::forget(self::TOKEN_CACHE_KEY);
+        return $out;
     }
 
     public function remind(string $requestId): array
