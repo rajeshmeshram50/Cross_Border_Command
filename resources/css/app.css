@@ -103,26 +103,18 @@ body,
   min-height: 100%;
 }
 
-/* Keep the scrollbar's lane reserved whether or not a scrollbar is there.
-   Filtering a list shortens the page; the scrollbar then disappears, the
-   scroller gains its width back, and everything inside slides sideways by it.
-   Measured on CLM Case to Case at 1366x700 while typing a query:
-   .main-content went from scrolling to not, its client width 1346 -> 1356, and
-   the search box moved 10px with it on every keystroke. That is the page
-   "shaking" as you type.
+/* The scrollbar's lane is NOT reserved.
 
-   Only .main-content, which is the box that actually gains and loses a
-   scrollbar.
+   scrollbar-gutter: stable was tried here, to stop the page sliding sideways
+   when filtering a list shortens it and .main-content loses its scrollbar.
+   It does fix that, but it reserves the lane on every page - and on a page
+   that never scrolls (Consignee, for one) that is 10px of empty strip down
+   the right edge, against the card's 8px on the left. Equal spacing won.
 
-   NOT html. This rule carried html too, on the reasoning that the idims
-   layout puts `overflow: hidden` there so a gutter could not matter — which
-   is wrong: `hidden` still makes an element a scroll container, so the gutter
-   was reserved on a box that never shows a scrollbar and the page carried a
-   strip of dead space down its right edge, on top of the card's own 8px. */
-.main-content {
-  scrollbar-gutter: stable;
-}
-
+   If the sideways shift comes back, fix it at the source instead: it only
+   happens because the card's height changes as rows filter out, which is what
+   makes the scrollbar come and go. Hold the card's height and the scrollbar
+   never toggles. */
 body {
   overflow-x: hidden;
 }
