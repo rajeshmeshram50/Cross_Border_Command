@@ -32,11 +32,6 @@ class LeavePlanController extends Controller
         'employees.department:id,name',
         'employees.designation:id,name',
         'employees.reportingManager:id,first_name,last_name,display_name',
-        /* Employee::$appends carries photo_url, whose accessor falls back to a
-           query of its own PER ROW when this relation is absent — 33 employees
-           meant 33 extra queries here. EmployeeController's LIST_WITH loads it
-           for the same reason. */
-        'employees.photoDocument:id,employee_id,document_key,file_path',
     ];
 
     /** DETAIL_WITH plus the name-ordered leaveTypes. */
@@ -47,6 +42,35 @@ class LeavePlanController extends Controller
         ]);
     }
 
+    /**
+     * Drop the Employee $appends this screen has no use for.
+     *
+     * It shows a name, a code, a department and a designation. But $appends
+     * carries photo_url, whose accessor falls back to an employee_documents
+     * lookup per row, and the nested reportingManager was never eager-loaded —
+     * so a plan with 56 assigned employees paid 56 of them for a photo nothing
+     * renders. encrypted_id and profile_completion are pure bytes here.
+     * makeHidden() is checked BEFORE the accessor runs, so the query never
+     * happens.
+     */
+    private static function trimEmployeeAppends(iterable $plans): void
+    {
+        $hide = [
+            'photo_url', 'face_registered', 'profile_completion', 'encrypted_id',
+            'other_assets_resolved', 'ancillary_roles_resolved',
+        ];
+        /* relationLoaded, not ?? — reading $plan->employees LAZY-LOADS it when
+           with_detail was not asked for, which both costs a query per plan and
+           then serialises every employee into a response that had none. Same
+           for the manager. */
+        foreach ($plans as $plan) {
+            if (!$plan->relationLoaded('employees')) continue;
+            foreach ($plan->employees as $e) {
+                $e->makeHidden($hide);
+                if ($e->relationLoaded('reportingManager')) $e->reportingManager?->makeHidden($hide);
+            }
+        }
+    }
     public function index(Request $request)
     {
         $user = $request->user();
@@ -115,6 +139,8 @@ class LeavePlanController extends Controller
             $plan->setup_complete = $total > 0 && $configured === $total;
         });
 
+        self::trimEmployeeAppends($rows);
+
         // total only when paged, so an unpaged caller's response is unchanged.
         return response()->json(
             ['data' => $rows] + ($total !== null ? ['total' => $total] : [])
@@ -131,6 +157,7 @@ class LeavePlanController extends Controller
             ['client:id,org_name', 'branch:id,name'],
             self::detailWith(),
         ));
+        self::trimEmployeeAppends([$plan]);
 
         return response()->json(['data' => $plan]);
     }
