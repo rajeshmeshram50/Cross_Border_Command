@@ -123,37 +123,51 @@ const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-
  * initials, a top sheen and a short shadow of its own colour. 24px with 8.5px
  * initials leaves the two letters about 6px of bearing on each side.
  *
- * One step lighter than it was, and deliberately only one. Light mode ran
- * #7C3AED → #5B21B6 (violet-600 → violet-900), which is white-on-violet at
- * 5.7:1 rising to 9.0:1 — three marks a row over ten rows made the table read
- * heavy. It is #8B5CF6 → #6D28D9 now, 4.2:1 to 7.1:1. That is still above the
- * 3:1 floor for bold text at this size, so the initials stay legible; the next
- * stop up, #A78BFA, falls to 2.7:1 and is where "lighter" turns into the
- * smudge the pale-lilac attempt above produced. The outer shadow is softened
- * too, since a dark halo reads as more ink even when the fill has not changed.
+ * Pale chip, violet letters — not white letters on violet.
  *
- * Both themes share the ramp now — dark was already on these two stops.
+ * This went as light as a solid fill can go first: #7C3AED → #5B21B6 at the
+ * start (white on violet, 5.7:1 rising to 9.0:1), then #8B5CF6 → #6D28D9
+ * (4.2:1 to 7.1:1). Lighter than that is not available on a solid fill — the
+ * next stop, #A78BFA, puts white at 2.7:1, under the 3:1 floor for bold text
+ * at this size, and that is exactly the unreadable smudge the earlier
+ * pale-lilac attempt produced.
+ *
+ * So the treatment inverts instead. A violet-50/100 fill carrying violet-700
+ * initials measures 6.0:1 — better contrast than any version above — while
+ * putting a fraction of the ink on the page, which is the thing that made ten
+ * rows of three marks feel heavy. The hairline is rgba(124,58,237,.30) rather
+ * than the #E2D6FB of the first attempt: that one was so faint the chip had no
+ * edge at all and dissolved into the row.
+ *
+ * No sheen any more — a white gradient over a near-white fill is invisible, so
+ * it was only there to be inherited from the old solid build.
+ *
+ * The light values below are the ones picked in the browser: a 12° ramp from
+ * #A083EE up to #E1DAF6, #6300FF initials at 9px/700, no border. Measured,
+ * since the gradient runs dark at the bottom: the letters sit on roughly
+ * #C0AEF2 at the centre of the box, which is 3.6:1 — above the 3:1 floor for
+ * bold text at this size. Only the bottom edge falls to 2.35:1, and no glyph
+ * reaches it. Worth knowing if the type ever shrinks below 9px or drops to
+ * 600: the headroom here is about half a stop, not a comfortable margin.
+ *
+ * Dark keeps its hairline. Its fill is a translucent wash of the accent rather
+ * than a solid ramp, so without an edge the chip has nothing to separate it
+ * from the panel behind and stops reading as a chip at all.
  */
 function Mark({ text, dark }: { text: string; dark: boolean }) {
   return (
     <span
       aria-hidden
       style={{
-        position: 'relative', overflow: 'hidden',
-        width: 24, height: 24, borderRadius: 8, flexShrink: 0,
+        width: 24, height: 24, borderRadius: 8, flexShrink: 0, boxSizing: 'border-box',
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 8.5, fontWeight: 800, letterSpacing: '.01em', lineHeight: 1,
-        color: '#fff',
-        background: 'linear-gradient(135deg,#8B5CF6,#6D28D9)',
-        boxShadow: dark
-          ? 'inset 0 1px 0 rgba(255,255,255,.16)'
-          : '0 1px 3px rgba(109,40,217,.16), inset 0 1px 0 rgba(255,255,255,.18)',
+        fontSize: 9, fontWeight: 700, letterSpacing: '.01em', lineHeight: 1,
+        ...(dark
+          ? { background: 'rgba(124,58,237,.18)', color: '#c4b5fd', border: '1px solid rgba(167,139,250,.30)' }
+          : { background: 'linear-gradient(12deg,#A083EE,#E1DAF6)', color: '#6300FF' }),
       }}
     >
-      {/* The same top-half sheen the active tab and the +N pill carry, so the
-          three read as one family rather than three flat swatches. */}
-      <span style={{ position: 'absolute', inset: '0 0 50% 0', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', pointerEvents: 'none' }} />
-      <span style={{ position: 'relative' }}>{inits(text)}</span>
+      {inits(text)}
     </span>
   );
 }
@@ -556,7 +570,7 @@ export default function ClmCaseToCasePage() {
                         <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
                         <td style={{ ...TDL, width: 200 }}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{cut30(c.title)}</div></Tooltip></td>
                         <td style={{ ...TDL, width: 200 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Mark text={c.org} dark={t.dark} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{cut30(c.org)}</span></Tooltip></div></td>
-                        <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Mark text={c.cp[0]} dark={t.dark} /><Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 108 }}>{c.cp[0]}</span></Tooltip>{extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}</div></td>
+                        <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Mark text={c.cp[0]} dark={t.dark} /><Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 108 }}>{c.cp[0]}</span></Tooltip>{extra > 0 && <Tooltip label="View all counterparties"><button className="ctc-more" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }}>+{extra}</button></Tooltip>}</div></td>
                         <td style={{ ...TDL, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Mark text={c.createdBy} dark={t.dark} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                         <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, background: apb.bg, border: `1px solid ${apb.border}`, whiteSpace: 'nowrap' }}><span style={{ fontSize: 9.5, fontWeight: 700, color: apb.text }}>{ap.label}</span></span></td>
                         <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
@@ -689,6 +703,33 @@ const CTC_CSS = `
 @keyframes ctcFade { from { opacity:0 } to { opacity:1 } }
 @keyframes ctcSpin { to { transform: rotate(360deg) } }
 
+/* ── "+2 more counterparties" ──
+   It was a solid #6D28D9 to #7C3AED disc in white, under its own drop shadow.
+   That was built to sit beside a solid violet initials mark; now that the mark
+   is a pale chip, the +N was the darkest thing in the row - a secondary "there
+   are more" affordance shouting over the name it belongs to.
+
+   Same family as the mark now: violet-100 fill, the mark's #6300FF letters,
+   no shadow, and the mark's 8px corner instead of a 20px pill, so the two
+   shapes agree. 5.9:1, and 5.1:1 on hover.
+
+   20px tall against the mark's 24: it is subordinate to the avatar, not a
+   second one. And it is a button, so it gets a real hover and focus ring -
+   the old one gave no feedback at all beyond the cursor. */
+.ctc-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 20px; padding: 0 6px; box-sizing: border-box;
+  border: 0; border-radius: 8px;
+  background: #EDE9FE; color: #6300FF;
+  font-family: inherit; font-size: 9px; font-weight: 700; line-height: 1;
+  flex-shrink: 0; cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.ctc-more:hover { background: #DDD6FE; }
+.ctc-more:focus-visible { outline: 2px solid rgba(124,58,237,.55); outline-offset: 1px; }
+[data-bs-theme="dark"] .ctc-more { background: rgba(124,58,237,.22); color: #c4b5fd; }
+[data-bs-theme="dark"] .ctc-more:hover { background: rgba(124,58,237,.32); color: #ddd6fe; }
+
 /* ── Tab rail ──
    The CLM master rail — .clm-tabrail / .clm-tab in clmShared.ts — on this
    page's violet ramp instead of teal.
@@ -719,7 +760,13 @@ const CTC_CSS = `
   display: inline-flex; align-items: center; gap: 8px;
   height: 48px; box-sizing: border-box;
   padding: 3px; border-radius: 11px;
-  background: rgba(255,255,255,.55);
+  /* A light violet track, not translucent white. The tabs stopped painting
+     themselves, so the rail IS the unselected state now and it was rendering
+     as plain white over the page — rgba(255,255,255,.55) only ever shows the
+     tint of whatever is behind it, and behind it is white. A stated violet
+     gives the unselected tabs something to sit on and leaves hover's solid
+     white a clear step up from it. */
+  background: linear-gradient(180deg, #faf8ff, #f2eefe);
   border: 1px solid rgba(139,92,246,.22);
 }
 .ctc-tabrail > button {
@@ -730,7 +777,12 @@ const CTC_CSS = `
   font-family: var(--font-sans);
   font-size: 12.5px; font-weight: 700; letter-spacing: 0; white-space: nowrap;
   cursor: pointer;
-  background: linear-gradient(135deg, #f5f1fe, #ede9fe);
+  /* Nothing of its own: an unselected tab is the rail showing through. Any
+     fill at all, however pale, drew a visible edge where the tab met the rail,
+     and four of those edges in a row read as four outlined boxes sitting
+     inside the capsule. With the tab transparent the rail is one clean band
+     and only the selected tab is a shape. */
+  background: transparent;
   /* No outline on the tabs — the rail already encloses them, so a border on
      each one drew a box inside a box. Transparent rather than removed so the
      tab keeps its width and the rail does not move when one is selected (the
@@ -740,9 +792,15 @@ const CTC_CSS = `
   overflow: hidden; position: relative; z-index: 1;
   transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
 }
+/* Hover is now the ONLY thing that gives an unselected tab a shape, so it has
+   to be unmistakable: solid white against the rail's translucent white, lifted
+   by a soft shadow. It also goes lighter rather than darker — deepening the
+   violet moved the tab TOWARDS the selected paint, so for a moment the pointer
+   made two tabs look selected. */
 .ctc-tabrail > button:hover:not(.active) {
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  background: #fff;
   color: #5b21b6;
+  box-shadow: 0 1px 4px rgba(91,33,182,.14);
 }
 /* Customers drops the border here (border: 0), which leaves its selected tab
    2px narrower than the rest and nudges the row on every click. A transparent
@@ -757,7 +815,13 @@ const CTC_CSS = `
   background-origin: border-box;
   border: 1px solid transparent;
   color: #fff;
-  box-shadow: 0 5px 14px rgba(124,58,237,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(91,33,182,.3);
+  /* Lift only — no insets. The inset 0 1px 0 rgba(255,255,255,.4) drew a
+     crisp white line along the tab's top edge and the inset 0 -2px 6px a
+     dark one along the bottom; together they read as an outline around the
+     selected tab, which is the border it should not have. The outer shadow
+     is Customers' 0 6px 16px -5px, which lifts the tab without drawing an
+     edge of its own. */
+  box-shadow: 0 6px 16px -5px rgba(124,58,237,.55);
   text-shadow: 0 1px 2px rgba(76,29,149,.4);
 }
 /* Customers' count disc (.smc-pill-count), with one change kept from this
@@ -775,15 +839,20 @@ const CTC_CSS = `
   color: #fff; background: rgba(255,255,255,.24); border-color: rgba(255,255,255,.4);
 }
 [data-bs-theme="dark"] .ctc-tabrail { background: rgba(124,58,237,.10); border-color: rgba(124,58,237,.22); }
+/* Same idea in the dark: the unselected tab is the rail, and hover is the only
+   thing that gives it a shape. Light cannot lift here, so hover brightens the
+   violet instead — on a dark rail that still moves AWAY from the selected tab,
+   which is the solid gradient. */
 [data-bs-theme="dark"] .ctc-tabrail > button {
   color: #c4b5fd;
-  background: linear-gradient(135deg, rgba(124,58,237,.16), rgba(124,58,237,.10));
-  border-color: rgba(124,58,237,.28);
+  background: transparent;
+  border-color: transparent;
 }
 [data-bs-theme="dark"] .ctc-tabrail > button:hover:not(.active) {
   color: #ddd6fe;
-  background: linear-gradient(135deg, rgba(124,58,237,.24), rgba(124,58,237,.16));
-  border-color: rgba(124,58,237,.5);
+  background: rgba(167,139,250,.16);
+  border-color: transparent;
+  box-shadow: none;
 }
 [data-bs-theme="dark"] .ctc-tabrail > button.active { color: #fff; border-color: transparent; }
 [data-bs-theme="dark"] .ctc-tab-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.30); }

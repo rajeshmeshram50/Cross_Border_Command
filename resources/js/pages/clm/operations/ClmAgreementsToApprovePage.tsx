@@ -56,6 +56,80 @@ const dateTimeParts = (s: string): { date: string; time: string } => {
 
 type AtaTab = 'all' | 'pending' | 'clarification' | 'approved' | 'rejected';
 
+/* The tab rail's icons — the same set Agreements We Sent and Case to Case now
+ * carry, and the same convention the SPI rail uses (SCOPE_TABS in
+ * InvoiceList.tsx): a 15px glyph on a 24-unit grid at strokeWidth 2.1, round
+ * caps and joins, stroke="currentColor" so each one takes its tab's colour —
+ * white when selected, cyan when not.
+ *
+ * Three coloured dots went: violet for Clarifications on a cyan page, green
+ * for Approved, red for Rejected. Two tabs carried nothing at all, so the rail
+ * read as a mixed set — some labels with a mark, some without. */
+/**
+ * The initials beside a person's name in Created By and Approver.
+ *
+ * The same chip Agreements We Sent and Case to Case use: a pale 12° ramp with
+ * deep-cyan letters, no border, no shadow. This page drew it two different
+ * ways for the same field — a 26px #A5F3FC→#67E8F9 circle with a #CFFAFE rim
+ * in one table, a 24px #22d3ee→#06b6d4 circle with white letters in another —
+ * so the same person looked like two different marks depending on the tab.
+ *
+ * Letters sit at about 4.0:1 against #0E7490, above the 3:1 floor for bold
+ * text at this size.
+ */
+function Avatar({ name }: { name: string }) {
+  return (
+    <div style={{
+      width: 24, height: 24, borderRadius: 8, flexShrink: 0, boxSizing: 'border-box',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'linear-gradient(12deg,#67E8F9,#DFF9FD)',
+    }}>
+      <span style={{ fontSize: 9, fontWeight: 700, color: '#0E7490', letterSpacing: '.01em', lineHeight: 1 }}>{inits(name)}</span>
+    </div>
+  );
+}
+
+const ATA_TAB_ICO = (d: React.ReactNode) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, position: 'relative', zIndex: 1 }}>{d}</svg>
+);
+
+const ATA_TABS: Array<{ key: AtaTab; label: string; icon: React.ReactNode }> = [
+  {
+    key: 'all', label: 'All Agreements',
+    icon: ATA_TAB_ICO(<>
+      <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" />
+      <line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" />
+      <line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+    </>),
+  },
+  {
+    key: 'pending', label: 'Pending Approval',
+    icon: ATA_TAB_ICO(<>
+      <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+    </>),
+  },
+  {
+    key: 'clarification', label: 'Clarifications',
+    icon: ATA_TAB_ICO(<>
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5Z" />
+    </>),
+  },
+  {
+    key: 'approved', label: 'Approved',
+    icon: ATA_TAB_ICO(<>
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
+    </>),
+  },
+  {
+    key: 'rejected', label: 'Rejected',
+    icon: ATA_TAB_ICO(<>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+    </>),
+  },
+];
+
 /* The header band, the same one the other CLM lists use - .clm-table thead th
    in clmShared.ts: a light accent tint carrying 9.5px/800 uppercase in the
    accent colour over a 1.5px accent rule. It was a solid dark teal strip
@@ -315,29 +389,37 @@ export default function ClmAgreementsToApprovePage() {
               radius-25 lozenges with no border and an inset shadow — a
               different control in the same module. */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(6,182,212,.10)' : 'linear-gradient(180deg, #f6feff, #f0fdff)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.22)' : '#c9f8fd'}`, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box' }}>
-            {([
-              ['all', 'All Agreements', null],
-              ['pending', 'Pending Approval', null],
-              ['clarification', 'Clarifications', '#8B5CF6'],
-              ['approved', 'Approved', '#10B981'],
-              ['rejected', 'Rejected', '#EF4444'],
-            ] as [AtaTab, string, string | null][]).map(([key, label, dot]) => {
+            {ATA_TABS.map(({ key, label, icon }) => {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                    /* No border on either state, and no insets on the selected
+                       one — the same two fixes Case to Case needed.
+                       A 1px TRANSPARENT border is not invisible under a
+                       gradient: a background sits against the padding box by
+                       default, so the strip beneath it gets painted with the
+                       ramp's edge colour extended outward, which outlines the
+                       selected tab in its own lightest stop. And the
+                       inset 0 1px 0 rgba(255,255,255,.25) drew a crisp white
+                       line along the top edge, which reads as the other half
+                       of that outline. Dropping the border from EVERY tab
+                       removes it and still shifts nothing, because none of
+                       them has one to lose. */
                     ...(active
-                      ? { border: '1px solid transparent', background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(6,182,212,.55), inset 0 1px 0 rgba(255,255,255,.25)' }
-                      : { background: 'transparent', border: '1px solid transparent', boxShadow: '0 1px 2px rgba(16,24,40,.05)', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
-                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', borderRadius: '8px 8px 0 0', pointerEvents: 'none' }} />}
-                  {dot && <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : dot, flexShrink: 0, boxShadow: active ? 'none' : `0 0 0 2px ${dot}40` }} />}
+                      ? { border: 0, background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(6,182,212,.55)' }
+                      : { background: 'transparent', border: 0, boxShadow: '0 1px 2px rgba(16,24,40,.05)', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
+                  {icon}
                   <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
                   {/* Raw count, not pad2 — "1" as on every other CLM rail and
                       on the KPI tiles above, rather than "01". */}
                   <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 28, height: 18, padding: '0 6px', borderRadius: 999, fontSize: 10, fontWeight: 800, lineHeight: 1, fontVariantNumeric: 'tabular-nums',
                     ...(active
                       ? { color: '#155e75', background: 'rgba(255,255,255,.9)', border: '1px solid rgba(255,255,255,.75)' }
-                      : (t.dark ? { color: '#67e8f9', background: 'rgba(6,182,212,.18)', border: '1px solid rgba(6,182,212,.35)' } : { color: '#0e7490', background: '#ccfbf1', border: '1px solid #a5f3fc' })) }}>{counts[key]}</span>
+                      /* cyan-100, not #ccfbf1. That is teal-100 — a green-cast
+                         chip sitting inside a cyan rail, against a cyan-200
+                         hairline it did not match. */
+                      : (t.dark ? { color: '#67e8f9', background: 'rgba(6,182,212,.18)', border: '1px solid rgba(6,182,212,.35)' } : { color: '#0e7490', background: '#cffafe', border: '1px solid #a5f3fc' })) }}>{counts[key]}</span>
                 </button>
               );
             })}
@@ -431,7 +513,12 @@ function Pager({ total, page, setPage, t }: { total: number; page: number; setPa
 function ReviewBtn({ active, onClick, onBlocked }: { active: boolean; onClick: () => void; onBlocked?: () => void }) {
   return (
     <Tooltip label={active ? 'Review & Approve' : 'Awaiting clarification response'}>
-      <button onClick={() => (active ? onClick() : onBlocked?.())} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 12px', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: 'pointer', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
+      {/* 30px stated, not inferred from padding. It used to be 6px of padding
+          around a 9.5px label, which came out around 24 — short for a row this
+          tall, and it changed size between the two states because the disabled
+          one adds a 1.5px border. border-box plus a fixed height holds both at
+          30. */}
+      <button onClick={() => (active ? onClick() : onBlocked?.())} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5, height: 30, padding: '0 14px', boxSizing: 'border-box', borderRadius: 8, border: active ? 'none' : '1.5px solid #E2E8F0', background: active ? 'linear-gradient(135deg,#0891b2,#0e7490)' : '#F8FAFC', color: active ? '#fff' : '#CBD5E1', fontFamily: 'inherit', fontSize: 9.5, fontWeight: active ? 700 : 600, cursor: 'pointer', boxShadow: active ? '0 2px 7px rgba(8,145,178,.35)' : 'none', whiteSpace: 'nowrap', opacity: active ? 1 : .6 }}>
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : '#CBD5E1'} strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg> Review &amp; Approve
       </button>
     </Tooltip>
@@ -457,15 +544,23 @@ function RespondBtn({ onClick, t }: { onClick: () => void; t: OpsTokens }) {
    chat-bubble button is gone too: the full conversation history now lives inside
    the Raise Clarification popup itself. */
 
-/* Lists every approver on a contract with their individual decision (✓/✕/?/•),
-   so a multi-approver / multi-round agreement shows who actually decided rather
-   than just the static primary approver. Falls back to the single `approver`. */
-const APPR_ST: Record<string, { ic: string; color: string }> = {
-  approved:      { ic: '✓', color: '#059669' },
-  rejected:      { ic: '✕', color: '#DC2626' },
-  clarification: { ic: '?', color: '#7C3AED' },
-  pending:       { ic: '•', color: '#94A3B8' },
-};
+/* Lists every approver on a contract, so a multi-approver / multi-round
+   agreement shows all of them rather than just the static primary approver.
+   Falls back to the single `approver`. */
+/* Name and initials chip only — the same Avatar Created By uses, so a person
+ * is drawn one way across the row.
+ *
+ * There used to be a per-approver decision mark here: a clock for pending, a
+ * tick / cross / question for the decided states. Both ends of that failed the
+ * same way. The tabs split the list by decision, so inside a tab the mark is
+ * identical on every row — a grey clock all the way down Pending Approval, a
+ * green tick all the way down Approved — and the status pill two columns over
+ * already says it in words. A mark that never varies is decoration, not a
+ * status, and it crowded the only thing the column is for: who the person is.
+ *
+ * If per-approver decisions ever need to show (approver A said yes, B asked a
+ * question, on one contract), that is a split-state case and wants its own
+ * treatment, not a mark that repeats on every single-approver row. */
 function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
   const list = (c.approvers && c.approvers.length)
     ? c.approvers
@@ -473,15 +568,12 @@ function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
   if (!list.length) return <span style={{ fontSize: 11, color: t.textSub }}>—</span>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {list.map((a, i) => {
-        const si = APPR_ST[a.status] || APPR_ST.pending;
-        return (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span title={a.status} style={{ width: 15, height: 15, borderRadius: '50%', background: si.color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 8.5, fontWeight: 900, color: '#fff', flexShrink: 0 }}>{si.ic}</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{a.name}</span>
-          </div>
-        );
-      })}
+      {list.map((a, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Avatar name={a.name} />
+          <span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{a.name}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -524,9 +616,10 @@ function StandardTable({ searching, rows, tab, page, setPage, pageSize, onPageSi
                   <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
                   <td style={TD_C}>{(() => { const dt = dateTimeParts(c.date); return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dt.date}</span>{dt.time && <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0891b2', whiteSpace: 'nowrap' }}>{dt.time}</span>}</span>); })()}</td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><ApproverList c={c} t={t} /></td>
-                  <td style={TD_C}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: sb.bg, border: `1.5px solid ${sb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: s.dot, flexShrink: 0 }} /><span style={{ fontSize: 10.5, fontWeight: 700, color: sb.text }}>{s.label}</span></span></td>
+                  <td style={TD_C}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: sb.bg, border: `1.5px solid ${sb.border}`, whiteSpace: 'nowrap' }}>{/* No dot. The pill already carries the status in its fill, border and
+                      text colour, so the dot repeated it a fourth time. */}<span style={{ fontSize: 10.5, fontWeight: 700, color: sb.text }}>{s.label}</span></span></td>
                   {isRej && <td style={{ ...TD_L, maxWidth: 180 }}><Tooltip label={c.rejReason ?? ''}><div style={{ fontSize: 10.5, color: '#DC2626', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>{c.rejReason}</div></Tooltip></td>}
                   <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.expDate)}</span></td>
                   <td style={TD_C}>
@@ -608,7 +701,7 @@ function ClarificationTable({ searching, rows, page, setPage, pageSize, onPageSi
                   <td style={TD_C}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490', background: 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(6,182,212,.28)' }}>{c.id}</span></td>
                   <td style={TD_C}>{(() => { const dt = dateTimeParts(c.date); return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dt.date}</span>{dt.time && <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0891b2', whiteSpace: 'nowrap' }}>{dt.time}</span>}</span>); })()}</td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
-                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
+                  <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Avatar name={c.createdBy} /><span style={{ fontSize: 11.5, fontWeight: 500, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><ApproverList c={c} t={t} /></td>
                   <td style={{ ...TD_L, maxWidth: 120 }}>
                     <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>{latest?.query ?? '—'}</div></Tooltip>

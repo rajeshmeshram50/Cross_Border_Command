@@ -240,16 +240,21 @@ export default function ClmSegmentPage() {
         <div className="clm-tabs-wrap">
           <div className="clm-tabs-bar">
             <div className="clm-tabrail">
+            {/* Icons, not coloured dots — the same 15px / 24-grid glyph at
+                strokeWidth 2.1 that Case to Case uses, stroked in currentColor so
+                each one takes the tab's own colour (white when selected, accent
+                when not). A regulated segment gets a shield carrying an alert;
+                a less regulated one the same shield, cleared. */}
             <button className={`clm-tab ${tab === 'all' ? 'active' : ''}`} onClick={() => { setTab('all'); setPage(1); }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
               All Segments <span className="clm-tab-count">{counts.all}</span>
             </button>
             <button className={`clm-tab ${tab === 'highly' ? 'active' : ''}`} onClick={() => { setTab('highly'); setPage(1); }}>
-              <span className="clm-tab-dot" style={{ background: '#ef4444', boxShadow: '0 0 5px rgba(239,68,68,.5)' }} />
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
               Highly Regulated Segments <span className="clm-tab-count">{counts.highly}</span>
             </button>
             <button className={`clm-tab ${tab === 'less' ? 'active' : ''}`} onClick={() => { setTab('less'); setPage(1); }}>
-              <span className="clm-tab-dot" style={{ background: '#0d9488', boxShadow: '0 0 5px rgba(13,148,136,.5)' }} />
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg>
               Less Regulated Segments <span className="clm-tab-count">{counts.less}</span>
             </button>
             </div>
