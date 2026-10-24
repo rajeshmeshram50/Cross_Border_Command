@@ -1122,51 +1122,50 @@ useEffect(() => {
                             <td style={{ textAlign: 'center' }}>
                               {v.mappedProducts > 0 ? (
                                 <Tooltip label="View mapped products">
-                                  <button type="button" className="smc-cons sup-cons-btn" onClick={() => setMappedTarget(v)}>
+                                  <button type="button" className="sl-prodcount" onClick={() => setMappedTarget(v)}>
                                     {v.mappedProducts}
                                   </button>
                                 </Tooltip>
                               ) : (
                                 <Tooltip label="No products mapped to this supplier yet">
-                                  <span className="smc-cons sup-cons-zero">0</span>
+                                  <span className="sl-prodcount sl-prodcount--zero">0</span>
                                 </Tooltip>
                               )}
                             </td>
                             <td style={{ textAlign: 'center' }}>
-                              <div className="d-inline-flex align-items-center gap-2 justify-content-center">
+                              {/* The Supplier list's own action pair (kept as it was):
+                                  the edit square and the "Evidence Vault" button. */}
+                              <div className="sl-actions">
                                 <Tooltip label="Edit Supplier">
-                                  <button
-                                    type="button"
-                                    aria-label="Edit Supplier"
-                                    className="smc-act smc-act-edit d-inline-flex align-items-center justify-content-center"
-                                    onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }}
-                                  >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                                  </button>
+                                <button
+                                  type="button"
+                                  className="sl-act-btn sl-act-btn--edit"
+                                  onClick={() => { setEditingId(v.id); setEditingStep(null); setAddOpen(true); }}
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                                </button>
                                 </Tooltip>
-                                <Tooltip label="Supplier Evidence Vault">
-                                  <button
-                                    type="button"
-                                    aria-label="Supplier Evidence Vault"
-                                    className="smc-act smc-act-vault d-inline-flex align-items-center justify-content-center"
-                                    onClick={() => setVaultTarget({
-                                      id: v.code,
-                                      db_id: v.id,
-                                      company: v.companyName,
-                                      risk: v.risk,
-                                      segment: v.segment,
-                                      segments: v.segments,
-                                      segmentItems: v.segmentItems,
-                                      country: v.country,
-                                      type: v.type,
-                                      contact: v.contactName,
-                                      contactCity: v.city,
-                                      email: v.email && v.email !== '—' ? v.email : undefined,
-                                    })}
-                                  >
-                                    <i className="ri-file-shield-line fs-14" />
-                                  </button>
-                                </Tooltip>
+                                <button
+                                  type="button"
+                                  className="sl-evault-btn"
+                                  onClick={() => setVaultTarget({
+                                    id: v.code,
+                                    db_id: v.id,
+                                    company: v.companyName,
+                                    risk: v.risk,
+                                    segment: v.segment,
+                                    segments: v.segments,
+                                    segmentItems: v.segmentItems,
+                                    country: v.country,
+                                    type: v.type,
+                                    contact: v.contactName,
+                                    contactCity: v.city,
+                                    email: v.email && v.email !== '—' ? v.email : undefined,
+                                  })}
+                                >
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg>
+                                  <span>Evidence Vault</span>
+                                </button>
                               </div>
                             </td>
                           </tr>
