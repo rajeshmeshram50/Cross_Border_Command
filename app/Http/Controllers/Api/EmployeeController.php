@@ -938,7 +938,21 @@ class EmployeeController extends Controller
             }
             $take('salary_structures', fn() => app(\App\Http\Controllers\Api\SalaryStructureController::class)
                 ->index($sub(['employee_id' => $employeeId, 'active_only' => 1])));
+            /* The chosen/finalised document set. The popup fetched this on its
+               own, and on the server a request costs ~1.5s whatever it carries —
+               0.7 kB for a round trip of its own. */
+            $take('doc_set', fn() => app(\App\Http\Controllers\Api\HrOnboardingDocSetController::class)
+                ->show($sub([]), $employeeId));
         }
+
+        /* The five masters the form's selects need. Same keys and fields the
+           popup asked /master/bulk for directly — 3.51s on the server for
+           4.3 kB. MasterController::bulk already batches them; this just stops
+           it being a second trip. */
+        $take('masters', fn() => app(\App\Http\Controllers\Api\MasterController::class)->bulk($sub([
+            'keys'   => 'departments,designations,roles,overtime_rates,countries',
+            'fields' => 'id,name,status',
+        ])));
 
         return response()->json(['data' => $out, 'skipped' => $skipped]);
     }

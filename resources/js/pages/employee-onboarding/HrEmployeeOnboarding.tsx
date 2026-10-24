@@ -1753,37 +1753,35 @@ function InitiateOnboardingModal({
     let cancelled = false;
     setMastersLoading(true);
     setCoreReady(false);
-    const masters =
-      api.get('/master/bulk', {
-        params: {
-          keys: 'departments,designations,roles,overtime_rates,countries',
-          fields: 'id,name,status',
-        },
-      }).then(r => {
-        if (cancelled) return;
-        const d = r.data?.data ?? {};
-        const rows = (k: string): any[] => {
-          const v = d[k];
-          return Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : [];
-        };
-        setMDepts(rows('departments'));
-        setMDesignations(rows('designations'));
-        setMRoles(rows('roles'));
-        setMCountries(
-          [...rows('countries')].sort((a: any, b: any) => String(a.name).localeCompare(String(b.name))),
-        );
-        setOvertimeRateOpts(toOvertimeRateOpts(rows('overtime_rates')));
-      }).catch(() => {
-        if (cancelled) return;
-        setMDepts([]); setMDesignations([]); setMRoles([]);
-        setMCountries([]); setOvertimeRateOpts([]);
-      });
+    /* The masters used to be a /master/bulk request of their own, CHAINED
+       before the bootstrap (masters.then(loadRest)) — so the popup paid two
+       serial round trips. Measured on the server that was 3.51s then 5.28s,
+       and the server-side work of both together is about 110ms: it was the
+       trips, not the queries. The bootstrap returns them under `masters` now,
+       identical bytes, so this is one request. */
+    const applyMasters = (bulk: any) => {
+      const d = bulk?.data ?? bulk ?? {};
+      const rows = (k: string): any[] => {
+        const v = d[k];
+        return Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : [];
+      };
+      setMDepts(rows('departments'));
+      setMDesignations(rows('designations'));
+      setMRoles(rows('roles'));
+      setMCountries(
+        [...rows('countries')].sort((a: any, b: any) => String(a.name).localeCompare(String(b.name))),
+      );
+      setOvertimeRateOpts(toOvertimeRateOpts(rows('overtime_rates')));
+    };
 
     const loadRest = () => api.get('/employees/onboarding-form-bootstrap', {
       params: emp?.dbId ? { employee_id: emp.dbId } : {},
     }).then(r => {
       if (cancelled) return;
       const d = r.data?.data ?? {};
+
+      applyMasters(d.masters);
+      bootstrapSalaryRef.current = d.salary_structures ?? null;
 
       setMLegalEntities(Array.isArray(d.legal_entities?.legal_entities) ? d.legal_entities.legal_entities : []);
 
@@ -1832,8 +1830,13 @@ function InitiateOnboardingModal({
       setLaptopAssets([]); setMobileAssets([]); setOtherAssets([]);
       setAssetsLoading(false);
     });
-    masters
-      .then(() => (cancelled ? undefined : loadRest()))
+    loadRest()
+      .catch(() => {
+        // A failed bootstrap must still clear the loading gates, or the form
+        // stays behind its skeleton forever.
+        if (cancelled) return;
+        applyMasters(null);
+      })
       .then(() => {
         if (cancelled) return;
         setMastersLoading(false);
@@ -1885,9 +1888,27 @@ function InitiateOnboardingModal({
   const stage1SavedSigRef = useRef<string | null>(null);
   /** Same, for the Payroll & Finance stage. (QA #9) */
   const stage4SavedSigRef = useRef<string | null>(null);
+  /* The form AS LOADED from the server.
+   *
+   * stage1SavedSigRef only knows what THIS session has sent, so it is null
+   * on the first Save & Next and the skip below could never fire — opening a
+   * finished record and paging straight through still ran a full update per
+   * stage. This is the other half of the comparison: if s1 still equals what
+   * was hydrated, the user has not edited anything, whatever the session has
+   * or has not sent. */
+  const stage1LoadedSigRef = useRef<string | null>(null);
+  /** Same, for Payroll & Finance. */
+  const stage4LoadedSigRef = useRef<string | null>(null);
+  /* The bootstrap's salary_structures, so the breakup effect below does not
+     refetch what already arrived. It runs on coreReady, which only flips once
+     the bootstrap has returned, so this was a THIRD serial round trip for a
+     payload already in hand. */
+  const bootstrapSalaryRef = useRef<any>(null);
   useEffect(() => {
     stage1SavedSigRef.current = null;
     stage4SavedSigRef.current = null;
+    stage1LoadedSigRef.current = null;
+    stage4LoadedSigRef.current = null;
   }, [emp?.dbId, isOpen]);
   const [s1, setS1] = useState({
     first_name:  '',
@@ -1970,8 +1991,13 @@ function InitiateOnboardingModal({
 
     setObBreakupLoading(true);
     setObSalaryVersion(null);
-    api.get('/salary-structures', { params: { employee_id: emp.dbId, active_only: 1 } })
-      .then(res => {
+    const parked = bootstrapSalaryRef.current;
+    /* Fall back to the request when the bootstrap skipped the key — it is only
+       included when an employee_id was passed. */
+    (parked !== null
+      ? Promise.resolve({ data: parked })
+      : api.get('/salary-structures', { params: { employee_id: emp.dbId, active_only: 1 } }))
+      .then((res: any) => {
         if (cancelled) return;
         const rows = res.data?.data ?? [];
         const active = Array.isArray(rows) && rows.length ? rows[0] : null;
@@ -2218,7 +2244,7 @@ function InitiateOnboardingModal({
 useEffect(() => {
   if (!isOpen || !emp?.raw) return;
   const x = emp.raw;
-  setS1({
+  const hydrated = {
     first_name:  String(x.first_name  ?? ''),
     middle_name: String(x.middle_name ?? ''),
     last_name:   String(x.last_name   ?? ''),
@@ -2285,7 +2311,11 @@ useEffect(() => {
     pf_eligible:           x.pf_eligible == null ? null : !!x.pf_eligible,
     pf_type:               String(x.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory',
     detailed_breakup:      !!x.detailed_breakup,
-  });
+  };
+  setS1(hydrated);
+  /* The object itself, not a read of s1 — that still holds the previous
+     render's value at this point. */
+  stage1LoadedSigRef.current = JSON.stringify(hydrated);
   setActualNameSnapshot(
     [x.first_name, x.middle_name, x.last_name]
       .filter(Boolean).join(' ').trim() || emp.name || ''
@@ -2624,8 +2654,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       const sig       = JSON.stringify(fields);
       const haveStep  = Number((emp as any)?.raw?.wizard_step_completed ?? 0);
       const haveMacro = Number((emp as any)?.raw?.onboarding_stage_completed ?? 0);
+      /* Untouched means EITHER: already sent this exact payload in this
+         session, OR the form still matches what was loaded from the server
+         and so cannot differ from it. The second is what makes the FIRST
+         Save & Next skippable. */
+      const untouched = stage1SavedSigRef.current === sig
+        || (stage1LoadedSigRef.current !== null && stage1LoadedSigRef.current === JSON.stringify(s1));
       if (
-        stage1SavedSigRef.current === sig
+        untouched
         && Number(wantStep ?? 0) <= haveStep
         && Number(wantMacro ?? 0) <= haveMacro
       ) {
@@ -2720,8 +2756,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (!isOpen || !emp?.raw) return;
     const x = emp.raw;
     const mode = String(x.salary_payment_mode ?? 'bank').toLowerCase();
-    setS4({
-      salary_payment_mode: mode === 'cheque' ? 'cheque' : 'bank',
+    const hydrated4 = {
+      // Annotated: in a const the ternary widens to string and setS4 wants the union.
+      salary_payment_mode: (mode === 'cheque' ? 'cheque' : 'bank') as 'bank' | 'cheque',
       bank_name:           String(x.bank_name           ?? ''),
       bank_account_number: String(x.bank_account_number ?? ''),
       ifsc_code:           String(x.ifsc_code           ?? ''),
@@ -2739,7 +2776,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         if (annual > 0) return String(+(annual / 100000).toFixed(2));
         return x.agreed_ctc_lpa != null ? String(x.agreed_ctc_lpa) : '';
       })(),
-    });
+    };
+    setS4(hydrated4);
+    stage4LoadedSigRef.current = JSON.stringify(hydrated4);
   }, [isOpen, emp?.id, emp?.raw]);
 
   useEffect(() => {
@@ -2867,8 +2906,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       const s4Sig     = JSON.stringify(s4Fields);
       const s4HaveMac = Number((emp as any)?.raw?.onboarding_stage_completed ?? 0);
       const s4HaveStp = Number((emp as any)?.raw?.wizard_step_completed ?? 0);
+      // Same two halves as Stage 1: sent this session, or still as loaded.
+      const s4Untouched = stage4SavedSigRef.current === s4Sig
+        || (stage4LoadedSigRef.current !== null && stage4LoadedSigRef.current === JSON.stringify(s4));
       if (
-        stage4SavedSigRef.current === s4Sig
+        s4Untouched
         && Number(s4Macro ?? 0) <= s4HaveMac
         && Number(s4Step ?? 0) <= s4HaveStp
       ) {
