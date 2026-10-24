@@ -96,6 +96,7 @@ export default function SalesLeadsDetails() {
   const [leads, setLeads]   = useState<Lead[]>([]);
   const [total, setTotal]   = useState(0);
   const [page, setPage]     = useState(1);
+  const [pageSize, setPageSize] = useState(ROWS_PER_PAGE);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -122,7 +123,7 @@ export default function SalesLeadsDetails() {
         salesperson_id: spId,
         search: debouncedQ || undefined,
         page,
-        per_page: ROWS_PER_PAGE,
+        per_page: pageSize,
       },
     })
       .then(({ data }) => {
@@ -134,13 +135,13 @@ export default function SalesLeadsDetails() {
         setLeads([]); setTotal(0);
       })
       .finally(() => setLoading(false));
-  }, [spId, debouncedQ, page, toast]);
+  }, [spId, debouncedQ, page, pageSize, toast]);
 
   const onBack = () => navigate('sales.lead_distribution');
 
-  const pages = Math.max(1, Math.ceil(total / ROWS_PER_PAGE));
+  const pages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pages);
-  const startIdx = (safePage - 1) * ROWS_PER_PAGE;
+  const startIdx = (safePage - 1) * pageSize;
   const endIdx   = Math.min(startIdx + leads.length, total);
 
   return (
@@ -166,26 +167,7 @@ export default function SalesLeadsDetails() {
           </div>
         </div>
 
-        {/* Meta chips */}
-        <div className="ldd-meta">
-          {spEmp && (
-            <span className="ldd-meta-chip ldd-meta-chip-dark">
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><rect x="2" y="7" width="20" height="15" rx="1"/><path d="M16 7V5a2 2 0 0 0-4 0v2"/></svg>
-              {spEmp}
-            </span>
-          )}
-          <span className="ldd-meta-chip">
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            {spName}
-          </span>
-          {spMgr && (
-            <span className="ldd-meta-chip">
-              Manager: {spMgr}
-            </span>
-          )}
-        </div>
-
-        {/* Search + Back */}
+        {/* Search, then the reference pills, then Back */}
         <div className="ldd-header-right">
           <div className="ldd-search ui-search-abs">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -197,6 +179,40 @@ export default function SalesLeadsDetails() {
               onChange={e => setSearch(e.target.value)}
             />
             <SearchClear show={search} onClear={() => { setSearch(''); }} />
+          </div>
+          {/* Meta chips */}
+          <div className="ldd-meta">
+            {spEmp && (
+              <>
+                <div className="ldd-hp">
+                  <span className="ldd-hp-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></span>
+                  <div className="ldd-hp-txt">
+                    <div className="ldd-hp-lbl">Employee ID</div>
+                    <div className="ldd-hp-val ldd-hp-val--mono" title={spEmp}>{spEmp}</div>
+                  </div>
+                </div>
+                <span className="ldd-hp-dots">⋮</span>
+              </>
+            )}
+            <div className="ldd-hp">
+              <span className="ldd-hp-ico ldd-hp-ico--alt"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+              <div className="ldd-hp-txt">
+                <div className="ldd-hp-lbl">Sales Person</div>
+                <div className="ldd-hp-val" title={spName}>{spName}</div>
+              </div>
+            </div>
+            {spMgr && (
+              <>
+                <span className="ldd-hp-dots">⋮</span>
+                <div className="ldd-hp">
+                  <span className="ldd-hp-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+                  <div className="ldd-hp-txt">
+                    <div className="ldd-hp-lbl">Reporting Manager</div>
+                    <div className="ldd-hp-val" title={spMgr}>{spMgr}</div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
           <button className="ldd-back-btn" onClick={onBack}>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -239,7 +255,7 @@ export default function SalesLeadsDetails() {
             </thead>
             <tbody>
               {/* Shimmer rows while the salesperson's leads load (not a bare "Loading…" line). */}
-              {loading && <ShimmerTableRows rows={ROWS_PER_PAGE} cols={11} height={12} cellClassName="" keyPrefix="ldd-shim" />}
+              {loading && <ShimmerTableRows rows={pageSize} cols={11} height={12} cellClassName="" keyPrefix="ldd-shim" />}
               {!loading && leads.length === 0 && (
                 <tr><td colSpan={11} className="ldd-status">No leads found</td></tr>
               )}
@@ -280,6 +296,15 @@ export default function SalesLeadsDetails() {
               : <>Showing <strong>{startIdx + 1}–{endIdx}</strong> of <strong>{total}</strong></>}
           </span>
           <div className="ldd-pag-ctrl">
+            <label className="ldd-rows-per-page">
+              <span>Rows per page:</span>
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+              >
+                {[10, 15, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
             <span className="ldd-pag-range">{safePage}/{pages}</span>
             <button
               className="ldd-pag-btn"
@@ -349,21 +374,27 @@ const LDD_CSS = `
 }
 .ldd-header-sub  { font-size: 10px; color: #0e7490; margin-top: 2px; font-weight: 500; opacity: .85; }
 
-.ldd-meta {
-  display: flex; align-items: center; gap: 6px;
-  flex: 1; justify-content: center; flex-wrap: wrap;
-}
-.ldd-meta-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc; border-radius: 20px;
-  padding: 4px 12px; font-size: 11px; font-weight: 600; color: #0e7490;
-}
-.ldd-meta-chip-dark {
-  background: rgba(255,255,255,.55); border-color: #67e8f9;
-  color: #155e75;
-}
+.ldd-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* Header reference pills = the Create PO header (.spi-dt-pill): icon tile,
+   small-caps label over a mono value, dotted separators. */
+.ldd-hp { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 12px; min-width: 0;
+  background: rgba(255,255,255,.65); border: 1.5px solid rgba(8,145,178,.3);
+  box-shadow: 0 2px 8px rgba(6,182,212,.12), inset 0 1px 0 rgba(255,255,255,.95);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.ldd-hp-ico { width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  background: linear-gradient(135deg,#06b6d4,#0891b2); color: #fff; box-shadow: 0 3px 8px rgba(8,145,178,.45); }
+.ldd-hp-ico--alt { background: linear-gradient(135deg,#0891b2,#0e7490); box-shadow: 0 3px 8px rgba(14,116,144,.4); }
+.ldd-hp-txt { min-width: 0; }
+.ldd-hp-lbl { font-size: 7px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #22d3ee; line-height: 1; margin-bottom: 2px; }
+.ldd-hp-val { font-size: 12.5px; font-weight: 600; letter-spacing: .05em; color: #0c4a6e; line-height: 1;
+  max-width: 190px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ldd-hp-val--mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+.ldd-hp-dots { align-self: center; color: #0891b2; opacity: .4; font-size: 12px; line-height: 1; letter-spacing: -1px; padding: 0 1px; }
+[data-bs-theme="dark"] .ldd-hp { background: rgba(12,38,48,.55); border-color: rgba(34,211,238,.28); box-shadow: 0 2px 8px rgba(0,0,0,.3), inset 0 1px 0 rgba(34,211,238,.08); }
+[data-bs-theme="dark"] .ldd-hp-val { color: #e8f2f6; }
+[data-bs-theme="dark"] .ldd-hp-lbl { color: #38d6f0; }
 
-.ldd-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ldd-header-right { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
 .ldd-search {
   display: flex; align-items: center; gap: 7px;
   background: #fff; border: 1.5px solid #a5f3fc; border-radius: 10px;
@@ -505,6 +536,17 @@ const LDD_CSS = `
 }
 .ldd-pag-info strong { color: #0891b2; font-weight: 800; }
 .ldd-pag-ctrl { display: flex; align-items: center; gap: 6px; }
+.ldd-rows-per-page {
+  display: inline-flex; align-items: center; gap: 5px; margin-right: 2px;
+  font-size: 11.5px; color: #0e7490; font-weight: 500;
+  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
+  padding: 4px 12px; border-radius: 20px;
+  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
+}
+.ldd-rows-per-page select {
+  border: none; background: transparent; font-family: inherit;
+  font-size: 11.5px; color: #0891b2; font-weight: 700; cursor: pointer; outline: none;
+}
 .ldd-pag-range {
   font-size: 11.5px; font-weight: 800; color: #fff;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
@@ -534,8 +576,6 @@ const LDD_CSS = `
 }
 [data-bs-theme="dark"] .ldd-header-title { color: #f0f9ff; }
 [data-bs-theme="dark"] .ldd-header-sub   { color: #67e8f9; }
-[data-bs-theme="dark"] .ldd-meta-chip    { background: rgba(34,211,238,.10); color: #67e8f9; border-color: rgba(103,232,249,.35); }
-[data-bs-theme="dark"] .ldd-meta-chip-dark { background: rgba(0,0,0,.25); color: #a5f3fc; border-color: rgba(103,232,249,.35); }
 [data-bs-theme="dark"] .ldd-search       { background: #0f2233; border-color: rgba(103,232,249,.30); }
 [data-bs-theme="dark"] .ldd-search input { color: #e2e8f0; }
 [data-bs-theme="dark"] .ldd-table-card   { background: #0f2233; border-color: rgba(34,211,238,.25); box-shadow: 0 4px 20px rgba(0,0,0,.35); }
@@ -555,12 +595,14 @@ const LDD_CSS = `
 [data-bs-theme="dark"] .ldd-pag          { background: rgba(8,145,178,.08); border-top-color: rgba(34,211,238,.25); }
 [data-bs-theme="dark"] .ldd-pag-info     { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
 [data-bs-theme="dark"] .ldd-pag-info strong { color: #a5f3fc; }
+[data-bs-theme="dark"] .ldd-rows-per-page { background: rgba(15,34,51,.8); color: #67e8f9; border-color: rgba(103,232,249,.30); box-shadow: none; }
+[data-bs-theme="dark"] .ldd-rows-per-page select { color: #a5f3fc; }
 [data-bs-theme="dark"] .ldd-pag-btn      { background: rgba(15,34,51,.8); border-color: rgba(103,232,249,.30); color: #67e8f9; }
 
 /* Responsive */
 @media (max-width: 1100px) {
   .ldd-header { flex-wrap: wrap; }
-  .ldd-meta { width: 100%; justify-content: flex-start; order: 3; }
+  .ldd-header-right { width: 100%; flex-wrap: wrap; justify-content: flex-end; }
 }
 @media (max-width: 640px) {
   .ldd-page { padding: 10px 12px; }

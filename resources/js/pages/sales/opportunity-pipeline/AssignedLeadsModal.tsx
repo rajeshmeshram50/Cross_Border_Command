@@ -162,14 +162,21 @@ export default function AssignedLeadsModal() {
              * unexpectedly null/undefined from a future API change.
              * Falls back to 0 so the layout still renders with a clear
              * "no data" reading instead of an error boundary. */}
-            <span className="ldp-header-pill">
-              <span className="ldp-header-pill-dot" />
-              {loading ? <span className="ldp-skel ldp-skel-num" /> : totalCount} Sales Members
-            </span>
-            <span className="ldp-header-pill">
-              <span className="ldp-header-pill-dot" />
-              {loading ? <span className="ldp-skel ldp-skel-num" /> : (summary?.total_leads ?? 0)} Total Leads
-            </span>
+            <div className="ldp-hp">
+              <span className="ldp-hp-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+              <div className="ldp-hp-txt">
+                <div className="ldp-hp-lbl">Sales Members</div>
+                <div className="ldp-hp-val ldp-hp-val--mono">{loading ? <span className="ldp-skel ldp-skel-num" /> : totalCount}</div>
+              </div>
+            </div>
+            <span className="ldp-hp-dots">⋮</span>
+            <div className="ldp-hp">
+              <span className="ldp-hp-ico ldp-hp-ico--alt"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+              <div className="ldp-hp-txt">
+                <div className="ldp-hp-lbl">Total Leads</div>
+                <div className="ldp-hp-val ldp-hp-val--mono">{loading ? <span className="ldp-skel ldp-skel-num" /> : (summary?.total_leads ?? 0)}</div>
+              </div>
+            </div>
             <button className="ldp-back-btn" onClick={onClose}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -526,14 +533,24 @@ const LDP_CSS = `
 .ldp-header-sub   { font-size: 10px; font-weight: 500; color: #0e7490; opacity: .85; margin-top: 2px; }
 
 .ldp-header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.ldp-header-pill {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 6px 14px; border-radius: 999px;
-  background: rgba(255,255,255,.8); border: 1.5px solid #a5f3fc;
-  font-size: 11px; font-weight: 700; color: #0e7490;
-  box-shadow: 0 1px 4px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
-}
-.ldp-header-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: #06b6d4; }
+/* Header reference pills = the Create PO header (.spi-dt-pill): icon tile,
+   small-caps label over a mono value, dotted separators. */
+.ldp-hp { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 12px; min-width: 0;
+  background: rgba(255,255,255,.65); border: 1.5px solid rgba(8,145,178,.3);
+  box-shadow: 0 2px 8px rgba(6,182,212,.12), inset 0 1px 0 rgba(255,255,255,.95);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.ldp-hp-ico { width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  background: linear-gradient(135deg,#06b6d4,#0891b2); color: #fff; box-shadow: 0 3px 8px rgba(8,145,178,.45); }
+.ldp-hp-ico--alt { background: linear-gradient(135deg,#0891b2,#0e7490); box-shadow: 0 3px 8px rgba(14,116,144,.4); }
+.ldp-hp-txt { min-width: 0; }
+.ldp-hp-lbl { font-size: 7px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #22d3ee; line-height: 1; margin-bottom: 2px; }
+.ldp-hp-val { font-size: 12.5px; font-weight: 600; letter-spacing: .05em; color: #0c4a6e; line-height: 1;
+  max-width: 190px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ldp-hp-val--mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+.ldp-hp-dots { align-self: center; color: #0891b2; opacity: .4; font-size: 12px; line-height: 1; letter-spacing: -1px; padding: 0 1px; }
+[data-bs-theme="dark"] .ldp-hp { background: rgba(12,38,48,.55); border-color: rgba(34,211,238,.28); box-shadow: 0 2px 8px rgba(0,0,0,.3), inset 0 1px 0 rgba(34,211,238,.08); }
+[data-bs-theme="dark"] .ldp-hp-val { color: #e8f2f6; }
+[data-bs-theme="dark"] .ldp-hp-lbl { color: #38d6f0; }
 /* Back = the My Workplace toolbar button (.lwp-bact): cyan gradient, 40px, 11.5 / 700. */
 .ldp-back-btn {
   position: relative; overflow: hidden;
@@ -607,7 +624,7 @@ const LDP_CSS = `
 }
 .ldp-stat-value {
   font-size: clamp(16px, 1.4vw, 22px);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ldp-tone-value, #1e293b);
   line-height: 1.1;
   word-break: break-word;
@@ -668,7 +685,7 @@ const LDP_CSS = `
 .ldp-text  { color: #475569; font-size: 11px; }
 .ldp-muted { color: #cbd5e1; font-style: italic; }
 
-.ldp-person-name { font-size: 11.5px; font-weight: 500; color: #0f172a; }
+.ldp-person-name { font-size: 11.5px; font-weight: 500; color: #475569; }
 
 .ldp-chip {
   display: inline-block; padding: 3px 12px; border-radius: 999px;
@@ -817,7 +834,6 @@ const LDP_CSS = `
 }
 [data-bs-theme="dark"] .ldp-header-title { color: #f0f9ff; }
 [data-bs-theme="dark"] .ldp-header-sub   { color: #67e8f9; }
-[data-bs-theme="dark"] .ldp-header-pill  { background: rgba(34,211,238,.10); color: #67e8f9; border-color: rgba(103,232,249,.35); box-shadow: none; }
 [data-bs-theme="dark"] .ldp-stat { background: #0f2233; color: #e0f2fe; }
 [data-bs-theme="dark"] .ldp-stat-label { color: #94a3b8; }
 [data-bs-theme="dark"] .ldp-stat-slate {
@@ -841,7 +857,7 @@ const LDP_CSS = `
 [data-bs-theme="dark"] .ldp-table tbody tr:nth-child(even) { background: rgba(8,145,178,.06); }
 [data-bs-theme="dark"] .ldp-table tbody tr:hover { background: rgba(8,145,178,.14); }
 [data-bs-theme="dark"] .ldp-table tbody td { color: #cbd5e1; }
-[data-bs-theme="dark"] .ldp-person-name   { color: #f0f9ff; }
+[data-bs-theme="dark"] .ldp-person-name   { color: #cbd5e1; }
 [data-bs-theme="dark"] .ldp-text          { color: #cbd5e1; }
 [data-bs-theme="dark"] .ldp-chip-outline  { background: transparent; }
 [data-bs-theme="dark"] .ldp-chip-dept      { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(103,232,249,.35); }
@@ -874,7 +890,7 @@ const LDP_CSS = `
   .ldp-header-left { gap: 10px; }
   .ldp-header-right { flex-wrap: wrap; gap: 8px; }
   .ldp-header-right .ldp-back-btn { flex: 1; justify-content: center; }
-  .ldp-header-pill { flex: 1; justify-content: center; }
+  .ldp-hp { flex: 1; justify-content: center; }
   .ldp-stats { grid-template-columns: 1fr; padding: 14px 16px 4px; gap: 10px; }
   .ldp-stat-value { font-size: 24px; }
   .ldp-table-wrap { margin: 12px 16px 16px; }
