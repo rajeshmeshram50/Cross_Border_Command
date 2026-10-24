@@ -1802,7 +1802,7 @@ const SCOPED_CSS = `
 .lwp-root .lwp-banner {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
-  min-height: 58px; padding: 0 20px; margin-bottom: 10px;
+  min-height: 58px; padding: 0 20px 0 13px; margin-bottom: 10px;
   border: 1px solid #cef3f9; border-radius: 16px;
   background: linear-gradient(110deg, #f0fdff 0%, #e6fafe 25%, #d0f5fb 55%, #bef0f8 85%, #a8eaf5 100%);
   box-shadow: 0 2px 0 rgba(255,255,255,.9) inset, 0 4px 16px rgba(8,145,178,.1), 0 1px 4px rgba(0,0,0,.04);
@@ -1827,7 +1827,9 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-banner-left {
   display: flex; align-items: center; gap: 13px;
-  z-index: 1; padding-left: 10px;
+  /* Icon starts on the same line as the first tab pill below — both sit
+     14px in (banner: 1px border + 13px; pills: 1.5px border + 12.5px). */
+  z-index: 1; padding-left: 0;
 }
 .lwp-root .lwp-banner-icon-wrap { position: relative; flex-shrink: 0; }
 .lwp-root .lwp-banner-icon {
@@ -1874,10 +1876,11 @@ const SCOPED_CSS = `
   /* Figma toolbar-button sizing (restored to match the design exactly). */
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 11px 20px; border-radius: 12px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 20px; border-radius: 12px;
   font-family: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap; transition: all .22s;
-  letter-spacing: .02em; min-height: 42px; border: none;
+  letter-spacing: .02em; min-height: 40px; border: none;
 }
 .lwp-root .lwp-bact-primary {
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
@@ -1930,8 +1933,8 @@ const SCOPED_CSS = `
    text-bearing siblings. */
 .lwp-root .lwp-bact-icon-only {
   padding: 0;
-  width: 42px;
-  flex: 0 0 42px;
+  width: 40px;
+  flex: 0 0 40px;
   justify-content: center;
 }
 .lwp-root .lwp-bact-sync.is-syncing { cursor: progress; }
@@ -2076,25 +2079,27 @@ const SCOPED_CSS = `
 .lwp-root .lwp-pills {
   display: flex; align-items: center; gap: 4px;
   background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
-  padding: 5px; border-radius: 14px;
+  /* 40px tall like the banner action buttons. */
+  box-sizing: border-box; height: 40px;
+  padding: 3px 12.5px; border-radius: 12px;
   border: 1.5px solid #a5f3fc;
   box-shadow: 0 2px 10px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
-  min-height: 50px;
   flex-shrink: 0;
 }
 .lwp-root .lwp-pill {
-  padding: 9px 20px; border-radius: 10px;
+  box-sizing: border-box; height: 31px;
+  padding: 0 20px; border-radius: 9px;
   font-size: 12.5px; font-weight: 600; cursor: pointer;
   background: transparent; color: #0e7490;
   border: none; transition: all .18s; white-space: nowrap;
-  min-height: 40px; display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 6px;
 }
 .lwp-root .lwp-pill:hover { color: #0891b2; background: rgba(255,255,255,.6); }
 .lwp-root .lwp-pill.active {
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
   color: #fff;
   box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
-  border-radius: 10px;
+  border-radius: 9px;
 }
 /* Dark mode — drop the light cyan gradient container for a translucent tonal
    panel; inactive pills read cyan-on-dark, active pill keeps the cyan fill. */
@@ -2154,7 +2159,8 @@ const SCOPED_CSS = `
   display: flex; align-items: center;
   background: #ffffff;
   border: 1.5px solid #a5f3fc;
-  border-radius: 14px; padding: 0 18px; gap: 10px;
+  box-sizing: border-box;
+  border-radius: 12px; padding: 0 18px; gap: 10px;
   /* Figma height/radius (50px / 14px). Kept as a capped flex item so it
    * still shrinks on narrow viewports instead of the design's fixed 380px.
    *
@@ -2165,7 +2171,7 @@ const SCOPED_CSS = `
    * column — the target asked for. That alignment is approximate by nature:
    * the table's columns are content-sized, so they shift with the data. The
    * cap is what keeps it from stretching the full 1217px of free space. */
-  flex: 1 1 420px; min-width: 220px; max-width: 686px; height: 50px;
+  flex: 1 1 420px; min-width: 220px; max-width: 686px; height: 40px;
   box-shadow: 0 2px 10px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
   transition: all .2s;
 }
@@ -3104,10 +3110,10 @@ const SCOPED_CSS = `
   .lwp-root .lwp-pre-table { flex-direction: column; align-items: stretch; gap: 8px; }
   /* Reset the flex basis: in the stacked (column) layout the 420px basis
    * applies to the VERTICAL axis and balloons the search into a tall empty
-   * box. Pin it back to a normal 50px-tall, full-width bar. */
-  .lwp-root .lwp-search { flex: 0 0 auto; width: 100%; max-width: none; height: 50px; }
+   * box. Pin it back to a normal 40px-tall, full-width bar. */
+  .lwp-root .lwp-search { flex: 0 0 auto; width: 100%; max-width: none; height: 40px; }
   .lwp-root .lwp-pills { width: 100%; justify-content: space-between; overflow-x: auto; }
-  .lwp-root .lwp-pill  { padding: 8px 14px; font-size: 12px; }
+  .lwp-root .lwp-pill  { padding: 0 14px; font-size: 12px; }
 }
 
 /* Large phone — actions become 2-column grid, pills shrink */
@@ -3121,7 +3127,7 @@ const SCOPED_CSS = `
     padding: 9px 12px; font-size: 11.5px;
     min-height: 38px; min-width: 0;
   }
-  .lwp-root .lwp-pill { padding: 7px 10px; font-size: 11px; }
+  .lwp-root .lwp-pill { padding: 0 10px; font-size: 11px; }
   .lwp-root .lwp-chip-strip { gap: 4px; }
   .lwp-root .lwp-chip { font-size: 10.5px; padding: 2px 4px 2px 8px; }
   .lwp-root .lwp-pagination { padding: 8px 12px; gap: 6px; }

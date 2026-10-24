@@ -551,7 +551,8 @@ const LDP_CSS = `
 .ldp-back-btn {
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
-  height: 40px; padding: 0 18px; border-radius: 12px; border: none;
+  box-sizing: border-box; height: 40px; min-height: 40px; max-height: 40px; flex-shrink: 0; align-self: center;
+  padding: 0 18px; border-radius: 12px; border: none; line-height: 1;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
   color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
   white-space: nowrap; cursor: pointer;
@@ -716,8 +717,8 @@ const LDP_CSS = `
   box-shadow: 0 2px 6px rgba(8,145,178,.30);
 }
 .ldp-view-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 12px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; padding: 0 12px; border-radius: 9px; box-sizing: border-box;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
   border: none; color: #fff;
   text-shadow: 0 1px 2px rgba(0,0,0,.15);
