@@ -18,6 +18,7 @@ import SelectedProducts, {
 } from './SelectedProducts';
 import BoxStickerModal from './BoxStickerModal';
 import type { ProductLine } from '../invoice-products';
+import { putId } from '../spi-api';
 
 const REMARKS = [
   { id: 'correct', cls: 'vti-rmk-correct', title: 'Correct Product', sub: 'As expected' },
@@ -282,7 +283,7 @@ export default function BoxDrawer({
           <div className="vti-dw-strip-accent" />
           <div className="vti-dw-strip-left">
             <StripItem label="Box ID" className="strip-boxid">
-              <span className="vti-dw-strip-val vti-dw-strip-id">{boxId}</span>
+              <span className="vti-dw-strip-val vti-dw-strip-id">{putId(boxId)}</span>
             </StripItem>
             <div className="vti-dw-strip-sep" />
             <StripItem label="Scenario"><span className="vti-dw-strip-val">{scenario}</span></StripItem>
@@ -384,12 +385,12 @@ export default function BoxDrawer({
                 own — the sticker ended up alone on a third line under the
                 buttons it belongs with. In here the whole toolbar wraps as
                 one group. */}
-          <Tooltip label={saved ? `Print the sticker for ${boxId}` : 'Save the box first — the sticker carries its box ID'}>
+          <Tooltip label={saved ? `Print the sticker for ${putId(boxId)}` : 'Save the box first — the sticker carries its box ID'}>
             <button type="button" className="vti-dw-sticker-btn" disabled={!saved}
               onClick={() => { if (saved) setStickerOpen(true); }}>
               {/* Once saved the button names the box it will print, so the id
                   on screen and the id on the label are visibly the same one. */}
-              <IcoBox size={13} stroke={2.3} /> {saved ? `${boxId} Sticker` : 'Box Sticker'}
+              <IcoBox size={13} stroke={2.3} /> {saved ? `${putId(boxId)} Sticker` : 'Box Sticker'}
             </button>
           </Tooltip>
           {onClose && variant === 'modal' && (
@@ -416,7 +417,7 @@ export default function BoxDrawer({
             </span>
             <div className="vti-dw-saved-text">
               <div className="vti-dw-saved-title">
-                <b>{boxId}</b> saved to Packed Boxes &amp; Products Details · {quantity} unit{quantity === 1 ? '' : 's'} packed
+                <b>{putId(boxId)}</b> saved to Packed Boxes &amp; Products Details · {quantity} unit{quantity === 1 ? '' : 's'} packed
               </div>
               <div className="vti-dw-saved-note">{savedBanner.note}</div>
             </div>
@@ -762,8 +763,8 @@ export default function BoxDrawer({
       {camOpen && (
         <Suspense fallback={null}>
           <CameraCaptureModal
-            subject={mixedCarton ? `${contentRows.length} products in ${boxId}` : line.spiName}
-            title={`Photograph ${boxId}`}
+            subject={mixedCarton ? `${contentRows.length} products in ${putId(boxId)}` : line.spiName}
+            title={`Photograph ${putId(boxId)}`}
             namePrefix={`box-${boxId.toLowerCase()}`}
             onAttach={files => { addPhotos(files); setCamOpen(false); }}
             onClose={() => setCamOpen(false)}

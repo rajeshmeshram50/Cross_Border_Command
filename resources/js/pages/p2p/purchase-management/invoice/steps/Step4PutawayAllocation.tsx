@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from '
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import {
-  spiApi, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
+  putId, spiApi, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
 } from '../spi-api';
 import type { ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
@@ -229,7 +229,7 @@ function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
           its label, and whether it has been put away. */}
       <div className="s4pkc__hd">
         <span className="s4pkc__ico"><IcoBoxSm size={15} /></span>
-        <span className="s4pkc__id">{b.code}</span>
+        <span className="s4pkc__id">{putId(b.code)}</span>
         <button
           type="button"
           className="s4pkc__stk"
@@ -630,7 +630,8 @@ const coreOf = (b: SpiBox | undefined) => {
 
 /** The note the packer left, if any. */
 const noteOf = (b: SpiBox | undefined): string | null => {
-  const t = String(b?.items?.[0]?.remark_note ?? '').trim();
+  const t = String(b?.items?.[0]?.remark_note ?? '')
+    .split(' · ').filter(p => !p.trim().startsWith('Cold chain')).join(' · ').trim();
   return t && t !== '—' ? t : null;
 };
 
@@ -1233,7 +1234,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     try {
       const row = await spiApi.putawayAssign(spiId, body);
       setAssigned({ boxId: box.id, spot, putawayId: row.id });
-      toast.success(`${box.code} allocated`, row.destination ? `Reserved at ${row.destination}.` : 'The location is reserved for this box.');
+      toast.success(`${putId(box.code)} allocated`, row.destination ? `Reserved at ${row.destination}.` : 'The location is reserved for this box.');
       setBoardTick(t => t + 1);
       setLcStep(2);
     } catch (e) {
@@ -1512,7 +1513,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       <div className="s4h-hero__ico"><IcoBoxSm size={21} /></div>
                       <div className="s4h-hero__txt">
                         <div className="s4h-hero__row">
-                          <span className="s4h-chip">{box.code}</span>
+                          <span className="s4h-chip">{putId(box.code)}</span>
                         </div>
                         <div className="s4h-hero__name">{box.name}</div>
                         <div className="s4h-hero__cat">
@@ -1772,7 +1773,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <div className="s4qm__hico"><IcoBoxSm /></div>
               <div className="s4qm__htx">
                 <div className="s4qm__t">Products in this Box</div>
-                <div className="s4qm__s">{box.code} · {box.scenario}</div>
+                <div className="s4qm__s">{putId(box.code)} · {box.scenario}</div>
               </div>
               <button type="button" className="s4qm__x" onClick={() => setShowProducts(false)} aria-label="Close">
                 &times;
@@ -1906,7 +1907,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     </span>
                   </span>
                 )}
-                <span className="s4wz-ctx__i"><IcoBoxSm size={13} /><span><em>Box ID</em><b>{box.code}</b></span></span>
+                <span className="s4wz-ctx__i"><IcoBoxSm size={13} /><span><em>Box ID</em><b>{putId(box.code)}</b></span></span>
                 <span className="s4wz-ctx__i">
                   <IcoFlag /><span>
                     <em>{spotNow.kind === 'zone' ? 'Zone' : 'Shelf'}</em>
@@ -2006,12 +2007,12 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 const steps: Array<[string, string]> = methodPick === 'zebra'
                   ? [
                       ['Task created', 'Assigned to the warehouse Zebra queue'],
-                      ['Scan Box QR', `Operator scans the ${box.code} sticker`],
+                      ['Scan Box QR', `Operator scans the ${putId(box.code)} sticker`],
                       [`Scan ${spotNow.kind === 'zone' ? 'Zone' : 'Shelf'} QR`, `Operator scans ${shelfCode} at the location`],
                       ['Putaway locked', 'Location confirmed automatically'],
                     ]
                   : [
-                      ['Box already placed', `${box.code} is physically at ${shelfCode}`],
+                      ['Box already placed', `${putId(box.code)} is physically at ${shelfCode}`],
                       ['Consent recorded', 'Your confirmation is logged on this SPI'],
                       ['Allocation generated', `${methodRef.alloc} is issued`],
                       ['Putaway completed', `${spotNow.kind === 'zone' ? 'Zone' : 'Shelf'} ${shelfCode} is locked for this box`],
@@ -2026,7 +2027,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         <span className="s4pm-route__ic s4pm-route__ic--box"><IcoBoxSm size={17} /></span>
                         <div>
                           <span className="s4pm-route__k">Box</span>
-                          <b className="s4pm-route__v">{box.code}</b>
+                          <b className="s4pm-route__v">{putId(box.code)}</b>
                         </div>
                       </div>
                       <span className="s4pm-route__go" aria-hidden><IcoArrow /></span>
@@ -2088,11 +2089,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         <b>This is final.</b>{' '}
                         {methodPick === 'zebra' ? (
                           <>Once submitted, {spotNow.kind === 'zone' ? 'zone' : 'shelf'} <b>{shelfCode}</b> is
-                          reserved for <b>{box.code}</b> and the box is placed only after both QR scans are
+                          reserved for <b>{putId(box.code)}</b> and the box is placed only after both QR scans are
                           received on the Zebra handheld.</>
                         ) : (
                           <>Once confirmed, {spotNow.kind === 'zone' ? 'zone' : 'shelf'} <b>{shelfCode}</b> is
-                          locked for <b>{box.code}</b> — it <b>cannot be undone</b> and the box location{' '}
+                          locked for <b>{putId(box.code)}</b> — it <b>cannot be undone</b> and the box location{' '}
                           <b>cannot be changed</b>. No Zebra scan will be requested.</>
                         )}
                       </p>
@@ -2106,7 +2107,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     <label className={`s4pm-ok s4pm-ok--${methodPick}${methodOk ? ' is-on' : ''}`}>
                       <input type="checkbox" checked={methodOk} onChange={e => setMethodOk(e.target.checked)} />
                       <span>
-                        I confirm that <b>{box.code}</b> is{' '}
+                        I confirm that <b>{putId(box.code)}</b> is{' '}
                         <u>{methodPick === 'zebra' ? 'ready to be scanned' : 'already physically placed'}</u> at{' '}
                         {chain}
                         {methodPick === 'zebra'
@@ -2198,7 +2199,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 <div className="s4qm__s">{scanTask.id} &middot; {scanSteps} / 2 scans received</div>
               </div>
               <div className="s4wz-ctx">
-                <span className="s4wz-ctx__i"><IcoBoxSm size={13} /><span><em>Box ID</em><b>{box.code}</b></span></span>
+                <span className="s4wz-ctx__i"><IcoBoxSm size={13} /><span><em>Box ID</em><b>{putId(box.code)}</b></span></span>
                 {spotNow && (
                   <span className="s4wz-ctx__i">
                     <IcoFlag /><span>
@@ -2224,7 +2225,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <ul>
                     <li>The task is removed from the warehouse Zebra queue.</li>
                     <li>
-                      {box.code} stays allocated to{' '}
+                      {putId(box.code)} stays allocated to{' '}
                       <b>{[warehouseInfo?.code || warehouse, locCode].filter(Boolean).join(' › ')}</b>
                       {' '}&mdash; only the confirmation method is reset.
                     </li>
@@ -2240,7 +2241,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <span className="s4pm-num s4pm-num--manual">Option 02</span>
                   <b>Manual Confirmation</b>
                   <p>
-                    If the Zebra handheld is unavailable, confirm that {box.code} is already
+                    If the Zebra handheld is unavailable, confirm that {putId(box.code)} is already
                     physically placed at {locCode} and complete the putaway now.
                   </p>
                   <div className="s4ct-alt__chips">
@@ -2315,7 +2316,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   facts the decision depends on, so neither has to be
                   remembered from the screen behind the dialog. */}
               <div className="s4wz-ctx">
-                <span className="s4wz-ctx__i"><IcoPin /><span><em>Box ID</em><b>{box.code}</b></span></span>
+                <span className="s4wz-ctx__i"><IcoPin /><span><em>Box ID</em><b>{putId(box.code)}</b></span></span>
                 {warehouse && (
                   <span className="s4wz-ctx__i"><IcoWarehouse /><span><em>Warehouse</em><b>{warehouse}</b></span></span>
                 )}
@@ -2418,7 +2419,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             <div className="s4qm__hd">
               <div className="s4qm__hico"><IcoBoxSm size={18} /></div>
               <div className="s4qm__htx">
-                <div className="s4pd__eyebrow">Product details · {box.code}</div>
+                <div className="s4pd__eyebrow">Product details · {putId(box.code)}</div>
                 <div className="s4qm__t">{detail.name}</div>
               </div>
               <button type="button" className="s4qm__x" onClick={() => setDetailIdx(null)} aria-label="Close">

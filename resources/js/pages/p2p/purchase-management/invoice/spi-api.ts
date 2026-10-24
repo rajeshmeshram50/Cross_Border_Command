@@ -330,6 +330,9 @@ export type PutawayLocations = {
   floorPick?: PutawayFloorZone | null;
 };
 
+export const putId = (code: string | null | undefined): string =>
+  !code ? '' : /^B-\d+$/i.test(code) ? `PUT-${code}` : code;
+
 export const spiApi = {
   boxes: (spiId: number) =>
     call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`),

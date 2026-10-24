@@ -4,6 +4,7 @@ import Tooltip from '../../../../../components/ui/Tooltip';
 import { IcoBox, IcoPencil, IcoPrinter } from '../../../icons';
 import { truncateName, NAME_MAX, type ProductLine } from '../invoice-products';
 import BoxStickerModal from './BoxStickerModal';
+import { putId } from '../spi-api';
 
 /* Tone per label. Keyed by the resolved text rather than the stored code, so
    the table needs nothing from the save payload beyond what it already
@@ -233,15 +234,15 @@ export default function PackedProducts({
                   {/* The id is the way back in: pressing it reopens the box. */}
                   <td className="invf-c-box">
                     <Tooltip label={onEditBox
-                      ? `Open ${b.code} — its size, weight, flags and what is inside it`
-                      : `Carton ${b.code}`}>
+                      ? `Open ${putId(b.code)} — its size, weight, flags and what is inside it`
+                      : `Carton ${putId(b.code)}`}>
                       {onEditBox ? (
                         <button
                           type="button" className="vti-code invf-boxid-btn"
                           onClick={() => onEditBox(b.code)}
-                          aria-label={`Open box ${b.code}`}
-                        >{b.code}</button>
-                      ) : <span className="vti-code">{b.code}</span>}
+                          aria-label={`Open box ${putId(b.code)}`}
+                        >{putId(b.code)}</button>
+                      ) : <span className="vti-code">{putId(b.code)}</span>}
                     </Tooltip>
                     {b.subLabel && <div className="invf-pb-sub">{b.subLabel}</div>}
                   </td>
@@ -298,24 +299,24 @@ export default function PackedProducts({
                   <td className="invf-c-acts">
                     <span className="vti-packed-acts">
                       {onEditBox && (
-                        <Tooltip label={`Edit ${b.code} — its size, weight and flags`}>
+                        <Tooltip label={`Edit ${putId(b.code)} — its size, weight and flags`}>
                           <button
                             type="button"
                             className={`vti-btn-single vti-btn-single--ico vti-btn-single--edit${open ? ' is-on' : ''}`}
                             onClick={() => onEditBox(b.code)}
-                            aria-label={`Edit ${b.code}`}
+                            aria-label={`Edit ${putId(b.code)}`}
                           ><IcoPencil size={14} /></button>
                         </Tooltip>
                       )}
                       {/* The label names the box it prints, so what is on
                           screen and what comes out of the printer are
                           visibly the same carton. */}
-                      <Tooltip label={`Print the sticker for ${b.code}`}>
+                      <Tooltip label={`Print the sticker for ${putId(b.code)}`}>
                         <button
                           type="button" className="invf-pb-sticker"
                           onClick={() => setSticker(b)}
-                          aria-label={`Print the sticker for ${b.code}`}
-                        ><IcoPrinter size={14} /><span className="invf-pb-stkid">{b.code}</span> Sticker</button>
+                          aria-label={`Print the sticker for ${putId(b.code)}`}
+                        ><IcoPrinter size={14} /><span className="invf-pb-stkid">{putId(b.code)}</span> Sticker</button>
                       </Tooltip>
                     </span>
                   </td>

@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { IcoCheck, IcoDownload, IcoTag, IcoX } from '../../../icons';
 import type { BoxContent } from './SelectedProducts';
-import { spiApi } from '../spi-api';
+import { putId, spiApi } from '../spi-api';
 import { PoApiError } from '../../order/api/po-api';
 import { useToast } from '../../../../../contexts/ToastContext';
 
@@ -58,7 +58,7 @@ export default function BoxStickerModal({
   const spiNo = spiNumber || ctx?.spiCode || '';
   const [busy, setBusy] = useState<'pdf' | 'print' | null>(null);
 
-  const notSaved = () => toast.warning('Save the box first', `${boxId} needs to be saved before its sticker can be produced.`);
+  const notSaved = () => toast.warning('Save the box first', `${putId(boxId)} needs to be saved before its sticker can be produced.`);
   const failed = (e: unknown) => toast.error('Could not get the sticker',
     e instanceof PoApiError ? e.firstError : 'Please try again.');
 
@@ -112,7 +112,7 @@ export default function BoxStickerModal({
             <div>
               <div className="spi-mdl-title" id="invf-stk-title">Temporary Putaway Sticker</div>
               <div className="spi-mdl-sub">
-                {boxId} &nbsp;·&nbsp; {scenario} &nbsp;·&nbsp;
+                {putId(boxId)} &nbsp;·&nbsp; {scenario} &nbsp;·&nbsp;
                 <span className="invf-stk__temp"><IcoCheck size={9} stroke={3} /> TEMPORARY</span>
               </div>
             </div>
@@ -131,7 +131,7 @@ export default function BoxStickerModal({
               </div>
               <div className="invf-stk__strip-right">
                 <div className="invf-stk__strip-lbl">Box No.</div>
-                <div className="invf-stk__strip-box">{boxId}</div>
+                <div className="invf-stk__strip-box">{putId(boxId)}</div>
               </div>
             </div>
 

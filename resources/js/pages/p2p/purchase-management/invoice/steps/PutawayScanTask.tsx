@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { putId } from '../spi-api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * STAGE 04 · STEP 03 — the Zebra scan task.
@@ -128,7 +129,7 @@ export default function PutawayScanTask({
   /* The failure says which label was read and what was expected - "invalid"
      would send someone back to the aisle with nothing to look for. */
   const why = qr.state === 'fail'
-    ? `This label belongs to a different box. Expected ${box.code}.`
+    ? `This label belongs to a different box. Expected ${putId(box.code)}.`
     : sh.state === 'fail'
       ? `Wrong shelf: it resolves to ${[spot.warehouse, spot.zone, spot.rack, 'SH-101'].filter(Boolean).join(' › ')}. `
         + `Assigned: ${[spot.warehouse, spot.zone, spot.rack, spot.shelf].filter(Boolean).join(' › ')}. `
@@ -154,7 +155,7 @@ export default function PutawayScanTask({
   /** One scan leg. `locked` is scan 02 before scan 01 has passed. */
   const leg = (n: '01' | '02', title: string, leg: Leg, locked: boolean, set: (l: Leg) => void) => {
     const isBox = n === '01';
-    const expectedId = isBox ? box.code : spot.shelf;
+    const expectedId = isBox ? putId(box.code) : spot.shelf;
     const dest = spot.kind === 'zone' ? 'zone' : 'shelf';
     const Dest = spot.kind === 'zone' ? 'Zone' : 'Shelf';
     return (
@@ -240,7 +241,7 @@ export default function PutawayScanTask({
             {spiCode && (
               <span className="s4wz-ctx__i"><IcoDoc /><span><em>SPI No.</em><b>{spiCode}</b></span></span>
             )}
-            <span className="s4wz-ctx__i"><IcoQr size={13} /><span><em>Box ID</em><b>{box.code}</b></span></span>
+            <span className="s4wz-ctx__i"><IcoQr size={13} /><span><em>Box ID</em><b>{putId(box.code)}</b></span></span>
             <span className="s4wz-ctx__i">
               <IcoShelf size={13} />
               <span><em>{spot.kind === 'zone' ? 'Zone ID' : 'Shelf ID'}</em><b>{spot.shelf}</b></span>
@@ -275,7 +276,7 @@ export default function PutawayScanTask({
                 behind it, none of which the design shows. Rack and Shelf stay
                 for a direct placement, struck as Not applicable. */}
             <div className="s4zt-grid">
-              <F k="Box" v={box.code} />
+              <F k="Box" v={putId(box.code)} />
               <F k="Warehouse" v={spot.warehouse || '—'} />
               <F k="Zone" v={<span className="s4zt-zone">{spot.zone}</span>} />
               {spot.kind === 'zone' ? <>
@@ -345,7 +346,7 @@ export default function PutawayScanTask({
                 <div>
                   <b>Putaway allocation confirmed</b>
                   <span>
-                    {box.code} is locked at {chain.join(' › ')}
+                    {putId(box.code)} is locked at {chain.join(' › ')}
                     {allocRef && <> &middot; {allocRef}</>}
                   </span>
                 </div>

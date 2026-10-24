@@ -13,6 +13,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
+import { putId } from '../spi-api';
 
 const IcoTag = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -84,7 +85,7 @@ export default function PutawayBoxSticker({
             <div>
               <div className="vsm-ht">Temporary Putaway Sticker</div>
               <div className="vsm-hs">
-                <span>{boxId}</span><span className="vsm-hsd" />
+                <span>{putId(boxId)}</span><span className="vsm-hsd" />
                 <span>{scenario}</span><span className="vsm-hsd" />
                 <span className="vsm-hb"><IcoTickSm /> Temporary</span>
               </div>
@@ -98,7 +99,7 @@ export default function PutawayBoxSticker({
           <div className="vsm-card">
             <div className="vsm-strip">
               <div className="vsm-sl"><span className="vsm-ll">SPI Number</span><span className="vsm-sv">{spiNumber}</span></div>
-              <div className="vsm-sr"><span className="vsm-ll">Box No.</span><span className="vsm-bv">{boxId}</span></div>
+              <div className="vsm-sr"><span className="vsm-ll">Box No.</span><span className="vsm-bv">{putId(boxId)}</span></div>
             </div>
             <div className="vsm-info">
               <div className="vsm-pn">{product}</div>
