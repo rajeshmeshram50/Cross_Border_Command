@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { PutawayFloorZone, PutawayLocations, PutawayRack, PutawayShelf, PutawayZone } from '../spi-api';
+import { putId, type PutawayFloorZone, type PutawayLocations, type PutawayRack, type PutawayShelf, type PutawayZone } from '../spi-api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * STAGE 04 · STEP 03 — Confirm Putaway Allocation.
@@ -187,14 +187,14 @@ export default function PutawayConfirmPlacement({
               <div className="s4c3-qr">{qr}</div>
               <div className="s4c3-hero__tx">
                 <span className="s4c3-k">Box ID</span>
-                <div className="s4c3-id">{box.code}</div>
+                <div className="s4c3-id">{putId(box.code)}</div>
                 <div className="s4c3-sub">
                   {box.scenarioNo} · {box.scenario}{box.modeLabel && <> · <b>{box.modeLabel}</b></>}
                 </div>
                 <div className="s4c3-meta">
                   {box.packedOn && <span><IcoCal /> Packed {box.packedOn}</span>}
                   <button type="button" className="s4c3-stk" onClick={onSticker}>
-                    <IcoPrn /> {box.code} Sticker
+                    <IcoPrn /> {putId(box.code)} Sticker
                   </button>
                 </div>
               </div>
@@ -309,7 +309,7 @@ export default function PutawayConfirmPlacement({
             <div className="s4zb-tx">
               <b>Putaway Completed</b>
               <p>
-                {box.code} is locked at <code>{code}</code>
+                {putId(box.code)} is locked at <code>{code}</code>
                 {placedVia?.allocation && <> · Allocation <code>{placedVia.allocation}</code></>}
                 {' · '}{placedVia ? `Verified via ${placedVia.via}` : 'Manual confirmation'}.
               </p>
@@ -324,7 +324,7 @@ export default function PutawayConfirmPlacement({
                   out where in the building, which is half the address. */}
               <p>
                 Task <code>{scan.id}</code> created for{' '}
-                <code>{[box.code, warehouseCode, code].filter(Boolean).join(' → ')}</code>. The box is
+                <code>{[putId(box.code), warehouseCode, code].filter(Boolean).join(' → ')}</code>. The box is
                 placed only after the warehouse operator scans the <b>Box QR</b> and the{' '}
                 <b>{isZone ? 'Zone' : 'Shelf'} QR</b> with a Zebra handheld.
               </p>

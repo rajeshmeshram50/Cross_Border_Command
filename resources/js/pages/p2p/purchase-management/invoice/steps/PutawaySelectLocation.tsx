@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { PutawayFloorZone, PutawayLocations, PutawayShelf, PutawayZone } from '../spi-api';
+import { putId, type PutawayFloorZone, type PutawayLocations, type PutawayShelf, type PutawayZone } from '../spi-api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * STAGE 04 · STEP 02 — Select Putaway Location.
@@ -567,7 +567,7 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
           key={z.id}
           className={`s4cn is-av${on ? ' is-on' : ''}`}
           role="radio" tabIndex={0} aria-checked={on}
-          title={`Put ${box.code} in ${z.code}`}
+          title={`Put ${putId(box.code)} in ${z.code}`}
           onClick={() => onSpot(on ? null : z.id)}
           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSpot(on ? null : z.id); } }}
         >
