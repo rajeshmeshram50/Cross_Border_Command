@@ -528,8 +528,6 @@
 .td-form-error-list { margin:0; padding-left:16px; display:flex; flex-direction:column; gap:2px; }
 .td-form-error-list li { line-height:1.4; }
 .td-char-count { font-size:10px; color:#94a3b8; align-self:flex-end; margin-top:2px; }
-.td-contact-row { display:flex; gap:6px; align-items:stretch; }
-.td-cc-select { flex:0 0 78px; width:78px; padding-right:6px; background-position:right 6px center; }
 /* Read-only reminder "view" modal */
 .td-view-modal { max-width: 560px; }
 .td-view-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px 16px; }
