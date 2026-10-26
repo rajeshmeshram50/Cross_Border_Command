@@ -7,6 +7,7 @@ use App\Models\P2p\SpiBox;
 use App\Models\P2p\SpiBoxAttachment;
 use App\Models\P2p\SpiBoxItem;
 use App\Models\P2p\SupplierInvoice;
+use App\Models\P2p\SupplierInvoiceItem;
 use App\Services\Inventory\StickerKey;
 use App\Services\P2p\SupplierInvoiceService;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -48,8 +49,25 @@ class SpiBoxController extends Controller
             $this->tenantUser($request);
             $spi = $this->findSpi($id);
 
-            $boxes = $spi->boxes()->with(['items', 'attachments'])->orderBy('box_code')->get()
-                ->map(fn ($b) => $b->toArray() + ['volumetric_weight_kg' => $b->volumetricWeightKg()]);
+            $boxRows = $spi->boxes()->with(['items', 'attachments'])->orderBy('box_code')->get();
+
+            /* supplier_invoice_item_id => uom_id, so each box item can carry
+               the unit of the quantity it holds. The id only; `uoms` below
+               holds the title. */
+            $uomOfLine = collect($this->invoiceItemMap($boxRows))
+                ->mapWithKeys(fn ($l) => [(int) $l['supplier_invoice_item_id'] => $l['uom_id']]);
+
+            $boxes = $boxRows->map(function ($b) use ($uomOfLine) {
+                $arr = $b->toArray();
+
+                $arr['items'] = collect($arr['items'] ?? [])
+                    ->map(fn ($i) => $i + [
+                        'uom_id' => $uomOfLine[(int) ($i['supplier_invoice_item_id'] ?? 0)] ?? null,
+                    ])
+                    ->all();
+
+                return $arr + ['volumetric_weight_kg' => $b->volumetricWeightKg()];
+            });
 
             $rows = $this->svc->packingSummary($id);
 
@@ -57,6 +75,12 @@ class SpiBoxController extends Controller
 
             return response()->json(['status' => true, 'data' => [
                 'boxes'           => $boxes,
+                /* What each box item IS, keyed by the supplier_invoice_item_id
+                   the items already carry. Additive: `boxes` keeps its exact
+                   shape, so no existing caller can be broken by it. */
+                'invoice_items'   => $this->invoiceItemMap($boxRows),
+                // id => unit, joined from invoice_items[].uom_id
+                'uoms'            => $this->uomMap($boxRows),
                 'packing_summary' => $rows,
                 'totals'          => $this->svc->packingTotals($rows) + ['boxes' => $boxes->count()],
             ]], 200);
@@ -350,6 +374,108 @@ class SpiBoxController extends Controller
         ]);
 
         return response()->json(['status' => true, 'data' => $box->attachments()->get()], 200);
+    }
+
+    /**
+     * supplier_invoice_item_id => what that line actually is.
+     *
+     * TWO units come back, and they are not the same fact:
+     *   uom      the string stored on the invoice line — what the screens
+     *            print today, and what was agreed with the supplier
+     *   uom_id   the product master's unit, with its title and short code
+     *            resolved — the canonical one
+     * They can disagree. The line's string is copied at invoicing and the
+     * master can be edited afterwards, so a caller that shows the line's value
+     * with the master's beside it can notice rather than guess.
+     *
+     * Two queries whatever the box count — the lines, then their products and
+     * units. No boxes costs none.
+     */
+    private function invoiceItemMap($boxes): array
+    {
+        return $this->resolveLines($boxes)['items'];
+    }
+
+    /**
+     * id => { title, short_code, unit_type } for every unit the boxes touch.
+     *
+     * Normalised out of invoice_items on purpose: a dozen lines on one
+     * invoice commonly share two or three units, and the id is what joins
+     * them. COALESCE(short_code, title) is the rule the PO-lines endpoint
+     * prints by (PurchaseOrderController:1456), so a caller rendering
+     * short_code with title as the fallback matches the existing screens.
+     */
+    private function uomMap($boxes): array
+    {
+        return $this->resolveLines($boxes)['uoms'];
+    }
+
+    /** Both maps from one pass — memoised so a request resolves them once. */
+    private array $linesCache = [];
+
+    private function resolveLines($boxes): array
+    {
+        $key = spl_object_id($boxes);
+        if (isset($this->linesCache[$key])) return $this->linesCache[$key];
+
+        $built = $this->buildLineMaps($boxes);
+
+        return $this->linesCache[$key] = $built;
+    }
+
+    private function buildLineMaps($boxes): array
+    {
+        $ids = $boxes
+            ->flatMap(fn ($b) => $b->items->pluck('supplier_invoice_item_id'))
+            ->filter()->unique()->values();
+
+        if ($ids->isEmpty()) return ['items' => [], 'uoms' => []];
+
+        $lines = SupplierInvoiceItem::whereIn('id', $ids)
+            ->with([
+                'product:id,product_code,name,generic_name,uom_id',
+                'product.uom:id,title,short_code,unit_type',
+            ])
+            ->get(['id', 'supplier_invoice_id', 'line_no', 'product_id',
+                   'description', 'hsn_code', 'uom', 'qty_spi', 'extra_qty']);
+
+        $items = $lines->mapWithKeys(fn (SupplierInvoiceItem $l) => [
+            (string) $l->id => [
+                'supplier_invoice_item_id' => (int) $l->id,
+                'line_no'        => $l->line_no === null ? null : (int) $l->line_no,
+                'description'    => $l->description,
+                'hsn_code'       => $l->hsn_code,
+                'qty_spi'        => $l->qty_spi === null ? null : (float) $l->qty_spi,
+
+                /* The line's own unit column. NULL on every row in this
+                   database, kept so a caller can tell it was never set rather
+                   than assume the product's unit was the invoiced one. */
+                'uom'            => $l->uom,
+
+                'product_id'     => $l->product_id === null ? null : (int) $l->product_id,
+                'product_code'   => $l->product?->product_code,
+                'product_name'   => $l->product?->name ?? $l->product?->generic_name,
+
+                /* The id only. The unit itself is in the `uoms` object beside
+                   this one — several lines usually share a unit, and repeating
+                   its title on each of them is the same string three times. */
+                'uom_id'         => $l->product?->uom_id === null ? null : (int) $l->product->uom_id,
+            ],
+        ])->all();
+
+        $uoms = $lines
+            ->map(fn (SupplierInvoiceItem $l) => $l->product?->uom)
+            ->filter()
+            ->unique('id')
+            ->mapWithKeys(fn ($u) => [(string) $u->id => [
+                'id'         => (int) $u->id,
+                'title'      => $u->title,
+                'short_code' => $u->short_code,
+                'unit_type'  => $u->unit_type,
+            ]])
+            ->all();
+
+        return ['items' => $items, 'uoms' => $uoms];
     }
 
     private function storePhotos(Request $request, SpiBox $box, int $userId): int
