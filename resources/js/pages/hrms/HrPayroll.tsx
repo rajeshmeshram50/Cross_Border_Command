@@ -1178,7 +1178,6 @@ export default function HrPayroll() {
 
   /* The payroll sheet. Nothing scrolls to it any more — the header's View
      button is gone — but the ref stays as the sheet's anchor. */
-  const sheetRef = useRef<HTMLDivElement | null>(null);
 
   const downloadPayslipPdf = async (row: PayrollRow) => {
     if (!row.payslip_id) {
@@ -2078,6 +2077,19 @@ export default function HrPayroll() {
 
   /* Department / Status pickers + result count — shared by the three tabs that
      list payroll rows (Salary Setup renders the roster and has no filters). */
+  /* The four tabs, in the table's own toolbar. They used to be a rail above
+     the card, which put the control one block away from the thing it
+     switches and left the header repeating the active tab's name. */
+  const payrollTabs = useMemo(() => ([
+    { key: 'processing', label: 'Payroll Processing', icon: 'ri-money-rupee-circle-line', count: loading ? undefined : counts.totalEmployees },
+    { key: 'biometric',  label: 'Biometric Input',    icon: 'ri-fingerprint-line',        count: loading ? undefined : counts.totalEmployees },
+    { key: 'report',     label: 'Salary Report',      icon: 'ri-file-chart-line',         count: loading ? undefined : counts.totalEmployees },
+    /* The roster's LENGTH, not the not-yet-configured subset (#141): the tab
+       lists every employee in the cycle, so counting only those without a
+       structure made the badge contradict the rows underneath it. */
+    { key: 'salary',     label: 'Salary Setup',       icon: 'ri-money-rupee-circle-line', count: rosterLoading ? undefined : roster.length },
+  ]), [counts.totalEmployees, roster.length, loading, rosterLoading]);
+
   const payrollToolbarActions = (
     <>
       <div className="d-flex align-items-center gap-2">
@@ -2459,7 +2471,7 @@ export default function HrPayroll() {
           than in CSS, same as the Employees and Onboarding hubs.
 
           rec-page-kpis is what makes these the PAGE-level tiles the rest of
-          HRMS uses — 14px radius, 11/15 padding, an 82px floor, a 24px value
+          HRMS uses — 14px radius, 11px padding, an 82px floor, a 24px value
           and a 38px icon tile. The bare .rec-kpi-card is the compact variant
           Attendance puts inside its detail pane, which is a size smaller. */}
       <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
@@ -2512,49 +2524,64 @@ export default function HrPayroll() {
       </Row>
         </div>
 
-      <Row className="g-2 align-items-center mb-3">
-        <Col xs={12}>
-          <div ref={sheetRef} className="dt-tabrail hr-dt" data-accent="violet">
-            <div className="dt-tabs" role="tablist">
-              {[
-                { key: 'processing' as const, label: 'Payroll Processing', icon: 'ri-money-rupee-circle-line', count: counts.totalEmployees },
-                { key: 'biometric'  as const, label: 'Biometric Input',    icon: 'ri-fingerprint-line',         count: counts.totalEmployees },
-                { key: 'report'     as const, label: 'Salary Report',      icon: 'ri-file-chart-line',          count: counts.totalEmployees },
-                /* The roster's LENGTH, not the not-yet-configured subset (#141).
-                   The tab lists every employee in the cycle, so counting only
-                   those without a structure made the badge contradict the rows
-                   underneath it. Every row already says which it is, offering
-                   "Set Salary" when there is no structure and "Revise" when
-                   there is. */
-                { key: 'salary'     as const, label: 'Salary Setup',       icon: 'ri-money-rupee-circle-line',  count: roster.length },
-              ].map(t => {
-                const on = tab === t.key;
-                return (
-                  <button
-                    key={t.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={on}
-                    className={`dt-tab ${on ? 'on' : 'off'}`}
-                    onClick={() => setTab(t.key)}
-                  >
-                    <i className={t.icon} />
-                    {t.label}
-                    <span className="dt-tab-count">
-                      {/* Shimmer rather than a stale number: these counts come
-                          from the cycle being fetched, so during a switch they
-                          were still showing the PREVIOUS month's totals. */}
-                      {(t.key === 'salary' ? rosterLoading : loading)
-                        ? <Shimmer height={11} width={18} radius={6} />
-                        : t.count}
-                    </span>
-                  </button>
-                );
-              })}
+      {/* The active tab's own KPI cards, above the rail rather than under
+          it: two card rows split by the tab strip read as two separate
+          summaries when they are one. */}
+      {tab === 'biometric' && (
+      <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
+        {[
+          { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   strip: '#10b981', icon: 'ri-user-follow-line' },
+          { key: 'missingPunchCases', label: 'Missing Punch Cases', n: counts.missingPunchCases, strip: '#f06548', icon: 'ri-error-warning-line' },
+          { key: 'paidLeaveCases',    label: 'Paid Leave Cases',    n: counts.paidLeaveCases,    strip: '#3b82f6', icon: 'ri-calendar-check-line' },
+          { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  strip: '#f59e0b', icon: 'ri-calendar-close-line' },
+        ].map(t => (
+          <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
+            {/* The hero KPI card, not a tile of its own. */}
+            <div className="rec-kpi-card">
+              <span className="rec-kpi-strip" style={{ background: t.strip }} />
+              <div className="rec-kpi-text">
+                <span className="rec-kpi-label">{t.label}</span>
+                <span className="rec-kpi-num">
+                  {loading ? <Shimmer height={22} width={60} radius={6} /> : t.n}
+                </span>
+              </div>
+              <span className="rec-kpi-icon" style={{ background: t.strip }}>
+                <i className={t.icon} />
+              </span>
             </div>
-          </div>
-        </Col>
+          </Col>
+        ))}
       </Row>
+      )}
+      {tab === 'report' && (
+      <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
+        {[
+          { key: 'totalGross',  label: 'Total Gross',    n: counts.totalGross,  strip: '#10b981', icon: 'ri-money-rupee-circle-line' },
+          { key: 'totalNetPay', label: 'Total Net Pay',  n: counts.totalNetPay, strip: '#3b82f6', icon: 'ri-wallet-3-line' },
+          { key: 'totalPf',     label: 'Total PF',       n: counts.totalPf,     strip: '#7c5cfc', icon: 'ri-safe-2-line' },
+          { key: 'totalTds',    label: 'Total TDS',      n: counts.totalTds,    strip: '#f59e0b', icon: 'ri-percent-line' },
+          { key: 'totalLop',    label: 'Total LOP Ded.', n: counts.totalLop,    strip: '#f06548', icon: 'ri-indeterminate-circle-line' },
+        ].map(t => (
+          <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
+            <div className="rec-kpi-card">
+              <span className="rec-kpi-strip" style={{ background: t.strip }} />
+              <div className="rec-kpi-text">
+                <span className="rec-kpi-label">{t.label}</span>
+                {/* 19px against the count cards' 22 — a full ₹ figure
+                    is far wider and wraps at the larger size. */}
+                <span className="rec-kpi-num" style={{ fontSize: 19 }}>
+                  {loading ? <Shimmer height={19} width={80} radius={6} /> : `₹${fmtINR(t.n)}`}
+                </span>
+              </div>
+              <span className="rec-kpi-icon" style={{ background: t.strip }}>
+                <i className={t.icon} />
+              </span>
+            </div>
+          </Col>
+        ))}
+      </Row>
+      )}
+
         {/* Flex remainder. The tables carry `fitToViewport`, which measures
             from their own top down to the footer — inside this box that is
             exactly the space left under the tab rail, so the card fills it and
@@ -2588,8 +2615,9 @@ export default function HrPayroll() {
             <DataTable<PayrollRow>
               data={filtered}
               columns={processingColumns}
-              title="Payroll Processing"
-              subtitle="Earnings, deductions and net pay for this cycle"
+              tabs={payrollTabs}
+              activeTab={tab}
+              onTabChange={k => setTab(k as typeof tab)}
               className="pay-tbl-run"
               /* Percentage, not the default 56px. Every other column here is a
                  percentage of the table, so a pixel-width serial column made
@@ -2637,49 +2665,19 @@ export default function HrPayroll() {
 
           {tab === 'biometric' && (
             <>
-              <div
-                className="pay-banner d-flex align-items-center gap-2 mb-3"
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 10,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                }}
-              >
+              {/* Back on its own line: the table header is the tab rail now,
+                  so there is no title block to carry this. */}
+              <div className="pay-banner d-flex align-items-center gap-2 mb-3" style={{ padding: '10px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 600 }}>
                 <i className="ri-information-line" style={{ fontSize: 15 }} />
                 Read-only · Source data from Attendance · {cycle.label} · {periodMeta?.working_days || 26} working days
               </div>
 
-              <Row className="g-1 mb-3 align-items-stretch">
-                {[
-                  { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   strip: '#10b981', icon: 'ri-user-follow-line' },
-                  { key: 'missingPunchCases', label: 'Missing Punch Cases', n: counts.missingPunchCases, strip: '#f06548', icon: 'ri-error-warning-line' },
-                  { key: 'paidLeaveCases',    label: 'Paid Leave Cases',    n: counts.paidLeaveCases,    strip: '#3b82f6', icon: 'ri-calendar-check-line' },
-                  { key: 'unpaidLeaveCases',  label: 'Unpaid Leave Cases',  n: counts.unpaidLeaveCases,  strip: '#f59e0b', icon: 'ri-calendar-close-line' },
-                ].map(t => (
-                  <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
-                    {/* The hero KPI card, not a tile of its own. */}
-                    <div className="rec-kpi-card">
-                      <span className="rec-kpi-strip" style={{ background: t.strip }} />
-                      <div className="rec-kpi-text">
-                        <span className="rec-kpi-label">{t.label}</span>
-                        <span className="rec-kpi-num">
-                          {loading ? <Shimmer height={22} width={60} radius={6} /> : t.n}
-                        </span>
-                      </div>
-                      <span className="rec-kpi-icon" style={{ background: t.strip }}>
-                        <i className={t.icon} />
-                      </span>
-                    </div>
-                  </Col>
-                ))}
-              </Row>
-
               <DataTable<PayrollRow>
                 data={filtered}
                 columns={biometricColumns}
-                title="Biometric Input"
-                subtitle="Attendance the cycle is computed from — read-only"
+                tabs={payrollTabs}
+                activeTab={tab}
+                onTabChange={k => setTab(k as typeof tab)}
                 /* Percentage, matching the other three tabs — the 56px default
                    would put a pixel column into a percentage budget, which is
                    the layout drift fixed in #66. */
@@ -2709,38 +2707,12 @@ export default function HrPayroll() {
 
           {tab === 'report' && (
             <>
-              <Row className="g-1 mb-3 align-items-stretch">
-                {[
-                  { key: 'totalGross',  label: 'Total Gross',    n: counts.totalGross,  strip: '#10b981', icon: 'ri-money-rupee-circle-line' },
-                  { key: 'totalNetPay', label: 'Total Net Pay',  n: counts.totalNetPay, strip: '#3b82f6', icon: 'ri-wallet-3-line' },
-                  { key: 'totalPf',     label: 'Total PF',       n: counts.totalPf,     strip: '#7c5cfc', icon: 'ri-safe-2-line' },
-                  { key: 'totalTds',    label: 'Total TDS',      n: counts.totalTds,    strip: '#f59e0b', icon: 'ri-percent-line' },
-                  { key: 'totalLop',    label: 'Total LOP Ded.', n: counts.totalLop,    strip: '#f06548', icon: 'ri-indeterminate-circle-line' },
-                ].map(t => (
-                  <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
-                    <div className="rec-kpi-card">
-                      <span className="rec-kpi-strip" style={{ background: t.strip }} />
-                      <div className="rec-kpi-text">
-                        <span className="rec-kpi-label">{t.label}</span>
-                        {/* 19px against the count cards' 22 — a full ₹ figure
-                            is far wider and wraps at the larger size. */}
-                        <span className="rec-kpi-num" style={{ fontSize: 19 }}>
-                          {loading ? <Shimmer height={19} width={80} radius={6} /> : `₹${fmtINR(t.n)}`}
-                        </span>
-                      </div>
-                      <span className="rec-kpi-icon" style={{ background: t.strip }}>
-                        <i className={t.icon} />
-                      </span>
-                    </div>
-                  </Col>
-                ))}
-              </Row>
-
               <DataTable<PayrollRow>
                 data={filtered}
                 columns={reportColumns}
-                title="Salary Report"
-                subtitle="Gross, deductions and net pay per employee"
+                tabs={payrollTabs}
+                activeTab={tab}
+                onTabChange={k => setTab(k as typeof tab)}
                 accent="violet"
                 /* Same 4% percentage the Processing tab uses, so the two
                    tables' serial columns line up and the width budget stays
@@ -2778,8 +2750,9 @@ export default function HrPayroll() {
               <DataTable<SalaryEmployeeLite>
                 data={roster}
                 columns={rosterColumns}
-                title="Salary Setup"
-                subtitle="Salary structures for every employee in this cycle"
+                tabs={payrollTabs}
+                activeTab={tab}
+                onTabChange={k => setTab(k as typeof tab)}
                 /* Percentage, matching Processing and Salary Report — the
                    56px default would put a pixel column into a percentage
                    budget, which is the drift fixed in #66. */

@@ -529,7 +529,7 @@ export default function MyTeam() {
 
             {/* KPI cards — ABOVE the tabs, always visible (pending-approval
                 summary), reusing the Recruitment page's rec-kpi-card look. */}
-            <div className="row g-1 mb-3 align-items-stretch">
+            <div className="row g-1 mb-3 align-items-stretch rec-page-kpis">
               {[
                 { label: 'Total Pending',     value: approvalCounts.total,              icon: 'ri-inbox-line',      gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)', deep: '#4338ca' },
                 { label: 'Document Signing',  value: approvalCounts.document_signature, icon: 'ri-quill-pen-line',  gradient: 'linear-gradient(135deg,#0ea5e9 0%,#3b82f6 100%)', deep: '#1d4ed8' },
@@ -537,7 +537,7 @@ export default function MyTeam() {
                 { label: 'Leave Approvals',   value: approvalCounts.leave,              icon: 'ri-calendar-2-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
               ].map(k => (
                 <div key={k.label} className="col-md-3 col-sm-6">
-                  <div className="rec-kpi-card h-100">
+                  <div className="rec-kpi-card">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
@@ -751,7 +751,7 @@ function ApprovalsPanel({
     <>
       {/* KPI strip — reuses the Recruitment page's rec-kpi-card so both modules
           read as one design (left accent strip, label over number, icon). */}
-      <div className="row g-1 mb-3 align-items-stretch">
+      <div className="row g-1 mb-3 align-items-stretch rec-page-kpis">
         {[
           { label: 'Total Pending',     value: counts.total,              icon: 'ri-inbox-line',         gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)', deep: '#4338ca' },
           { label: 'Document Signing',  value: counts.document_signature, icon: 'ri-quill-pen-line',     gradient: 'linear-gradient(135deg,#0ea5e9 0%,#3b82f6 100%)', deep: '#1d4ed8' },
@@ -759,7 +759,7 @@ function ApprovalsPanel({
           { label: 'Leave Approvals',   value: counts.leave,              icon: 'ri-calendar-2-line',    gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
         ].map(k => (
           <div key={k.label} className="col-md-3 col-sm-6">
-            <div className="rec-kpi-card h-100">
+            <div className="rec-kpi-card">
               <span className="rec-kpi-strip" style={{ background: k.gradient }} />
               <div className="rec-kpi-text">
                 <span className="rec-kpi-label">{k.label}</span>

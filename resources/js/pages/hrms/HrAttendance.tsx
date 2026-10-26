@@ -390,19 +390,18 @@ function EmployeeDetailPanel({
         </div>
       </div>
 
-      <Row className="g-2 mb-3 align-items-stretch row-cols-xl-3 row-cols-md-3 row-cols-2">
+      <Row className="g-2 mb-3 align-items-stretch row-cols-xl-3 row-cols-md-3 row-cols-2 rec-page-kpis">
         {([
-          { key: 'pres', label: 'Present Days',   sub: 'This month', value: employee.presentDays,  icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
-          { key: 'late', label: 'Late Marks',     sub: 'This month', value: employee.lateMarks,    icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },
-          { key: 'miss', label: 'Missing Punches',sub: 'This month', value: employee.missingPunch, icon: 'ri-error-warning-line',   gradient: 'linear-gradient(135deg,#f06548,#f47c5d)', deep: '#b91c1c' },
+          { key: 'pres', label: 'Present Days',   value: employee.presentDays,  icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
+          { key: 'late', label: 'Late Marks',     value: employee.lateMarks,    icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },
+          { key: 'miss', label: 'Missing Punches',value: employee.missingPunch, icon: 'ri-error-warning-line',   gradient: 'linear-gradient(135deg,#f06548,#f47c5d)', deep: '#b91c1c' },
         ] as const).map(k => (
           <Col key={k.key}>
-            <div className="rec-kpi-card h-100">
+            <div className="rec-kpi-card">
               <span className="rec-kpi-strip" style={{ background: k.gradient }} />
               <div className="rec-kpi-text">
                 <span className="rec-kpi-label">{k.label}</span>
                 <span className="rec-kpi-num">{k.value}</span>
-                <span className="att-kpi-sub">{k.sub}</span>
               </div>
               <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                 <i className={k.icon} />

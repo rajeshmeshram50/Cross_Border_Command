@@ -9,6 +9,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 import SearchClear from '../../components/ui/SearchClear';
+import { Shimmer } from '../../components/ui/Shimmer';
 
 const TITLE_MAX = 191;
 const DESC_MAX  = 2000;
@@ -459,11 +460,13 @@ export default function HrBroadcastCentre() {
             <Row className="g-1 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-4">
               {KPI_CARDS.map(k => (
                 <Col key={k.label}>
-                  <div className="rec-kpi-card h-100">
+                  <div className="rec-kpi-card">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
-                      <span className="rec-kpi-num">{k.value}</span>
+                      <span className="rec-kpi-num">
+                        {loading ? <Shimmer height={22} width={56} /> : k.value}
+                      </span>
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                       <i className={k.icon} />
@@ -546,11 +549,13 @@ function AudienceCell({ row }: { row: AnnRow }) {
   );
 }
 
-const STEPS: Array<{ key: number; label: string; sub: string }> = [
-  { key: 1, label: 'Basic Details',    sub: 'Title, type & priority' },
-  { key: 2, label: 'Audience',         sub: 'Who receives this?' },
-  { key: 3, label: 'Notifications',    sub: 'Delivery channels' },
-  { key: 4, label: 'Review & Publish', sub: 'Final confirmation' },
+/* No sub-line: the four labels already say what each step is, and a second
+   line under each one made the rail twice as tall as the controls in it. */
+const STEPS: Array<{ key: number; label: string }> = [
+  { key: 1, label: 'Basic Details' },
+  { key: 2, label: 'Audience' },
+  { key: 3, label: 'Notifications' },
+  { key: 4, label: 'Review & Publish' },
 ];
 const TOTAL_STEPS = STEPS.length;
 
@@ -835,20 +840,20 @@ function CreateAnnouncementModal({
 
       modalClassName="rec-form-modal broadcast-form-modal"
 
-      contentClassName="rec-form-content border-0"
+      contentClassName="rec-form-content border-0 brd-wizard"
     >
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
 
-        <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #4c2d9c 0%, #6d28d9 60%, #7c3aed 100%)' }}>
+        <div className="brd-wizard-head" style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #4c2d9c 0%, #6d28d9 60%, #7c3aed 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
 
-              <span style={{ width: 38, height: 38, borderRadius: 11, background: 'rgba(255,255,255,0.22)', border: '2px solid rgba(255,255,255,0.55)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,0.22)', border: '2px solid rgba(255,255,255,0.55)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <i className="ri-send-plane-line" style={{ fontSize: 18, color: '#fff' }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>{readOnly ? 'View Announcement' : editing ? 'Edit Announcement' : 'Create Announcement'}</h5>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Manage company-wide communications and notifications</div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>{readOnly ? 'View Announcement' : editing ? 'Edit Announcement' : 'Create Announcement'}</h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>Manage company-wide communications and notifications</div>
               </div>
             </div>
 
@@ -858,7 +863,7 @@ function CreateAnnouncementModal({
           </div>
         </div>
 
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--vz-border-color, #e5e7eb)', overflowX: 'auto' }}>
+        <div className="brd-wizard-steps" style={{ padding: '12px 16px', borderBottom: '1px solid var(--vz-border-color, #e5e7eb)', overflowX: 'auto' }}>
           <div className="d-flex align-items-center" style={{ gap: 0, flexWrap: 'nowrap', minWidth: 620 }}>
             {STEPS.map((s, idx, arr) => {
               const active = step === s.key;
@@ -870,9 +875,9 @@ function CreateAnnouncementModal({
                   type="button"
                   onClick={() => { if (!saving && (done || active)) setStep(s.key); }}
                   disabled={!!saving || (!done && !active)}
-                  className="d-inline-flex align-items-center"
+                  className="d-inline-flex flex-column align-items-center"
                   style={{
-                    gap: 8, padding: '4px 8px', border: 0, background: 'transparent',
+                    gap: 5, padding: '4px 8px', border: 0, background: 'transparent',
                     color: active ? '#6d28d9' : (done ? '#15803d' : '#9ca3af'),
                     cursor: saving ? 'not-allowed' : ((done || active) ? 'pointer' : 'default'),
                     opacity: saving ? 0.6 : 1,
@@ -882,7 +887,7 @@ function CreateAnnouncementModal({
                 >
                   <span
                     style={{
-                      width: 26, height: 26, borderRadius: '50%',
+                      width: 32, height: 32, borderRadius: '50%',
                       /* Three states, three colours — not three violets.
                          Green for a step that is DONE, violet for the one you
                          are ON, grey for one you have not reached. Done and
@@ -906,9 +911,8 @@ function CreateAnnouncementModal({
                   >
                     {done ? <i className="ri-check-line" /> : s.key}
                   </span>
-                  <div style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.1 }}>{s.label}</div>
-                    <div style={{ fontSize: 10.5, opacity: 0.75 }}>{s.sub}</div>
+                  <div style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, lineHeight: 1.1 }}>{s.label}</div>
                   </div>
                 </button>
 
@@ -917,7 +921,7 @@ function CreateAnnouncementModal({
                     aria-hidden
                     style={{
                       flex: 1, height: 2, minWidth: 16, margin: '0 4px',
-                      alignSelf: 'flex-start', marginTop: 17,
+                      alignSelf: 'flex-start', marginTop: 20, flexShrink: 0,
                       /* The line BEHIND a finished step is the ground you have
                           covered, so it matches the step it leads out of. */
                       background: done
@@ -934,7 +938,7 @@ function CreateAnnouncementModal({
         </div>
 
         <div className="d-flex" style={{ minHeight: 360, maxHeight: '70vh' }}>
-          <div style={{ flex: '1 1 0', minWidth: 0, minHeight: 0, padding: 18, overflowY: 'auto' }}>
+          <div style={{ flex: '1 1 0', minWidth: 0, minHeight: 0, padding: 15, overflowY: 'auto' }}>
 
             <fieldset
               disabled={readOnly || !!saving}
@@ -981,7 +985,7 @@ function CreateAnnouncementModal({
             </fieldset>
           </div>
 
-          <div style={{ flex: '0 0 320px', minHeight: 0, borderLeft: '1px solid var(--vz-border-color, #e5e7eb)', padding: 18, background: 'var(--vz-secondary-bg, #fafafa)', overflowY: 'auto' }}>
+          <div style={{ flex: '0 0 320px', minHeight: 0, borderLeft: '1px solid var(--vz-border-color, #e5e7eb)', padding: 15, background: 'var(--vz-secondary-bg, #fafafa)', overflowY: 'auto' }}>
             <div className="text-uppercase fw-semibold mb-2" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color, #6b7280)' }}>Live Preview</div>
 
             <div style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.26)', borderRadius: 12, padding: 14, marginBottom: 12 }}>

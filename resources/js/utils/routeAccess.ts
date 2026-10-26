@@ -57,6 +57,9 @@ const HR_LEAF: Record<string, string> = {
   '/hr/employee-onboarding': 'hr.onboarding',
   '/hr/attendance': 'hr.attendance',
   '/hr/devices': 'hr.attendance',   // Biometric Devices rides on the attendance grant
+  // Regularization Requests are attendance corrections, reached from a button
+  // on the Attendance page — same grant, as Biometric Devices has it.
+  '/hr/regularization-requests': 'hr.attendance',
   '/hr/leave': 'hr.leave',
   '/hr/leave-plans': 'hr.leave',
   // No hr.leave_approvals module exists, so that slug can never be granted and

@@ -696,7 +696,7 @@ export default function HrExitManagement() {
                    but is not is the complaint this fixed. */
                 return (
                 <Col key={k.key}>
-                  <div className="rec-kpi-card h-100">
+                  <div className="rec-kpi-card">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>

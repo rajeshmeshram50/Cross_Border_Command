@@ -886,7 +886,7 @@ export default function HrLeave() {
             <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl={3} md={6} sm={6} xs={6}>
-                  <div className="rec-kpi-card h-100">
+                  <div className="rec-kpi-card">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>

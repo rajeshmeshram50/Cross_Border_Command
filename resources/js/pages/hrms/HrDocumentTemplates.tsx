@@ -645,7 +645,7 @@ export default function HrDocumentTemplates() {
           {/* mb-4 (24px), not mb-3 — the table card sat almost against the KPI
               tiles, and the two are separate blocks: the tiles summarise, the
               card below is the list. 8px more is enough to read as a break. */}
-          <Row className="g-1 mb-4 align-items-stretch">
+          <Row className="g-1 mb-4 align-items-stretch rec-page-kpis">
             {KPI.map(k => (
               <Col key={k.label} xl={true} md={3} sm={6} xs={12}>
                 {/* The shared KPI card, as Payroll, Attendance and the employee

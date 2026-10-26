@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Col, Row } from 'reactstrap';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { Shimmer } from '../../components/ui/Shimmer';
 import CustomFieldModal, { CustomFieldFormPayload } from './doc-templates/CustomFieldModal';
 import '../../../css/recruitment.css';
 
@@ -48,16 +49,7 @@ const TYPE_TONES: Record<FieldType, { bg: string; fg: string; border: string; la
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrCustomFields() {
   const toast = useToast();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-
-  // Back button — always return to the parent Document Templates page (Custom
-  // Fields belong to the doc-template system). Using navigate(-1) followed
-  // browser history, which wrongly dropped users onto whatever page they came
-  // from (e.g. Broadcast) instead of the correct parent.
-  const goBack = () => {
-    navigate('/hr/doc-templates');
-  };
 
   const [rows, setRows]   = useState<CustomFieldRow[]>([]);
   const [stats, setStats] = useState<Stats>(ZERO_STATS);
@@ -443,10 +435,6 @@ export default function HrCustomFields() {
                 onClick={() => { setEditing(null); setPrefillName(''); setModalOpen(true); }}>
                 <i className="ri-add-line" />Add Custom Field
               </button>
-              <button type="button" className="frm-cstrip-back flex-shrink-0" onClick={goBack}>
-                <i className="ri-arrow-left-line" />
-                Back
-              </button>
             </div>
           </div>
 
@@ -458,11 +446,13 @@ export default function HrCustomFields() {
           <div className="row g-1 mb-3 align-items-stretch rec-page-kpis">
             {KPI.map(k => (
               <div key={k.label} className="col-xl col-md-4 col-sm-6">
-                <div className="rec-kpi-card h-100">
+                <div className="rec-kpi-card">
                   <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                   <div className="rec-kpi-text">
                     <span className="rec-kpi-label">{k.label}</span>
-                    <span className="rec-kpi-num">{k.value}</span>
+                    <span className="rec-kpi-num">
+                      {loading ? <Shimmer height={22} width={56} /> : k.value}
+                    </span>
                   </div>
                   <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                     <i className={k.icon} />

@@ -1078,9 +1078,9 @@ function AdminDashboardAnalytics() {
           />
           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
             <div className="px-3 pt-3">
-              <Row className="g-3 mb-3">
+              <Row className="g-3 mb-3 rec-page-kpis">
                 <Col md={4}>
-                  <div className="rec-kpi-card h-100">
+                  <div className="rec-kpi-card">
                     <span className="rec-kpi-strip" style={{ background: 'linear-gradient(90deg,#0ab39c,#22c8a9)' }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">Total Revenue</span>
@@ -1089,7 +1089,7 @@ function AdminDashboardAnalytics() {
                   </div>
                 </Col>
                 <Col md={4}>
-                  <div className="rec-kpi-card h-100">
+                  <div className="rec-kpi-card">
                     <span className="rec-kpi-strip" style={{ background: 'linear-gradient(90deg,#405189,#6691e7)' }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">This Month</span>
@@ -1098,7 +1098,7 @@ function AdminDashboardAnalytics() {
                   </div>
                 </Col>
                 <Col md={4}>
-                  <div className="rec-kpi-card h-100">
+                  <div className="rec-kpi-card">
                     <span className="rec-kpi-strip" style={{ background: 'linear-gradient(90deg,#f7b84b,#f6c85a)' }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">Transactions</span>

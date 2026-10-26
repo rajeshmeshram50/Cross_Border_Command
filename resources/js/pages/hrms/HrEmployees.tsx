@@ -286,11 +286,11 @@ const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: stri
 
 
 const KPI_CARDS = [
-  { key: 'total', label: 'Total Employees', icon: 'ri-team-line', gradient: 'linear-gradient(135deg,#405189,#6691e7)', accent: '#6691e7' },
-  { key: 'active', label: 'Active Employees', icon: 'ri-user-follow-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)', accent: '#0ab39c' },
-  { key: 'disabled', label: 'Disabled Employees', icon: 'ri-user-unfollow-fill', gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)', accent: '#878a99' },
-  { key: 'onboarding_completed', label: 'Onboarding Completed', icon: 'ri-medal-fill', gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)', accent: '#299cdb' },
-  { key: 'new_joiners', label: 'New Joiners', icon: 'ri-user-add-fill', gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', accent: '#7c5cfc' },
+  { key: 'total', label: 'Total Employees', icon: 'ri-team-line', gradient: 'linear-gradient(135deg,#405189,#6691e7)' },
+  { key: 'active', label: 'Active Employees', icon: 'ri-user-follow-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)' },
+  { key: 'disabled', label: 'Disabled Employees', icon: 'ri-user-unfollow-fill', gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)' },
+  { key: 'onboarding_completed', label: 'Onboarding Completed', icon: 'ri-medal-fill', gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)' },
+  { key: 'new_joiners', label: 'New Joiners', icon: 'ri-user-add-fill', gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
 ] as const;
 
 type ExpiryDays = 3 | 7 | 15;
@@ -4014,41 +4014,24 @@ const STEP_SAFE_FIELDS = new Set([
 
             {/* g-1 — see the note on the Onboarding hub's KPI row: the gap
                 between tiles is set here rather than via app.css. */}
-            <Row className="g-1 mb-3 align-items-stretch">
+            <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl md={4} sm={6} xs={12}>
-                  <div
-                    /* No h-100: Bootstrap's height:100% !important beat the
-                       82px on .hr-emp-kpi-card, so the tile took the row's
-                       height instead — 79px, and varying with whatever else
-                       was on the row. The class owns the height now. */
-                    className="hr-employees-surface hr-emp-kpi-card"
-                    style={{
-                      borderRadius: 14,
-                      border: '1px solid var(--vz-border-color)',
-                      borderTopWidth: 0,
-                      padding: '11px',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      ['--card-accent' as any]: k.accent,
-                    }}
-                  >
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.gradient }} />
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, height: '100%' }}>
-                      <div className="min-w-0" style={{ flex: 1, minWidth: 0 }}>
-                        <p className="hr-emp-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.05em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                          {k.label}
-                        </p>
-                        <h3 className="hr-emp-kpi-value" style={{ fontSize: 24, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                          {loadingEmployees
-                            ? <Shimmer height={24} width={56} />
-                            : <AnimatedNumber value={(counts as any)[k.key]} />}
-                        </h3>
-                      </div>
-                      <div className="hr-emp-kpi-icon" style={{ width: 38, height: 38, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                        <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
-                      </div>
+                  {/* The shared card, as Payroll, Recruitment and the rest of
+                      HRMS have it. Only the per-card colour stays local. */}
+                  <div className="rec-kpi-card">
+                    <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+                    <div className="rec-kpi-text">
+                      <span className="rec-kpi-label">{k.label}</span>
+                      <span className="rec-kpi-num">
+                        {loadingEmployees
+                          ? <Shimmer height={22} width={56} />
+                          : <AnimatedNumber value={(counts as any)[k.key]} />}
+                      </span>
                     </div>
+                    <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                      <i className={k.icon} />
+                    </span>
                   </div>
                 </Col>
               ))}

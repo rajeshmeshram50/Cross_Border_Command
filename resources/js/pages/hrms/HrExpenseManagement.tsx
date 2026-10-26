@@ -124,68 +124,33 @@ function withinDateFilter(iso: string | null | undefined, filter: DateFilter): b
   return true;
 }
 
+/* The shared KPI card. `tint` and `fg` are gone with the hand-built tile:
+   they painted a pale icon background behind a coloured glyph, which took a
+   dark-mode override of its own; the shared icon is a solid accent. */
 function KpiTile({
-  label, value, iconClass, strip, tint, fg, titleText,
+  label, value, iconClass, strip, titleText,
 }: {
   label: string;
   value: React.ReactNode;
   iconClass: string;
   strip: string;
-  tint: string;
-  fg: string;
   /** Native hover tooltip — used to surface the exact rupee value behind a
    *  compact figure (e.g. "₹500.00Cr" → "₹5,00,00,32,001"). */
   titleText?: string;
 }) {
   return (
-    <div
-      className="hrexp-surface hrexp-kpi-card"
-      title={titleText}
-      style={{
-        borderRadius: 14,
-        border: '1px solid var(--vz-border-color)',
-        boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-        padding: '16px 18px',
-        position: 'relative',
-        overflow: 'hidden',
-        height: '100%',
-      }}
-    >
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: strip }} />
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-        <div className="min-w-0">
-          <p style={{
-            fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)',
-            letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px',
-          }}>
-            {label}
-          </p>
-          <h3 style={{
-            fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))',
-            margin: 0, lineHeight: 1, fontVariantNumeric: 'tabular-nums',
-          }}>
-            {value}
-          </h3>
-        </div>
-        <div
-          className="hrexp-kpi-ic"
-          style={{
-            width: 44, height: 44, borderRadius: 10,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
-            ['--kpi-tint' as string]: tint,
-            ['--kpi-fg' as string]: fg,
-            ['--kpi-tint-dark' as string]: `${strip}33`,
-            ['--kpi-fg-dark' as string]: strip,
-          } as React.CSSProperties}
-        >
-          <i className={iconClass} style={{ fontSize: 20 }} />
-        </div>
+    <div className="rec-kpi-card" title={titleText}>
+      <span className="rec-kpi-strip" style={{ background: strip }} />
+      <div className="rec-kpi-text">
+        <span className="rec-kpi-label">{label}</span>
+        <span className="rec-kpi-num">{value}</span>
       </div>
+      <span className="rec-kpi-icon" style={{ background: strip }}>
+        <i className={iconClass} />
+      </span>
     </div>
   );
 }
-
 export default function HrExpenseManagement() {
   const { user } = useAuth();
   const toast = useToast();
@@ -1123,15 +1088,13 @@ export default function HrExpenseManagement() {
           </div>
         </div>
 
-        <Row className="g-2 mb-2 align-items-stretch hrexp-kpi-row">
+        <Row className="g-2 mb-2 align-items-stretch hrexp-kpi-row rec-page-kpis">
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label={isAdvanceModule ? 'Total Advances' : 'Total Claims'}
               value={kpiCounts.all}
               iconClass="ri-file-list-3-line"
               strip="#7c5cfc"
-              tint="#ece6ff"
-              fg="#7c5cfc"
             />
           </Col>
           <Col xl={true} md={4} sm={6} xs={6}>
@@ -1141,8 +1104,6 @@ export default function HrExpenseManagement() {
               titleText={`₹${kpiTotalAmount.toLocaleString('en-IN')} · excludes rejected`}
               iconClass="ri-cash-line"
               strip="#f97316"
-              tint="#fdf3d6"
-              fg="#a06f00"
             />
           </Col>
           <Col xl={true} md={4} sm={6} xs={6}>
@@ -1152,8 +1113,6 @@ export default function HrExpenseManagement() {
               titleText={`₹${kpiApprovedAmount.toLocaleString('en-IN')} · approved only`}
               iconClass="ri-checkbox-circle-line"
               strip="#10b981"
-              tint="#d6f4e3"
-              fg="#108548"
             />
           </Col>
           <Col xl={true} md={4} sm={6} xs={6}>
@@ -1162,8 +1121,6 @@ export default function HrExpenseManagement() {
               value={kpiCounts.pending}
               iconClass="ri-time-line"
               strip="#3b82f6"
-              tint="#dceefe"
-              fg="#0c63b0"
             />
           </Col>
           <Col xl={true} md={4} sm={6} xs={6}>
@@ -1172,8 +1129,6 @@ export default function HrExpenseManagement() {
               value={kpiCounts.rejected}
               iconClass="ri-close-circle-line"
               strip="#f06548"
-              tint="#fdd9d6"
-              fg="#b1401d"
             />
           </Col>
         </Row>

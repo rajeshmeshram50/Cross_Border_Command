@@ -8131,12 +8131,6 @@
 }
 .att-emplist-empty i { font-size: 28px; color: #d1d5db; }
 
-.att-kpi-sub {
-  display: block;
-  font-size: 10.5px; color: #9ca3af; font-weight: 600;
-  margin-top: 2px;
-}
-[data-bs-theme="dark"] .att-kpi-sub { color: rgba(255,255,255,0.55); }
 
 .att-section-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -11470,13 +11464,6 @@
   color: #c4b5fd !important; background: rgba(124,92,252,0.18) !important;
 }
 
-:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .pay-page .onb-kpi-icon {
-  background: var(--kpi-tint-dark, rgba(255,255,255,0.08)) !important;
-}
-:is([data-bs-theme="dark"],[data-layout-mode="dark"]) .pay-page .onb-kpi-icon i {
-  color: var(--kpi-accent, #e2e8f0) !important;
-}
-
 .pay-att-badge { white-space: nowrap; }
 
 :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .pay-page .pay-att-badge[data-att="low"] {
@@ -11678,58 +11665,9 @@
           letter-spacing: 0.01em;
         }
 
-        .hr-emp-kpi-outer {
-          position: relative;
-          padding: 0 48px;
-        }
 
-        .hr-emp-kpi-swiper {
-          overflow: visible !important;
-          padding: 10px 0 22px !important;
-
-          clip-path: inset(-32px 0 -32px 0);
-        }
-        .hr-emp-kpi-nav {
-          position: absolute;
-          top: 50%;
-          transform: translateY(-50%);
-          z-index: 10;
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          border: 1.5px solid var(--vz-border-color);
-
-          background: var(--vz-secondary-bg, #fff);
-          color: var(--vz-primary, #405189);
-          font-size: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: pointer;
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
-          transition: background .2s ease, color .2s ease, box-shadow .2s ease, transform .2s ease, border-color .2s ease;
-          outline: none;
-        }
-        .hr-emp-kpi-nav:hover {
-          background: var(--vz-primary, #405189);
-          color: #fff;
-          border-color: var(--vz-primary, #405189);
-          box-shadow: 0 6px 20px rgba(64, 81, 137, 0.35);
-          transform: translateY(-50%) scale(1.08);
-        }
-        .hr-emp-kpi-nav-prev { left: 4px; }
-        .hr-emp-kpi-nav-next { right: 4px; }
-        [data-bs-theme="dark"] .hr-emp-kpi-nav,
-        [data-layout-mode="dark"] .hr-emp-kpi-nav {
-          background: var(--vz-card-bg);
-          border-color: var(--vz-border-color);
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
-          color: #c4b5fd;
-        }
 
         @media (max-width: 575.98px) {
-          .hr-emp-kpi-outer { padding: 0; }
-          .hr-emp-kpi-nav { display: none; }
         }
 
         .hr-employees-surface .table-responsive {
@@ -11836,84 +11774,10 @@
           }
         }
 
-        .hr-emp-kpi-grid {
-          position: relative;
 
-          overflow-x: auto;
-          padding: 8px 0 14px;
-          mask-image: linear-gradient(90deg, transparent 0%, #000 1.5%, #000 98.5%, transparent 100%);
-          -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 1.5%, #000 98.5%, transparent 100%);
-          scrollbar-width: none;
-          scroll-behavior: smooth;
-        }
-        .hr-emp-kpi-grid::-webkit-scrollbar { display: none; }
-        .hr-emp-kpi-grid:hover { cursor: grab; }
-        .hr-emp-kpi-grid:active { cursor: grabbing; }
-        .hr-emp-kpi-grid::after {
-          content: '';
-          position: absolute; inset: 0;
-          pointer-events: none;
-          background: linear-gradient(90deg,
-            rgba(255,255,255,0.55) 0%,
-            rgba(255,255,255,0) 30%,
-            rgba(255,255,255,0) 70%,
-            rgba(255,255,255,0.55) 100%);
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-grid::after {
-          background: linear-gradient(90deg,
-            rgba(28,37,49,0.65) 0%,
-            rgba(28,37,49,0) 30%,
-            rgba(28,37,49,0) 70%,
-            rgba(28,37,49,0.65) 100%);
-        }
 
-        .hr-emp-kpi-track {
-          display: flex;
-          gap: 14px;
-          width: max-content;
-        }
-        .hr-emp-kpi-card {
-          flex: 0 0 250px;
 
-          height: 82px;
-          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 
-          box-shadow:
-            0 6px 16px -4px rgba(15, 23, 42, 0.10),
-            0 2px 4px rgba(15, 23, 42, 0.06) !important;
-        }
-
-        .hr-emp-kpi-label {
-          min-height: 24px;
-          line-height: 1.2;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-card {
-
-          background: var(--vz-card-bg) !important;
-          border-color: var(--vz-border-color) !important;
-          color: rgba(255, 255, 255, 0.96);
-          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.30) !important;
-        }
-
-        [data-bs-theme="dark"] .hr-emp-kpi-card > div:first-child {
-          height: 4px !important;
-        }
-
-        [data-bs-theme="dark"] .hr-emp-kpi-label {
-          color: #cbd5e1 !important;
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-value {
-          color: #f8fafc !important;
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-
-          background: var(--vz-card-bg) !important;
-          border-color: color-mix(in srgb, var(--card-accent, #7c5cfc) 55%, var(--vz-border-color)) !important;
-        }
 
         [data-bs-theme="dark"] .hr-employees-surface .text-muted,
         [data-bs-theme="dark"] .hr-employees-surface .text-secondary {
@@ -11974,23 +11838,6 @@
         [data-bs-theme="dark"] .hr-employees-surface .btn[aria-label]:hover {
           background: rgba(124,92,252,0.18) !important;
         }
-        .hr-emp-kpi-card:hover {
-          transform: translateY(-4px);
-          box-shadow:
-            0 16px 32px -8px rgba(15, 23, 42, 0.18),
-            0 4px 10px rgba(124, 92, 252, 0.10) !important;
-          border-color: rgba(124, 92, 252, 0.45);
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-card:hover {
-          box-shadow:
-            0 18px 36px -8px rgba(0, 0, 0, 0.65),
-            0 4px 12px rgba(124, 92, 252, 0.25) !important;
-        }
-        .hr-emp-kpi-card:hover .hr-emp-kpi-icon {
-          transform: scale(1.06);
-          box-shadow: 0 8px 18px rgba(0,0,0,0.18);
-        }
-        .hr-emp-kpi-icon { transition: transform .18s ease, box-shadow .18s ease; }
 
         .hr-emp-srno { color: var(--vz-secondary-color); font-weight: 600; }
         [data-bs-theme="dark"] .hr-emp-srno,
@@ -12039,18 +11886,6 @@
           color: #b0b4bd;
         }
 
-        .hr-emp-kpi-card {
-          background-image: linear-gradient(180deg, rgba(124,92,252,0.04) 0%, rgba(124,92,252,0) 60%);
-        }
-        [data-bs-theme="dark"] .hr-emp-kpi-card,
-        [data-layout-mode="dark"] .hr-emp-kpi-card {
-          background-image: linear-gradient(180deg, rgba(124,92,252,0.10) 0%, rgba(124,92,252,0) 70%);
-        }
-        .hr-emp-kpi-label { color: var(--vz-secondary-color); }
-        [data-bs-theme="dark"] .hr-emp-kpi-label,
-        [data-layout-mode="dark"] .hr-emp-kpi-label { color: #c4c8d0; }
-        [data-bs-theme="dark"] .hr-emp-kpi-value,
-        [data-layout-mode="dark"] .hr-emp-kpi-value { color: #f4f5f7 !important; }
 
           .onb-modal-wide .modal-dialog { max-width: min(900px, 92vw); }
           .onb-modal-content { border-radius: 24px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
@@ -13090,3 +12925,44 @@
 
   .pay-page > .pay-tablearea > .dt-root { flex: 1; min-height: 0; }
 }
+
+/* ── Create Announcement wizard ───────────────────────────────────────────
+ *
+ * Scoped to .brd-wizard on purpose: .rec-sec-head, .rec-form-label and
+ * .rec-input are shared by every recruitment, employee and HR form in the
+ * app, so these sizes are stated here rather than on the base classes. */
+/* DM Sans on the header and the stepper only — the form below keeps the
+   family the rest of the app s forms use. Inheritance loses to any matching
+   rule (the theme sets Montserrat on h1-h6), so the descendants are named;
+   the icon fonts are left out or the glyphs render as letters. */
+.brd-wizard-head,
+.brd-wizard-steps,
+.brd-wizard-head :not(i):not([class^="ri-"]):not([class*=" ri-"]),
+.brd-wizard-steps :not(i):not([class^="ri-"]):not([class*=" ri-"]) {
+  font-family: 'DM Sans', var(--font-sans, system-ui), sans-serif;
+}
+
+/* The section heading reads as a heading, not as a second accent: the violet
+   it had competed with the gradient field labels directly under it. */
+.brd-wizard .rec-sec-head { font-size: 12.5px; color: #111827; }
+[data-bs-theme="dark"] .brd-wizard .rec-sec-head { color: rgba(255, 255, 255, 0.95); }
+.brd-wizard .rec-sec-head i {
+  width: 28px; height: 28px;
+  border-radius: 10px;
+  font-size: 18px;
+  color: #6d28d9;
+}
+[data-bs-theme="dark"] .brd-wizard .rec-sec-head i { color: #c4b5fd; }
+
+.brd-wizard .rec-form-label { font-size: 10.5px; font-weight: 700; }
+
+/* 38 on 9/11. The textarea is excluded — it sizes from `rows`, and a fixed
+   height would collapse the five lines it is asked for. */
+.brd-wizard .rec-input:not(.rec-textarea),
+.brd-wizard .master-select-wrap .master-select-toggle,
+.brd-wizard .master-datepicker-wrap .master-datepicker-toggle {
+  height: 38px;
+  padding: 9px 11px;
+}
+.brd-wizard .rec-textarea { padding: 9px 11px; }
+.brd-wizard .rec-input::placeholder { font-size: 13px; }

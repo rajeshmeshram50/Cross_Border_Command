@@ -456,7 +456,7 @@ function EmployeeWiseView() {
       <Row className="g-1 mb-3 align-items-stretch rec-page-kpis pip-kpis">
         {EMPLOYEE_KPIS.map(k => (
           <Col key={k.key} xl md={4} sm={6} xs={12}>
-            <div className="rec-kpi-card h-100 pip-kpi-card">
+            <div className="rec-kpi-card pip-kpi-card">
               <span className="rec-kpi-strip" style={{ background: k.strip }} />
               <div className="rec-kpi-text">
                 <span className="rec-kpi-label">{k.label}</span>
@@ -1024,7 +1024,7 @@ function PipActionsView({ pips }: { pips: ActivePip[] }) {
       <Row className="g-1 mb-3 align-items-stretch rec-page-kpis pip-kpis">
         {PIP_KPIS.map(k => (
           <Col key={k.key} xl={2} md={4} sm={6} xs={12}>
-            <div className="rec-kpi-card h-100 pip-kpi-card">
+            <div className="rec-kpi-card pip-kpi-card">
               <span className="rec-kpi-strip" style={{ background: k.strip }} />
               <div className="rec-kpi-text">
                 <span className="rec-kpi-label">{k.label}</span>

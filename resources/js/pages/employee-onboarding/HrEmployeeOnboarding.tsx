@@ -804,38 +804,26 @@ export default function HrEmployeeOnboarding() {
         </Button>
       </div>
 
-      <Row className="g-1 mb-3 align-items-stretch">
+      <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
         {KPI_CARDS.map(k => (
           <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
-            <div
-              className="onb-surface onb-kpi-card"
-              style={{
-                borderRadius: 14,
-                border: '1px solid var(--vz-border-color)',
-                borderTopWidth: 0,
-                boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                padding: '16px 18px',
-                position: 'relative',
-                overflow: 'hidden',
-                height: '100%',
-              }}
-            >
-              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.strip }} />
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                <div className="min-w-0">
-                  <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                    {k.label}
-                  </p>
-                  <h3 style={{ fontSize: 26, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                    {loadingRows
-                      ? <Shimmer height={26} width={64} />
-                      : <AnimatedNumber value={(counts as any)[k.key] ?? 0} />}
-                  </h3>
-                </div>
-                <div className="onb-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.grad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
-                </div>
+            {/* The shared KPI card, as Employees, Payroll and Recruitment
+                have it. This was a hand-built copy two sizes up: a 26/700
+                number against 22/800 and a 44px icon tile with a 20px glyph
+                against 36/16, on 16/18 of padding against 11. */}
+            <div className="rec-kpi-card">
+              <span className="rec-kpi-strip" style={{ background: k.strip }} />
+              <div className="rec-kpi-text">
+                <span className="rec-kpi-label">{k.label}</span>
+                <span className="rec-kpi-num">
+                  {loadingRows
+                    ? <Shimmer height={22} width={64} />
+                    : <AnimatedNumber value={(counts as any)[k.key] ?? 0} />}
+                </span>
               </div>
+              <span className="rec-kpi-icon" style={{ background: k.grad }}>
+                <i className={k.icon} />
+              </span>
             </div>
           </Col>
         ))}

@@ -86,14 +86,6 @@
   background: rgba(124,92,252,0.10);
   color: #c4b5fd;
 }
-.hrexp-kpi-card { transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
-.hrexp-kpi-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0,0,0,0.12); border-color: rgba(124,92,252,0.45); }
-[data-bs-theme="dark"] .hrexp-kpi-card:hover { box-shadow: 0 10px 28px rgba(0,0,0,0.5); border-color: rgba(124,92,252,0.55); }
-
-.hrexp-kpi-ic { background: var(--kpi-tint); }
-.hrexp-kpi-ic i { color: var(--kpi-fg); }
-[data-bs-theme="dark"] .hrexp-kpi-ic { background: var(--kpi-tint-dark); }
-[data-bs-theme="dark"] .hrexp-kpi-ic i { color: var(--kpi-fg-dark); }
 
 [data-bs-theme="dark"] .hrexp-card-ic--chart {
   background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
@@ -242,7 +234,6 @@
    just as badly as a narrow one.
    ─────────────────────────────────────────────────────────────────────────── */
 @media (max-height: 900px) {
-  .hrexp-page .hrexp-kpi-card { padding: 11px 14px !important; }
   .hrexp-page .frm-cstrip { padding-top: 12px !important; padding-bottom: 12px !important; }
   /* The KPI row and the Analytics panel each carry their own bottom margin. */
   .hrexp-page .hrexp-kpi-row { margin-bottom: 10px !important; }
@@ -262,7 +253,6 @@
 
 /* Tighter still — a 110% zoom on a 1080p screen lands here (~785px). */
 @media (max-height: 800px) {
-  .hrexp-page .hrexp-kpi-card { padding: 8px 12px !important; }
   .hrexp-page .frm-cstrip { padding-top: 8px !important; padding-bottom: 8px !important; }
   .hrexp-page .hrexp-kpi-row { margin-bottom: 8px !important; }
   .hrexp-page .hrexp-analytics-card { margin-bottom: 8px !important; }
