@@ -400,6 +400,7 @@ export default function InvoiceForm({
         );
         return;
       }
+      if (spiId) { void finishStage3(); return; }
     }
     advance();
   };
@@ -410,6 +411,19 @@ export default function InvoiceForm({
         ? `Put away every box first — ${putaway.placed} of ${putaway.total} placed`
         : 'Put away every box first')
     : undefined;
+
+  const finishStage3 = async () => {
+    if (!spiId || saving) return;
+    setSaving(true);
+    try {
+      await spiApi.completeStage3(spiId);
+      advance();
+    } catch (e) {
+      toast.error('Could not finish Stage 03', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const mapInvoice = async () => {
     if (!spiId || saving || !allPlaced) return;

@@ -453,6 +453,9 @@ export const spiApi = {
     call('Cancel Zebra task', () => api.post(`/putaway/tasks/${taskId}/cancel`, { reason: reason || undefined }),
       () => true),
 
+  completeStage3: (spiId: number) =>
+    call('Stage 03', () => api.put(`/p2p/spi/${spiId}/stage-3`), () => true),
+
   submit: (spiId: number) =>
     call('Map Invoice', () => api.put(`/p2p/spi/${spiId}/submit`), () => true),
 
