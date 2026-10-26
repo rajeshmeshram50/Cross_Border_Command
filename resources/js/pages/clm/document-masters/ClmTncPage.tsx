@@ -200,7 +200,17 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+          {/* Stretch to fillH only when there is enough data to use it.
+              The card stretched unconditionally with the pager pinned to its
+              bottom, so a short list left a blank band between the last row
+              and the pager: measured 189px here on 8 rows, 381px on the
+              segment-wise tab's 3 and 426px on Global's 2. No page size can
+              close that — the auto-fit already offers 11 rows and there are
+              only 8 records to show.
+              The test is filtered.length, not the current page's slice, so a
+              long list keeps one card height as you page through it and the
+              table does not jump on the last, part-full page. */}
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: filtered.length >= rpp ? fillH : undefined }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -349,13 +359,11 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
       </div>
 
       <div className="clm-tab-body has-data">
-        {/* Stretches now, as the sibling panes do: the pane has a pager, and
-            .clm-table-fill is what pushes it to the bottom of a part-full
-            card. The old note here said the stretch was for the empty state
-            only "because this pane has no pager" — it has one now, so the
-            band of nothing under the last row that worried QA #30 is the
-            pager's seat. */}
-        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+        {/* Stretches only when the data fills it — see the note on the
+            Document Category pane. This tab holds one entry per document
+            category, so it is the shortest list in the master and the one the
+            unconditional stretch hurt most: 426px of blank under two rows. */}
+        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: filtered.length >= rpp ? fillH : undefined }}>
           <table className="clm-table">
             <thead><tr>
               <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -532,7 +540,9 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       </div>
 
       <div className="clm-tab-body has-data">
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
+          {/* Stretches only when the data fills it — see the note on the
+              Document Category pane. */}
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: filtered.length >= rpp ? fillH : undefined }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>

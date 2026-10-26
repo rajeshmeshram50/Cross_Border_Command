@@ -320,6 +320,31 @@ export type PutawayAssigned = {
   lock: { id: number; expires_at: string | null } | null;
 };
 
+export type PutawayTask = {
+  id: number;
+  task_code: string;
+  status: 'pending' | 'scanned' | 'failed' | 'cancelled' | 'expired';
+  completed_scans: number;
+  required_scans: number;
+  issued_at: string | null;
+  expires_at: string | null;
+  destination: string | null;
+  failed_reason?: string | null;
+};
+
+export type PutawayRow = {
+  id: number;
+  box_id: number;
+  zone_id: number | null;
+  rack_id: number | null;
+  shelf_id: number | null;
+  status: string;
+  destination: string | null;
+  assigned_at: string | null;
+  confirmed_at: string | null;
+  verify_method: string | null;
+};
+
 export type PutawayLocations = {
   box: PutawayNeed;
   modes: { rack: number; norack: number };
@@ -410,6 +435,30 @@ export const spiApi = {
   putawayAssign: (spiId: number, body: PutawayAssignBody) =>
     call('Putaway assign', () => api.post(`/p2p/spi/${spiId}/putaway/assign`, body),
       (b) => (b as { data?: PutawayAssigned } | null)?.data as PutawayAssigned),
+
+  putawayConfirmManual: (spiId: number, rowId: number, note?: string | null) =>
+    call('Putaway confirm', () => api.post(`/p2p/spi/${spiId}/putaway/${rowId}/confirm-manual`,
+      { confirmed: true, note: note || undefined }),
+      (b) => (b as { data?: PutawayAssigned } | null)?.data as PutawayAssigned),
+
+  putawayScanTask: (spiId: number, rowId: number) =>
+    call('Zebra task', () => api.post(`/p2p/spi/${spiId}/putaway/${rowId}/scan-task`, { confirmed: true }),
+      (b) => (b as { data?: PutawayTask } | null)?.data as PutawayTask),
+
+  putawayTask: (taskId: number) =>
+    call('Zebra task', () => api.get(`/putaway/tasks/${taskId}`),
+      (b) => (b as { data?: PutawayTask } | null)?.data as PutawayTask),
+
+  putawayCancelTask: (taskId: number, reason?: string) =>
+    call('Cancel Zebra task', () => api.post(`/putaway/tasks/${taskId}/cancel`, { reason: reason || undefined }),
+      () => true),
+
+  submit: (spiId: number) =>
+    call('Map Invoice', () => api.put(`/p2p/spi/${spiId}/submit`), () => true),
+
+  putawayRows: (spiId: number) =>
+    call('Putaway rows', () => api.get(`/p2p/spi/${spiId}/putaway`),
+      (b) => ((b as { data?: { rows?: PutawayRow[] } } | null)?.data?.rows ?? [])),
 
   putawayBoard: (spiId: number) =>
     call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),
