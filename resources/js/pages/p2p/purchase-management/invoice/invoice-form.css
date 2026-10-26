@@ -594,8 +594,21 @@
    Condition off the left edge instead of being contained. */
 .vti-dw-mini-section:last-child { border-right: none; flex: 1; min-width: 0; }
 .vti-dw-mini-title { font-size: 8px; font-weight: 800; color: #0891b2; text-transform: uppercase; letter-spacing: .18em; margin-bottom: 12px; opacity: .7; }
-/* Wraps: the count is open-ended, and the row must not grow to fit it. */
-.vti-dw-flags { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; row-gap: 8px; }
+/* One line. The contents are bounded — three built-in flags, exactly ONE
+   custom chip (the drawer caps visibleCustomFlags at one), the "+N" counter
+   and the Stackable toggle — so the row has no reason to wrap. It did anyway:
+   at wrap, a few pixels over and the toggle alone dropped to a second line,
+   which read as Stackable belonging to something else.
+
+   The custom chip is the one item allowed to shrink, because its name already
+   truncates (.vti-flag-name). Everything else holds its size. */
+.vti-dw-flags { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; row-gap: 8px; min-width: 0; }
+.vti-dw-flags > * { flex-shrink: 0; }
+.vti-dw-flags > .invf-flag-custom { flex-shrink: 1; min-width: 0; }
+/* Below this the drawer is too narrow for six items on a line, and the section
+   clips its overflow — so wrapping is the right answer again, not a clipped
+   toggle. */
+@media (max-width: 900px) { .vti-dw-flags { flex-wrap: wrap; } }
 /* The hidden flags open in a portalled panel rather than unfolding into the
    row — expanding in place pushed this strip wider again, which is what the
    counter is here to stop. Modelled on the CLM masters' "+N" popover. */
