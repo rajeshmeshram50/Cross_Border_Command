@@ -123,7 +123,7 @@ const kv = (k: string, v: ReactNode) => <div key={k}><span>{k}</span><b>{v}</b><
 
 export default function PutawayConfirmPlacement({
   box, spot, warehouse, warehouseCode = null, assigned, scan = null, placedVia = null,
-  qr, locQr, onChange, onMethod, onSticker, onCancelTask, onOpenScanTask,
+  qr, locQr, onChange, onMethod, onSticker, onCancelTask, onOpenScanTask, scansDone = 0,
 }: {
   box: ConfirmBox;
   spot: ConfirmSpot | null;
@@ -146,6 +146,7 @@ export default function PutawayConfirmPlacement({
   onMethod: () => void;
   onSticker?: () => void;
   onCancelTask?: () => void;
+  scansDone?: number;
   onOpenScanTask?: () => void;
 }) {
   /** Outstanding: a task exists and the box is not in place yet. */
@@ -422,7 +423,15 @@ export default function PutawayConfirmPlacement({
               </div>
             </div>
             <div className="s4zb-btns">
-              <button type="button" className="s4zb-cancel" onClick={onCancelTask}><IcoBan /> Cancel Task</button>
+              <button
+                type="button"
+                className="s4zb-cancel"
+                onClick={onCancelTask}
+                disabled={scansDone > 0}
+                title={scansDone > 0 ? 'Scanning has started on the Zebra device — the task can no longer be cancelled' : undefined}
+              >
+                <IcoBan /> Cancel Task
+              </button>
               <button type="button" className="s4zb-open" onClick={onOpenScanTask}>Open Scan Task <IcoChevR /></button>
             </div>
           </div>

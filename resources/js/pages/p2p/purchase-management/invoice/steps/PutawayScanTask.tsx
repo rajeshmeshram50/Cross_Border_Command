@@ -341,7 +341,14 @@ export default function PutawayScanTask({
               you are reading the scan legs this is the screen in front of you.
               Gone once both scans are in: there is nothing left to cancel. */}
           {onCancelTask && !done && (
-            <button type="button" className="s4zt-cancel" onClick={onCancelTask}>
+            <button
+              type="button"
+              className="s4zt-cancel"
+              onClick={onCancelTask}
+              disabled={serverScans > 0 || qr.state === 'ok' || sh.state === 'ok'}
+              title={serverScans > 0 || qr.state === 'ok' || sh.state === 'ok'
+                ? 'Scanning has started on the Zebra device — the task can no longer be cancelled' : undefined}
+            >
               Cancel Task
             </button>
           )}

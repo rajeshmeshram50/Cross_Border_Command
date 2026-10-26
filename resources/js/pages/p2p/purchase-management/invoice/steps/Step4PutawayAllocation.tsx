@@ -798,9 +798,9 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
                               : <><span><IcoPlay /></span>Open Task</>}
                           </button>
                           <button type="button" className="s4zv-btn s4zv-btn--cancel"
-                            disabled={busy !== null}
+                            disabled={busy !== null || t.legs > 0}
                             aria-busy={busy?.kind === 'cancel' && busy.code === t.code}
-                            title="Cancel this scan task"
+                            title={t.legs > 0 ? 'Scanning has started on the Zebra device — the task can no longer be cancelled' : 'Cancel this scan task'}
                             onClick={() => run('cancel', t.code, () => onCancelTask(t.code))}>
                             {busy?.kind === 'cancel' && busy.code === t.code
                               ? <><span className="s4zv-spin" aria-hidden />Cancelling…</>
@@ -1414,6 +1414,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
   const cancelScanTask = async (which: 'only' | 'manual'): Promise<boolean> => {
     if (!scanTask || cancelBusy) return false;
+    if (scanSteps > 0) {
+      toast.warning('Scanning has started', 'The Zebra device has already scanned this box — the task can no longer be cancelled.');
+      setCancelAsk(false);
+      return false;
+    }
     setCancelBusy(true);
     setCancelWhich(which);
     try {
@@ -1775,6 +1780,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       onSticker={() => setQrOpen(true)}
                       onChange={() => { if (!boxLocked) setLcStep(1); }}
                       scan={scanTask}
+                      scansDone={scanSteps}
                       placedVia={placedVia}
                       warehouseCode={warehouse || null}
                       onMethod={() => { setMethodPick(null); setMethodOk(false); setMethodStage('select'); setMethodAsk(true); }}
