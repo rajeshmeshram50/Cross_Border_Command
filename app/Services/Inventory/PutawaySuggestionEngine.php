@@ -85,6 +85,39 @@ class PutawaySuggestionEngine
         return $code === null ? null : (self::REASONS[$code] ?? $code);
     }
 
+    /**
+     * The refusals that mean SPACE, as opposed to the ones that mean this
+     * box. Everything else — inactive, held, cold chain, hazardous,
+     * temperature, height — leaves the location as empty as it found it.
+     */
+    public const CAPACITY_REASONS = ['full', 'over_weight', 'over_capacity'];
+
+    public const STATES = [
+        'available' => 'Available',
+        'blocked'   => 'Has space · not valid for this box',
+        'full'      => 'No space left',
+    ];
+
+    /**
+     * available · blocked · full.
+     *
+     * `eligible: false` answered "can this box go here" and nothing else, so
+     * a cold-chain mismatch and a full shelf were the same answer. They are
+     * not: one is this box in the wrong place, the other is a shelf with
+     * nothing left to give, and only the second should count against free
+     * capacity.
+     */
+    public function state(?string $reason): string
+    {
+        if ($reason === null) return 'available';
+        return in_array($reason, self::CAPACITY_REASONS, true) ? 'full' : 'blocked';
+    }
+
+    public function stateLabel(?string $reason): string
+    {
+        return self::STATES[$this->state($reason)];
+    }
+
     /* ═══════════════════ HARD CONDITIONS · SHELF ═══════════════════ */
 
     /**
