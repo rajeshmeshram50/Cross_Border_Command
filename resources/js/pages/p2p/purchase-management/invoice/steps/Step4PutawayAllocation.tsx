@@ -647,19 +647,14 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
   poNumber: string | null;
   supplier: string | null;
   wh: { id?: string | null; name?: string | null; own?: boolean } | null;
-  onOpenTask: () => void;
-  onCancelTask: () => void;
+  onOpenTask: (code: string) => void;
+  onCancelTask: (code: string) => void;
   onClose: () => void;
 }) {
   const boxDone = tasks.filter(t => t.legs >= 1).length;
   const locDone = tasks.filter(t => t.legs >= 2).length;
   const notStarted = tasks.filter(t => t.legs === 0).length;
 
-  /* Both actions close this dialog and open another one, which on a loaded
-     page is not instant — and a click that changes nothing for a moment reads
-     as a dead button. The row says what it is doing instead. The close is held
-     back a beat because it unmounts the spinner: closing in the same tick as
-     setBusy means the state never paints. */
   const [busy, setBusy] = useState<{ kind: 'open' | 'cancel'; code: string } | null>(null);
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
@@ -697,10 +692,6 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
     </div>
   );
 
-  /* No backdrop-click close. This dialog carries the scan queue and two
-     actions that act on a task, and it has both a header × and a footer
-     Close — two deliberate ways out. A stray click beside it was a third,
-     unintended one, which is how it kept vanishing mid-read. */
   return createPortal(
     <div className="s4zv-ov" role="presentation">
       <div className="s4zv" role="dialog" aria-modal="true" aria-label="Zebra Open Tasks">
@@ -740,10 +731,6 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
                 <thead><tr>
                   <th>Sr.</th><th>Zebra Task ID</th><th>Putaway Box ID</th>
                   <th>Selected Location ID</th><th>Scan Status</th>
-                  {/* No inline textAlign. It was 'right', from when the buttons
-                      under it were pinned right too; both are centred now, and
-                      an inline style beats the stylesheet's th rule, which is
-                      what left this one heading adrift from its column. */}
                   <th>Actions</th>
                 </tr></thead>
                 <tbody>
@@ -802,19 +789,19 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
                       <td>
                         <div className="s4zv-acts">
                           <button type="button" className="s4zv-btn s4zv-btn--open"
-                            disabled={!t.live || busy !== null}
+                            disabled={busy !== null}
                             aria-busy={busy?.kind === 'open' && busy.code === t.code}
-                            title={t.live ? 'Open this scan task' : 'Select this box to open its task'}
-                            onClick={() => run('open', t.code, onOpenTask)}>
+                            title="Open this scan task"
+                            onClick={() => run('open', t.code, () => onOpenTask(t.code))}>
                             {busy?.kind === 'open' && busy.code === t.code
                               ? <><span className="s4zv-spin" aria-hidden />Opening…</>
                               : <><span><IcoPlay /></span>Open Task</>}
                           </button>
                           <button type="button" className="s4zv-btn s4zv-btn--cancel"
-                            disabled={!t.live || busy !== null}
+                            disabled={busy !== null}
                             aria-busy={busy?.kind === 'cancel' && busy.code === t.code}
-                            title={t.live ? 'Cancel this scan task' : 'Select this box to cancel its task'}
-                            onClick={() => run('cancel', t.code, onCancelTask)}>
+                            title="Cancel this scan task"
+                            onClick={() => run('cancel', t.code, () => onCancelTask(t.code))}>
                             {busy?.kind === 'cancel' && busy.code === t.code
                               ? <><span className="s4zv-spin" aria-hidden />Cancelling…</>
                               : <><span><IcoXSm /></span>Cancel Task</>}
@@ -946,19 +933,9 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
       if (!anchor || !el) return;
       const r = anchor.getBoundingClientRect();
       const top = Math.round(r.bottom + 8);
-      /* The button used to live inside the right panel, so `.s4-panel` was the
-         thing to stop at. It sits on the stage rail now, which is a SIBLING of
-         .s4-panels — closest('.s4-panel') finds nothing from there and the
-         floor fell through to the window, which is the one case the rule above
-         exists to prevent: the pop-over ran the full height of the screen and
-         covered the Update Invoice footer. Fall back to the panels row, which
-         ends exactly where the footer begins. */
       const scope: ParentNode = anchor.closest('.s4-root') ?? document;
       const stop = anchor.closest('.s4-panel') ?? scope.querySelector('.s4-panels');
       const floor = stop ? stop.getBoundingClientRect().bottom : window.innerHeight;
-      /* 220, not 320. A 320px floor is taller than the gap below the button on
-         a short window, so the minimum itself pushed the panel back over the
-         footer it had just been kept off. */
       const limit = Math.min(window.innerHeight - 12, floor - 8);
       setPos({
         top,
@@ -975,13 +952,6 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     };
   }, [anchor, entries.length]);
 
-  /* Escape closes it; an outside click does not.
-     This is anchored to its button like a popover, and a popover would
-     normally dismiss on any click away — but it is read as a log: you scroll
-     it, you click into the page to compare a code against the row behind it,
-     and it vanished every time. It carries an × of its own, and every other
-     dialog in this stage now closes only when you say so, so it behaves the
-     same way. */
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     document.addEventListener('keydown', esc, true);
@@ -1442,9 +1412,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     }
   };
 
-  /* WHICH of the two cancel buttons is running, not just that one is.
-     cancelBusy disables both, so a spinner driven off it alone would appear on
-     the button you did not press as well. */
   const cancelScanTask = async (which: 'only' | 'manual'): Promise<boolean> => {
     if (!scanTask || cancelBusy) return false;
     setCancelBusy(true);
@@ -1497,6 +1464,22 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       .catch(() => {});
     return () => { live = false; };
   }, [spiId, box?.code, board]);
+
+  const pendingTask = useRef<{ code: string; kind: 'open' | 'cancel' } | null>(null);
+  const taskAction = (code: string, kind: 'open' | 'cancel') => {
+    if (box && box.code === code && scanTask) {
+      if (kind === 'open') setScanOpen(true); else setCancelAsk(true);
+      return;
+    }
+    pendingTask.current = { code, kind };
+    setSelected(code);
+  };
+  useEffect(() => {
+    const p = pendingTask.current;
+    if (!p || !box || box.code !== p.code || !scanTask || !loc.data) return;
+    pendingTask.current = null;
+    if (p.kind === 'open') setScanOpen(true); else setCancelAsk(true);
+  }, [box?.code, scanTask?.apiId, loc.data]);
 
   const finishFromTask = (code: string) => {
     if (!box || scanDoneRef.current) return;
@@ -1565,7 +1548,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             title="Zebra scan tasks waiting on the warehouse floor"
             aria-haspopup="dialog"
             aria-expanded={zebraOpen}
-            onClick={() => setZebraOpen(true)}
+            onClick={() => { setLogsOpen(false); setZebraOpen(true); }}
           >
             <IcoScan />
             <span className="s4fs-t">Zebra Open Tasks</span>
@@ -1577,7 +1560,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             className="s4fs-btn s4b-toolbtn s4-scanlogs"
             title="Scan logs for this box"
             aria-expanded={logsOpen}
-            onClick={() => setLogsOpen(o => !o)}
+            onClick={() => { setZebraOpen(false); setLogsOpen(o => !o); }}
           >
             <IcoLog size={14} />
             <span className="s4fs-t">Scan Logs</span>
@@ -2057,14 +2040,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               createdAt: taskStamp(live ? scanTask!.at : null),
               scenario: b.scenario,
               qty: b.qty,
-              legs: live ? scanSteps : 0,
+              legs: live ? scanSteps : Math.min(2, board?.boxes.find(r => r.box_code === b.code)?.task?.scans.done ?? 0),
               legKind: s?.kind === 'zone' ? 'Zone' : 'Shelf',
               loc: rows,
               live,
             };
           })}
-          onOpenTask={() => setScanOpen(true)}
-          onCancelTask={() => setCancelAsk(true)}
+          onOpenTask={code => taskAction(code, 'open')}
+          onCancelTask={code => taskAction(code, 'cancel')}
           spiCode={spiCode}
           poNumber={draft.poNumber || null}
           supplier={draft.supplier || null}
