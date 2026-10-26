@@ -499,11 +499,14 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
           <div className="clm-modal-divider" />
 
           <div className="clm-field">
-            <label className="clm-field-label">Segment Name <span className="clm-req">*</span></label>
+            <label className="clm-field-label">Segment Name <span className="clm-req">*</span>
+              {/* Not shown when the name is locked: the hint under the field
+                  explains why it cannot be typed in, so a count of characters
+                  you are not allowed to change is noise. */}
+              {!inUse && <span className={`clm-count ${name.length >= 255 ? 'is-full' : ''}`}>{name.length}/255</span>}
+            </label>
             <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. Tobacco, Rice, Food Grade Ethanol" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} readOnly={inUse} tabIndex={inUse ? -1 : undefined} style={inUse ? { background: 'var(--vz-secondary-bg)', color: 'var(--vz-secondary-color)', cursor: 'not-allowed' } : undefined} autoFocus={!inUse} />
-            {inUse
-              ? <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 4 }}>Segment name is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — renaming would break those records.</div>
-              : <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/255</div>}
+            {inUse && <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 4 }}>Segment name is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — renaming would break those records.</div>}
             {errors.name && (
               /already exists/i.test(errors.name) ? (
                 <div role="alert" style={{

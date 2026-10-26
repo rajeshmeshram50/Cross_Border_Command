@@ -412,10 +412,11 @@ export function SimpleDescModal(props: {
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">Description <span className="clm-req">*</span></label>
+            <label className="clm-field-label">Description <span className="clm-req">*</span>
+              <span className={`clm-count ${desc.length >= CLM_DESC_MAX ? 'is-full' : ''}`}>{desc.length}/{CLM_DESC_MAX}</span>
+            </label>
             <textarea className={`clm-textarea ${errors.desc ? 'clm-input-err' : ''}`} placeholder={descPlaceholder} value={desc} maxLength={CLM_DESC_MAX} onChange={e => handleDescChange(e.target.value)} />
             {errors.desc && <div className="clm-err">{errors.desc}</div>}
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{desc.length}/{CLM_DESC_MAX}</div>
           </div>
         </div>
         <div className="clm-modal-foot">

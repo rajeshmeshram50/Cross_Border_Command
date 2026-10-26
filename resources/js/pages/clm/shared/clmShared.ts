@@ -363,7 +363,11 @@ export const CLM_CSS = `
   transition: box-shadow .22s ease, border-color .15s ease;
   white-space: nowrap; letter-spacing: 0; position: relative; z-index: 1;
 }
-.clm-tab:hover { background: rgba(6,182,212,.06); border-color: rgba(6,182,212,.22); color: #0891b2; }
+/* A white chip lifting off the rail, with no outline. The teal wash plus a
+   visible border read as a second, half-selected state next to the filled
+   active tab — hover should say "this is under the pointer", not "this is
+   nearly chosen". The lift comes from the shadow alone. */
+.clm-tab:hover { background: #fff; border-color: transparent; color: #0891b2; box-shadow: 0 2px 6px rgba(16,24,40,.12); }
 /* The selected tab, measured off Customers: three stops a-400 → a-600 at 55%
    → a-700, one lifted shadow and a lit top edge. CLM ran four stops under a
    0 5px 14px .5 shadow with a sunk bottom inset as well, which sat heavier
@@ -1084,8 +1088,13 @@ body > .dropdown-menu.master-select-menu,
 
 .clm-modal-body {
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
-  padding: 10px 16px 8px;
-  display: flex; flex-direction: column; gap: 6px;
+  /* Even top and bottom. It was 10 / 8, which left the first field tight
+     under the head and the last one sitting closer to the footer than to its
+     own neighbour. */
+  padding: 14px 16px;
+  /* 14 between fields, against 5 inside one (.clm-field) — see the note there:
+     at 6 against 1 the two gaps read as the same measure and nothing grouped. */
+  display: flex; flex-direction: column; gap: 14px;
   overflow-y: auto;
 }
 
@@ -1141,7 +1150,12 @@ body > .dropdown-menu.master-select-menu,
 .clm-modal-body .mms-placeholder { color: #94A3B8; }
 [data-bs-theme="dark"] .clm-modal-body .mms-toggle { background: #1e293b; border-color: rgba(6,182,212,.25); color: #e2e8f0; box-shadow: none; }
 .clm-modal-body .mms-chip { background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%); border-color: #a5f3fc; color: #0e7490; }
-.clm-modal-body .mms-chip-x { background: rgba(8,145,178,.12); color: #0e7490; }
+/* 500, not the component's 700. The × is a control, not a word — at bold it
+   carried more ink than the name it removes. */
+.clm-modal-body .mms-chip-x { background: rgba(8,145,178,.12); color: #0e7490; font-weight: 500; }
+/* The chip's own label likewise: 600 set every selected authority in
+   semi-bold, so a toggle holding six of them read as a row of headings. */
+.clm-modal-body .mms-chip { font-weight: 500; }
 .clm-modal-body .mms-chip-x:hover { background: #0891b2; color: #fff; }
 .clm-modal-body .mms-more { background: #ecfeff; border-color: #a5f3fc; color: #0e7490; }
 .clm-modal-body .mms-more:hover { background: #cffafe; border-color: #67e8f9; }
@@ -1153,7 +1167,11 @@ body > .dropdown-menu.master-select-menu,
 .mms-menu.clm-mms-menu { border-color: rgba(6,182,212,.25); }
 .clm-mms-menu .mms-search:focus { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.14); }
 .clm-mms-menu .mms-item:hover { background: rgba(6,182,212,.07); }
-.clm-mms-menu .mms-item.is-on { background: rgba(6,182,212,.12); color: #0e7490; }
+/* 500, against the component's 600 for a ticked row. These lists are mostly
+   ticked — you open them to review what is already selected — so at 600 the
+   whole menu came out bold and the tick, the tint and the colour were already
+   saying "selected" three times over without the weight. */
+.clm-mms-menu .mms-item.is-on { background: rgba(6,182,212,.12); color: #0e7490; font-weight: 500; }
 .clm-mms-menu .mms-item.is-on .mms-check { background: #0891b2; border-color: #0891b2; }
 .clm-mms-menu .mms-done { background: #0891b2; }
 .clm-mms-menu .mms-done:hover { background: #0e7490; }
@@ -1195,17 +1213,55 @@ body > .dropdown-menu.master-select-menu,
 .clm-autocode-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.5); }
 .clm-autocode-badge.edit .clm-autocode-dot { background: #f59e0b; box-shadow: 0 0 4px rgba(245,158,11,.5); }
 /* Hairline divider under the auto-code strip (matches Figma seg-modal-divider).
- * Inter-field spacing comes from .clm-modal-body's flex gap, so no margin here. */
-.clm-modal-divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(6,182,212,.2), transparent); }
+ * The negative margin is the point: this is a flex child of .clm-modal-body,
+ * so it collects a FULL gap on each side — 14 + 1 + 14 = 29px between the
+ * auto-code strip and the first field, against 14 between any two fields. The
+ * block under the code looked pushed away from the form. Pulling 7.5px off
+ * each side brings the whole run back to 14, with the hairline sitting in the
+ * middle of it. */
+.clm-modal-divider {
+  height: 1px; background: linear-gradient(90deg, transparent, rgba(6,182,212,.2), transparent);
+  margin-top: -7.5px; margin-bottom: -7.5px;
+}
 
 /* Form field — relies on .clm-modal-body's flex gap for inter-field
  * spacing (no margin-bottom) so we don't stack double space between rows. */
-.clm-field { display: flex; flex-direction: column; gap: 1px; margin-bottom: 0; }
+/* 5px from a label to its own control, against the 14px between one field and
+   the next (.clm-modal-body). It was 1px against 6: at those sizes the two
+   gaps read as the same measure, so a label never grouped with the input it
+   names and the body came out as one even stack of lines instead of five
+   fields. Proximity is the only thing saying which label belongs to which
+   box, and it needs a clear ratio to say it. */
+/* 3, not 5. The label ROW got taller when the character count moved into it:
+   it now holds three type sizes — the 8.5px label, the 13px required asterisk
+   and the 10px count — and align-items: center makes the row as tall as the
+   largest, so the label text picked up dead space under it before the gap
+   even started. line-height: 1 on the row stops each of those adding its own
+   leading on top; 3 then measures like the 5 did before. */
+.clm-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 0; }
 .clm-field-label {
   font-size: 8.5px; font-weight: 500; letter-spacing: .13em; text-transform: uppercase;
-  color: #0e7490; display: flex; align-items: center; gap: 5px;
+  color: #0e7490; display: flex; align-items: center; gap: 5px; line-height: 1;
 }
 .clm-req { color: #EF4444; font-size: 13px; line-height: 1; font-weight: 700; }
+/* The character count, on the LABEL's line rather than under the control.
+   Below the input it was a third row inside the field, so the distance to the
+   next field measured 14px of gap PLUS the counter's own line — the fields
+   that had a counter looked further apart than the ones that did not, which
+   is the uneven rhythm the 14px gap exists to prevent.
+   Up here it costs no height at all: the label row has space to its right and
+   nothing else in it. Its own type, not the label's — a number reads as data,
+   not as a heading, so no tracking and no uppercasing. */
+.clm-count {
+  margin-left: auto;
+  font-size: 10px; font-weight: 500; letter-spacing: 0; text-transform: none;
+  color: #64748b; font-variant-numeric: tabular-nums;
+  /* No leading of its own — it is the tallest text in the row after the
+     asterisk, and any extra pushes the label away from its input. */
+  line-height: 1;
+}
+.clm-count.is-full { color: #dc2626; font-weight: 700; }
+[data-bs-theme="dark"] .clm-count { color: #94a3b8; }
 .clm-input, .clm-textarea, .clm-select {
   width: 100%; padding: 7px 12px;
   border: 1.5px solid rgba(6,182,212,.25); border-radius: 9px;
@@ -1646,7 +1702,9 @@ body > .dropdown-menu.master-select-menu,
    to be. */
 [data-bs-theme="dark"] .clm-tab:not(.active) { color: #67e8f9; background: linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10)); border-color: rgba(6,182,212,.28); }
 [data-bs-theme="dark"] .clm-tab.active { color: #fff; border-color: transparent; }
-[data-bs-theme="dark"] .clm-tab:not(.active):hover { color: #a5f3fc; background: linear-gradient(135deg, rgba(6,182,212,.24), rgba(6,182,212,.16)); border-color: rgba(6,182,212,.5); }
+/* Dark has no white to lift with, so the chip is the lightest surface the
+   rail can carry — but the border goes here too, for the same reason. */
+[data-bs-theme="dark"] .clm-tab:not(.active):hover { color: #a5f3fc; background: rgba(255,255,255,.08); border-color: transparent; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
 [data-bs-theme="dark"] .clm-tab:not(.active) .clm-tab-count { background: rgba(6,182,212,.18); color: #67e8f9; border-color: rgba(34,211,238,.30); }
 /* Dark: the same idea inverted, and the same values HRMS uses — a translucent
    wash of the accent rather than a flat panel colour, so the field reads as a

@@ -100,9 +100,10 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
             <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">QC Certificate Name <span className="clm-req">*</span></label>
+            <label className="clm-field-label">QC Certificate Name <span className="clm-req">*</span>
+              <span className={`clm-count ${name.length >= 255 ? 'is-full' : ''}`}>{name.length}/255</span>
+            </label>
             <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. ISO 9001, HACCP, GOTS" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/255</div>
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
@@ -134,14 +135,16 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
             {errors.issuedBy && <div className="clm-err">{errors.issuedBy}</div>}
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">QA Testing Parameters</label>
+            <label className="clm-field-label">QA Testing Parameters
+              <span className={`clm-count ${(qaParams ?? '').length >= 256 ? 'is-full' : ''}`}>{(qaParams ?? '').length}/256</span>
+            </label>
             <textarea className="clm-textarea" placeholder="e.g. Moisture %, microbial count, contamination levels" value={qaParams ?? ''} maxLength={256} onChange={e => setQaParams(e.target.value.slice(0, 256))} />
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{(qaParams ?? '').length}/256</div>
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">Minimum Acceptance Criteria</label>
+            <label className="clm-field-label">Minimum Acceptance Criteria
+              <span className={`clm-count ${(minCrit ?? '').length >= 256 ? 'is-full' : ''}`}>{(minCrit ?? '').length}/256</span>
+            </label>
             <textarea className="clm-textarea" placeholder="e.g. Moisture < 13%, zero contamination, pH 6.0–7.5" value={minCrit ?? ''} maxLength={256} onChange={e => setMinCrit(e.target.value.slice(0, 256))} />
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{(minCrit ?? '').length}/256</div>
           </div>
         </div>
         <div className="clm-modal-foot">

@@ -489,8 +489,16 @@ const MMS_CSS = `
 /* Wraps: an authority's name can be a sentence, and cutting it here would
    defeat the point of opening the list. */
 .mms-pop-pill {
-  flex: 1; min-width: 0;
-  font-size: 11px; font-weight: 700; color: #0e7490;
+  /* Hugs its text, like the .clm-pop rows this mirrors. It was flex: 1, which
+     stretched every pill to the full row — a short name like "Customer" came
+     out as a bar with a word at one end. It can still grow and wrap when the
+     name really is a sentence, which is what min-width: 0 and the normal
+     white-space below are for; it just no longer claims the width by default. */
+  flex: 0 1 auto; min-width: 0;
+  /* 500. These rows are a list of names read one after another; at 700 the
+     whole panel came out as a stack of headings with nothing to rest on, and
+     the pill's own tint and border already separate one from the next. */
+  font-size: 11px; font-weight: 500; color: #0e7490;
   background: #ecfeff; border: 1px solid #cffafe; border-radius: 7px;
   padding: 3px 8px; white-space: normal; word-break: break-word;
 }
@@ -500,10 +508,15 @@ const MMS_CSS = `
    portalled to <body>, so it sits outside every one of those scopes and can
    never be reached by them. It kept coming out violet against a teal list.
    Teal here, to the same values .clm-modal-body uses. */
-.mms-pop-x { flex-shrink: 0; }
+/* Pushed to the right rail now that the pill no longer fills the row, so the
+   × sits in one column down the list instead of trailing each name at a
+   different x. */
+.mms-pop-x { flex-shrink: 0; margin-left: auto; }
 /* Two classes, because .mms-chip-x is declared further down and would
    otherwise win on order and repaint these violet again. */
-.mms-chip-x.mms-pop-x { background: rgba(8,145,178,.12); color: #0e7490; }
+/* Popover-only, like the colour above it: 500 rather than .mms-chip-x's 700.
+   The × removes a row; it should not out-weigh the name it removes. */
+.mms-chip-x.mms-pop-x { background: rgba(8,145,178,.12); color: #0e7490; font-weight: 500; }
 .mms-chip-x.mms-pop-x:hover { background: #0891b2; color: #fff; }
 
 [data-bs-theme="dark"] .mms-chip-x.mms-pop-x,
