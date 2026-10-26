@@ -319,7 +319,16 @@ export default function PutawayConfirmPlacement({
                 : 'Storage zone with rack · Zone › Rack › Shelf'}</em>
             </div>
             {spot && (
-              <button type="button" className="s4c3-chg" onClick={onChange}><IcoEdit /> Change</button>
+              <button
+                type="button"
+                className="s4c3-chg"
+                onClick={onChange}
+                disabled={assigned || waiting}
+                title={assigned ? 'Putaway is completed — the location is locked to this box'
+                  : waiting ? 'Cancel the Zebra task before changing the location' : undefined}
+              >
+                <IcoEdit /> Change
+              </button>
             )}
           </div>
           <div className="s4c3-bd">

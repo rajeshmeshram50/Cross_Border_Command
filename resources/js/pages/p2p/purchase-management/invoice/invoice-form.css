@@ -8508,6 +8508,9 @@
   font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
 }
 .s4-root .s4c3-chg:hover { background: #ecfdf5; }
+.s4-root .s4c3-chg:disabled { opacity: .5; cursor: not-allowed; }
+.s4-root .s4c3-chg:disabled:hover { background: #fff; }
+[data-bs-theme="dark"] .s4-root .s4c3-chg:disabled:hover { background: rgba(16,185,129,.1); }
 .s4-root .s4c3-bd { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px; }
 
 /* ── the hero band in each card ── */

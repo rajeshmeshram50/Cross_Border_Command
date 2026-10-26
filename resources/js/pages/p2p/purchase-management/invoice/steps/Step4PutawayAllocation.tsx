@@ -1249,6 +1249,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const coldCount = scope.filter(b => b.cold).length;
   const pct = scope.length ? Math.round((placed / scope.length) * 100) : 0;
   const box = all.find(b => b.code === selected) ?? null;
+  const boxLocked = placedAt !== null || box?.status === 'placed';
+  useEffect(() => { if (boxLocked && lcStep === 1) setLcStep(2); }, [boxLocked, lcStep]);
 
   const zebraTasks = useMemo(() => {
     const open = all.filter(b => b.status === 'awaiting_scan');
@@ -1304,7 +1306,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   }, [firstAwaiting, selected, shownCodes]);
 
   const askStorageMode = () => {
-    if (!box) return;
+    if (!box || boxLocked) return;
     setModePick(null);
     if (!spiId) {
       setModeAsk({ loading: false, rack: 0, norack: 0, error: 'Save the invoice before allocating a location.' });
@@ -1339,6 +1341,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   }, [lcStep, putMode, spiId, box?.id, locTick]);
 
   const assignSpot = async () => {
+    if (boxLocked) return;
     if (!spiId || !box || !putMode || spot === null || assigning) return;
     if (assigned && assigned.boxId === box.id && assigned.spot === spot) { setLcStep(2); return; }
     const sp = findSpot(loc.data, spot);
@@ -1766,7 +1769,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       qr={<BoxQr text={box.code} size={92} bare />}
                       locQr={<BoxQr text={`${warehouse ?? ''}/${spot ?? ''}`} size={80} bare />}
                       onSticker={() => setQrOpen(true)}
-                      onChange={() => setLcStep(1)}
+                      onChange={() => { if (!boxLocked) setLcStep(1); }}
                       scan={scanTask}
                       placedVia={placedVia}
                       warehouseCode={warehouse || null}
@@ -1805,7 +1808,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       totalQty={box.qty}
                       note={noteOf(rawBox)}
                       onSticker={() => setQrOpen(true)}
-                      onNext={askStorageMode}
+                      onNext={boxLocked ? () => setLcStep(2) : askStorageMode}
                     />
                   )}
                 </div>
@@ -1816,7 +1819,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     type="button"
                     className="s4-btn-back"
                     disabled={lcStep === 0}
-                    onClick={() => setLcStep(n => Math.max(0, n - 1))}
+                    onClick={() => setLcStep(n => (boxLocked && n === 2 ? 0 : Math.max(0, n - 1)))}
                   >
                     <IcoChevL /> Back
                   </button>
