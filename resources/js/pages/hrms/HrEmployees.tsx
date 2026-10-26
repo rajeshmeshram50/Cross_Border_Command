@@ -2163,8 +2163,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
      branch, any kind of record. The save refuses it either way, but a wizard
      that only says so on the way out of Stage 1 (or, worse, after Stage 4)
      makes the operator re-find the field. This asks the same question the
-     validator will ask, on blur and again before Next, so the answer lands on
-     the field being typed. Mirrors checkMobileUnique above, token and all. */
+     validator will ask, ON BLUR ONLY, so the answer lands on the field being
+     typed. It used to run again on Next as well — that cost a whole extra
+     round trip (~3s on the server) to hear what the save was about to say
+     authoritatively a moment later. Mirrors checkMobileUnique above, token
+     and all. */
   const emailCheckTokenRef = useRef(0);
   const checkEmailUnique = useCallback(async (value: string): Promise<boolean> => {
     const v = (value || '').trim();
@@ -2862,6 +2865,35 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     return 1;
   };
 
+/* Fields the narrow step endpoint accepts (EmployeeController::STEP_SAFE_FIELDS).
+ *
+ * This is a HINT, not the rule. It decides which endpoint to try first; the
+ * server keeps the authoritative list and answers 422 { fallback: true } for
+ * anything outside it, which is retried on PUT. So a field added here by
+ * mistake costs one extra round trip, never a skipped side effect — and the
+ * two lists drifting apart cannot break a save.
+ *
+ * Everything absent needs the full update: names (display-name derivation),
+ * email (user sync + EmailGuard), mobile (duplicate guard), status (account
+ * enable/disable), anything payroll (structure versioning + payslip
+ * recompute), leave_plan, shift, date_of_joining. */
+const STEP_SAFE_FIELDS = new Set([
+  'department_id', 'designation_id', 'primary_role_id', 'ancillary_role_ids',
+  'legal_entity_id', 'holiday_group_id', 'holiday_list',
+  'nationality_country_id', 'work_country_id',
+  'reporting_manager_id', 'reporting_manager_user_id',
+  'location', 'date_of_birth', 'gender', 'blood_group',
+  'probation_months', 'probation_end_date', 'probation_policy',
+  'notice_period', 'weekly_off',
+  'attendance_number', 'attendance_tracking', 'biometric_status',
+  'desk_workstation_no', 'id_card_status',
+  'laptop_assigned', 'laptop_master_asset_id',
+  'mobile_assigned', 'mobile_master_asset_id', 'mobile_device',
+  'other_assets', 'other_master_asset_ids',
+  'expense_policy', 'overtime', 'pay_group', 'penalization_policy',
+  'tax_regime', 'time_tracking',
+]);
+
   const buildEmployeePayload = (stepCompleted: number): Record<string, any> => {
     const intOrNull = (s: string | null | undefined) => {
       const n = parseInt(String(s ?? ''), 10);
@@ -3058,7 +3090,29 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
           ? { ...Object.fromEntries(changed.map(k => [k, payload[k]])),
               wizard_step_completed: payload.wizard_step_completed }
           : payload;
-        await api.put(`/employees/${currentId}`, body);
+
+        /* Master-data-only edits go to the narrow endpoint: the same write in
+           10 queries against the full update's 38, because it does not eager
+           load every relation or rebuild an employee for a response this call
+           discards anyway. Anything the server will not take there comes back
+           422 { fallback: true } and is re-sent to the PUT untouched, so the
+           old path still runs for every save that needs its side effects. */
+        const narrow = !!changed && changed.length > 0
+          && changed.every(k => STEP_SAFE_FIELDS.has(k));
+
+        if (narrow) {
+          try {
+            await api.patch(`/employees/${currentId}/step`, body);
+          } catch (err: any) {
+            if (err?.response?.status === 422 && err?.response?.data?.fallback) {
+              await api.put(`/employees/${currentId}`, body);
+            } else {
+              throw err;
+            }
+          }
+        } else {
+          await api.put(`/employees/${currentId}`, body);
+        }
       } else {
         const r = await api.post('/employees', payload);
         const newId: number | undefined = r?.data?.employee?.id;
@@ -3100,6 +3154,19 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
         }
         setEErrors(flat);
         scrollToFirstError();
+
+        /* A duplicate address or number keeps the headline it had when a
+           separate pre-check asked the question — "Could not save" over a
+           field error reads like a server fault rather than something the
+           user can fix. */
+        if (flat.email || flat.mobile) {
+          const dupEmail = !!flat.email;
+          toast.error(
+            dupEmail ? 'Duplicate email address' : 'Duplicate mobile number',
+            dupEmail ? flat.email : flat.mobile,
+          );
+          return false;
+        }
       }
       const msg = err?.response?.data?.message || err?.message || 'Save failed';
       toast.error('Could not save', String(msg));
@@ -3135,26 +3202,19 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
     setSaving(true);
     try {
-      if (empStep === 1) {
-        /* Both at once. They ask different questions of different tables and
-           neither depends on the other, but awaiting them in turn made Step 1 →
-           Step 2 three sequential round trips before the save even started —
-           and on the server a round trip is the expensive part. Email is still
-           reported first when both clash, so the message order is unchanged. */
-        const [emailOk, mobileOk] = await Promise.all([
-          checkEmailUnique(eWorkEmail),
-          checkMobileUnique(eMobile),
-        ]);
-        if (!emailOk) {
-          toast.error('Duplicate email address', 'This email is already used somewhere in the system. Each address can be used only once.');
-          scrollToFirstError();
-          return;
-        }
-        if (!mobileOk) {
-          toast.error('Duplicate mobile number', 'This mobile is already in use by another employee.');
-          return;
-        }
-      }
+      /* No uniqueness pre-check here any more.
+
+         Step 1 → Step 2 used to run the email and mobile checks and THEN the
+         save: two sequential round trips, and on the server a round trip is
+         ~3s whatever it carries. The save already refuses both before it
+         writes anything — Rule::unique + UniqueSystemEmail for the address,
+         guardDuplicate() for the number — so the pair was paying 3s to hear
+         an answer the next request would give authoritatively. A duplicate
+         now comes back as a 422 and persistCurrentStepInner reports it on the
+         field, same wording as before.
+
+         The onBlur checks stay: they answer while the user is still typing,
+         off the critical path, which is where that question belongs. */
       const ok = await persistCurrentStepInner(empStep);
       if (!ok) return;
       setEErrors({});

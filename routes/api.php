@@ -971,6 +971,10 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
     /* Advancing the onboarding wizard writes two integers. Through update() that
        cost 41 queries — validation, structure mirroring, payslip recompute, HOD
        wiring — none of which a progress marker needs. (QA #5-#11) */
+    /* The wizard's master-data save. Narrow by design — see
+       EmployeeController::STEP_SAFE_FIELDS. A body carrying anything else
+       is refused with fallback:true and belongs on PUT /employees/{id}. */
+    Route::patch ('/employees/{id}/step',         [EmployeeController::class, 'updateStep']);
     Route::patch ('/employees/{id}/onboarding-progress', [EmployeeController::class, 'updateOnboardingProgress']);
     Route::apiResource('employees', EmployeeController::class);
 

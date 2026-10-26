@@ -73,6 +73,8 @@ export default function InvoiceForm({
   const [spiId, setSpiId] = useState<number | null>(null);
   const [spiCode, setSpiCode] = useState<string | null>(input.invoiceNo ?? null);
   const [saving, setSaving] = useState(false);
+  const [putaway, setPutaway] = useState<{ placed: number; total: number } | null>(null);
+  const onPutawayProgress = useCallback((placed: number, total: number) => setPutaway({ placed, total }), []);
   const [boxes, setBoxes] = useState<SpiBox[]>([]);
   const [flagMaster, setFlagMaster] = useState<ProductFlagOption[]>([]);
   const [boxesLoading, setBoxesLoading] = useState(false);
@@ -110,17 +112,6 @@ export default function InvoiceForm({
           if (existing.warehouse?.id) setSavedWarehouseId(existing.warehouse.id);
           setSpiStatus({ status: existing.status, label: SPI_STATUS_LABELS[existing.status] ?? existing.status });
           setSpiBranchId(existing.branch_id ?? null);
-          /* Resume where the work stopped.
-
-             stage_completed counts FINISHED stages, so it is also the index
-             of the first unfinished one: 2 finished means index 2, Box
-             Packaging. Clamped to the last stage for a submitted invoice
-             (stage_completed 4), which has no index 4 to land on.
-
-             Both pieces of state are set from it on purpose — `reached` is
-             how far the user MAY jump, `stage` is where they ARE. Only the
-             first was restored, so every reopen started at Supplier Details
-             however much had been done. */
           const resumeAt = Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1);
           setReached(resumeAt);
           setStage(resumeAt);
@@ -297,7 +288,7 @@ export default function InvoiceForm({
   }, []);
 
   useEffect(() => {
-    if (stage !== 2 || !spiId) return;
+    if (stage < 2 || !spiId) return;
     let live = true;
     setBoxesLoading(true);
     Promise.all([
@@ -359,6 +350,19 @@ export default function InvoiceForm({
     }
   }, [spiId, reloadBoxes, toast]);
 
+  const deleteBoxPhoto = useCallback(async (boxId: number, attachmentId: number): Promise<boolean> => {
+    if (!spiId) return false;
+    try {
+      await spiApi.deleteBoxPhoto(spiId, boxId, attachmentId);
+      void reloadBoxes(spiId).catch(() => {});
+      toast.success('Photo removed', 'It is no longer attached to this box.');
+      return true;
+    } catch (e) {
+      toast.error('Could not remove the photo', boxError(e));
+      return false;
+    }
+  }, [spiId, reloadBoxes, toast]);
+
   const deleteBoxes = useCallback(async (ids: number[]): Promise<boolean> => {
     if (!spiId) return false;
     let removed = 0;
@@ -386,7 +390,7 @@ export default function InvoiceForm({
       if (stage >= STAGES.length - 1) onClose(); else advance();
       return;
     }
-    if (stage >= STAGES.length - 1) return;
+    if (stage >= STAGES.length - 1) { void mapInvoice(); return; }
     if (stage === 0) { void saveStage1(); return; }
     if (stage === 1) { void saveStage2(); return; }
     if (stage === 2) {
@@ -398,10 +402,46 @@ export default function InvoiceForm({
         );
         return;
       }
+      if (spiId) { void finishStage3(); return; }
     }
     advance();
   };
-  const nextBlocked = viewOnly ? poLoading : saving || (stage === 0 && (poLoading || !!poError)) || (stage === 2 && boxesLoading);
+  const allPlaced = !!putaway && putaway.total > 0 && putaway.placed >= putaway.total;
+  const mapBlocked = !viewOnly && stage === STAGES.length - 1 && !allPlaced;
+  const mapHint = mapBlocked
+    ? (putaway && putaway.total > 0
+        ? `Put away every box first — ${putaway.placed} of ${putaway.total} placed`
+        : 'Put away every box first')
+    : undefined;
+
+  const finishStage3 = async () => {
+    if (!spiId || saving) return;
+    setSaving(true);
+    try {
+      await spiApi.completeStage3(spiId);
+      advance();
+    } catch (e) {
+      toast.error('Could not finish Stage 03', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const mapInvoice = async () => {
+    if (!spiId || saving || !allPlaced) return;
+    setSaving(true);
+    try {
+      await spiApi.submit(spiId);
+      toast.success(`${spiCode ?? 'Invoice'} mapped`, 'Every box is put away and the invoice is closed for Stage 04.');
+      onClose();
+    } catch (e) {
+      toast.error('Could not map the invoice', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || (stage === 0 && (poLoading || !!poError)) || (stage === 2 && boxesLoading);
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
@@ -442,10 +482,6 @@ export default function InvoiceForm({
 
           <div className="spi-dt-steps cpf-steps4">
             {STAGES.map((s, i) => (
-              /* The shared pill, not the browser's own tooltip. `title` drew
-                 the OS one — a plain white box in a different font, after the
-                 browser's own delay — so this was the one control on the page
-                 whose hover did not look like the rest of the app. */
               <Tooltip
                 key={s.title}
                 label={i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
@@ -503,6 +539,7 @@ export default function InvoiceForm({
                     onCreateBox={spiId ? createBox : undefined}
                     onUpdateBox={spiId ? updateBox : undefined}
                     onDeleteBoxes={spiId ? deleteBoxes : undefined}
+                    onDeleteBoxPhoto={spiId ? deleteBoxPhoto : undefined}
                     spiId={spiId}
                     spiCode={spiCode}
                   />
@@ -512,6 +549,7 @@ export default function InvoiceForm({
                     flagMaster={flagMaster} spiId={spiId}
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
                     spiCode={spiCode}
+                    onProgress={onPutawayProgress}
                     warehouseInfo={{
                       code: warehouseRow?.wh_code ?? input.storage.warehouse?.code ?? null,
                       since: warehouseRow?.created_at ?? null,
@@ -544,8 +582,6 @@ export default function InvoiceForm({
             </div>
           </div>
           <div className="spi-dt-foot-r">
-            {/* Leaving the step mid-save would walk away from a request that
-                is still going to land, so Back waits with everything else. */}
             <button type="button" className="spi-dt-btn-ghost" onClick={goBack} disabled={saving}>
               <IcoChevronL /> {stage === 0 ? 'Change Selection' : 'Back'}
             </button>
@@ -554,11 +590,9 @@ export default function InvoiceForm({
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
               onClick={goNext}
               disabled={nextBlocked}
+              title={mapHint}
               aria-busy={saving}
             >
-              {/* "Saving…" on its own is a word change on a button that has
-                  just gone grey — easy to miss, and on a quick save easy to
-                  doubt it happened. The button turns instead. */}
               {saving ? <WizSpinner /> : isLast ? <IcoCheck /> : null}
               {viewOnly ? (isLast ? 'Close' : 'Next')
                 : isLast ? (editing ? 'Update Invoice' : 'Map Invoice')

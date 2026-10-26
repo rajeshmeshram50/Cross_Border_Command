@@ -60,8 +60,9 @@ const todayIso = () => {
 
 export default function Step3BoxPackaging({
   draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
-  spiId, spiCode,
+  spiId, spiCode, onDeleteBoxPhoto,
 }: {
+  onDeleteBoxPhoto?: (boxId: number, attachmentId: number) => Promise<boolean>;
   draft: InvoiceDraft;
   spiId?: number | null;
   spiCode?: string | null;
@@ -210,6 +211,7 @@ export default function Step3BoxPackaging({
       scenarioNo: SCN_LABEL[b.scenario][0],
       scenario: SCN_LABEL[b.scenario][1],
       subLabel: subLabelOf(b),
+      packedOn: packedOn(b),
       dims: { l: num(b.length_cm), w: num(b.width_cm), h: num(b.height_cm) },
       netWt: num(b.net_weight_kg),
       grossWt: num(b.gross_weight_kg),
@@ -369,6 +371,7 @@ export default function Step3BoxPackaging({
       is_stackable: data.stackable ? 1 : 0,
       temp_min_c: data.tempMin,
       temp_max_c: data.tempMax,
+      photos: data.photos,
       items: contents.map(c => {
         const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
         const note = scenario === 's3'
@@ -567,6 +570,7 @@ export default function Step3BoxPackaging({
       ...(box.temp_min_c != null && box.temp_max_c != null
         ? { temp: { min: String(box.temp_min_c), max: String(box.temp_max_c) } }
         : range.length === 2 ? { temp: { min: range[0], max: range[1] } } : {}),
+      photos: (box.attachments ?? []).map(a => ({ id: a.id, name: a.file_name ?? 'Box photo', path: a.file_path })),
     };
   };
 
@@ -1070,6 +1074,7 @@ export default function Step3BoxPackaging({
           saving={savingKey === `edit:${editingBox.id}`}
           saved
           onSave={data => void saveEdit(data)}
+          onDeletePhoto={readOnly || !onDeleteBoxPhoto ? undefined : (id: number) => onDeleteBoxPhoto(editingBox.id, id)}
           onClose={closeEdit}
         />
         </div>

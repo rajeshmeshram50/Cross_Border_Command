@@ -1152,7 +1152,7 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     document.body);
 }
 
-export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false }: {
+export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false, onProgress }: {
   draft: InvoiceDraft;
   boxes: SpiBox[];
   lines?: ProductLine[];
@@ -1165,6 +1165,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   /** This invoice's own number, shown on the scan task's header. */
   spiCode?: string | null;
   readOnly?: boolean;
+  onProgress?: (placed: number, total: number) => void;
 }) {
   const [tab, setTab] = useState<'all' | Disposition>('all');
   const [selected, setSelected] = useState<string | null>(null);
@@ -1242,6 +1243,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       };
     });
   };
+
+  useEffect(() => {
+    if (board) onProgress?.(board.counts.placed, board.counts.total);
+  }, [board?.counts.placed, board?.counts.total]);
 
   const againstPo = !!draft.poNumber;
   const all = useMemo(
@@ -1372,7 +1377,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [methodOk, setMethodOk] = useState(false);
   /* The raised Zebra task. An object, not a flag: the screen has to name the
      task, and "which one" is the first thing an operator asks about it. */
-  const [scanTask, setScanTask] = useState<{ id: string; at: string } | null>(null);
+  const [scanTask, setScanTask] = useState<{ id: string; at: string; apiId: number } | null>(null);
+  const [methodBusy, setMethodBusy] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const scanDoneRef = useRef(false);
   /* The per-box Zebra Scan Task dialog (PutawayScanTask), opened from the
      method dialog for the box in hand. */
   const [scanOpen, setScanOpen] = useState(false);
@@ -1584,6 +1592,144 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       setAssigning(false);
     }
   };
+
+  const putawayIdOf = (boxId: number): number | null =>
+    (assigned && assigned.boxId === boxId ? assigned.putawayId : null)
+      ?? board?.boxes.find(r => r.box_id === boxId)?.putaway_id ?? null;
+
+  const apiError = (e: unknown) => (e instanceof PoApiError ? e.firstError : 'Please try again.');
+
+  const confirmManual = async () => {
+    if (!spiId || !box || methodBusy) return false;
+    const rowId = putawayIdOf(box.id);
+    if (!rowId) { toast.warning('Allocate the box first', 'Choose a location in Step 02 and press Next.'); return false; }
+    setMethodBusy(true);
+    try {
+      await spiApi.putawayConfirmManual(spiId, rowId);
+      setPlacedAt(new Date().toISOString());
+      setPlacedVia(null);
+      setScanTask(null);
+      markPlaced(box.id, locCodeOf(findSpot(loc.data, spot)));
+      setBoardTick(t => t + 1);
+      toast.success(`${putId(box.code)} put away`, 'The placement is confirmed and the location is locked to this box.');
+      return true;
+    } catch (e) {
+      toast.error('Could not confirm the putaway', apiError(e));
+      return false;
+    } finally {
+      setMethodBusy(false);
+    }
+  };
+
+  const raiseScanTask = async () => {
+    if (!spiId || !box || methodBusy) return false;
+    const rowId = putawayIdOf(box.id);
+    if (!rowId) { toast.warning('Allocate the box first', 'Choose a location in Step 02 and press Next.'); return false; }
+    setMethodBusy(true);
+    try {
+      const task = await spiApi.putawayScanTask(spiId, rowId);
+      scanDoneRef.current = false;
+      setScanSteps(Number(task.completed_scans) || 0);
+      setScanTask({ id: task.task_code, at: task.issued_at ?? new Date().toISOString(), apiId: task.id });
+      setBoardTick(t => t + 1);
+      toast.success(`Task ${task.task_code} raised`, `${putId(box.code)} is waiting for the Zebra handheld to scan it.`);
+      return true;
+    } catch (e) {
+      toast.error('Could not raise the Zebra task', apiError(e));
+      return false;
+    } finally {
+      setMethodBusy(false);
+    }
+  };
+
+  const cancelScanTask = async (): Promise<boolean> => {
+    if (!scanTask || cancelBusy) return false;
+    setCancelBusy(true);
+    try {
+      await spiApi.putawayCancelTask(scanTask.apiId, 'Cancelled from the SPI form');
+      setBoardTick(t => t + 1);
+      return true;
+    } catch (e) {
+      toast.error('Could not cancel the task', apiError(e));
+      return false;
+    } finally {
+      setCancelBusy(false);
+    }
+  };
+
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!spiId || !box || !board || restoredFor.current === box.code) return;
+    const br = board.boxes.find(r => r.box_id === box.id);
+    if (!br) return;
+    restoredFor.current = box.code;
+    if (br.status === 'pending' || !br.putaway_id) return;
+    let live = true;
+    const boxId = box.id;
+    spiApi.putawayRows(spiId)
+      .then(async rows => {
+        const row = rows.find(r => r.box_id === boxId);
+        if (!live || !row || !row.zone_id) return;
+        const mode: 'rack' | 'norack' = row.shelf_id ? 'rack' : 'norack';
+        const place = row.shelf_id ?? row.zone_id;
+        const data = await spiApi.putawayLocations(spiId, boxId, mode);
+        if (!live) return;
+        setPutMode(mode);
+        setLoc({ loading: false, data, error: null });
+        setSpot(place);
+        setAssigned({ boxId, spot: place, putawayId: row.id });
+        if (br.task) {
+          scanDoneRef.current = false;
+          setScanSteps(Math.min(2, br.task.scans.done));
+          setScanTask({ id: br.task.task_code, at: row.assigned_at ?? new Date().toISOString(), apiId: br.task.id });
+        }
+        if (br.status === 'placed') {
+          setPlacedAt(row.confirmed_at ?? new Date().toISOString());
+          setPlacedVia(row.verify_method === 'manual' ? null : { via: 'Using Zebra Device', allocation: putId(box.code) });
+        }
+        setLcStep(2);
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [spiId, box?.code, board]);
+
+  const finishFromTask = (code: string) => {
+    if (!box || scanDoneRef.current) return;
+    scanDoneRef.current = true;
+    setScanSteps(2);
+    setPlacedAt(new Date().toISOString());
+    setPlacedVia({ via: 'Using Zebra Device', allocation: code });
+    markPlaced(box.id, locCodeOf(findSpot(loc.data, spot)));
+    setBoardTick(t => t + 1);
+    setScanTask(null);
+    setScanOpen(false);
+    toast.success(`${putId(box.code)} put away`, `Both scans came back on task ${code}.`);
+  };
+
+  useEffect(() => {
+    if (!scanTask) return;
+    let live = true;
+    const poll = () => {
+      spiApi.putawayTask(scanTask.apiId)
+        .then(t => {
+          if (!live) return;
+          setScanSteps(Math.min(2, Number(t.completed_scans) || 0));
+          if (t.status === 'scanned') finishFromTask(t.task_code);
+          else if (t.status === 'cancelled' || t.status === 'expired' || t.status === 'failed') {
+            setScanTask(null);
+            setScanOpen(false);
+            setScanSteps(0);
+            setBoardTick(n => n + 1);
+            toast.warning(`Task ${t.task_code} ${t.status}`,
+              t.failed_reason || 'The box is still allocated — confirm it again, by hand or with a new task.');
+          }
+        })
+        .catch(() => {});
+    };
+    poll();
+    const h = window.setInterval(poll, 5000);
+    return () => { live = false; window.clearInterval(h); };
+  }, [scanTask?.apiId]);
 
   return (
     <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
@@ -2090,28 +2236,25 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 : (sp.shelf.name || `Level ${sp.shelf.level_no}`),
             }}
             reservedPct={reserved}
+            serverScans={scanSteps}
             onClose={() => setScanOpen(false)}
             onScan={(leg, ok) => {
               const what = leg === 'box' ? 'Box QR' : sp.kind === 'zone' ? 'Zone QR' : 'Shelf QR';
               const where = leg === 'box' ? box.code : spotLabel(sp);
               if (ok) {
-                setScanSteps(n => Math.min(2, n + 1));
                 addLog(box.code, 'scan', `${what} scanned`, `${where} · verified on Zebra handheld`);
               } else {
                 addLog(box.code, 'err', `${what} mismatch`, `${where} — rejected`);
               }
             }}
             onComplete={() => {
-              /* Both labels read: the box IS on the shelf now, so this is the
-                 moment it becomes placed - not when the task was raised. */
-              setPlacedAt(new Date().toISOString());
-              setPlacedVia({
-                via: 'Using Zebra Device',
-                allocation: `TPA-${scanTask.id.slice(3, 11)}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`,
-              });
-              markPlaced(box.id, locCodeOf(sp));
-              setScanTask(null);
-              setScanOpen(false);
+              spiApi.putawayTask(scanTask.apiId)
+                .then(t => {
+                  if (t.status === 'scanned') finishFromTask(t.task_code);
+                  else toast.info('Waiting for the handheld',
+                    'Prototype scans are not saved. The box is placed once the Zebra device scans both labels.');
+                })
+                .catch(e => toast.error('Could not read the task', apiError(e)));
             }}
           />
         );
@@ -2556,20 +2699,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 className={`s4-btn-next s4pm-go${methodPick ? ` s4pm-go--${methodPick}` : ''}`}
                 /* Gated on the tick, not on the pick: the pick says how, the
                    tick says the operator has read what it locks. */
-                disabled={!methodPick || !methodOk}
-                onClick={() => {
-                  /* Manual confirmation IS the placement. A Zebra scan is a
-                     task for the floor, so the box stays unplaced until the
-                     scan comes back. */
-                  if (methodPick === 'manual') {
-                    setPlacedAt(new Date().toISOString());
-                    setScanTask(null);
-                    markPlaced(box.id, locCodeOf(spotNow));
-                  }
-                  /* The same number the header has been showing — not a second
-                     one minted at submit. */
-                  else setScanTask({ id: methodRef.task, at: new Date().toISOString() });
-                  setMethodAsk(false);
+                disabled={!methodPick || !methodOk || methodBusy}
+                aria-busy={methodBusy}
+                onClick={async () => {
+                  const ok = methodPick === 'manual' ? await confirmManual() : await raiseScanTask();
+                  if (ok) setMethodAsk(false);
                 }}
               >
                 {methodPick === 'zebra' ? <><IcoScan />Submit for Zebra Verification</>
@@ -2679,7 +2813,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <button
                 type="button"
                 className="s4ct-only"
-                onClick={() => {
+                disabled={cancelBusy}
+                onClick={async () => {
+                  if (!(await cancelScanTask())) return;
                   addLog(box.code, 'cancel', 'Zebra scan task cancelled',
                     [scanTask.id, 'method cleared'].filter(Boolean).join(' · '));
                   setScanTask(null);
@@ -2692,7 +2828,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <button
                 type="button"
                 className="s4ct-manual"
-                onClick={() => {
+                disabled={cancelBusy}
+                onClick={async () => {
+                  if (!(await cancelScanTask())) return;
                   addLog(box.code, 'cancel', 'Zebra scan task cancelled',
                     [scanTask.id, 'switching to manual'].filter(Boolean).join(' · '));
                   setScanTask(null);

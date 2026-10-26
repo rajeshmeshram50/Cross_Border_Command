@@ -122,6 +122,7 @@ export interface PackedBox {
      captured still lists, it just shows a dash. */
   /** Under the box id: "Box 1 of 5" in a split set, else the date packed. */
   subLabel?: string;
+  packedOn?: string;
   dims?: { l: number | null; w: number | null; h: number | null };
   netWt?: number | null;
   grossWt?: number | null;
@@ -244,12 +245,13 @@ export default function PackedProducts({
                         >{putId(b.code)}</button>
                       ) : <span className="vti-code">{putId(b.code)}</span>}
                     </Tooltip>
-                    {b.subLabel && <div className="invf-pb-sub">{b.subLabel}</div>}
+                    {(b.packedOn || b.subLabel) && <div className="invf-pb-sub">{b.packedOn || b.subLabel}</div>}
                   </td>
 
                   <td>
                     <span className="invf-scn-no">{b.scenarioNo}</span>
                     <div className="invf-pb-scn">{b.scenario}</div>
+                    {b.subLabel && b.subLabel !== b.packedOn && <div className="invf-pb-sub">{b.subLabel}</div>}
                   </td>
 
                   <td className="invf-c-prod">

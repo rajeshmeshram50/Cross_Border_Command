@@ -104,11 +104,19 @@ type VaultRun = {
 };
 
 /** What the preview needs — a run fetched whole, with its stored document. */
-type PreviewRun = VaultRun & {
+type PreviewRun = Omit<VaultRun, 'status'> & {
+  /* A template that has not been sent has no run status — it is not
+     Pending, it simply has not happened yet (QA #35). */
+  status: VaultRun['status'] | 'Not sent yet';
   updated_at?: string | null;
   content_html?: string | null;
   header_config?: Partial<HeaderConfig> | null;
   footer_config?: Partial<FooterConfig> | null;
+  /* Set when the preview is an UNSENT template rather than a run (QA #35).
+     There is no signature row behind it, so the footer has to download from
+     the template endpoint instead — asking /hr-document-signatures for an id
+     that does not exist would 404. */
+  tplId?: number;
 };
 
 export default function EvidenceVaultModal({ employee, onClose, extraChips = [], initialTab = 'employee' }: {
@@ -660,7 +668,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const fmtDate = (x?: string | null) => { if (!x) return ''; const d = new Date(x); return isNaN(+d) ? '' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }); };
   const fmtStamp = (x?: string | null) => { if (!x) return ''; const d = new Date(x); return isNaN(+d) ? '' : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }); };
 
-  const downloadRun = async (r: VaultRun) => {
+  const downloadRun = async (r: VaultRun | PreviewRun) => {
     if (busyKey) return;
     setBusyKey(`run-${r.id}`); setBusyAction('download');
     try {
@@ -691,6 +699,40 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     try {
       const { data } = await api.get(`/hr-document-signatures/${r.id}`);
       setPreview({ ...(data || {}), id: r.id, code: data?.code ?? r.code, template: data?.template ?? r.template });
+    } catch (err: any) {
+      toast.error('Could not open', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally { setBusyKey(null); setBusyAction(null); }
+  };
+
+  /**
+   * Read a template before anyone is asked to sign it (QA #35).
+   *
+   * /preview resolves the tokens against this employee, so what opens is the
+   * document as the signer will receive it — not the raw template with
+   * {{placeholders}} still in it. That is the whole point of looking: the
+   * wording is checkable only once the names and dates are filled in.
+   */
+  const previewTemplate = async (t: VaultTemplate) => {
+    if (!employee || busyKey) return;
+    setBusyKey(`tpl-${t.id}`); setBusyAction('view');
+    try {
+      const { data } = await api.get(`/hr-document-templates/${t.id}/preview`, {
+        params: { employee_id: employee.id },
+      });
+      setPreview({
+        id: t.id,
+        tplId: t.id,
+        template_id: t.id,
+        code: data?.code ?? t.code,
+        template: { name: data?.name ?? t.name },
+        // Nothing has been sent, so there is no status and no signer trail —
+        // the head reads "Not sent yet" rather than borrowing a run's words.
+        status: 'Not sent yet',
+        signers: [],
+        content_html: data?.content_html ?? null,
+        header_config: data?.header_config ?? null,
+        footer_config: data?.footer_config ?? null,
+      } as PreviewRun);
     } catch (err: any) {
       toast.error('Could not open', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally { setBusyKey(null); setBusyAction(null); }
@@ -959,6 +1001,18 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                                   : <><i className="ri-eye-line" />View</>}
                               </button>
                             </>
+                          )}
+                          {/* Outside the run guard on purpose (QA #35): before
+                              anything is sent there is no run, and that is
+                              exactly when someone needs to read the document. */}
+                          {!run && (
+                            <button type="button" className="ev-doc-btn ev-doc-btn--open"
+                              disabled={busyKey === `tpl-${t.id}`} onClick={() => previewTemplate(t)}
+                              title="Read it before it goes out for signature">
+                              {busyKey === `tpl-${t.id}`
+                                ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />View</>
+                                : <><i className="ri-eye-line" />View</>}
+                            </button>
                           )}
                           <button type="button" className="ev-doc-btn ev-doc-btn--send"
                             disabled={sendingTplId != null} onClick={() => sendDocForSignature(t.id, t.name)}>
@@ -1372,12 +1426,17 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
             <button type="button" className="ev-doc-btn ev-doc-btn--soft" onClick={closePreview}>
               <i className="ri-close-line" />Close
             </button>
-            <button type="button" className="ev-doc-btn ev-doc-btn--download"
-              disabled={busyKey === `run-${preview.id}`} onClick={() => downloadRun(preview)}>
-              {busyKey === `run-${preview.id}`
-                ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
-                : <><i className="ri-download-line" />Download PDF</>}
-            </button>
+            {/* Only a run has a PDF worth saving. The template endpoint renders
+                the RAW content_html — tokens unresolved — so a Download here
+                would save a different document from the one on screen. */}
+            {!preview.tplId && (
+              <button type="button" className="ev-doc-btn ev-doc-btn--download"
+                disabled={busyKey === `run-${preview.id}`} onClick={() => downloadRun(preview)}>
+                {busyKey === `run-${preview.id}`
+                  ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
+                  : <><i className="ri-download-line" />Download PDF</>}
+              </button>
+            )}
           </div>
         </ModalBody>
       </Modal>

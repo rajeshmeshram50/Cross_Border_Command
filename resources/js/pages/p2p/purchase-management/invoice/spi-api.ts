@@ -177,7 +177,27 @@ export type SpiBoxBody = {
   temp_min_c: number | null;
   temp_max_c: number | null;
   items: SpiBoxItemBody[];
+  photos?: File[];
 };
+
+export type SpiBoxAttachment = { id: number; box_id: number; file_path: string; file_name: string | null; created_at: string | null };
+
+function boxForm(body: SpiBoxBody): FormData {
+  const fd = new FormData();
+  const put = (key: string, v: unknown) => {
+    if (v === null || v === undefined) { fd.append(key, ''); return; }
+    if (typeof v === 'boolean') { fd.append(key, v ? '1' : '0'); return; }
+    if (Array.isArray(v)) { v.forEach((x, i) => put(`${key}[${i}]`, x)); return; }
+    if (typeof v === 'object') { Object.entries(v as Record<string, unknown>).forEach(([k, x]) => put(`${key}[${k}]`, x)); return; }
+    fd.append(key, String(v));
+  };
+  const { photos = [], ...rest } = body;
+  Object.entries(rest).forEach(([k, v]) => put(k, v));
+  photos.forEach(f => fd.append('photos[]', f));
+  return fd;
+}
+
+const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 export type SpiBoxItem = {
   id: number;
@@ -212,6 +232,7 @@ export type SpiBox = {
   net_weight_kg?: string | number | null;
   gross_weight_kg?: string | number | null;
   items: SpiBoxItem[];
+  attachments?: SpiBoxAttachment[];
 };
 
 export type SpiPackingTotals = {
@@ -229,7 +250,6 @@ export type PutawayNeed = {
 
 export type PutawayShelf = {
   id: number; name: string | null; code: string; level_no: number;
-  /** "Standard Shelf", "Cold Shelf", "Heavy Duty Shelf"… — the kind, not the name. */
   shelf_type: string | null;
   max_weight_kg: number; free_weight_kg: number; boxes: number;
   used_pct: number; used_pct_after: number;
@@ -320,6 +340,31 @@ export type PutawayAssigned = {
   lock: { id: number; expires_at: string | null } | null;
 };
 
+export type PutawayTask = {
+  id: number;
+  task_code: string;
+  status: 'pending' | 'scanned' | 'failed' | 'cancelled' | 'expired';
+  completed_scans: number;
+  required_scans: number;
+  issued_at: string | null;
+  expires_at: string | null;
+  destination: string | null;
+  failed_reason?: string | null;
+};
+
+export type PutawayRow = {
+  id: number;
+  box_id: number;
+  zone_id: number | null;
+  rack_id: number | null;
+  shelf_id: number | null;
+  status: string;
+  destination: string | null;
+  assigned_at: string | null;
+  confirmed_at: string | null;
+  verify_method: string | null;
+};
+
 export type PutawayLocations = {
   box: PutawayNeed;
   modes: { rack: number; norack: number };
@@ -328,6 +373,17 @@ export type PutawayLocations = {
   recommended: PutawayPick | null;
   floor?: PutawayFloorZone[];
   floorPick?: PutawayFloorZone | null;
+};
+
+export type SpiZohoTracker = {
+  owns_bill: boolean;
+  bill_owner?: { type: string; id: number | null; code: string | null; zoho_bill_id: string | null; zoho_bill_number: string | null };
+  zoho_bill_id?: string | null;
+  zoho_bill_number?: string | null;
+  zoho_status?: string | null;
+  zoho_synced_at?: string | null;
+  zoho_error?: string | null;
+  can_retry: boolean;
 };
 
 export const putId = (code: string | null | undefined): string =>
@@ -343,11 +399,15 @@ export const spiApi = {
       (b) => ((b as { data?: { next_codes?: string[] } } | null)?.data?.next_codes ?? [])),
 
   createBox: (spiId: number, body: SpiBoxBody) =>
-    call('SPI box save', () => api.post(`/p2p/spi/${spiId}/boxes`, body),
+    call('SPI box save', () => (body.photos?.length
+      ? api.post(`/p2p/spi/${spiId}/boxes`, boxForm(body), MULTIPART)
+      : api.post(`/p2p/spi/${spiId}/boxes`, { ...body, photos: undefined })),
       (b) => (b as { data?: { box: SpiBox; totals: SpiPackingTotals } } | null)?.data?.box as SpiBox),
 
   updateBox: (spiId: number, boxId: number, body: SpiBoxBody) =>
-    call('SPI box update', () => api.put(`/p2p/spi/${spiId}/boxes/${boxId}`, body),
+    call('SPI box update', () => (body.photos?.length
+      ? api.post(`/p2p/spi/${spiId}/boxes/${boxId}`, boxForm(body), MULTIPART)
+      : api.put(`/p2p/spi/${spiId}/boxes/${boxId}`, { ...body, photos: undefined })),
       (b) => (b as { data?: { box: SpiBox } } | null)?.data?.box as SpiBox),
 
   deleteBox: (spiId: number, boxId: number) =>
@@ -377,8 +437,6 @@ export const spiApi = {
           apiId: w.id,
           code: w.wh_code ?? undefined,
           name: w.wh_name ?? `Warehouse ${w.id}`,
-          /* City and state. The code used to be folded in here because the
-             row had nowhere else to put it; it has its own chip now. */
           location: w.location || '—',
           address: w.address ?? undefined,
           pincode: w.pincode ?? undefined,
@@ -410,6 +468,43 @@ export const spiApi = {
   putawayAssign: (spiId: number, body: PutawayAssignBody) =>
     call('Putaway assign', () => api.post(`/p2p/spi/${spiId}/putaway/assign`, body),
       (b) => (b as { data?: PutawayAssigned } | null)?.data as PutawayAssigned),
+
+  putawayConfirmManual: (spiId: number, rowId: number, note?: string | null) =>
+    call('Putaway confirm', () => api.post(`/p2p/spi/${spiId}/putaway/${rowId}/confirm-manual`,
+      { confirmed: true, note: note || undefined }),
+      (b) => (b as { data?: PutawayAssigned } | null)?.data as PutawayAssigned),
+
+  putawayScanTask: (spiId: number, rowId: number) =>
+    call('Zebra task', () => api.post(`/p2p/spi/${spiId}/putaway/${rowId}/scan-task`, { confirmed: true }),
+      (b) => (b as { data?: PutawayTask } | null)?.data as PutawayTask),
+
+  putawayTask: (taskId: number) =>
+    call('Zebra task', () => api.get(`/putaway/tasks/${taskId}`),
+      (b) => (b as { data?: PutawayTask } | null)?.data as PutawayTask),
+
+  putawayCancelTask: (taskId: number, reason?: string) =>
+    call('Cancel Zebra task', () => api.post(`/putaway/tasks/${taskId}/cancel`, { reason: reason || undefined }),
+      () => true),
+
+  deleteBoxPhoto: (spiId: number, boxId: number, attachmentId: number) =>
+    call('Box photo', () => api.delete(`/p2p/spi/${spiId}/boxes/${boxId}/attachments/${attachmentId}`), () => true),
+
+  zohoSync: (spiId: number) =>
+    call('Zoho sync', () => api.post(`/p2p/spi/${spiId}/zoho-sync`), () => true),
+
+  zohoTracker: (spiId: number) =>
+    call('Zoho tracker', () => api.get(`/p2p/spi/${spiId}/zoho-tracker`),
+      (b) => (b as { data?: SpiZohoTracker } | null)?.data as SpiZohoTracker),
+
+  completeStage3: (spiId: number) =>
+    call('Stage 03', () => api.put(`/p2p/spi/${spiId}/stage-3`), () => true),
+
+  submit: (spiId: number) =>
+    call('Map Invoice', () => api.put(`/p2p/spi/${spiId}/submit`), () => true),
+
+  putawayRows: (spiId: number) =>
+    call('Putaway rows', () => api.get(`/p2p/spi/${spiId}/putaway`),
+      (b) => ((b as { data?: { rows?: PutawayRow[] } } | null)?.data?.rows ?? [])),
 
   putawayBoard: (spiId: number) =>
     call('Putaway board', () => api.get(`/p2p/spi/${spiId}/putaway/board`),
