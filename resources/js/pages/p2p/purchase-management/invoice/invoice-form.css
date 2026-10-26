@@ -9589,6 +9589,19 @@
 /* Disabled, not hidden: the row still has to say the action exists and why it
    is not available here — the title explains it. */
 .s4zv-btn:disabled{opacity:.42;cursor:not-allowed;box-shadow:none;}
+/* The working button keeps its full colour and its own glyph slot is replaced
+   by the mark — a faded button that is also spinning reads as broken rather
+   than as busy. currentColor, so one rule serves the teal and the red.
+   Unscoped like the rest of .s4zv: this dialog portals to <body>, where the
+   page's .s4-root spinner cannot reach it. */
+@keyframes s4zvSpin { to { transform: rotate(360deg); } }
+.s4zv-btn > .s4zv-spin {
+  width: 13px; height: 13px; flex-shrink: 0; padding: 0;
+  border-radius: 50%; background: none; box-shadow: none;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: s4zvSpin .6s linear infinite;
+}
+.s4zv-btn[aria-busy="true"]:disabled { opacity: 1; cursor: progress; }
 
 /* The new zebra glyph carries no intrinsic size, so the tiles it sits in have
    to state one. 17px in the cancel dialog's warning block, matching the

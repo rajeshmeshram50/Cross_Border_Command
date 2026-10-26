@@ -655,6 +655,21 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
   const locDone = tasks.filter(t => t.legs >= 2).length;
   const notStarted = tasks.filter(t => t.legs === 0).length;
 
+  /* Both actions close this dialog and open another one, which on a loaded
+     page is not instant — and a click that changes nothing for a moment reads
+     as a dead button. The row says what it is doing instead. The close is held
+     back a beat because it unmounts the spinner: closing in the same tick as
+     setBusy means the state never paints. */
+  const [busy, setBusy] = useState<{ kind: 'open' | 'cancel'; code: string } | null>(null);
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+
+  const run = (kind: 'open' | 'cancel', code: string, go: () => void) => {
+    if (busy) return;
+    setBusy({ kind, code });
+    timer.current = window.setTimeout(() => { onClose(); go(); }, 280);
+  };
+
   const CUT = 35;
   const ref = (ico: React.ReactNode, label: string, value: string, mono?: boolean, tag?: React.ReactNode) => {
     const long = value.length > CUT;
@@ -787,16 +802,22 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
                       <td>
                         <div className="s4zv-acts">
                           <button type="button" className="s4zv-btn s4zv-btn--open"
-                            disabled={!t.live}
+                            disabled={!t.live || busy !== null}
+                            aria-busy={busy?.kind === 'open' && busy.code === t.code}
                             title={t.live ? 'Open this scan task' : 'Select this box to open its task'}
-                            onClick={() => { onClose(); onOpenTask(); }}>
-                            <span><IcoPlay /></span>Open Task
+                            onClick={() => run('open', t.code, onOpenTask)}>
+                            {busy?.kind === 'open' && busy.code === t.code
+                              ? <><span className="s4zv-spin" aria-hidden />Opening…</>
+                              : <><span><IcoPlay /></span>Open Task</>}
                           </button>
                           <button type="button" className="s4zv-btn s4zv-btn--cancel"
-                            disabled={!t.live}
+                            disabled={!t.live || busy !== null}
+                            aria-busy={busy?.kind === 'cancel' && busy.code === t.code}
                             title={t.live ? 'Cancel this scan task' : 'Select this box to cancel its task'}
-                            onClick={() => { onClose(); onCancelTask(); }}>
-                            <span><IcoXSm /></span>Cancel Task
+                            onClick={() => run('cancel', t.code, onCancelTask)}>
+                            {busy?.kind === 'cancel' && busy.code === t.code
+                              ? <><span className="s4zv-spin" aria-hidden />Cancelling…</>
+                              : <><span><IcoXSm /></span>Cancel Task</>}
                           </button>
                         </div>
                       </td>
