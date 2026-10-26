@@ -1499,10 +1499,22 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     toast.success(`${putId(box.code)} put away`, `Both scans came back on task ${code}.`);
   };
 
+  const scanOpenRef = useRef(scanOpen);
+  scanOpenRef.current = scanOpen;
   useEffect(() => {
     if (!scanTask) return;
     let live = true;
+    let busy = false;
+    let timer: number | null = null;
+    const schedule = () => {
+      if (!live) return;
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(poll, scanOpenRef.current ? 5000 : 15000);
+    };
     const poll = () => {
+      if (!live) return;
+      if (document.hidden || busy) { schedule(); return; }
+      busy = true;
       spiApi.putawayTask(scanTask.apiId)
         .then(t => {
           if (!live) return;
@@ -1517,12 +1529,25 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               t.failed_reason || 'The box is still allocated — confirm it again, by hand or with a new task.');
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => { busy = false; schedule(); });
     };
+    const onVisible = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVisible);
     poll();
-    const h = window.setInterval(poll, 5000);
-    return () => { live = false; window.clearInterval(h); };
+    return () => {
+      live = false;
+      if (timer) window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [scanTask?.apiId]);
+
+  useEffect(() => {
+    if (!scanTask || !scanOpen) return;
+    void spiApi.putawayTask(scanTask.apiId)
+      .then(t => setScanSteps(Math.min(2, Number(t.completed_scans) || 0)))
+      .catch(() => {});
+  }, [scanOpen]);
 
   return (
     <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
