@@ -197,8 +197,18 @@ class SupplierInvoiceController extends Controller
             if (!empty($f['from']))      $base->whereDate("$t.invoice_date", '>=', $f['from']);
             if (!empty($f['to']))        $base->whereDate("$t.invoice_date", '<=', $f['to']);
 
-            /* Counted BEFORE the tab and the search narrow the list: typing in the
-               search box must not make "All SPI's 60" fall to 3. */
+            /* The search goes on the base, so the tab numbers and the rows under
+               them agree: a tab reading 60 over a list of 3 is the tab lying.
+               Still applied BEFORE the tab itself — each tab has to show its own
+               figure, not the selected one's.
+
+               It must also run before withCount below: applySearch ends in
+               ->select('p2p_supplier_invoices.*'), and select() REPLACES the
+               column list rather than adding to it. */
+            if ($term = trim((string) ($f['q'] ?? ''))) {
+                $this->applySearch($base, $term);
+            }
+
             $tabs = $this->tabCounts(clone $base, $f['po_mode'] ?? null);
 
             $q = $base->with([
@@ -236,10 +246,6 @@ class SupplierInvoiceController extends Controller
 
             $this->applyPoMode($q, $f['po_mode'] ?? null);
             $this->applyShipmentMode($q, $f['shipment_mode'] ?? null);
-
-            if ($term = trim((string) ($f['q'] ?? ''))) {
-                $this->applySearch($q, $term);
-            }
 
             $page = $q->orderByDesc("$t.id")->paginate((int) ($f['per_page'] ?? 10));
             $rows = collect($page->items());
@@ -1086,9 +1092,13 @@ class SupplierInvoiceController extends Controller
     /**
      * The tab numbers.
      *
-     * Counted from the query as it stands BEFORE the tab and the search are
-     * applied, so the numbers hold still while you type — but after status,
-     * supplier and date, which the whole screen is filtered by.
+     * Counted from the query as it stands BEFORE the tab is applied, but AFTER
+     * the search and the screen-wide status / supplier / date filters — so each
+     * tab shows its own figure, and every figure describes the rows a search
+     * has left behind.
+     *
+     * $base may therefore carry applySearch's left joins. They are all
+     * many-to-one (po, vendor, shipment, lead), so COUNT(*) is unaffected.
      *
      * The sub-tab counts are taken WITHIN the selected top tab, because the
      * screen nests them under it. With the Direct-SPI fix in
@@ -1097,12 +1107,12 @@ class SupplierInvoiceController extends Controller
     private function tabCounts($base, ?string $poMode = null): array
     {
         // One pass for the top row of tabs.
-        $r = (clone $base)->selectRaw(
+        $r = (clone $base)->select(DB::raw(
             'COUNT(*) AS all_spi,
              COUNT(p2p_supplier_invoices.purchase_order_id) AS with_po,
              COUNT(*) FILTER (WHERE p2p_supplier_invoices.purchase_order_id IS NULL) AS direct_spi,
              COUNT(DISTINCT p2p_supplier_invoices.purchase_order_id) AS distinct_po'
-        )->reorder()->first();
+        ))->reorder()->first();
 
         /* The sub-tabs sit UNDER the selected top tab, so they are counted
            within it — before, they always counted every SPI and the two never
