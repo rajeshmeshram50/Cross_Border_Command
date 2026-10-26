@@ -101,7 +101,33 @@ export default function InvoiceList() {
   const [summaryRow, setSummaryRow] = useState<InvoiceRow | null>(null);
   const [vaultRow, setVaultRow] = useState<InvoiceRow | null>(null);
 
+  const zohoBusy = useRef<Set<number>>(new Set());
+  const syncZoho = useCallback(async (row: InvoiceRow) => {
+    const id = row.apiId;
+    if (!id || zohoBusy.current.has(id)) return;
+    zohoBusy.current.add(id);
+    try {
+      const t = await spiApi.zohoTracker(id);
+      if (!t.owns_bill) {
+        const po = t.bill_owner?.code ?? row.poNo ?? 'its purchase order';
+        toast.info('Synced through the purchase order',
+          t.bill_owner?.zoho_bill_number
+            ? `${row.invoiceNo} is billed on ${po} — Zoho bill ${t.bill_owner.zoho_bill_number}.`
+            : `${row.invoiceNo} is billed on ${po}. Sync ${po} from the Purchase Order list.`);
+        return;
+      }
+      await spiApi.zohoSync(id);
+      toast.success(`${row.invoiceNo} sent to Zohobook`, 'The bill status updates once Zoho confirms it.');
+      reloadList();
+    } catch (e) {
+      toast.error('Could not sync to Zohobook', e instanceof PoApiError ? e.firstError : 'Please try again.');
+    } finally {
+      zohoBusy.current.delete(id);
+    }
+  }, [toast, reloadList]);
+
   const handleRowAction = useCallback((action: InvoiceAction, row: InvoiceRow) => {
+    if (action === 'zoho-sync') { void syncZoho(row); return; }
     if (action === 'payment-requests') { setPaymentsRow(row); return; }
     if (action === 'summary') { setSummaryRow(row); return; }
     if (action === 'vault') { setVaultRow(row); return; }
@@ -126,7 +152,7 @@ export default function InvoiceList() {
     }
     // eslint-disable-next-line no-console
     console.info('[invoice] action', action, row.invoiceNo);
-  }, []);
+  }, [syncZoho]);
 
   const tabs = list.meta?.tabs;
   const scopeCounts = useMemo(() => ({

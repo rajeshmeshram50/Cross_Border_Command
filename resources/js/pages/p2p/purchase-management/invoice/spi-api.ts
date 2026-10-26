@@ -355,6 +355,17 @@ export type PutawayLocations = {
   floorPick?: PutawayFloorZone | null;
 };
 
+export type SpiZohoTracker = {
+  owns_bill: boolean;
+  bill_owner?: { type: string; id: number | null; code: string | null; zoho_bill_id: string | null; zoho_bill_number: string | null };
+  zoho_bill_id?: string | null;
+  zoho_bill_number?: string | null;
+  zoho_status?: string | null;
+  zoho_synced_at?: string | null;
+  zoho_error?: string | null;
+  can_retry: boolean;
+};
+
 export const putId = (code: string | null | undefined): string =>
   !code ? '' : /^B-\d+$/i.test(code) ? `PUT-${code}` : code;
 
@@ -452,6 +463,16 @@ export const spiApi = {
   putawayCancelTask: (taskId: number, reason?: string) =>
     call('Cancel Zebra task', () => api.post(`/putaway/tasks/${taskId}/cancel`, { reason: reason || undefined }),
       () => true),
+
+  zohoSync: (spiId: number) =>
+    call('Zoho sync', () => api.post(`/p2p/spi/${spiId}/zoho-sync`), () => true),
+
+  zohoTracker: (spiId: number) =>
+    call('Zoho tracker', () => api.get(`/p2p/spi/${spiId}/zoho-tracker`),
+      (b) => (b as { data?: SpiZohoTracker } | null)?.data as SpiZohoTracker),
+
+  completeStage3: (spiId: number) =>
+    call('Stage 03', () => api.put(`/p2p/spi/${spiId}/stage-3`), () => true),
 
   submit: (spiId: number) =>
     call('Map Invoice', () => api.put(`/p2p/spi/${spiId}/submit`), () => true),
