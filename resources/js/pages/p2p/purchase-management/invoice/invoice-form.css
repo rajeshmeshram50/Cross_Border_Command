@@ -5986,17 +5986,9 @@
 .s4-root .s4zt-bar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:9px 12px; border-radius:11px; border:1px solid #cffafe; background:#f0fdff; }
 .s4-root .s4zt-bar__k { display:inline-flex; align-items:center; gap:7px; font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#0e7490; }
 .s4-root .s4zt-bar__k em { font-style:normal; font-weight:600; letter-spacing:0; text-transform:none; color:#94a3b8; }
-.s4-root .s4zt-proto { margin-left:auto; display:inline-flex; align-items:center; gap:9px; padding:5px 7px 5px 6px; border-radius:999px; border:1.5px solid #e2e8f0; background:#fff; font:inherit; font-size:11.5px; font-weight:700; color:#64748b; cursor:pointer; transition:border-color .15s, background .15s; }
-.s4-root .s4zt-proto i { width:30px; height:17px; border-radius:999px; background:#cbd5e1; position:relative; transition:background .18s; }
-.s4-root .s4zt-proto i::after { content:''; position:absolute; top:2px; left:2px; width:13px; height:13px; border-radius:50%; background:#fff; transition:transform .18s; }
-.s4-root .s4zt-proto b { font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#94a3b8; }
 /* Teal when on, not amber. Prototype mode is a MODE, not a warning — the
    results it produces are each marked Simulated, which is where the caution
    belongs. Amber here made the strip read as a problem with the task. */
-.s4-root .s4zt-proto.is-on { border-color:#67e8f9; background:#f0fdff; color:#0c4a6e; }
-.s4-root .s4zt-proto.is-on i { background:linear-gradient(135deg,#22d3ee,#0891b2); }
-.s4-root .s4zt-proto.is-on i::after { transform:translateX(13px); }
-.s4-root .s4zt-proto.is-on b { color:#0e7490; }
 
 .s4-root .s4zt-legs { display:grid; grid-template-columns:minmax(0,1fr) 30px minmax(0,1fr); align-items:stretch; }
 .s4-root .s4zt-legs__go { justify-self:center; align-self:center; width:26px; height:26px; border-radius:50%; display:grid; place-items:center; color:#64748b; background:#fff; border:1px solid #e2e8f0; }
@@ -6036,16 +6028,6 @@
 .s4-root .s4zt-leg__ok { margin-top:auto; display:flex; align-items:center; gap:7px; padding:9px 12px; border-radius:10px; background:#f0fdf4; border:1px solid #a7f3d0; font-size:11.5px; font-weight:700; color:#047857; }
 .s4-root .s4zt-leg__ok em { margin-left:auto; font-style:normal; font-size:8.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:6px; background:#fef3c7; color:#92400e; }
 .s4-root .s4zt-leg__bad { display:flex; align-items:center; gap:7px; padding:9px 12px; border-radius:10px; background:#fef2f2; border:1px solid #fecaca; font-size:11.5px; color:#b91c1c; }
-/* The stand-in for the handheld: one full-width control, dashed, because it
-   is scaffolding and should not be mistaken for part of the task. */
-.s4-root .s4zt-sim {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  width: 100%; padding: 10px 12px; border-radius: 11px;
-  border: 1.5px dashed #a5dce8; background: #f8fdff;
-  font: inherit; font-size: 11.5px; font-weight: 800; color: #0e7490; cursor: pointer;
-  transition: background .15s, border-color .15s;
-}
-.s4-root .s4zt-sim:hover { background: #ecfeff; border-color: #67e8f9; }
 
 /* The outcome, once both legs pass. Green and quiet — it is a receipt, not
    an alert, so it states the address and the reference and stops. */
@@ -6105,8 +6087,6 @@
 [data-bs-theme="dark"] .s4-root .s4zt-mono { color:#7dd3e8; }
 [data-bs-theme="dark"] .s4-root .s4zt-bar { background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.28); }
 [data-bs-theme="dark"] .s4-root .s4zt-bar__k { color:#7dd3e8; }
-[data-bs-theme="dark"] .s4-root .s4zt-proto { background:var(--s4d-bg2); border-color:var(--s4d-line); color:var(--s4d-dim); }
-[data-bs-theme="dark"] .s4-root .s4zt-proto.is-on { background:rgba(34,211,238,.14); border-color:rgba(34,211,238,.42); color:#7dd3e8; }
 [data-bs-theme="dark"] .s4-root .s4zt-leg { background:var(--s4d-bg2); border-color:rgba(34,211,238,.4); }
 [data-bs-theme="dark"] .s4-root .s4zt-leg.is-locked { background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.02) 0 7px,rgba(255,255,255,.05) 7px 14px); border-color:var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4zt-leg.is-ok { border-color:rgba(16,185,129,.5); }
@@ -6118,8 +6098,6 @@
 [data-bs-theme="dark"] .s4-root .s4zt-leg__ok { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.3); color:#6ee7b7; }
 [data-bs-theme="dark"] .s4-root .s4zt-leg__bad,
 [data-bs-theme="dark"] .s4-root .s4zt-err { background:rgba(220,38,38,.12); border-color:rgba(220,38,38,.3); color:#fca5a5; }
-[data-bs-theme="dark"] .s4-root .s4zt-sim { background:rgba(34,211,238,.07); border-color:rgba(34,211,238,.32); color:#7dd3e8; }
-[data-bs-theme="dark"] .s4-root .s4zt-sim:hover { background:rgba(34,211,238,.14); border-color:rgba(34,211,238,.5); }
 [data-bs-theme="dark"] .s4-root .s4zt-dest { background:rgba(255,255,255,.03); border-color:var(--s4d-line); }
 [data-bs-theme="dark"] .s4-root .s4zt-dest.is-done { background:rgba(16,185,129,.12); border-color:rgba(16,185,129,.32); }
 [data-bs-theme="dark"] .s4-root .s4zt-dest__k { color:var(--s4d-dim); }

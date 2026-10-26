@@ -1548,7 +1548,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             title="Zebra scan tasks waiting on the warehouse floor"
             aria-haspopup="dialog"
             aria-expanded={zebraOpen}
-            onClick={() => { setLogsOpen(false); setZebraOpen(true); }}
+            onClick={() => { setLogsOpen(false); setBoardTick(t => t + 1); setZebraOpen(true); }}
           >
             <IcoScan />
             <span className="s4fs-t">Zebra Open Tasks</span>
