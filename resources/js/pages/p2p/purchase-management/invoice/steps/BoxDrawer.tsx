@@ -402,6 +402,21 @@ export default function BoxDrawer({
         )}
 
         <div className="vti-dw-body">
+          {/* While a save is in flight the fields must stop accepting input:
+              a quantity or an identifier typed after collect() has run is not
+              in the request, so it would be silently dropped and the form
+              would show a value the server never received. The veil also says
+              the save IS running — the Save button's "Saving…" is in the strip
+              overhead, easy to miss when you are looking at the row you just
+              edited. */}
+          {saving && (
+            <div className="vti-dw-saving" role="status" aria-live="polite">
+              <span className="vti-dw-saving__box">
+                <span className="vti-dw-saving__spin" aria-hidden />
+                Saving the box…
+              </span>
+            </div>
+          )}
           {(photos.length > 0 || savedPhotos.length > 0) && (
             <div className="vti-dw-shots">
               <div className="vti-dw-shots-lbl">

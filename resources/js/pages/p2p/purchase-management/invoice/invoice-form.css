@@ -507,7 +507,34 @@
    (.s4zv-body / .s4zv-kpis). This ran gap 10 on 14px 14px 0 — close enough to
    look like a near-miss rather than a different spacing, which is worse than
    either. Now the same 8 between cards and the same 16 down the sides. */
-.vti-dw-body { padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; background: transparent; }
+.vti-dw-body { padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; background: transparent; position: relative; }
+/* Blocks the fields while a save is in flight — see .avm-cp-saving-veil in
+   the vendor modal, which solves the same problem the same way. Covers the
+   BODY only: the strip above keeps its Save button and its × reachable, so a
+   save that hangs does not trap the operator in the dialog. */
+.vti-dw-saving {
+  position: absolute; inset: 0; z-index: 20;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 90px;
+  background: rgba(246,253,255,.62);
+  -webkit-backdrop-filter: blur(1.5px); backdrop-filter: blur(1.5px);
+  cursor: progress;
+}
+.vti-dw-saving__box {
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 10px 18px; border-radius: 999px;
+  background: #fff; border: 1.5px solid rgba(6,182,212,.3);
+  box-shadow: 0 8px 24px -10px rgba(8,145,178,.55);
+  font-size: 12px; font-weight: 800; color: #0e7490; white-space: nowrap;
+}
+@keyframes vtiDwSpin { to { transform: rotate(360deg); } }
+.vti-dw-saving__spin {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: vtiDwSpin .6s linear infinite;
+}
+[data-bs-theme="dark"] .vti-dw-saving { background: rgba(8,20,28,.6); }
+[data-bs-theme="dark"] .vti-dw-saving__box { background: #0f2630; border-color: rgba(34,211,238,.35); color: #7dd3e8; }
 .vti-dw-section, .vti-dw-advanced { background: #fff; border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,1) inset, 0 2px 10px rgba(6,182,212,.08), 0 6px 24px rgba(6,182,212,.06); position: relative; }
 /* z-index keeps the accent above anything a child paints over it. Every other
    section holds plain blocks, whose backgrounds never reach the card edge, but
@@ -8565,21 +8592,22 @@
 .s4-root .s4c3-pill--bad  { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
 .s4-root .s4c3-pill--flag { color: #0e7490; background: #ecfeff; border-color: #a5f3fc; }
 .s4-root .s4c3-pill--flag::before { display: none; }
-/* "+N more" / "Show less" — the same chip as a flag so the row stays one
-   shape, but dashed and neutral so it reads as a control rather than another
-   flag on the box. */
+/* The counter, as a filled teal disc carrying just "+N" — the app's pattern
+   for this, from the Issuing Authorities counter in the CLM masters. It was a
+   dashed neutral chip the same shape as a flag, which read as an empty flag
+   waiting to be filled rather than as a count of the ones not shown. */
 .s4-root .s4c3-pill--more {
-  color: #64748b; background: #f8fafc;
-  border: 1px dashed #cbd5e1; border-radius: inherit;
-  font: inherit; cursor: pointer;
-  transition: color .15s ease, border-color .15s ease, background .15s ease;
+  justify-content: center; gap: 0;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  border: none; border-radius: 999px;
+  background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490);
+  box-shadow: 0 2px 8px rgba(8,145,178,.4);
+  color: #fff; font-family: inherit; font-size: 10px; font-weight: 800;
+  cursor: pointer; flex-shrink: 0;
+  transition: filter .15s ease, transform .15s ease;
 }
 .s4-root .s4c3-pill--more::before { display: none; }
-.s4-root .s4c3-pill--more:hover { color: #0e7490; background: #ecfeff; border-color: #67e8f9; }
-[data-bs-theme="dark"] .s4-root .s4c3-pill--more {
-  color: #94a3b8; background: rgba(148,163,184,.10); border-color: rgba(148,163,184,.38);
-}
-[data-bs-theme="dark"] .s4-root .s4c3-pill--more:hover { color: #67e8f9; border-color: rgba(103,232,249,.5); }
+.s4-root .s4c3-pill--more:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .s4-root .s4c3-na { font-size: 10.5px; font-style: italic; font-weight: 500; color: #94a9b6; }
 .s4-root .s4c3-attrs .s4c3-na { letter-spacing: 0; text-transform: none; }
 

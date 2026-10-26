@@ -257,8 +257,9 @@ export default function PutawayConfirmPlacement({
                             const flipUp = below < estH + 12 && r.top > below;
                             setFlagPop({ x: r.left, y: flipUp ? r.top - 4 : r.bottom + 4, flipUp });
                           }}
+                          title={`View all ${box.flags.length} product flags`}
                         >
-                          +{hiddenFlags} more
+                          +{hiddenFlags}
                         </button>
                       )}
                       {flagPop && createPortal(
