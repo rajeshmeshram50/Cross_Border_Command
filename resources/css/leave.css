@@ -29,13 +29,22 @@
 }
 
 /* Header doubles as a button so the whole strip is clickable to toggle */
+/* On Leave Today sits on the header-strip geometry — 58 tall with a 10px
+   inset — so it reads as a band of the same family as the strip above it
+   rather than a taller card wedged between the KPIs and the table. */
+.lv-today-head {
+  min-height: 58px;
+  padding: 0 10px;
+}
 .lv-today-head-btn {
   display: flex; align-items: center; justify-content: space-between;
   gap: 14px; flex-wrap: wrap;
   width: 100%;
   background: transparent;
   border: none;
-  padding: 14px 4px;
+  /* No vertical padding: the row owns its height now. The 14px here was
+     what made the band 66 against the strip's 58. */
+  padding: 0 4px;
   cursor: pointer;
   text-align: left;
 }

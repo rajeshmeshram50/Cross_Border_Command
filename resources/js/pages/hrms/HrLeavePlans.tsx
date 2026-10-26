@@ -238,8 +238,18 @@ interface PlanEmployee {
  * very different widths, and a width-based ellipsis would truncate at a
  * different point in each — the same plan reading two different ways. */
 const PLAN_NAME_MAX = 30;
+
+/* Display only — the STORED name keeps whatever case it was typed in.
+ * Capitalising on the way in would rewrite the row and make "sick leave"
+ * and "Sick leave" two different plans to the uniqueness check; doing it
+ * here leaves the data alone and only fixes how it reads. First letter,
+ * not title case: "Leave Plan For Trainee" is already how someone typed
+ * it, and capitalize would not change it, but a name like "sick leave for
+ * interns" should not become "Sick Leave For Interns" either. */
+const capFirst = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
 const PlanName = ({ name, className }: { name: string; className?: string }) => (
-  <TruncText text={name} max={PLAN_NAME_MAX} className={className} />
+  <TruncText text={capFirst(name)} max={PLAN_NAME_MAX} className={className} />
 );
 
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];

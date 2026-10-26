@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
+import ToolbarFilter from '../../components/ui/ToolbarFilter';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -1364,7 +1364,79 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
     const d = new Date(String(raw));
     return isNaN(d.getTime()) ? '—' : WK[d.getDay()];
   };
-  const sorted = [...rows].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  /* Group / year / type, read off the rows themselves: /holidays returns the
+     whole calendar, so the options and their counts are exact and nothing
+     has to be fetched a second time when a tile is pressed. */
+  const [facets, setFacets] = useState<Record<string, string>>({ group: '', year: '', type: '' });
+  const yearOf = (raw: any) => { const d = new Date(String(raw)); return isNaN(d.getTime()) ? '' : String(d.getFullYear()); };
+
+  const filterGroups = useMemo(() => {
+    const tally = (pick: (r: any) => string) => {
+      const m = new Map<string, number>();
+      rows.forEach(r => { const v = pick(r); if (v) m.set(v, (m.get(v) ?? 0) + 1); });
+      return m;
+    };
+    const groups = tally(r => r.group?.name ?? '');
+    const years  = tally(r => yearOf(r.date));
+    const types  = tally(r => r.type ?? '');
+    const opts = (m: Map<string, number>, icon: string, sort?: (a: string, b: string) => number) =>
+      [...m.keys()].sort(sort ?? ((a, b) => a.localeCompare(b)))
+        .map(v => ({ value: v, label: v, count: m.get(v) ?? 0, icon }));
+    return [
+      { key: 'group', label: 'Holiday Group', cols: 2 as const, options: opts(groups, 'ri-group-line') },
+      { key: 'year',  label: 'Year',          cols: 3 as const, options: opts(years, 'ri-calendar-line', (a, b) => a.localeCompare(b)) },
+      { key: 'type',  label: 'Type',          cols: 2 as const, options: opts(types, 'ri-price-tag-3-line') },
+    ].filter(g => g.options.length > 1);
+  }, [rows]);
+
+  const sorted = rows
+    .filter(r => (!facets.group || (r.group?.name ?? '') === facets.group)
+              && (!facets.year  || yearOf(r.date) === facets.year)
+              && (!facets.type  || (r.type ?? '') === facets.type))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  /* Columns for the shared <DataTable>. The group name rides under the
+     holiday rather than taking a column of its own — it is context for the
+     name, and a column of mostly-repeated values reads as noise. */
+  const holidayColumns = useMemo<DataTableColumn<any>[]>(() => [
+    {
+      header: 'Holiday',
+      accessorKey: 'name',
+      meta: { width: 38 },
+      cell: (info: any) => {
+        const h = info.row.original;
+        return (
+          <div>
+            <div className="fw-semibold" style={{ fontSize: 13 }}>{h.name}</div>
+            {h.group?.name && <div className="text-muted" style={{ fontSize: 11 }}>{h.group.name}</div>}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Date',
+      accessorKey: 'date',
+      meta: { width: 22 },
+      cell: (info: any) => <span style={{ fontSize: 13 }}>{fmt(info.row.original.date)}</span>,
+    },
+    {
+      header: 'Day',
+      id: 'day',
+      meta: { width: 18 },
+      cell: (info: any) => <span className="text-muted" style={{ fontSize: 13 }}>{weekday(info.row.original.date)}</span>,
+    },
+    {
+      header: 'Type',
+      accessorKey: 'type',
+      meta: { width: 22 },
+      cell: (info: any) => (
+        <span className="rec-pill" style={{ background: '#ede9fe', color: '#5b3fd1', fontSize: 11 }}>
+          {info.row.original.type || '—'}
+        </span>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
 
   return (
     <Modal isOpen={open} toggle={onClose} centered size="lg" scrollable contentClassName="border-0">
@@ -1388,67 +1460,34 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
         </div>
 
-        <div style={{ padding: '14px 18px', maxHeight: '65vh', overflowY: 'auto' }}>
-          {loading ? (
-            /* Skeleton of the real table, not a spinner on an empty panel. (#124)
-               A centred spinner told the user something was happening but left
-               the content area blank, so the modal appeared to open onto
-               nothing and then jump into a table. Rendering the actual header
-               with placeholder rows underneath keeps the layout stable — what
-               loads in is the same shape that was already on screen — and
-               matches how every other list in the app loads. */
-            <div className="table-responsive">
-              <table className="table align-middle table-nowrap mb-0">
-                <thead style={{ background: dark ? 'rgba(255,255,255,0.06)' : '#f8f9fa', color: dark ? 'rgba(255,255,255,0.65)' : undefined }}>
-                  <tr>
-                    <th className="text-center" style={{ width: 60, background: 'transparent', color: 'inherit' }}>Sr No</th>
-                    <th style={{ background: 'transparent', color: 'inherit' }}>Holiday</th>
-                    <th style={{ width: 135, background: 'transparent', color: 'inherit' }}>Date</th>
-                    <th style={{ width: 110, background: 'transparent', color: 'inherit' }}>Day</th>
-                    <th style={{ width: 120, background: 'transparent', color: 'inherit' }}>Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <ShimmerTableRows rows={6} cols={5} keyPrefix="hol-shim" />
-                </tbody>
-              </table>
-            </div>
-          ) : sorted.length === 0 ? (
-            <div className="text-center py-5 text-muted">
-              <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-              No holidays configured yet.
-            </div>
-          ) : (
-            <div className="table-responsive">
-              <table className="table align-middle table-nowrap mb-0">
-                <thead style={{ background: dark ? 'rgba(255,255,255,0.06)' : '#f8f9fa', color: dark ? 'rgba(255,255,255,0.65)' : undefined }}>
-                  <tr>
-                    <th className="text-center" style={{ width: 60, background: 'transparent', color: 'inherit' }}>Sr No</th>
-                    <th style={{ background: 'transparent', color: 'inherit' }}>Holiday</th>
-                    <th style={{ width: 135, background: 'transparent', color: 'inherit' }}>Date</th>
-                    <th style={{ width: 110, background: 'transparent', color: 'inherit' }}>Day</th>
-                    <th style={{ width: 120, background: 'transparent', color: 'inherit' }}>Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((h, i) => (
-                    <tr key={h.id ?? i}>
-                      <td className="text-center text-muted" style={{ fontSize: 12.5, background: 'transparent' }}>{i + 1}</td>
-                      <td style={{ background: 'transparent' }}>
-                        <div className="fw-semibold" style={{ fontSize: 13, color: dark ? '#f1f5f9' : undefined }}>{h.name}</div>
-                        {h.group?.name && <div className="text-muted" style={{ fontSize: 11 }}>{h.group.name}</div>}
-                      </td>
-                      <td style={{ fontSize: 13, background: 'transparent', color: dark ? '#e5e7eb' : undefined }}>{fmt(h.date)}</td>
-                      <td className="text-muted" style={{ fontSize: 13, background: 'transparent' }}>{weekday(h.date)}</td>
-                      <td style={{ background: 'transparent' }}><span className="rec-pill" style={{ background: dark ? 'rgba(124,92,252,0.20)' : '#ede9fe', color: dark ? '#c4b5fd' : '#5b3fd1', fontSize: 11 }}>{h.type || '—'}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </ModalBody>
+        <div style={{ padding: '14px 18px' }}>
+          <DataTable<any>
+            data={sorted}
+            columns={holidayColumns}
+            serial
+            accent="violet"
+            loading={loading}
+            paginate
+            pageSize={8}
+            toolbarFilters={filterGroups.length > 0 ? (
+              <ToolbarFilter
+                title="Filter Holidays"
+                groups={filterGroups}
+                value={facets}
+                onChange={(key, v) => setFacets(f => ({ ...f, [key]: v }))}
+                onClear={() => setFacets({ group: '', year: '', type: '' })}
+                shown={sorted.length}
+                total={rows.length}
+              />
+            ) : undefined}
+            emptyMessage={
+              <>
+                <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                No holidays configured yet.
+              </>
+            }
+          />
+        </div>      </ModalBody>
     </Modal>
   );
 }

@@ -125,10 +125,9 @@ function withinDateFilter(iso: string | null | undefined, filter: DateFilter): b
 }
 
 function KpiTile({
-  label, sub, value, iconClass, strip, tint, fg, titleText,
+  label, value, iconClass, strip, tint, fg, titleText,
 }: {
   label: string;
-  sub?: string;
   value: React.ReactNode;
   iconClass: string;
   strip: string;
@@ -167,11 +166,6 @@ function KpiTile({
           }}>
             {value}
           </h3>
-          {sub && (
-            <p style={{ fontSize: 10.5, color: 'var(--vz-secondary-color, #6b7280)', margin: '6px 0 0' }}>
-              {sub}
-            </p>
-          )}
         </div>
         <div
           className="hrexp-kpi-ic"
@@ -910,50 +904,37 @@ export default function HrExpenseManagement() {
 
   // Company Used / Self Used toggle — sits at the START of the Advance table
   // toolbar (before the status tabs) via the DataTable `leadingToolbar` slot.
-  // Same rail + rounded-rect (8px) design as the status tabs, and ONE active
-  // colour for both halves. Self Used used to fill blue while Company Used
-  // filled violet, so the toggle changed colour as well as side and the page
-  // read as two different screens depending on which half was chosen.
-  const USED_FOR_ACTIVE = '#8b5cf6';
+  // ONE active colour for both halves, which the shared rail gives it: Self
+  // Used used to fill blue while Company Used filled violet, so the toggle
+  // changed colour as well as side and the page read as two different
+  // screens depending on which half was chosen.
+  /* The product's tab rail, not a copy of it. This used to inline the numbers
+     it was imitating — 34px tabs, a 20x18 count puck — and then the shared
+     rail moved to 48 with 40px tabs and this one did not follow. The classes
+     carry the geometry, the accent, the hover and the dark mode. */
   const usedForToggle = (
-    <div className="d-inline-flex" style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 11, padding: 4, gap: 8 }}>
-      {[
-        { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: USED_FOR_ACTIVE },
-        { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: USED_FOR_ACTIVE },
-      ].map(t => {
-        const on = advUsedFor === t.key;
-        return (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => { if (advUsedFor !== t.key) flashSwitch(); setAdvUsedFor(t.key); setFilter('all'); }}
-            className="btn d-inline-flex align-items-center gap-2 fw-semibold"
-            style={{
-              /* The product's tab box, as .dt-tab sets it: 34px on 14px of side
-                 padding at 12.5px/650. This ran 13px text in a 48px button,
-                 which made the toggle a head taller than the status rail it
-                 sits beside and read as a different kind of control. */
-              fontSize: 12.5, fontWeight: 650, height: 34, padding: '0 14px', borderRadius: 8, border: 'none',
-              background: on ? t.active : 'transparent',
-              color: on ? '#fff' : 'var(--vz-secondary-color)',
-              boxShadow: on ? `0 4px 10px ${t.active}55` : 'none',
-            }}
-          >
-            {t.label}
-            <span
-              className="d-inline-flex align-items-center justify-content-center rounded-pill"
-              style={{
-                /* .dt-tab-count: a 20x18 puck at 10px/700. */
-                minWidth: 20, height: 18, fontSize: 10, fontWeight: 700, padding: '0 7px',
-                background: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
-                color: on ? '#fff' : 'var(--vz-secondary-color)',
-              }}
+    <div className="dt-tabrail flex-shrink-0" data-accent="violet">
+      <div className="dt-tabs" role="tablist">
+        {[
+          { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company },
+          { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self },
+        ].map(t => {
+          const on = advUsedFor === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              className={`dt-tab ${on ? 'on' : 'off'}`}
+              onClick={() => { if (advUsedFor !== t.key) flashSwitch(); setAdvUsedFor(t.key); setFilter('all'); }}
             >
-              {t.count}
-            </span>
-          </button>
-        );
-      })}
+              {t.label}
+              <span className="dt-tab-count">{t.count}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
   const expenseToolbarActions = (
@@ -1146,7 +1127,6 @@ export default function HrExpenseManagement() {
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label={isAdvanceModule ? 'Total Advances' : 'Total Claims'}
-              sub={dateSubLabel}
               value={kpiCounts.all}
               iconClass="ri-file-list-3-line"
               strip="#7c5cfc"
@@ -1157,7 +1137,6 @@ export default function HrExpenseManagement() {
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Total Amount"
-              sub={dateSubLabel}
               value={fmtCompact(kpiTotalAmount)}
               titleText={`₹${kpiTotalAmount.toLocaleString('en-IN')} · excludes rejected`}
               iconClass="ri-cash-line"
@@ -1169,7 +1148,6 @@ export default function HrExpenseManagement() {
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Approved"
-              sub="Disbursable"
               value={fmtCompact(kpiApprovedAmount)}
               titleText={`₹${kpiApprovedAmount.toLocaleString('en-IN')} · approved only`}
               iconClass="ri-checkbox-circle-line"
@@ -1181,7 +1159,6 @@ export default function HrExpenseManagement() {
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Pending Review"
-              sub="Awaiting approval"
               value={kpiCounts.pending}
               iconClass="ri-time-line"
               strip="#3b82f6"
@@ -1192,7 +1169,6 @@ export default function HrExpenseManagement() {
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label="Rejected"
-              sub="This cycle"
               value={kpiCounts.rejected}
               iconClass="ri-close-circle-line"
               strip="#f06548"
@@ -1217,7 +1193,10 @@ export default function HrExpenseManagement() {
             onMouseEnter={warmSpendChart}
             onFocus={warmSpendChart}
             className="btn w-100 d-flex align-items-center justify-content-between"
-            style={{ padding: '13px 18px', border: 'none', background: 'transparent' }}
+            /* 58, the same band as the scope row below and the header strip
+               above. Height rather than vertical padding: 13px of it put the
+               bar at 59 and one pixel off everything beside it. */
+            style={{ height: 58, padding: '0 18px', border: 'none', background: 'transparent' }}
             aria-expanded={analyticsOpen}
           >
             <span className="d-inline-flex align-items-center gap-2 fw-bold" style={{ fontSize: 14 }}>

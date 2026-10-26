@@ -247,6 +247,24 @@ button.ms-cstrip-add {
   border-radius: 999px !important;
 }
 
+/* HRMS strips are 40, not the 42 the blanket rule above forces on every
+   button in every cstrip.
+
+   That rule is why a height set anywhere else kept losing: cand-pill-btn,
+   frm-cstrip-back, rec-btn-primary and the reactstrap <Button>s each
+   declare 40 and each was overruled by its !important. Matching the
+   !important here rather than editing the blanket rule leaves the client,
+   plan, payment, branch and master strips on their 42. */
+.frm-cstrip.hr-cstrip :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
+  height: 40px !important;
+  /* min-height too, and this is the part that actually settles it.
+     .hr-cstrip > .d-flex .btn.rounded-pill carries min-height: 42px, and
+     min-height is resolved AFTER height — it clamps the used value back
+     up, so height: 40 !important was being applied and then overruled by
+     a rule with no !important at all. */
+  min-height: 40px !important;
+}
+
 .row.mb-3:has(> [class*="col"] > [class*="kpi"]),
 .row.mb-3:has(> [class*="col"] > [class*="stat-box"]),
 .rec-page-kpis.mb-3:not(.ep-doc-kpis),
@@ -1687,9 +1705,19 @@ tbody tr:nth-child(10) {
    added slack on top of slack. align-items:center on the base rule does the
    centring. 10px is the side inset. */
 .frm-cstrip.hr-cstrip {
-  min-height: 70px;
+  min-height: 58px;
   padding: 0 10px;
-  gap: 12px;
+  gap: 10px;
+}
+
+/* Both halves of the strip sit on one height, so the mark and the actions line
+   up against each other rather than each finding its own. min-height, not
+   height: the actions group carries flex-wrap, and a hard height would clip
+   the second row on a narrow window instead of letting it grow. */
+.frm-cstrip.hr-cstrip > .frm-cstrip-left,
+.frm-cstrip.hr-cstrip > .cand-actions,
+.frm-cstrip.hr-cstrip > .d-flex.flex-shrink-0 {
+  min-height: 42px;
 }
 
 .att-page .frm-cstrip.hr-cstrip {

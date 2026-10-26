@@ -648,34 +648,20 @@ export default function HrDocumentTemplates() {
           <Row className="g-1 mb-4 align-items-stretch">
             {KPI.map(k => (
               <Col key={k.label} xl={true} md={3} sm={6} xs={12}>
-                <div
-                  className="dtm-kpi-tile"
-                  style={{
-                    borderRadius: 14,
-                    border: '1px solid var(--vz-border-color)',
-                    borderTopWidth: 0,
-                    background: 'var(--vz-card-bg, #fff)',
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
-                    padding: '16px 18px',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    height: '100%',
-                  }}
-                >
-                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: k.strip }} />
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', height: '100%' }}>
-                    <div className="min-w-0">
-                      <p className="dtm-kpi-label" style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '0 0 8px' }}>
-                        {k.label}
-                      </p>
-                      <h3 className="dtm-kpi-num" style={{ fontSize: 26, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-                        {loading ? <Shimmer height={26} width={64} /> : <AnimatedNumber value={k.value ?? 0} />}
-                      </h3>
-                    </div>
-                    <div className="dtm-kpi-icon" style={{ width: 44, height: 44, borderRadius: 10, background: k.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <i className={k.icon} style={{ fontSize: 20, color: '#fff' }} />
-                    </div>
+                {/* The shared KPI card, as Payroll, Attendance and the employee
+                    pages have it — 82px on 11px of padding, a 36px icon tile
+                    and a 22px number. */}
+                <div className="rec-kpi-card">
+                  <span className="rec-kpi-strip" style={{ background: k.strip }} />
+                  <div className="rec-kpi-text">
+                    <span className="rec-kpi-label">{k.label}</span>
+                    <span className="rec-kpi-num">
+                      {loading ? <Shimmer height={22} width={64} /> : <AnimatedNumber value={k.value ?? 0} />}
+                    </span>
                   </div>
+                  <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                    <i className={k.icon} />
+                  </span>
                 </div>
               </Col>
             ))}
@@ -1537,8 +1523,6 @@ function DtmDarkStyles() {
            card's rounded edge instead of scrolling inside it. */
         .dtm-page .frm-cstrip > * { min-width: 0; }
         .dtm-page .dt-tabrail { width: 100%; max-width: 100%; }
-        /* Same inline-style override as the height rules below. */
-        .dtm-page .dtm-kpi-num { font-size: 19px !important; }
         /* The table body is flex:1 + min-height:0 inside a shell that gets its
            height from the viewport-fit calc. On a phone that calc leaves nothing
            over, so the rows collapsed to zero height — the pager still read
@@ -1638,14 +1622,6 @@ function DtmDarkStyles() {
          as a different size from Recruitment (#57). Rows are won from the KPI
          tiles and the table, not from the page title. */
       @media (max-height: 900px) {
-        .dtm-page .dtm-kpi-tile { padding: 12px 14px !important; }
-        .dtm-page .dtm-kpi-icon { width: 38px !important; height: 38px !important; }
-        /* !important throughout this block: the tiles and the Generate button
-           carry INLINE styles (fontSize / padding on the JSX), and an inline
-           declaration beats any stylesheet rule short of !important. Without
-           it these rules parse fine, ship fine and do nothing. */
-        .dtm-page .dtm-kpi-num { font-size: 18px !important; }
-        .dtm-page .dtm-kpi-label { font-size: 9.5px !important; }
         .dtm-page .dt-table tbody td { padding: 5px 9px; }
         .dtm-page .dt-table thead th { padding: 7px 9px; }
         .dtm-page .dt-toolbar { padding-top: 8px; padding-bottom: 8px; gap: 8px; }
@@ -1653,9 +1629,6 @@ function DtmDarkStyles() {
       @media (max-height: 740px) {
         /* The KPI row is the biggest single block that is not the table. It
            keeps its numbers, on one line, at half the height. */
-        .dtm-page .dtm-kpi-tile { padding: 10px 12px !important; }
-        .dtm-page .dtm-kpi-icon { width: 34px !important; height: 34px !important; }
-        .dtm-page .dtm-kpi-num { font-size: 16px !important; }
         .dtm-page .dt-table tbody td { padding: 4px 8px; font-size: 11px; }
         .dtm-page .dt-table tbody .dt-serial { width: 20px; height: 20px; font-size: 9.5px; }
         .dtm-page .dtm-gen-btn { padding: 4px 9px !important; font-size: 11px !important; }
@@ -1671,38 +1644,10 @@ function DtmDarkStyles() {
         .dtm-page .frm-cstrip-icon { width: 38px; height: 38px; font-size: 18px; }
       }
 
-      /* Matches .onb-kpi-card on Employee Onboarding (Bug #62). Cursor stays
-         default — these tiles are not filters, unlike the onboarding ones. */
-      .dtm-page .dtm-kpi-tile {
-        transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
-        cursor: default;
-      }
-      .dtm-page .dtm-kpi-tile:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 32px rgba(18,38,63,0.12) !important;
-        border-color: rgba(124,92,252,0.30) !important;
-      }
-      .dtm-page .dtm-kpi-tile .dtm-kpi-icon { transition: transform .25s ease; }
-      .dtm-page .dtm-kpi-tile:hover .dtm-kpi-icon { transform: scale(1.08); }
-      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile:hover,
-      [data-layout-mode="dark"] .dtm-page .dtm-kpi-tile:hover{
-        box-shadow: 0 10px 22px rgba(0,0,0,0.45);
-        border-color: rgba(167,139,250,0.55) !important;
-      }
-
       [data-bs-theme="dark"] .dtm-page .dtm-header-icon,
       [data-layout-mode="dark"] .dtm-page .dtm-header-icon{
         background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.25)) !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile,
-      [data-layout-mode="dark"] .dtm-page .dtm-kpi-tile{
-        background: var(--vz-card-bg) !important;
-        border-color: var(--vz-border-color) !important;
-      }
-      [data-bs-theme="dark"] .dtm-page .dtm-kpi-num,
-      [data-layout-mode="dark"] .dtm-page .dtm-kpi-num{ color: rgba(255,255,255,0.95) !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-kpi-label,
-      [data-layout-mode="dark"] .dtm-page .dtm-kpi-label{ color: rgba(255,255,255,0.55) !important; }
       [data-bs-theme="dark"] .dtm-page .dtm-filter-label,
       [data-layout-mode="dark"] .dtm-page .dtm-filter-label{ color: rgba(255,255,255,0.5) !important; }
 

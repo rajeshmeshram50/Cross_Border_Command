@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Popover, PopoverBody } from 'reactstrap';
 import { MasterFormStyles, MasterDatePicker } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { Turtle } from 'lucide-react';
 import api from '../../api';
 import RegularizationModal, { type RegPrefillPunch } from './RegularizationModal';
-import RegularizationApprovals from './RegularizationApprovals';
 import type { ApiRegularization } from './regularizationApi';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
@@ -437,6 +437,7 @@ function LogsShimmer() {
 }
 
 export default function HrAttendance() {
+  const navigate = useNavigate();
   const [employees, setEmployees] = useState<AttendanceEmployee[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState<boolean>(true);
   /* "Never loaded" vs "loading again" — the first roster fetch draws the
@@ -851,6 +852,18 @@ export default function HrAttendance() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+                {/* Reads the same pending count the queue shows, so the
+                    number on the button and the number on the page cannot
+                    disagree — it is the one fact a reviewer needs before
+                    deciding whether to go there at all. */}
+                <button
+                  type="button"
+                  className="cand-pill-btn cand-pill-btn--primary flex-shrink-0"
+                  onClick={() => navigate('/hr/regularization-requests')}
+                  title="Approve or reject attendance correction requests"
+                >
+                  <i className="ri-file-edit-line" />Regularization Requests
+                </button>
                 <div className="att-date-nav">
                   <button type="button" className="att-date-nav-btn" onClick={() => setViewDate(addDays(viewDate, -1))} aria-label="Previous day">
                     <i className="ri-arrow-left-s-line" />
@@ -999,11 +1012,11 @@ export default function HrAttendance() {
               ) : detailError}
             </div>
 
-           
-            <RegularizationApprovals
-              refreshKey={regVersion}
-              onActed={() => setAttVersion(v => v + 1)}
-            />
+            {/* The approval queue lives at /hr/regularization-requests now.
+                Three stacked tables on one screen meant the one thing a
+                reviewer comes here to ACT on sat below the two they only
+                read, past a full day's timeline. The header carries a
+                button to it instead. */}
         </Col>
       </Row>
 

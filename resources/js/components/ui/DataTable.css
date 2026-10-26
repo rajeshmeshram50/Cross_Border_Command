@@ -1155,11 +1155,17 @@
 /* HRMS keeps its own COLOURS — a pale recessed track instead of the default
    tinted one — but no longer its own sizes. Geometry lives once, on the base
    rules above, so a rail is the same object in every module. */
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tabs {
-  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tabs {
+  /* The Case to Case rail (.ctc-tabrail), through the accent variables.
+     A STATED tint, not translucent white: the unselected tabs paint nothing
+     of their own, so the rail IS the unselected state, and it has to be
+     something for hover's solid white to be a step up from. */
+  border: 1px solid rgba(var(--dt-a-rgb), .22);
+  background: linear-gradient(180deg,
+      var(--dt-a-50),
+      color-mix(in srgb, var(--dt-a-150) 70%, #fff));
 }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab {
   border: 0;
   /* 650, a half-step below the 700 of Customers' .smc-pill and the base rule.
      This has been tried both ways: at 700 the HRMS rail reads heavier than
@@ -1172,14 +1178,42 @@
   font-weight: 650;
 }
 .hr-cstrip .dt-tabrail .dt-tab { font-weight: 650; }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off { background: transparent; color: var(--dt-a-700); }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .06); color: var(--dt-a-600); }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.on {
+/* An unselected tab is the rail showing through. Any fill at all, however
+   pale, draws an edge where the tab meets the rail, and four of those in a
+   row read as four outlined boxes inside the capsule. The transparent border
+   keeps its width so the rail does not shift when the selection moves.
+
+   background-COLOR in the transition, not the background shorthand: the
+   shorthand also animates background-image, and gradient <-> none cannot be
+   interpolated, so CSS swaps it discretely at the HALFWAY point. That is the
+   white flash on tab switch — the click starts from the hover white and holds
+   it for 80ms with the active gradient not yet painted. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off {
+  background: transparent;
+  border: 1px solid transparent;
+  /* The base .dt-tab.off is a white chip: a card background, a .22 accent
+     border AND a shadow. Clearing the first two left the shadow drawing
+     the chip edge on its own, which is the outline between tabs — four of
+     them in a row instead of one clean band. */
+  box-shadow: none;
+  color: var(--dt-a-700);
+  transition: background-color .16s, color .16s, box-shadow .16s, border-color .16s;
+}
+/* Hover is the only thing that gives an unselected tab a shape, so it has to
+   be unmistakable: solid white against the rail's tint, lifted by a soft
+   shadow. It goes LIGHTER, not darker — deepening the accent moved the tab
+   towards the selected paint, and for a moment two tabs looked selected. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off:hover {
+  background: #fff;
+  color: var(--dt-a-800);
+  box-shadow: 0 1px 4px rgba(var(--dt-a-rgb), .14);
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.on {
   color: #fff;
   background: linear-gradient(135deg, var(--dt-a-400), var(--dt-a-600) 55%, var(--dt-a-700));
   box-shadow: 0 6px 16px -5px rgba(var(--dt-a-rgb), .55), inset 0 1px 0 rgba(255, 255, 255, .25);
 }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab-count {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab-count {
   /* Size comes from the base rule; the hairline and the weight are this
      variant's. 700, not the base 800: beside a 650 label an 800 number read as
      the loudest thing in the rail. It stays a step above the label so the count
@@ -1187,8 +1221,8 @@
   border: 1px solid var(--dt-a-200);
   font-weight: 700;
 }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off .dt-tab-count { background: var(--dt-a-100); color: var(--dt-a-700); }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.on .dt-tab-count {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off .dt-tab-count { background: var(--dt-a-100); color: var(--dt-a-700); }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.on .dt-tab-count {
   border-color: rgba(255, 255, 255, .75);
   background: rgba(255, 255, 255, .9);
   color: var(--dt-a-800);
@@ -1268,13 +1302,15 @@
   flex: 0 0 calc(50% - 10px);
   min-width: 0;
 }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-toolbar-filters {
-  flex: 0 0 calc(12.5% - 5px);
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-toolbar-filters:not(:has(.dt-fwrap)) {
+  /* Fixed, not a share of the row: these selects hold one short word and at
+     12.5% they grew with the window until the box dwarfed its own label. */
+  flex: 0 0 150px;
   min-width: 0;
   margin-left: 0;
 }
 /* The select fills its three columns instead of its own inline min-width. */
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-toolbar-filters > div {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-toolbar-filters:not(:has(.dt-fwrap)) > div {
   flex: 1 1 auto; min-width: 0 !important;
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar:has(.dt-title):not(:has(.dt-tabs)) .dt-search {
@@ -1311,14 +1347,42 @@
  * Vertical padding is zeroed wherever a control sized itself by padding —
  * height alone does not win against it. The rail is 48px: 40px of tab plus its
  * own 3px inset and 1px border on each side. */
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tab {
+/* 48 outside, 40 inside — and the STANDALONE rail arms matter here. A tab
+   rail in a header strip (Document Templates, Expense) is a bare
+   .dt-tabrail with no .dt-root around it, so the two .dt-root arms alone
+   left those rails on the base 42/34 while the one below the strip, inside
+   the table, sat at 48/40. Same page, two sizes. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root,
+    .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab {
   height: 40px; padding-top: 0; padding-bottom: 0;
 }
-:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabrail {
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-tabrail,
+.page-content:has(.hr-cstrip) .dt-tabrail,
+.dt-tabrail.hr-dt {
   min-height: 48px; align-items: center;
 }
+/* ONE box, not two.
+
+   .dt-tabs is the track and normally IS the rail — it carries the border,
+   the tint and the 3px of padding. When a .dt-tabrail wrapper is present
+   as well (the header-strip rails), both drew a box and the result was a
+   border inside a border, with the wrapper 50px because it was padding a
+   48px track. Inside a wrapper the track gives all of that up: the wrapper
+   is the 48, the tabs are the 40, and nothing is nested. */
+.dt-tabrail > .dt-tabs,
+.dt-tabrail .dt-tabs {
+  border: 0;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  min-height: 0;
+}
+/* 48, the tab rail's height — the search is the other full-height object
+   on this row, so it reads as the rail's counterpart rather than a third
+   size. The buttons beside it stay 40, the same 40 as the tabs INSIDE the
+   rail, so the row has two heights and not four. */
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search {
-  height: 40px; min-height: 40px;
+  height: 48px; min-height: 48px;
 }
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-filter-btn,
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar .master-select-toggle,
@@ -1327,6 +1391,11 @@
 :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar-actions > .dropdown > button {
   height: 40px; min-height: 40px;
   padding-top: 0; padding-bottom: 0;
+  /* The row is 48 (the tab rail and the search) and these are 40. Some of
+     these toolbars run align-items:stretch, where a fixed height puts the
+     item at the START of the cross axis — so the 8px showed as the button
+     riding above everything beside it. */
+  align-self: center;
 }
 /* The search field is 42px for every module now, on the base rule — it used to
    be 42px here only when an actions group or Filter button was present, and
@@ -1344,19 +1413,19 @@
 [data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar {
   background: linear-gradient(180deg, rgba(var(--dt-a-rgb), .10), rgba(var(--dt-a-rgb), .02));
 }
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tabs,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tabs,
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tabs,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tabs,
 [data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search,
 [data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-search {
   background: rgba(var(--dt-a-rgb), .08);
   border-color: rgba(var(--dt-a-rgb), .22);
 }
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off { background: transparent; color: var(--dt-a-300); }
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off:hover,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .10); color: var(--dt-a-200); }
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off .dt-tab-count,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.off .dt-tab-count {
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off { background: transparent; color: var(--dt-a-300); }
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off:hover,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .10); color: var(--dt-a-200); }
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off .dt-tab-count,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.off .dt-tab-count {
   background: rgba(var(--dt-a-rgb), .14);
   border-color: rgba(var(--dt-a-rgb), .30);
   color: var(--dt-a-300);
@@ -1369,8 +1438,8 @@
    the white dot was on every one of them.)
    Recessed instead of raised: a dark chip sunk into the accent pill, which also
    buys the numeral white-on-dark contrast rather than dark-on-near-white. */
-[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.on .dt-tab-count,
-[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt) .dt-tab.on .dt-tab-count {
+[data-bs-theme="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.on .dt-tab-count,
+[data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root, .dt-tabrail.hr-dt, .page-content:has(.hr-cstrip) .dt-tabrail) .dt-tab.on .dt-tab-count {
   background: rgba(0, 0, 0, .28);
   border-color: rgba(255, 255, 255, .22);
   color: #fff;
@@ -1387,4 +1456,215 @@
 [data-layout-mode="dark"] :is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-table thead th.dt-sortable:hover {
   background: linear-gradient(rgba(var(--dt-a-rgb), .22), rgba(var(--dt-a-rgb), .22)), var(--vz-secondary-bg, #212529);
   color: var(--dt-a-200);
+}
+
+/* ── HRMS: the compact Filter button ──────────────────────────────────────
+ *
+ * One filter control across the module, matching Document Templates: a filled
+ * 40px square holding a funnel, sitting immediately RIGHT of the search with
+ * the page actions after it.
+ *
+ * Icon-only. The word "Filter" cost ~60px on a row that already carries a tab
+ * rail, a search and an Add button, and the funnel is one of the few glyphs
+ * that reads without a label — the name stays on title/aria-label. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-filter-lbl { display: none; }
+
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-filter-btn:has(.dt-filter-lbl) {
+  width: 40px; padding: 0;
+  justify-content: center;
+  gap: 0;
+  border: 0;
+  background: linear-gradient(135deg, var(--dt-a-400) 0%, var(--dt-a-500) 38%, var(--dt-a-600) 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(var(--dt-a-rgb), .38);
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-filter-btn:has(.dt-filter-lbl):hover {
+  background: linear-gradient(135deg, var(--dt-a-500) 0%, var(--dt-a-600) 38%, var(--dt-a-800) 100%);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(var(--dt-a-rgb), .48);
+}
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-filter-btn:has(.dt-filter-lbl) i { font-size: 17px; }
+/* The count rides on the corner rather than beside the glyph — there is no
+   room left inside a square once the label is gone. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-filter-btn:has(.dt-filter-lbl) { position: relative; }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-filter-btn:has(.dt-filter-lbl) .dt-filter-badge {
+  position: absolute; top: -5px; right: -5px;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  font-size: 10px;
+  background: #fff; color: var(--dt-a-700);
+  border: 1.5px solid rgba(var(--dt-a-rgb), .35);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+}
+
+/* Right of the search, not left of it. DataTable renders Filter first because
+   that pins it to a fixed spot; with the search elastic in HRMS it pinned it
+   against the TABS instead, a third of the row away from the field it acts on.
+   `order` moves it without touching the markup every other module shares. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar > * { order: 1; }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar > .dt-search { order: 2; }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar > :is(.dt-filter-btn, .dt-toolbar-filters) { order: 3; }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar > .dt-toolbar-actions { order: 4; }
+/* The auto margin has to follow the reorder: whatever is now visually first of
+   the right-hand group claims the slack, and the rest give it back. */
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar > .dt-search { margin-left: auto; }
+:is(.dt-root.hr-dt, .page-content:has(.hr-cstrip) .dt-root) .dt-toolbar > :is(.dt-filter-btn, .dt-toolbar-filters, .dt-toolbar-actions) { margin-left: 0; }
+
+/* ── ToolbarFilter: the panel behind the Filter button ────────────────────
+ *
+ * Accent-driven, like the rest of this file, so a table with accent="teal"
+ * gets a teal panel without the page saying anything. The trigger is the
+ * plain .dt-filter-btn above, which is why nothing here styles a button. */
+.dt-fwrap { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
+.dt-filter-btn.is-open { box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .30), 0 5px 14px rgba(var(--dt-a-rgb), .42); }
+
+/* The anchor is a zero-size fixed box over the button; it must not eat
+   clicks meant for the table underneath it. */
+.dt-fpop-anchor { z-index: 4000; pointer-events: none; }
+.dt-fpop {
+  position: fixed;
+  top: calc(100% + 10px);
+  pointer-events: auto;
+  display: flex; flex-direction: column;
+  border-radius: 14px;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color);
+  box-shadow: 0 18px 44px rgba(18, 38, 63, .18), 0 2px 6px rgba(18, 38, 63, .06);
+  overflow: hidden;
+}
+
+.dt-fpop-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px 0 12px;
+  min-height: 44px;
+  background: linear-gradient(135deg, var(--dt-a-400) 0%, var(--dt-a-600) 100%);
+  color: #fff;
+}
+.dt-fpop-head-ico { display: inline-flex; font-size: 15px; opacity: .92; }
+.dt-fpop-title { font-size: 12.5px; font-weight: 700; letter-spacing: .01em; }
+.dt-fpop-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 800;
+  background: #fff; color: var(--dt-a-700);
+}
+.dt-fpop-sp { flex: 1 1 auto; }
+.dt-fpop-reset, .dt-fpop-x {
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 26px; padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  font-family: inherit; font-size: 11px; font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+}
+.dt-fpop-x { width: 26px; padding: 0; justify-content: center; font-size: 14px; }
+.dt-fpop-reset:hover, .dt-fpop-x:hover { background: rgba(255, 255, 255, .30); }
+
+.dt-fpop-body { padding: 12px; overflow-y: auto; }
+.dt-fpop-group + .dt-fpop-group { margin-top: 12px; }
+.dt-fpop-k {
+  font-size: 10px; font-weight: 800;
+  letter-spacing: .07em; text-transform: uppercase;
+  color: var(--vz-secondary-color);
+  margin-bottom: 7px;
+}
+.dt-fpop-grid { display: grid; gap: 7px; }
+.dt-fpop-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dt-fpop-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.dt-fpop-tile {
+  position: relative;
+  display: flex; align-items: center; gap: 6px;
+  min-height: 38px; padding: 0 9px;
+  border-radius: 10px;
+  border: 1.5px solid var(--vz-border-color);
+  background: var(--vz-secondary-bg);
+  color: var(--vz-body-color);
+  font-family: inherit; font-size: 11.5px; font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, box-shadow .15s, color .15s;
+}
+.dt-fpop-tile:hover { border-color: rgba(var(--dt-a-rgb), .45); background: var(--vz-card-bg, #fff); }
+.dt-fpop-tile.is-on {
+  /* --fpop-tone lets a tile carry the colour its own status uses elsewhere
+     (red for Urgent, amber for Draft); the accent is the fallback. */
+  border-color: transparent;
+  background: var(--fpop-tone, var(--dt-a-600));
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(var(--dt-a-rgb), .34);
+}
+/* Dimmed, not hidden: a zero tile still says the option exists. */
+.dt-fpop-tile.is-empty:not(.is-on) { opacity: .5; }
+.dt-fpop-tile-ico { display: inline-flex; font-size: 13px; flex-shrink: 0; }
+.dt-fpop-tile-lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dt-fpop-tile-n {
+  flex-shrink: 0;
+  min-width: 18px; padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px; font-weight: 800; text-align: center;
+  background: rgba(var(--dt-a-rgb), .12); color: var(--dt-a-700);
+}
+.dt-fpop-tile.is-on .dt-fpop-tile-n { background: rgba(255, 255, 255, .25); color: #fff; }
+/* The tick rides on the corner of the chosen tile, so the label keeps its
+   full width whether or not anything is selected. */
+.dt-fpop-tick {
+  position: absolute; top: -6px; right: -6px;
+  display: none; align-items: center; justify-content: center;
+  width: 17px; height: 17px;
+  border-radius: 999px;
+  background: #fff; color: var(--dt-a-700);
+  font-size: 11px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .2);
+}
+.dt-fpop-tile.is-on .dt-fpop-tick { display: inline-flex; }
+
+.dt-fpop-foot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 12px;
+  min-height: 54px;
+  border-top: 1px solid var(--vz-border-color);
+  background: var(--vz-secondary-bg);
+}
+.dt-fpop-res { font-size: 12px; color: var(--vz-secondary-color); white-space: nowrap; }
+.dt-fpop-res b { font-size: 14px; font-weight: 800; color: var(--vz-body-color); }
+.dt-fpop-res i { font-style: normal; }
+.dt-fpop-meter {
+  flex: 1 1 auto; height: 5px;
+  border-radius: 999px;
+  background: rgba(var(--dt-a-rgb), .15);
+  overflow: hidden;
+}
+.dt-fpop-meter > span {
+  display: block; height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--dt-a-400), var(--dt-a-600));
+  transition: width .25s ease;
+}
+.dt-fpop-done {
+  flex-shrink: 0;
+  height: 32px; padding: 0 16px;
+  border: 0; border-radius: 9px;
+  background: linear-gradient(135deg, var(--dt-a-400), var(--dt-a-600));
+  color: #fff;
+  font-family: inherit; font-size: 12px; font-weight: 700;
+  cursor: pointer;
+}
+.dt-fpop-done:hover { box-shadow: 0 5px 14px rgba(var(--dt-a-rgb), .42); }
+
+[data-bs-theme="dark"] .dt-fpop,
+[data-layout-mode="dark"] .dt-fpop {
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .55);
+}
+
+/* Below 720px the panel spans the viewport rather than hanging off the
+   button, which at that width would put most of it off screen. */
+@media (max-width: 720px) {
+  .dt-fpop { left: 12px !important; right: 12px; width: auto !important; }
+  .dt-fpop-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

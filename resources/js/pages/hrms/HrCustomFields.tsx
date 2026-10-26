@@ -308,19 +308,6 @@ export default function HrCustomFields() {
           [data-bs-theme="dark"] .cf-page .cf-subtle,
           [data-layout-mode="dark"] .cf-page .cf-subtle { color: rgba(255, 255, 255, 0.62) !important; }
 
-          [data-bs-theme="dark"] .cf-page .cf-info-banner,
-          [data-layout-mode="dark"] .cf-page .cf-info-banner {
-            background: rgba(139, 92, 246, 0.10) !important;
-            border-color: rgba(139, 92, 246, 0.30) !important;
-            color: #ddd6fe !important;
-          }
-          [data-bs-theme="dark"] .cf-page .cf-info-banner strong,
-          [data-layout-mode="dark"] .cf-page .cf-info-banner strong { color: #f5f3ff !important; }
-          [data-bs-theme="dark"] .cf-page .cf-info-icon,
-          [data-layout-mode="dark"] .cf-page .cf-info-icon { color: #c4b5fd !important; }
-          [data-bs-theme="dark"] .cf-page .cf-info-code,
-          [data-layout-mode="dark"] .cf-page .cf-info-code { background: rgba(139,92,246,0.22) !important; color: #c4b5fd !important; }
-
           /* Uniform body-cell padding + middle-align so the header columns line
              up exactly with the body columns (some cells had ad-hoc inline
              padding). Header padding is set with the header recipe below. */
@@ -483,14 +470,6 @@ export default function HrCustomFields() {
                 </div>
               </div>
             ))}
-          </div>
-
-          {/* Info banner */}
-          <div className="cf-info-banner" style={{ borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, color: '#4c1d95' }}>
-            <i className="ri-information-line cf-info-icon" style={{ fontSize: 18, color: '#7c3aed', flexShrink: 0 }} />
-            <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-              Custom Fields are variables you define here that <strong>are not available in employee data</strong>. When a document template includes <code className="cf-info-code" style={{ background: '#ede9fe', color: '#6d28d9', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{'{{YourField}}'}</code>, the system will ask you to fill this value manually at generation time.
-            </div>
           </div>
 
           {/* Shared list table — search, sortable headers and the dynamic

@@ -66,6 +66,8 @@ class AnnouncementController extends Controller
         }
         if ($type = $request->query('type'))     $q->where('type', $type);
         if ($status = $request->query('status')) $q->where('status', $status);
+        // Third facet in the toolbar filter panel, beside type and status.
+        if ($priority = $request->query('priority')) $q->where('priority', $priority);
 
         $q->orderByDesc('id');
 

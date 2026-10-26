@@ -815,7 +815,9 @@ export default function DataTable<T extends object>({
               onClick={onFilterClick}
             >
               <i className="ri-equalizer-line" />
-              {filterLabel}
+              {/* Hidden where the toolbar is tight (HRMS), so the button
+                  collapses to its icon without a second render path. */}
+              <span className="dt-filter-lbl">{filterLabel}</span>
               {activeFilterCount > 0 && <span className="dt-filter-badge">{activeFilterCount}</span>}
             </button>
           )}

@@ -98,6 +98,7 @@ const HrRecruitment = lazyPage(() => import('../pages/recruitment/HrRecruitment'
 const HrCandidates = lazyPage(() => import('../pages/recruitment/HrCandidates'));
 const HrExitManagement = lazyPage(() => import('../pages/hrms/HrExitManagement'));
 const HrAttendance = lazyPage(() => import('../pages/hrms/HrAttendance'));
+const HrRegularizationRequests = lazyPage(() => import('../pages/hrms/HrRegularizationRequests'));
 const HrLeave = lazyPage(() => import('../pages/hrms/HrLeave'));
 const HrLeavePlans = lazyPage(() => import('../pages/hrms/HrLeavePlans'));
 const HrLeaveApprovals = lazyPage(() => import('../pages/hrms/HrLeaveApprovals'));
@@ -775,8 +776,13 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/hr/recruitment" element={<HrRecruitment />} />
               <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />
               <Route path="/hr/exit-management" element={<HrExitManagement />} />
+              {/* Both behind the same flag: the queue is attendance data, so
+                 it has no meaning on a build where attendance is off. */}
               {FEATURE_FLAGS.hrAttendance && (
-                <Route path="/hr/attendance" element={<HrAttendance />} />
+                <>
+                  <Route path="/hr/attendance" element={<HrAttendance />} />
+                  <Route path="/hr/regularization-requests" element={<HrRegularizationRequests />} />
+                </>
               )}
               <Route path="/hr/leave" element={<HrLeave />} />
               <Route path="/hr/leave-plans" element={<HrLeavePlans />} />

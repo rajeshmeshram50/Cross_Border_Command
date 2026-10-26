@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ToolbarFilter from '../../components/ui/ToolbarFilter';
 import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
-import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import { MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
@@ -61,6 +62,38 @@ interface AnnRow {
 interface Stats { total: number; active: number; scheduled: number; draft: number; expired: number; archived: number; high_priority: number; }
 const ZERO_STATS: Stats = { total: 0, active: 0, scheduled: 0, draft: 0, expired: 0, archived: 0, high_priority: 0 };
 
+/* The three facets behind the toolbar's Filter button. Each selected tile
+   takes the colour that value already has in the table, so the panel and
+   the rows agree on what Urgent or Draft looks like. */
+const ANN_FILTER_GROUPS = [
+  {
+    key: 'type', label: 'Type', cols: 3 as const,
+    options: [
+      { value: 'General', label: 'General', icon: 'ri-megaphone-line',      tone: '#3b82f6' },
+      { value: 'Policy',  label: 'Policy',  icon: 'ri-shield-check-line',   tone: '#7c5cfc' },
+      { value: 'Urgent',  label: 'Urgent',  icon: 'ri-alarm-warning-line',  tone: '#f06548' },
+    ],
+  },
+  {
+    key: 'priority', label: 'Priority', cols: 3 as const,
+    options: [
+      { value: 'Normal',   label: 'Normal',   icon: 'ri-flag-line',      tone: '#10b981' },
+      { value: 'High',     label: 'High',     icon: 'ri-fire-line',      tone: '#f59e0b' },
+      { value: 'Critical', label: 'Critical', icon: 'ri-error-warning-line', tone: '#f06548' },
+    ],
+  },
+  {
+    key: 'status', label: 'Status', cols: 3 as const,
+    options: [
+      { value: 'Draft',     label: 'Draft',     icon: 'ri-draft-line',           tone: '#f59e0b' },
+      { value: 'Scheduled', label: 'Scheduled', icon: 'ri-calendar-schedule-line', tone: '#3b82f6' },
+      { value: 'Active',    label: 'Active',    icon: 'ri-checkbox-circle-line', tone: '#10b981' },
+      { value: 'Expired',   label: 'Expired',   icon: 'ri-time-line',            tone: '#6b7280' },
+      { value: 'Archived',  label: 'Archived',  icon: 'ri-archive-line',         tone: '#6b7280' },
+    ],
+  },
+];
+
 const PER_PAGE_KEY = 'cbc.hr.broadcast.perPage.v1';
 
 /* The SAME ceiling as AnnouncementController::MAX_PER_PAGE. autoFitRows has a
@@ -105,7 +138,11 @@ export default function HrBroadcastCentre() {
   const [stats, setStats] = useState<Stats>(ZERO_STATS);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('All');
+  /* Keyed by facet so the filter panel can set any of them by name, and so
+     the query below is one spread instead of three conditionals. An empty
+     string means the facet is not applied. */
+  const [facets, setFacets] = useState<Record<string, string>>({ type: '', status: '', priority: '' });
+  const activeFacets = Object.values(facets).filter(Boolean).length;
 
   const [page, setPage] = useState(0);
   const [perPage, setPerPageRaw] = useState<number>(() => {
@@ -129,7 +166,6 @@ export default function HrBroadcastCentre() {
   const [total, setTotal] = useState(0);
   const reqRef = useRef(0);
 
-  const applyFilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(0); };
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<AnnRow | null>(null);
@@ -145,7 +181,9 @@ export default function HrBroadcastCentre() {
           page: page + 1,
           per_page: perPage,
           ...(search.trim() ? { search: search.trim() } : {}),
-          ...(typeFilter !== 'All' ? { type: typeFilter } : {}),
+          ...(facets.type     ? { type: facets.type }         : {}),
+          ...(facets.status   ? { status: facets.status }     : {}),
+          ...(facets.priority ? { priority: facets.priority } : {}),
         },
       });
       if (token !== reqRef.current) return;
@@ -167,7 +205,7 @@ export default function HrBroadcastCentre() {
       if (token === reqRef.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, perPage, search, typeFilter]);
+  }, [page, perPage, search, facets]);
 
   const fetchStats = async () => {
     try {
@@ -460,16 +498,21 @@ export default function HrBroadcastCentre() {
               emptyMessage={
                 <>
                   <i className="ri-send-plane-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  {(search.trim() || typeFilter !== 'All')
+                  {(search.trim() || activeFacets > 0)
                     ? 'No announcements match your filters'
                     : 'No announcements yet — click New Announcement to add one'}
                 </>
               }
               toolbarFilters={
-                <div style={{ minWidth: 130 }}>
-                  {/* Four fixed options — the in-menu search had nothing to narrow. */}
-                  <MasterSelect searchable={false} value={typeFilter} onChange={applyFilter(setTypeFilter)} options={[{ value: 'All', label: 'All' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All" />
-                </div>
+                <ToolbarFilter
+                  title="Filter Announcements"
+                  groups={ANN_FILTER_GROUPS}
+                  value={facets}
+                  onChange={(key, v) => { setFacets(f => ({ ...f, [key]: v })); setPage(0); }}
+                  onClear={() => { setFacets({ type: '', status: '', priority: '' }); setPage(0); }}
+                  shown={total}
+                  total={stats.total}
+                />
               }
             />
           </div>

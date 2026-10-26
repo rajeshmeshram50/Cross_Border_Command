@@ -223,7 +223,7 @@
 .hrexp-page .dt-search { flex: 0 1 520px; max-width: 520px; margin-left: auto; }
 .hrexp-page .dt-toolbar-actions { margin-left: 8px; }
 /* Batch Payment / Export buttons match the 48px search + tab height. */
-.hrexp-page .dt-toolbar-actions .hrexp-cta { height: 48px; padding: 0 18px; }
+.hrexp-page .dt-toolbar-actions .hrexp-cta { height: 40px; padding: 0 18px; }
 
 /* ───────────────────────────────────────────────────────────────────────────
    SHORT VIEWPORTS — give the table back its rows.
@@ -252,7 +252,8 @@
      page's toolbar never matched any other list — and a 1080p screen lands in
      this query, so it was the size almost everyone actually saw. Only the CTA
      buttons still shrink. */
-  .hrexp-page .dt-toolbar-actions .hrexp-cta { height: 40px; }
+  /* Height holds at 40; only the padding gives way. */
+  .hrexp-page .dt-toolbar-actions .hrexp-cta { padding: 0 14px; }
   /* Narrow the search too. At 520px it pushed the tabs and the action
      buttons onto a second toolbar row on a short window, costing another
      ~48px of table. It stays right-anchored and still fits a full query. */
@@ -265,7 +266,7 @@
   .hrexp-page .frm-cstrip { padding-top: 8px !important; padding-bottom: 8px !important; }
   .hrexp-page .hrexp-kpi-row { margin-bottom: 8px !important; }
   .hrexp-page .hrexp-analytics-card { margin-bottom: 8px !important; }
-  .hrexp-page .dt-toolbar-actions .hrexp-cta { height: 36px; }
+  .hrexp-page .dt-toolbar-actions .hrexp-cta { padding: 0 12px; }
   .hrexp-page .dt-search { flex: 0 1 280px; max-width: 280px; }
 }
 
@@ -279,48 +280,25 @@
    Export button drifting somewhere to its right. The row is now the surface —
    white, bordered, same radius and shadow as the KPI and Analytics cards — and
    the toggle sits flat inside it. */
+/* 58, the band height the header strip and Spend Analytics use. The row holds
+   a 48px tab rail and a 40px button, so the padding is 0 and the height is the
+   min-height — anything vertical here would stack on top of the rail's own. */
 .hrexp-page .hrexp-scoperow {
   border-radius: 14px;
   border: 1px solid var(--vz-border-color);
   box-shadow: 0 2px 10px rgba(0,0,0,0.04);
-  padding: 8px 12px;
+  min-height: 58px;
+  padding: 0 12px;
 }
-/* The toggle is a tab rail, so give it the SAME shell as the four status tabs
-   on the row below (.dt-tabs): secondary-bg, 1px border, 10px radius, 4px pad.
-   Flattening it made the two rows read as different kinds of control when they
-   are the same kind — one selects the set, the other filters it. */
-.hrexp-page .hrexp-scoperow > div:first-child {
-  background: var(--vz-secondary-bg) !important;
-  border: 1px solid var(--vz-border-color) !important;
-  border-radius: 11px !important;
-  /* 3px, matching .dt-tabs — with the 1px border that puts this toggle at the
-     same 42px as the rail below it and the search beside it. */
-  padding: 3px !important;
-  gap: 8px !important;
-}
-/* The shared tab box: 34px on 14px of side padding at 12.5px/650. This said
-   "match .dt-tab's 40px" and was true when it was written — .dt-tab is 34px
-   now, so the toggle stood a head taller than the status rail right below it.
-   !important throughout: these buttons carry .fw-semibold, which the theme
-   redefines as `font-weight: 500 !important`, and an !important declaration
-   beats an inline style — so the weight cannot be set from the markup. */
-.hrexp-page .hrexp-scoperow > div:first-child .btn {
-  height: 34px !important;
-  padding: 0 14px !important;
-  font-size: 12.5px !important;
-  /* 650, matching the .dt-tab rail on the row above — HRMS's weight, not the
-     base 700. See the HRMS .dt-tab rule in DataTable.css. */
-  font-weight: 650 !important;
-  letter-spacing: 0 !important;
-  border-radius: 8px !important;
-}
+/* No shell override for the toggle any more. It used to be a hand-built copy
+   of the rail and needed one; it uses .dt-tabrail / .dt-tabs / .dt-tab now, so
+   forcing a second padding and radius onto it with !important only made the
+   two identical rails on consecutive rows disagree. The .btn height rules went
+   with it — the toggle's buttons are .dt-tab, so those matched nothing. */
 .hrexp-page .hrexp-scoperow .hrexp-cta { height: 40px; padding: 0 18px; }
 @media (max-height: 900px) {
   .hrexp-page .hrexp-scoperow .hrexp-cta { height: 40px; padding: 0 14px; }
-  /* The toggle's buttons carry their height inline, so it is overridden here. */
-  .hrexp-page .hrexp-scoperow .btn { height: 40px !important; }
 }
 @media (max-height: 800px) {
-  .hrexp-page .hrexp-scoperow .hrexp-cta { height: 36px; padding: 0 12px; }
-  .hrexp-page .hrexp-scoperow .btn { height: 36px !important; }
+  .hrexp-page .hrexp-scoperow .hrexp-cta { height: 40px; padding: 0 12px; }
 }

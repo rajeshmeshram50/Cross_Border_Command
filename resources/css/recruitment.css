@@ -30,7 +30,10 @@
 .rec-page-kpis .rec-kpi-card {
   align-items: flex-start;
   gap: 10px;
-  padding: 11px 15px;
+  /* 11 all round. The 15 on the sides left the label and the number
+     sitting further in than they do from the top, which reads as the tile
+     being off-centre rather than as deliberate side padding. */
+  padding: 11px;
   min-height: 82px;
   background: #ffffff;
   background-image: linear-gradient(180deg, rgba(124,92,252,0.04) 0%, rgba(124,92,252,0) 60%);
@@ -893,9 +896,21 @@
 [data-bs-theme="dark"] .rec-form-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
 .rec-form-footer .hint { font-size: 11.5px; color: var(--vz-secondary-color); }
 
+/* The row is 42 and the buttons inside it are 40, the same pair the tab rail
+   uses. box-sizing is the part that was missing: height alone leaves any
+   border or UA default outside the 40, which is how these measured 42 and
+   filled the row edge to edge. Same trap as cand-pill-btn, frm-cstrip-back
+   and onb-checklist-cta. */
+.rec-hero-actions {
+  min-height: 42px;
+}
 .rec-hero-actions .rec-btn-primary,
-.rec-hero-actions .rec-btn-teal {
-  height: 40px; padding-top: 0; padding-bottom: 0; border-radius: 12px;
+.rec-hero-actions .rec-btn-teal,
+.rec-hero-actions .rec-btn-ghost {
+  box-sizing: border-box;
+  height: 40px; min-height: 40px;
+  padding-top: 0; padding-bottom: 0;
+  border-radius: 12px;
 }
 .rec-btn-primary {
   padding: 6px 18px; height: 36px; border-radius: 10px;

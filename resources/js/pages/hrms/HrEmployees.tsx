@@ -4018,12 +4018,16 @@ const STEP_SAFE_FIELDS = new Set([
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl md={4} sm={6} xs={12}>
                   <div
-                    className="hr-employees-surface hr-emp-kpi-card h-100"
+                    /* No h-100: Bootstrap's height:100% !important beat the
+                       82px on .hr-emp-kpi-card, so the tile took the row's
+                       height instead — 79px, and varying with whatever else
+                       was on the row. The class owns the height now. */
+                    className="hr-employees-surface hr-emp-kpi-card"
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
                       borderTopWidth: 0,
-                      padding: '11px 15px',
+                      padding: '11px',
                       position: 'relative',
                       overflow: 'hidden',
                       ['--card-accent' as any]: k.accent,
