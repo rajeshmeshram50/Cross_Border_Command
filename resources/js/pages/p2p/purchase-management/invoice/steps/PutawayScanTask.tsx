@@ -12,11 +12,7 @@ import { putId } from '../spi-api';
  * The second scan is locked until the first passes, deliberately. Scanning a
  * shelf first would tell you a shelf exists; scanning the box first and the
  * shelf second is what proves THIS box reached THAT shelf.
- *
- * Prototype mode exists because there is no handheld attached to a browser:
- * it turns on two buttons that stand in for a correct and an incorrect read,
- * and everything they produce is labelled SIMULATED so it can never be
- * mistaken for a real scan.
+
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 export interface ScanTaskSpot {
@@ -113,7 +109,6 @@ export default function PutawayScanTask({
   onScan?: (leg: 'box' | 'loc', ok: boolean) => void;
   serverScans?: number;
 }) {
-  const [proto, setProto] = useState(false);
   const [qr, setQr] = useState<Leg>({ state: 'idle' });
   const [sh, setSh] = useState<Leg>({ state: 'idle' });
 
@@ -196,7 +191,7 @@ export default function PutawayScanTask({
           <div className="s4zt-leg__lock"><IcoLock />Unlocks after the Box QR is verified</div>
         ) : leg.state === 'ok' ? (
           <div className="s4zt-leg__ok">
-            <IcoTick size={12} />Verified at {leg.at}<em>Simulated</em>
+            <IcoTick size={12} />Verified at {leg.at}
           </div>
         ) : leg.state === 'fail' ? (
           <div className="s4zt-leg__bad"><IcoX size={11} /><b>Wrong {isBox ? 'box' : dest} scanned.</b> Try again.</div>
@@ -207,21 +202,6 @@ export default function PutawayScanTask({
           </div>
         )}
 
-        {/* Only in prototype mode, and only where a scan is actually due.
-            ONE button, as the design has it: it stands in for the handheld,
-            and a handheld has one trigger. The pair that was here — simulate
-            correct, simulate wrong — turned the stand-in into a control
-            panel, and offered "scan the wrong box" as an equal choice beside
-            scanning the right one. */}
-        {proto && !locked && leg.state !== 'ok' && (
-          <button
-            type="button"
-            className="s4zt-sim"
-            onClick={() => { set({ state: 'ok', at: clock() }); onScan?.(isBox ? 'box' : 'loc', true); }}
-          >
-            <IcoScan size={13} />Simulate {isBox ? 'Box' : Dest} QR scan
-          </button>
-        )}
       </div>
     );
   };
@@ -304,17 +284,6 @@ export default function PutawayScanTask({
                   ? 'Both QR codes verified — task closed.'
                   : 'Scans from the Zebra handheld are received here automatically'}</em>
               </span>
-              {/* A browser has no handheld attached. This stands in for one,
-                  and says so - every result it produces is marked SIMULATED. */}
-              <button
-                type="button"
-                className={`s4zt-proto${proto ? ' is-on' : ''}`}
-                role="switch"
-                aria-checked={proto}
-                onClick={() => setProto(p => !p)}
-              >
-                <i /><span>Prototype mode</span><b>{proto ? 'On' : 'Off'}</b>
-              </button>
             </div>
 
             <div className="s4zt-legs">
