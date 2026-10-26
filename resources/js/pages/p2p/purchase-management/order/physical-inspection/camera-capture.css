@@ -314,6 +314,19 @@
   pointer-events: none;
 }
 
+/* The camera is never the first thing on screen: every one of its seven call
+   sites opens it from inside another dialog — the box drawer, physical
+   inspection, add payment, payment request, refund, recovery, invoice step 2.
+   Its backdrop carries .pins-layer, which is z-index 3010, and that is under
+   the box drawer's 11000 (invoice-form.css) and under create-po's 10500 — so
+   the camera opened BEHIND the form that asked for it.
+
+   12000 here, matching .vti-over-drawer and .pfm-backdrop, and still under
+   app.css's 20000 and Tooltip's 260000. On .cam-layer rather than .pins-layer
+   so the physical-inspection pin overlay, which shares that class, keeps its
+   own stacking. */
+.spi-mdl-backdrop.cam-layer { z-index: 12000; }
+
 /* Phones: the whole screen is the camera. */
 @media (max-width: 640px) {
   .spi-mdl-backdrop.cam-layer { padding: 0; }

@@ -1382,7 +1382,11 @@ body > .dropdown-menu.master-select-menu,
 }
 .clm-reg-head { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
 .clm-reg-head-label { font-size: 10.5px; font-weight: 500; color: #0891b2; letter-spacing: .06em; text-transform: uppercase; }
+/* Two-up on anything roomy, stacked on a phone. Each option is a title plus
+   two lines of explanation, so at 1fr 1fr on a 390px screen the pair ran about
+   160px wide and the explanations broke to four or five lines each. */
 .clm-reg-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .clm-reg-options { grid-template-columns: 1fr; } }
 .clm-reg-option {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 11px 14px; border-radius: 10px;

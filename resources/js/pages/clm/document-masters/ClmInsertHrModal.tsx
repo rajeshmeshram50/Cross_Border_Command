@@ -297,6 +297,22 @@ const IHR_CSS = `
 }
 .ihr-btn-primary:hover { filter: brightness(1.05); }
 
+/* ── Narrow screens ──
+   This popup opens from inside the drafting editor, which is itself inside a
+   wizard, and it had no breakpoints at all: the two-up field grid stayed
+   two-up at every width, so on a phone its controls ran at about 160px each.
+   It collapses to one column now, and the footer buttons go full width rather
+   than crowding into a corner. 560px is the step the rest of CLM uses. */
+@media (max-width: 560px) {
+  .ihr-bd { padding: 10px; }
+  .ihr-shell { max-height: calc(100vh - 20px); }
+  .ihr-grid { grid-template-columns: 1fr; gap: 10px; }
+  .ihr-head { padding: 12px 14px; gap: 10px; }
+  .ihr-body { padding: 14px; }
+  .ihr-foot { padding: 10px 14px; }
+  .ihr-foot .ihr-btn { flex: 1 1 auto; justify-content: center; }
+}
+
 /* Dark mode — mirror the Insert Table modal's explicit slate palette (not the
    raw --vz vars, which rendered an inconsistent/washed-out shade here) so the
    two picker modals look identical in dark mode. */

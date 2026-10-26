@@ -1828,5 +1828,9 @@ const TNW_CSS = `
   .tnw-foot { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
   .tnw-foot-left, .tnw-foot-right { width: 100%; justify-content: stretch; }
   .tnw-btn { flex: 1; justify-content: center; }
+  /* The regulatory pair kept its two columns down to the smallest screen —
+     measured 164px each at 390px, which is a heading plus two lines of
+     explanation in a box narrower than a thumb. */
+  .tnw-reg-grid { grid-template-columns: minmax(0,1fr); }
 }
 `;

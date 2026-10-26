@@ -61,8 +61,11 @@ export default function TemperatureModal({
   const inverted = numeric && Number(min) > Number(max);
   const canApply = numeric && !inverted;
 
+  /* vti-over-drawer: this dialog only ever opens from the box drawer, which is
+     itself a dialog, so it has to clear the drawer's z-index. See the rule
+     beside .vti-dw-modal-backdrop in invoice-form.css. */
   return createPortal(
-    <div className="spi-mdl-backdrop">
+    <div className="spi-mdl-backdrop vti-over-drawer">
       <div className="spi-mdl invf-temp" role="dialog" aria-modal="true" aria-labelledby="invf-temp-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">

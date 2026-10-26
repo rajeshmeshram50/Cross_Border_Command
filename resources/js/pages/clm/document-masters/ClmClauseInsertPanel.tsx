@@ -474,6 +474,25 @@ const CLP_CSS = `
 .clp-btn-primary:hover:not(:disabled) { filter: brightness(1.05); }
 .clp-btn-primary:disabled { opacity: .45; cursor: not-allowed; }
 
+/* ── Narrow screens ──
+   Opened from inside the drafting editor, which is inside a wizard, and it had
+   no breakpoints. The body is already one column, so the two things that bite
+   are the footer — a space-between row holding a count and two buttons, which
+   squeezed both onto one cramped line — and the clause list's fixed 300px cap,
+   which on a short phone left the footer off the end of the card. 560px is the
+   step the rest of CLM uses. */
+@media (max-width: 560px) {
+  .clp-bd { padding: 10px; }
+  .clp-shell { max-height: calc(100vh - 20px); }
+  .clp-head { padding: 12px 14px; gap: 10px; }
+  .clp-body { padding: 14px; }
+  .clp-list { max-height: 44vh; }
+  .clp-foot { padding: 10px 14px; flex-wrap: wrap; justify-content: flex-end; }
+  .clp-selcount { flex: 1 1 100%; }
+  .clp-foot-btns { flex: 1 1 auto; }
+  .clp-foot-btns .clp-btn { flex: 1 1 auto; justify-content: center; }
+}
+
 [data-bs-theme="dark"] .clp-shell { background: #1e293b; box-shadow: 0 28px 64px rgba(0,0,0,.55), 0 0 0 1px rgba(6,182,212,.20); }
 [data-bs-theme="dark"] .clp-body { background: #172033; }
 [data-bs-theme="dark"] .clp-lbl,

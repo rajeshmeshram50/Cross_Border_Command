@@ -647,10 +647,14 @@ const IcoPrintSm = () => (
     <rect x="6" y="14" width="12" height="8" />
   </svg>
 );
-const IcoClock = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+/* Scan Logs' own mark: a clock wound backwards, not a clock. The design uses
+   it on the rail button at 14 and in the pop-over header at 15. */
+const IcoLog = ({ size = 15 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" />
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <polyline points="3 3 3 8 8 8" />
+    <polyline points="12 7 12 12 15 14" />
   </svg>
 );
 const IcoTick = () => (
@@ -695,6 +699,319 @@ const LIFECYCLE = [
     hint: 'What was placed, where, and by whom',
     todo: 'The receipt for this carton: where it went, when, and who placed it.' },
 ];
+
+/* ── Zebra Open Tasks ───────────────────────────────────────────────────────
+ * The scan tasks the warehouse floor is still holding, opened from the stage
+ * rail. Not the per-box Scan Logs below — that is one box's audit trail, this
+ * is every box currently waiting on a handheld.
+ *
+ * It is a centred modal rather than a popover because it carries the stage's
+ * own references (invoice, PO, supplier, warehouse) across the top: an
+ * operator reading it is being asked "which consignment is this?", and a
+ * popover anchored to a toolbar button has nowhere to say so.
+ *
+ * Empty is the normal state, not an error. Tasks exist only between "send for
+ * Zebra verification" and the operator scanning both QRs, which on a good day
+ * is minutes — so the empty copy explains what would put something here
+ * instead of apologising for the blank.
+ * ────────────────────────────────────────────────────────────────────────── */
+export interface ZebraTaskRow {
+  code: string;
+  /** The Zebra task's own number. Null while the board has not issued one. */
+  taskId: string | null;
+  /** "26 Oct · 11:02", already formatted by the caller, which owns the clock. */
+  createdAt: string | null;
+  scenario: string;
+  qty: number;
+  /** How many of the task's two QR legs are verified: 0, 1 or 2. */
+  legs: number;
+  /** "Zone" on a no-rack putaway, "Shelf" on a racked one — the second leg is
+   *  named after what the operator actually scans. */
+  legKind: 'Zone' | 'Shelf';
+  /** Warehouse / Zone / Rack / Shelf, only the levels this spot has. */
+  loc: Array<{ label: string; code: string; name?: string; tag?: string }>;
+  /** Whether this row is the box currently in hand — only that one can be
+   *  opened or cancelled, because the page's dialogs read the selected box. */
+  live: boolean;
+}
+
+function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, onCancelTask, onClose }: {
+  tasks: ZebraTaskRow[];
+  spiCode: string | null;
+  poNumber: string | null;
+  supplier: string | null;
+  wh: { id?: string | null; name?: string | null; own?: boolean } | null;
+  onOpenTask: () => void;
+  onCancelTask: () => void;
+  onClose: () => void;
+}) {
+  /* Counted off the rows rather than tracked separately: a task is in `tasks`
+     precisely because at least one leg is outstanding, so both figures can
+     only ever be derived from the legs those rows report. */
+  const boxDone = tasks.filter(t => t.legs >= 1).length;
+  const locDone = tasks.filter(t => t.legs >= 2).length;
+  const notStarted = tasks.filter(t => t.legs === 0).length;
+
+  /* Cut at 35 characters, full value on hover.
+     These chips are a single nowrap row across the header, so one long value
+     pushed the whole row onto a second line and squeezed the rest — a supplier
+     recorded as "AAASS1 Supplier Legal Identity Company, GST, PAN & contact In
+     Progress KYC Due Diligence Docs,1" took the line on its own. Cutting keeps
+     the row to one line; the title carries the untruncated name, which the
+     app's native-title bridge renders as the usual pill. */
+  const CUT = 35;
+  const ref = (ico: React.ReactNode, label: string, value: string, mono?: boolean, tag?: React.ReactNode) => {
+    const long = value.length > CUT;
+    return (
+      <span className="s4zv-ref" title={long ? value : undefined}>
+        <span className="s4zv-ref__i">{ico}</span>
+        <span>
+          <span className="s4zv-ref__l">{label}</span>
+          <span className={`s4zv-ref__v${mono ? ' mono' : ''}`}>
+            {long ? `${value.slice(0, CUT).trimEnd()}…` : value}{tag}
+          </span>
+        </span>
+      </span>
+    );
+  };
+
+  /* The glyph is rendered TWICE: once in its tile, once oversized and faded
+     into the card's bottom-right as a watermark. That second copy is what
+     stops a KPI card reading as a label with a number next to it — the
+     prototype's .s4zv-kpi__wm. Same node, sized and tinted by CSS, so the two
+     can never drift apart. */
+  const kpi = (tone: '' | 'g' | 'a', ico: React.ReactNode, label: string, value: number, sub: string) => (
+    <div className={`s4zv-kpi${tone ? ' ' + tone : ''}`}>
+      <span className="s4zv-kpi__wm" aria-hidden>{ico}</span>
+      <span className="s4zv-kpi__i">{ico}</span>
+      <div>
+        <div className="s4zv-kpi__l">{label}</div>
+        <div className="s4zv-kpi__v">{value}<em>{sub}</em></div>
+      </div>
+    </div>
+  );
+
+  return createPortal(
+    <div className="s4zv-ov" role="presentation" onClick={onClose}>
+      <div className="s4zv" role="dialog" aria-modal="true" aria-label="Zebra Open Tasks"
+        onClick={e => e.stopPropagation()}>
+        <div className="s4zv-hd">
+          <div className="s4zv-top">
+            <span className="s4zv-ico"><IcoZvZebra /></span>
+            <div className="s4zv-ttl">
+              <b>Zebra Open Tasks</b>
+              <span>Putaway scan tasks waiting on the warehouse floor for physical QR verification</span>
+            </div>
+            <div className="s4zv-r">
+              <span className="s4zv-live"><i />{tasks.length} open task{tasks.length === 1 ? '' : 's'}</span>
+              <button type="button" className="s4zv-x" onClick={onClose} aria-label="Close"><IcoXSm /></button>
+            </div>
+          </div>
+          <div className="s4zv-refs">
+            {ref(<IcoList />, 'Invoice No', spiCode || '—', true)}
+            {ref(<IcoList />, 'PO Number', poNumber || 'Direct SPI', true)}
+            {ref(<IcoUserSm />, 'Supplier', supplier || '—')}
+            {wh?.name && ref(<IcoWh />, 'Warehouse', `${wh.id ? wh.id + ' · ' : ''}${wh.name}`, false,
+              <span className="s4zv-ref__tag">{wh.own === false ? 'Third Party' : 'Own'}</span>)}
+            {ref(<IcoGrid />, 'Stage', '04 · Temporary Putaway Allocation')}
+          </div>
+        </div>
+
+        <div className="s4zv-body">
+          <div className="s4zv-kpis">
+            {kpi('',  <IcoZvZebra />, 'Open Zebra Tasks',    tasks.length, tasks.length === 1 ? 'task' : 'tasks')}
+            {kpi('g', <IcoZvBox />,   'Box QR Scanned',      boxDone,      `of ${tasks.length}`)}
+            {kpi('g', <IcoZvPin />,   'Location QR Scanned', locDone,      `of ${tasks.length}`)}
+            {kpi('a', <IcoZvClock />, 'Not Started',         notStarted,   'awaiting operator')}
+          </div>
+
+          {tasks.length ? (
+            <div className="s4zv-tblwrap">
+              <table className="s4zv-tbl">
+                <thead><tr>
+                  <th>Sr.</th><th>Zebra Task ID</th><th>Putaway Box ID</th>
+                  <th>Selected Location ID</th><th>Scan Status</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {tasks.map((t, i) => (
+                    <tr key={t.code}>
+                      <td><span className="s4zv-sr">{i + 1}</span></td>
+                      <td>
+                        <div className="s4zv-c">
+                          <span className="s4zv-id">{t.taskId ?? '—'}</span>
+                          {t.createdAt && <small>Created {t.createdAt}</small>}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="s4zv-c">
+                          <span className="s4zv-id box">{putId(t.code)}</span>
+                          {(() => {
+                            const line = `${t.scenario}${t.qty ? ` · ${t.qty} units` : ''}`;
+                            return <small title={line.length > 34 ? line : undefined}>
+                              {line.length > 34 ? `${line.slice(0, 34).trimEnd()}…` : line}
+                            </small>;
+                          })()}
+                        </div>
+                      </td>
+                      <td>
+                        {t.loc.length ? (
+                          <div className="s4zv-loc">
+                            {/* Label, then ONE value that holds the code, the
+                                name and the tag together. They were three grid
+                                tracks, and the name's 1fr expanded to the cell
+                                width — which shoved the Own tag to the far
+                                right, a stretched row with the badge adrift
+                                from the warehouse it belongs to. */}
+                            {t.loc.map(l => (
+                              <div className="s4zv-loc__r" key={l.label}>
+                                <span className="s4zv-loc__l">{l.label}</span>
+                                <span className="s4zv-loc__v">
+                                  <span className="s4zv-loc__c">{l.code}</span>
+                                  {/* The name ellipsises; the title carries it
+                                      whole, which the app's native-title
+                                      bridge shows as the usual pill. */}
+                                  {l.name && (
+                                    <span className="s4zv-loc__n" title={l.name.length > 28 ? l.name : undefined}>
+                                      {l.name}
+                                    </span>
+                                  )}
+                                  {l.tag && <span className="s4zv-loc__tag">{l.tag}</span>}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <span className="s4zv-dash">—</span>}
+                      </td>
+                      <td>
+                        <div className="s4zv-prog">
+                          <span className="s4zv-st">
+                            <i />{t.legs ? `Scanning · ${t.legs}/2` : 'Awaiting scan · 0/2'}
+                          </span>
+                          {/* 50% a leg — the bar IS the fraction in the pill
+                              beside it, so the two can never disagree. */}
+                          <div className="s4zv-prog__bar"><b style={{ width: `${t.legs * 50}%` }} /></div>
+                          <div className="s4zv-legs">
+                            <span className={`s4zv-sc${t.legs >= 1 ? ' ok' : ''}`}>{t.legs >= 1 ? '✓' : '○'} Box QR</span>
+                            <span className={`s4zv-sc${t.legs >= 2 ? ' ok' : ''}`}>{t.legs >= 2 ? '✓' : '○'} {t.legKind} QR</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        {/* Only the box in hand can be opened or cancelled: both
+                            dialogs read the SELECTED box, so offering the action
+                            on another row would act on the wrong one. */}
+                        <div className="s4zv-acts">
+                          <button type="button" className="s4zv-btn s4zv-btn--open"
+                            disabled={!t.live}
+                            title={t.live ? 'Open this scan task' : 'Select this box to open its task'}
+                            onClick={() => { onClose(); onOpenTask(); }}>
+                            <span><IcoPlay /></span>Open Task
+                          </button>
+                          <button type="button" className="s4zv-btn s4zv-btn--cancel"
+                            disabled={!t.live}
+                            title={t.live ? 'Cancel this scan task' : 'Select this box to cancel its task'}
+                            onClick={() => { onClose(); onCancelTask(); }}>
+                            <span><IcoXSm /></span>Cancel Task
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="s4zv-empty">
+              <div className="s4zv-empty__i"><IcoZvZebra /></div>
+              <b>No open Zebra tasks</b>
+              <span>Boxes sent for Zebra verification appear here until the operator scans the Box QR and the location QR.</span>
+            </div>
+          )}
+        </div>
+
+        <div className="s4zv-ft">
+          <span className="s4zv-ft__n">
+            A box is placed only after the operator scans its Box QR and the location QR on the Zebra device.
+            Cancel a task to switch the box to manual confirmation.
+          </span>
+          <button type="button" className="s4zv-ft__b" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/* The Zebra pop-up's own glyphs, taken path-for-path from the prototype's
+   I.zeb / I.box / I.pin / I.clock.
+ *
+ * Not the page's existing IcoScan / IcoBoxSm / IcoPin / IcoLog: those are
+ * this screen's icon set and are drawn differently — IcoScan in particular is
+ * a viewfinder, where the prototype's zebra mark is a bracketed barcode. The
+ * KPI tiles sit beside a design review, so they use the design's glyphs.
+ *
+ * Size and stroke come from CSS, not from the markup, so one rule governs
+ * every place they appear — tile, watermark and empty state.
+ */
+const zvSvg = (d: React.ReactNode, strokeWidth = 2.1) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden>{d}</svg>
+);
+
+const IcoZvZebra = () => zvSvg(<>
+  <path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" />
+  <path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+  <line x1="7" y1="8" x2="7" y2="16" /><line x1="12" y1="8" x2="12" y2="16" />
+  <line x1="17" y1="8" x2="17" y2="16" />
+</>);
+
+const IcoZvBox = () => zvSvg(<>
+  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+  <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+  <line x1="12" y1="22.08" x2="12" y2="12" />
+</>);
+
+const IcoZvPin = () => zvSvg(<>
+  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+  <circle cx="12" cy="10" r="3" />
+</>, 2.2);
+
+const IcoZvClock = () => zvSvg(<>
+  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+</>, 2.2);
+
+/* A play triangle, for Open Task. The prototype's I.play — the row's primary
+   action starts something, and an arrow read as "go to" rather than "run". */
+const IcoPlay = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+/* "26 Oct · 11:02". scanTask.at is an ISO string, which rendered in the row as
+   "Created 2026-10-26T06:24:40.358Z" — a machine timestamp, in UTC, in a cell
+   that is telling a warehouse operator when a task was raised. Falls back to
+   the raw value if it is not a date this can parse, rather than printing
+   "Invalid Date". */
+function taskStamp(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const day = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${day} · ${time}`;
+}
+
+/* ZT-<yyyymmdd>-<nnn>, the prototype's shape. Derived from the index rather
+   than stored: these ids are display-only until the backend issues real ones,
+   and a derived id cannot drift out of step with the row it labels. */
+function zebraTaskId(i: number): string {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  return `ZT-${ymd}-${String(i + 1).padStart(3, '0')}`;
+}
 
 /* ── Scan Logs ──────────────────────────────────────────────────────────────
    The per-box audit trail, and NOT the Zebra scan task — which is why the
@@ -797,7 +1114,7 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
         : { visibility: 'hidden' }}
     >
       <div className="s4lg-hd">
-        <span className="s4lg-hd__i"><IcoClock /></span>
+        <span className="s4lg-hd__i"><IcoLog size={15} /></span>
         <b>Scan Logs</b>
         {boxCode && <span className="s4lg-box">{boxCode}</span>}
         <button type="button" className="s4lg-x" onClick={onClose} aria-label="Close"><IcoXSm /></button>
@@ -1056,9 +1373,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   /* The raised Zebra task. An object, not a flag: the screen has to name the
      task, and "which one" is the first thing an operator asks about it. */
   const [scanTask, setScanTask] = useState<{ id: string; at: string } | null>(null);
-  /* The scan-task dialog is the next piece; the button that opens it is wired
-     here so the state it reads already exists. */
+  /* The per-box Zebra Scan Task dialog (PutawayScanTask), opened from the
+     method dialog for the box in hand. */
   const [scanOpen, setScanOpen] = useState(false);
+  /* The stage-level Zebra Open Tasks pop-up, opened from the rail. Its OWN
+     state: it was briefly sharing scanOpen, which meant the rail button put
+     the per-box scan dialog on screen underneath it. */
+  const [zebraOpen, setZebraOpen] = useState(false);
   /* Set when a Zebra task completes, so the finished screen can say HOW the
      box was placed. A manual confirmation leaves it null. */
   const [placedVia, setPlacedVia] = useState<{ via: string; allocation: string } | null>(null);
@@ -1119,6 +1440,20 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const coldCount = scope.filter(b => b.cold).length;
   const pct = scope.length ? Math.round((placed / scope.length) * 100) : 0;
   const box = all.find(b => b.code === selected) ?? null;
+
+  /* The boxes the warehouse floor is still holding a scan task for. The rail's
+     count and the pop-up's list read this one array, so the badge can never
+     disagree with what opening it shows.
+     The board's own `awaiting_scan` is the source of record, but it only
+     catches up on the next load — a task raised a moment ago is still live in
+     `scanTask` alone, and leaving that out meant raising a Zebra task and then
+     being told there were none open. Declared here, below `scanTask` and
+     `box`, because it reads both. */
+  const zebraTasks = useMemo(() => {
+    const open = all.filter(b => b.status === 'awaiting_scan');
+    if (scanTask && box && !open.some(b => b.code === box.code)) return [box, ...open];
+    return open;
+  }, [all, scanTask, box]);
 
   /* The trail is written from the state the stage already keeps, so every
      route into a step — the button, the dialog, the banner — is recorded the
@@ -1277,23 +1612,55 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </button>
           ))}
         </div>
-        {/* No Zebra tasks button here. The design does not have one on this
-            rail, and the one that was here had no handler — it counted open
-            tasks and did nothing when pressed, which is worse than absent.
-            Zebra verification is still reached from the method dialog. */}
-        {/* On the rail, not in the right panel's head: it expands the whole
-            stage, so it belongs with the controls that scope the stage rather
-            than with the pane's own title. */}
-        <button
-          type="button"
-          className="s4fs-btn s4fs-btn--rail"
-          title={fs ? 'Exit full view' : 'Full view'}
-          aria-pressed={fs}
-          onClick={toggleFs}
-        >
-          {fs ? <IcoCollapse /> : <IcoExpand />}
-          <span className="s4fs-t">{fs ? 'Exit Full View' : 'Full View'}</span>
-        </button>
+        {/* Zebra Open Tasks. There WAS a button here once that counted tasks
+            and did nothing when pressed, so it was removed as worse than
+            absent — this one opens the pop-up, which is what the design has.
+            Never disabled: "no open tasks" is an answer an operator needs, and
+            a dead button cannot give it. */}
+        {/* The three stage-level controls, grouped and filled, as the design
+            has them: they act on the stage rather than on one box, so they sit
+            together at the end of the rail instead of being scattered between
+            the rail and the right pane's title. */}
+        <div className="s4b-tools">
+          <button
+            type="button"
+            className="s4fs-btn s4b-toolbtn"
+            title="Zebra scan tasks waiting on the warehouse floor"
+            aria-haspopup="dialog"
+            aria-expanded={zebraOpen}
+            onClick={() => setZebraOpen(true)}
+          >
+            <IcoScan />
+            <span className="s4fs-t">Zebra Open Tasks</span>
+            <span className="s4fs-c">{zebraTasks.length}</span>
+          </button>
+          {/* Never disabled. It used to open the Zebra scan task, so it had to
+              be switched off until one existed — but Scan Logs is the box's
+              history, which every box has from the moment it is picked, and
+              which answers "what happened to this box?" even when the answer
+              is "nothing yet". */}
+          <button
+            type="button"
+            ref={logBtnRef}
+            className="s4fs-btn s4b-toolbtn s4-scanlogs"
+            title="Scan logs for this box"
+            aria-expanded={logsOpen}
+            onClick={() => setLogsOpen(o => !o)}
+          >
+            <IcoLog size={14} />
+            <span className="s4fs-t">Scan Logs</span>
+          </button>
+          <button
+            type="button"
+            className="s4fs-btn s4b-toolbtn"
+            title={fs ? 'Exit full view' : 'Full view'}
+            aria-pressed={fs}
+            onClick={toggleFs}
+          >
+            {fs ? <IcoCollapse /> : <IcoExpand />}
+            <span className="s4fs-t">{fs ? 'Exit Full View' : 'Full View'}</span>
+          </button>
+        </div>
       </div>
 
       {/* The Scenario 1 / 2 / 3 sub-tabs are gone. The design has one tab row,
@@ -1403,21 +1770,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   sub-line repeated what the strip underneath already shows. */}
               <div className="s4-panel__head-title">Temporary Putaway Allocation</div>
             </div>
-            {/* Never disabled. It used to open the Zebra scan task, so it had
-                to be switched off until one existed — but Scan Logs is the
-                box's history, which every box has from the moment it is
-                picked, and which answers "what happened to this box?" even
-                when the answer is "nothing yet". */}
-            <button
-              type="button"
-              ref={logBtnRef}
-              className="s4fs-btn s4-scanlogs"
-              title="Scan logs for this box"
-              aria-expanded={logsOpen}
-              onClick={() => setLogsOpen(o => !o)}
-            >
-              <IcoClock /> <span className="s4fs-t">Scan Logs</span>
-            </button>
+            {/* The Scan Logs BUTTON moved to the stage rail, beside Zebra Open
+                Tasks and Full View, which is where the design groups the three
+                stage-level controls. The popover still renders here because it
+                anchors to that button through logBtnRef, wherever it lives. */}
             {logsOpen && (
               <ScanLogs
                 anchor={logBtnRef.current}
@@ -1840,6 +2196,57 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         <InspectionProductView productId={productViewId} onClose={() => setProductViewId(null)} />
       )}
 
+      {zebraOpen && (
+        <ZebraOpenTasks
+          tasks={zebraTasks.map((b): ZebraTaskRow => {
+            const live = !!(scanTask && box && b.code === box.code);
+            const s = live ? findSpot(loc.data, spot) : null;
+            /* The four levels, but only the ones this spot HAS: a no-rack
+               putaway is warehouse + zone and nothing more, so the cell is
+               built from what exists rather than printing empty rows. */
+            const rows: ZebraTaskRow['loc'] = [];
+            if (s) {
+              if (warehouseInfo?.code) {
+                rows.push({ label: 'Warehouse', code: warehouseInfo.code, name: warehouseInfo.name,
+                  tag: warehouseInfo.own === false ? 'Third Party' : 'Own' });
+              }
+              if (s.zone?.code) rows.push({ label: 'Zone', code: s.zone.code, name: s.zone.name ?? undefined });
+              if (s.kind !== 'zone') {
+                if (s.rack?.code)  rows.push({ label: 'Rack',  code: s.rack.code,  name: s.rack.name ?? undefined });
+                if (s.shelf?.code) rows.push({ label: 'Shelf', code: s.shelf.code, name: s.shelf.name ?? undefined });
+              }
+            } else if (b.destination) {
+              /* No live spot — the board's flat destination is all there is.
+                 Split rather than invent: the codes are real, the level names
+                 are positional and the names are simply absent. */
+              const parts = b.destination.split(/\s*[/→]\s*/).filter(Boolean);
+              const labels = ['Warehouse', 'Zone', 'Rack', 'Shelf'];
+              parts.forEach((code, i) => rows.push({ label: labels[i] ?? 'Level', code }));
+            }
+            return {
+              code: b.code,
+              taskId: live ? scanTask!.id : (b.taskCode ?? null),
+              createdAt: taskStamp(live ? scanTask!.at : null),
+              scenario: b.scenario,
+              qty: b.qty,
+              legs: live ? scanSteps : 0,
+              legKind: s?.kind === 'zone' ? 'Zone' : 'Shelf',
+              loc: rows,
+              live,
+            };
+          })}
+          onOpenTask={() => setScanOpen(true)}
+          onCancelTask={() => setCancelAsk(true)}
+          spiCode={spiCode}
+          poNumber={draft.poNumber || null}
+          supplier={draft.supplier || null}
+          wh={warehouseInfo
+            ? { id: warehouseInfo.code, name: warehouseInfo.name, own: warehouseInfo.own !== false }
+            : (warehouse ? { name: warehouse } : null)}
+          onClose={() => setZebraOpen(false)}
+        />
+      )}
+
       {/* The sticker as it will print, not a bare QR.
           The old dialog showed the code and the box id — enough to scan,
           not enough to check you are labelling the right carton. */}
@@ -2193,7 +2600,16 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           aria-label="Cancel Zebra scan task">
           <div className="s4qm__dlg s4wz__dlg">
             <div className="s4qm__hd">
-              <div className="s4qm__hico"><IcoBan size={18} /></div>
+              {/* A circled ✕, as the design has it. IcoBan is a circle-SLASH,
+                  which means "not allowed"; this dialog asks whether to cancel
+                  something, and cancel is a ✕. */}
+              <div className="s4qm__hico">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+              </div>
               <div className="s4qm__htx">
                 <div className="s4qm__t">Cancel Zebra Scan Task?</div>
                 <div className="s4qm__s">{scanTask.id} &middot; {scanSteps} / 2 scans received</div>
@@ -2219,7 +2635,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   it does NOT do. The allocation survives; only the method
                   goes. Saying so is what stops this reading as "undo". */}
               <div className="s4ct-warn">
-                <span className="s4ct-warn__i"><IcoScan /></span>
+                {/* The zebra barcode mark, the same glyph the Open Tasks
+                    pop-up uses — this warning is about a Zebra task, and
+                    IcoScan's bare viewfinder said "scan" generically. */}
+                <span className="s4ct-warn__i"><IcoZvZebra /></span>
                 <div>
                   <b>This will cancel task {scanTask.id}</b>
                   <ul>

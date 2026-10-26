@@ -577,6 +577,9 @@ export default function Step3BoxPackaging({
   }, [editingId]);
   const [dropped, setDropped] = useState<string[]>([]);
   const [editQty, setEditQty] = useState<number | null>(null);
+  /* A mixed carton has no single quantity, so the strip stepper is no use to
+     it — each product carries its own, and the edits live here until Save. */
+  const [editQtyBy, setEditQtyBy] = useState<Record<string, number>>({});
   const editingBox = boxes.find(b => b.id === editingId) ?? null;
 
   const openEdit = (boxCode: string) => {
@@ -594,10 +597,11 @@ export default function Step3BoxPackaging({
     }
     setDropped([]);
     setEditQty(null);
+    setEditQtyBy({});
     setEditingId(box.id);
   };
 
-  const closeEdit = () => { setEditingId(null); setDropped([]); setEditQty(null); };
+  const closeEdit = () => { setEditingId(null); setDropped([]); setEditQty(null); setEditQtyBy({}); };
 
   const editContents = (editingBox?.items ?? [])
     .map(i => {
@@ -609,7 +613,18 @@ export default function Step3BoxPackaging({
     })
     .filter((c): c is { line: ProductLine; qty: number } => !!c)
     .map((c, i) => (i === 0 && editQty != null && editingBox?.scenario !== 's3'
-      ? { ...c, qty: editQty } : c));
+      ? { ...c, qty: editQty } : c))
+    .map(c => (editingBox?.scenario === 's3' && editQtyBy[c.line.code] != null
+      ? { ...c, qty: editQtyBy[c.line.code] } : c));
+
+  /* What this box may hold of a product: what it already holds plus whatever
+     of the line is still unpacked. Anything more would bill past the SPI. */
+  const editMaxOf = (code: string) => {
+    const item = editingBox?.items.find(i => codeOfItem.get(i.supplier_invoice_item_id) === code);
+    const orig = Number(item?.quantity) || 0;
+    const line = lines.find(l => l.code === code);
+    return orig + (line ? remainingOf(line) : 0);
+  };
 
   const editMax = (() => {
     if (!editingBox) return undefined;
@@ -1019,7 +1034,11 @@ export default function Step3BoxPackaging({
           key={editingBox.id}
           boxId={editingBox.box_code}
           line={editContents[0].line}
-          quantity={editContents[0].qty}
+          /* A mixed carton's "Total Qty" is the whole box, not whatever
+             product happens to sit on the first row. */
+          quantity={editingBox.scenario === 's3'
+            ? editContents.reduce((n, c) => n + c.qty, 0)
+            : editContents[0].qty}
           scenario={SCN_LABEL[editingBox.scenario][1]}
           modeKey={editingBox.scenario === 's3' ? 'Products' : 'Mode'}
           modeLabel={editingBox.scenario === 's3'
@@ -1034,7 +1053,17 @@ export default function Step3BoxPackaging({
           {...(editingBox.scenario === 's3'
             ? {
               contents: editContents,
-              ...(editContents.length > 1 ? { onRemoveContent: (code: string) => void dropFromBox(code) } : {}),
+              contentQtyMaxOf: editMaxOf,
+              ...(readOnly ? {} : {
+                onContentQtyChange: (code: string, qty: number) =>
+                  setEditQtyBy(m => ({ ...m, [code]: Math.min(editMaxOf(code), Math.max(1, qty)) })),
+              }),
+              /* No per-row remove on a box that is already packed: the design
+                 leaves this column a dash, and our own guards already send you
+                 the other way ("Delete the box instead of taking everything out
+                 of it"). Quantities and identifiers are what you correct here;
+                 changing WHAT is in the carton means unpacking it. dropFromBox
+                 stays — this is the one line that would put the control back. */
             }
             : {})}
           customFlags={customFlags} onFlagCreated={onFlagsChanged}

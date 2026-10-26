@@ -362,6 +362,31 @@
 /* ── Editing a saved box: the drawer as a dialog over the page ──
    z-index sits above the step chrome but below Tooltip (260000), so a
    tooltip raised from inside the form still shows over it. */
+/* A dialog opened from INSIDE the drawer. The shared .spi-mdl-backdrop is
+   z-index 3000 (p2p-common.css), well under the drawer's 11000 below, so any
+   such dialog rendered behind the box form — it looked like the button did
+   nothing, or like you had been thrown back to the box. The Cold Chain
+   temperature dialog is the reported case.
+
+   Scoped, not a global raise of .spi-mdl-backdrop: the 3000-11000 band is
+   occupied (physical-inspection 3010, p2p-common 3200, p2p-detail 9999,
+   create-po 10500), and lifting the shared backdrop over all of those would
+   drop other screens' overlays underneath it.
+
+   12000 clears the drawer and still sits under app.css's 20000 and Tooltip's
+   260000. The product-flag dialog solves the same problem with its own
+   .pfm-backdrop at the same number — worth folding into one token if a third
+   case turns up. */
+.spi-mdl-backdrop.vti-over-drawer { z-index: 12000; }
+
+/* The modal is portalled to <body>, so it leaves the page's DM Sans behind and
+   lands in the theme's Rubik — which carries noticeably more ink at the same
+   weight and made every label in here read a step bolder than the design.
+   The font stack has to be restated on the portal root. */
+.vti-dw-modal-backdrop, .vti-dw-modal {
+  font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
 .vti-dw-modal-backdrop {
   position: fixed; inset: 0; z-index: 11000;
   display: flex; align-items: center; justify-content: center;
@@ -372,7 +397,8 @@
 }
 @keyframes vti-dw-fade { from { opacity: 0; } to { opacity: 1; } }
 .vti-dw-modal {
-  width: min(1680px, 100%);
+  /* 1640, the design's own ceiling (#spkEditRoot .spke-m2). We had 1680. */
+  width: min(1640px, 100%);
   /* The form scrolls inside the card, so the page behind never does and the
      teal header stays visible while you work down the fields. */
   max-height: calc(100vh - 48px);
@@ -454,11 +480,20 @@
 
 .vti-dw-body { padding: 14px 14px 0; display: flex; flex-direction: column; gap: 10px; background: transparent; }
 .vti-dw-section, .vti-dw-advanced { background: #fff; border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,1) inset, 0 2px 10px rgba(6,182,212,.08), 0 6px 24px rgba(6,182,212,.06); position: relative; }
-.vti-dw-section::before, .vti-dw-advanced::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; background: linear-gradient(180deg, #22d3ee 0%, #06b6d4 40%, #0891b2 70%, #0e7490 100%); border-radius: 14px 0 0 14px; }
+/* z-index keeps the accent above anything a child paints over it. Every other
+   section holds plain blocks, whose backgrounds never reach the card edge, but
+   a table's header gradient and hover fill start at x=0 and were washing the
+   stripe out row by row as the pointer moved down it. */
+.vti-dw-section::before, .vti-dw-advanced::before { content: ''; position: absolute; top: 0; left: 0; bottom: 0; width: 3px; z-index: 2; background: linear-gradient(180deg, #22d3ee 0%, #06b6d4 40%, #0891b2 70%, #0e7490 100%); border-radius: 14px 0 0 14px; }
 .vti-dw-section-hd, .vti-dw-adv-toggle { display: flex; align-items: center; padding: 11px 16px; background: linear-gradient(102deg, #e6fafd 0%, #edfbfe 25%, #f4fbfd 55%, #f9fdfe 78%, #ffffff 100%); border-bottom: 1px solid rgba(6,182,212,.18); }
 .vti-dw-section-hd { justify-content: space-between; }
 /* 12px, measured off the design — it had drifted half a pixel up. */
-.vti-dw-section-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; color: #0c4a6e; letter-spacing: -.15px; }
+/* 12.5px, the design's base. It read 12 — which IS a value the design uses,
+   but only inside .s4rv-core, where it overrides the section title down for
+   the review panel. We have no .s4rv-core rule, so that narrower value had
+   been taken as the general one and every section title in this drawer ran
+   half a pixel small. */
+.vti-dw-section-title { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.15px; }
 .vti-dw-section-title svg { color: #0891b2; flex-shrink: 0; }
 .vti-dw-toolbar { display: flex; align-items: center; gap: 7px; }
 .vti-dw-strip .vti-dw-toolbar { align-self: center; flex-shrink: 0; margin-left: auto; margin-right: 14px; gap: 9px; position: relative; z-index: 2; }
@@ -598,7 +633,11 @@
   width: 100%; padding: 7px 10px;
   border: 1.5px solid transparent; border-radius: 8px;
   background: transparent;
-  font-family: inherit; font-size: 11.5px; font-weight: 700;
+  /* 500, not 700. These are flag NAMES, read one after another down a list -
+     at bold the whole panel read as a stack of headings and the eye had
+     nowhere to rest. The selected row still stands out: it keeps the teal fill
+     and border, and takes 600 below. */
+  font-family: inherit; font-size: 11.5px; font-weight: 500;
   text-align: left; cursor: pointer;
   transition: background .14s, border-color .14s;
 }
@@ -614,6 +653,7 @@
   background: rgba(6,182,212,.12);
   border-color: rgba(6,182,212,.34);
   color: #0e7490;
+  font-weight: 600;
 }
 .vti-flag-pop__row.is-active:hover { background: rgba(6,182,212,.18); }
 .vti-flag-pop__row.is-active .vti-flag-pop__box { background: #0891b2; border-color: #0891b2; }
@@ -1266,6 +1306,20 @@
 .invf-fpop__row { padding: 5px 8px; border-radius: 8px; }
 .invf-fpop__row.is-alt { background: rgba(6,182,212,.05); }
 .invf-fpop__row .invf-pb-flag { max-width: 100%; }
+/* The review panel lists its flags in here too, and this pop-over is
+   portalled to <body> — outside .s4-root, where every .s4rv-* rule is scoped.
+   The chip's own look has to be restated or it arrives unstyled. */
+.invf-fpop .s4rv-flag {
+  display: inline-flex; align-items: center; gap: 7px; max-width: 100%;
+  padding: 5px 12px; border-radius: 999px;
+  background: #f1f8fa; border: 1px solid #d8ecf2; color: #476b7e;
+  font-size: 11px; font-weight: 800; letter-spacing: -.1px;
+}
+.invf-fpop .s4rv-flag svg { flex-shrink: 0; }
+.invf-fpop .s4rv-flag.is-haz { color: #fff; background: linear-gradient(135deg,#fbbf24,#d97706); border-color: transparent; }
+.invf-fpop .s4rv-flag.is-cold { color: #fff; background: linear-gradient(135deg,#22d3ee,#0891b2); border-color: transparent; }
+.invf-fpop .s4rv-flag.is-fragile { color: #fff; background: linear-gradient(135deg,#fb7185,#e11d48); border-color: transparent; }
+[data-bs-theme="dark"] .invf-fpop .s4rv-flag { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.26); color: #cbd5e1; }
 [data-bs-theme="dark"] .invf-fpop { background: #0f1b2a; border-color: rgba(34,211,238,.28); box-shadow: 0 16px 40px rgba(0,0,0,.6); }
 [data-bs-theme="dark"] .invf-fpop__title { color: #67e8f9; }
 [data-bs-theme="dark"] .invf-fpop__row.is-alt { background: rgba(34,211,238,.07); }
@@ -1808,8 +1862,17 @@
 /* Remarks is prose, so it reads from the left, where a sentence starts. The
    codes beside it stay centred — that column is scanned down, not read. It
    takes no extra width: a note is typed and scrolls, where a box wider than
-   its neighbours is seen on every row that is empty. */
-.invf-selprod__in--note { text-align: left; }
+   its neighbours is seen on every row that is empty.
+
+   min-width: 0 so this is the column that gives way. Seven identity inputs at
+   a 130px floor made the table wider than the drawer, which put Remarks half
+   into the horizontal overflow and the Remove column past it entirely — the
+   wrap does scroll, but an overlay scrollbar is easy to miss, so the field
+   simply read as cut off. The note is the one column here whose content
+   scrolls inside itself, so it is the right one to absorb the shortfall; the
+   codes and dates beside it keep their floor and stay readable. The column is
+   still at least as wide as its own REMARKS heading. */
+.invf-selprod__in--note { text-align: left; min-width: 0; }
 .invf-selprod .vti-table td { vertical-align: middle; }
 
 .invf-selprod__clear,
@@ -7283,6 +7346,26 @@
   min-height: 40px; padding: 0 16px;
   font-size: 11.5px; letter-spacing: -.1px;
 }
+/* The counter that stands in for the flags this row has no space for. Dashed
+   and uncoloured, like the packing step's — it is a control, not a flag, and
+   must not read as one more thing the slot has to satisfy. */
+.s4-root .s4rv-flagmore {
+  display: inline-flex; align-items: center;
+  min-height: 40px; padding: 0 16px;
+  border-radius: 999px;
+  border: 1.5px dashed rgba(100,116,139,.45);
+  background: rgba(148,163,184,.10);
+  color: #475569;
+  font-size: 11.5px; font-weight: 800; letter-spacing: -.1px;
+  white-space: nowrap; cursor: pointer;
+  transition: border-color .18s, background .18s, color .18s;
+}
+.s4-root .s4rv-flagmore:hover {
+  border-color: #64748b; background: rgba(148,163,184,.20); color: #334155;
+}
+[data-bs-theme="dark"] .s4-root .s4rv-flagmore {
+  border-color: rgba(148,163,184,.4); background: rgba(148,163,184,.12); color: #cbd5e1;
+}
 .s4-root .s4rv-flag.is-haz {
   color: #fff; background: linear-gradient(135deg,#fbbf24,#d97706);
   border-color: transparent; box-shadow: 0 2px 8px rgba(217,119,6,.32);
@@ -8385,6 +8468,21 @@
 .s4-root .s4c3-pill--bad  { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
 .s4-root .s4c3-pill--flag { color: #0e7490; background: #ecfeff; border-color: #a5f3fc; }
 .s4-root .s4c3-pill--flag::before { display: none; }
+/* "+N more" / "Show less" — the same chip as a flag so the row stays one
+   shape, but dashed and neutral so it reads as a control rather than another
+   flag on the box. */
+.s4-root .s4c3-pill--more {
+  color: #64748b; background: #f8fafc;
+  border: 1px dashed #cbd5e1; border-radius: inherit;
+  font: inherit; cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.s4-root .s4c3-pill--more::before { display: none; }
+.s4-root .s4c3-pill--more:hover { color: #0e7490; background: #ecfeff; border-color: #67e8f9; }
+[data-bs-theme="dark"] .s4-root .s4c3-pill--more {
+  color: #94a3b8; background: rgba(148,163,184,.10); border-color: rgba(148,163,184,.38);
+}
+[data-bs-theme="dark"] .s4-root .s4c3-pill--more:hover { color: #67e8f9; border-color: rgba(103,232,249,.5); }
 .s4-root .s4c3-na { font-size: 10.5px; font-style: italic; font-weight: 500; color: #94a9b6; }
 .s4-root .s4c3-attrs .s4c3-na { letter-spacing: 0; text-transform: none; }
 
@@ -8457,50 +8555,90 @@
    Built on the method dialog's shell, so the header, the context chips and
    the close all behave the same. Narrower than the chooser: this one asks a
    question about a single task rather than laying two options side by side. */
-.s4-root .s4ct-modal .s4wz__dlg { width: min(860px, 94vw); }
+/* 980, up from 860. The design is right as it stands — what it does not have
+   is this build's real data: a warehouse path like "WH-002 › SH-01" sits
+   inside a sentence, and the Manual Confirmation paragraph names both the box
+   and the location. At 860 those two wrapped to three and four lines, so the
+   dialog read as a wall of text rather than the two blocks it is. Nothing
+   else about it changes. */
+.s4-root .s4ct-modal .s4wz__dlg { width: min(980px, 94vw); }
 .s4-root .s4ct-modal .s4qm__bd { padding: 14px 16px 16px; gap: 12px; }
+/* "OPTION 02" is a plain amber label here, not the chip .s4pm-num draws in the
+   method dialog. Two reasons it was wrong: the chip is an inline-flex inside a
+   stretch-aligned flex column, so it ran the full width of the card as an
+   amber bar; and the design shows no chip at all in this dialog. Scoped to
+   .s4ct-alt so the method dialog keeps its chip. */
+.s4-root .s4ct-alt .s4pm-num {
+  align-self: flex-start;
+  padding: 0; border: 0; background: none; border-radius: 0;
+  color: #b45309;
+}
 
 /* What cancelling does. Red because it is destructive, bordered rather than
    filled because the destruction is bounded — the task goes, the allocation
    does not, and the list underneath is there to say exactly that. */
+/* The design's .zc-warn: a FLAT #fef2f2, not a gradient. The gradient washed
+   out toward the right, so the block's own tint disagreed with its border. */
 .s4-root .s4ct-warn {
   display: flex; align-items: flex-start; gap: 12px;
-  padding: 13px 15px; border-radius: 14px;
-  background: linear-gradient(135deg, #fff5f5, #fffafa 60%); border: 1px solid #fecaca;
+  padding: 12px 14px; border-radius: 14px;
+  background: #fef2f2; border: 1px solid #fecaca;
 }
+/* 36px on a 10px radius with no shadow — the design's .zc-warn__i. Ours ran
+   38/11 under a drop shadow, which made the tile sit proud of a block that
+   is meant to read flat. */
 .s4-root .s4ct-warn__i {
-  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 11px;
+  flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px;
   display: grid; place-items: center; color: #fff;
   background: linear-gradient(135deg, #f87171, #dc2626);
-  box-shadow: 0 6px 14px -8px rgba(220,38,38,.8);
 }
-.s4-root .s4ct-warn b { display: block; font-size: 12.5px; font-weight: 800; color: #b91c1c; }
-.s4-root .s4ct-warn ul { margin: 6px 0 0; padding-left: 16px; display: flex; flex-direction: column; gap: 3px; }
-.s4-root .s4ct-warn li { font-size: 11.5px; font-weight: 500; color: #5b7585; line-height: 1.45; }
+.s4-root .s4ct-warn b { display: block; font-size: 13px; font-weight: 800; color: #991b1b; margin-bottom: 4px; }
+/* list-style stated: the app's reset strips it, and `display:flex` on a <ul>
+   removes the markers anyway — so the three consequences of cancelling read
+   as three loose sentences instead of a list. Back to a block list with discs,
+   which is what the design shows. */
+.s4-root .s4ct-warn ul { margin: 6px 0 0; padding-left: 18px; list-style: disc outside; display: block; }
+.s4-root .s4ct-warn li + li { margin-top: 3px; }
+.s4-root .s4ct-warn li::marker { color: #f87171; }
+.s4-root .s4ct-warn li { font-size: 11.5px; font-weight: 500; color: #7f1d1d; line-height: 1.45; }
 .s4-root .s4ct-warn li b { display: inline; font-size: inherit; color: #0c2c3a; }
 
 /* The way out, offered rather than implied. Green because it COMPLETES the
    putaway — it is the only control on this dialog that finishes anything. */
+/* The design's .zc-sug: 14px padding on a 16px radius, a 1.5px #6ee7b7 edge
+   and a soft 3px ring outside it. Ours was a flatter card on a paler #bbf7d0
+   border with no ring, so the recommended option did not stand out from the
+   warning above it the way it should. */
 .s4-root .s4ct-alt {
   position: relative; display: flex; align-items: flex-start; gap: 12px;
-  padding: 13px 15px; border-radius: 14px;
-  background: linear-gradient(135deg, #f0fdf4, #fbfffc 60%); border: 1.5px solid #bbf7d0;
+  padding: 14px; border-radius: 16px;
+  background: linear-gradient(135deg, #ecfdf5, #fff 70%); border: 1.5px solid #6ee7b7;
+  box-shadow: 0 0 0 3px rgba(16,185,129,.1);
 }
+/* A pill ABOVE the card's top edge, not a notch cut into its corner — the
+   design's .zc-sug__tag: 9.5px on 3px 10px, floating at top:-10px right:14px. */
 .s4-root .s4ct-alt__rec {
-  position: absolute; top: -1px; right: -1px;
-  padding: 3px 11px; border-radius: 0 13px 0 12px;
-  font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
-  color: #fff; background: linear-gradient(135deg, #22c55e, #16a34a);
+  position: absolute; top: -10px; right: 14px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #fff; background: linear-gradient(135deg, #10b981, #047857);
+  box-shadow: 0 6px 12px -8px rgba(5,150,105,.9);
 }
+/* 44px on a 12px radius, amber running to #d97706 — the design's .zc-sug__i.
+   Ours was a 38px tile on the lighter #f59e0b, so it read as the same weight
+   as the warning's icon instead of as the larger, primary one. */
 .s4-root .s4ct-alt__i {
-  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 11px;
+  flex: 0 0 auto; width: 44px; height: 44px; border-radius: 12px;
   display: grid; place-items: center; color: #fff;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  box-shadow: 0 6px 14px -8px rgba(245,158,11,.85);
+  background: linear-gradient(135deg, #fbbf24, #d97706);
+  box-shadow: 0 8px 16px -10px rgba(217,119,6,.9);
 }
-.s4-root .s4ct-alt__tx { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding-right: 86px; }
+/* No right padding any more. The 86px was carved out for a RECOMMENDED badge
+   notched into the card's top-right corner; the badge now floats above the
+   card's edge, so that gutter only squeezed the paragraph into extra lines. */
+.s4-root .s4ct-alt__tx { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .s4-root .s4ct-alt__tx > b { font-size: 13px; font-weight: 800; color: #0c2c3a; }
-.s4-root .s4ct-alt__tx p { margin: 0; font-size: 11.5px; font-weight: 500; color: #5b7585; line-height: 1.45; }
+.s4-root .s4ct-alt__tx p { margin: 0; font-size: 11.5px; font-weight: 500; color: #3f5b6b; line-height: 1.45; }
 .s4-root .s4ct-alt__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
 .s4-root .s4ct-alt__chips span {
   display: inline-flex; align-items: center; gap: 5px;
@@ -9038,3 +9176,410 @@
 [data-bs-theme="dark"] .s4-root .s4zt-leg.is-locked .s4zt-leg__t { color: #7f97a5; }
 /* The 3px cap across the top of every leg was a fixed #e2e8f0. */
 [data-bs-theme="dark"] .s4-root .s4zt-leg::before { background: var(--s4d-line); }
+
+/* ── Stage 04 · Zebra Open Tasks pop-up ──────────────────────────────────────
+   Ported from the P2P_New_Logic prototype (the s4zv3 revision — the last of
+   three the prototype carries). Values are the prototype's; only the overlay
+   and the dialog box itself are written here, because the prototype mounts the
+   pop-up into a container it styles separately.
+
+   A modal rather than a popover: it carries the consignment's own references
+   across the head, and an operator reading a scan queue has to be able to see
+   WHICH consignment it belongs to. A toolbar popover has nowhere to say that.
+   ────────────────────────────────────────────────────────────────────────── */
+.s4zv-ov{position:fixed;inset:0;z-index:12000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(4,47,66,.42);backdrop-filter:blur(3px);}
+/* The family is stated, not inherited. This dialog is portalled to
+   document.body, so it leaves the SPI page's own typography behind and picks
+   up whatever the app sets on <body> — Velzon puts Rubik there, and Rubik
+   carries more ink than DM Sans at the same size and weight. The heading read
+   visibly heavier than the prototype's at an identical 17px/800. */
+.s4zv-ov,.s4zv{font-family:'DM Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+.s4zv{width:1120px;max-width:100%;max-height:calc(100vh - 48px);display:flex;flex-direction:column;border-radius:18px;overflow:hidden;background:#fff;border:1px solid rgba(165,227,240,.9);box-shadow:0 40px 90px -30px rgba(4,47,66,.6),0 0 0 6px rgba(255,255,255,.08);}
+
+.s4zv-hd{position:relative;padding:16px 20px;background:radial-gradient(120% 140% at 100% 0%,#22d3ee 0%,rgba(34,211,238,0) 45%),linear-gradient(120deg,#063f52 0%,#0b5f76 30%,#0e7490 62%,#0891b2 100%);color:#fff;overflow:hidden;display:flex;flex-direction:column;gap:8px;flex-shrink:0;}
+/* The faint grid, faded in from the left so it never sits under the title. */
+.s4zv-hd:after{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:22px 22px;mask-image:linear-gradient(90deg,transparent,#000 60%);-webkit-mask-image:linear-gradient(90deg,transparent,#000 60%);pointer-events:none;}
+.s4zv-top{position:relative;z-index:1;display:flex;align-items:center;gap:12px;}
+/* The glyphs carry no width/height of their own, so every place they appear
+   states its own size — 20px in the header, 15px in a KPI tile, 24px in the
+   empty state, 54px as a watermark. The prototype's sizes. */
+.s4zv-ico svg{width:20px;height:20px;}
+.s4zv-empty__i svg{width:24px;height:24px;}
+.s4zv-ico{width:44px;height:44px;border-radius:13px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;background:linear-gradient(145deg,rgba(255,255,255,.28),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.4);box-shadow:inset 0 1px 0 rgba(255,255,255,.4),0 8px 18px -8px rgba(0,0,0,.4);}
+.s4zv-ttl b{display:block;font-size:17px;font-weight:800;letter-spacing:-.25px;}
+.s4zv-ttl span{display:block;font-size:11.5px;opacity:.85;margin-top:1px;}
+.s4zv-r{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.s4zv-live{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:800;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.32);backdrop-filter:blur(4px);white-space:nowrap;}
+.s4zv-live i{width:7px;height:7px;border-radius:50%;background:#fde68a;box-shadow:0 0 0 3px rgba(253,230,138,.28);}
+.s4zv-x{width:34px;height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.32);background:rgba(255,255,255,.14);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .15s;}
+.s4zv-x:hover{background:rgba(255,255,255,.26);}
+
+.s4zv-refs{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:8px;}
+.s4zv-ref{display:inline-flex;align-items:center;gap:8px;padding:5px 10px 5px 5px;border-radius:10px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.24);}
+.s4zv-ref__i{width:24px;height:24px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.2);flex-shrink:0;}
+.s4zv-ref__l{display:block;font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.75;}
+.s4zv-ref__v{display:block;font-size:11.5px;font-weight:700;white-space:nowrap;}
+.s4zv-ref__v.mono{font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;}
+.s4zv-ref__tag{margin-left:2px;font-size:8.5px;font-weight:800;padding:1px 6px;border-radius:999px;background:#ecfdf5;color:#047857;}
+.s4zv-ref__tag.tp{background:#fff7ed;color:#b45309;}
+
+.s4zv-body{display:flex;flex-direction:column;gap:8px;padding:8px 0;background:#fff;overflow-y:auto;flex:1 1 auto;}
+.s4zv-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:0 16px;}
+.s4zv-kpi{position:relative;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:linear-gradient(180deg,#f6fcfe,#fff);border:1px solid #dff1f6;overflow:hidden;}
+.s4zv-kpi:before{content:"";position:absolute;left:0;top:0;right:0;height:3px;background:linear-gradient(90deg,#22d3ee,#0891b2);}
+.s4zv-kpi.g:before{background:linear-gradient(90deg,#6ee7b7,#10b981);}
+.s4zv-kpi.a:before{background:linear-gradient(90deg,#fcd34d,#f59e0b);}
+.s4zv-kpi__i{width:34px;height:34px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;color:#fff;background:linear-gradient(135deg,#22d3ee,#0e7490);box-shadow:0 5px 12px -5px rgba(8,145,178,.7);flex-shrink:0;}
+/* 15px, the prototype's S(ico,15). Stated here because these icons carry
+   their own width/height attributes, which differ per glyph — left alone, the
+   four tiles held four different icon sizes. */
+.s4zv-kpi__i svg{width:15px;height:15px;}
+.s4zv-kpi.g .s4zv-kpi__i{background:linear-gradient(135deg,#34d399,#059669);box-shadow:0 5px 12px -5px rgba(5,150,105,.7);}
+.s4zv-kpi.a .s4zv-kpi__i{background:linear-gradient(135deg,#fbbf24,#d97706);box-shadow:0 5px 12px -5px rgba(217,119,6,.7);}
+.s4zv-kpi__l{font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:#6b8d9c;}
+.s4zv-kpi__v{font-size:19px;font-weight:800;color:#0b3a49;line-height:1.1;}
+.s4zv-kpi__v em{font-style:normal;font-size:10.5px;font-weight:600;color:#7a95a1;margin-left:3px;}
+/* The oversized, faded glyph in the card's bottom-right. Without it a KPI is
+   a label with a number beside it; the watermark is what gives the card a
+   subject. 54px and clipped by the card's own overflow, so it bleeds off the
+   corner rather than sitting inside like a second icon. Tinted to the card's
+   own tone — a teal clock on the amber "Not Started" card would belong to a
+   different card. */
+.s4zv-kpi__wm{position:absolute;right:-6px;bottom:-10px;color:#0891b2;opacity:.07;pointer-events:none;line-height:0;}
+.s4zv-kpi__wm svg{width:54px;height:54px;}
+.s4zv-kpi.g .s4zv-kpi__wm{color:#059669;}
+.s4zv-kpi.a .s4zv-kpi__wm{color:#d97706;opacity:.09;}
+
+.s4zv-tblwrap{border-top:1px solid #d5ecf3;border-bottom:1px solid #d5ecf3;}
+.s4zv-tbl{width:100%;border-collapse:collapse;font-size:11.5px;}
+.s4zv-tbl th{background:linear-gradient(180deg,#eefafd,#e3f5fa);color:#0b4f63;font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:left;padding:10px 12px;white-space:nowrap;border-bottom:1px solid #cdeaf2;}
+.s4zv-tbl th:first-child,.s4zv-tbl td:first-child{padding-left:16px;}
+.s4zv-tbl th:last-child,.s4zv-tbl td:last-child{padding-right:16px;}
+.s4zv-tbl td{padding:12px;border-bottom:1px solid #edf6f9;vertical-align:middle;color:#0f3a4d;}
+.s4zv-tbl td.mono{font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;}
+.s4zv-tbl tbody tr:nth-child(even) td{background:#fbfeff;}
+.s4zv-tbl tbody tr:hover td{background:#f2fbfd;}
+.s4zv-tbl tr:last-child td{border-bottom:0;}
+/* The prototype's .s4zo-st, to the value: 9.5px/700 in #b45309 on #fffbeb
+   under a #fde68a hairline, 2px 8px. It was 10.5px on #fff7ed with 3px 9px —
+   a pill a size larger and a shade warmer than the leg pills under it, which
+   made the two rows of status read as two different systems. */
+.s4zv-st{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;color:#b45309;padding:2px 8px;border-radius:999px;background:#fffbeb;border:1px solid #fde68a;}
+.s4zv-st i{width:6px;height:6px;border-radius:50%;background:#f59e0b;flex-shrink:0;}
+
+.s4zv-empty{margin:0 16px;padding:40px 20px;text-align:center;border:1.5px dashed #cdeaf2;border-radius:14px;background:linear-gradient(180deg,#f9fdfe,#fff);}
+.s4zv-empty__i{width:52px;height:52px;margin:0 auto 8px;border-radius:15px;display:flex;align-items:center;justify-content:center;color:#0e7490;background:#ecfeff;border:1px solid #a5e3f0;}
+.s4zv-empty b{display:block;font-size:14px;color:#0b3a49;margin-bottom:4px;}
+.s4zv-empty span{font-size:11.5px;color:#7a95a1;}
+
+.s4zv-ft{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid #e6f2f6;background:linear-gradient(180deg,#fafdfe,#f3fafc);flex-shrink:0;}
+.s4zv-ft__n{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#6b8d9c;}
+.s4zv-ft__b{margin-left:auto;height:36px;padding:0 18px;border-radius:10px;border:1.5px solid #cdeaf2;background:#fff;color:#0b4f63;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;}
+.s4zv-ft__b:hover{background:#f0fbfd;}
+
+/* The rail's count chip, on the Zebra Open Tasks button. */
+.s4fs-btn .s4fs-c{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;padding:0 6px;margin-left:2px;border-radius:999px;font-size:10px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.34);}
+
+@media (max-width:1180px){
+  .s4zv{width:100%;}
+  .s4zv-kpis{grid-template-columns:repeat(2,1fr);}
+}
+
+/* ── Stage 04 rail · the three stage-level controls ──────────────────────────
+   Zebra Open Tasks, Scan Logs and Full View act on the STAGE, not on one box,
+   so the design groups them at the end of the rail and fills them, rather than
+   leaving them as outlined buttons split between the rail and the right pane's
+   title. Values are the prototype's .s4b-tools block.
+   ────────────────────────────────────────────────────────────────────────── */
+.s4b-tools{display:inline-flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0;}
+.s4b-tools .s4b-toolbtn{
+  display:inline-flex;align-items:center;gap:7px;
+  height:40px;padding:0 12px 0 7px;
+  border-radius:10px;border:none;
+  background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);
+  color:#fff;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:-.1px;
+  cursor:pointer;
+  box-shadow:0 3px 9px -3px rgba(8,145,178,.55),inset 0 1px 0 rgba(255,255,255,.25);
+  transition:filter .15s cubic-bezier(.22,1,.36,1),transform .15s cubic-bezier(.22,1,.36,1),box-shadow .15s cubic-bezier(.22,1,.36,1);
+}
+/* The background MUST be restated on hover. The page already carries
+   `.s4-root .s4fs-btn:hover { background:#ecfeff }`, and a pseudo-class counts
+   as a class — so that rule is (0,3,0) against this button's base (0,2,0) and
+   wins. The fill went pale on hover while the white label and white-stroked
+   icon stayed, which rendered the button as an empty white box. */
+.s4b-tools .s4b-toolbtn:hover,
+.s4b-tools .s4b-toolbtn[aria-expanded="true"],
+.s4b-tools .s4b-toolbtn[aria-pressed="true"]{
+  background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);
+  border-color:transparent;color:#fff;
+  filter:brightness(1.08);transform:translateY(-1px);
+  box-shadow:0 7px 16px -4px rgba(8,145,178,.6),inset 0 1px 0 rgba(255,255,255,.3);
+}
+/* Full View while it is ON reads as the deeper end of the same ramp, so the
+   pressed state is legible without introducing a second colour. */
+.s4b-tools .s4b-toolbtn[aria-pressed="true"],
+.s4b-tools .s4b-toolbtn[aria-pressed="true"]:hover{background:linear-gradient(135deg,#0e7490,#0b5f76);}
+/* Each glyph sits on its own translucent tile — that is what keeps a filled
+   button from reading as a solid slab of teal with a word on it. */
+.s4b-tools .s4b-toolbtn > svg{
+  box-sizing:content-box;width:13px;height:13px;padding:5px;
+  border-radius:7px;background:rgba(255,255,255,.2);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.3);flex-shrink:0;
+}
+.s4b-tools .s4b-toolbtn .s4fs-c{
+  background:rgba(255,255,255,.22);color:#fff;border:1px solid rgba(255,255,255,.35);
+}
+@media (max-width:1700px){
+  .s4b-tools .s4b-toolbtn{height:38px;padding:0 10px 0 6px;font-size:11px;gap:6px;}
+}
+
+/* Dark carries its own `.s4-root .s4fs-btn:hover` at (0,4,0) — an attribute
+   selector plus two classes plus the pseudo — which outranks the light-mode
+   fix above and would blank these buttons on hover in dark exactly as it did
+   in light. Matched here rather than raised with !important. */
+[data-bs-theme="dark"] .s4-root .s4b-tools .s4b-toolbtn,
+[data-bs-theme="dark"] .s4-root .s4b-tools .s4b-toolbtn:hover{
+  background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);
+  border-color:transparent;color:#fff;
+}
+[data-bs-theme="dark"] .s4-root .s4b-tools .s4b-toolbtn[aria-pressed="true"],
+[data-bs-theme="dark"] .s4-root .s4b-tools .s4b-toolbtn[aria-pressed="true"]:hover{
+  background:linear-gradient(135deg,#0e7490,#0b5f76);
+}
+
+/* ── Stage 04 · Zebra Open Tasks · task row ──────────────────────────────────
+   The prototype's row, which is five stacked cells rather than five strings:
+   an id over a timestamp, an id over a scenario line, the location broken into
+   its levels, a scan state with its own progress, and the two actions.
+   ────────────────────────────────────────────────────────────────────────── */
+.s4zv-sr{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:8px;background:linear-gradient(135deg,#22d3ee,#0e7490);color:#fff;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;box-shadow:0 3px 8px -3px rgba(8,145,178,.6);}
+.s4zv-c{display:flex;flex-direction:column;gap:3px;align-items:flex-start;}
+.s4zv-c small{font-size:10px;color:#7a95a1;white-space:nowrap;}
+.s4zv-id{display:inline-flex;align-items:center;padding:3px 8px;border-radius:7px;font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;font-weight:700;background:#ecfeff;color:#0e7490;border:1px solid #a5e3f0;white-space:nowrap;}
+.s4zv-id.box{background:#f1f9fc;color:#0f3a4d;border-color:#d5ecf3;}
+
+/* Each level on its own line: label, code chip, then the human name. The grid
+   keeps every code chip on one x, so four levels read as a column and not as
+   four ragged sentences. */
+.s4zv-loc{display:flex;flex-direction:column;gap:4px;}
+/* Two tracks: the label, then one value holding the code, the name and the
+   tag. Splitting those three into their own grid columns gave the name a 1fr
+   that expanded to the cell, pushing the Own tag to the far right and leaving
+   the row looking stretched. The value is a flex, so the three sit together
+   and the row is only as wide as they are. */
+.s4zv-loc__r{display:grid;grid-template-columns:64px minmax(0,1fr);align-items:center;gap:8px;}
+.s4zv-loc__v{display:flex;align-items:center;gap:6px;min-width:0;white-space:nowrap;font-size:11px;font-weight:600;color:#0f3a4d;}
+.s4zv-loc__l{font-size:8.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#7a95a1;}
+.s4zv-loc__c{display:inline-flex;align-items:center;padding:2px 7px;border-radius:6px;font-family:'Geist Mono',ui-monospace,monospace;font-size:10px;font-weight:700;background:#ecfeff;color:#0b4f63;border:1px solid #bfeaf5;white-space:nowrap;}
+.s4zv-loc__n{font-size:11px;font-weight:600;color:#0f3a4d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.s4zv-loc__tag{font-size:8px;font-weight:800;padding:1px 6px;border-radius:999px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;white-space:nowrap;}
+.s4zv-dash{color:#9fb6c0;}
+
+.s4zv-prog{display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-width:150px;}
+.s4zv-prog__bar{width:100%;height:6px;border-radius:99px;background:#e6f2f6;overflow:hidden;}
+.s4zv-prog__bar b{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#22d3ee,#0891b2);transition:width .25s ease;}
+.s4zv-legs{display:flex;gap:5px;}
+.s4zv-sc{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#f8fafc;color:#7a95a1;border:1px solid #e2e8f0;white-space:nowrap;}
+.s4zv-sc.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0;}
+
+.s4zv-acts{display:flex;gap:7px;justify-content:flex-end;}
+.s4zv-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px 0 6px;border-radius:9px;border:none;font-family:inherit;font-size:11.5px;font-weight:700;color:#fff;cursor:pointer;white-space:nowrap;transition:filter .15s,transform .15s,box-shadow .15s;}
+.s4zv-btn > span{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.3);flex-shrink:0;}
+.s4zv-btn > span svg{width:11px;height:11px;}
+.s4zv-btn--open{background:linear-gradient(135deg,#22d3ee,#0891b2 60%,#0e7490);box-shadow:0 3px 9px -3px rgba(8,145,178,.55);}
+.s4zv-btn--cancel{background:linear-gradient(135deg,#f87171,#ef4444 60%,#dc2626);box-shadow:0 3px 9px -3px rgba(220,38,38,.5);}
+.s4zv-btn:hover:not(:disabled){filter:brightness(1.07);transform:translateY(-1px);}
+/* Disabled, not hidden: the row still has to say the action exists and why it
+   is not available here — the title explains it. */
+.s4zv-btn:disabled{opacity:.42;cursor:not-allowed;box-shadow:none;}
+
+/* The new zebra glyph carries no intrinsic size, so the tiles it sits in have
+   to state one. 17px in the cancel dialog's warning block, matching the
+   design. */
+.s4-root .s4ct-warn__i svg { width: 17px; height: 17px; }
+
+/* ── SPI Product Advance Details · the row inputs ────────────────────────────
+   The design's rule for these fields, value for value:
+
+     height 40 / radius 10 / 1.5px #b9dfea / #fff / #0c2c3a
+     11.5px / 700 / padding 0 10px
+     box-shadow 0 1px 2px rgba(15,23,42,.04), inset 0 1px 0 rgba(255,255,255,.9)
+
+   Ours inherited .cpd-in, which is 10.5px on a 7px radius with a #e6eef3
+   border, 5px 8px of padding and no height — a visibly smaller, flatter field
+   than the design, and one that sized itself off its own padding so the eight
+   inputs on a row did not all land on the same height.
+
+   SCOPED to .spi-prodtbl rather than changing .cpd-in: that class lives in
+   create-po.css and the Purchase Order module's own tables use it, so editing
+   it there would restyle a screen nobody asked about.
+   ────────────────────────────────────────────────────────────────────────── */
+.spi-prodtbl .cpd-in {
+  height: 40px; min-height: 40px;
+  padding: 0 10px;
+  border: 1.5px solid #b9dfea;
+  border-radius: 10px;
+  background: #fff;
+  color: #0c2c3a;
+  font-size: 11.5px;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04), inset 0 1px 0 rgba(255,255,255,.9);
+}
+/* The focus ring keeps the field's own shadow, which the bare :focus rule in
+   create-po.css replaces outright — without this the input went flat the
+   moment it was being typed into. */
+.spi-prodtbl .cpd-in:focus {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 3px rgba(34,211,238,.14), inset 0 1px 0 rgba(255,255,255,.9);
+}
+[data-bs-theme="dark"] .spi-prodtbl .cpd-in {
+  background: #0c1c24; border-color: rgba(34,211,238,.22); color: #e2e8f0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+/* ── Product Advance Details (box editor) ──────────────────────────────────
+   The table a packed box is edited through. Values are the design's: the
+   quantity stepper is the strip's .vqe in its light-on-white variant, so the
+   geometry below is the base rule and the in-table override folded together
+   rather than inherited from a dark pill that never renders here. */
+
+.vs3-wrap { overflow-x: auto; }
+.vs3t { width: 100%; border-collapse: collapse; font-size: 11px; }
+/* Eleven columns do not fit a narrowed window, and `width: 100%` alone just
+   crushes them — the identity fields were collapsing to sixty-odd pixels and
+   clipping the values already typed into them. Giving the cells a floor makes
+   the table outgrow its wrapper instead, which is what hands the scrolling to
+   .vs3-wrap. The scroll stays inside this one card: the strip, the dimensions
+   and the flags above and below it never move. */
+.vs3t td.vs3-prod, .vs3t > thead > tr > th:nth-child(2) { min-width: 200px; }
+.vs3t > thead > tr > th:nth-child(3) { min-width: 84px; }
+.vs3t > thead > tr > th:nth-child(4) { min-width: 146px; }
+.vs3t .vs3-in { min-width: 116px; }
+/* A note takes a sentence, where the codes beside it take six characters — so
+   it ASKS for the most width and is the least harmed by losing it, because a
+   note scrolls inside its own box while a code does not.
+
+   It was the widest floor in the table at 168px, and the floors add up: 200
+   product + 84 SPI qty + 146 box qty + 4x116 text + 2x128 date + 168 note is
+   already past 1300px before Sr No, Action and cell padding. That fits the
+   drawer at 100%, but browser zoom shrinks the viewport in CSS pixels, so at
+   125% the last columns — Remarks among them — went into the horizontal
+   overflow. .vs3-wrap does scroll, but an overlay scrollbar is easy to miss,
+   so the column reads as simply missing.
+
+   The floor comes off the note so the shortfall lands here first. Its own
+   120px cap keeps it usable; the codes and dates keep theirs. */
+.vs3t .vs3-in--note { min-width: 0; }
+.vs3t td:has(> .vs3-in--note) { min-width: 120px; }
+.vs3t .master-datepicker-toggle { min-width: 128px; }
+.vs3t > thead > tr { background: linear-gradient(180deg, #e9f9fc, #f2fcfd); }
+.vs3t > thead > tr > th {
+  padding: 9px 6px; font-size: 8.5px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: #6b8a97; text-align: center; white-space: nowrap;
+  border-bottom: 1px solid #e3f1f5;
+}
+.vs3t > tbody > tr > td {
+  padding: 10px 6px; text-align: center; vertical-align: middle;
+  border-bottom: 1px solid #eff5f8;
+}
+.vs3t > tbody > tr:last-child > td { border-bottom: none; }
+.vs3t > tbody > tr:hover > td { background: #f6fdfe; }
+.vs3t > thead > tr > th:first-child, .vs3t > tbody > tr > td:first-child { padding-left: 14px; width: 48px; }
+.vs3t > thead > tr > th:last-child, .vs3t > tbody > tr > td:last-child { padding-right: 14px; width: 60px; }
+.vs3t > thead > tr > th:nth-child(2), .vs3t > tbody > tr > td.vs3-prod { text-align: left; }
+.vs3t td.vs3-prod .cpd-prod { gap: 4px; }
+.vs3t td.vs3-prod .cpd-prod__nm { font-size: 12px; font-weight: 800; color: #0c4a6e; white-space: nowrap; }
+.vs3t td.vs3-prod .cpd-prod__meta { flex-wrap: nowrap; white-space: nowrap; }
+/* The shared .cpd-* rules were tuned for the PO grid and run a weight and a
+   shade darker than the design wants here. Corrected in place rather than at
+   the source, which the PO pages still depend on. */
+.vs3t td.vs3-prod .cpd-code { font-weight: 700; padding: 2px 6px; letter-spacing: normal; }
+.vs3t td.vs3-prod .cpd-prod__meta b { color: #42627a; }
+
+.bst-sr { font-size: 12px; font-weight: 800; color: #7c93a3; }
+.vs3t .spk-dash { color: #9fb2c0; font-weight: 700; }
+
+.vs3t .vti-s3-prod-qty {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; color: #0c4a6e; white-space: nowrap;
+}
+.vs3t .vti-s3-prod-qty-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+  box-shadow: 0 0 4px rgba(6,182,212,.5);
+}
+
+.vs3t .vqe {
+  display: inline-flex; align-items: center; gap: 2px; height: 30px;
+  padding: 0 10px 0 3px; border-radius: 999px; box-sizing: border-box;
+  background: #f0fbfe; border: 1.5px solid #bae6fd; white-space: nowrap;
+}
+.vs3t .vqe .vqe-btn {
+  width: 22px; min-width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  border: 1px solid #bae6fd; background: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; line-height: 1; color: #0e7490;
+  transition: transform .12s, background .12s;
+}
+.vs3t .vqe .vqe-btn:hover:not(:disabled) { background: #ecfeff; transform: scale(1.06); }
+/* A stepper at its bound has to look it. Left as a live-looking button, it
+   reads as a broken control rather than a full box. */
+.vs3t .vqe .vqe-btn:disabled {
+  cursor: not-allowed; background: #eef5f8; border-color: #dbe8ee; color: #a8bcc7; box-shadow: none;
+}
+.vs3t .vqe .vqe-inp {
+  width: 44px; height: 22px; padding: 0; border: none; outline: none;
+  background: transparent; text-align: center; font-family: inherit;
+  font-size: 12.5px; font-weight: 800; color: #0c4a6e; -moz-appearance: textfield;
+}
+.vs3t .vqe .vqe-inp::-webkit-outer-spin-button,
+.vs3t .vqe .vqe-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.vs3t .vqe .vqe-max { margin-left: 4px; font-size: 10.5px; font-weight: 700; color: #64748b; }
+.vs3t .vqe .vqe-max b { color: #0c4a6e; font-weight: 800; }
+
+.vs3t .vs3-in, .vs3t .master-datepicker-toggle {
+  width: 100%; height: 40px; min-height: 40px; box-sizing: border-box;
+  border: 1.5px solid #b9dfea; border-radius: 10px; background: #fff;
+  color: #0c2c3a; font-family: inherit; font-size: 11.5px; font-weight: 700;
+  padding: 0 10px;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04), inset 0 1px 0 rgba(255,255,255,.9);
+}
+.vs3t .vs3-in::placeholder,
+.vs3t .master-datepicker-toggle .master-datepicker-placeholder { color: #8aa6b4; font-weight: 600; }
+.vs3t .vs3-in:hover, .vs3t .master-datepicker-toggle:hover:not([aria-disabled="true"]) { border-color: #67d4e8; }
+.vs3t .vs3-in:focus, .vs3t .master-datepicker-toggle.open {
+  border-color: #06b6d4; background: #fff; box-shadow: 0 0 0 3px rgba(6,182,212,.18);
+}
+.vs3t .vs3-in:not(:placeholder-shown) { border-color: #22d3ee; background: #f0fdff; }
+.vs3t .master-datepicker-toggle .master-datepicker-value { font-size: 11.5px; font-weight: 700; color: #0c2c3a; }
+
+.vs3t .vs3-rm {
+  width: 40px; height: 40px; border: none; border-radius: 11px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(135deg, #f87171 0%, #ef4444 50%, #dc2626 100%);
+  box-shadow: 0 4px 12px -3px rgba(220,38,38,.55), 0 1px 0 rgba(255,255,255,.3) inset;
+  transition: transform .18s, filter .14s;
+}
+.vs3t .vs3-rm:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.vs3t .vs3-rm svg { width: 15px; height: 15px; }
+
+[data-bs-theme="dark"] .vs3t > thead > tr { background: linear-gradient(180deg, #102a35, #0d2430); }
+[data-bs-theme="dark"] .vs3t > thead > tr > th { color: #8fb3c2; border-bottom-color: rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .vs3t > tbody > tr > td { border-bottom-color: rgba(34,211,238,.1); }
+[data-bs-theme="dark"] .vs3t > tbody > tr:hover > td { background: rgba(34,211,238,.05); }
+[data-bs-theme="dark"] .vs3t td.vs3-prod .cpd-prod__nm { color: #e2e8f0; }
+[data-bs-theme="dark"] .bst-sr { color: #7c93a8; }
+[data-bs-theme="dark"] .vs3t .vti-s3-prod-qty { color: #a5f3fc; }
+[data-bs-theme="dark"] .vs3t .vqe { background: #0c1c24; border-color: rgba(34,211,238,.24); }
+[data-bs-theme="dark"] .vs3t .vqe .vqe-btn { background: #102a35; border-color: rgba(34,211,238,.28); color: #67e8f9; }
+[data-bs-theme="dark"] .vs3t .vqe .vqe-btn:hover:not(:disabled) { background: #14323f; }
+[data-bs-theme="dark"] .vs3t .vqe .vqe-inp { color: #e2e8f0; }
+[data-bs-theme="dark"] .vs3t .vqe .vqe-max { color: #7c93a8; }
+[data-bs-theme="dark"] .vs3t .vqe .vqe-max b { color: #e2e8f0; }
+[data-bs-theme="dark"] .vs3t .vs3-in,
+[data-bs-theme="dark"] .vs3t .master-datepicker-toggle {
+  background: #0c1c24; border-color: rgba(34,211,238,.22); color: #e2e8f0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+}
+[data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown) { background: #0e2530; border-color: rgba(34,211,238,.38); }
+[data-bs-theme="dark"] .vs3t .master-datepicker-toggle .master-datepicker-value { color: #e2e8f0; }

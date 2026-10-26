@@ -15,8 +15,9 @@
  * preview and a QR before anything else: useful once, at the printer, but not
  * what you check when the carton is already in your hands.
  */
-import type { ReactNode } from 'react';
-import { IcoBox, IcoLines, IcoCheck } from '../../../icons';
+import { useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { IcoBox, IcoLines, IcoCheck, IcoTag } from '../../../icons';
 import { putId } from '../spi-api';
 
 export interface ReviewProduct {
@@ -84,10 +85,92 @@ function flagTone(name: string): { cls: string; ico: ReactNode } {
   if (n.includes('haz')) return { cls: ' is-haz', ico: <IcoWarnSm /> };
   if (n.includes('cold') || n.includes('chill') || n.includes('frozen')) return { cls: ' is-cold', ico: <IcoColdSm /> };
   if (n.includes('fragile') || n.includes('brittle')) return { cls: ' is-fragile', ico: <IcoFragileSm /> };
-  return { cls: '', ico: null };
+  /* Everything else is a flag off the master. It keeps the neutral pill, but
+     it still carries the tag mark the packing step gives it — without one a
+     custom flag read as a stray word rather than a flag. */
+  return { cls: '', ico: <IcoTag size={11} stroke={2.4} /> };
+}
+
+/* How many chips stay on the row. A box can carry a dozen flags and the row
+   is one line in a read-only panel, so the rest go behind a counter — the
+   same bargain the packing step makes with "+N more". */
+const FLAGS_SHOWN = 4;
+
+function FlagChip({ name }: { name: string }) {
+  const tone = flagTone(name);
+  return <span className={`s4rv-flag${tone.cls}`}>{tone.ico}{titleCase(name)}</span>;
+}
+
+function FlagRow({ flags }: { flags: string[] }) {
+  const [pop, setPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
+  const shown = flags.slice(0, FLAGS_SHOWN);
+  const hidden = flags.slice(FLAGS_SHOWN);
+
+  return (
+    <>
+      {shown.map(f => <FlagChip key={f} name={f} />)}
+      {hidden.length > 0 && (
+        <button
+          type="button"
+          className="s4rv-flagmore"
+          aria-haspopup="dialog"
+          aria-expanded={!!pop}
+          onClick={e => {
+            if (pop) { setPop(null); return; }
+            const r = e.currentTarget.getBoundingClientRect();
+            /* This row sits low in the panel, so below is usually the short
+               side — flip above when the list would not fit under the chip. */
+            const estH = 34 + hidden.length * 32;
+            const below = window.innerHeight - r.bottom;
+            const flipUp = below < estH + 12 && r.top > below;
+            setPop({ x: r.left, y: flipUp ? r.top - 4 : r.bottom + 4, flipUp });
+          }}
+        >
+          +{hidden.length} more
+        </button>
+      )}
+      {pop && createPortal(
+        <>
+          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 100000 }} />
+          <div
+            className="invf-fpop" role="dialog" aria-label="More product flags"
+            style={{
+              position: 'fixed',
+              left: Math.max(12, Math.min(pop.x, window.innerWidth - 260 - 12)),
+              top: pop.flipUp ? undefined : pop.y,
+              bottom: pop.flipUp ? Math.max(12, window.innerHeight - pop.y) : undefined,
+              maxHeight: pop.flipUp
+                ? Math.max(140, pop.y - 16)
+                : Math.max(140, window.innerHeight - pop.y - 16),
+              zIndex: 100001,
+            }}
+          >
+            <div className="invf-fpop__title">Product Flags ({flags.length})</div>
+            {/* Every flag, not just the hidden ones: opened from a counter,
+                the question is what this box carries, and answering with the
+                tail alone makes you hold the first four in your head. */}
+            {flags.map((f, i) => (
+              <div key={f} className={`invf-fpop__row${i % 2 ? ' is-alt' : ''}`}>
+                <FlagChip name={f} />
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
+    </>
+  );
 }
 
 const titleCase = (s: string) => s.replace(/\b[a-z]/g, c => c.toUpperCase());
+
+/* Box Product names are free text and some run to 70+ characters with no
+   spaces to break on, which stretched the Box Product column until the ten
+   identity columns beside it were squeezed to nothing. 35 characters, with the
+   whole name on hover so nothing is lost. */
+const NAME_MAX = 35;
+const clipName = (s: string): string =>
+  s.length > NAME_MAX ? `${s.slice(0, NAME_MAX).trimEnd()}…` : s;
 
 /** A value, or the muted dash the whole pane uses for "nothing recorded". */
 const val = (v: string | null | undefined): ReactNode =>
@@ -253,10 +336,7 @@ export default function PutawayReviewBox({
             <span className="s4rv-mark__lbl">Product Flags</span>
             <span className="s4rv-flagwrap">
               {flags.length
-                ? flags.map(f => {
-                  const tone = flagTone(f);
-                  return <span className={`s4rv-flag${tone.cls}`} key={f}>{tone.ico}{titleCase(f)}</span>;
-                })
+                ? <FlagRow flags={flags} />
                 : <span className="s4rv-napill">NA</span>}
               {/* The switch reads as one control with its label inside, the
                   way the packing step shows it — not a loose toggle next to
@@ -294,7 +374,7 @@ export default function PutawayReviewBox({
                 <tr key={p.code + i}>
                   <td><span className="s4rv-sr">{i + 1}</span></td>
                   <td className="s4rv-prodcell">
-                    <div className="s4rv-pn">{p.name}</div>
+                    <div className="s4rv-pn" title={p.name.length > NAME_MAX ? p.name : undefined}>{clipName(p.name)}</div>
                     <div className="s4rv-pm">
                       <span className="s4rv-pcode">{p.code}</span>
                       <span>HSN {p.hsn}</span>

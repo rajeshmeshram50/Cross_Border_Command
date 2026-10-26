@@ -103,7 +103,7 @@ export default function AddProductFlagModal({ flag, onClose, onSaved }: {
     /* No backdrop-click close. The form holds unsaved input, and a stray
        click outside it must not throw that away — the dialog closes only
        through the X or Cancel. */
-    <div className="spi-mdl-backdrop whm-backdrop">
+    <div className="spi-mdl-backdrop whm-backdrop pfm-backdrop">
       <div
         className="spi-mdl whm-addmdl pfm-addmdl"
         role="dialog" aria-modal="true" aria-labelledby="pfm-add-title"

@@ -34,6 +34,21 @@
    instead of sitting at the top of a block. */
 .pfm-page .whm-namecell { align-items: center; }
 
+/* This form opens from two places: the Product Flags master, where nothing is
+   above it, and the "+" beside PRODUCT FLAGS inside the box drawer, where it
+   is a dialog ON TOP of a dialog.
+
+   The shared .spi-mdl-backdrop is z-index 3000 (p2p-common.css) and the box
+   drawer's .vti-dw-modal-backdrop is 11000 (invoice-form.css), so from the
+   drawer this form opened BEHIND the box form. Clicking "+" looked like it
+   did nothing, or like it threw you back to the box form — the add form was
+   there the whole time, underneath.
+
+   12000 clears the drawer and still sits well under Tooltip's 260000, so a
+   tooltip raised inside this form stays on top. Scoped to this modal's own
+   backdrop class, so no other dialog's stacking moves. */
+.spi-mdl-backdrop.pfm-backdrop { z-index: 12000; }
+
 /* The Add form is two fields in one column — wider than the 600px it started
    at, which let the header subtitle wrap to two lines and made a short form
    taller than it needed to be. */
