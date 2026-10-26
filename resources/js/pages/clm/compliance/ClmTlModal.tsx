@@ -96,9 +96,10 @@ export function TlModal(props: { existing: Tl | null; authorities: Authority[]; 
             <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">Licence Name <span className="clm-req">*</span></label>
+            <label className="clm-field-label">Licence Name <span className="clm-req">*</span>
+              <span className={`clm-count ${name.length >= 255 ? 'is-full' : ''}`}>{name.length}/255</span>
+            </label>
             <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. GST Registration, IEC Certificate" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/255</div>
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">

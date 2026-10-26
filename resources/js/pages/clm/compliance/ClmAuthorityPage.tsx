@@ -529,15 +529,17 @@ function AuthorityModal(props: { existing: Authority | null; nextCode: string; o
             <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">Authority Name <span className="clm-req">*</span></label>
+            <label className="clm-field-label">Authority Name <span className="clm-req">*</span>
+              <span className={`clm-count ${name.length >= CLM_NAME_MAX ? 'is-full' : ''}`}>{name.length}/{CLM_NAME_MAX}</span>
+            </label>
             <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. FSSAI, DGFT, BIS" value={name} maxLength={CLM_NAME_MAX} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
-            <div style={{ fontSize: 11, color: name.length >= CLM_NAME_MAX ? '#dc2626' : 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/{CLM_NAME_MAX}</div>
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
-            <label className="clm-field-label">Description <span className="clm-req">*</span></label>
+            <label className="clm-field-label">Description <span className="clm-req">*</span>
+              <span className={`clm-count ${desc.length >= CLM_DESC_MAX ? 'is-full' : ''}`}>{desc.length}/{CLM_DESC_MAX}</span>
+            </label>
             <input className={`clm-input ${errors.desc ? 'clm-input-err' : ''}`} placeholder="e.g. Food Safety & Standards Authority of India" value={desc} maxLength={CLM_DESC_MAX} onChange={e => { setDesc(e.target.value); setErrors(p => ({ ...p, desc: '' })); }} />
-            <div style={{ fontSize: 11, color: desc.length >= CLM_DESC_MAX ? '#dc2626' : 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{desc.length}/{CLM_DESC_MAX}</div>
             {errors.desc && <div className="clm-err">{errors.desc}</div>}
           </div>
         </div>

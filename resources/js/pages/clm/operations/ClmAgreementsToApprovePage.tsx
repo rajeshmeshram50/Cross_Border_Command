@@ -404,8 +404,8 @@ export default function ClmAgreementsToApprovePage() {
                      this sets it directly. The selected tab is skipped: it is
                      already filled, and washing it would mean restoring a
                      gradient on the way out. */
-                  onMouseEnter={e => { if (active) return; e.currentTarget.style.background = t.dark ? 'rgba(6,182,212,.16)' : 'rgba(6,182,212,.08)'; e.currentTarget.style.color = t.dark ? '#a5f3fc' : '#0891b2'; }}
-                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; }}
+                  onMouseEnter={e => { if (active) return; e.currentTarget.style.background = t.dark ? 'rgba(255,255,255,.08)' : '#fff'; e.currentTarget.style.color = t.dark ? '#a5f3fc' : '#0891b2'; e.currentTarget.style.boxShadow = t.dark ? '0 2px 6px rgba(0,0,0,.35)' : '0 2px 6px rgba(16,24,40,.12)'; }}
+                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(16,24,40,.05)'; }}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
                     /* No border on either state, and no insets on the selected
                        one — the same two fixes Case to Case needed.
