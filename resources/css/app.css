@@ -1680,9 +1680,15 @@ tbody tr:nth-child(10) {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
+/* 70px across every HRMS page — the strip appears on a dozen of them and a
+   height that varied by page is what made them read as different products.
+   Vertical padding is 0: at 70px the box is already taller than its tallest
+   child (title+subtitle ~39px, icon 38, action pills 40), so padding only
+   added slack on top of slack. align-items:center on the base rule does the
+   centring. 10px is the side inset. */
 .frm-cstrip.hr-cstrip {
   min-height: 70px;
-  padding: 12px 20px 12px 18px;
+  padding: 0 10px;
   gap: 12px;
 }
 
@@ -1987,6 +1993,21 @@ tbody tr:nth-child(10) {
    at 46 — 6px taller than the action pill beside it, which is the gap
    visible on Custom Fields. Scoped to .hr-cstrip; the non-HRMS strips keep
    the larger button. */
+/* Any reactstrap <Button> in an HRMS strip joins the 40px the rest of the
+   row uses. They set no height of their own — Bootstrap sizes .btn from
+   padding and line-height, so Export / Onboarding Link / Add Employee
+   landed at 42 and the container with them. inline-flex centres the label
+   without touching .btn-label, whose .label-icon is positioned absolute
+   against the button box and follows the new height on its own. */
+.frm-cstrip.hr-cstrip .btn {
+  box-sizing: border-box;
+  height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
 .frm-cstrip.hr-cstrip .frm-cstrip-back {
   box-sizing: border-box;
   height: 40px;
