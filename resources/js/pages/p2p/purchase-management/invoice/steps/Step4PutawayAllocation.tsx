@@ -682,10 +682,13 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
     </div>
   );
 
+  /* No backdrop-click close. This dialog carries the scan queue and two
+     actions that act on a task, and it has both a header × and a footer
+     Close — two deliberate ways out. A stray click beside it was a third,
+     unintended one, which is how it kept vanishing mid-read. */
   return createPortal(
-    <div className="s4zv-ov" role="presentation" onClick={onClose}>
-      <div className="s4zv" role="dialog" aria-modal="true" aria-label="Zebra Open Tasks"
-        onClick={e => e.stopPropagation()}>
+    <div className="s4zv-ov" role="presentation">
+      <div className="s4zv" role="dialog" aria-modal="true" aria-label="Zebra Open Tasks">
         <div className="s4zv-hd">
           <div className="s4zv-top">
             <span className="s4zv-ico"><IcoZvZebra /></span>
