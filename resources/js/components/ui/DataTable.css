@@ -1361,22 +1361,6 @@
 .dt-tabrail.hr-dt {
   min-height: 48px; align-items: center;
 }
-/* ONE box, not two.
-
-   .dt-tabs is the track and normally IS the rail — it carries the border,
-   the tint and the 3px of padding. When a .dt-tabrail wrapper is present
-   as well (the header-strip rails), both drew a box and the result was a
-   border inside a border, with the wrapper 50px because it was padding a
-   48px track. Inside a wrapper the track gives all of that up: the wrapper
-   is the 48, the tabs are the 40, and nothing is nested. */
-.dt-tabrail > .dt-tabs,
-.dt-tabrail .dt-tabs {
-  border: 0;
-  background: none;
-  box-shadow: none;
-  padding: 0;
-  min-height: 0;
-}
 /* 48, the tab rail's height — the search is the other full-height object
    on this row, so it reads as the rail's counterpart rather than a third
    size. The buttons beside it stay 40, the same 40 as the tabs INSIDE the
