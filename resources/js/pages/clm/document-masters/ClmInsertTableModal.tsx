@@ -335,6 +335,21 @@ const ITM_CSS = `
   border: 1px solid transparent; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px;
 }
+
+/* ── Narrow screens ──
+   Opened from inside the drafting editor, which is inside a wizard, and it
+   carried no breakpoints: the Rows / Columns pair and the two colour pickers
+   stayed two-up at every width. One column below 560, which is the step the
+   rest of CLM uses. */
+@media (max-width: 560px) {
+  .itm-bd { padding: 10px; }
+  .itm-shell { max-height: calc(100vh - 20px); }
+  .itm-grid { grid-template-columns: 1fr; gap: 10px; }
+  .itm-head { padding: 12px 14px; gap: 10px; }
+  .itm-body { padding: 14px; }
+  .itm-foot { padding: 10px 14px; }
+  .itm-foot .itm-btn { flex: 1 1 auto; justify-content: center; }
+}
 .itm-btn-cancel { background: #fff; color: #374151; border-color: #e5e7eb; }
 .itm-btn-cancel:hover { background: #f3f4f6; }
 .itm-btn-primary {

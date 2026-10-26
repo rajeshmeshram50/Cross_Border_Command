@@ -103,8 +103,13 @@ export default function BoxStickerModal({
   const title = mixed ? `${rows.length} products` : first?.spiName ?? '—';
   const sku = mixed ? `${rows.length} SKUs` : `HSN ${first?.hsn ?? '—'}`;
 
+  /* vti-over-drawer: the Sticker button sits in the box drawer's header, so
+     this dialog opens on top of another dialog. Same class the Cold Chain
+     dialog uses — see the rule beside .vti-dw-modal-backdrop in
+     invoice-form.css. Harmless from PackedProducts, which is a step panel and
+     has nothing above it to clear. */
   return createPortal(
-    <div className="spi-mdl-backdrop">
+    <div className="spi-mdl-backdrop vti-over-drawer">
       <div className="spi-mdl invf-stk" role="dialog" aria-modal="true" aria-labelledby="invf-stk-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">

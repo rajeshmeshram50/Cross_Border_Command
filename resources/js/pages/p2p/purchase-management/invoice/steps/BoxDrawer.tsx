@@ -119,6 +119,7 @@ export default function BoxDrawer({
   contents,
   onRemoveContent,
   onContentQtyChange,
+  contentQtyMaxOf,
   onClearContents,
   onSave,
   onClose,
@@ -141,6 +142,8 @@ export default function BoxDrawer({
   contents?: BoxContent[];
   onRemoveContent?: (code: string) => void;
   onContentQtyChange?: (code: string, qty: number) => void;
+  /** Per-product ceiling for the content steppers. */
+  contentQtyMaxOf?: (code: string) => number;
   onClearContents?: () => void;
   onSave?: (data: BoxSaveData) => void;
   onDeletePhoto?: (id: number) => Promise<boolean>;
@@ -175,7 +178,12 @@ export default function BoxDrawer({
   const hiddenCustomFlags = customFlags.slice(CUSTOM_FLAGS_SHOWN);
   const hiddenOnCount = hiddenCustomFlags.filter(f => flags.includes(f.id)).length;
   const [flagPop, setFlagPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
-  useDismissPopover(!!flagPop, () => setFlagPop(null));
+  /* `inside` matters: the hook closes on any scroll EXCEPT one that starts
+     inside the popover, and it finds the popover by this selector. It defaults
+     to '.clm-pop', which is CLM's class and matches nothing here — so every
+     wheel tick over this list counted as an outside scroll and shut the panel.
+     With 50+ flags the list is the one thing you have to scroll. */
+  useDismissPopover(!!flagPop, () => setFlagPop(null), { inside: '.vti-flag-pop' });
   const [temp, setTemp] = useState<TempRange>(initial?.temp ?? { min: '', max: '' });
   const [tempOpen, setTempOpen] = useState(false);
   const [stickerOpen, setStickerOpen] = useState(false);
@@ -429,6 +437,7 @@ export default function BoxDrawer({
               onRemove={onRemoveContent}
               onClear={onClearContents}
               onQtyChange={onContentQtyChange}
+              qtyMaxOf={contentQtyMaxOf}
             />
           )}
 

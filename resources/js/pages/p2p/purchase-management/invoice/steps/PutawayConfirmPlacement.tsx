@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { putId, type PutawayFloorZone, type PutawayLocations, type PutawayRack, type PutawayShelf, type PutawayZone } from '../spi-api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -150,6 +150,16 @@ export default function PutawayConfirmPlacement({
   /** Outstanding: a task exists and the box is not in place yet. */
   const waiting = !!scan && !assigned;
 
+  /* The flag list used to print every flag on the box. A box carrying twenty
+     of them turned this attribute into a wall of chips several rows deep, and
+     pushed the rest of the card — and the Confirm button under it — down the
+     page. Six, then a "+N more" that opens the rest in place, which is the
+     same wording the box drawer's flag strip uses. */
+  const FLAGS_SHOWN = 6;
+  const [allFlags, setAllFlags] = useState(false);
+  const hiddenFlags = Math.max(0, box.flags.length - FLAGS_SHOWN);
+  const shownFlags = allFlags ? box.flags : box.flags.slice(0, FLAGS_SHOWN);
+
   const isZone = spot?.kind === 'zone';
   const code = !spot ? null
     : spot.kind === 'zone' ? spot.zone.code : shortCode(spot.shelf.code);
@@ -221,9 +231,21 @@ export default function PutawayConfirmPlacement({
               <div className="s4c3-attrs__f">
                 <span>Product Flags</span>
                 <div>
-                  {box.flags.length
-                    ? box.flags.map(f => <span className="s4c3-pill s4c3-pill--flag" key={f}>{f}</span>)
-                    : <span className="s4c3-na">No flags</span>}
+                  {box.flags.length ? (
+                    <>
+                      {shownFlags.map(f => <span className="s4c3-pill s4c3-pill--flag" key={f}>{f}</span>)}
+                      {hiddenFlags > 0 && (
+                        <button
+                          type="button"
+                          className="s4c3-pill s4c3-pill--more"
+                          aria-expanded={allFlags}
+                          onClick={() => setAllFlags(v => !v)}
+                        >
+                          {allFlags ? 'Show less' : `+${hiddenFlags} more`}
+                        </button>
+                      )}
+                    </>
+                  ) : <span className="s4c3-na">No flags</span>}
                 </div>
               </div>
             </div>

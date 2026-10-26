@@ -578,10 +578,12 @@ const IcoPrintSm = () => (
     <rect x="6" y="14" width="12" height="8" />
   </svg>
 );
-const IcoClock = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+const IcoLog = ({ size = 15 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" />
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+    <polyline points="3 3 3 8 8 8" />
+    <polyline points="12 7 12 12 15 14" />
   </svg>
 );
 const IcoTick = () => (
@@ -626,6 +628,246 @@ const LIFECYCLE = [
     hint: 'What was placed, where, and by whom',
     todo: 'The receipt for this carton: where it went, when, and who placed it.' },
 ];
+
+export interface ZebraTaskRow {
+  code: string;
+  taskId: string | null;
+  createdAt: string | null;
+  scenario: string;
+  qty: number;
+  legs: number;
+  legKind: 'Zone' | 'Shelf';
+  loc: Array<{ label: string; code: string; name?: string; tag?: string }>;
+  live: boolean;
+}
+
+function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, onCancelTask, onClose }: {
+  tasks: ZebraTaskRow[];
+  spiCode: string | null;
+  poNumber: string | null;
+  supplier: string | null;
+  wh: { id?: string | null; name?: string | null; own?: boolean } | null;
+  onOpenTask: () => void;
+  onCancelTask: () => void;
+  onClose: () => void;
+}) {
+  const boxDone = tasks.filter(t => t.legs >= 1).length;
+  const locDone = tasks.filter(t => t.legs >= 2).length;
+  const notStarted = tasks.filter(t => t.legs === 0).length;
+
+  const CUT = 35;
+  const ref = (ico: React.ReactNode, label: string, value: string, mono?: boolean, tag?: React.ReactNode) => {
+    const long = value.length > CUT;
+    return (
+      <span className="s4zv-ref" title={long ? value : undefined}>
+        <span className="s4zv-ref__i">{ico}</span>
+        <span>
+          <span className="s4zv-ref__l">{label}</span>
+          <span className={`s4zv-ref__v${mono ? ' mono' : ''}`}>
+            {long ? `${value.slice(0, CUT).trimEnd()}…` : value}{tag}
+          </span>
+        </span>
+      </span>
+    );
+  };
+
+  const kpi = (tone: '' | 'g' | 'a', ico: React.ReactNode, label: string, value: number, sub: string) => (
+    <div className={`s4zv-kpi${tone ? ' ' + tone : ''}`}>
+      <span className="s4zv-kpi__wm" aria-hidden>{ico}</span>
+      <span className="s4zv-kpi__i">{ico}</span>
+      <div>
+        <div className="s4zv-kpi__l">{label}</div>
+        <div className="s4zv-kpi__v">{value}<em>{sub}</em></div>
+      </div>
+    </div>
+  );
+
+  return createPortal(
+    <div className="s4zv-ov" role="presentation" onClick={onClose}>
+      <div className="s4zv" role="dialog" aria-modal="true" aria-label="Zebra Open Tasks"
+        onClick={e => e.stopPropagation()}>
+        <div className="s4zv-hd">
+          <div className="s4zv-top">
+            <span className="s4zv-ico"><IcoZvZebra /></span>
+            <div className="s4zv-ttl">
+              <b>Zebra Open Tasks</b>
+              <span>Putaway scan tasks waiting on the warehouse floor for physical QR verification</span>
+            </div>
+            <div className="s4zv-r">
+              <span className="s4zv-live"><i />{tasks.length} open task{tasks.length === 1 ? '' : 's'}</span>
+              <button type="button" className="s4zv-x" onClick={onClose} aria-label="Close"><IcoXSm /></button>
+            </div>
+          </div>
+          <div className="s4zv-refs">
+            {ref(<IcoList />, 'Invoice No', spiCode || '—', true)}
+            {ref(<IcoList />, 'PO Number', poNumber || 'Direct SPI', true)}
+            {ref(<IcoUserSm />, 'Supplier', supplier || '—')}
+            {wh?.name && ref(<IcoWh />, 'Warehouse', `${wh.id ? wh.id + ' · ' : ''}${wh.name}`, false,
+              <span className="s4zv-ref__tag">{wh.own === false ? 'Third Party' : 'Own'}</span>)}
+            {ref(<IcoGrid />, 'Stage', '04 · Temporary Putaway Allocation')}
+          </div>
+        </div>
+
+        <div className="s4zv-body">
+          <div className="s4zv-kpis">
+            {kpi('',  <IcoZvZebra />, 'Open Zebra Tasks',    tasks.length, tasks.length === 1 ? 'task' : 'tasks')}
+            {kpi('g', <IcoZvBox />,   'Box QR Scanned',      boxDone,      `of ${tasks.length}`)}
+            {kpi('g', <IcoZvPin />,   'Location QR Scanned', locDone,      `of ${tasks.length}`)}
+            {kpi('a', <IcoZvClock />, 'Not Started',         notStarted,   'awaiting operator')}
+          </div>
+
+          {tasks.length ? (
+            <div className="s4zv-tblwrap">
+              <table className="s4zv-tbl">
+                <thead><tr>
+                  <th>Sr.</th><th>Zebra Task ID</th><th>Putaway Box ID</th>
+                  <th>Selected Location ID</th><th>Scan Status</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {tasks.map((t, i) => (
+                    <tr key={t.code}>
+                      <td><span className="s4zv-sr">{i + 1}</span></td>
+                      <td>
+                        <div className="s4zv-c">
+                          <span className="s4zv-id">{t.taskId ?? '—'}</span>
+                          {t.createdAt && <small>Created {t.createdAt}</small>}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="s4zv-c">
+                          <span className="s4zv-id box">{putId(t.code)}</span>
+                          {(() => {
+                            const line = `${t.scenario}${t.qty ? ` · ${t.qty} units` : ''}`;
+                            return <small title={line.length > 34 ? line : undefined}>
+                              {line.length > 34 ? `${line.slice(0, 34).trimEnd()}…` : line}
+                            </small>;
+                          })()}
+                        </div>
+                      </td>
+                      <td>
+                        {t.loc.length ? (
+                          <div className="s4zv-loc">
+                            {t.loc.map(l => (
+                              <div className="s4zv-loc__r" key={l.label}>
+                                <span className="s4zv-loc__l">{l.label}</span>
+                                <span className="s4zv-loc__v">
+                                  <span className="s4zv-loc__c">{l.code}</span>
+                                  {l.name && (
+                                    <span className="s4zv-loc__n" title={l.name.length > 28 ? l.name : undefined}>
+                                      {l.name}
+                                    </span>
+                                  )}
+                                  {l.tag && <span className="s4zv-loc__tag">{l.tag}</span>}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <span className="s4zv-dash">—</span>}
+                      </td>
+                      <td>
+                        <div className="s4zv-prog">
+                          <span className="s4zv-st">
+                            <i />{t.legs ? `Scanning · ${t.legs}/2` : 'Awaiting scan · 0/2'}
+                          </span>
+                          <div className="s4zv-prog__bar"><b style={{ width: `${t.legs * 50}%` }} /></div>
+                          <div className="s4zv-legs">
+                            <span className={`s4zv-sc${t.legs >= 1 ? ' ok' : ''}`}>{t.legs >= 1 ? '✓' : '○'} Box QR</span>
+                            <span className={`s4zv-sc${t.legs >= 2 ? ' ok' : ''}`}>{t.legs >= 2 ? '✓' : '○'} {t.legKind} QR</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div className="s4zv-acts">
+                          <button type="button" className="s4zv-btn s4zv-btn--open"
+                            disabled={!t.live}
+                            title={t.live ? 'Open this scan task' : 'Select this box to open its task'}
+                            onClick={() => { onClose(); onOpenTask(); }}>
+                            <span><IcoPlay /></span>Open Task
+                          </button>
+                          <button type="button" className="s4zv-btn s4zv-btn--cancel"
+                            disabled={!t.live}
+                            title={t.live ? 'Cancel this scan task' : 'Select this box to cancel its task'}
+                            onClick={() => { onClose(); onCancelTask(); }}>
+                            <span><IcoXSm /></span>Cancel Task
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="s4zv-empty">
+              <div className="s4zv-empty__i"><IcoZvZebra /></div>
+              <b>No open Zebra tasks</b>
+              <span>Boxes sent for Zebra verification appear here until the operator scans the Box QR and the location QR.</span>
+            </div>
+          )}
+        </div>
+
+        <div className="s4zv-ft">
+          <span className="s4zv-ft__n">
+            A box is placed only after the operator scans its Box QR and the location QR on the Zebra device.
+            Cancel a task to switch the box to manual confirmation.
+          </span>
+          <button type="button" className="s4zv-ft__b" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+const zvSvg = (d: React.ReactNode, strokeWidth = 2.1) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth}
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden>{d}</svg>
+);
+
+const IcoZvZebra = () => zvSvg(<>
+  <path d="M3 7V5a2 2 0 0 1 2-2h2" /><path d="M17 3h2a2 2 0 0 1 2 2v2" />
+  <path d="M21 17v2a2 2 0 0 1-2 2h-2" /><path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+  <line x1="7" y1="8" x2="7" y2="16" /><line x1="12" y1="8" x2="12" y2="16" />
+  <line x1="17" y1="8" x2="17" y2="16" />
+</>);
+
+const IcoZvBox = () => zvSvg(<>
+  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+  <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+  <line x1="12" y1="22.08" x2="12" y2="12" />
+</>);
+
+const IcoZvPin = () => zvSvg(<>
+  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+  <circle cx="12" cy="10" r="3" />
+</>, 2.2);
+
+const IcoZvClock = () => zvSvg(<>
+  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+</>, 2.2);
+
+const IcoPlay = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+function taskStamp(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const day = d.toLocaleDateString(undefined, { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${day} · ${time}`;
+}
+
+function zebraTaskId(i: number): string {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  return `ZT-${ymd}-${String(i + 1).padStart(3, '0')}`;
+}
 
 type LogKind = 'pick' | 'zone' | 'loc' | 'method' | 'task' | 'scan' | 'err' | 'done' | 'cancel';
 type LogEntry = { k: LogKind; t: string; d: string; time: string };
@@ -719,7 +961,7 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
         : { visibility: 'hidden' }}
     >
       <div className="s4lg-hd">
-        <span className="s4lg-hd__i"><IcoClock /></span>
+        <span className="s4lg-hd__i"><IcoLog size={15} /></span>
         <b>Scan Logs</b>
         {boxCode && <span className="s4lg-box">{boxCode}</span>}
         <button type="button" className="s4lg-x" onClick={onClose} aria-label="Close"><IcoXSm /></button>
@@ -942,6 +1184,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [cancelBusy, setCancelBusy] = useState(false);
   const scanDoneRef = useRef(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [zebraOpen, setZebraOpen] = useState(false);
   const [placedVia, setPlacedVia] = useState<{ via: string; allocation: string } | null>(null);
   const [productViewId, setProductViewId] = useState<number | null>(null);
   const [modeAsk, setModeAsk] = useState<null | { loading: boolean; rack: number; norack: number; error: string | null }>(null);
@@ -988,6 +1231,12 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const coldCount = scope.filter(b => b.cold).length;
   const pct = scope.length ? Math.round((placed / scope.length) * 100) : 0;
   const box = all.find(b => b.code === selected) ?? null;
+
+  const zebraTasks = useMemo(() => {
+    const open = all.filter(b => b.status === 'awaiting_scan');
+    if (scanTask && box && !open.some(b => b.code === box.code)) return [box, ...open];
+    return open;
+  }, [all, scanTask, box]);
 
   useEffect(() => {
     if (!box) return;
@@ -1262,16 +1511,41 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className="s4fs-btn s4fs-btn--rail"
-          title={fs ? 'Exit full view' : 'Full view'}
-          aria-pressed={fs}
-          onClick={toggleFs}
-        >
-          {fs ? <IcoCollapse /> : <IcoExpand />}
-          <span className="s4fs-t">{fs ? 'Exit Full View' : 'Full View'}</span>
-        </button>
+        <div className="s4b-tools">
+          <button
+            type="button"
+            className="s4fs-btn s4b-toolbtn"
+            title="Zebra scan tasks waiting on the warehouse floor"
+            aria-haspopup="dialog"
+            aria-expanded={zebraOpen}
+            onClick={() => setZebraOpen(true)}
+          >
+            <IcoScan />
+            <span className="s4fs-t">Zebra Open Tasks</span>
+            <span className="s4fs-c">{zebraTasks.length}</span>
+          </button>
+          <button
+            type="button"
+            ref={logBtnRef}
+            className="s4fs-btn s4b-toolbtn s4-scanlogs"
+            title="Scan logs for this box"
+            aria-expanded={logsOpen}
+            onClick={() => setLogsOpen(o => !o)}
+          >
+            <IcoLog size={14} />
+            <span className="s4fs-t">Scan Logs</span>
+          </button>
+          <button
+            type="button"
+            className="s4fs-btn s4b-toolbtn"
+            title={fs ? 'Exit full view' : 'Full view'}
+            aria-pressed={fs}
+            onClick={toggleFs}
+          >
+            {fs ? <IcoCollapse /> : <IcoExpand />}
+            <span className="s4fs-t">{fs ? 'Exit Full View' : 'Full View'}</span>
+          </button>
+        </div>
       </div>
 
       <div className={`s4-panels${fs ? ' is-fs' : ''}`} ref={panelsRef}>
@@ -1350,16 +1624,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             <div className="s4-panel__head-text">
               <div className="s4-panel__head-title">Temporary Putaway Allocation</div>
             </div>
-            <button
-              type="button"
-              ref={logBtnRef}
-              className="s4fs-btn s4-scanlogs"
-              title="Scan logs for this box"
-              aria-expanded={logsOpen}
-              onClick={() => setLogsOpen(o => !o)}
-            >
-              <IcoClock /> <span className="s4fs-t">Scan Logs</span>
-            </button>
             {logsOpen && (
               <ScanLogs
                 anchor={logBtnRef.current}
@@ -1719,6 +1983,51 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         <InspectionProductView productId={productViewId} onClose={() => setProductViewId(null)} />
       )}
 
+      {zebraOpen && (
+        <ZebraOpenTasks
+          tasks={zebraTasks.map((b): ZebraTaskRow => {
+            const live = !!(scanTask && box && b.code === box.code);
+            const s = live ? findSpot(loc.data, spot) : null;
+            const rows: ZebraTaskRow['loc'] = [];
+            if (s) {
+              if (warehouseInfo?.code) {
+                rows.push({ label: 'Warehouse', code: warehouseInfo.code, name: warehouseInfo.name,
+                  tag: warehouseInfo.own === false ? 'Third Party' : 'Own' });
+              }
+              if (s.zone?.code) rows.push({ label: 'Zone', code: s.zone.code, name: s.zone.name ?? undefined });
+              if (s.kind !== 'zone') {
+                if (s.rack?.code)  rows.push({ label: 'Rack',  code: s.rack.code,  name: s.rack.name ?? undefined });
+                if (s.shelf?.code) rows.push({ label: 'Shelf', code: s.shelf.code, name: s.shelf.name ?? undefined });
+              }
+            } else if (b.destination) {
+              const parts = b.destination.split(/\s*[/→]\s*/).filter(Boolean);
+              const labels = ['Warehouse', 'Zone', 'Rack', 'Shelf'];
+              parts.forEach((code, i) => rows.push({ label: labels[i] ?? 'Level', code }));
+            }
+            return {
+              code: b.code,
+              taskId: live ? scanTask!.id : (b.taskCode ?? null),
+              createdAt: taskStamp(live ? scanTask!.at : null),
+              scenario: b.scenario,
+              qty: b.qty,
+              legs: live ? scanSteps : 0,
+              legKind: s?.kind === 'zone' ? 'Zone' : 'Shelf',
+              loc: rows,
+              live,
+            };
+          })}
+          onOpenTask={() => setScanOpen(true)}
+          onCancelTask={() => setCancelAsk(true)}
+          spiCode={spiCode}
+          poNumber={draft.poNumber || null}
+          supplier={draft.supplier || null}
+          wh={warehouseInfo
+            ? { id: warehouseInfo.code, name: warehouseInfo.name, own: warehouseInfo.own !== false }
+            : (warehouse ? { name: warehouse } : null)}
+          onClose={() => setZebraOpen(false)}
+        />
+      )}
+
       {qrOpen && box && (
         <PutawayBoxSticker
           boxId={box.code}
@@ -2012,7 +2321,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           aria-label="Cancel Zebra scan task">
           <div className="s4qm__dlg s4wz__dlg">
             <div className="s4qm__hd">
-              <div className="s4qm__hico"><IcoBan size={18} /></div>
+              <div className="s4qm__hico">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                </svg>
+              </div>
               <div className="s4qm__htx">
                 <div className="s4qm__t">Cancel Zebra Scan Task?</div>
                 <div className="s4qm__s">{scanTask.id} &middot; {scanSteps} / 2 scans received</div>
@@ -2035,7 +2350,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
             <div className="s4qm__bd">
               <div className="s4ct-warn">
-                <span className="s4ct-warn__i"><IcoScan /></span>
+                <span className="s4ct-warn__i"><IcoZvZebra /></span>
                 <div>
                   <b>This will cancel task {scanTask.id}</b>
                   <ul>
