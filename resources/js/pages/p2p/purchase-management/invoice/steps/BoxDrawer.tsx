@@ -374,6 +374,13 @@ export default function BoxDrawer({
               <IcoBox size={13} stroke={2.3} /> {saved ? `${putId(boxId)} Sticker` : 'Box Sticker'}
             </button>
           </Tooltip>
+          </div>
+          {/* A direct child of the STRIP, not of the toolbar. The toolbar is
+              position: relative for its own z-index, so a × inside it anchors
+              to the toolbar — which is why pinning it to top/right put it at
+              the corner of the button row rather than the corner of the strip.
+              Out here the strip is the containing block and the corner is the
+              corner. */}
           {onClose && variant === 'modal' && (
             <Tooltip label="Close without saving">
               <button type="button" className="vti-dw-modal-x" onClick={onClose} disabled={saving} aria-label="Close">
@@ -381,7 +388,6 @@ export default function BoxDrawer({
               </button>
             </Tooltip>
           )}
-          </div>
         </div>
 
         {saved && savedBanner && (

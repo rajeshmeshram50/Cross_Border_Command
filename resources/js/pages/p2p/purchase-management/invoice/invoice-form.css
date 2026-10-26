@@ -448,6 +448,18 @@
   background: rgba(255,255,255,.14); color: #fff; cursor: pointer;
   transition: background .14s, border-color .14s, transform .12s;
 }
+/* Pinned to the strip's top-right at EVERY width, not inside a breakpoint.
+   The × is the toolbar's last child, so whenever the strip breaks into two
+   rows it travelled down with the toolbar and ended up hanging off the band's
+   edge, past the rounded corner. This was keyed to max-width: 1500px before,
+   which is the wrong trigger: the strip wraps when its own content outgrows
+   the DIALOG, so it can break at viewport widths well above 1500 and the pin
+   never applied — which is exactly the trap the .vti-dw-flags note records.
+   A close is a corner control; it belongs in the corner regardless.
+   The labels take a right gutter so a long product name cannot run under it. */
+.vti-dw-strip { position: relative; }
+.vti-dw-strip .vti-dw-modal-x { position: absolute; top: 10px; right: 12px; z-index: 5; }
+.vti-dw-strip .vti-dw-strip-left { padding-right: 52px; }
 .vti-dw-modal-x:hover { background: rgba(255,255,255,.26); border-color: rgba(255,255,255,.5); }
 .vti-dw-modal-x:active { transform: scale(.95); }
 .vti-dw-modal-x:disabled { opacity: .5; cursor: not-allowed; }
@@ -592,18 +604,6 @@
      instead. */
   .vti-dw-strip .vti-dw-strip-item { padding: 9px 14px; }
 
-  /* The close button is the LAST child of the toolbar, so when the toolbar
-     takes its own row the × travelled with it and ended up floating in the
-     middle of the strip, after the Sticker button. A close is a corner
-     control: wherever the strip breaks, it belongs at the top right.
-     The strip is already position: relative, so pinning it there costs
-     nothing, and the labels get a right gutter so a long product name cannot
-     run underneath it. */
-  .vti-dw-strip { position: relative; }
-  .vti-dw-strip .vti-dw-modal-x {
-    position: absolute; top: 10px; right: 12px; z-index: 5;
-  }
-  .vti-dw-strip .vti-dw-strip-left { padding-right: 52px; }
 }
 
 @media (max-width: 820px) {
@@ -9706,8 +9706,38 @@
    geometry below is the base rule and the in-table override folded together
    rather than inherited from a dark pill that never renders here. */
 
-.vs3-wrap { overflow-x: auto; }
-.vs3t { width: 100%; border-collapse: collapse; font-size: 11px; }
+/* min-width: 0 on the wrap AND on the card around it. Without it a flex item
+   is allowed to grow to its content, so the eleven-column table pushed the
+   section wider than the drawer instead of overflowing INSIDE this box —
+   .vti-dw-section then clipped the surplus with its own overflow: hidden and
+   no scrollbar appeared anywhere. The table has to overflow here, because
+   this is the only box that scrolls.
+
+   The bar is also drawn rather than left to the platform: Windows overlay
+   scrollbars fade out when idle, so on a table that is cut off at the right
+   there was nothing on screen saying it could be scrolled at all. */
+.vs3-wrap {
+  overflow-x: auto; min-width: 0;
+  scrollbar-width: thin; scrollbar-color: rgba(8,145,178,.45) transparent;
+}
+/* Solid, not translucent, and tall enough to find. A 9px bar at 45% opacity
+   over a near-white track is invisible at a glance, which is indistinguishable
+   from a table that has simply lost its last columns. */
+.vs3-wrap::-webkit-scrollbar { height: 11px; }
+.vs3-wrap::-webkit-scrollbar-track { background: #e6f4f8; border-radius: 999px; }
+.vs3-wrap::-webkit-scrollbar-thumb { background: #0891b2; border-radius: 999px; border: 2px solid #e6f4f8; }
+.vs3-wrap::-webkit-scrollbar-thumb:hover { background: #0e7490; }
+[data-bs-theme="dark"] .vs3-wrap::-webkit-scrollbar-track { background: rgba(34,211,238,.1); }
+[data-bs-theme="dark"] .vs3-wrap::-webkit-scrollbar-thumb { background: #22d3ee; border-color: rgba(34,211,238,.1); }
+.vti-dw-section, .vti-dw-advanced { min-width: 0; }
+/* min-width as well as width:100%. The per-cell floors below only bite once
+   the table is already being squeezed; until then `auto` layout hands the
+   spare width to whichever columns ask loudest, so Serial and Lot sat at
+   230px while Cat, the dates, Remarks and Action were pushed past the card's
+   edge — and because the floors had not engaged, the table was not yet wider
+   than its wrapper, so no scrollbar appeared to say where they had gone.
+   A floor on the table itself makes the overflow explicit. */
+.vs3t { width: 100%; min-width: 1400px; border-collapse: collapse; font-size: 11px; }
 /* Eleven columns do not fit a narrowed window, and `width: 100%` alone just
    crushes them — the identity fields were collapsing to sixty-odd pixels and
    clipping the values already typed into them. Giving the cells a floor makes
