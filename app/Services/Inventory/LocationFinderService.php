@@ -51,6 +51,15 @@ class LocationFinderService
         $body['zones']       = $tree['zones'];
         $body['eligible']    = $tree['eligible'];
         $body['total']       = $tree['total'];
+
+        /* The same three buckets for the whole warehouse, so the header can
+           say "2 available · 1 not valid for this box · 0 full" without the
+           caller walking the tree to add it up. A no-rack zone IS the
+           location, so there each zone counts as one. */
+        $rows = collect($tree['zones']);
+        $body['available'] = $mode === 'rack' ? (int) $rows->sum('available') : $rows->where('state', 'available')->count();
+        $body['blocked']   = $mode === 'rack' ? (int) $rows->sum('blocked')   : $rows->where('state', 'blocked')->count();
+        $body['full']      = $mode === 'rack' ? (int) $rows->sum('full')      : $rows->where('state', 'full')->count();
         $body['recommended'] = $tree['recommended'];
 
         return $body;
@@ -174,6 +183,11 @@ class LocationFinderService
                         // Every rule that ran, pass AND fail — not just the refusal.
                         'checks'         => $this->engine->checkShelf($need, $s, $z, $free),
                         'eligible'      => $why === null,
+                        /* available · blocked · full. `eligible` stays for the
+                           callers that only ask yes/no; `state` is what tells
+                           a wrong-temperature shelf from a full one. */
+                        'state'         => $this->engine->state($why),
+                        'state_label'   => $this->engine->stateLabel($why),
                         'reason'        => $why,
                         'reason_label'  => $this->engine->label($why),
                         'held_by'       => $hold['held_by'] ?? null,
@@ -200,17 +214,35 @@ class LocationFinderService
                 $rCap  = $shelfRows->sum('max_weight_kg');
                 $rFree = $shelfRows->sum('free_weight_kg');
 
+                /* Free space THIS box could actually take. free_weight_kg is a
+                   fact about the warehouse and counts every shelf; a rack whose
+                   shelves are all the wrong temperature still reports its full
+                   capacity as free, which reads as plenty of room when there is
+                   none. Invalid is not the same as full, and both numbers have
+                   to be on the row for a reader to tell them apart. */
+                $fit    = $shelfRows->where('eligible', true);
+                $rUsable = $fit->sum('free_weight_kg');
+                $rUsableM3 = $fit->sum('free_volume_m3');
+
                 return [
                     'id'       => (int) $r->id,
                     'name'     => $r->rack_name,
                     'code'     => $r->code,
                     'max_weight_kg'  => round($rCap, 3),
                     'free_weight_kg' => round($rFree, 3),
+                    'usable_weight_kg' => round($rUsable, 3),
+                    'usable_volume_m3' => round($rUsableM3, 3),
                     'boxes'    => $shelfRows->sum('boxes'),
                     'used_pct' => $rCap > 0 ? round(($rCap - $rFree) / $rCap * 100, 1) : 0.0,
                     'shelves'  => $shelfRows->all(),
                     'total'    => $shelfRows->count(),
                     'eligible' => $shelfRows->where('eligible', true)->count(),
+                    /* The same shelves split three ways. blocked + full is
+                       total - eligible, but a reader should not have to work
+                       out which of the two they are looking at. */
+                    'available' => $shelfRows->where('state', 'available')->count(),
+                    'blocked'   => $shelfRows->where('state', 'blocked')->count(),
+                    'full'      => $shelfRows->where('state', 'full')->count(),
                 ];
             })->values();
 
@@ -219,6 +251,8 @@ class LocationFinderService
                for no-rack zones, where the zone itself holds the boxes. */
             $zCap  = $rackRows->sum('max_weight_kg');
             $zFree = $rackRows->sum('free_weight_kg');
+            $zUsable   = $rackRows->sum('usable_weight_kg');
+            $zUsableM3 = $rackRows->sum('usable_volume_m3');
 
             return [
                 'id'        => (int) $z->id,
@@ -233,11 +267,16 @@ class LocationFinderService
                 'temp_max_c' => $z->temp_max_c === null ? null : (float) $z->temp_max_c,
                 'max_weight_kg'  => round($zCap, 3),
                 'free_weight_kg' => round($zFree, 3),
+                'usable_weight_kg' => round($zUsable, 3),
+                'usable_volume_m3' => round($zUsableM3, 3),
                 'boxes'     => $rackRows->sum('boxes'),
                 'used_pct'  => $zCap > 0 ? round(($zCap - $zFree) / $zCap * 100, 1) : 0.0,
                 'racks'     => $rackRows->all(),
                 'total'     => $rackRows->sum('total'),
                 'eligible'  => $rackRows->sum('eligible'),
+                'available' => $rackRows->sum('available'),
+                'blocked'   => $rackRows->sum('blocked'),
+                'full'      => $rackRows->sum('full'),
             ];
         })->values();
 
@@ -288,6 +327,8 @@ class LocationFinderService
                 'used_pct'       => $capM3 > 0 ? round($usedM3 / $capM3 * 100, 1) : 0.0,
                 'used_pct_after' => $capM3 > 0 ? round(($usedM3 + $need['volume_cm3'] / 1_000_000) / $capM3 * 100, 1) : 0.0,
                 'eligible'       => $why === null,
+                'state'          => $this->engine->state($why),
+                'state_label'    => $this->engine->stateLabel($why),
                 'reason'         => $why,
                 'reason_label'   => $this->engine->label($why),
                 'held_by'        => $hold['held_by'] ?? null,
