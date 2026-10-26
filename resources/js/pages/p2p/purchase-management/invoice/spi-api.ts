@@ -213,7 +213,11 @@ export type SpiBoxItem = {
   cat_no?: string | null;
   expiry_date?: string | null;
   mfg_date?: string | null;
+  uom_id?: number | null;
+  uom?: string | null;
 };
+
+type SpiUom = { id: number; title: string | null; short_code: string | null };
 
 export type SpiBox = {
   id: number;
@@ -391,8 +395,18 @@ export const putId = (code: string | null | undefined): string =>
 
 export const spiApi = {
   boxes: (spiId: number) =>
-    call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`),
-      (b) => ((b as { data?: { boxes?: SpiBox[] } } | null)?.data?.boxes ?? [])),
+    call('SPI boxes', () => api.get(`/p2p/spi/${spiId}/boxes`), (b) => {
+      const d = (b as { data?: { boxes?: SpiBox[]; uoms?: Record<string, SpiUom> } } | null)?.data;
+      const uoms = d?.uoms ?? {};
+      const label = (id: number | null | undefined) => {
+        const u = id == null ? undefined : uoms[String(id)];
+        return u ? (u.short_code || u.title || null) : null;
+      };
+      return (d?.boxes ?? []).map(box => ({
+        ...box,
+        items: (box.items ?? []).map(i => ({ ...i, uom: i.uom ?? label(i.uom_id) })),
+      }));
+    }),
 
   nextBoxCodes: (spiId: number, count = 20) =>
     call('SPI next box codes', () => api.get(`/p2p/spi/${spiId}/boxes/next-codes`, { params: { count } }),

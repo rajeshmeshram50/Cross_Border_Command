@@ -99,14 +99,6 @@ const IcoExpand = () => (
     <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
   </svg>
 );
-/** Puts a dialog inside the full-screened element.
- *
- *  In full screen the browser paints ONLY that element's subtree. Every dialog
- *  on this step is a sibling of `.s4-panels`, which is the element that goes
- *  full screen - so all of them opened invisibly behind it. `position: fixed`
- *  does not help: the issue is what gets rendered, not where it is placed.
- *
- *  Outside full screen `host` is null and nothing moves. */
 function FsLayer({ host, children }: { host: HTMLElement | null; children: ReactNode }) {
   return host ? createPortal(children, host) : <>{children}</>;
 }
@@ -136,11 +128,6 @@ const IcoCheck = () => (
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
-/** Confirming by hand: a box ticked off. The design uses it for the dialog's
- *  own head and for the manual option — the question and that answer are the
- *  same act, so they carry the same mark. It replaced a hand placing a box,
- *  which read as the moment of carrying rather than the moment of signing. */
-/** Cancelling: the task struck out. */
 const IcoBan = ({ size = 15 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="9" /><line x1="15.5" y1="8.5" x2="8.5" y2="15.5" />
@@ -199,16 +186,12 @@ const IcoList = () => (
   </svg>
 );
 
-/* The disposition a box belongs to, as the design writes it: a tinted tile, a
-   name and a line saying why those boxes are together. */
 const GROUPS: Array<{ key: Disposition; title: string; sub: string }> = [
   { key: 'ship',     title: 'Shipment Dispatch Boxes',             sub: 'Correct product — ready for dispatch' },
   { key: 'inv',      title: 'Inventory Stock (Extra Stock) Boxes', sub: 'Extra quantity — staged for storage' },
   { key: 'damaged',  title: 'Damaged / Rejected Boxes',            sub: 'Not accepted — held for QC' },
   { key: 'mismatch', title: 'Mismatch Boxes',                      sub: 'Wrong item — held for return' },
 ];
-/* What the packer marked, read back off the disposition — the pick list does
-   not carry the remark itself, and the two are the same fact. */
 const REMARK_OF: Record<Disposition, string> = {
   ship: 'Correct Product', inv: 'Extra Quantity',
   damaged: 'Damaged / Rejected', mismatch: 'Mismatched',
@@ -225,8 +208,6 @@ function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
       data-boxid={b.code}
       onClick={() => { if (!readOnly) onPick(); }}
     >
-      {/* The teal head carries the things you identify a carton by: its id,
-          its label, and whether it has been put away. */}
       <div className="s4pkc__hd">
         <span className="s4pkc__ico"><IcoBoxSm size={15} /></span>
         <span className="s4pkc__id">{putId(b.code)}</span>
@@ -238,8 +219,6 @@ function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
           <IcoPrintSm /> Sticker
         </button>
         <span className={`s4pkc__st${placed ? ' is-done' : ''}`}>
-          {/* "Putaway Completed", the words the pane uses when it finishes —
-              "Placed" was a third name for the same state. */}
           <i />{placed ? 'Putaway Completed' : b.status === 'awaiting_scan' ? 'Awaiting scan' : b.status === 'draft' ? 'Allocated' : 'Pending'}
         </span>
       </div>
@@ -248,8 +227,6 @@ function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
           <span className="s4pkc__scnno">{(SCENARIO_NO[b.scenarioKey] ?? 'Scenario 01').toUpperCase()}</span>
           <span className="s4pkc__scnt">{b.scenario}</span>
         </div>
-        {/* Four figures, divided — the ones a person checks against the carton
-            in front of them before committing it to a slot. */}
         <div className="s4pkc__mets">
           <div className="s4pkc__met"><span>Box Qty</span><b>{b.qty} <i>units</i></b></div>
           <div className="s4pkc__met"><span>Dimensions</span><b>{b.dims ?? '—'}</b></div>
@@ -273,17 +250,6 @@ function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
   );
 }
 
-/**
- * A box or location code as a QR.
- *
- * `bare` is for the codes that sit inside a frame of their own — the two in
- * the confirm step's heroes sit on a white tile. Without it the canvas wears
- * `.s4s-stk__qr`, which belongs to the sticker preview and brings a 1px
- * border and 6px of padding: inside a border-box those eat into the 92px the
- * hero asks for, so the code came out smaller than the design's with a wider
- * white margin round it, and the inline canvas left the tile taller than it
- * was wide.
- */
 function BoxQr({ text, size = 76, bare = false }: { text: string; size?: number; bare?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
@@ -291,18 +257,9 @@ function BoxQr({ text, size = 76, bare = false }: { text: string; size?: number;
     const c = ref.current;
     if (!c) return;
     setFailed(false);
-    /* Drawn at the screen's real pixel density and scaled back down in CSS.
-       A 92px canvas on a 125% display was being stretched to 115 device
-       pixels, which smears the module edges — the one thing a QR cannot
-       afford. The design draws an SVG, which never has the problem. */
-    /* Rounded UP, not to nearest: Windows at 125% reports 1.25, and rounding
-       that to 1 gave back the blur this is here to remove. */
     const dpr = Math.min(3, Math.max(1, Math.ceil(window.devicePixelRatio || 1)));
     QRCode.toCanvas(c, text, {
       width: size * dpr,
-      /* Two modules of white around the code, as the design has it. Without a
-         quiet zone a scanner has to find the edge against whatever is behind
-         it, and the code filled its white tile corner to corner. */
       margin: 2,
       errorCorrectionLevel: 'M',
       color: { dark: '#0c2c3a', light: '#ffffff' },
@@ -322,8 +279,6 @@ function BoxQr({ text, size = 76, bare = false }: { text: string; size?: number;
 
 interface BoxProduct {
   code: string; name: string; hsn: string;
-  /** The line's GST rate. The sticker and the review table both print it, and
-   *  it is a property of the product rather than of the packing. */
   gst: string | null;
   batch: string | null; expiry: string | null;
   desc: string | null;
@@ -360,7 +315,7 @@ function productsOf(box: SpiBox | undefined, lines: ProductLine[], flagMaster: P
       expiry: it.expiry_date ? String(it.expiry_date).slice(0, 10) : null,
       desc: dash(line?.description),
       qtyNum: String(num(it.quantity)),
-      uom: dash(line?.uom),
+      uom: dash(it.uom) ?? dash(line?.uom),
       productId: line?.productId ?? null,
       remark: REMARK_LABEL[String(it.remark ?? '')] ?? 'Not marked',
       haz: isHaz(flagNames([it], flagMaster)),
@@ -486,8 +441,6 @@ function dispositionOf(items: SpiBoxItem[], againstPo: boolean): Disposition {
   return againstPo ? 'ship' : 'inv';
 }
 
-/** The code a placement is read by on the floor: "RC-D02-SH-03" → "SH-03",
- *  and a direct placement is the zone's own code. */
 const locCodeOf = (s: ReturnType<typeof findSpot>): string | null =>
   !s ? null
     : s.kind === 'zone' ? s.zone.code
@@ -537,10 +490,6 @@ function toPickBoxes(
   });
 }
 
-/* The NUMBER, without its unit. Both call sites print "kg" themselves — the
- * pick card as its own <i>, the confirm card through stat()'s third argument —
- * so carrying the unit in here as well is what produced "9 kg kg" on the card.
- * dimsOf() below keeps its "cm" because neither of its call sites adds one. */
 function kg(v: unknown): string | null {
   const n = num(v);
   return n ? `${Number.isInteger(n) ? n : n.toFixed(2)}` : null;
@@ -566,11 +515,6 @@ function tempOf(b: SpiBox): string | null {
   return lo != null ? `${f(lo)} and above` : `up to ${f(hi)}`;
 }
 
-/* Full names, in the design's order. They were abbreviated — "Dispatch",
-   "Damage/Rejected" — and ordered with Inventory last, which put the two
-   exception buckets between the two ordinary ones. Dispatch and Inventory are
-   where boxes normally go; Damaged and Mismatch are the exceptions, and they
-   read better as a pair at the end. */
 const TABS: Array<{ key: 'all' | Disposition; label: string; ico: ReactNode }> = [
   { key: 'all',      label: 'All Boxes',                            ico: <IcoBoxSm /> },
   { key: 'ship',     label: 'Shipment Dispatch Boxes',              ico: <IcoTruck /> },
@@ -579,19 +523,14 @@ const TABS: Array<{ key: 'all' | Disposition; label: string; ico: ReactNode }> =
   { key: 'mismatch', label: 'Mismatch Boxes',                       ico: <IcoSwap /> },
 ];
 
-
 const PRODUCTS_PER_PAGE = 5;
 
-/* Labels the Review pane prints verbatim. Kept beside the Disposition type
-   they key off, so a new disposition cannot quietly fall through to blank. */
 const SECTION_LABEL: Record<Disposition, string> = {
   ship: 'Shipment Dispatch Boxes',
   inv: 'Inventory Stock (Extra Stock) Boxes',
   damaged: 'Damaged / Rejected Boxes',
   mismatch: 'Mismatch Boxes',
 };
-/* The short form the printed label uses — a sticker has no room for
-   "Multiple Products → 1 Box". */
 const STICKER_SCENARIO: Record<string, string> = {
   s1: 'S1 — Single', s2: 'S2 — Split', s3: 'S3 — Mixed',
 };
@@ -603,7 +542,6 @@ const CONDITION_LABEL: Record<string, string> = {
   Perfect: 'Perfect', 'Minor Damage': 'Minor Damage', 'Critical Damage': 'Critical Damage',
 };
 
-/** dd/mm/yyyy from whatever the row carries, or null. */
 const packedOnOf = (b: SpiBox | undefined): string | null => {
   const raw = (b as unknown as { created_at?: string | null } | undefined)?.created_at;
   const d = raw ? new Date(raw) : new Date();
@@ -612,8 +550,6 @@ const packedOnOf = (b: SpiBox | undefined): string | null => {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 };
 
-/** The seven measurements, as strings, with volumetric derived the same way
- *  the packing step derives it (L x W x H / 5000). */
 const coreOf = (b: SpiBox | undefined) => {
   const n = (v: unknown): string | null => {
     const x = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
@@ -628,17 +564,12 @@ const coreOf = (b: SpiBox | undefined) => {
   };
 };
 
-/** The note the packer left, if any. */
 const noteOf = (b: SpiBox | undefined): string | null => {
   const t = String(b?.items?.[0]?.remark_note ?? '')
     .split(' · ').filter(p => !p.trim().startsWith('Cold chain')).join(' · ').trim();
   return t && t !== '—' ? t : null;
 };
 
-/* The three steps the design shows. LIFECYCLE below still drives the pane's
-   own headings and its four internal states — including Putaway Summary,
-   which is the receipt after the work rather than a step you take — but the
-   strip names only the three you actually do. */
 const IcoPrintSm = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
@@ -696,12 +627,6 @@ const LIFECYCLE = [
     todo: 'The receipt for this carton: where it went, when, and who placed it.' },
 ];
 
-/* ── Scan Logs ──────────────────────────────────────────────────────────────
-   The per-box audit trail, and NOT the Zebra scan task — which is why the
-   button that opens it is never disabled. It records the whole run, from
-   picking the box to confirming the putaway, so it reads the same whether the
-   box went out on a handheld or was confirmed by hand. A box with no task
-   still has a history, and a box with no history still has an answer. */
 type LogKind = 'pick' | 'zone' | 'loc' | 'method' | 'task' | 'scan' | 'err' | 'done' | 'cancel';
 type LogEntry = { k: LogKind; t: string; d: string; time: string };
 
@@ -745,9 +670,6 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; height: number } | null>(null);
 
-  /* Hung under the button and run down to the bottom of the panel it belongs
-     to, rather than to the bottom of the screen — the list is long and the
-     footer below it is not something to cover. */
   useEffect(() => {
     const place = () => {
       const el = ref.current;
@@ -842,10 +764,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   flagMaster?: ProductFlagOption[];
   spiId?: number | null;
   warehouse?: string | null;
-  /** The same site with its code and town, for Step 02's warehouse card. The
-   *  bare name still drives every other mention of it. */
   warehouseInfo?: SelectLocationWarehouse | null;
-  /** This invoice's own number, shown on the scan task's header. */
   spiCode?: string | null;
   readOnly?: boolean;
   onProgress?: (placed: number, total: number) => void;
@@ -853,19 +772,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [tab, setTab] = useState<'all' | Disposition>('all');
   const [selected, setSelected] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(true);
-  /* Either pane can be folded away, as the design has it. Collapsing the box
-     list gives the allocation the whole stage; collapsing the allocation gives
-     the list the whole stage, which is what you want when you are scanning
-     down thirteen cartons looking for the one in your hands. */
   const [rightOpen, setRightOpen] = useState(true);
   const [lcStep, setLcStep] = useState(0);
   const panelsRef = useRef<HTMLDivElement>(null);
-  /* Full View is a takeover of the page, not the browser's own fullscreen.
-     It used to call requestFullscreen() on the panels element — which put the
-     ONLY way out (this button, which sits on the rail above) outside the
-     fullscreened subtree, so nothing on screen said how to leave and Esc was
-     the only exit. The design keeps the rail and its Exit Full View in view
-     and simply gives the two panels the whole window. */
   const [fs, setFs] = useState(false);
   const toggleFs = () => setFs(v => !v);
   useEffect(() => {
@@ -889,14 +798,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     return () => { live = false; };
   }, [spiId, boxKey, boardTick]);
 
-  /* Write a finished putaway back into the board.
-   *
-   * The box list reads EVERY card's state from the board — is-placed, the
-   * status pill, the group counts. Completing a putaway only set this step's
-   * own local state, so the card the operator had just finished went on
-   * reading Pending in teal until the next fetch, while the pane beside it
-   * said Putaway Completed. The green card has always been built; nothing
-   * ever turned it on. */
   const markPlaced = (boxId: number, destination: string | null) => {
     setBoard(prev => {
       if (!prev) return prev;
@@ -908,7 +809,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           ...prev.counts,
           placed: prev.counts.placed + 1,
           remaining: dec(prev.counts.remaining),
-          /* Only the bucket it actually came from moves. */
           ...(was === 'awaiting_scan' ? { awaiting_scan: dec(prev.counts.awaiting_scan) }
             : was === 'draft' ? { draft: dec(prev.counts.draft) }
             : { pending: dec(prev.counts.pending) }),
@@ -919,7 +819,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             status: 'placed' as const,
             destination: destination ?? r.destination,
             assigned_at: new Date().toISOString(),
-            /* The task is spent — it must not keep showing as outstanding. */
             task: null,
           }
           : r),
@@ -972,13 +871,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     [boxes, selected],
   );
   const products = useMemo(() => productsOf(rawBox, lines, flagMaster), [rawBox, lines, flagMaster]);
-  /* Flags are stored per item; a box's flags are the union of its items'. */
   const boxFlagNames = useMemo(
     () => (rawBox ? flagNames(rawBox.items ?? [], flagMaster) : []),
     [rawBox, flagMaster],
   );
-  /* "Box 1 of 3" for a split set, read off the saved boxes of the same line —
-     the only place that relationship still exists once packing is finished. */
   const modeLabelOf = (b: PickBox): string | null => {
     if (b.scenarioKey === 's3') return 'Mixed Carton';
     if (b.scenarioKey !== 's2') return 'Single Box';
@@ -1031,44 +927,21 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     }
   };
   const [placedAt, setPlacedAt] = useState<string | null>(null);
-  /* How the placement gets confirmed. The two answers are not the same event:
-     a manual confirmation IS the placement, a Zebra scan only queues one for
-     the floor to verify - so the box is not placed until the scan comes back.
-     Confirming straight off the button conflated the two. */
   const [methodAsk, setMethodAsk] = useState(false);
-  /* Cancelling a raised Zebra task is not an undo — the task is already in the
-     warehouse queue, and the box stays allocated either way. So it asks, and
-     the asking offers the way forward rather than only the way out. */
   const [cancelAsk, setCancelAsk] = useState(false);
   const [methodPick, setMethodPick] = useState<'zebra' | 'manual' | null>(null);
-  /* The dialog asks WHICH method first and shows what that method commits to
-     second. Both on one screen meant it opened already arguing a case for a
-     choice the operator had not made yet. */
   const [methodStage, setMethodStage] = useState<'select' | 'detail'>('select');
-  /* The reference the detail screen names before it is committed — the task
-     number for a Zebra scan, the allocation number for a manual one. Settled
-     when the dialog opens so the header can show it, rather than appearing
-     only after submit. */
   const methodRef = useMemo(() => {
     const n = new Date();
     const ymd = `${n.getFullYear()}${String(n.getMonth() + 1).padStart(2, '0')}${String(n.getDate()).padStart(2, '0')}`;
     return { task: `ZT-${ymd}-001`, alloc: `TPA-${ymd}-001` };
   }, [methodAsk]);
-  /* The tick is the consent, not the button. Picking a method only says HOW;
-     this says the operator has read what it locks. It resets whenever the
-     method changes, because it was given about that method. */
   const [methodOk, setMethodOk] = useState(false);
-  /* The raised Zebra task. An object, not a flag: the screen has to name the
-     task, and "which one" is the first thing an operator asks about it. */
   const [scanTask, setScanTask] = useState<{ id: string; at: string; apiId: number } | null>(null);
   const [methodBusy, setMethodBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const scanDoneRef = useRef(false);
-  /* The scan-task dialog is the next piece; the button that opens it is wired
-     here so the state it reads already exists. */
   const [scanOpen, setScanOpen] = useState(false);
-  /* Set when a Zebra task completes, so the finished screen can say HOW the
-     box was placed. A manual confirmation leaves it null. */
   const [placedVia, setPlacedVia] = useState<{ via: string; allocation: string } | null>(null);
   const [productViewId, setProductViewId] = useState<number | null>(null);
   const [modeAsk, setModeAsk] = useState<null | { loading: boolean; rack: number; norack: number; error: string | null }>(null);
@@ -1080,10 +953,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [assigned, setAssigned] = useState<{ boxId: number; spot: number; putawayId: number } | null>(null);
   const [assigning, setAssigning] = useState(false);
   const [locTick, setLocTick] = useState(0);
-  /* How many of the task's two QR legs have come back verified, so the logs
-     can say "1 / 2 scans" without reaching inside the scan dialog. */
   const [scanSteps, setScanSteps] = useState(0);
-  /* The trail, kept per box for the session, and the button that shows it. */
   const [logs, setLogs] = useState<Record<string, LogEntry[]>>({});
   const [logsOpen, setLogsOpen] = useState(false);
   const logBtnRef = useRef<HTMLButtonElement>(null);
@@ -1092,14 +962,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     setLogs(prev => {
       const list = prev[code] ?? [];
       const last = list[list.length - 1];
-      /* Re-picking the shelf you already picked is one entry, not a run of
-         identical ones - and it keeps StrictMode's double effects honest. */
       if (last && last.t === t && last.d === d) return prev;
       return { ...prev, [code]: [...list, { k, t, d, time: hhmmss() }] };
     });
   };
-  /* "WH-002 → ZN-136 · Ambient Bulk" for a bare zone, or the full
-     warehouse → zone → rack → shelf chain where the zone has racks. */
   const spotLabel = (s: ReturnType<typeof findSpot>) => {
     if (!s) return '';
     const wh = warehouseInfo?.code ?? '';
@@ -1109,11 +975,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   };
 
   const detail = detailIdx == null ? null : products[detailIdx] ?? null;
-  /* Everything here belongs to the BOX, so all of it resets when the box
-     does. scanTask and spot were missing: a Zebra task raised for one box
-     followed you to the next, which then showed that task's banner and a
-     footer offering "Pick Next Box" instead of letting you work — and the
-     chosen location carried over with it. */
   useEffect(() => {
     setShowProducts(false); setProdPage(1); setLcStep(0); setDetailIdx(null);
     setModeAsk(null); setModePick(null); setPutMode(null); setQrOpen(false);
@@ -1128,9 +989,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const pct = scope.length ? Math.round((placed / scope.length) * 100) : 0;
   const box = all.find(b => b.code === selected) ?? null;
 
-  /* The trail is written from the state the stage already keeps, so every
-     route into a step — the button, the dialog, the banner — is recorded the
-     same way, and nothing has to remember to call a logger. */
   useEffect(() => {
     if (!box) return;
     addLog(box.code, 'pick', 'Box picked', [box.code, box.scenario, 'Pick a Box'].filter(Boolean).join(' · '));
@@ -1168,9 +1026,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   }, [placedAt, selected]);
   const shownCodes = shown.map(b => b.code).join('|');
   const firstAwaiting = shown.find(b => !b.location)?.code ?? shown[0]?.code ?? null;
-  /* The next box still waiting on a location, looking after the current one
-     and wrapping round — so "Pick Next Box" never lands back on the box just
-     dealt with, and goes null only when the whole list is done. */
   const nextBoxCode = (() => {
     const i = shown.findIndex(b => b.code === selected);
     const order = i < 0 ? shown : [...shown.slice(i + 1), ...shown.slice(0, i)];
@@ -1181,12 +1036,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     setSelected(firstAwaiting);
   }, [firstAwaiting, selected, shownCodes]);
 
-  /* "Select Putaway Location" asks HOW before it asks WHERE.
-     The chooser existed but nothing ever opened it — setModeAsk was only
-     called to clear it — so the button jumped straight to the location
-     picker with no storage type chosen, and the picker then had nothing to
-     fetch. One call gives both counts: the locations endpoint returns
-     `modes: { rack, norack }` whichever mode you ask it for. */
   const askStorageMode = () => {
     if (!box) return;
     setModePick(null);
@@ -1195,14 +1044,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       return;
     }
     setModeAsk({ loading: true, rack: 0, norack: 0, error: null });
-    /* putawayModes, not putawayLocations: there is an endpoint for exactly
-       this question, and asking for the whole layout to read two counts off
-       it fetches every zone, rack and shelf to show "41 shelves available". */
     spiApi.putawayModes(spiId, box.id)
       .then(m => {
         setModeAsk({ loading: false, rack: m.rack, norack: m.norack, error: null });
-        /* With only one kind of storage configured there is nothing to
-           choose, so the choice is made and the dialog just confirms it. */
         if (m.rack > 0 && m.norack === 0) setModePick('rack');
         else if (m.norack > 0 && m.rack === 0) setModePick('norack');
       })
@@ -1398,12 +1242,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
   return (
     <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
-      {/* Full View is for the work, so the recap above it and the brief that
-          explains the stage both stand down — the design shows the tab row
-          and the two panels, nothing else. */}
       {!fs && <StageSummary draft={draft} upto={3} />}
-      {/* What this stage is for, and in which warehouse — the brief the
-          design puts between the recap and the work. */}
       {!fs && <PutawayStageBrief warehouse={warehouse} />}
 
       <div className="spi-segrow">
@@ -1423,13 +1262,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </button>
           ))}
         </div>
-        {/* No Zebra tasks button here. The design does not have one on this
-            rail, and the one that was here had no handler — it counted open
-            tasks and did nothing when pressed, which is worse than absent.
-            Zebra verification is still reached from the method dialog. */}
-        {/* On the rail, not in the right panel's head: it expands the whole
-            stage, so it belongs with the controls that scope the stage rather
-            than with the pane's own title. */}
         <button
           type="button"
           className="s4fs-btn s4fs-btn--rail"
@@ -1442,21 +1274,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         </button>
       </div>
 
-      {/* The Scenario 1 / 2 / 3 sub-tabs are gone. The design has one tab row,
-          and the second filtered a list the left panel already groups by
-          disposition — two filters over the same boxes, one above the other.
-          Zebra tasks moves up to the rail rather than going with them. */}
-
       <div className={`s4-panels${fs ? ' is-fs' : ''}`} ref={panelsRef}>
-        {/* Collapsing is a CLASS, not an inline flex-basis. The inline style
-            could not win: .s4-panel--left:not(.is-collapsed) sets a 300px
-            min-width, and since the class was never added that selector
-            always matched — so the "collapsed" panel stopped at 300px with
-            its header and the whole box list still in it, squashed. The
-            class also switches on the rail treatment the stylesheet already
-            carries: 38px wide, head turned on its side, body hidden, the
-            vertical "Pick a Box" label shown. The id picks up the finished
-            version of those rules. */}
         <div
           id="s4PanelLeft"
           className={`s4-panel s4-panel--left${leftOpen ? '' : ' is-collapsed'}`}
@@ -1464,9 +1282,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           <div className="s4-panel__head" onClick={() => setLeftOpen(o => !o)}>
             <div className="s4-panel__head-ico"><IcoBoxSm /></div>
             <div className="s4-panel__head-text">
-              {/* No sub-line: the design has the count instead, which is the
-                  thing that changes. "Choose the next box to put away" told
-                  you what the panel is while the groups below already do. */}
               <div className="s4-panel__head-title">Pick a Box</div>
             </div>
             <span className="s4-panel__head-count">
@@ -1476,10 +1291,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               type="button"
               className="s4-panel__toggle"
               title={leftOpen ? 'Collapse' : 'Expand'}
-              /* Folding one pane opens the other. Both closed leaves the stage
-                 as two rails against an empty field, with no way back except
-                 guessing which rail to click — and nothing on the screen to do
-                 the work this step exists for. */
               onClick={e => {
                 e.stopPropagation();
                 if (leftOpen) setRightOpen(true);
@@ -1492,9 +1303,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           </div>
 
           <div className="s4-panel__body s4-boxlist">
-            {/* Every disposition, every time. A category with nothing in it
-                still says so: "no damaged boxes" is an answer, and a list
-                whose groups come and go is one you have to re-read. */}
             {GROUPS.map(g => {
               const rows = shown.filter(x => x.type === g.key);
               return (
@@ -1537,23 +1345,11 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           id="s4PanelRight"
           className={`s4-panel s4-panel--right${rightOpen ? '' : ' is-collapsed'}`}
         >
-          {/* The head opens the pane only while it is CLOSED. Expanded, it
-              holds the Scan Logs button, and a click there must reach that
-              button rather than folding the pane under it. */}
           <div className="s4-panel__head" onClick={rightOpen ? undefined : () => setRightOpen(true)}>
             <div className="s4-panel__head-ico"><IcoGrid /></div>
             <div className="s4-panel__head-text">
-              {/* "Temporary Putaway Allocation" — the stage's own name, as the
-                  step card above says it. "& Rack Allocation" described a
-                  mechanism that only applies when the zone HAS racks, and the
-                  sub-line repeated what the strip underneath already shows. */}
               <div className="s4-panel__head-title">Temporary Putaway Allocation</div>
             </div>
-            {/* Never disabled. It used to open the Zebra scan task, so it had
-                to be switched off until one existed — but Scan Logs is the
-                box's history, which every box has from the moment it is
-                picked, and which answers "what happened to this box?" even
-                when the answer is "nothing yet". */}
             <button
               type="button"
               ref={logBtnRef}
@@ -1582,7 +1378,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               type="button"
               className="s4-panel__toggle"
               title={rightOpen ? 'Collapse' : 'Expand'}
-              /* Same rule from this side — see the box list's toggle. */
               onClick={e => {
                 e.stopPropagation();
                 if (rightOpen) setLeftOpen(true);
@@ -1591,17 +1386,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             >
               <IcoChevR />
             </button>
-            {/* Read down the rail once the pane is folded, the way the box
-                list's does. */}
             <div className="s4-panel__collapsed-label">Putaway Allocation</div>
           </div>
 
-          {/* The journey, as three cards on a teal band.
-              It was four numbered circles joined by rules, which gave Putaway
-              Summary — a receipt you read after the work, not a thing you do —
-              equal billing with the three real steps. The design shows the
-              three, each naming itself and carrying its own state; once the
-              box is placed all three read Completed, which is the summary. */}
           <div className="s4bj">
             {STEPPER.map((s, i) => {
               const state = i < lcStep ? 'done' : i === lcStep ? 'active' : 'idle';
@@ -1615,9 +1402,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <div className={`s4bj-step is-${state}`}>
                     <div className="s4bj-ico">
                       {s.ico}
-                      {/* The badge is a bare 1/2/3, not the padded "02" — it
-                          is an 18px circle, and two digits crowd it. The
-                          zero-padded form belongs in the "Step 02" label. */}
                       <span className="s4bj-num">{state === 'done' ? <IcoTick /> : i + 1}</span>
                     </div>
                     <div className="s4bj-tx">
@@ -1639,20 +1423,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <div className="s4pk-none">Pick a box on the left to start its putaway.</div>
             ) : (
               <div className="s4-c2-pane is-visible">
-                {/* No "Step 01 · Review Box · Active" bar here.
-                    The strip directly above already carries the number, the
-                    name and the state — this said all three again, a few
-                    pixels lower, in different words. The design has one
-                    statement of where you are, and it is the strip. */}
                 <div className="s4h">
-                  {/* Steps 02 and 03 each open with their own teal band that
-                      already names the box and carries its state - the "where
-                      should this box go?" bar and the route strip. This one
-                      above them was the same band twice with the same B-003
-                      in it, so it only shows where nothing repeats it. */}
-                  {/* …and not on step 0 either: the Review pane opens with its
-                      own Box Details band, so this one repeated the id, the
-                      scenario and the status directly above it. */}
                   {lcStep === 3 && (
                   <div className="s4h-hero">
                     <div className="s4h-hero__id">
@@ -1678,7 +1449,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     <PutawaySelectLocation
                       box={{
                         ...box,
-                        /* Both from the hero band this bar replaced. */
                         scenario: box.scenario,
                         status: box.status === 'placed' ? 'Placed'
                           : box.status === 'awaiting_scan' ? 'Awaiting Zebra scan'
@@ -1693,8 +1463,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       box={{
                         code: box.code, scenario: box.scenario, skus: box.skus, qty: box.qty,
                         uom: box.uom, dims: box.dims, netKg: box.netKg, grossKg: box.grossKg,
-                        /* The same words Step 01's card uses, so a box reads
-                           the same on both steps. */
                         scenarioNo: SCENARIO_NO[box.scenarioKey] ?? 'Scenario 01',
                         modeLabel: modeLabelOf(box),
                         sectionKey: box.type === 'damaged' ? 'dmg' : box.type === 'mismatch' ? 'mis' : box.type,
@@ -1708,9 +1476,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       spot={findSpot(loc.data, spot)}
                       warehouse={warehouse}
                       assigned={placedAt !== null}
-                      /* The code, not the row id: a scanner reading this should
-                         get PUT-B-001 — the thing printed beside it and on the
-                         sticker — not an internal number. */
                       qr={<BoxQr text={box.code} size={92} bare />}
                       locQr={<BoxQr text={`${warehouse ?? ''}/${spot ?? ''}`} size={80} bare />}
                       onSticker={() => setQrOpen(true)}
@@ -1735,12 +1500,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       )}
                     </div>
                   ) : (
-                    /* Step 01 — Review Box Details.
-                       Was a "Box Identification" grid led by a large sticker
-                       preview and a QR: the right thing at the printer, but
-                       not what you check with the carton already in hand. The
-                       design reviews the box itself — what it is, what it
-                       measures, what is inside, what was noted. */
                     <PutawayReviewBox
                       boxId={box.code}
                       sectionKey={box.type === 'damaged' ? 'dmg' : box.type === 'mismatch' ? 'mis' : box.type}
@@ -1764,9 +1523,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   )}
                 </div>
 
-                {/* Not on step 01. The Review pane ends with its own
-                    "Select Putaway Location", so this footer put a second
-                    button for the same move directly beneath it. */}
                 {lcStep > 0 && (
                 <div className="s4-pane-footer">
                   <button
@@ -1777,11 +1533,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   >
                     <IcoChevL /> Back
                   </button>
-                  {/* Once the box is placed, or out for a Zebra scan, there is
-                      nothing further to do to IT — the next move is the next
-                      box, which is what the footer offers. Only on the confirm
-                      step: on the earlier steps there is still work to do here,
-                      and this was replacing the button that does it. */}
                   {lcStep === 2 && (placedAt !== null || scanTask) ? (
                     <button
                       type="button"
@@ -1797,8 +1548,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     type="button"
                     className="s4-btn-next"
                     disabled={lcStep >= LIFECYCLE.length - 1 || (lcStep === 1 && (spot === null || assigning))}
-                    /* The hint has to name what you are actually picking: a
-                       direct placement has no tree and no shelf in it. */
                     title={lcStep === 1 && spot === null
                       ? (putMode === 'norack'
                           ? 'Choose a zone first — use the recommended one, or pick one from the list'
@@ -1839,26 +1588,15 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         </div>
       </div>
 
-      {/* Every dialog on this step, moved as a group into the full-screened
-          element when full screen is on. One wrapper rather than six, so a
-          dialog added later cannot be forgotten. */}
       <FsLayer host={fs ? panelsRef.current : null}>
       {scanOpen && scanTask && box && findSpot(loc.data, spot) && (() => {
         const sp = findSpot(loc.data, spot)!;
-        /* What this box takes off the shelf — or off the zone floor, when the
-           placement is direct — which is what the task holds against it until
-           the scans come back. */
         const held = sp.kind === 'zone' ? sp.zone : sp.shelf;
         const reserved = Math.max(0, Math.round((held.used_pct_after - held.used_pct) * 10) / 10);
         return (
           <PutawayScanTask
             taskId={scanTask.id}
-            /* The reference the allocation is locked under once both scans
-               pass — the same one the manual route issues, so a box reads the
-               same however it was confirmed. */
             allocRef={methodRef.alloc}
-            /* The same confirm the awaiting card raises — one question about
-               dropping a task, asked the same way from either screen. */
             onCancelTask={() => setCancelAsk(true)}
             spiCode={spiCode}
             createdAt={new Date(scanTask.at).toLocaleString('en-GB',
@@ -1869,8 +1607,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               kind: sp.kind,
               warehouse: warehouseInfo?.code || warehouse || null,
               zone: sp.zone.code,
-              /* A direct placement has no rack and no shelf to scan: the zone
-                 itself is the second QR. */
               rack: sp.kind === 'zone' ? null : sp.rack.code,
               shelf: sp.kind === 'zone'
                 ? sp.zone.code
@@ -1983,9 +1719,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         <InspectionProductView productId={productViewId} onClose={() => setProductViewId(null)} />
       )}
 
-      {/* The sticker as it will print, not a bare QR.
-          The old dialog showed the code and the box id — enough to scan,
-          not enough to check you are labelling the right carton. */}
       {qrOpen && box && (
         <PutawayBoxSticker
           boxId={box.code}
@@ -2005,10 +1738,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         />
       )}
 
-      {/* How the placement is confirmed. Same chrome as the storage-type
-          chooser above - two options and a footer - because it is the same
-          question shape, and a second dialog pattern for it would only be a
-          second thing to keep in step. */}
       {methodAsk && box && findSpot(loc.data, spot) && (() => {
       const spotNow = findSpot(loc.data, spot)!;
       return (
@@ -2037,9 +1766,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       : 'Option 02 · Manual Confirmation — confirm the box is already placed at the selected location.'}
                 </div>
               </div>
-              {/* The facts the choice is about, as chips — the same header the
-                  storage-zone chooser uses. The detail screen adds the
-                  reference it is about to issue. */}
               <div className="s4wz-ctx">
                 {methodStage === 'detail' && (
                   <span className="s4wz-ctx__i">
@@ -2066,9 +1792,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </div>
 
             <div className="s4qm__bd">
-              {/* The cards are the QUESTION. Once it is answered the detail
-                  screen replaces them outright — it does not sit underneath
-                  them, which is what dev was doing. */}
               {methodStage === 'select' && <>
               <div className="s4wz-lead">Select one putaway method</div>
               <div className="s4wz-opts">
@@ -2105,17 +1828,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               </div>
               </>}
 
-              {/* What the chosen method actually commits to — the address it
-                  locks and the fact that it cannot be undone. */}
               {methodStage === 'detail' && (() => {
-                /* A floor zone IS the destination — it has no rack and no
-                   shelf under it — so the address stops at the zone and says
-                   the placement is direct. */
                 const shelfCode = spotNow.kind === 'zone'
                   ? spotNow.zone.code
                   : spotNow.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1');
-                /* The warehouse's CODE, not its name — the address is read off
-                   labels on the floor, and "kuhi" is not written on anything. */
                 const whCode = warehouseInfo?.code || warehouse || '—';
                 const addr: Array<[string, string, ReactNode]> = spotNow.kind === 'zone'
                   ? [
@@ -2129,9 +1845,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       ['Rack', spotNow.rack.code, <IcoList key="r" />],
                       ['Shelf', shelfCode, <IcoShelfSm key="s" />],
                     ];
-                /* The sentence names the PLACE, so it stops at the zone for a
-                   direct placement — "Direct zone" is how it gets there, not
-                   somewhere the box can be. */
                 const chainParts = spotNow.kind === 'zone'
                   ? [whCode, spotNow.zone.code]
                   : [whCode, spotNow.zone.code, spotNow.rack.code, shelfCode];
@@ -2143,10 +1856,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     </Fragment>
                   ))}
                 </>;
-                /* What the submit actually sets in motion, in order. The
-                   dialog used to assert that the placement was final without
-                   ever saying what happens between pressing the button and
-                   the box being locked. */
                 const steps: Array<[string, string]> = methodPick === 'zebra'
                   ? [
                       ['Task created', 'Assigned to the warehouse Zebra queue'],
@@ -2164,7 +1873,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <>
                   <div className="s4pm-grid">
                   <div className="s4pm-left">
-                    {/* From this box, to that shelf. */}
                     <div className="s4pm-route">
                       <div className="s4pm-route__card s4pm-route__card--box">
                         <span className="s4pm-route__ic s4pm-route__ic--box"><IcoBoxSm size={17} /></span>
@@ -2179,9 +1887,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         <div>
                           <span className="s4pm-route__k">{spotNow.kind === 'zone' ? 'Final zone' : 'Final shelf'}</span>
                           <b className="s4pm-route__v">{shelfCode}</b>
-                          {/* Name, level and rack — the three things that tell
-                              one SH-01 from another. The level was being
-                              dropped whenever the shelf had a name. */}
                           <span className="s4pm-route__s">
                             {spotNow.kind === 'zone'
                               ? `${spotNow.zone.name || 'Unnamed zone'} · direct placement`
@@ -2222,10 +1927,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   </div>
                   </div>
 
-                    {/* The one thing that cannot be taken back, said before the
-                        tick rather than after it. */}
-                    {/* "shelf" was hard-coded, so a direct placement into a
-                        zone was warned about as though it were a shelf. */}
                     <div className="s4pm-warn">
                       <span className="s4pm-warn__ic" aria-hidden>!</span>
                       <p>
@@ -2242,11 +1943,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       </p>
                     </div>
 
-                    {/* The sentence the operator is agreeing to, in the method's
-                        own words. It is only ever shown once a method is
-                        chosen, so there is no "pick one first" wording left. */}
-                    {/* Manual carries the green the whole way through — the
-                        consent box included, not only once it is ticked. */}
                     <label className={`s4pm-ok s4pm-ok--${methodPick}${methodOk ? ' is-on' : ''}`}>
                       <input type="checkbox" checked={methodOk} onChange={e => setMethodOk(e.target.checked)} />
                       <span>
@@ -2284,14 +1980,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <IcoChevR />
                 </button>
               ) : (<>
-              {/* Back steps, Cancel abandons — the detail screen offers both,
-                  because by now there are two different ways out. */}
               <button type="button" className="s4-btn-back s4pm-cancel" onClick={() => setMethodAsk(false)}>Cancel</button>
               <button
                 type="button"
                 className={`s4-btn-next s4pm-go${methodPick ? ` s4pm-go--${methodPick}` : ''}`}
-                /* Gated on the tick, not on the pick: the pick says how, the
-                   tick says the operator has read what it locks. */
                 disabled={!methodPick || !methodOk || methodBusy}
                 aria-busy={methodBusy}
                 onClick={async () => {
@@ -2310,14 +2002,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       );
       })()}
 
-      {/* Cancel Zebra Scan Task.
-          Three outcomes, not two: keep it, drop it, or drop it and finish the
-          putaway by hand. The third is the one most people actually want —
-          the handheld is missing, the box is already on the shelf — so it is
-          offered as a card rather than hidden behind a second decision. */}
       {cancelAsk && box && scanTask && (() => {
-      /* Resolved here, the way the method dialog does it — the allocation is
-         what the warning is about, and it has to survive the cancel. */
       const spotNow = findSpot(loc.data, spot);
       const locCode = !spotNow ? null
         : spotNow.kind === 'zone' ? spotNow.zone.code
@@ -2349,9 +2034,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             </div>
 
             <div className="s4qm__bd">
-              {/* What cancelling actually does — and, just as important, what
-                  it does NOT do. The allocation survives; only the method
-                  goes. Saying so is what stops this reading as "undo". */}
               <div className="s4ct-warn">
                 <span className="s4ct-warn__i"><IcoScan /></span>
                 <div>
@@ -2417,8 +2099,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   setScanTask(null);
                   setScanSteps(0);
                   setCancelAsk(false);
-                  /* Straight to the manual confirmation screen — the point of
-                     this route is not to choose again. */
                   setMethodPick('manual');
                   setMethodOk(false);
                   setMethodStage('detail');
@@ -2445,14 +2125,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <div className="s4qm__hico"><IcoPin /></div>
               <div className="s4qm__htx">
                 <div className="s4qm__t">Where do you want to store this box?</div>
-                {/* The sub-line says what the choice IS. It printed the box
-                    code, which the chip on the right now carries — and a bare
-                    id under the question answered nothing. */}
                 <div className="s4qm__s">Choose the storage zone type for this box.</div>
               </div>
-              {/* Which box, and which warehouse it is going into — the two
-                  facts the decision depends on, so neither has to be
-                  remembered from the screen behind the dialog. */}
               <div className="s4wz-ctx">
                 <span className="s4wz-ctx__i"><IcoPin /><span><em>Box ID</em><b>{putId(box.code)}</b></span></span>
                 {warehouse && (
@@ -2483,28 +2157,12 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       type="button"
                       key={k}
                       className={`s4wz-opt s4wz-opt--${k}${modePick === k ? ' is-on' : ''}${modeAsk.loading ? ' is-loading' : ''}`}
-                      /* Not disabled on a zero count.
-                         A warehouse with no open zones today may have one by
-                         the time the box is carried over, and the count is
-                         read once when the dialog opens. Blocking the choice
-                         on a number that old leaves the only route forward
-                         greyed out with no way to say otherwise — the chip
-                         already says "No zones available", which is the
-                         warning without being the wall. */
                       aria-disabled={modeAsk.loading}
                       aria-pressed={modePick === k}
                       onClick={() => { if (!modeAsk.loading) setModePick(k); }}
                     >
-                      {/* Icon beside the text, not above it, and the radio at
-                          the far edge — the design reads left to right:
-                          what it is, what it means, is it chosen. */}
                       <span className="s4wz-opt__ic">{k === 'rack' ? <IcoList /> : <IcoHome />}</span>
                       <span className="s4wz-opt__tx">
-                        {/* No "Recommended" pill. Neither kind of storage is
-                            the right answer in general — it depends on the
-                            box, and the two cards already say what each one
-                            is for. The counts underneath are the fact that
-                            decides it. */}
                         <span className="s4wz-opt__ttl">
                           <span className="s4wz-opt__t">{title}</span>
                         </span>
@@ -2519,8 +2177,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                               {n === 0 ? `No ${unit} available` : `${n} ${unit} available`}
                             </span>
                           )}
-                          {/* What this kind of storage is LIKE — the count says
-                              whether you can use it, this says why you would. */}
                           <span className="s4wz-opt__d">{trait}</span>
                         </span>
                       </span>
