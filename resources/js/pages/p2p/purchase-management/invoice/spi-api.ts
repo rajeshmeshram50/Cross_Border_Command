@@ -177,7 +177,27 @@ export type SpiBoxBody = {
   temp_min_c: number | null;
   temp_max_c: number | null;
   items: SpiBoxItemBody[];
+  photos?: File[];
 };
+
+export type SpiBoxAttachment = { id: number; box_id: number; file_path: string; file_name: string | null; created_at: string | null };
+
+function boxForm(body: SpiBoxBody): FormData {
+  const fd = new FormData();
+  const put = (key: string, v: unknown) => {
+    if (v === null || v === undefined) { fd.append(key, ''); return; }
+    if (typeof v === 'boolean') { fd.append(key, v ? '1' : '0'); return; }
+    if (Array.isArray(v)) { v.forEach((x, i) => put(`${key}[${i}]`, x)); return; }
+    if (typeof v === 'object') { Object.entries(v as Record<string, unknown>).forEach(([k, x]) => put(`${key}[${k}]`, x)); return; }
+    fd.append(key, String(v));
+  };
+  const { photos = [], ...rest } = body;
+  Object.entries(rest).forEach(([k, v]) => put(k, v));
+  photos.forEach(f => fd.append('photos[]', f));
+  return fd;
+}
+
+const MULTIPART = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 export type SpiBoxItem = {
   id: number;
@@ -212,6 +232,7 @@ export type SpiBox = {
   net_weight_kg?: string | number | null;
   gross_weight_kg?: string | number | null;
   items: SpiBoxItem[];
+  attachments?: SpiBoxAttachment[];
 };
 
 export type SpiPackingTotals = {
@@ -229,7 +250,6 @@ export type PutawayNeed = {
 
 export type PutawayShelf = {
   id: number; name: string | null; code: string; level_no: number;
-  /** "Standard Shelf", "Cold Shelf", "Heavy Duty Shelf"… — the kind, not the name. */
   shelf_type: string | null;
   max_weight_kg: number; free_weight_kg: number; boxes: number;
   used_pct: number; used_pct_after: number;
@@ -379,11 +399,15 @@ export const spiApi = {
       (b) => ((b as { data?: { next_codes?: string[] } } | null)?.data?.next_codes ?? [])),
 
   createBox: (spiId: number, body: SpiBoxBody) =>
-    call('SPI box save', () => api.post(`/p2p/spi/${spiId}/boxes`, body),
+    call('SPI box save', () => (body.photos?.length
+      ? api.post(`/p2p/spi/${spiId}/boxes`, boxForm(body), MULTIPART)
+      : api.post(`/p2p/spi/${spiId}/boxes`, { ...body, photos: undefined })),
       (b) => (b as { data?: { box: SpiBox; totals: SpiPackingTotals } } | null)?.data?.box as SpiBox),
 
   updateBox: (spiId: number, boxId: number, body: SpiBoxBody) =>
-    call('SPI box update', () => api.put(`/p2p/spi/${spiId}/boxes/${boxId}`, body),
+    call('SPI box update', () => (body.photos?.length
+      ? api.post(`/p2p/spi/${spiId}/boxes/${boxId}`, boxForm(body), MULTIPART)
+      : api.put(`/p2p/spi/${spiId}/boxes/${boxId}`, { ...body, photos: undefined })),
       (b) => (b as { data?: { box: SpiBox } } | null)?.data?.box as SpiBox),
 
   deleteBox: (spiId: number, boxId: number) =>
@@ -413,8 +437,6 @@ export const spiApi = {
           apiId: w.id,
           code: w.wh_code ?? undefined,
           name: w.wh_name ?? `Warehouse ${w.id}`,
-          /* City and state. The code used to be folded in here because the
-             row had nowhere else to put it; it has its own chip now. */
           location: w.location || '—',
           address: w.address ?? undefined,
           pincode: w.pincode ?? undefined,
@@ -463,6 +485,9 @@ export const spiApi = {
   putawayCancelTask: (taskId: number, reason?: string) =>
     call('Cancel Zebra task', () => api.post(`/putaway/tasks/${taskId}/cancel`, { reason: reason || undefined }),
       () => true),
+
+  deleteBoxPhoto: (spiId: number, boxId: number, attachmentId: number) =>
+    call('Box photo', () => api.delete(`/p2p/spi/${spiId}/boxes/${boxId}/attachments/${attachmentId}`), () => true),
 
   zohoSync: (spiId: number) =>
     call('Zoho sync', () => api.post(`/p2p/spi/${spiId}/zoho-sync`), () => true),

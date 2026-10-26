@@ -12,6 +12,8 @@ const AddProductFlagModal = lazy(() => import('../../../../inventory-management/
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
 
 type Shot = { file: File; url: string };
+export type SavedPhoto = { id: number; name: string; path: string };
+
 import TemperatureModal, { formatRange, type TempRange } from './TemperatureModal';
 import SelectedProducts, {
   EMPTY_IDENTITY, type BoxContent, type ProductIdentity,
@@ -19,6 +21,22 @@ import SelectedProducts, {
 import BoxStickerModal from './BoxStickerModal';
 import type { ProductLine } from '../invoice-products';
 import { putId } from '../spi-api';
+import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
+
+function SavedShot({ photo, onRemove }: { photo: SavedPhoto; onRemove?: () => void }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="vti-dw-shot">
+      {failed ? <span className="vti-dw-shot__ph">Not found</span>
+        : <img src={resolveFileUrl(photo.path)} alt={photo.name} onError={() => setFailed(true)} />}
+      {onRemove && (
+        <button type="button" className="vti-dw-shot__x" onClick={onRemove} aria-label={`Remove ${photo.name}`}>
+          <IcoX size={10} stroke={3} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 const REMARKS = [
   { id: 'correct', cls: 'vti-rmk-correct', title: 'Correct Product', sub: 'As expected' },
@@ -67,14 +85,12 @@ export interface BoxSaveData {
   flagIds: string[];
   flagNames: string[];
   stackable: boolean;
-  /* The cold-chain range as numbers, null when the box is not cold chain or
-     no range has been set. `note` still carries the human sentence for the
-     remark line; these two are what anything can actually compare. */
   tempMin: number | null;
   tempMax: number | null;
   note: string | null;
   boxIdentity: ProductIdentity;
   identities: Record<string, ProductIdentity>;
+  photos: File[];
 }
 
 export interface BoxInitial {
@@ -86,6 +102,7 @@ export interface BoxInitial {
   boxIdentity: ProductIdentity;
   identities: Record<string, ProductIdentity>;
   temp?: TempRange;
+  photos?: SavedPhoto[];
 }
 
 const VOLUMETRIC_DIVISOR = 5000;
@@ -93,7 +110,7 @@ const VOLUMETRIC_DIVISOR = 5000;
 const dimStr = (v: number | null | undefined) => (v == null ? '' : String(v));
 
 export default function BoxDrawer({
-  boxId, line, quantity, initial,
+  boxId, line, quantity, initial, onDeletePhoto,
   scenario = '1 Product → 1 Box',
   modeKey = 'Mode',
   modeLabel = 'Single Box',
@@ -125,21 +142,17 @@ export default function BoxDrawer({
   onContentQtyChange?: (code: string, qty: number) => void;
   onClearContents?: () => void;
   onSave?: (data: BoxSaveData) => void;
+  onDeletePhoto?: (id: number) => Promise<boolean>;
   onClose?: () => void;
   saving?: boolean;
-  /** Ceiling for the quantity stepper. Defaults to the line's open units. */
   quantityMax?: number;
   saved?: boolean;
-  /** Shown under the header once `saved`. The wording is the caller's because
-   *  it differs per scenario — see the note at the render site. */
   savedBanner?: { note: string; actionLabel: string; onAction: () => void };
   customFlags?: CustomFlag[];
   onFlagCreated?: () => void;
   onQuantityChange?: (qty: number) => void;
 }) {
   const [unit, setUnit] = useState<'cm' | 'm'>('cm');
-  /* Weight is kilograms. The toggle that let it be grams is gone (see the
-     note in the toolbar), so the conversions below collapse to 1. */
   const wUnit = 'kg' as const;
   const [dims, setDims] = useState<Record<string, string>>((): Record<string, string> => (initial ? {
     length: dimStr(initial.dims.length_cm),
@@ -156,27 +169,10 @@ export default function BoxDrawer({
   const [flags, setFlags] = useState<string[]>(initial?.flagIds ?? []);
   const [stackable, setStackable] = useState(initial?.stackable ?? true);
   const [flagsOpen, setFlagsOpen] = useState(false);
-  /* One. The row already carries three built-in flags and the Stackable
-     toggle, and custom names run long — three of them was still enough to
-     force the strip wider than the drawer. So the second custom flag is
-     already behind "+1 more". */
   const CUSTOM_FLAGS_SHOWN = 1;
-  /* Exactly four chips in the row: the three built-ins above plus one custom.
-     Everything else is behind the counter, whether or not it is switched on.
-
-     Selected flags used to be exempt from the cap — "a flag you cannot see is
-     one you cannot clear" — but with eight of them on, the exemption WAS the
-     overflow: every flag stayed in the row and the counter never appeared.
-     The panel can clear them just as well, so the cap holds and the counter
-     says how many of the hidden ones are on. */
   const visibleCustomFlags = customFlags.slice(0, CUSTOM_FLAGS_SHOWN);
   const hiddenCustomFlags = customFlags.slice(CUSTOM_FLAGS_SHOWN);
   const hiddenOnCount = hiddenCustomFlags.filter(f => flags.includes(f.id)).length;
-  /* The rest open in a popover rather than unfolding into the row. Expanding
-     in place pushed this strip wider again, which is the thing the counter is
-     here to stop; a portalled panel is laid out against the viewport and
-     cannot disturb the drawer at all. Same interaction as the CLM masters'
-     "+N" authority chips. */
   const [flagPop, setFlagPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
   useDismissPopover(!!flagPop, () => setFlagPop(null));
   const [temp, setTemp] = useState<TempRange>(initial?.temp ?? { min: '', max: '' });
@@ -192,6 +188,13 @@ export default function BoxDrawer({
   );
 
   const [photos, setPhotos] = useState<Shot[]>([]);
+  const [savedPhotos, setSavedPhotos] = useState<SavedPhoto[]>(initial?.photos ?? []);
+  const savedKey = (initial?.photos ?? []).map(p => p.id).join(',');
+  useEffect(() => { setSavedPhotos(initial?.photos ?? []); }, [savedKey]);
+  const removeSaved = async (p: SavedPhoto) => {
+    if (!onDeletePhoto) return;
+    if (await onDeletePhoto(p.id)) setSavedPhotos(list => list.filter(x => x.id !== p.id));
+  };
   const [camOpen, setCamOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -215,10 +218,6 @@ export default function BoxDrawer({
   const contentRows: BoxContent[] = contents ?? [{ line, qty: quantity }];
   const mixedCarton = !!contents;
 
-  /* The ceiling the stepper counts up to. Defaults to what is left of the
-     line, which is right for a single box; a split box passes its own share
-     plus whatever is still unallocated, so raising one box is bounded by the
-     units actually available rather than by the whole line. */
   const qtyMax = Math.max(quantity, quantityMax ?? line.spiQty);
 
   const volumetric = (() => {
@@ -255,11 +254,10 @@ export default function BoxDrawer({
         .map(id => FLAGS.find(f => f.id === id)?.label ?? customFlags.find(c => c.id === id)?.name)
         .filter((n): n is string => !!n),
       stackable,
-      // Only a cold-chain box carries a range; anything else sends nulls so a
-      // flag turned off does not leave its temperatures behind.
       tempMin: isCold ? numOrNull(temp.min) : null,
       tempMax: isCold ? numOrNull(temp.max) : null,
       note: note || null,
+      photos: photos.map(s => s.file),
       boxIdentity: {
         serial: boxIdentity.serial ?? '', lot: boxIdentity.lot ?? '', batch: boxIdentity.batch ?? '',
         cat: boxIdentity.cat ?? '', expiry: boxIdentity.expiry ?? '', mfg: boxIdentity.mfg ?? '',
@@ -294,16 +292,8 @@ export default function BoxDrawer({
               <span className="vti-dw-strip-val">{line.spiName}</span>
             </StripItem>
             <div className="vti-dw-strip-sep" />
-            {/* "Box Quantity" when you can set it, "Total Qty" when you
-                cannot — a mixed carton's figure is the sum of its products
-                and is changed on their rows, not here. */}
             <StripItem label={onQuantityChange ? 'Box Quantity' : 'Total Qty'}>
               {onQuantityChange ? (
-                /* Stepper, not a number input with carets. The carets were
-                   8px tall and stacked, which is a hard target on a warehouse
-                   screen; round −/+ either side of the value are the obvious
-                   controls. "/ max" sits with them because the ceiling is
-                   part of the reading: 14 means little without "of 20". */
                 <span className="vti-dw-qty">
                   <button
                     type="button" className="vti-dw-qty-btn" aria-label="One unit fewer"
@@ -314,8 +304,6 @@ export default function BoxDrawer({
                     type="text" inputMode="numeric" className="vti-dw-qty-val"
                     value={quantity}
                     aria-label="Units in this box"
-                    /* Digits only: a number input still accepts "-" and "e",
-                       which reached state and had to be cleaned up later. */
                     onChange={e => {
                       const n = Number(e.target.value.replace(/[^\d]/g, '')) || 0;
                       onQuantityChange(Math.min(Math.max(0, n), qtyMax));
@@ -345,11 +333,6 @@ export default function BoxDrawer({
                 </button>
               ))}
             </div>
-            {/* No Weight KG/G toggle: the design has only Dimensions here,
-                and each weight field already carries its unit as a chip on
-                its own label (WEIGHT KG, VOL. WEIGHT KG). A second toggle
-                beside Dimensions read as if it governed them both. Weight is
-                kilograms throughout. */}
             <Tooltip label="Upload a photo of this box">
               <button type="button" className="vti-dw-icon-btn" onClick={() => fileRef.current?.click()}>
                 <IcoUpload size={13} stroke={2.3} /> Upload
@@ -364,32 +347,16 @@ export default function BoxDrawer({
               disabled={saving || (!initial && saved) || !onSave}
               onClick={() => onSave?.(collect())}>
               <IcoSave size={12} stroke={2.5} />
-              {/* "Save" when editing too — the design labels it that way, and
-                  the dialog's title strip already says which box this is, so
-                  "Update Box" was naming the object twice. */}
               {saving ? 'Saving…' : saved && !initial ? 'Saved' : 'Save'}
             </button>
-            {/* Inline, "× Close" is one more button in a row of buttons and
-                reads as part of the form. In the modal it is the dialog's
-                dismiss, so it takes the icon square at the far end, past the
-                sticker — last in the row because it is the way out, not an
-                action on the box. */}
             {onClose && variant !== 'modal' && (
               <button type="button" className="vti-dw-close-btn" onClick={onClose} disabled={saving}>
                 × Close
               </button>
             )}
-            {/* Inside the toolbar, not beside it.
-                As a direct child of the strip these two were separate flex
-                items, so once the strip could wrap they broke away on their
-                own — the sticker ended up alone on a third line under the
-                buttons it belongs with. In here the whole toolbar wraps as
-                one group. */}
           <Tooltip label={saved ? `Print the sticker for ${putId(boxId)}` : 'Save the box first — the sticker carries its box ID'}>
             <button type="button" className="vti-dw-sticker-btn" disabled={!saved}
               onClick={() => { if (saved) setStickerOpen(true); }}>
-              {/* Once saved the button names the box it will print, so the id
-                  on screen and the id on the label are visibly the same one. */}
               <IcoBox size={13} stroke={2.3} /> {saved ? `${putId(boxId)} Sticker` : 'Box Sticker'}
             </button>
           </Tooltip>
@@ -403,13 +370,6 @@ export default function BoxDrawer({
           </div>
         </div>
 
-        {/* Saved confirmation.
-            A box used to vanish the moment it saved — the row collapsed and
-            the only proof was a toast. The design keeps the box open and says
-            what happened to it, where it went and how much it holds, and waits
-            for an explicit dismissal. `note` and the action come from the
-            caller because they differ per scenario: a single box is finished
-            ("Done"), one box of a split set is not ("Continue Packing"). */}
         {saved && savedBanner && (
           <div className="vti-dw-saved">
             <span className="vti-dw-saved-ico" aria-hidden>
@@ -428,12 +388,16 @@ export default function BoxDrawer({
         )}
 
         <div className="vti-dw-body">
-          {photos.length > 0 && (
+          {(photos.length > 0 || savedPhotos.length > 0) && (
             <div className="vti-dw-shots">
               <div className="vti-dw-shots-lbl">
-                Box Photos <span>{photos.length}</span>
+                Box Photos <span>{photos.length + savedPhotos.length}</span>
               </div>
               <div className="vti-dw-shots-strip">
+                {savedPhotos.map(p => (
+                  <SavedShot key={`saved-${p.id}`} photo={p}
+                    onRemove={onDeletePhoto ? () => void removeSaved(p) : undefined} />
+                ))}
                 {photos.map(s => (
                   <div className="vti-dw-shot" key={s.url}>
                     <img src={s.url} alt={s.file.name} />
@@ -561,10 +525,6 @@ export default function BoxDrawer({
                         onClick={() => toggleFlag(f.id)}
                       >
                         <IcoTag size={11} stroke={2.4} />
-                        {/* In its own element so it can be truncated. A bare
-                            text node in a flex container is anonymous and
-                            cannot take text-overflow, so one long flag name
-                            would still widen the strip past the drawer. */}
                         <span className="vti-flag-name" title={f.name}>{f.name}</span>
                       </button>
                     );
@@ -575,17 +535,12 @@ export default function BoxDrawer({
                       onClick={e => {
                         if (flagPop) { setFlagPop(null); return; }
                         const b = e.currentTarget.getBoundingClientRect();
-                        /* Flip above the chip when the panel would not fit
-                           below it — this row sits low in a drawer, so below
-                           is usually the side without room. */
                         const estH = Math.min(300, 34 + hiddenCustomFlags.length * 38);
                         const spaceBelow = window.innerHeight - b.bottom;
                         const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
                         setFlagPop({ x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
                       }}>
                       +{hiddenCustomFlags.length} more
-                      {/* How many of the hidden ones are switched on, so the
-                          row never hides a selection without saying so. */}
                       {hiddenOnCount > 0 && (
                         <span className="vti-flag-more__on">{hiddenOnCount}</span>
                       )}
@@ -601,14 +556,6 @@ export default function BoxDrawer({
                     <span className="vti-stack-txt">Stackable</span>
                   </div>
 
-                  {/* Portalled to the body, so the panel is positioned against
-                      the viewport and cannot widen the drawer. The flags stay
-                      live in here — they are toggles, not labels, and one you
-                      can see but not switch would be worse than hiding it. */}
-                  {/* Nothing hidden means nothing to show. The row re-flows
-                      as the panel resizes, so flags that were behind "+2 more"
-                      can come back onto the row while the panel is open —
-                      leaving it rendering its title over an empty box. */}
                   {flagPop && hiddenCustomFlags.length > 0 && createPortal(
                     <>
                       <div onClick={() => setFlagPop(null)}
@@ -617,17 +564,11 @@ export default function BoxDrawer({
                         className="vti-flag-pop"
                         role="dialog"
                         aria-label="More product flags"
-                        /* Clamped to the viewport with a margin at BOTH ends.
-                           It was clamped only on the right and only against
-                           the panel's own width, so it could still sit flush
-                           to the screen edge — and nothing held the bottom,
-                           so a long list ran off the screen. */
                         style={{
                           position: 'fixed',
                           left: Math.max(12, Math.min(flagPop.x, window.innerWidth - 320 - 12)),
                           top: flagPop.flipUp ? undefined : flagPop.y,
                           bottom: flagPop.flipUp ? Math.max(12, window.innerHeight - flagPop.y) : undefined,
-                          /* Never taller than the room it actually has. */
                           maxHeight: flagPop.flipUp
                             ? Math.max(160, flagPop.y - 16)
                             : Math.max(160, window.innerHeight - flagPop.y - 16),
@@ -637,32 +578,14 @@ export default function BoxDrawer({
                         <div className="vti-flag-pop__title">
                           Product Flags ({customFlags.length})
                         </div>
-                        {/* Rows, not the row-chips from the strip above.
-                            Each chip there carries its flag's colour as a
-                            border and a tint; stacked fifty deep that is
-                            fifty outlines down a narrow column, which is what
-                            made this panel unreadable. In here the colour
-                            stays on the tag and the label, the surface is a
-                            quiet alternating tint, and only the flags that
-                            are ON take their colour as a fill — so what is
-                            selected is the thing that stands out. */}
                         {hiddenCustomFlags.map((f, i) => {
                           const on = flags.includes(f.id);
                           return (
                             <button
                               key={f.id}
                               type="button"
-                              /* role=checkbox, not a pressed button: this is a
-                                 list you tick through, and the box is the
-                                 thing that says what is selected. */
                               role="checkbox"
                               aria-checked={on}
-                              /* No per-flag colour in here. Each flag carrying
-                                 its own tint made the panel a different colour
-                                 on every line — the chips in the row already
-                                 show which flag is which, and a list you tick
-                                 through should read as one list. Selection is
-                                 the app's teal, the same everywhere. */
                               className={`vti-flag-pop__row${on ? ' is-active' : ''}${i % 2 ? ' is-alt' : ''}`}
                               onClick={() => toggleFlag(f.id)}
                             >
@@ -799,17 +722,6 @@ function PanelShell({ children }: { onClose?: () => void; children: React.ReactN
   return <>{children}</>;
 }
 
-/**
- * Editing a SAVED box happens over the page, not inside it.
- *
- * Inline, the form opened above the Packed Boxes table and pushed everything
- * below it down — so pressing the pencil on row 5 moved row 5. The design puts
- * the box on top of a dimmed page instead: the row you came from stays where
- * it was, and the form is plainly a thing you finish and close.
- *
- * Portalled to document.body because the table lives inside
- * `.vti-table-wrap`, whose `overflow-x: auto` clips any descendant.
- */
 function ModalShell({ onClose, children }: { onClose?: () => void; children: React.ReactNode }) {
   useScrollLock(true);
   useEffect(() => {
@@ -821,9 +733,6 @@ function ModalShell({ onClose, children }: { onClose?: () => void; children: Rea
   return createPortal(
     <div
       className="vti-dw-modal-backdrop"
-      /* Only a press that both starts AND ends on the backdrop closes it —
-         otherwise releasing a drag that began inside the form (selecting
-         text in a field, say) would throw the edit away. */
       onMouseDown={e => { if (e.target === e.currentTarget) onClose?.(); }}
     >
       <div className="vti-dw-modal" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
