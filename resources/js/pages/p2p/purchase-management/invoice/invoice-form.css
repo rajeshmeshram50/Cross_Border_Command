@@ -7430,26 +7430,23 @@
   min-height: 40px; padding: 0 16px;
   font-size: 11.5px; letter-spacing: -.1px;
 }
-/* The counter that stands in for the flags this row has no space for. Dashed
-   and uncoloured, like the packing step's — it is a control, not a flag, and
-   must not read as one more thing the slot has to satisfy. */
+/* The counter that stands in for the flags this row has no space for. A filled
+   teal disc carrying just "+N", which is the app's established pattern for
+   this — the Issuing Authorities counter in the CLM masters, and MasterSelect.
+   It was a dashed outlined box, which read as an empty chip waiting to be
+   filled rather than as a count. */
 .s4-root .s4rv-flagmore {
-  display: inline-flex; align-items: center;
-  min-height: 40px; padding: 0 16px;
-  border-radius: 999px;
-  border: 1.5px dashed rgba(100,116,139,.45);
-  background: rgba(148,163,184,.10);
-  color: #475569;
-  font-size: 11.5px; font-weight: 800; letter-spacing: -.1px;
-  white-space: nowrap; cursor: pointer;
-  transition: border-color .18s, background .18s, color .18s;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 28px; padding: 0 8px;
+  border-radius: 999px; border: none;
+  background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490);
+  box-shadow: 0 2px 8px rgba(8,145,178,.4);
+  color: #fff;
+  font-family: inherit; font-size: 11px; font-weight: 800;
+  white-space: nowrap; cursor: pointer; flex-shrink: 0;
+  transition: filter .18s, transform .18s;
 }
-.s4-root .s4rv-flagmore:hover {
-  border-color: #64748b; background: rgba(148,163,184,.20); color: #334155;
-}
-[data-bs-theme="dark"] .s4-root .s4rv-flagmore {
-  border-color: rgba(148,163,184,.4); background: rgba(148,163,184,.12); color: #cbd5e1;
-}
+.s4-root .s4rv-flagmore:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .s4-root .s4rv-flag.is-haz {
   color: #fff; background: linear-gradient(135deg,#fbbf24,#d97706);
   border-color: transparent; box-shadow: 0 2px 8px rgba(217,119,6,.32);
@@ -8655,14 +8652,25 @@
    Built on the method dialog's shell, so the header, the context chips and
    the close all behave the same. Narrower than the chooser: this one asks a
    question about a single task rather than laying two options side by side. */
-/* 980, up from 860. The design is right as it stands — what it does not have
-   is this build's real data: a warehouse path like "WH-002 › SH-01" sits
-   inside a sentence, and the Manual Confirmation paragraph names both the box
-   and the location. At 860 those two wrapped to three and four lines, so the
-   dialog read as a wall of text rather than the two blocks it is. Nothing
-   else about it changes. */
-.s4-root .s4ct-modal .s4wz__dlg { width: min(980px, 94vw); }
-.s4-root .s4ct-modal .s4qm__bd { padding: 14px 16px 16px; gap: 12px; }
+/* 900. It was 860, then 980 because this build's real data is longer than the
+   design's — a warehouse path like "WH-002 › SH-01" sits inside a sentence and
+   the Manual Confirmation paragraph names both the box and the location, and
+   at 860 those wrapped to three and four lines.
+   900 keeps both on one or two lines while bringing the dialog back off the
+   width it had grown to. If either sentence starts wrapping long again, this
+   is the number to raise — not the padding. */
+.s4-root .s4ct-modal .s4wz__dlg { width: min(900px, 94vw); }
+/* Roomier than the method dialog this shell is shared with. Measured against
+   the design: the option card sat ~14px off the footer rule where it should
+   sit ~36, and the footer ran 11px of padding where it should run ~18 — so
+   the two decision buttons looked wedged under the card they belong to rather
+   than set apart from it. This dialog asks a destructive question; the blocks
+   need room to read as separate steps. */
+/* 24, not 14. The gap is not clear space here: the Recommended pill floats at
+   top:-10px on the card below, so 14px of gap left about 4px between the two
+   blocks and put the pill on the warning box's border. The pill needs its own
+   10px back before the gap reads as a gap. */
+.s4-root .s4ct-modal .s4qm__bd { padding: 18px 20px 24px; gap: 24px; }
 /* "OPTION 02" is a plain amber label here, not the chip .s4pm-num draws in the
    method dialog. Two reasons it was wrong: the chip is an inline-flex inside a
    stretch-aligned flex column, so it ran the full width of the card as an
@@ -8714,6 +8722,12 @@
   padding: 14px; border-radius: 16px;
   background: linear-gradient(135deg, #ecfdf5, #fff 70%); border: 1.5px solid #6ee7b7;
   box-shadow: 0 0 0 3px rgba(16,185,129,.1);
+  /* Clearance for the RECOMMENDED pill, which hangs 10px above this card's
+     top edge, and for the 3px ring outside it. The body's 14px gap left about
+     4px between the pill and the warning block above, so the two cards read as
+     one glued slab instead of a warning and the way out of it. 12 here puts
+     ~16px of clear space above the pill. */
+  margin-top: 12px;
 }
 /* A pill ABOVE the card's top edge, not a notch cut into its corner — the
    design's .zc-sug__tag: 9.5px on 3px 10px, floating at top:-10px right:14px. */
@@ -8748,8 +8762,23 @@
 }
 .s4-root .s4ct-alt__chips svg { width: 10px; height: 10px; }
 
+/* The working spinner on whichever cancel button was pressed. Both buttons go
+   disabled while the request runs, which on its own says nothing — the label
+   did not change, so a slow call looked like a dead click. currentColor, so
+   the same mark works on the white "Cancel Task Only" and the green one. */
+@keyframes s4ctSpin { to { transform: rotate(360deg); } }
+.s4-root .s4ct-spin {
+  width: 13px; height: 13px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: s4ctSpin .6s linear infinite;
+}
+/* The button keeps full colour while it works: a faded button that is also
+   spinning reads as broken rather than busy. */
+.s4-root .s4ct-only[aria-busy="true"],
+.s4-root .s4ct-manual[aria-busy="true"] { opacity: 1; cursor: progress; }
+
 /* Keep Task sits apart from the two that end the task. */
-.s4-root .s4ct-ft { gap: 10px; }
+.s4-root .s4ct-ft { gap: 10px; padding: 16px 20px; }
 .s4-root .s4ct-ft .s4-btn-back { margin-right: auto; }
 .s4-root .s4ct-only, .s4-root .s4ct-manual {
   display: inline-flex; align-items: center; gap: 8px;
@@ -9414,6 +9443,11 @@
    title. Values are the prototype's .s4b-tools block.
    ────────────────────────────────────────────────────────────────────────── */
 .s4b-tools{display:inline-flex;align-items:center;gap:8px;margin-left:auto;flex-shrink:0;}
+/* The row's gap is the ONLY spacing. These buttons also match .s4fs-btn,
+   which carries margin-left:auto and margin-right:8px of its own from when it
+   was a lone button floated to the right of a header. Inside .s4b-tools that
+   margin adds to the container's 8px gap, so the three sat 16px apart. */
+.s4b-tools .s4fs-btn{margin-left:0;margin-right:0;}
 .s4b-tools .s4b-toolbtn{
   display:inline-flex;align-items:center;gap:7px;
   height:40px;padding:0 12px 0 7px;

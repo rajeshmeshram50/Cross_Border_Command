@@ -954,20 +954,18 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     };
   }, [anchor, entries.length]);
 
+  /* Escape closes it; an outside click does not.
+     This is anchored to its button like a popover, and a popover would
+     normally dismiss on any click away — but it is read as a log: you scroll
+     it, you click into the page to compare a code against the row behind it,
+     and it vanished every time. It carries an × of its own, and every other
+     dialog in this stage now closes only when you say so, so it behaves the
+     same way. */
   useEffect(() => {
-    const out = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (ref.current?.contains(t) || anchor?.contains(t)) return;
-      onClose();
-    };
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
-    document.addEventListener('mousedown', out, true);
     document.addEventListener('keydown', esc, true);
-    return () => {
-      document.removeEventListener('mousedown', out, true);
-      document.removeEventListener('keydown', esc, true);
-    };
-  }, [anchor, onClose]);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [onClose]);
 
   return createPortal(
     <div
@@ -1201,6 +1199,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [scanTask, setScanTask] = useState<{ id: string; at: string; apiId: number } | null>(null);
   const [methodBusy, setMethodBusy] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelWhich, setCancelWhich] = useState<'only' | 'manual' | null>(null);
   const scanDoneRef = useRef(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [zebraOpen, setZebraOpen] = useState(false);
@@ -1419,9 +1418,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     }
   };
 
-  const cancelScanTask = async (): Promise<boolean> => {
+  /* WHICH of the two cancel buttons is running, not just that one is.
+     cancelBusy disables both, so a spinner driven off it alone would appear on
+     the button you did not press as well. */
+  const cancelScanTask = async (which: 'only' | 'manual'): Promise<boolean> => {
     if (!scanTask || cancelBusy) return false;
     setCancelBusy(true);
+    setCancelWhich(which);
     try {
       await spiApi.putawayCancelTask(scanTask.apiId, 'Cancelled from the SPI form');
       setBoardTick(t => t + 1);
@@ -1431,6 +1434,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       return false;
     } finally {
       setCancelBusy(false);
+      setCancelWhich(null);
     }
   };
 
@@ -2411,8 +2415,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                 type="button"
                 className="s4ct-only"
                 disabled={cancelBusy}
+                aria-busy={cancelWhich === 'only'}
                 onClick={async () => {
-                  if (!(await cancelScanTask())) return;
+                  if (!(await cancelScanTask('only'))) return;
                   addLog(box.code, 'cancel', 'Zebra scan task cancelled',
                     [scanTask.id, 'method cleared'].filter(Boolean).join(' · '));
                   setScanTask(null);
@@ -2420,14 +2425,17 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   setCancelAsk(false);
                 }}
               >
-                <IcoBan /> Cancel Task Only
+                {cancelWhich === 'only'
+                  ? <><span className="s4ct-spin" aria-hidden /> Cancelling…</>
+                  : <><IcoBan /> Cancel Task Only</>}
               </button>
               <button
                 type="button"
                 className="s4ct-manual"
                 disabled={cancelBusy}
+                aria-busy={cancelWhich === 'manual'}
                 onClick={async () => {
-                  if (!(await cancelScanTask())) return;
+                  if (!(await cancelScanTask('manual'))) return;
                   addLog(box.code, 'cancel', 'Zebra scan task cancelled',
                     [scanTask.id, 'switching to manual'].filter(Boolean).join(' · '));
                   setScanTask(null);
@@ -2439,7 +2447,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   setMethodAsk(true);
                 }}
               >
-                Cancel &amp; Continue with Manual <IcoChevR />
+                {cancelWhich === 'manual'
+                  ? <><span className="s4ct-spin" aria-hidden /> Cancelling…</>
+                  : <>Cancel &amp; Continue with Manual <IcoChevR /></>}
               </button>
             </div>
           </div>

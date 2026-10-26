@@ -125,8 +125,9 @@ function FlagRow({ flags }: { flags: string[] }) {
             const flipUp = below < estH + 12 && r.top > below;
             setPop({ x: r.left, y: flipUp ? r.top - 4 : r.bottom + 4, flipUp });
           }}
+          title={`View all ${flags.length} product flags`}
         >
-          +{hidden.length} more
+          +{hidden.length}
         </button>
       )}
       {pop && createPortal(
