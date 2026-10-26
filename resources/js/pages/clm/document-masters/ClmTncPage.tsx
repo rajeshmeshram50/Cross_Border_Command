@@ -200,17 +200,17 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
       </div>
 
       <div className="clm-tab-body has-data">
-          {/* Stretch to fillH only when there is enough data to use it.
-              The card stretched unconditionally with the pager pinned to its
-              bottom, so a short list left a blank band between the last row
-              and the pager: measured 189px here on 8 rows, 381px on the
-              segment-wise tab's 3 and 426px on Global's 2. No page size can
-              close that — the auto-fit already offers 11 rows and there are
-              only 8 records to show.
-              The test is filtered.length, not the current page's slice, so a
-              long list keeps one card height as you page through it and the
-              table does not jump on the last, part-full page. */}
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: filtered.length >= rpp ? fillH : undefined }}>
+          {/* Always stretched, which is the house pattern — CLM Segment Master
+              is the reference and every other CLM list follows it: the card
+              fills the viewport and the pager sits on its bottom edge.
+              This was briefly conditional (stretch only when the rows could
+              fill the height) to close the blank band a short list leaves
+              above the pager. That traded one fault for a worse one: with two
+              records the card ended halfway up the screen and the footer rode
+              up with it, leaving the page empty underneath. The band is the
+              lesser fault — and it is inherent, since the auto-fit sizes the
+              page to the viewport and a two-record table cannot fill it. */}
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -359,11 +359,12 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
       </div>
 
       <div className="clm-tab-body has-data">
-        {/* Stretches only when the data fills it — see the note on the
-            Document Category pane. This tab holds one entry per document
-            category, so it is the shortest list in the master and the one the
-            unconditional stretch hurt most: 426px of blank under two rows. */}
-        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: filtered.length >= rpp ? fillH : undefined }}>
+        {/* Stretched, as the sibling panes are — see the note on the Document
+            Category pane. This tab holds one entry per document category, so
+            it is the shortest list in the master and the one where the blank
+            above the pager shows most; the alternative, a card ending halfway
+            up the screen, looked worse. */}
+        <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
           <table className="clm-table">
             <thead><tr>
               <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
@@ -540,9 +541,9 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       </div>
 
       <div className="clm-tab-body has-data">
-          {/* Stretches only when the data fills it — see the note on the
+          {/* Stretched, as the sibling panes are — see the note on the
               Document Category pane. */}
-          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: filtered.length >= rpp ? fillH : undefined }}>
+          <div className={`clm-table-wrap clm-table-fill ${isEmpty ? 'clm-fill-empty' : ''}`} ref={scrollRef} style={{ minHeight: fillH }}>
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>

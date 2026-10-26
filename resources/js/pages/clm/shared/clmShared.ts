@@ -171,12 +171,18 @@ export const CLM_CSS = `
   opacity: .85; margin-top: 2px; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* 40px, the one button height in CLM — the same as the modal's Cancel and
+   Save, so the control that opens a dialog matches the two that close it. */
 .clm-add-btn {
   position: relative; overflow: hidden; flex-shrink: 0;
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 10px 20px; border: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 40px; box-sizing: border-box;
+  /* 0 18px / radius 10 / 12.5px-700 — the Create CTC Agreement button's spec,
+     which is the one CLM button the whole module is measured against. This
+     ran 13px on 0 20px, a half-step of type and 2px of padding away from it. */
+  padding: 0 18px; border: none; cursor: pointer;
   border-radius: 10px; font-family: inherit;
-  font-size: 13px; font-weight: 700; color: #fff;
+  font-size: 12.5px; font-weight: 700; color: #fff;
   background: linear-gradient(135deg, #06b6d4, #0891b2, #0e7490);
   box-shadow: 0 4px 14px rgba(8,145,178,.44), inset 0 1px 0 rgba(255,255,255,.18);
   transition: transform .18s ease, box-shadow .22s ease;
@@ -999,6 +1005,19 @@ body:has(.clm-modal-bd) { -webkit-user-select: none; user-select: none; }
      here so the modal's own content stays selectable/copyable. */
   -webkit-user-select: text; user-select: text;
 }
+/* The family is STATED here, not inherited. Every CLM modal is portalled to
+   <body>, so it leaves .clm-root — and the var(--font-sans) that rule sets —
+   behind and lands in whatever Velzon puts on the body, which is Rubik. Each
+   control inside says font-family: inherit and therefore inherited the wrong
+   face: the footer's Save and Cancel came out 12.5px Rubik while the Create
+   CTC Agreement button they were matched to is 12.5px DM Sans, which carries
+   less ink at the same size and weight.
+   The box drawer (.vti-dw-modal-backdrop) and the Zebra dialog (.s4zv-ov) hit
+   this and fixed it the same way; CLM's modals had not. */
+.clm-modal-bd, .clm-modal {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
 /* Full-page drafting mode portals the editor shell OUT to <body> (a sibling of
    .clm-modal-bd), so it doesn't inherit the re-enable above — restore selection
    on the editor shells explicitly so the TipTap content stays selectable. */
@@ -1307,15 +1326,24 @@ body > .dropdown-menu.master-select-menu,
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   flex-shrink: 0;
 }
+/* 40px, stated. Cancel and Save were sized by padding alone (7px + 12px text
+   ≈ 30), so the footer's two buttons were shorter than every other control in
+   the dialog and than the 40px Add button that opens it. A stated height also
+   keeps them equal to each other whatever text or icon they carry — Save has
+   an icon and a label that changes to "Saving…", Cancel has neither. */
 .clm-btn-cancel {
-  padding: 7px 18px; border-radius: 9px;
+  height: 40px; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
+  /* Radius 10 and 12.5px-700, matching .clm-add-btn and the Create CTC
+     Agreement button it is drawn from. These ran 9px on 12px type. */
+  padding: 0 18px; border-radius: 10px;
   /* Border lifted from #d1d5db to a stronger slate + a subtle shadow — the
      old border was too faint to identify against the white modal surface in
      light mode (QA report). Matches the .apm-btn-ghost / .avm-btn-ghost
      cancel-button treatment in the product & vendor modals. */
   border: 1.5px solid #94a3b8;
   background: #fff; font-family: inherit;
-  font-size: 12px; font-weight: 700; color: #334155;
+  font-size: 12.5px; font-weight: 700; color: #334155;
   cursor: pointer;
   box-shadow: 0 1px 2px rgba(15,23,42,.06);
   transition: background .18s ease, border-color .18s ease, color .18s ease, transform .18s ease, box-shadow .22s ease;
@@ -1329,12 +1357,14 @@ body > .dropdown-menu.master-select-menu,
 }
 .clm-btn-save {
   position: relative; overflow: hidden;
-  padding: 7px 20px; border-radius: 9px;
+  height: 40px; box-sizing: border-box;
+  /* Same 0 18px / radius 10 as Cancel beside it and .clm-add-btn. */
+  padding: 0 18px; border-radius: 10px;
   border: none; cursor: pointer; font-family: inherit;
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
-  font-size: 12px; font-weight: 700; color: #fff;
+  font-size: 12.5px; font-weight: 700; color: #fff;
   box-shadow: 0 4px 14px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18);
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   transition: transform .18s ease, box-shadow .22s ease;
 }
 .clm-btn-save::before {
