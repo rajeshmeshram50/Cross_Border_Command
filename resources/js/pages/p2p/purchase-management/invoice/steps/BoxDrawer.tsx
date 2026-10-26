@@ -745,12 +745,15 @@ function ModalShell({ onClose, children }: { onClose?: () => void; children: Rea
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  /* No backdrop-click close. This form holds unsaved input — dimensions,
+     identifiers, remarks, flags — and a stray click beside it threw the lot
+     away with no warning and no undo. It has an × in its header and a Save
+     beside it, so there is already a way out that the operator means to take.
+     The four dialogs this one opens (Cold Chain, Sticker, Camera, Add Flag)
+     all made the same call. */
   return createPortal(
-    <div
-      className="vti-dw-modal-backdrop"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose?.(); }}
-    >
-      <div className="vti-dw-modal" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
+    <div className="vti-dw-modal-backdrop">
+      <div className="vti-dw-modal" role="dialog" aria-modal="true">
         {children}
       </div>
     </div>,

@@ -1,7 +1,7 @@
 import { memo, useCallback } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import { IcoCheck, IcoTrash, IcoX } from '../../../icons';
+import { IcoCheck, IcoX } from '../../../icons';
 import { DESC_MAX, NAME_MAX, truncateDesc, truncateName, type ProductLine } from '../invoice-products';
 
 export interface ProductIdentity {
@@ -278,7 +278,11 @@ const AdvRow = memo(function AdvRow({
               onClick={() => onRemove(line.code)}
               aria-label={`Remove ${line.spiName}`}
             >
-              <IcoTrash size={15} stroke={2.2} />
+              {/* A cross, not a bin. This takes the product out of THIS box —
+                  it goes back to Pending and can be packed again. A bin says
+                  the thing is being destroyed, which is a different promise
+                  from the one the button keeps. */}
+              <IcoX size={15} stroke={2.8} />
             </button>
           </Tooltip>
         ) : (

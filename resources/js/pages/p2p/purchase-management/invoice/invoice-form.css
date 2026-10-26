@@ -400,9 +400,19 @@
   /* 1640, the design's own ceiling (#spkEditRoot .spke-m2). We had 1680. */
   width: min(1640px, 100%);
   /* The form scrolls inside the card, so the page behind never does and the
-     teal header stays visible while you work down the fields. */
+     teal header stays visible while you work down the fields.
+
+     That second promise was not being kept: `overflow: auto` on the card
+     scrolls the WHOLE card, header and all, so on a short window the strip —
+     Save, Sticker, the unit toggle, the close — scrolled away with the
+     fields. The card is a column now: the strip and the saved banner are
+     pinned, and the body is the one band that scrolls. `min-height: 0` is
+     what lets it: a flex item will not shrink below its content without it,
+     so the body stayed full height and pushed the card past the viewport
+     instead of scrolling inside it. */
   max-height: calc(100vh - 48px);
-  overflow: auto;
+  display: flex; flex-direction: column;
+  overflow: hidden;
   border-radius: 16px;
   background: linear-gradient(180deg, #f8feff, #eefafd);
   box-shadow: 0 24px 70px rgba(8,47,73,.45), 0 2px 10px rgba(8,47,73,.25);
@@ -412,6 +422,20 @@
 /* The card owns the corner radius, so the header strip must not square it off. */
 .vti-dw-modal > .vti-dw-strip,
 .vti-dw-modal .vti-dw-strip:first-child { border-radius: 16px 16px 0 0; }
+/* Every band holds its height; only the body gives. Stated on the children so
+   a short window ends in a scrollbar rather than a crushed strip. */
+.vti-dw-modal > * { flex: 0 0 auto; }
+.vti-dw-modal > .vti-dw-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+}
+/* The body is itself a flex column, so bounding its height made ITS children
+   shrink rather than overflow — flex items shrink by default. The sections
+   got squashed instead of scrolling: the advance table showed one row of
+   three (its own overflow:auto wrapper clipped the rest) and the flags were
+   cut off at the card's edge, with no scrollbar anywhere, because nothing
+   ever exceeded the body. Each section holds its full height now, so the
+   shortfall lands where it belongs — on the body's scrollbar. */
+.vti-dw-modal > .vti-dw-body > * { flex: 0 0 auto; }
 .vti-dw-modal .vti-dw-body { padding-bottom: 16px; }
 /* The dialog's dismiss — last in the header row, after the sticker. */
 .vti-dw-modal-x {
@@ -478,7 +502,12 @@
 [data-bs-theme="dark"] .vti-dw-saved-title { color: #bbf7d0; }
 [data-bs-theme="dark"] .vti-dw-saved-note  { color: #86efac; }
 
-.vti-dw-body { padding: 14px 14px 0; display: flex; flex-direction: column; gap: 10px; background: transparent; }
+/* The Zebra Open Tasks dialog's rhythm, which is the one to follow: its body
+   is gap 8 on padding 8px 0, with its blocks taking a 16px side gutter
+   (.s4zv-body / .s4zv-kpis). This ran gap 10 on 14px 14px 0 — close enough to
+   look like a near-miss rather than a different spacing, which is worse than
+   either. Now the same 8 between cards and the same 16 down the sides. */
+.vti-dw-body { padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; background: transparent; }
 .vti-dw-section, .vti-dw-advanced { background: #fff; border: 1.5px solid rgba(6,182,212,.22); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,1) inset, 0 2px 10px rgba(6,182,212,.08), 0 6px 24px rgba(6,182,212,.06); position: relative; }
 /* z-index keeps the accent above anything a child paints over it. Every other
    section holds plain blocks, whose backgrounds never reach the card edge, but
@@ -535,6 +564,19 @@
      broken it is a stray vertical rule, so the items carry their own spacing
      instead. */
   .vti-dw-strip .vti-dw-strip-item { padding: 9px 14px; }
+
+  /* The close button is the LAST child of the toolbar, so when the toolbar
+     takes its own row the × travelled with it and ended up floating in the
+     middle of the strip, after the Sticker button. A close is a corner
+     control: wherever the strip breaks, it belongs at the top right.
+     The strip is already position: relative, so pinning it there costs
+     nothing, and the labels get a right gutter so a long product name cannot
+     run underneath it. */
+  .vti-dw-strip { position: relative; }
+  .vti-dw-strip .vti-dw-modal-x {
+    position: absolute; top: 10px; right: 12px; z-index: 5;
+  }
+  .vti-dw-strip .vti-dw-strip-left { padding-right: 52px; }
 }
 
 @media (max-width: 820px) {
@@ -602,13 +644,26 @@
 
    The custom chip is the one item allowed to shrink, because its name already
    truncates (.vti-flag-name). Everything else holds its size. */
-.vti-dw-flags { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; row-gap: 8px; min-width: 0; }
+/* `min-width: 0` on the custom chip let it shrink without limit: in the
+   three-column row this strip sits in, the built-ins plus the counter plus
+   the toggle take the whole width, and the chip was squeezed down to its tag
+   icon and a sliver of a letter — present, unreadable, and indistinguishable
+   from a rendering fault. It now has a floor, and the row may wrap when even
+   that will not fit. Wrapping is the lesser fault: a flag on the next line
+   can still be read. */
+.vti-dw-flags { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; row-gap: 8px; min-width: 0; }
 .vti-dw-flags > * { flex-shrink: 0; }
-.vti-dw-flags > .invf-flag-custom { flex-shrink: 1; min-width: 0; }
-/* Below this the drawer is too narrow for six items on a line, and the section
-   clips its overflow — so wrapping is the right answer again, not a clipped
-   toggle. */
-@media (max-width: 900px) { .vti-dw-flags { flex-wrap: wrap; } }
+/* Flex wraps BEFORE it shrinks, so a floor alone pushed Stackable onto a
+   second line: the chip refused to go under 104 and the line broke instead.
+   Capping its natural width is what keeps the line whole — the row was ~21px
+   over, and a 104px cap plus the tighter gap gives back ~29. The name
+   truncates inside it and carries its full text on hover. */
+.vti-dw-flags > .invf-flag-custom { flex: 0 1 auto; min-width: 88px; max-width: 104px; }
+/* The 900px breakpoint that used to turn wrapping back on is gone with it:
+   it keyed off the VIEWPORT, while what runs out of room is this strip — the
+   third column of a three-column row, a fraction of the drawer's width. A
+   1640px dialog never tripped it, which is why the chip was being crushed on
+   a wide screen. */
 /* The hidden flags open in a portalled panel rather than unfolding into the
    row — expanding in place pushed this strip wider again, which is what the
    counter is here to stop. Modelled on the CLM masters' "+N" popover. */
@@ -718,6 +773,10 @@
    strip past the drawer on its own. */
 .vti-flag-name {
   max-width: 150px;
+  /* A flex item will not go below its content width without this, so the
+     ellipsis never engaged inside a chip whose own width is capped — the name
+     simply pushed the chip wider than its max-width allowed. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -918,12 +977,24 @@
    Condition down to one chip per line. */
 .vti-dw-row2-inner > .vti-dw-mini-section:nth-child(1) { flex: 0 0 auto; min-width: max-content; }
 .vti-dw-row2-inner > .vti-dw-mini-section:nth-child(2) { flex: 0 0 auto; min-width: max-content; }
-/* Only a genuinely narrow screen stacks them. */
+/* Only a genuinely narrow screen stacks them ALL. */
 @media (max-width: 1100px) {
   .vti-dw-row2-inner { flex-wrap: wrap; }
   .vti-dw-row2-inner > .vti-dw-mini-section { width: 100%; border-right: none; }
 }
-.vti-dw-row2-inner > .vti-dw-mini-section:last-child  { flex: 1 1 0; min-width: 0; }
+/* Wrapping allowed at every width, and a floor on Flags.
+   Remark and Condition are max-content and do not shrink, so Flags took
+   literally what was left — and with `min-width: 0` that could be less than
+   one chip. The chips then ran past the column and .vti-dw-section's
+   overflow: hidden cut them in half: "Hazardou", "Cold Chai", "Stackabl".
+   The floor is one chip wide, so when the three cannot share a line Flags
+   drops to its own full-width row and stays readable, which is the same
+   trade the strip above makes — a flag on the next line can still be read, a
+   clipped one cannot. The 1100px rule above still stacks all three on a
+   genuinely narrow screen; this handles the case where the drawer is wide but
+   Remark and Condition have eaten the row. */
+.vti-dw-row2-inner { flex-wrap: wrap; }
+.vti-dw-row2-inner > .vti-dw-mini-section:last-child  { flex: 1 1 260px; min-width: 260px; }
 /* Was `flex: 1 1 0; min-width: 0; white-space: normal`, which let a
    condition chip shrink and wrap its label the same way the remark chips
    did. Sized to its text now, like every other chip in this row. */
@@ -7611,6 +7682,13 @@
 /* The second chip is the design's "soft" one — a quiet slate, not a tinted
    sibling of the first. */
 .s4-root .s4wz-modal .s4wz-opt__chips .s4wz-opt__d { color: #5b7585; background: #f6fafb; border-color: #e3eef2; }
+/* This chip DID have a dark rule — `[data-bs-theme="dark"] .s4wz-opt__d`, at
+   (0,2,0). The light rule above it is (0,4,0) and simply outranked it, so the
+   trait stayed a white pill on a dark card. Restated at a specificity that
+   can win. */
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt__chips .s4wz-opt__d {
+  color: #94a9b6; background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.26);
+}
 
 /* The chosen card's radio is a filled tick, as the design draws it — a ring
    with a dot reads as "selectable", a tick reads as "selected". */
@@ -8447,6 +8525,15 @@
   border-radius: 8px; border: none; background: #fff; color: #0e7490;
   font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer;
 }
+/* Solid white works on the light card, where it is the one raised surface on a
+   teal ramp. On the dark card it becomes a lit slab beside its own neighbours
+   — the Packed-on chip next to it is already translucent white. The button
+   joins it rather than shouting over it. (The base sets `border: none`, so the
+   border has to be declared here, not just recoloured.) */
+[data-bs-theme="dark"] .s4-root .s4c3-stk {
+  background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.3); color: #fff;
+}
+[data-bs-theme="dark"] .s4-root .s4c3-stk:hover { background: rgba(255,255,255,.24); }
 .s4-root .s4c3-kind {
   align-self: flex-start; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
   color: #fff; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35);
@@ -9190,6 +9277,22 @@
 /* The 3px cap across the top of every leg was a fixed #e2e8f0. */
 [data-bs-theme="dark"] .s4-root .s4zt-leg::before { background: var(--s4d-line); }
 
+/* The task's own status pill, and the badge on each scan leg. Only the LOCKED
+   badge above had a dark rule, which is why that one alone looked right while
+   "Pending Device Scan" and "Ready to scan" stayed near-white pills. Each tone
+   keeps its hue and trades a pale fill for a translucent one. */
+[data-bs-theme="dark"] .s4-root .s4zt-st--wait { background: rgba(245,158,11,.14); color: #fcd34d; border-color: rgba(245,158,11,.34); }
+[data-bs-theme="dark"] .s4-root .s4zt-st--half,
+[data-bs-theme="dark"] .s4-root .s4zt-st--ok { background: rgba(34,211,238,.12); color: #67e8f9; border-color: rgba(34,211,238,.32); }
+[data-bs-theme="dark"] .s4-root .s4zt-st--bad { background: rgba(239,68,68,.14); color: #fca5a5; border-color: rgba(239,68,68,.34); }
+
+[data-bs-theme="dark"] .s4-root .s4zt-leg__badge { background: rgba(34,211,238,.12); color: #67e8f9; border-color: rgba(34,211,238,.32); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg.is-ok .s4zt-leg__badge { background: rgba(16,185,129,.16); color: #6ee7b7; border-color: rgba(16,185,129,.34); }
+[data-bs-theme="dark"] .s4-root .s4zt-leg.is-fail .s4zt-leg__badge { background: rgba(239,68,68,.14); color: #fca5a5; border-color: rgba(239,68,68,.34); }
+/* Restated after the three above so the locked badge keeps winning — it comes
+   earlier in the file and carries the same specificity. */
+[data-bs-theme="dark"] .s4-root .s4zt-leg.is-locked .s4zt-leg__badge { background: rgba(255,255,255,.06); color: #7f97a5; border-color: var(--s4d-line); }
+
 /* ── Stage 04 · Zebra Open Tasks pop-up ──────────────────────────────────────
    Ported from the P2P_New_Logic prototype (the s4zv3 revision — the last of
    three the prototype carries). Values are the prototype's; only the overlay
@@ -9265,10 +9368,13 @@
 
 .s4zv-tblwrap{border-top:1px solid #d5ecf3;border-bottom:1px solid #d5ecf3;}
 .s4zv-tbl{width:100%;border-collapse:collapse;font-size:11.5px;}
-.s4zv-tbl th{background:linear-gradient(180deg,#eefafd,#e3f5fa);color:#0b4f63;font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:left;padding:10px 12px;white-space:nowrap;border-bottom:1px solid #cdeaf2;}
+/* Headings centred over their columns. They were left-aligned, which on the
+   wide ones — SELECTED LOCATION ID, SCAN STATUS, ACTIONS — left the label
+   stranded at the far edge of a column whose content sits in the middle. */
+.s4zv-tbl th{background:linear-gradient(180deg,#eefafd,#e3f5fa);color:#0b4f63;font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:center;padding:10px 12px;white-space:nowrap;border-bottom:1px solid #cdeaf2;}
 .s4zv-tbl th:first-child,.s4zv-tbl td:first-child{padding-left:16px;}
 .s4zv-tbl th:last-child,.s4zv-tbl td:last-child{padding-right:16px;}
-.s4zv-tbl td{padding:12px;border-bottom:1px solid #edf6f9;vertical-align:middle;color:#0f3a4d;}
+.s4zv-tbl td{padding:12px;border-bottom:1px solid #edf6f9;vertical-align:middle;color:#0f3a4d;text-align:center;}
 .s4zv-tbl td.mono{font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;}
 .s4zv-tbl tbody tr:nth-child(even) td{background:#fbfeff;}
 .s4zv-tbl tbody tr:hover td{background:#f2fbfd;}
@@ -9287,7 +9393,10 @@
 
 .s4zv-ft{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid #e6f2f6;background:linear-gradient(180deg,#fafdfe,#f3fafc);flex-shrink:0;}
 .s4zv-ft__n{display:flex;align-items:center;gap:6px;font-size:10.5px;color:#6b8d9c;}
-.s4zv-ft__b{margin-left:auto;height:36px;padding:0 18px;border-radius:10px;border:1.5px solid #cdeaf2;background:#fff;color:#0b4f63;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;}
+/* 34, the height every other button in this dialog states — the task row's
+   Open / Cancel and the header's close x. This was 36, which made the footer
+   button 2px taller than the rest for no reason anyone wrote down. */
+.s4zv-ft__b{margin-left:auto;height:34px;padding:0 18px;border-radius:10px;border:1.5px solid #cdeaf2;background:#fff;color:#0b4f63;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;}
 .s4zv-ft__b:hover{background:#f0fbfd;}
 
 /* The rail's count chip, on the Zebra Open Tasks button. */
@@ -9366,7 +9475,11 @@
    its levels, a scan state with its own progress, and the two actions.
    ────────────────────────────────────────────────────────────────────────── */
 .s4zv-sr{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:8px;background:linear-gradient(135deg,#22d3ee,#0e7490);color:#fff;font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;box-shadow:0 3px 8px -3px rgba(8,145,178,.6);}
-.s4zv-c{display:flex;flex-direction:column;gap:3px;align-items:flex-start;}
+/* Cell content centres under its heading, now that the headings are centred.
+   These blocks are all narrower than their column, so left-aligned content sat
+   away from the label above it — most visibly on Actions, whose buttons were
+   pinned to the far right edge. */
+.s4zv-c{display:flex;flex-direction:column;gap:3px;align-items:center;}
 .s4zv-c small{font-size:10px;color:#7a95a1;white-space:nowrap;}
 .s4zv-id{display:inline-flex;align-items:center;padding:3px 8px;border-radius:7px;font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;font-weight:700;background:#ecfeff;color:#0e7490;border:1px solid #a5e3f0;white-space:nowrap;}
 .s4zv-id.box{background:#f1f9fc;color:#0f3a4d;border-color:#d5ecf3;}
@@ -9374,7 +9487,10 @@
 /* Each level on its own line: label, code chip, then the human name. The grid
    keeps every code chip on one x, so four levels read as a column and not as
    four ragged sentences. */
-.s4zv-loc{display:flex;flex-direction:column;gap:4px;}
+/* inline-flex, so the block is only as wide as its rows and the cell's
+   text-align centres it as ONE unit. Centring the rows themselves would undo
+   the 64px label track below and leave four ragged lines. */
+.s4zv-loc{display:inline-flex;flex-direction:column;gap:4px;text-align:left;}
 /* Two tracks: the label, then one value holding the code, the name and the
    tag. Splitting those three into their own grid columns gave the name a 1fr
    that expanded to the cell, pushing the Own tag to the far right and leaving
@@ -9388,15 +9504,18 @@
 .s4zv-loc__tag{font-size:8px;font-weight:800;padding:1px 6px;border-radius:999px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;white-space:nowrap;}
 .s4zv-dash{color:#9fb6c0;}
 
-.s4zv-prog{display:flex;flex-direction:column;gap:6px;align-items:flex-start;min-width:150px;}
+.s4zv-prog{display:flex;flex-direction:column;gap:6px;align-items:center;min-width:150px;}
 .s4zv-prog__bar{width:100%;height:6px;border-radius:99px;background:#e6f2f6;overflow:hidden;}
 .s4zv-prog__bar b{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#22d3ee,#0891b2);transition:width .25s ease;}
 .s4zv-legs{display:flex;gap:5px;}
 .s4zv-sc{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:#f8fafc;color:#7a95a1;border:1px solid #e2e8f0;white-space:nowrap;}
 .s4zv-sc.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0;}
 
-.s4zv-acts{display:flex;gap:7px;justify-content:flex-end;}
-.s4zv-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px 0 6px;border-radius:9px;border:none;font-family:inherit;font-size:11.5px;font-weight:700;color:#fff;cursor:pointer;white-space:nowrap;transition:filter .15s,transform .15s,box-shadow .15s;}
+.s4zv-acts{display:flex;gap:7px;justify-content:center;}
+/* 42. These two are the row's actions — the only thing on this screen an
+   operator presses to act on a task — so they are deliberately taller than
+   the dialog's other controls rather than matching them. */
+.s4zv-btn{display:inline-flex;align-items:center;gap:6px;height:42px;padding:0 12px 0 6px;border-radius:9px;border:none;font-family:inherit;font-size:11.5px;font-weight:700;color:#fff;cursor:pointer;white-space:nowrap;transition:filter .15s,transform .15s,box-shadow .15s;}
 .s4zv-btn > span{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.3);flex-shrink:0;}
 .s4zv-btn > span svg{width:11px;height:11px;}
 .s4zv-btn--open{background:linear-gradient(135deg,#22d3ee,#0891b2 60%,#0e7490);box-shadow:0 3px 9px -3px rgba(8,145,178,.55);}
@@ -9410,6 +9529,75 @@
    to state one. 17px in the cancel dialog's warning block, matching the
    design. */
 .s4-root .s4ct-warn__i svg { width: 17px; height: 17px; }
+
+/* ── Zebra Open Tasks · dark ─────────────────────────────────────────────────
+   The dialog was ported light-only, so in dark mode a white card landed on a
+   dark page with pale-on-pale text. Its header keeps the teal ramp it already
+   has — that reads correctly either way — and everything below it is brought
+   onto the page's own dark surface. The dialog portals to <body>, so these
+   are NOT scoped under .s4-root; the theme attribute is on <html>.
+   ────────────────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .s4zv-ov { background: rgba(2,12,18,.62); }
+[data-bs-theme="dark"] .s4zv {
+  background: #0b1922; border-color: rgba(34,211,238,.2);
+  box-shadow: 0 40px 90px -30px rgba(0,0,0,.75), 0 0 0 6px rgba(34,211,238,.04);
+}
+[data-bs-theme="dark"] .s4zv-body { background: #0b1922; }
+
+[data-bs-theme="dark"] .s4zv-kpi {
+  background: linear-gradient(180deg,#102a35,#0d2029); border-color: rgba(34,211,238,.16);
+}
+[data-bs-theme="dark"] .s4zv-kpi__l { color: #8fb3c2; }
+[data-bs-theme="dark"] .s4zv-kpi__v { color: #e2e8f0; }
+[data-bs-theme="dark"] .s4zv-kpi__v em { color: #7f9aa6; }
+/* The watermark is a 7% tint of a dark ink — invisible once the card is dark.
+   Lifted, not recoloured: it still belongs to its card's own tone. */
+[data-bs-theme="dark"] .s4zv-kpi__wm { opacity: .16; }
+[data-bs-theme="dark"] .s4zv-kpi.a .s4zv-kpi__wm { opacity: .18; }
+
+[data-bs-theme="dark"] .s4zv-tblwrap { border-top-color: rgba(34,211,238,.14); border-bottom-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .s4zv-tbl th {
+  background: linear-gradient(180deg,#102a35,#0d2430); color: #8fb3c2;
+  border-bottom-color: rgba(34,211,238,.18);
+}
+[data-bs-theme="dark"] .s4zv-tbl td { color: #cbd5e1; border-bottom-color: rgba(34,211,238,.1); }
+[data-bs-theme="dark"] .s4zv-tbl tbody tr:nth-child(even) td { background: rgba(34,211,238,.035); }
+[data-bs-theme="dark"] .s4zv-tbl tbody tr:hover td { background: rgba(34,211,238,.08); }
+
+[data-bs-theme="dark"] .s4zv-st { color: #fcd34d; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.34); }
+[data-bs-theme="dark"] .s4zv-id { background: rgba(34,211,238,.12); color: #67e8f9; border-color: rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .s4zv-id.box { background: rgba(148,163,184,.12); color: #cbd5e1; border-color: rgba(148,163,184,.26); }
+[data-bs-theme="dark"] .s4zv-c small { color: #7f9aa6; }
+[data-bs-theme="dark"] .s4zv-loc__v, [data-bs-theme="dark"] .s4zv-loc__n { color: #cbd5e1; }
+[data-bs-theme="dark"] .s4zv-loc__l { color: #7f9aa6; }
+[data-bs-theme="dark"] .s4zv-loc__c { background: rgba(34,211,238,.1); color: #7dd3e8; border-color: rgba(34,211,238,.26); }
+[data-bs-theme="dark"] .s4zv-loc__tag { background: rgba(16,185,129,.16); color: #6ee7b7; border-color: rgba(16,185,129,.34); }
+[data-bs-theme="dark"] .s4zv-dash { color: #64798a; }
+[data-bs-theme="dark"] .s4zv-prog__bar { background: rgba(148,163,184,.18); }
+[data-bs-theme="dark"] .s4zv-sc { background: rgba(148,163,184,.12); color: #94a9b6; border-color: rgba(148,163,184,.24); }
+[data-bs-theme="dark"] .s4zv-sc.ok { background: rgba(16,185,129,.16); color: #6ee7b7; border-color: rgba(16,185,129,.34); }
+
+[data-bs-theme="dark"] .s4zv-empty {
+  border-color: rgba(34,211,238,.22);
+  background: linear-gradient(180deg,#0d2029,#0b1922);
+}
+[data-bs-theme="dark"] .s4zv-empty__i { color: #67e8f9; background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .s4zv-empty b { color: #e2e8f0; }
+[data-bs-theme="dark"] .s4zv-empty span { color: #7f9aa6; }
+
+[data-bs-theme="dark"] .s4zv-ft {
+  border-top-color: rgba(34,211,238,.14);
+  background: linear-gradient(180deg,#0d2029,#0b1922);
+}
+[data-bs-theme="dark"] .s4zv-ft__n { color: #7f9aa6; }
+/* The Close button was the one white slab left on the dark card. */
+[data-bs-theme="dark"] .s4zv-ft__b { background: #102a35; border-color: rgba(34,211,238,.28); color: #cbd5e1; }
+[data-bs-theme="dark"] .s4zv-ft__b:hover { background: #14323f; }
+
+/* The two header tags sit on the teal ramp, so they stay light — but their
+   own fills were near-white and blew out against it. */
+[data-bs-theme="dark"] .s4zv-ref__tag { background: rgba(16,185,129,.22); color: #a7f3d0; }
+[data-bs-theme="dark"] .s4zv-ref__tag.tp { background: rgba(245,158,11,.22); color: #fde68a; }
 
 /* ── SPI Product Advance Details · the row inputs ────────────────────────────
    The design's rule for these fields, value for value:
@@ -9575,6 +9763,30 @@
 }
 .vs3t .vs3-rm:hover { filter: brightness(1.06); transform: translateY(-1px); }
 .vs3t .vs3-rm svg { width: 15px; height: 15px; }
+/* Dark: the light button is a solid red gradient with a white inset highlight
+   and a red glow under it. That is right on a white row and wrong on a dark
+   one — it became the brightest thing on the card, one per row, pulling the
+   eye away from the fields the operator is actually filling in, and the white
+   inset read as a seam across the top of each button.
+   Tinted and outlined instead, like every other dark control in this table.
+   border-box because the light rule has no border and the size must stay 40.
+   Both attributes: this sheet writes [data-bs-theme], but the SPI wizard is
+   one of the screens that carries [data-layout-mode] (see .vti-flag-pop). */
+[data-bs-theme="dark"] .vs3t .vs3-rm,
+[data-layout-mode="dark"] .vs3t .vs3-rm {
+  box-sizing: border-box;
+  background: rgba(239,68,68,.16);
+  border: 1px solid rgba(248,113,113,.38);
+  color: #fca5a5;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .vs3t .vs3-rm:hover,
+[data-layout-mode="dark"] .vs3t .vs3-rm:hover {
+  background: rgba(239,68,68,.28);
+  border-color: #f87171;
+  color: #fee2e2;
+  filter: none;
+}
 
 [data-bs-theme="dark"] .vs3t > thead > tr { background: linear-gradient(180deg, #102a35, #0d2430); }
 [data-bs-theme="dark"] .vs3t > thead > tr > th { color: #8fb3c2; border-bottom-color: rgba(34,211,238,.18); }

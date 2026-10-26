@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { putId, type PutawayFloorZone, type PutawayLocations, type PutawayRack, type PutawayShelf, type PutawayZone } from '../spi-api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -150,15 +151,20 @@ export default function PutawayConfirmPlacement({
   /** Outstanding: a task exists and the box is not in place yet. */
   const waiting = !!scan && !assigned;
 
-  /* The flag list used to print every flag on the box. A box carrying twenty
-     of them turned this attribute into a wall of chips several rows deep, and
-     pushed the rest of the card — and the Confirm button under it — down the
-     page. Six, then a "+N more" that opens the rest in place, which is the
-     same wording the box drawer's flag strip uses. */
-  const FLAGS_SHOWN = 6;
-  const [allFlags, setAllFlags] = useState(false);
+  /* The flag list used to print every flag on the box, which on a box carrying
+     twenty turned this attribute into a wall of chips several rows deep and
+     pushed the Confirm button under it down the page.
+     Six chips, then a counter that opens the rest in the SAME popover Step 01
+     uses (FlagRow in PutawayReviewBox) — the two steps show the same box, so
+     they answer "what else is on it" the same way. Expanding in place, which
+     this tried first, just rebuilds the wall. */
+  /* One. Six chips still filled the attribute on a box carrying eighteen, and
+     this card is a summary — what matters here is that the box HAS flags and
+     how many, not reading them off the row. The counter opens the full list. */
+  const FLAGS_SHOWN = 1;
+  const [flagPop, setFlagPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
   const hiddenFlags = Math.max(0, box.flags.length - FLAGS_SHOWN);
-  const shownFlags = allFlags ? box.flags : box.flags.slice(0, FLAGS_SHOWN);
+  const shownFlags = box.flags.slice(0, FLAGS_SHOWN);
 
   const isZone = spot?.kind === 'zone';
   const code = !spot ? null
@@ -238,11 +244,59 @@ export default function PutawayConfirmPlacement({
                         <button
                           type="button"
                           className="s4c3-pill s4c3-pill--more"
-                          aria-expanded={allFlags}
-                          onClick={() => setAllFlags(v => !v)}
+                          aria-haspopup="dialog"
+                          aria-expanded={!!flagPop}
+                          onClick={e => {
+                            if (flagPop) { setFlagPop(null); return; }
+                            const r = e.currentTarget.getBoundingClientRect();
+                            /* This row sits low in the card, so below is
+                               usually the short side — flip above when the
+                               list would not fit under the chip. */
+                            const estH = 34 + box.flags.length * 32;
+                            const below = window.innerHeight - r.bottom;
+                            const flipUp = below < estH + 12 && r.top > below;
+                            setFlagPop({ x: r.left, y: flipUp ? r.top - 4 : r.bottom + 4, flipUp });
+                          }}
                         >
-                          {allFlags ? 'Show less' : `+${hiddenFlags} more`}
+                          +{hiddenFlags} more
                         </button>
+                      )}
+                      {flagPop && createPortal(
+                        <>
+                          <div onClick={() => setFlagPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 100000 }} />
+                          <div
+                            className="invf-fpop" role="dialog" aria-label="More product flags"
+                            style={{
+                              position: 'fixed',
+                              left: Math.max(12, Math.min(flagPop.x, window.innerWidth - 260 - 12)),
+                              top: flagPop.flipUp ? undefined : flagPop.y,
+                              bottom: flagPop.flipUp ? Math.max(12, window.innerHeight - flagPop.y) : undefined,
+                              maxHeight: flagPop.flipUp
+                                ? Math.max(140, flagPop.y - 16)
+                                : Math.max(140, window.innerHeight - flagPop.y - 16),
+                              zIndex: 100001,
+                            }}
+                          >
+                            <div className="invf-fpop__title">Product Flags ({box.flags.length})</div>
+                            {/* Every flag, not just the hidden tail: opened from
+                                a counter, the question is what this box carries,
+                                and the tail alone makes you hold the first six
+                                in your head. Same call Step 01 makes. */}
+                            {/* .s4rv-flag, not this card's .s4c3-pill: the
+                                popover is portalled to <body>, outside
+                                .s4-root, where every .s4c3-* rule is scoped —
+                                the chip would arrive unstyled. .invf-fpop
+                                .s4rv-flag is already written for exactly this
+                                case (invoice-form.css), so the rows need no
+                                CSS of their own. */}
+                            {box.flags.map((f, i) => (
+                              <div key={f} className={`invf-fpop__row${i % 2 ? ' is-alt' : ''}`}>
+                                <span className="s4rv-flag">{f}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>,
+                        document.body,
                       )}
                     </>
                   ) : <span className="s4c3-na">No flags</span>}

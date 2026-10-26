@@ -1061,13 +1061,19 @@ export default function Step3BoxPackaging({
               ...(readOnly ? {} : {
                 onContentQtyChange: (code: string, qty: number) =>
                   setEditQtyBy(m => ({ ...m, [code]: Math.min(editMaxOf(code), Math.max(1, qty)) })),
+                /* Per-row remove IS offered on a packed box. This column used
+                   to be a dash on the reasoning that changing what is in a
+                   carton means unpacking it — but the Action column then had
+                   nothing in it on every row, which reads as a column that is
+                   broken rather than one that is deliberately empty.
+
+                   dropFromBox already carries the guards that made the dash
+                   feel safe: it refuses to empty a box, refuses to leave a
+                   mixed carton with one product, and confirms before taking
+                   anything out. So the rule still holds — you just hear it
+                   when you try, instead of being left to guess. */
+                onRemoveContent: dropFromBox,
               }),
-              /* No per-row remove on a box that is already packed: the design
-                 leaves this column a dash, and our own guards already send you
-                 the other way ("Delete the box instead of taking everything out
-                 of it"). Quantities and identifiers are what you correct here;
-                 changing WHAT is in the carton means unpacking it. dropFromBox
-                 stays — this is the one line that would put the control back. */
             }
             : {})}
           customFlags={customFlags} onFlagCreated={onFlagsChanged}

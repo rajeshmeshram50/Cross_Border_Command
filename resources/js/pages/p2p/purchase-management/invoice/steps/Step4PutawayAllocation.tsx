@@ -831,7 +831,11 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
                 <thead><tr>
                   <th>Sr.</th><th>Zebra Task ID</th><th>Putaway Box ID</th>
                   <th>Selected Location ID</th><th>Scan Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  {/* No inline textAlign. It was 'right', from when the buttons
+                      under it were pinned right too; both are centred now, and
+                      an inline style beats the stylesheet's th rule, which is
+                      what left this one heading adrift from its column. */}
+                  <th>Actions</th>
                 </tr></thead>
                 <tbody>
                   {tasks.map((t, i) => (
@@ -1071,12 +1075,24 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
       if (!anchor || !el) return;
       const r = anchor.getBoundingClientRect();
       const top = Math.round(r.bottom + 8);
-      const panel = anchor.closest('.s4-panel');
-      const floor = panel ? panel.getBoundingClientRect().bottom : window.innerHeight;
+      /* The button used to live inside the right panel, so `.s4-panel` was the
+         thing to stop at. It sits on the stage rail now, which is a SIBLING of
+         .s4-panels — closest('.s4-panel') finds nothing from there and the
+         floor fell through to the window, which is the one case the rule above
+         exists to prevent: the pop-over ran the full height of the screen and
+         covered the Update Invoice footer. Fall back to the panels row, which
+         ends exactly where the footer begins. */
+      const scope: ParentNode = anchor.closest('.s4-root') ?? document;
+      const stop = anchor.closest('.s4-panel') ?? scope.querySelector('.s4-panels');
+      const floor = stop ? stop.getBoundingClientRect().bottom : window.innerHeight;
+      /* 220, not 320. A 320px floor is taller than the gap below the button on
+         a short window, so the minimum itself pushed the panel back over the
+         footer it had just been kept off. */
+      const limit = Math.min(window.innerHeight - 12, floor - 8);
       setPos({
         top,
         left: Math.max(12, Math.round(r.right - el.offsetWidth)),
-        height: Math.max(320, Math.min(window.innerHeight - 16, floor - 8) - top),
+        height: Math.max(220, limit - top),
       });
     };
     place();

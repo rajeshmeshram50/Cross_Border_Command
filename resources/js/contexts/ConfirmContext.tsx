@@ -111,12 +111,22 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             @keyframes cfm-scale-in { from { opacity: 0; transform: scale(.92) } to { opacity: 1; transform: scale(1) } }
             .cfm-overlay {
               position: fixed; inset: 0;
-              /* High z-index so the confirm stays on top of nested
-                 reactstrap modals (each ~1055, sometimes stacked) and
-                 custom EpModal/Vault overlays in this app that climb
-                 up to ~6500. The native confirm() this replaced was
-                 always above app chrome, so the styled one must be too. */
-              z-index: 10050;
+              /* Above everything except the toaster.
+                 This was 10050, chosen when the tallest overlay in the app was
+                 about 6500. The app's layers have climbed a long way past that
+                 since: the SPI box drawer is 11000, the evidence vaults 13000,
+                 the CLM wizards 200000, the CTC dialogs 9999999, P2P detail
+                 2800000 — so a confirm raised from inside any of them opened
+                 BEHIND the thing that asked the question. Clicking Remove on a
+                 box row looked like nothing happened.
+                 It cannot be scoped: this is one component for the whole app,
+                 so the number has to clear the tallest dialog. 2147483620 sits
+                 just over the highest portalled dropdown (.spidd-panel,
+                 2147483600) and just under the toaster (2147483647), which is
+                 the one thing that should still be able to speak over a
+                 confirm. A confirm is the most modal thing in the app; nothing
+                 else belongs above it. */
+              z-index: 2147483620;
               display: flex; align-items: center; justify-content: center;
               background: rgba(15, 23, 42, 0.45);
               backdrop-filter: blur(6px);
