@@ -288,7 +288,7 @@ export default function InvoiceForm({
   }, []);
 
   useEffect(() => {
-    if (stage !== 2 || !spiId) return;
+    if (stage < 2 || !spiId) return;
     let live = true;
     setBoxesLoading(true);
     Promise.all([
