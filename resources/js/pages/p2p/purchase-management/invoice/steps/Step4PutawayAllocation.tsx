@@ -1250,7 +1250,6 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const pct = scope.length ? Math.round((placed / scope.length) * 100) : 0;
   const box = all.find(b => b.code === selected) ?? null;
   const boxLocked = placedAt !== null || box?.status === 'placed';
-  useEffect(() => { if (boxLocked && lcStep === 1) setLcStep(2); }, [boxLocked, lcStep]);
 
   const zebraTasks = useMemo(() => {
     const open = all.filter(b => b.status === 'awaiting_scan');
@@ -1329,6 +1328,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   useEffect(() => {
     if (lcStep !== 1 || !putMode) return;
     if (!spiId || !box) return;
+    if (boxLocked && loc.data) return;
     let live = true;
     setLoc({ loading: true, data: null, error: null });
     setSpot(null);
@@ -1745,7 +1745,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                           : box.status === 'draft' ? 'Location allocated'
                           : 'Awaiting putaway',
                       }}
-                      mode={putMode} state={loc} spot={spot} onSpot={setSpot}
+                      mode={putMode} state={loc} spot={spot} onSpot={boxLocked ? () => {} : setSpot}
                       warehouse={warehouseInfo ?? (warehouse ? { name: warehouse } : null)}
                     />
                   ) : lcStep === 2 ? (
@@ -1819,7 +1819,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     type="button"
                     className="s4-btn-back"
                     disabled={lcStep === 0}
-                    onClick={() => setLcStep(n => (boxLocked && n === 2 ? 0 : Math.max(0, n - 1)))}
+                    onClick={() => setLcStep(n => Math.max(0, n - 1))}
                   >
                     <IcoChevL /> Back
                   </button>
@@ -1844,7 +1844,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                           : 'Choose a spot first — use the recommended one, or pick a shelf from the tree')
                       : undefined}
                     onClick={() => {
-                      if (lcStep === 1) { void assignSpot(); return; }
+                      if (lcStep === 1) { if (boxLocked) setLcStep(2); else void assignSpot(); return; }
                       if (lcStep !== 0) { setLcStep(n => Math.min(LIFECYCLE.length - 1, n + 1)); return; }
                       setModePick(null);
                       setModeAsk({ loading: true, rack: 0, norack: 0, error: null });
