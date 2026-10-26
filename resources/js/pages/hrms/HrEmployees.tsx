@@ -2163,8 +2163,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
      branch, any kind of record. The save refuses it either way, but a wizard
      that only says so on the way out of Stage 1 (or, worse, after Stage 4)
      makes the operator re-find the field. This asks the same question the
-     validator will ask, on blur and again before Next, so the answer lands on
-     the field being typed. Mirrors checkMobileUnique above, token and all. */
+     validator will ask, ON BLUR ONLY, so the answer lands on the field being
+     typed. It used to run again on Next as well — that cost a whole extra
+     round trip (~3s on the server) to hear what the save was about to say
+     authoritatively a moment later. Mirrors checkMobileUnique above, token
+     and all. */
   const emailCheckTokenRef = useRef(0);
   const checkEmailUnique = useCallback(async (value: string): Promise<boolean> => {
     const v = (value || '').trim();
@@ -3100,6 +3103,19 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
         }
         setEErrors(flat);
         scrollToFirstError();
+
+        /* A duplicate address or number keeps the headline it had when a
+           separate pre-check asked the question — "Could not save" over a
+           field error reads like a server fault rather than something the
+           user can fix. */
+        if (flat.email || flat.mobile) {
+          const dupEmail = !!flat.email;
+          toast.error(
+            dupEmail ? 'Duplicate email address' : 'Duplicate mobile number',
+            dupEmail ? flat.email : flat.mobile,
+          );
+          return false;
+        }
       }
       const msg = err?.response?.data?.message || err?.message || 'Save failed';
       toast.error('Could not save', String(msg));
@@ -3135,26 +3151,19 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
     setSaving(true);
     try {
-      if (empStep === 1) {
-        /* Both at once. They ask different questions of different tables and
-           neither depends on the other, but awaiting them in turn made Step 1 →
-           Step 2 three sequential round trips before the save even started —
-           and on the server a round trip is the expensive part. Email is still
-           reported first when both clash, so the message order is unchanged. */
-        const [emailOk, mobileOk] = await Promise.all([
-          checkEmailUnique(eWorkEmail),
-          checkMobileUnique(eMobile),
-        ]);
-        if (!emailOk) {
-          toast.error('Duplicate email address', 'This email is already used somewhere in the system. Each address can be used only once.');
-          scrollToFirstError();
-          return;
-        }
-        if (!mobileOk) {
-          toast.error('Duplicate mobile number', 'This mobile is already in use by another employee.');
-          return;
-        }
-      }
+      /* No uniqueness pre-check here any more.
+
+         Step 1 → Step 2 used to run the email and mobile checks and THEN the
+         save: two sequential round trips, and on the server a round trip is
+         ~3s whatever it carries. The save already refuses both before it
+         writes anything — Rule::unique + UniqueSystemEmail for the address,
+         guardDuplicate() for the number — so the pair was paying 3s to hear
+         an answer the next request would give authoritatively. A duplicate
+         now comes back as a 422 and persistCurrentStepInner reports it on the
+         field, same wording as before.
+
+         The onBlur checks stay: they answer while the user is still typing,
+         off the critical path, which is where that question belongs. */
       const ok = await persistCurrentStepInner(empStep);
       if (!ok) return;
       setEErrors({});
