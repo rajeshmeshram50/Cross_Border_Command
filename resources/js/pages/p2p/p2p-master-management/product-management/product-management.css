@@ -8506,11 +8506,11 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 
 /* Toolbar heights = the Supplier list's (QA #83–85): the tab rail stands 48px
    (40px tabs inside 3px padding + 1px border), the search matches the rail at
-   48px, and Filter stands 44px centred on it, as on the Supplier toolbar. */
+   48px, and Filter matches them at 48px (QA #25). */
 .prd-tabs { padding: 3px; }
 .prd-tab { height: 40px; padding-top: 0; padding-bottom: 0; }
 .prd-search { height: 48px; }
-.prd-filter-btn { height: 44px; }
+.prd-filter-btn { height: 48px; }
 
 /* Reset frozen while no filter is applied (QA #86). */
 .prd-fbtn:disabled,
