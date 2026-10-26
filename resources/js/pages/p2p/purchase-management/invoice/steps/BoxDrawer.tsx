@@ -23,17 +23,18 @@ import type { ProductLine } from '../invoice-products';
 import { putId } from '../spi-api';
 import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
 
-function SavedShot({ photo, onRemove }: { photo: SavedPhoto; onRemove?: () => void }) {
+function SavedShot({ photo, onRemove, busy = false }: { photo: SavedPhoto; onRemove?: () => void; busy?: boolean }) {
   const [failed, setFailed] = useState(false);
   return (
-    <div className="vti-dw-shot">
+    <div className={`vti-dw-shot${busy ? ' is-busy' : ''}`} aria-busy={busy}>
       {failed ? <span className="vti-dw-shot__ph">Not found</span>
         : <img src={resolveFileUrl(photo.path)} alt={photo.name} onError={() => setFailed(true)} />}
       {onRemove && (
-        <button type="button" className="vti-dw-shot__x" onClick={onRemove} aria-label={`Remove ${photo.name}`}>
+        <button type="button" className="vti-dw-shot__x" onClick={onRemove} disabled={busy} aria-label={`Remove ${photo.name}`}>
           <IcoX size={10} stroke={3} />
         </button>
       )}
+      {busy && <span className="vti-dw-shot__busy"><i /></span>}
     </div>
   );
 }
@@ -191,10 +192,15 @@ export default function BoxDrawer({
   const [savedPhotos, setSavedPhotos] = useState<SavedPhoto[]>(initial?.photos ?? []);
   const savedKey = (initial?.photos ?? []).map(p => p.id).join(',');
   useEffect(() => { setSavedPhotos(initial?.photos ?? []); }, [savedKey]);
+  const [removing, setRemoving] = useState<number[]>([]);
   const removeSaved = async (p: SavedPhoto) => {
-    if (!onDeletePhoto) return;
-    if (await onDeletePhoto(p.id)) setSavedPhotos(list => list.filter(x => x.id !== p.id));
+    if (!onDeletePhoto || removing.includes(p.id)) return;
+    setRemoving(r => [...r, p.id]);
+    const ok = await onDeletePhoto(p.id);
+    if (ok) setSavedPhotos(list => list.filter(x => x.id !== p.id));
+    setRemoving(r => r.filter(x => x !== p.id));
   };
+
   const [camOpen, setCamOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -395,7 +401,7 @@ export default function BoxDrawer({
               </div>
               <div className="vti-dw-shots-strip">
                 {savedPhotos.map(p => (
-                  <SavedShot key={`saved-${p.id}`} photo={p}
+                  <SavedShot key={`saved-${p.id}`} photo={p} busy={removing.includes(p.id)}
                     onRemove={onDeletePhoto ? () => void removeSaved(p) : undefined} />
                 ))}
                 {photos.map(s => (

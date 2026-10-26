@@ -354,7 +354,7 @@ export default function InvoiceForm({
     if (!spiId) return false;
     try {
       await spiApi.deleteBoxPhoto(spiId, boxId, attachmentId);
-      await reloadBoxes(spiId);
+      void reloadBoxes(spiId).catch(() => {});
       toast.success('Photo removed', 'It is no longer attached to this box.');
       return true;
     } catch (e) {
