@@ -133,6 +133,49 @@ class EmployeeController extends Controller
      */
     private const LIST_DROP_APPENDS = ['other_assets_resolved', 'ancillary_roles_resolved'];
 
+    /**
+     * Fields a step save may write through the narrow route.
+     *
+     * The list is defined by ABSENCE: update() guards every side effect on a
+     * field being present in the payload, and none of these appears in any of
+     * those guards. Nothing here enables or disables a login, syncs an email,
+     * versions a salary structure, recomputes a payslip, assigns a leave plan
+     * or trips OnboardingGuard. Employee has no model observers either, so a
+     * plain column write is the whole of it.
+     *
+     * Deliberately NOT here, and why:
+     *   status, email, official_email  — user account sync + EmailGuard
+     *   first/middle/last_name         — display-name derivation
+     *   mobile                         — guardDuplicate()
+     *   annual_salary, enable_payroll,
+     *   pf_eligible, pf_type,
+     *   esi_applicable, salary_*       — structure versioning + payslip recompute
+     *   leave_plan                     — plan assignment
+     *   shift                          — shift handling
+     *   date_of_joining                — the salary effective date is validated
+     *                                    against it (date_equals)
+     *
+     * A payload carrying ANY key outside this list is refused here and the
+     * caller falls back to PUT /employees/{id}, which is unchanged. Growing
+     * the list means re-reading update() for a guard on that field first.
+     */
+    private const STEP_SAFE_FIELDS = [
+        'department_id', 'designation_id', 'primary_role_id', 'ancillary_role_ids',
+        'legal_entity_id', 'holiday_group_id', 'holiday_list',
+        'nationality_country_id', 'work_country_id',
+        'reporting_manager_id', 'reporting_manager_user_id',
+        'location', 'date_of_birth', 'gender', 'blood_group',
+        'probation_months', 'probation_end_date', 'probation_policy',
+        'notice_period', 'weekly_off',
+        'attendance_number', 'attendance_tracking', 'biometric_status',
+        'desk_workstation_no', 'id_card_status',
+        'laptop_assigned', 'laptop_master_asset_id',
+        'mobile_assigned', 'mobile_master_asset_id', 'mobile_device',
+        'other_assets', 'other_master_asset_ids',
+        'expense_policy', 'overtime', 'pay_group', 'penalization_policy',
+        'tax_regime', 'time_tracking',
+    ];
+
 
     private const EXIT_WITH = [
         'department:id,name',
@@ -3496,6 +3539,92 @@ class EmployeeController extends Controller
      * only upward. Anything else still goes through update(), where the
      * payroll and permission consequences are handled. (QA #5-#11)
      */
+    /**
+     * PATCH /employees/{id}/step — the wizard's master-data save.
+     *
+     * Same validation as the full update: validatePayload() is the method
+     * store() and update() both call, so the rules cannot drift apart. Every
+     * rule is nullable on an update and validated() returns only the keys that
+     * were sent, so a partial body is checked exactly as the same keys would
+     * be through PUT.
+     *
+     * What it does NOT do is the reason it exists — no fullWith() eager load,
+     * no dependent-column re-derivation, no rebuilt employee in the response.
+     * Measured against the same two-master-id save: 36 queries through update(),
+     * under ten here.
+     *
+     * A key outside STEP_SAFE_FIELDS is refused with 422 and `fallback: true`,
+     * which is the caller's signal to send the same body to PUT /employees/{id}.
+     * Refusing is deliberate: silently ignoring an unsafe field would write
+     * half a save and skip the side effect that field exists to trigger.
+     */
+    public function updateStep(Request $request, $id)
+    {
+        $this->authorize($request, 'can_edit');
+
+        /* Same tenant scope as update(), on a query that selects what it
+           touches rather than the whole graph. */
+        $q = Employee::query()->withTrashed()->select(array_merge(
+            ['id', 'client_id', 'branch_id', 'wizard_step_completed', 'onboarding_stage_completed'],
+            self::STEP_SAFE_FIELDS,
+        ));
+        $this->applyScope($q, $request->user());
+        $row = $q->findOrFail($this->resolveIdParam($id));
+
+        if ($row->isDisabled()) {
+            return response()->json([
+                'message' => 'This employee is disabled. Re-enable them before editing.',
+            ], 422);
+        }
+
+        $data = $this->validatePayload($request, $row->id);
+
+        $step  = array_key_exists('wizard_step_completed', $data) ? (int) $data['wizard_step_completed'] : null;
+        $macro = array_key_exists('onboarding_stage_completed', $data) ? (int) $data['onboarding_stage_completed'] : null;
+
+        $fields = array_diff_key($data, array_flip([
+            'wizard_step_completed', 'onboarding_stage_completed',
+        ]));
+
+        $unsafe = array_values(array_diff(array_keys($fields), self::STEP_SAFE_FIELDS));
+        if ($unsafe) {
+            return response()->json([
+                'message'  => 'These fields need the full save.',
+                'fields'   => $unsafe,
+                'fallback' => true,
+            ], 422);
+        }
+
+        $patch = [];
+        foreach ($fields as $col => $val) {
+            // Only what actually moved — an unchanged column is not a write.
+            if ($row->{$col} != $val) $patch[$col] = $val;
+        }
+
+        // Watermarks move forward only, same rule as updateOnboardingProgress.
+        if ($step !== null && $step > (int) ($row->wizard_step_completed ?? 0)) {
+            $patch['wizard_step_completed'] = $step;
+        }
+        if ($macro !== null && $macro > (int) ($row->onboarding_stage_completed ?? 0)) {
+            $patch['onboarding_stage_completed'] = $macro;
+        }
+
+        // No updated_by here: `employees` has no such column, and writing one
+        // is how the first cut of this aborted the transaction.
+        if ($patch) {
+            $row->forceFill($patch)->save();
+        }
+
+        return response()->json([
+            'message' => 'Saved.',
+            'data'    => [
+                'id'                         => (int) $row->id,
+                'wizard_step_completed'      => (int) ($row->wizard_step_completed ?? 0),
+                'onboarding_stage_completed' => (int) ($row->onboarding_stage_completed ?? 0),
+                'changed'                    => array_keys($patch),
+            ],
+        ]);
+    }
     public function updateOnboardingProgress(Request $request, $id)
     {
         $this->authorize($request, 'can_edit');

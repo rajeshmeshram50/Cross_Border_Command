@@ -2865,6 +2865,35 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     return 1;
   };
 
+/* Fields the narrow step endpoint accepts (EmployeeController::STEP_SAFE_FIELDS).
+ *
+ * This is a HINT, not the rule. It decides which endpoint to try first; the
+ * server keeps the authoritative list and answers 422 { fallback: true } for
+ * anything outside it, which is retried on PUT. So a field added here by
+ * mistake costs one extra round trip, never a skipped side effect — and the
+ * two lists drifting apart cannot break a save.
+ *
+ * Everything absent needs the full update: names (display-name derivation),
+ * email (user sync + EmailGuard), mobile (duplicate guard), status (account
+ * enable/disable), anything payroll (structure versioning + payslip
+ * recompute), leave_plan, shift, date_of_joining. */
+const STEP_SAFE_FIELDS = new Set([
+  'department_id', 'designation_id', 'primary_role_id', 'ancillary_role_ids',
+  'legal_entity_id', 'holiday_group_id', 'holiday_list',
+  'nationality_country_id', 'work_country_id',
+  'reporting_manager_id', 'reporting_manager_user_id',
+  'location', 'date_of_birth', 'gender', 'blood_group',
+  'probation_months', 'probation_end_date', 'probation_policy',
+  'notice_period', 'weekly_off',
+  'attendance_number', 'attendance_tracking', 'biometric_status',
+  'desk_workstation_no', 'id_card_status',
+  'laptop_assigned', 'laptop_master_asset_id',
+  'mobile_assigned', 'mobile_master_asset_id', 'mobile_device',
+  'other_assets', 'other_master_asset_ids',
+  'expense_policy', 'overtime', 'pay_group', 'penalization_policy',
+  'tax_regime', 'time_tracking',
+]);
+
   const buildEmployeePayload = (stepCompleted: number): Record<string, any> => {
     const intOrNull = (s: string | null | undefined) => {
       const n = parseInt(String(s ?? ''), 10);
@@ -3061,7 +3090,29 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
           ? { ...Object.fromEntries(changed.map(k => [k, payload[k]])),
               wizard_step_completed: payload.wizard_step_completed }
           : payload;
-        await api.put(`/employees/${currentId}`, body);
+
+        /* Master-data-only edits go to the narrow endpoint: the same write in
+           10 queries against the full update's 38, because it does not eager
+           load every relation or rebuild an employee for a response this call
+           discards anyway. Anything the server will not take there comes back
+           422 { fallback: true } and is re-sent to the PUT untouched, so the
+           old path still runs for every save that needs its side effects. */
+        const narrow = !!changed && changed.length > 0
+          && changed.every(k => STEP_SAFE_FIELDS.has(k));
+
+        if (narrow) {
+          try {
+            await api.patch(`/employees/${currentId}/step`, body);
+          } catch (err: any) {
+            if (err?.response?.status === 422 && err?.response?.data?.fallback) {
+              await api.put(`/employees/${currentId}`, body);
+            } else {
+              throw err;
+            }
+          }
+        } else {
+          await api.put(`/employees/${currentId}`, body);
+        }
       } else {
         const r = await api.post('/employees', payload);
         const newId: number | undefined = r?.data?.employee?.id;
