@@ -929,6 +929,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                       placeholder={segmentOptions.length ? '— Select Segments —' : 'No less-regulated segments configured'}
                       options={segmentOptions}
                       onChange={(vs) => { setSegments(vs); setErrors(p => ({ ...p, segment: '' })); }}
+                      /* Portalled to <body>, so this class is the only way the
+                         menu gets CLM's teal instead of the component's own
+                         indigo. */
+                      menuClassName="clm-mms-menu"
                     />
                   )}
                   {errors.segment && <div className="agw-err">{errors.segment}</div>}
@@ -1791,16 +1795,27 @@ const AGW_CSS = `
 .agw-stepper-progress { display: inline-flex; flex-direction: column; gap: 6px; flex-shrink: 0; align-items: flex-end; }
 .agw-stepper-label { font-size: 10.5px; font-weight: 700; color: #0e7490; background: #f0fdff; border: 1px solid rgba(6,182,212,.22); padding: 4px 10px; border-radius: 999px; }
 
-.agw-body { flex: 1; min-height: 0; overflow-y: auto; background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%); padding: 22px; }
-.agw-step-body { display: flex; flex-direction: column; gap: 16px; }
+/* 16px of gutter, down from 22. The CLM modal body runs 14px 16px; this is a
+   wider shell so it keeps 16 on all four sides, but it no longer sits half
+   again as loose as every other dialog in the module. */
+.agw-body { flex: 1; min-height: 0; overflow-y: auto; background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%); padding: 16px; }
+/* 14px between blocks — the CLM modal's field gap (.clm-modal-body), and the
+   same value .agw-grid-2 now uses between columns. It was 16 down and 18
+   across: one grid with two different gaps, which is what read as uneven. */
+.agw-step-body { display: flex; flex-direction: column; gap: 14px; }
 /* Step 2 (editor) — the body itself does NOT scroll; the editor card fills
  * the available height and only its page-shell region scrolls internally. */
 .agw-body-editor { overflow: hidden; display: flex; flex-direction: column; }
 .agw-body-editor .agw-step-body { flex: 1; min-height: 0; }
 .agw-body-editor .agw-editor-shell { flex: 1; min-height: 0; }
-.agw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
-.agw-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.agw-label { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0e7490; }
+.agw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px; }
+/* 3px from a label to its control, against the 14px between fields — the
+   ratio .clm-field uses. At 6 against 16 the two were close enough that a
+   label did not group with the input it names. line-height: 1 on the label
+   because the row carries three sizes (label, the 12px required mark, the
+   count) and each was adding its own leading under the text. */
+.agw-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.agw-label { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0e7490; line-height: 1; }
 .agw-count { float: right; font-weight: 700; letter-spacing: 0; text-transform: none; color: #94a3b8; }
 .agw-req { color: #ef4444; font-size: 12px; line-height: 1; }
 .agw-input {
@@ -2015,7 +2030,11 @@ const AGW_CSS = `
 /* Footer */
 .agw-foot { display: flex; align-items: center; justify-content: space-between; background: #fff; border-top: 1px solid rgba(6,182,212,.18); padding: 14px 22px; flex-shrink: 0; }
 .agw-foot-left, .agw-foot-right { display: inline-flex; align-items: center; gap: 10px; }
-.agw-btn { display: inline-flex; align-items: center; gap: 7px; padding: 10px 22px; border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: transform .18s ease, box-shadow .22s ease, background .18s ease, color .18s ease, border-color .18s ease; }
+/* 40px / 0 18px / radius 10 / 12.5px-700 — the CLM button spec, the same one
+   .clm-btn-save, .clm-btn-cancel and .clm-add-btn carry, taken from the
+   Create CTC Agreement button. This was padding-sized at 13px on 10px 22px,
+   so the wizard's footer stood a step apart from every other CLM dialog's. */
+.agw-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 40px; box-sizing: border-box; padding: 0 18px; border-radius: 10px; font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: transform .18s ease, box-shadow .22s ease, background .18s ease, color .18s ease, border-color .18s ease; }
 .agw-btn-back, .agw-btn-cancel { background: #fff; color: #475569; border: 1px solid #e2e8f0; }
 .agw-btn-back:hover, .agw-btn-cancel:hover { border-color: #0891b2; color: #0891b2; background: #f0fdff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.16); }
 .agw-btn-primary { background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%); color: #fff; border: none; box-shadow: 0 4px 14px rgba(8,145,178,.40), inset 0 1px 0 rgba(255,255,255,.18); }

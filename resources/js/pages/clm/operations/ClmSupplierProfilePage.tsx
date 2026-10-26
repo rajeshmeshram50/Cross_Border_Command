@@ -156,7 +156,8 @@ const CSS = `
    so the strip under the border took the ramp's lightest stop and drew a pale
    line along the left and top edges of the selected tab. */
 .bpa-tab-active{border:1px solid transparent;background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);background-origin:border-box;color:#fff;box-shadow:0 6px 16px -5px rgba(6,182,212,.55),inset 0 1px 0 rgba(255,255,255,.25);}
-.bpa-tab-inactive{background:transparent;border:1px solid transparent;color:#0e7490;box-shadow:0 1px 2px rgba(16,24,40,.05);}
+/* No shadow at rest — see .clm-tab and the Buyer Profile note. */
+.bpa-tab-inactive{background:transparent;border:1px solid transparent;color:#0e7490;}
 /* White chip, no outline — the rail standard set on .clm-tab. */
 .bpa-tab-inactive:hover{background:#fff;border-color:transparent;color:#0891b2;box-shadow:0 2px 6px rgba(16,24,40,.12);}
 [data-bs-theme="dark"] .bpa-tab-inactive:hover{background:rgba(255,255,255,.08) !important;border-color:transparent !important;color:#a5f3fc !important;box-shadow:0 2px 6px rgba(0,0,0,.35);}

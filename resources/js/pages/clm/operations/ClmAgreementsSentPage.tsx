@@ -352,7 +352,7 @@ export default function ClmAgreementsSentPage() {
                      selected tab is skipped: it is already filled, and washing
                      it would mean restoring a gradient on the way out. */
                   onMouseEnter={e => { if (active) return; e.currentTarget.style.background = t.dark ? 'rgba(255,255,255,.08)' : '#fff'; e.currentTarget.style.color = t.dark ? '#a5f3fc' : '#0891b2'; e.currentTarget.style.boxShadow = t.dark ? '0 2px 6px rgba(0,0,0,.35)' : '0 2px 6px rgba(16,24,40,.12)'; }}
-                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(16,24,40,.05)'; }}
+                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; e.currentTarget.style.boxShadow = 'none'; }}
                   style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40,
                     border: 0, borderRadius: 8,
                     fontFamily: 'var(--font-sans)', fontSize: 12.5, fontWeight: 650, letterSpacing: 0,
@@ -362,7 +362,12 @@ export default function ClmAgreementsSentPage() {
                          drew a crisp white line along the tab's top edge, which
                          reads as a border the selected tab should not have. */
                       ? { background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(8,145,178,.55)' }
-                      : { background: 'transparent', boxShadow: '0 1px 2px rgba(16,24,40,.05)', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
+                      /* No shadow at rest — Case to Case, the rail these are
+                         measured against, has none. A 1px shadow on a
+                         transparent tab still draws a card edge, so four of
+                         them read as outlined boxes in the capsule instead of
+                         one band with a selection in it. */
+                      : { background: 'transparent', boxShadow: 'none', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
                   {icon}
                   <span>{label}</span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 28, height: 18, padding: '0 6px', borderRadius: 999, fontSize: 10, fontWeight: 700, lineHeight: 1, fontVariantNumeric: 'tabular-nums', border: '1px solid',

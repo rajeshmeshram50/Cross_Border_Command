@@ -855,6 +855,12 @@ function SegmentRuleModal(props: {
                           })}
                           renderBadges={(code) => <SegmentBadge status={segments.find(s => s.code === code)?.regulatory_status} />}
                           onChange={(vs) => setSegCodes(vs)}
+                          /* The menu is portalled to <body>, so no CLM scope
+                             reaches it — this class is the only way it gets
+                             the module's teal. Without it the component's own
+                             indigo showed through on the ticked row, the
+                             checkbox and the search focus ring. */
+                          menuClassName="clm-mms-menu"
                         />
                       )
                     ) : (
@@ -890,14 +896,27 @@ function SegmentRuleModal(props: {
                   <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)' }}>
                     <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Segment Details</span>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto', gap: 0 }}>
+                  {/* minmax(0,1fr), not 1fr: a bare 1fr refuses to go below its
+                      content, so the name column could never shrink and the
+                      ellipsis above would never engage. */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0,1fr) auto auto', gap: 0 }}>
                     <div className="dcp-segdtl-cell" style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
                       <div className="dcp-segdtl-label" style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Segment ID</div>
                       <div className="dcp-segdtl-val" style={{ fontFamily: "'Geist Mono', monospace", fontSize: 14, fontWeight: 800, color: '#0c4a6e' }}>{selSeg.code}</div>
                     </div>
                     <div className="dcp-segdtl-cell" style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
                       <div className="dcp-segdtl-label" style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Segment Name</div>
-                      <div className="dcp-segdtl-val" style={{ fontSize: 12, fontWeight: 700, color: '#0c4a6e' }}>{selSeg.name}</div>
+                      {/* 35 characters, then the rest on hover. A segment name
+                          is free text and some run to 200+ with nothing to
+                          break on, which pushed this card — and the modal with
+                          it — past the screen. */}
+                      <div className="dcp-segdtl-val" style={{ fontSize: 12, fontWeight: 700, color: '#0c4a6e', minWidth: 0 }}>
+                        <Tooltip label={selSeg.name} disabled={selSeg.name.length <= 35}>
+                          <span style={{ display: 'inline-block', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {selSeg.name.length > 35 ? `${selSeg.name.slice(0, 35).trimEnd()}…` : selSeg.name}
+                          </span>
+                        </Tooltip>
+                      </div>
                     </div>
                     <div className="dcp-segdtl-cell" style={{ padding: '10px 14px', borderRight: '1px solid rgba(6,182,212,.09)' }}>
                       <div className="dcp-segdtl-label" style={{ fontSize: 11, fontWeight: 700, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Regulatory</div>
@@ -1026,7 +1045,19 @@ function SegmentRuleModal(props: {
                               const shown = full.length > 25 ? `${full.slice(0, 25)}…` : full;
                               return <TruncCell value={full} shown={shown} />;
                             })()}
-                            <td className="clm-td-desc">{d.authority || d.issued_by || '—'}</td>
+                            {/* The first authority and a "+N" disc, with the
+                                rest in the popover — the same control the DCP
+                                rules table above uses. A document can carry
+                                several, and printing them all wrapped the row
+                                to two lines and pushed the table wider than
+                                the modal. */}
+                            <td className="clm-td-desc">
+                              <AuthorityBadges value={
+                                Array.isArray(d.authority_list) && d.authority_list.length
+                                  ? d.authority_list
+                                  : (d.authority || d.issued_by || '')
+                              } />
+                            </td>
                             <td style={{ width: 200, textAlign: 'right' }}>
                               <div className={`dcp-req-group ${isM ? 'dcp-req-group-mand' : isO ? 'dcp-req-group-opt' : ''}`} style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: `1.5px solid ${isM ? 'rgba(6,182,212,.35)' : isO ? 'rgba(245,158,11,.35)' : 'rgba(203,213,225,.4)'}` }}>
                                 <button className={isM ? 'dcp-req-btn-on' : 'dcp-req-btn-off'} onClick={() => setDocReq(activeCat, d.code, isM ? null : 'M')} style={{ padding: '5px 14px', border: 'none', borderRight: '1px solid rgba(203,213,225,.35)', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', background: isM ? 'linear-gradient(135deg, #06b6d4, #0891b2)' : 'rgba(248,250,252,.8)', color: isM ? '#fff' : '#94a3b8' }}>Mandatory</button>

@@ -62,6 +62,8 @@ const IcoMap = ({ size = 13 }: { size?: number }) =>
 const IcoChev = () => svg(<polyline points="6 9 12 15 18 9" />, 12, 2.6);
 const IcoCheck = ({ size = 11 }: { size?: number }) => svg(<polyline points="20 6 9 17 4 12" />, size, 3.4);
 const IcoLock = () => svg(<><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></>, 11, 2.4);
+/** Refused on a condition, as opposed to the lock's "no room left". */
+const IcoNo = () => svg(<><circle cx="12" cy="12" r="9" /><line x1="5.6" y1="5.6" x2="18.4" y2="18.4" /></>, 11, 2.4);
 const IcoLayers = () => svg(<><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></>, 14);
 const IcoPin = ({ size = 14 }: { size?: number }) =>
   svg(<><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></>, size);
@@ -91,6 +93,26 @@ const zoneSub = (z: PutawayZone, shelves: number) =>
     z.hazardous ? 'Hazardous' : null,
     many(z.racks.length, 'rack', 'racks'),
     many(shelves, 'shelf', 'shelves')].filter(Boolean).join(' · ');
+
+/** The server's refusal codes for "there is no room", as opposed to "this
+ *  shelf is not for this box". It already tells us exactly why a shelf was
+ *  refused, so reading that beats inferring it from the fill: a shelf refused
+ *  for being inactive, held by another picker, too short for the box or the
+ *  wrong temperature can sit at any fill at all, and judging it by percentage
+ *  filed those under "Fully Utilized" whenever they happened to be full-ish —
+ *  which is most of them, so the second band almost never appeared. */
+const CAPACITY_REASONS = new Set(['full', 'over_weight', 'over_capacity']);
+
+/** Only reached when the payload carries no code (older responses). */
+const FULL_PCT = 75;
+const outOfRoom = (reason: string | null, usedPct: number) =>
+  reason ? CAPACITY_REASONS.has(reason) : usedPct >= FULL_PCT;
+
+/** Refused because there is no room — frees up when stock moves out. */
+const isFull = (s: PutawayShelf) => !s.eligible && outOfRoom(s.reason, s.used_pct);
+/** Refused on a condition: inactive, in use, wrong temperature, too tall, no
+ *  cold chain. Emptying the shelf would not help — it is not for this box. */
+const isNotEligible = (s: PutawayShelf) => !s.eligible && !outOfRoom(s.reason, s.used_pct);
 
 /** How full a set of shelves is, by weight: what is used against what they
  *  hold. Derived here rather than sent, because the payload already carries
@@ -230,8 +252,14 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
 
   const zones = state.data?.zones ?? [];
   const racks = zones.reduce((t, z) => t + z.racks.length, 0);
-  const nAvail = state.data?.eligible ?? 0;
-  const nFull = Math.max(0, (state.data?.total ?? 0) - nAvail);
+  /* Counted off the same shelves the bands below are built from, through the
+     same two helpers. The header used to take "refused" as total - eligible,
+     which is every refusal in one number and could not be split; counting here
+     means the four figures always add up to the tree the operator is reading. */
+  const allShelves = zones.flatMap(z => z.racks.flatMap(r => r.shelves));
+  const nAvail = allShelves.filter(s => s.eligible).length;
+  const nFull = allShelves.filter(isFull).length;
+  const nNotFit = allShelves.filter(isNotEligible).length;
 
   /** One shelf tile — a choice, or a frozen one that says why. */
   const tile = (sh: PutawayShelf) => {
@@ -264,7 +292,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
     }
     /* The legend's two frozen bands: amber is a shelf filling up, red is one
        at 90 %+ or refused on a condition that is not occupancy at all. */
-    const full = sh.used_pct >= 75;
+    const full = outOfRoom(sh.reason, sh.used_pct);
     const red = sh.used_pct >= 90 || !full;
     return (
       <div key={sh.id} className="s4cl-sh is-fu" aria-disabled="true" title={sh.reason_label || 'Not available'}>
@@ -277,10 +305,14 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
           <i className="f" style={{ width: `${Math.max(4, Math.min(100, sh.used_pct))}%` }} />
         </div>
         <div className="s4cl-sh__ft">
-          {/* A shelf frozen because it is FULL says how full; one frozen for
-              any other reason says the reason, which the number would hide. */}
+          {/* A shelf with nothing left says how full it is; every other
+              refusal says why, which the number would hide. "Not enough free
+              load" is a capacity refusal too, but a shelf at 60 % that cannot
+              take THIS box has to say so rather than report 60 % used. */}
           <span className={red ? 'r' : 'a'}>
-            {full ? `${pct(sh.used_pct)} used` : (sh.reason_label || 'Not available')}
+            {full && (!sh.reason_label || sh.reason === 'full')
+              ? `${pct(sh.used_pct)} used`
+              : (sh.reason_label || 'Not available')}
           </span>
           <em>Frozen</em>
         </div>
@@ -428,6 +460,10 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                 <div><span className="s4cl-kpi__i r"><IcoRack /></span><b>{racks}</b><em>Racks</em></div>
                 <div><span className="s4cl-kpi__i g"><IcoCheck /></span><b>{nAvail}</b><em>Available</em></div>
                 <div><span className="s4cl-kpi__i x"><IcoLock /></span><b>{nFull}</b><em>Fully Utilized</em></div>
+                {/* Shown even at nought, unlike the band inside a rack: this row
+                    is the one place every shelf is accounted for, and 12 + 4
+                    not adding up to 16 is the question it exists to answer. */}
+                <div><span className="s4cl-kpi__i n"><IcoNo /></span><b>{nNotFit}</b><em>Not Eligible</em></div>
               </div>
 
               <div className="s4cl-leg">
@@ -472,7 +508,14 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                               ...r.shelves.filter(s => s.eligible && rec?.id === s.id),
                               ...r.shelves.filter(s => s.eligible && rec?.id !== s.id),
                             ];
-                            const fu = r.shelves.filter(s => !s.eligible);
+                            /* Two refusals, not one. A shelf with no room left
+                               and a shelf the box may not go on are different
+                               problems: the first clears when stock moves, the
+                               second never clears for THIS box. Both stay
+                               frozen; they just stop being called the same
+                               thing. */
+                            const fu = r.shelves.filter(isFull);
+                            const ne = r.shelves.filter(isNotEligible);
                             return (
                               <div className={`s4cl-rk${ropen ? ' is-open' : ''}${rSel ? ' has-sel' : ''}`} key={r.id}>
                                 <div className="s4cl-rk__hd" role="button" tabIndex={0}
@@ -484,6 +527,11 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                                   <span className="s4cl-rk__meta">{many(r.total, 'shelf', 'shelves')}</span>
                                   <span className="s4cl-pill s4cl-pill--g">{av.length} available</span>
                                   {fu.length > 0 && <span className="s4cl-pill s4cl-pill--r">{fu.length} full</span>}
+                                  {/* Counted apart from "full" — before the
+                                      split these were added to it, so a rack
+                                      could report shelves as full that had
+                                      plenty of room and were simply refused. */}
+                                  {ne.length > 0 && <span className="s4cl-pill s4cl-pill--n">{ne.length} not eligible</span>}
                                   <Meter p={fillOf(r.shelves)} />
                                   <span className="s4cl-chev"><IcoChev /></span>
                                 </div>
@@ -502,6 +550,17 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                                         ? <div className="s4cl-grid">{fu.map(tile)}</div>
                                         : <div className="s4cl-none">No fully utilized shelf in this rack.</div>}
                                     </div>
+                                    {/* Only when there are some. An empty
+                                        "Not Eligible" band on every rack would
+                                        be a third heading saying nothing — the
+                                        other two are always meaningful, this
+                                        one is the exception. */}
+                                    {ne.length > 0 && (
+                                      <div className="s4cl-grp s4cl-grp--ne">
+                                        <div className="s4cl-grp__hd"><i><IcoLock /></i>Not Eligible<span>{ne.length}</span></div>
+                                        <div className="s4cl-grid">{ne.map(tile)}</div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>

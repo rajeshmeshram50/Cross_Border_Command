@@ -1292,16 +1292,26 @@ const TNW_CSS = `
   flex: 1; min-height: 0;
   overflow-y: auto;
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
-  padding: 22px;
+  /* 16, as the Agreement wizard — both ran 22, half again as loose as the
+     14px 16px the CLM modal body uses. */
+  padding: 16px;
 }
 .tnw-body.is-editor { overflow-y: auto; display: flex; flex-direction: column; }
 .tnw-body.is-editor > .tnw-step-body { flex: 1; min-height: 0; }
-.tnw-step-body { display: flex; flex-direction: column; gap: 18px; }
-.tnw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
-.tnw-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* 14 between blocks and between columns, 3 from a label to its control — the
+   CLM measures, and the same ones the Agreement wizard now uses. These were
+   18 and 6: not uneven here, just looser than every dialog around them, and
+   6 against 18 is close enough that a label does not group with its input. */
+.tnw-step-body { display: flex; flex-direction: column; gap: 14px; }
+.tnw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px; }
+.tnw-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .tnw-label {
   font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
   color: #0e7490;
+  /* The row carries the label, the 12px required mark and sometimes a hint
+     chip; without this each adds its own leading under the text and the 3px
+     gap above behaves like 5 or 6. */
+  line-height: 1;
 }
 .tnw-req { color: #ef4444; font-size: 12px; line-height: 1; }
 .tnw-input {
@@ -1725,10 +1735,13 @@ const TNW_CSS = `
   flex-shrink: 0;
 }
 .tnw-foot-left, .tnw-foot-right { display: inline-flex; align-items: center; gap: 10px; }
+/* 40px / 0 18px / radius 10 / 12.5px-700 — the CLM button spec, shared with
+   .clm-btn-save, .clm-add-btn and the Agreement wizard's .agw-btn. */
 .tnw-btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 10px 22px; border-radius: 10px;
-  font-family: inherit; font-size: 13px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 40px; box-sizing: border-box;
+  padding: 0 18px; border-radius: 10px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   transition: transform .18s ease, box-shadow .22s ease, background .18s ease, color .18s ease, border-color .18s ease;
 }

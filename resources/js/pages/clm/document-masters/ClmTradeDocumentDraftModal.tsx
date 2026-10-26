@@ -990,6 +990,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       placeholder={segmentOptions.length ? '— Select Segments —' : 'No less-regulated segments configured'}
                       options={segmentOptions}
                       onChange={(vs) => { setSegments(vs); setErrors(p => ({ ...p, segment: '' })); }}
+                      /* Portalled to <body>, so this class is the only way the
+                         menu gets CLM's teal instead of the component's own
+                         indigo. */
+                      menuClassName="clm-mms-menu"
                     />
                   )}
                   {errors.segment && <div className="tdw-err">{errors.segment}</div>}
@@ -1477,17 +1481,26 @@ const TDW_CSS = `
   flex: 1; min-height: 0;
   overflow-y: auto;
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
-  padding: 22px;
+  /* 16, as the Agreement and T&C wizards. All three ran 22 — half again as
+     loose as the 14px 16px the CLM modal body uses. */
+  padding: 16px;
 }
-.tdw-step-body { display: flex; flex-direction: column; gap: 18px; }
+/* 14 between blocks, matching .tdw-grid-2's columns below and the CLM modal's
+   field gap, so this wizard measures like the two beside it. */
+.tdw-step-body { display: flex; flex-direction: column; gap: 14px; }
 /* Step 2 (editor) — the body itself does NOT scroll; the editor card fills
  * the available height and only its page-shell region scrolls internally. */
 .tdw-body-editor { overflow: hidden; display: flex; flex-direction: column; }
 .tdw-body-editor .tdw-step-body { flex: 1; min-height: 0; }
 .tdw-body-editor .tdw-editor-shell { flex: 1; min-height: 0; }
-.tdw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
-.tdw-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tdw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px; }
+/* 3 from a label to its control against 14 between fields — the .clm-field
+   ratio. At 6 against 18 a label did not group with the input it names. */
+.tdw-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .tdw-label {
+  /* line-height: 1 — the row carries the label, the required mark and the
+     count, and each was adding leading under the text. */
+  line-height: 1;
   font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
   color: #0e7490;
 }
@@ -1774,10 +1787,13 @@ const TDW_CSS = `
   flex-shrink: 0;
 }
 .tdw-foot-left, .tdw-foot-right { display: inline-flex; align-items: center; gap: 10px; }
+/* 40px / 0 18px / radius 10 / 12.5px-700 — the CLM button spec, shared with
+   .clm-btn-save, .clm-add-btn, .agw-btn and .tnw-btn. */
 .tdw-btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 10px 22px; border-radius: 10px;
-  font-family: inherit; font-size: 13px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 40px; box-sizing: border-box;
+  padding: 0 18px; border-radius: 10px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   transition: transform .18s ease, box-shadow .22s ease, background .18s ease, color .18s ease, border-color .18s ease;
 }

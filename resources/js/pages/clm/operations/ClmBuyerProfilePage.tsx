@@ -338,7 +338,10 @@ const BP_CSS = `
    tab. Against the border box the ramp runs to the edge. The border itself has
    to stay, or the selected tab goes 2px narrower than the others. */
 .bpa-tab-active{border:1px solid transparent;background:linear-gradient(135deg,#22d3ee,#0891b2 55%,#0e7490);background-origin:border-box;color:#fff;box-shadow:0 6px 16px -5px rgba(6,182,212,.55),inset 0 1px 0 rgba(255,255,255,.25);}
-.bpa-tab-inactive{background:transparent;border:1px solid transparent;color:#0e7490;box-shadow:0 1px 2px rgba(16,24,40,.05);}
+/* No shadow at rest — see .clm-tab: on a transparent tab a 1px shadow still
+   draws a card edge, so the rail reads as a row of outlined boxes instead of
+   one band with a selection in it. Case to Case is the reference. */
+.bpa-tab-inactive{background:transparent;border:1px solid transparent;color:#0e7490;}
 /* A white chip on its own shadow, no outline — the rail standard set on
    .clm-tab. A teal wash moved the tab towards the selected paint, so for a
    moment two tabs looked chosen. */

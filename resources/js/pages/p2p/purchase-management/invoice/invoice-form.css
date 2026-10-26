@@ -8062,7 +8062,12 @@
 
 /* ── Section B ── */
 .s4-root .s4rx-bd.s4cl { gap: 10px; }
-.s4-root .s4cl-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+/* Five cards where there were four. auto-fit rather than repeat(5): the pane
+   is half the screen above 1180px and the whole of it below, so a fixed five
+   is either crushed or stranded. This drops to four, three and two on its own
+   as the pane narrows, which is why the 760px override below no longer names
+   this row. */
+.s4-root .s4cl-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; }
 .s4-root .s4cl-kpis.s4cl--nr { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .s4-root .s4cl-kpis > div {
   min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px 10px;
@@ -8078,6 +8083,9 @@
 .s4-root .s4cl-kpi__i.r { background: linear-gradient(135deg, #22d3ee, #0e7490); }
 .s4-root .s4cl-kpi__i.g { background: linear-gradient(135deg, #34d399, #059669); }
 .s4-root .s4cl-kpi__i.x { background: linear-gradient(135deg, #f87171, #dc2626); }
+/* Slate, matching the Not Eligible band in the tree. A second red would read
+   as a worse kind of full rather than a different answer. */
+.s4-root .s4cl-kpi__i.n { background: linear-gradient(135deg, #94a3b8, #475569); }
 .s4-root .s4cl--nr .s4cl-kpi__i.z { background: linear-gradient(135deg, #fbbf24, #d97706); }
 
 .s4-root .s4cl-leg {
@@ -8109,6 +8117,8 @@
 }
 .s4-root .s4cl-pill--g { color: #047857; background: #ecfdf5; border-color: #a7f3d0; }
 .s4-root .s4cl-pill--r { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+/* The "not eligible" count on a rack heading — slate, matching its band. */
+.s4-root .s4cl-pill--n { color: #475569; background: #f8fafc; border-color: #e2e8f0; }
 .s4-root .s4cl-meter { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .s4-root .s4cl-meter b { font-size: 10.5px; font-weight: 700; color: #334e5c; min-width: 30px; text-align: right; }
 .s4-root .s4cl-meter__bar { width: 54px; height: 6px; border-radius: 999px; background: #e6eef2; overflow: hidden; display: block; }
@@ -8164,6 +8174,11 @@
 .s4-root .s4cl-grp { border-radius: 10px; padding: 8px; }
 .s4-root .s4cl-grp--av { background: #f3fdf8; border: 1px solid #c9f2de; }
 .s4-root .s4cl-grp--fu { background: #fbf7f6; border: 1px solid #f3e1dd; }
+/* Slate, not another warm tint. "Full" is a state that clears when stock
+   moves, so it is warned about in amber; "Not Eligible" is a refusal that
+   will not clear for THIS box, and a second amber band beside the first read
+   as one long warning rather than two different answers. */
+.s4-root .s4cl-grp--ne { background: #f8fafc; border: 1px solid #e2e8f0; }
 .s4-root .s4cl-grp__hd {
   display: flex; align-items: center; gap: 6px; margin-bottom: 7px;
   font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
@@ -8176,6 +8191,8 @@
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
 .s4-root .s4cl-grp--fu .s4cl-grp__hd > i { width: auto; height: auto; background: none; box-shadow: none; color: #b45309; }
+.s4-root .s4cl-grp--ne .s4cl-grp__hd { color: #475569; }
+.s4-root .s4cl-grp--ne .s4cl-grp__hd > i { width: auto; height: auto; background: none; box-shadow: none; color: #475569; }
 .s4-root .s4cl-grp__hd span {
   margin-left: 2px; font-size: 9.5px; letter-spacing: 0; border-radius: 999px;
   padding: 1px 7px; background: #fff; border: 1px solid currentColor;
@@ -8275,7 +8292,7 @@
   .s4-root .s4ra-use { margin-top: 10px; }
 }
 @media (max-width: 760px) {
-  .s4-root .s4cl-kpis, .s4-root .s4cl-kpis.s4cl--nr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .s4-root .s4cl-kpis.s4cl--nr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .s4-root .s4ra-chks { grid-template-columns: 1fr; }
   .s4-root .s4ra-grid--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .s4-root .s4ra-grid--3 > div:nth-child(3n) { border-right: 1px solid #eef6f8; }
@@ -8378,6 +8395,10 @@
 
 [data-bs-theme="dark"] .s4-root .s4cl-grp--av { background: rgba(16,185,129,.07); border-color: rgba(16,185,129,.26); }
 [data-bs-theme="dark"] .s4-root .s4cl-grp--fu { background: rgba(180,83,9,.08); border-color: rgba(180,83,9,.3); }
+[data-bs-theme="dark"] .s4-root .s4cl-grp--ne { background: rgba(148,163,184,.08); border-color: rgba(148,163,184,.26); }
+[data-bs-theme="dark"] .s4-root .s4cl-grp--ne .s4cl-grp__hd,
+[data-bs-theme="dark"] .s4-root .s4cl-grp--ne .s4cl-grp__hd > i { color: #cbd5e1; }
+[data-bs-theme="dark"] .s4-root .s4cl-pill--n { color: #cbd5e1; background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.32); }
 [data-bs-theme="dark"] .s4-root .s4cl-grp--av .s4cl-grp__hd { color: #6ee7b7; }
 [data-bs-theme="dark"] .s4-root .s4cl-grp--fu .s4cl-grp__hd { color: #fbbf24; }
 [data-bs-theme="dark"] .s4-root .s4cl-grp__hd span { background: rgba(0,0,0,.25); }

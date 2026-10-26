@@ -1586,6 +1586,16 @@
   cursor: not-allowed;
   box-shadow: none;
 }
+/* Working, not unavailable: the button is disabled while it hands off, but it
+   keeps its colour, because faded-and-spinning reads as broken. currentColor,
+   so the mark needs no palette of its own. */
+@keyframes spiMdlSpin { to { transform: rotate(360deg); } }
+.spi-mdl-spin {
+  width: 13px; height: 13px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: spiMdlSpin .6s linear infinite;
+}
+.spi-mdl-confirm[aria-busy="true"]:disabled { opacity: 1; cursor: progress; box-shadow: 0 3px 10px rgba(8, 145, 178, .4); }
 
 [data-bs-theme="dark"] .spi-mdl {
   background: #0e1b24;
@@ -1875,7 +1885,11 @@
 .spisel { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; }
 .spisel-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .spisel-n { font-size: 12px; font-weight: 700; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.spisel-s { font-size: 9.5px; font-weight: 600; color: #93a7b3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* #5b7585, not #93a7b3. At 9.5px this is the smallest copy in the dialog and
+   it was sitting at 2.49:1 on white — below AA's 4.5 for normal text, and
+   DevTools flags it. #5b7585 is already the app's quiet-slate and measures
+   4.85:1. Dark mode keeps a light tone; the old value only failed on white. */
+.spisel-s { font-size: 9.5px; font-weight: 600; color: #5b7585; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .spidd-panel {
   position: fixed; z-index: 2147483600;
@@ -1950,6 +1964,7 @@
 [data-bs-theme="dark"] .spim-code { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.28); color: #7dd3e8; }
 [data-bs-theme="dark"] .spim-name,
 [data-bs-theme="dark"] .spisel-n { color: #e4f3f8; }
+[data-bs-theme="dark"] .spisel-s { color: #9fb6c4; }
 [data-bs-theme="dark"] .spim-amt { color: #7dd3e8; }
 
 /* Where the order's procurement case came from. Fixed width so the pills form

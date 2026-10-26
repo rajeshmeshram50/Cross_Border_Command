@@ -136,8 +136,16 @@ export default function MapInvoiceModal({
     : mode === 'without-po' ? !!supplier
     : false;
 
+  /* Confirm hands off to the parent, which loads the invoice form — on a slow
+     page that is a visible wait with nothing on screen to say so. The button
+     says it is working and refuses a second click. It is never cleared: the
+     dialog is unmounted by the hand-off it just started. */
+  const [confirming, setConfirming] = useState(false);
+
   const confirm = () => {
+    if (confirming) return;
     if (!canConfirm || !mode) { setShowError(true); return; }
+    setConfirming(true);
     onConfirm(mode === 'with-po' && poPicked
       ? { mode, poId: poPicked.id, poNo: poPicked.code, supplier: poPicked.supplier_name ?? undefined }
       : { mode, supplier });
@@ -271,8 +279,11 @@ export default function MapInvoiceModal({
                 question to answer. Once one is, it stays live even with the
                 PO still unpicked — a disabled button cannot say what is
                 missing, and the message below can. */}
-            <button type="button" className="spi-mdl-confirm" onClick={confirm} disabled={!mode}>
-              Confirm &amp; Continue <IcoChevronR size={14} />
+            <button type="button" className="spi-mdl-confirm" onClick={confirm}
+              disabled={!mode || confirming} aria-busy={confirming}>
+              {confirming
+                ? <><span className="spi-mdl-spin" aria-hidden />Opening invoice…</>
+                : <>Confirm &amp; Continue <IcoChevronR size={14} /></>}
             </button>
           </div>
         </div>

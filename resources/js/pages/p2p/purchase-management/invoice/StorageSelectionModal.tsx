@@ -79,9 +79,15 @@ export default function StorageSelectionModal({
      reviews, so it is always ready. */
   const canAdvance = step === 1 ? !!type : step === 2 ? !!warehouseId : true;
 
+  /* Only the last step waits on anything: steps 1 and 2 change the step in the
+     same tick, so a spinner there would be a lie. Continue to Invoice hands off
+     to the parent, which loads the invoice form — that is the one click with a
+     gap behind it. Never cleared; the hand-off unmounts this dialog. */
+  const [leaving, setLeaving] = useState(false);
+
   const advance = () => {
-    if (!canAdvance || !type) return;
-    if (step === 3) { onNext({ type, warehouse }); return; }
+    if (leaving || !canAdvance || !type) return;
+    if (step === 3) { setLeaving(true); onNext({ type, warehouse }); return; }
     setStep(step === 1 && skipsWarehouse ? 3 : step + 1);
   };
 
@@ -275,14 +281,16 @@ export default function StorageSelectionModal({
                 fact to a screen reader, which a class cannot. */}
             <button
               type="button"
-              className={`smod-next${canAdvance ? '' : ' disabled'}`}
-              aria-disabled={!canAdvance}
+              className={`smod-next${canAdvance && !leaving ? '' : ' disabled'}`}
+              aria-disabled={!canAdvance || leaving}
+              aria-busy={leaving}
               onClick={advance}
             >
               {/* The last step's button names where it goes, because it leaves
                   the wizard rather than moving inside it. */}
-              {step === 3 ? 'Continue to Invoice' : 'Next'}
-              <IcoChevronR size={11} stroke={2.6} />
+              {leaving
+                ? <><span className="smod-spin" aria-hidden />Opening invoice…</>
+                : <>{step === 3 ? 'Continue to Invoice' : 'Next'}<IcoChevronR size={11} stroke={2.6} /></>}
             </button>
           </div>
         </div>

@@ -70,14 +70,19 @@ export default function AuthorityBadges({ value, variant = 'teal' }: { value?: s
 
       {pop && createPortal(
         <>
-          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 100000 }} />
+          {/* Above .clm-modal-bd, which sits at 200000. The badge is used
+              inside the DCP rule wizard as well as in the page tables behind
+              it, and at 100001 the popover opened underneath the modal —
+              invisible, with its own click-catcher behind the modal too, so
+              the "+N" read as a dead control. */}
+          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 200100 }} />
           <div
             className={popClass}
             style={{
               position: 'fixed', left: Math.min(pop.x, window.innerWidth - 340),
               top: pop.flipUp ? undefined : pop.y,
               bottom: pop.flipUp ? (window.innerHeight - pop.y) : undefined,
-              zIndex: 100001, width: 320, maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
+              zIndex: 200101, width: 320, maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
             }}
           >
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px', }}>Issuing Authorities ({list.length})</div>

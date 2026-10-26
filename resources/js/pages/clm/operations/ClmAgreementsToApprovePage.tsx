@@ -405,7 +405,7 @@ export default function ClmAgreementsToApprovePage() {
                      already filled, and washing it would mean restoring a
                      gradient on the way out. */
                   onMouseEnter={e => { if (active) return; e.currentTarget.style.background = t.dark ? 'rgba(255,255,255,.08)' : '#fff'; e.currentTarget.style.color = t.dark ? '#a5f3fc' : '#0891b2'; e.currentTarget.style.boxShadow = t.dark ? '0 2px 6px rgba(0,0,0,.35)' : '0 2px 6px rgba(16,24,40,.12)'; }}
-                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(16,24,40,.05)'; }}
+                  onMouseLeave={e => { if (active) return; e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = t.dark ? '#67e8f9' : '#0e7490'; e.currentTarget.style.boxShadow = 'none'; }}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
                     /* No border on either state, and no insets on the selected
                        one — the same two fixes Case to Case needed.
@@ -421,7 +421,10 @@ export default function ClmAgreementsToApprovePage() {
                        them has one to lose. */
                     ...(active
                       ? { border: 0, background: 'linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490)', color: '#fff', boxShadow: '0 6px 16px -5px rgba(6,182,212,.55)' }
-                      : { background: 'transparent', border: 0, boxShadow: '0 1px 2px rgba(16,24,40,.05)', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
+                      /* No shadow at rest — see the note on Agreements We
+                         Sent: a 1px shadow on a transparent tab still draws a
+                         card edge, which is what made these read as boxes. */
+                      : { background: 'transparent', border: 0, boxShadow: 'none', color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
                   {icon}
                   <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
                   {/* Raw count, not pad2 — "1" as on every other CLM rail and

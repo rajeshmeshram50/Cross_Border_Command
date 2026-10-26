@@ -359,7 +359,13 @@ export const CLM_CSS = `
      by a pixel. */
   border: 1px solid transparent;
   background: transparent;
-  box-shadow: 0 1px 2px rgba(16,24,40,.05);
+  /* No shadow at rest. The fill and border are already transparent so the
+     rail shows through, but a 1px shadow still drew a faint card edge round
+     every tab — four of them in a row read as four outlined boxes sitting in
+     the capsule rather than as one band with a selection in it. Case to Case,
+     which is the rail these are measured against, carries none. The lift
+     belongs to hover and to the selected tab; those are the two states that
+     are meant to be objects. */
   overflow: hidden;
   /* Neither colour nor background eases — same reason as .clm-pill. The
      active tab's background is a gradient, which snaps the instant the class
@@ -613,9 +619,14 @@ export const CLM_CSS = `
  * toolbar's own layout rules (.clm-tabs-bar .clm-total, and the stacking
  * breakpoint above) keep working untouched.
  * ────────────────────────────────────────────────────────── */
+/* Indented past the toolbar's own 8px. The table header below starts at 9px
+   (.clm-table thead th), so at 8 the heading sat on the same vertical as the
+   first column and read as the table's own top row rather than as the title
+   above it. 12 more gives it a left edge of its own. */
 .clm-total {
   display: flex; align-items: center;
   height: auto; min-height: 48px; box-sizing: border-box;
+  padding-left: 12px;
   background: none; border: 0; border-radius: 0; box-shadow: none;
   overflow: visible; flex-shrink: 0;
 }
@@ -1111,9 +1122,10 @@ body > .dropdown-menu.master-select-menu,
      under the head and the last one sitting closer to the footer than to its
      own neighbour. */
   padding: 14px 16px;
-  /* 14 between fields, against 5 inside one (.clm-field) — see the note there:
-     at 6 against 1 the two gaps read as the same measure and nothing grouped. */
-  display: flex; flex-direction: column; gap: 14px;
+  /* 12 between fields, against 3 inside one (.clm-field) — see the note there.
+     It was 14; 12 takes ~10px off a five-field form while keeping the 4:1
+     ratio that makes a label group with its own input. */
+  display: flex; flex-direction: column; gap: 12px;
   overflow-y: auto;
 }
 
@@ -1192,6 +1204,29 @@ body > .dropdown-menu.master-select-menu,
    saying "selected" three times over without the weight. */
 .clm-mms-menu .mms-item.is-on { background: rgba(6,182,212,.12); color: #0e7490; font-weight: 500; }
 .clm-mms-menu .mms-item.is-on .mms-check { background: #0891b2; border-color: #0891b2; }
+
+/* There are TWO multi-selects in this app with the same exported name:
+   components/ui/MasterMultiSelect (.mms-*, themed above) and the one in
+   pages/master/masterFormKit, which is built on .master-select-* instead.
+   CLM's DCP uses the second. Its selected row, tick and search focus come
+   from MasterSelect.css as indigo — #6366f1 with !important, and #7c5cfc on
+   the tick — and that sheet is shared with Sales, HRMS and P2P, so it cannot
+   be changed. Re-themed here through the class CLM forms already pass, which
+   is how the P2P order page handles the same clash (body:has(.ord-page) in
+   order.css). !important because the rule being overridden carries it. */
+.master-select-menu.clm-mms-menu .master-select-item.active {
+  background: rgba(6,182,212,.12) !important;
+  color: #0e7490 !important;
+  /* 500, as the .mms- menu above: these lists are mostly ticked, and the
+     tick and tint already say so without the weight. */
+  font-weight: 500;
+}
+.master-select-menu.clm-mms-menu .master-select-check.is-on {
+  background: #0891b2; border-color: #0891b2;
+}
+.master-select-menu.clm-mms-menu .master-select-search-input:focus {
+  border-color: #0891b2; box-shadow: 0 0 0 2px rgba(8,145,178,.15);
+}
 .clm-mms-menu .mms-done { background: #0891b2; }
 .clm-mms-menu .mms-done:hover { background: #0e7490; }
 [data-bs-theme="dark"] .clm-mms-menu .mms-item.is-on { background: rgba(6,182,212,.18); color: #67e8f9; }
@@ -1282,7 +1317,9 @@ body > .dropdown-menu.master-select-menu,
 .clm-count.is-full { color: #dc2626; font-weight: 700; }
 [data-bs-theme="dark"] .clm-count { color: #94a3b8; }
 .clm-input, .clm-textarea, .clm-select {
-  width: 100%; padding: 7px 12px;
+  /* 6px of vertical padding, down from 7. Two pixels a control, and a form
+     like QC carries five of them. The 12.5px text still clears the border. */
+  width: 100%; padding: 6px 12px;
   border: 1.5px solid rgba(6,182,212,.25); border-radius: 9px;
   background: #fff; font-family: inherit;
   font-size: 12.5px; color: #0c4a6e;
@@ -1290,7 +1327,10 @@ body > .dropdown-menu.master-select-menu,
   box-shadow: 0 1px 4px rgba(6,182,212,.08), inset 0 1px 0 rgba(255,255,255,.9);
   box-sizing: border-box;
 }
-.clm-textarea { resize: vertical; line-height: 1.45; min-height: 50px; }
+/* 44px, down from 50 — still two lines of 12.5px text at 1.45, which is what
+   these fields are for, but the two textareas on the QC form were the single
+   biggest block of empty height in it. They drag on resize if more is wanted. */
+.clm-textarea { resize: vertical; line-height: 1.45; min-height: 44px; }
 .clm-input:focus, .clm-textarea:focus, .clm-select:focus {
   border-color: #0891b2; box-shadow: 0 0 0 3.5px rgba(8,145,178,.14), inset 0 1px 0 rgba(255,255,255,.9);
 }
