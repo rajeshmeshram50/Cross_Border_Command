@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { IcoBox, IcoPencil, IcoPrinter } from '../../../icons';
 import { truncateName, NAME_MAX, type ProductLine } from '../invoice-products';
+import WorklistPager from '../../../../../components/ui/WorklistPager';
 import BoxStickerModal from './BoxStickerModal';
 import { putId } from '../spi-api';
 
@@ -192,12 +193,24 @@ export default function PackedProducts({
      the current view, so an empty tab still says it is empty rather than
      disappearing — "0 Boxes" is the answer to "did anything get split?". */
   const [scnTab, setScnTab] = useState('all');
+  /* Rows per page rather than fitting rows to the viewport: a row here is a
+     CARTON, and a mixed carton stacks one block per product, so rows differ in
+     height by a factor of three. Measuring how many fit would give a different
+     answer per page of data. The choice is the operator's, and it is
+     remembered while the step is open. */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   if (boxes.length === 0) return null;
 
   const countOf = (key: string) =>
     key === 'all' ? boxes.length : boxes.filter(b => b.scenario === key).length;
   const shown = scnTab === 'all' ? boxes : boxes.filter(b => b.scenario === scnTab);
+  /* Clamped rather than reset: deleting the last box on page 3 should land you
+     on page 2, not back at the top of the list. */
+  const pages = Math.max(1, Math.ceil(shown.length / pageSize));
+  const safePage = Math.min(page, pages);
+  const pageRows = shown.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   /* Products, not rows: one product split across five cartons is one product
      packed, and the header would otherwise claim five. */
@@ -255,7 +268,7 @@ export default function PackedProducts({
               role="tab"
               aria-selected={on}
               className={`invf-pb-rtab${on ? ' is-on' : ''}`}
-              onClick={() => setScnTab(t.key)}
+              onClick={() => { setScnTab(t.key); setPage(1); }}
             >
               <span className="invf-pb-rtab__i" aria-hidden>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -311,12 +324,12 @@ export default function PackedProducts({
                 </td>
               </tr>
             )}
-            {shown.map((b, i) => {
+            {pageRows.map((b, i) => {
               const open = b.code === editingBoxId;
               const qty = b.items.reduce((n, it) => n + it.qty, 0);
               return (
                 <tr key={b.code} className={`invf-pb-row${open ? ' is-open' : ''}${b.items.length > 1 ? ' has-stack' : ''}`}>
-                  <td className="invf-c-sr"><span className="invf-sr">{i + 1}</span></td>
+                  <td className="invf-c-sr"><span className="invf-sr">{(safePage - 1) * pageSize + i + 1}</span></td>
 
                   {/* The id is the way back in: pressing it reopens the box. */}
                   <td className="invf-c-box">
@@ -420,6 +433,27 @@ export default function PackedProducts({
           </tbody>
         </table>
       </div>
+
+      {/* Always, not only past one page. These tabs hold very different
+          counts - 13 boxes, 11, 1 - so gating on shown.length > pageSize made
+          the pager appear and disappear as you moved between them, and the
+          footer jumped with it. It also took the rows-per-page control away
+          on exactly the tabs where someone might want to widen the page.
+          The count is of the CURRENT scenario, so the numbers agree with the
+          tab above.
+
+          Not gated on shown.length either: an unused scenario is the one tab
+          where the footer disappearing is most obvious, and "No records" is a
+          better answer there than a missing bar. */}
+      <WorklistPager
+        className="wl-teal invf-pb-pager"
+        total={shown.length}
+        page={safePage}
+        pageSize={pageSize}
+        onPage={setPage}
+        onPageSize={n => { setPageSize(n); setPage(1); }}
+        pageSizeOptions={[5, 10, 25, 50]}
+      />
 
       {/* The row's own sticker button opens this. Everything the label needs
           is already on the row, so it needs no extra plumbing from Step 3. */}

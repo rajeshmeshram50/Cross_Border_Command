@@ -10024,3 +10024,13 @@
 .invf-packed .vti-btn-single--edit:disabled:hover { opacity: .4; cursor: not-allowed; box-shadow: none; transform: none; }
 .spi-btn-spin { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -2px; animation: vtiDwSpin .7s linear infinite; }
 .vsm-bpdf:disabled, .vsm-bprint:disabled { opacity: .75; cursor: progress; }
+
+/* The pager sits inside the card, so it loses the margin that separates a
+   standalone one from the table above it and picks up the card's own radius.
+   At narrow widths the two halves stack rather than squeezing the row count
+   against the arrows. */
+.invf-packed .invf-pb-pager { margin-top: 0; border-radius: 0 0 16px 16px; }
+@media (max-width: 760px) {
+  .invf-packed .invf-pb-pager { flex-direction: column; align-items: stretch; gap: 10px; }
+  .invf-packed .invf-pb-pager .tc-wl-right { justify-content: space-between; }
+}
