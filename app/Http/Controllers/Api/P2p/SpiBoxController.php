@@ -90,6 +90,49 @@ class SpiBoxController extends Controller
         }
     }
 
+    /**
+     * GET /p2p/spi/{id}/boxes/{box} — one box, items and attachments.
+     *
+     * The same row index() returns, with the same `uom_id` on each item and
+     * the same `invoice_items` / `uoms` maps beside it, so a caller reading
+     * one box sees exactly what it would have seen in the list. What is left
+     * out is what belongs to the invoice rather than the box: the packing
+     * summary and the totals.
+     */
+    public function show(Request $request, int $id, int $boxId)
+    {
+        $this->tenantUser($request);
+        $spi = $this->findSpi($id);
+
+        /* Scoped through the invoice, not fetched by id and checked after:
+           a box id from another tenant's invoice must read as missing. */
+        $box = $spi->boxes()->with(['items', 'attachments'])->whereKey($boxId)->first();
+
+        if (!$box) {
+            return response()->json([
+                'status'  => false,
+                'message' => "No box {$boxId} on {$spi->code}.",
+            ], 404);
+        }
+
+        $rows = collect([$box]);
+        $uomOfLine = collect($this->invoiceItemMap($rows))
+            ->mapWithKeys(fn ($l) => [(int) $l['supplier_invoice_item_id'] => $l['uom_id']]);
+
+        $arr = $box->toArray();
+        $arr['items'] = collect($arr['items'] ?? [])
+            ->map(fn ($i) => $i + [
+                'uom_id' => $uomOfLine[(int) ($i['supplier_invoice_item_id'] ?? 0)] ?? null,
+            ])
+            ->all();
+
+        return response()->json(['status' => true, 'data' => [
+            'box'           => $arr + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
+            'invoice_items' => $this->invoiceItemMap($rows),
+            'uoms'          => $this->uomMap($rows),
+        ]], 200);
+    }
+
     public function packingSummary(Request $request, int $id)
     {
         try {

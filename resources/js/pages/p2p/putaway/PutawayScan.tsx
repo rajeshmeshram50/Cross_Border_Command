@@ -964,7 +964,35 @@ export default function PutawayScan() {
           going. The dimensions and the weights are gone — a packer typed them
           and nobody on the floor acts on them; what the operator checks is the
           code, the contents and the shelf. */}
-      {state.box && (
+      {/* Before the box scan: what to fetch, and nothing else. */}
+      {state.box && !task?.box_scan_at && (
+        <div className="pws2-body">
+          <section className="pws2-card">
+            <div className="pws2-card-top">
+              <span className="pws2-kicker">BOX</span>
+              <span className="pws2-code">{state.box.box_code}</span>
+              <span className="pws2-sp" />
+              <span className="pws2-chip pws2-chip--warn">PENDING_DEVICE_SCAN</span>
+            </div>
+            <div className="pws2-meta3" style={{ marginTop: 9 }}>
+              <div><span>Invoice</span><b>{state.box.spi_code ?? '—'}</b></div>
+              <div><span>Destination</span><b>{dest?.shelf ?? dest?.rack ?? dest?.zone ?? '—'}</b></div>
+              <div><span>Scans</span><b>{task?.completed_scans ?? 0}/{task?.required_scans ?? 0}</b></div>
+            </div>
+          </section>
+
+          <div className="pws2-next">
+            <span>NEXT SCAN</span>
+            <b>Box QR {state.box.box_code}</b>
+            <small>
+              Scan the label on the carton to confirm it is this one. Its
+              contents open once the box is verified.
+            </small>
+          </div>
+        </div>
+      )}
+
+      {state.box && !!task?.box_scan_at && (
         <div className="pws2-body">
           <section className="pws2-card">
             <div className="pws2-card-top">
@@ -1330,8 +1358,13 @@ export default function PutawayScan() {
               <i className="ri-checkbox-circle-line" />Complete put-away
             </button>
           )}
-          <button type="button" className="pws2-ghost"
-            onClick={() => { writeRun(null); window.location.href = INDEX_PATH; }}>
+          <button type="button" className="pws2-ghost" disabled={busy}
+            onClick={async () => {
+              try { await call('post', `/scan/putaway/${task.id}/release`, {}); }
+              catch { /* Leaving is not refusable — the carton is already down. */ }
+              writeRun(null);
+              window.location.href = INDEX_PATH;
+            }}>
             <i className="ri-close-line" />Clear box
           </button>
         </div>
