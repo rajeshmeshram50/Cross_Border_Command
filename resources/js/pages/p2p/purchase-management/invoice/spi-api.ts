@@ -177,6 +177,7 @@ export type SpiBoxBody = {
   temp_min_c: number | null;
   temp_max_c: number | null;
   items: SpiBoxItemBody[];
+  flags?: number[];
   photos?: File[];
 };
 
@@ -237,7 +238,17 @@ export type SpiBox = {
   gross_weight_kg?: string | number | null;
   items: SpiBoxItem[];
   attachments?: SpiBoxAttachment[];
+  flags?: number[] | null;
 };
+
+const withBoxFlags = (box: SpiBox, label: (id: number | null | undefined) => string | null): SpiBox => ({
+  ...box,
+  items: (box.items ?? []).map(i => ({
+    ...i,
+    uom: i.uom ?? label(i.uom_id),
+    flags: Array.isArray(i.flags) && i.flags.length ? i.flags : (Array.isArray(box.flags) ? box.flags.map(Number) : []),
+  })),
+});
 
 export type SpiPackingTotals = {
   lines: number; qty_spi: number; qty_packed: number; qty_pending: number; lines_done: number; fully_packed: boolean;
@@ -402,10 +413,7 @@ export const spiApi = {
         const u = id == null ? undefined : uoms[String(id)];
         return u ? (u.short_code || u.title || null) : null;
       };
-      return (d?.boxes ?? []).map(box => ({
-        ...box,
-        items: (box.items ?? []).map(i => ({ ...i, uom: i.uom ?? label(i.uom_id) })),
-      }));
+      return (d?.boxes ?? []).map(box => withBoxFlags(box, label));
     }),
 
   box: (spiId: number, boxId: number) =>
@@ -419,9 +427,7 @@ export const spiApi = {
         const u = id == null ? undefined : uoms[String(id)];
         return u ? (u.short_code || u.title || null) : null;
       };
-      const box = d?.box
-        ? { ...d.box, items: (d.box.items ?? []).map(i => ({ ...i, uom: i.uom ?? label(i.uom_id) })) }
-        : null;
+      const box = d?.box ? withBoxFlags(d.box, label) : null;
       const flags: ProductFlagOption[] = Object.values(d?.flags ?? {})
         .map(f => ({ id: Number(f.id), flag_name: f.flag_name, behaviour: f.behaviour ?? null }));
       return { box, flags };

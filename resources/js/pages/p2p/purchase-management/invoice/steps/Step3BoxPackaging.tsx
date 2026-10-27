@@ -373,6 +373,7 @@ export default function Step3BoxPackaging({
       is_stackable: data.stackable ? 1 : 0,
       temp_min_c: data.tempMin,
       temp_max_c: data.tempMax,
+      flags: ids,
       photos: data.photos,
       items: contents.map(c => {
         const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
