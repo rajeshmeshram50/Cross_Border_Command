@@ -625,7 +625,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     <div style={{ position: 'fixed', inset: 0, zIndex: 9000, background: t.dark ? '#0d0a1a' : '#F0F0FA', overflowY: 'auto', fontFamily: 'var(--font-sans)', WebkitFontSmoothing: 'antialiased' }}>
       <style>{CTC_FORM_CSS}</style>
       <MasterFormStyles />
-      <div className="ctc-shell" style={{ height: '100vh', background: t.dark ? '#0d0a1a' : '#F0F0F8', display: 'flex', flexDirection: 'column', padding: '16px 16px 0', gap: 10, overflow: 'hidden' }}>
+      <div className="ctc-shell" style={{ height: '100vh', background: t.dark ? '#0d0a1a' : '#F0F0F8', display: 'flex', flexDirection: 'column', padding: '8px 8px 0', gap: 8, overflow: 'hidden' }}>
 
         {/* HEADER */}
         <div style={{ borderRadius: 14, overflow: 'hidden', flexShrink: 0, boxShadow: '0 2px 12px rgba(109,40,217,.1)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : 'rgba(124,58,237,.18)'}` }}>
@@ -697,7 +697,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
         </div>
 
         {/* STAGE BODY */}
-        <div className="ctc-stagebody" style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', paddingBottom: 16 }}>
+        <div className="ctc-stagebody" style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', paddingBottom: 8 }}>
           {hydrating && <CtcFormShimmer t={t} />}
           {!hydrating && stage === 1 && (
             <Stage1
@@ -813,7 +813,7 @@ function CtcFormShimmer({ t }: { t: OpsTokens }) {
     </div>
   );
   const body = (n: number) => (
-    <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'hidden', padding: 14, display: 'flex', flexDirection: 'column', gap: 11 }}>
+    <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'hidden', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
       {Array.from({ length: n }).map((_, i) => (
         i % 4 === 0
           ? <Shimmer key={i} height={48} radius={12} />
@@ -822,7 +822,7 @@ function CtcFormShimmer({ t }: { t: OpsTokens }) {
     </div>
   );
   return (
-    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 8, flex: 1, minHeight: 0, width: '100%' }}>
       <div style={{ flex: 2, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#4C1D95,#6D28D9,#7C3AED,#8B5CF6')}{body(6)}</div></div>
       <div style={{ flex: 5.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#3B0764,#5B21B6,#7C3AED,#8B5CF6')}{body(11)}</div></div>
       <div style={{ flex: 2.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#6D28D9,#7C3AED,#8B5CF6,#A78BFA')}{body(7)}</div></div>
@@ -1190,12 +1190,12 @@ function Stage1(p: {
   const cpPct = p.cps.length === 0 ? 0 : (cpAgg.total > 0 ? Math.round((cpAgg.done / cpAgg.total) * 100) : 100);
   const orgPct = p.org ? 100 : 0;
   return (
-    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 8, flex: 1, minHeight: 0, width: '100%' }}>
       {/* LEFT — Counterparty Details */}
       <div style={{ flex: leftOpen ? 2 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!leftOpen ? <CollapsedBar t={t} title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" dir="left" onExpand={() => setLeftOpen(true)} /> :
         <Panel t={t} header="Panel 01" title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" onCollapse={() => setLeftOpen(false)} collapseDir="left">
-          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12, padding: 12, overflowY: 'auto' }}>
+          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8, padding: 8, overflowY: 'auto' }}>
             {/* Counterparty sub-card */}
             <div style={{ borderRadius: 14, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DCFB'}`, background: t.surface, boxShadow: '0 4px 14px rgba(109,40,217,.1)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(110deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto' }}>
@@ -1312,7 +1312,7 @@ function Stage1(p: {
       {/* MIDDLE — Draft workspace */}
       <div style={{ flex: 5.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <Panel t={t} header="Panel 02 · Main Workspace" title="Agreement Draft Workspace" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>}>
-          <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
 
             {/* ── inner STEP stepper ── */}
             <div style={{ display: 'flex', alignItems: 'center', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, padding: '10px 14px', flexShrink: 0, boxShadow: '0 2px 10px rgba(109,40,217,.07)' }}>
@@ -1582,9 +1582,9 @@ function Stage1(p: {
               through it even before anything paints on top. */}
           <div style={{ position: 'relative', zIndex: 2, flexShrink: 0, padding: '10px 18px', borderTop: `1px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : 'rgba(255,255,255,.85)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             {midStep > 1 ? (
-              <button onClick={midBack} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', borderRadius: 8, background: t.dark ? 'rgba(124,58,237,.16)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-                <span style={{ fontSize: 9, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>Back</span>
+              <button onClick={midBack} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 40, boxSizing: 'border-box', padding: '0 18px', borderRadius: 10, background: t.dark ? 'rgba(124,58,237,.16)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.8" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>Back</span>
               </button>
             ) : <span />}
             {midStep < 3 ? (
@@ -1595,11 +1595,11 @@ function Stage1(p: {
                  "Loading…", so the wait is explained, not just enforced. */
               const waiting = navBusy || (midStep === 1 && docsChecking);
               return (
-              <button onClick={midNext} disabled={waiting} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: waiting ? 'wait' : 'pointer', opacity: waiting ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
-                <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{navBusy ? 'Loading…' : (midStep === 1 && docsChecking) ? 'Checking documents…' : MID_STEPS[midStep - 1].next}</span>
+              <button onClick={midNext} disabled={waiting} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 40, boxSizing: 'border-box', padding: '0 18px', borderRadius: 10, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: waiting ? 'wait' : 'pointer', opacity: waiting ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#fff' }}>{navBusy ? 'Loading…' : (midStep === 1 && docsChecking) ? 'Checking documents…' : MID_STEPS[midStep - 1].next}</span>
                 {waiting
                   ? <svg className="ctc-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                  : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>}
+                  : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>}
               </button>
               ); })()
             ) : p.editLock ? (
@@ -1783,7 +1783,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const bandFg = (fg?: string | null) => (t.dark && PAPER_FG.includes(asIs(fg)) ? t.textSub : (fg ?? undefined));
 
   return (
-    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 8, flex: 1, minHeight: 0, width: '100%' }}>
 
       {/* LEFT — Counterparty Details (stages 2-3) · Contract Summary (stage 4) */}
       <div style={{ flex: 2, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -1799,7 +1799,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.3)' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: '#6ee7b7' }} /><span style={{ fontSize: 7.5, fontWeight: 800, color: '#fff' }}>Executed</span></span>
               : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 20, background: 'rgba(255,255,255,.15)', border: '1px solid rgba(255,255,255,.25)' }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.8)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.85)' }}>Read Only</span></span>}
           </div>
-          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {stage === 4 ? (
               <ContractSummaryCard t={t} code={code} agTitle={agTitle} agType={agType} cps={cps} org={org} effDate={effDate} endDate={endDate} executedOn={executedOn} signers={signers} />
             ) : (<>
@@ -1932,7 +1932,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}</div>
             <div><div style={{ fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Panel 03</div><div style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{stage === 4 ? 'Contract History' : stage === 3 ? 'Negotiation Status' : 'Internal Review & Approval'}</div></div>
           </div>
-          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '10px 12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {stage === 4 ? <ContractHistoryPanel t={t} draftCount={draftCount} signedUrl={signedUrl} signatureRequestId={Number(record?.signature_request_id) || null} onVersionHistory={() => setVhOpen(true)} onExit={onExit} /> : (<>
             {/* Rejection banner — shown when an approver rejected this draft */}
             {approval === 'rejected' && (
@@ -2277,7 +2277,7 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
         {/* body */}
-        <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg><span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#a78bfa' : '#6D28D9' }}>Select Recipients &amp; Contact Persons</span></div>
           {cps.length === 0 && <div style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', padding: 24 }}>No counterparties on this agreement. Add them in Stage 1 first.</div>}
           {cps.map((cp, i) => {
@@ -2696,10 +2696,14 @@ function CpReadCard({ t, idx, cp, comp, onOpenVault }: { t: OpsTokens; idx: numb
           <div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#4C1D95' }}>{cp.referred}</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 4, borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}` }}>
-          {[cp.country, cp.phone, cp.email].map((v, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <div style={{ width: 20, height: 20, borderRadius: 6, background: t.dark ? 'rgba(124,58,237,.12)' : '#F5F0FF', flexShrink: 0 }} />
-              <span style={{ fontSize: 11, color: t.textSub, fontWeight: 500 }}>{v}</span>
+          {/* Label/value, matching the left panel. Each row used to open with an
+              empty 20px rounded square - a blank tile that reads as a checkbox
+              waiting to be ticked - and carried no label, so a country, a phone
+              number and an email sat in a column with nothing naming them. */}
+          {([['Country', cp.country], ['Phone', cp.phone], ['Email', cp.email]] as const).map(([label, v]) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
+              <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: t.textMuted }}>{label}</span>
+              <span title={v} style={{ marginLeft: 'auto', minWidth: 0, textAlign: 'right', fontSize: 11.5, fontWeight: 500, color: t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v}</span>
             </div>
           ))}
         </div>
@@ -2789,7 +2793,7 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, ac
   const sigUsed = /\{\{\s*signature\s*\}\}/i.test(draft);
   const cardBd = `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`;
   return (
-    <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 12px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="ctc-mid-scroll ctc-noshrink" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
       {/* Signer decline remark — shown while revising the draft to address it */}
       {(declineReason || declinedBy) && (
         <div style={{ borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(239,68,68,.4)' : '#FECACA'}`, background: t.dark ? 'rgba(239,68,68,.1)' : '#FEF2F2', overflow: 'hidden', boxShadow: '0 2px 10px rgba(239,68,68,.08)' }}>
@@ -2945,7 +2949,7 @@ function CpCard({ t, slot, cp, onRemove, readOnly }: { t: OpsTokens; slot: numbe
         {!readOnly && onRemove && <button onClick={onRemove} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
       </div>
       <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
-        <OrgDetail t={t} text={cp.country} /><OrgDetail t={t} text={cp.phone} /><OrgDetail t={t} text={cp.email} />
+        <OrgDetail t={t} label="Country" text={cp.country} /><OrgDetail t={t} label="Phone" text={cp.phone} /><OrgDetail t={t} label="Email" text={cp.email} />
       </div>
     </div>
   );
@@ -2967,8 +2971,20 @@ function OrgMiniCard({ t, org }: { t: OpsTokens; org: Org }) {
   );
 }
 
+/* A label/value row, not a bullet list. The row used to lead with an empty 8px
+   circle, which reads as an unticked radio button and says nothing; worse, the
+   counterparty card passed no label at all, so three values sat in a column
+   identified only by their shape - you had to work out that the middle one was
+   a phone number. Label left, value right, on the type the Customers list uses
+   (8.5/800 uppercase against 10.5/600), and long values truncate with the full
+   text on hover instead of wrapping the row. */
 function OrgDetail({ t, label, text }: { t: OpsTokens; label?: string; text: string }) {
-  return <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /></svg>{label && <span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</span>}<span style={{ fontSize: 9, color: t.textSub, fontWeight: 600 }}>{text}</span></div>;
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0 }}>
+      {label && <span style={{ flexShrink: 0, fontSize: 8.5, fontWeight: 800, letterSpacing: '.07em', textTransform: 'uppercase', color: t.textMuted }}>{label}</span>}
+      <span title={text} style={{ minWidth: 0, marginLeft: label ? 'auto' : 0, textAlign: label ? 'right' : 'left', fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+    </div>
+  );
 }
 
 function Field({ t, label, green, error, counter, children }: { t: OpsTokens; label: string; green?: boolean; error?: string; counter?: React.ReactNode; children: React.ReactNode }) {
@@ -3446,7 +3462,9 @@ const CTC_FORM_CSS = `
 .ctc-cp-head {
   position: relative; overflow: hidden; flex-shrink: 0;
   background: linear-gradient(110deg, #4C1D95 0%, #6D28D9 48%, #8B5CF6 100%);
-  padding: 14px 18px;
+  /* 10 on every side, as .clm-modal-head is - head, body and footer share one
+     inset so the icon, the first field and the buttons keep one left edge. */
+  padding: 10px;
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
 }
 .ctc-cp-head::before {

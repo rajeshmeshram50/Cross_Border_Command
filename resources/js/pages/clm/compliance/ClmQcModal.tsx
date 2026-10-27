@@ -97,7 +97,6 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
               <div className="clm-autocode-label">{isEdit ? 'QC Code' : 'Auto Generated Code'}</div>
               <div className="clm-autocode-val">{isEdit ? existing!.code : nextCode}</div>
             </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
             <label className="clm-field-label">QC Certificate Name <span className="clm-req">*</span>

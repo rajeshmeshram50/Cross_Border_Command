@@ -302,13 +302,9 @@ export default function ClmAgreementsSentPage() {
               flex item refuses to shrink past its content and the text wraps
               instead of being cut. */}
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.2 }}>Agreements We Sent</div>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
-                <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
-              </span>
-            </div>
+            {/* No ACTIVE badge — same as Agreements To Approve: hard-coded,
+                never off, and reporting only that the page exists. */}
+            <div style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.2, marginBottom: 3 }}>Agreements We Sent</div>
             {/* One line, as .clm-head-strip-sub does it on every other CLM page.
                 This carried maxWidth: 580 instead, which wrapped "and signing."
                 onto a second line and made the strip a row taller than the rest
@@ -460,8 +456,8 @@ function SummaryCard({ t, accent, value, label, icon }: {
           rule IS the edge, which is what keeps it a clean 3px band. */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${c1},${c2})` }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 10.5, fontWeight: 700, color: t.dark ? t.textMuted : 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px' }}>{label}</p>
-        <div style={{ fontSize: 24, fontWeight: 700, color: t.dark ? t.textStrong : 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{value}</div>
+        <p style={{ fontSize: 9, fontWeight: 600, color: t.dark ? t.textMuted : 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={label}>{label}</p>
+        <div style={{ fontSize: 20, fontWeight: 600, color: t.dark ? t.textStrong : 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{value}</div>
       </div>
       <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${c1},${c2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,.10)' }}>{icon}</div>
     </div>
@@ -1085,6 +1081,8 @@ const AWS_CSS = `
   position:relative; overflow:hidden; border-radius:14px; padding:11px 15px;
   background:#fff; border:1px solid var(--bd); border-top-width:0;
   box-shadow:0 1px 4px rgba(6,182,212,.08); transition:all .18s;
-  display:flex; align-items:flex-start; justify-content:space-between; gap:10px;
+  /* Centred, not top-aligned: with the label on a single line the icon tile
+     is taller than the text column, so flex-start hung it above the figure. */
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
 }
 `;

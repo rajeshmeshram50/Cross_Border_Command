@@ -146,7 +146,14 @@ function RouteFallback() {
     <div
       style={{
         padding: 24,
-        animation: 'cbcRouteFallbackIn 0s linear 180ms forwards',
+        /* 420ms, not 180. Every lazy route that fetches on mount shows two
+           skeletons in a row: this one while the chunk downloads, then the
+           page's own while its data loads. They are different shapes, so it
+           reads as the shimmer running twice (QA 83, Case to Case → Track).
+           A chunk usually arrives well inside 420ms, so this one stays
+           invisible and the page's own skeleton is the only one seen; a
+           genuinely slow chunk still gets feedback. */
+        animation: 'cbcRouteFallbackIn 0s linear 420ms forwards',
         opacity: 0,
       }}
       role="status"

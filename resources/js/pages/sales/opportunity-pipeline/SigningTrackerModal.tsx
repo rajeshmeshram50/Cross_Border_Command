@@ -420,6 +420,17 @@ export function SigningTrackerModal({ sigId, code, onClose, onSettled }: {
   const settledSent = useRef(false);
   useEffect(() => { settledSent.current = false; }, [sigId]);
 
+  /* onSettled lives in a ref, and is NOT a dependency of `load`.
+     Every caller passes it as an inline arrow, so it is a new function on each
+     parent render. With it in the dependency list, `load` got a fresh identity
+     each time, the effect below re-ran, and the modal fetched again — the
+     shimmer played, cleared, then played a second time (QA 83). Worse, the
+     call itself re-renders the parent, so one settled request could start the
+     cycle again. The ref keeps the latest callback without tying the fetch to
+     its identity. */
+  const onSettledRef = useRef(onSettled);
+  onSettledRef.current = onSettled;
+
   const load = useCallback(() => {
     setLoading(true); setErr(null);
     return api.get(`/clm/signature-requests/${sigId}`)
@@ -429,12 +440,13 @@ export function SigningTrackerModal({ sigId, code, onClose, onSettled }: {
         const st = String(row?.status ?? '').toLowerCase();
         if (st && st !== 'inprogress' && !settledSent.current) {
           settledSent.current = true;
-          onSettled?.(st);
+          onSettledRef.current?.(st);
         }
       })
       .catch(e => setErr(e?.response?.data?.message ?? 'Could not load signing status.'))
       .finally(() => setLoading(false));
-  }, [sigId, onSettled]);
+  }, [sigId]);
+  /* Keyed on the request, so it runs once per open and once per id change. */
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {

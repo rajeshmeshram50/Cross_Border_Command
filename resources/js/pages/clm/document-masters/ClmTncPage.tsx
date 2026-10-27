@@ -14,7 +14,7 @@ import SearchClear from '../../../components/ui/SearchClear';
 import useDismissPopover from '../shared/useDismissPopover';
 
 /* Central CLM → Terms & Conditions Master. Three tabs: the document categories,
-   the segment-wise T&C matched by a product's segment, and one global T&C per
+   the segment-wise Terms and Conditions matched by a product's segment, and one global Terms and Conditions per
    category that applies to every document of that category. */
 
 /* The backend still requires a non-null short_code (12-char column) even
@@ -44,7 +44,7 @@ type GlobalTnc = {
 type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
 /* The "Applies To" column and its Buyer/Consignee/Supplier-Material label map
-   were removed: a T&C has no applicable party. It belongs to a DOCUMENT and a
+   were removed: a Terms and Conditions has no applicable party. It belongs to a DOCUMENT and a
    segment, not to a counterparty. The legacy `party` column is still on the
    table but is written blank and read by nothing. */
 
@@ -71,14 +71,14 @@ export default function ClmTncPage() {
          it the endpoint also runs usageLabels(), three whole-table JSON scans
          PER SEGMENT to work out where each one is referenced, and this page
          never looks at in_use or used_in. On live that call takes 14-16s for
-         1.9 kB of response, and it is what the T&C list is waiting on. */
+         1.9 kB of response, and it is what the Terms and Conditions list is waiting on. */
       api.get<{ status: boolean; data: Seg[] }>('/clm/segments', { params: { lite: 1 } }),
       api.get<{ status: boolean; data: GlobalTnc[] }>('/clm/tnc-global')
         .catch(() => ({ data: { data: [] as GlobalTnc[] } })),
     ]).then(([c, l, s, g]) => {
       setCats(c.data.data ?? []); setLib(l.data.data ?? []); setSegs(s.data.data ?? []); setGlob(g.data.data ?? []);
     })
-      .catch((e) => loadFailed(toast, 'the T&C data', e))
+      .catch((e) => loadFailed(toast, 'the Terms and Conditions data', e))
       .finally(() => setLoading(false));
   };
   useEffect(() => { reload(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -88,7 +88,7 @@ export default function ClmTncPage() {
      until you opened them. */
   const pillSwitcher = (
     <div className="clm-pill-group">
-      <Tooltip label="The document categories a T&C can be written for">
+      <Tooltip label="The document categories a Terms and Conditions can be written for">
         <button className={`clm-pill ${tab === 'cat' ? 'active' : ''}`} onClick={() => setTab('cat')}>
           <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
           Document Category
@@ -97,10 +97,13 @@ export default function ClmTncPage() {
       <Tooltip label="Terms that apply to one business segment only — used when that segment's documents need their own wording">
         <button className={`clm-pill ${tab === 'lib' ? 'active' : ''}`} onClick={() => setTab('lib')}>
           <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+          {/* Short in the rail, spelled out in the title. Three tabs at the
+              full name ran the rail nearly the width of the page and pushed
+              the search off it; the page header already says what T&C is. */}
           T&amp;C Segment Wise
         </button>
       </Tooltip>
-      <Tooltip label="One T&C per document category, printed on every document of that category regardless of segment">
+      <Tooltip label="One Terms and Conditions per document category, printed on every document of that category regardless of segment">
         <button className={`clm-pill ${tab === 'glob' ? 'active' : ''}`} onClick={() => setTab('glob')}>
           <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></svg></span>
           T&amp;C Global
@@ -116,21 +119,21 @@ export default function ClmTncPage() {
 
       <ClmPageHeader
         icon={ICO.hTnc}
-        title="T&C Master"
+        title="Terms and Conditions Master"
         sub="Manage reusable Terms & Conditions templates for trade and operational documents."
         rightSlot={pillSwitcher}
       />
 
       <ClmBrefBox
         icon={ICO.bTnc}
-        label="T&C Master"
+        label="Terms and Conditions Master"
         sub="Manage document-wise Terms & Conditions and reusable legal content."
         steps={[
           { n: '01', title: 'Create Category',       desc: 'Add PI, PO, Invoice, and document categories.',         icon: ICO.grid },
-          { n: '02', title: 'Create T&C',            desc: 'Add reusable Terms & Conditions content.',              icon: ICO.book },
+          { n: '02', title: 'Create Terms and Conditions',            desc: 'Add reusable Terms & Conditions content.',              icon: ICO.book },
           { n: '03', title: 'Set Applies To',        desc: 'Define customer, consignee, and supplier applicability.',   icon: ICO.users },
-          { n: '04', title: 'Write T&C Content',     desc: 'Create legal rules and reusable clauses.',              icon: ICO.edit },
-          { n: '05', title: 'Enable Usage',          desc: 'Use T&Cs across contracts and trade workflows.',         icon: ICO.check },
+          { n: '04', title: 'Write Terms and Conditions Content',     desc: 'Create legal rules and reusable clauses.',              icon: ICO.edit },
+          { n: '05', title: 'Enable Usage',          desc: 'Use Terms and Conditions across contracts and trade workflows.',         icon: ICO.check },
         ]}
       />
 
@@ -336,23 +339,23 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <div className="clm-total">
           {/* `written`, not `rows`: the table lists the categories that HAVE a
-              global T&C, while rows is every category. The badge read 6 over a
+              global Terms and Conditions, while rows is every category. The badge read 6 over a
               list of 4. */}
-          <SubHead title="Global T&amp;C" count={written.length}
+          <SubHead title="Global Terms and Conditions" count={written.length}
             sub="One set of terms per category, applied to every document of that category." />
         </div>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input autoComplete="off" type="text" placeholder="Search global T&C…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input autoComplete="off" type="text" placeholder="Search global Terms and Conditions…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <SearchClear show={search} onClear={() => setSearch('')} />
         </div>
         <Tooltip label={pending.length
-          ? `Write the global T&C of a document category · ${pending.length} still free`
-          : 'Every document category already has its global T&C — edit the entry instead'}>
+          ? `Write the global Terms and Conditions of a document category · ${pending.length} still free`
+          : 'Every document category already has its global Terms and Conditions — edit the entry instead'}>
           <span>
             <button className="clm-add-btn" disabled={!pending.length} onClick={() => openFor(null)}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Global T&amp;C
+              Add Global Terms and Conditions
             </button>
           </span>
         </Tooltip>
@@ -368,7 +371,9 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
           <table className="clm-table">
             <thead><tr>
               <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-              <th style={{ width: 130, textAlign: 'center' }}>T&amp;C ID</th>
+              {/* 170, not 130: the column was sized for "T&C ID" and the
+                  spelled-out name is three times the width. */}
+              <th style={{ width: 170, textAlign: 'center' }}>Terms and Conditions ID</th>
               <th style={{ width: 240 }}>DOCUMENT CATEGORY</th>
               <th>GLOBAL TERMS &amp; CONDITIONS</th>
               <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
@@ -382,12 +387,12 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}>
                       {r.code
-                        ? <Tooltip label={`Auto-generated T&C ID · ${r.code}`}><span className="clm-code-pill">{r.code}</span></Tooltip>
+                        ? <Tooltip label={`Auto-generated Terms and Conditions ID · ${r.code}`}><span className="clm-code-pill">{r.code}</span></Tooltip>
                         : <span style={{ color: '#94a3b8' }}>—</span>}
                     </td>
                     <td className="clm-td-name">{r.category}</td>
                     {/* Clipped to the column; the whole clause reads on hover,
-                        itself capped so a long T&C cannot cover the page. */}
+                        itself capped so a long Terms and Conditions cannot cover the page. */}
                     <td style={{ color: plain ? undefined : '#94a3b8' }}>
                       {plain ? (
                         <Tooltip label={plain.length > 700 ? `${plain.slice(0, 700)}…` : plain}>
@@ -396,7 +401,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
                       ) : 'Not written yet'}
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <Tooltip label={plain ? `Edit the global T&C for ${r.category}` : `Write the global T&C for ${r.category}`}>
+                      <Tooltip label={plain ? `Edit the global Terms and Conditions for ${r.category}` : `Write the global Terms and Conditions for ${r.category}`}>
                         <button type="button" className="clm-act clm-act-edit" onClick={() => openFor(r)} aria-label={`Edit ${r.category}`}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
                         </button>
@@ -410,7 +415,7 @@ function GlobalPane({ rows, cats, loading, reload }: { rows: GlobalTnc[]; cats: 
           {isEmpty && (
             <div className="clm-empty" style={{ flex: 1 }}>
               <div className="clm-empty-ico">{ICO.bTnc}</div>
-              <div className="clm-empty-title">{search.trim() ? 'No matching global T&C' : 'No global T&C yet'}</div>
+              <div className="clm-empty-title">{search.trim() ? 'No matching global Terms and Conditions' : 'No global Terms and Conditions yet'}</div>
               <div className="clm-empty-sub">{search.trim() ? 'No results match the current search.' : 'Add one per document category — it prints on every document of that category.'}</div>
             </div>
           )}
@@ -507,11 +512,11 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   return (
     <div className="clm-page-card">
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
-        <SubHead title="T&amp;C Entries" count={rows.length}
+        <SubHead title="Terms and Conditions Entries" count={rows.length}
           sub="Segment-wise Terms &amp; Conditions, matched to a product's segment." />
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input autoComplete="off" type="text" placeholder="Search T&C library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <input autoComplete="off" type="text" placeholder="Search Terms and Conditions library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
         </div>
         {/* 214, not 190: the funnel takes about 22px of the label's room and
@@ -532,10 +537,10 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
             onChange={(v) => { setStatusFilter((v || 'all') as 'all' | 'highly' | 'less'); setPage(1); }}
           />
         </div>
-        <Tooltip label="Draft a new reusable T&C block">
+        <Tooltip label="Draft a new reusable Terms and Conditions block">
           <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add T&amp;C
+            Add Terms and Conditions
           </button>
         </Tooltip>
       </div>
@@ -547,7 +552,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
             <table className="clm-table">
               <thead><tr>
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-                <th style={{ width: 110, textAlign: 'center' }}>T&amp;C ID</th>
+                <th style={{ width: 170, textAlign: 'center' }}>Terms and Conditions ID</th>
                 <th style={{ width: 150, textAlign: 'center' }}>SEGMENT</th>
                 <th style={{ width: 150, textAlign: 'center' }}>STATUS</th>
                 <th>DOCUMENT CATEGORY</th>
@@ -559,7 +564,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}>
-                      <Tooltip label={`Auto-generated T&C ID · ${r.code}`}>
+                      <Tooltip label={`Auto-generated Terms and Conditions ID · ${r.code}`}>
                         <span className="clm-code-pill">{r.code}</span>
                       </Tooltip>
                     </td>
@@ -610,10 +615,10 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                     <TruncCell value={r.category} />
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
-                        <Tooltip label={`Edit T&C — ${r.category}`}>
+                        <Tooltip label={`Edit Terms and Conditions — ${r.category}`}>
                           <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                         </Tooltip>
-                        <Tooltip label={`Delete T&C — ${r.category}`}>
+                        <Tooltip label={`Delete Terms and Conditions — ${r.category}`}>
                           <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                         </Tooltip>
                       </div>
@@ -625,8 +630,8 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
             {isEmpty && (
               <div className="clm-empty" style={{ flex: 1 }}>
                 <div className="clm-empty-ico">{ICO.bTnc}</div>
-                <div className="clm-empty-title">{search.trim() || statusFilter !== 'all' ? 'No matching T&C blocks' : 'No T&C blocks yet'}</div>
-                <div className="clm-empty-sub">{search.trim() || statusFilter !== 'all' ? 'No results match the current search.' : 'Click + Add T&C to create the first record.'}</div>
+                <div className="clm-empty-title">{search.trim() || statusFilter !== 'all' ? 'No matching Terms and Conditions blocks' : 'No Terms and Conditions blocks yet'}</div>
+                <div className="clm-empty-sub">{search.trim() || statusFilter !== 'all' ? 'No results match the current search.' : 'Click + Add Terms and Conditions to create the first record.'}</div>
               </div>
             )}
             {!loading && filtered.length > 0 && (
@@ -635,7 +640,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
           </div>
       </div>
 
-      {pendingDelete && createPortal(<DeleteConf title="Delete T&C block?" sub={`${pendingDelete.category} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete Terms and Conditions block?" sub={`${pendingDelete.category} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
 
       {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
       {segPop && createPortal(

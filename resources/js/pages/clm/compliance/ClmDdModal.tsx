@@ -88,7 +88,6 @@ export function DdModal(props: { existing: Dd | null; authorities: Authority[]; 
               <div className="clm-autocode-label">{isEdit ? 'DD Code' : 'Auto Generated Code'}</div>
               <div className="clm-autocode-val">{isEdit ? existing!.code : nextCode}</div>
             </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
             <label className="clm-field-label">DD Document Name <span className="clm-req">*</span>

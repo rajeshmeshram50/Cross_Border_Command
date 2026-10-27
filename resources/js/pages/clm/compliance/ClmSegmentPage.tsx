@@ -186,14 +186,34 @@ export default function ClmSegmentPage() {
       {loading && !booted && <ShimmerClmMaster cols={6} />}
       <style>{`
         .clm-root .clm-tabs-bar .seg-toolbar {
-          margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+          margin-left: auto; display: flex; align-items: center; gap: 8px;
+          /* nowrap, and min-width:0 so the group shrinks instead.
+             These two go together. Wrap was fine while the search was a rigid
+             500px - nothing inside could ever overflow. The moment the search
+             was allowed to flex, the toolbar's own wrap caught it first and
+             dropped it BELOW the filter, two stacked controls in the corner.
+             min-width:0 is what lets the group give way at all: a flex item
+             will not shrink past its content without it, which is what pushed
+             the tab rail onto its own line in the first place. */
+          flex-wrap: nowrap; min-width: 0;
         }
         /* 500px — the width every other CLM list search uses. This bar was
            300px, which next to the Authority or KYC search on the same module
            read as a different control. The filter select beside it simply sits
            200px further left; the tab rail ends well clear of it. */
         .clm-root .clm-tabs-bar .seg-search {
-          flex: 0 0 auto; width: 500px; max-width: 100%;
+          /* 500 is the width it WANTS, not a width it holds. It was
+             flex: 0 0 auto at a flat 500px, so the one elastic control on the
+             bar could not give a pixel: once the rail, the filter and the
+             search exceeded the row, the bar wrapped and left a void beside
+             the tabs (QA, Ritika 23/10) instead of the search simply getting
+             shorter. It now shrinks to 240 before anything wraps.
+             Note the 1280 rule below keys off the VIEWPORT while this bar
+             lives in a content column narrower than it - on a small laptop
+             the column is under 1280 while the window is not, so that rule
+             never fired on the screens that needed it. Shrinking does not
+             depend on a breakpoint being right. */
+          flex: 1 1 500px; width: auto; min-width: 240px; max-width: 500px;
           transition: border-color .15s ease, box-shadow .15s ease;
         }
         /* The funnel, its placement and the toggle's left padding all come
@@ -233,10 +253,12 @@ export default function ClmSegmentPage() {
         [data-bs-theme="dark"] .seg-filter-menu .master-select-item { color: #e2e8f0 !important; }
         [data-bs-theme="dark"] .seg-filter-menu .master-select-item:hover, [data-bs-theme="dark"] .seg-filter-menu .master-select-item:focus { background: rgba(6,182,212,.16) !important; color: #a5f3fc !important; }
         [data-bs-theme="dark"] .seg-filter-menu .master-select-item.active { background: rgba(6,182,212,.22) !important; color: #67e8f9 !important; }
-        @media (max-width: 1280px) { .clm-root .clm-tabs-bar .seg-search { width: 360px; } }
+        @media (max-width: 1280px) { .clm-root .clm-tabs-bar .seg-search { max-width: 360px; } }
         @media (max-width: 760px)  {
-          .clm-root .clm-tabs-bar .seg-toolbar { width: 100%; margin-left: 0; }
-          .clm-root .clm-tabs-bar .seg-search { width: 100%; }
+          /* Wrap comes back only here, where the toolbar owns a full row and
+             stacking the two controls is the intended answer. */
+          .clm-root .clm-tabs-bar .seg-toolbar { width: 100%; margin-left: 0; flex-wrap: wrap; }
+          .clm-root .clm-tabs-bar .seg-search { flex: 1 1 100%; max-width: 100%; }
           .clm-root .seg-filter-ms { flex: 1 1 auto; width: auto !important; }
         }
       `}</style>
@@ -493,7 +515,6 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
               <div className="clm-autocode-label">{isEdit ? 'Segment Code' : 'Auto Generated Code'}</div>
               <div className="clm-autocode-val">{isEdit ? existing!.code : nextCode}</div>
             </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
 
           <div className="clm-modal-divider" />

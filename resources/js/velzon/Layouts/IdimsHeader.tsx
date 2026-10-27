@@ -89,7 +89,7 @@ const LEAF_DESC: Record<string, string> = {
   'clm.document_panel': 'Manage document rules & governance.',
   'clm.trade_documents': 'Manage declarations & trade papers.',
   'clm.agreements': 'Manage agreement templates & masters.',
-  'clm.terms_conditions': 'Manage reusable legal T&C structures.',
+  'clm.terms_conditions': 'Manage reusable legal Terms and Conditions structures.',
   'clm.clause_library': 'Manage reusable legal clauses.',
   // HRMS
   'hr.overview': 'Headcount, joinings, exits & headline KPIs.',

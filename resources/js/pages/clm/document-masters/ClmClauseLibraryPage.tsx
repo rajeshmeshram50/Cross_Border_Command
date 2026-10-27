@@ -810,7 +810,6 @@ function ClauseTypeModal(props: {
               <div className="clm-autocode-label">Auto Generated</div>
               <div className="clm-autocode-val">{code}</div>
             </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Clause Type Name <span className="clm-req">*</span></label>

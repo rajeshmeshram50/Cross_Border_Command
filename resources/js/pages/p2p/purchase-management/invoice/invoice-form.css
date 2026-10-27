@@ -10034,3 +10034,26 @@
   .invf-packed .invf-pb-pager { flex-direction: column; align-items: stretch; gap: 10px; }
   .invf-packed .invf-pb-pager .tc-wl-right { justify-content: space-between; }
 }
+
+/* ── The box drawer's strip, inside the MODAL ────────────────────────────────
+   The two-row layout is chosen by a viewport media query (max-width: 1500px),
+   which is the wrong measurement here: the modal is min(1640px, 100%), so its
+   strip never gets more than 1640 however wide the screen is. This strip's
+   content — five identity items, the quantity stepper, the unit toggle and
+   four buttons — needs more than that, so on a 1900px screen the single-row
+   branch applied, the toolbar wrapped anyway, and `margin-left: auto` left it
+   right-aligned under an empty gap with the sticker against the corner.
+
+   Keyed to the modal instead of the screen, so the toolbar takes its own row
+   whenever it is in a dialog. The accordion and panel variants are not capped
+   and keep the viewport rules. Declared after the media blocks so it wins at
+   equal specificity.
+   ────────────────────────────────────────────────────────────────────────── */
+.vti-dw-modal .vti-dw-strip .vti-dw-strip-left { width: 100%; }
+.vti-dw-modal .vti-dw-strip .vti-dw-toolbar {
+  width: 100%;
+  margin-left: 0; margin-right: 0;
+  padding: 0 14px 12px;
+  justify-content: flex-start;
+}
+.vti-dw-modal .vti-dw-strip .vti-dw-strip-item { padding: 9px 14px; }

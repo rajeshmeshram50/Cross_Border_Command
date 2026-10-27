@@ -162,10 +162,16 @@ const BP_CSS = `
 :where(.bpx-13) { position: absolute !important; inset: 0 !important; background-image: radial-gradient(circle,rgba(6,182,212,.07) 1px,transparent 1px) !important; background-size: 18px 18px !important; pointer-events: none !important; }
 :where(.bpx-14) { display: flex !important; align-items: center !important; gap: 14px !important; z-index: 1 !important; padding-left: 10px !important; }
 :where(.bpx-15) { position: relative !important; flex-shrink: 0 !important; }
-:where(.bpx-16) { width: 42px !important; height: 42px !important; border-radius: 12px !important; display: flex !important; align-items: center !important; justify-content: center !important; background: linear-gradient(135deg,#06b6d4,#0891b2,#0e7490) !important; box-shadow: 0 0 0 3px rgba(6,182,212,.22),0 4px 12px rgba(8,145,178,.4) !important; }
+/* 38px, matching .clm-head-strip-ico — the tile has to come down with the
+   title or the strip stays a size larger than the rest of CLM. */
+:where(.bpx-16) { width: 38px !important; height: 38px !important; border-radius: 12px !important; display: flex !important; align-items: center !important; justify-content: center !important; background: linear-gradient(135deg,#06b6d4,#0891b2,#0e7490) !important; box-shadow: 0 0 0 3px rgba(6,182,212,.22),0 4px 12px rgba(8,145,178,.4) !important; }
 :where(.bpx-17) { position: absolute !important; bottom: -1px !important; right: -1px !important; width: 10px !important; height: 10px !important; border-radius: 50% !important; background: linear-gradient(135deg,#4ade80,#22c55e) !important; border: 2px solid #cef8ff !important; box-shadow: 0 0 5px rgba(34,197,94,.45) !important; }
-:where(.bpx-18) { font-size: 16px !important; font-weight: 500 !important; color: #0c4a6e !important; letter-spacing: -.4px !important; line-height: 1.15 !important; }
-:where(.bpx-19) { font-size: 11px !important; font-weight: 500 !important; color: #0e7490 !important; opacity: 0.9 !important; margin-top: 3px !important; }
+/* Supplier Management's strip, by way of .clm-head-strip-title: 14.5px/700
+   at -.4px over 10px/500. This page ran 16px at weight 500 — a size larger
+   than every other CLM header and lighter than any of them, so the Customer
+   Profile strip read as a different kind of page. */
+:where(.bpx-18) { font-size: 14.5px !important; font-weight: 700 !important; color: #0c4a6e !important; letter-spacing: -.4px !important; line-height: 1.2 !important; }
+:where(.bpx-19) { font-size: 10px !important; font-weight: 500 !important; color: #0e7490 !important; opacity: 0.85 !important; margin-top: 2px !important; line-height: 1.3 !important; }
 :where(.bpx-20) { z-index: 1 !important; flex-shrink: 0 !important; }
 :where(.bpx-21) { border: none !important; border-radius: 0 !important; box-shadow: none !important; margin: 0 !important; }
 :where(.bpx-22) { display: flex !important; flex-direction: column !important; gap: 8px !important; }
@@ -181,16 +187,20 @@ const BP_CSS = `
 :where(.bpx-32) { font-size: 7.5px !important; font-weight: 700 !important; color: #0891b2 !important; background: rgba(6,182,212,.1) !important; border: 1px solid rgba(6,182,212,.25) !important; padding: 1px 6px !important; border-radius: 20px !important; }
 :where(.bpx-33) { font-size: 9px !important; font-weight: 500 !important; color: #0e7490 !important; margin-top: 2px !important; }
 :where(.bpx-34) { display: flex !important; align-items: center !important; gap: 8px !important; }
-/* The tab rail leads its group and the search closes it, as on every other
-   CLM toolbar. The search is written first here, and .bpx-34 is shared by
-   several groups, so this orders the rail rather than moving markup. */
-:where(.bpx-34) .bpx-64 { order: -1 !important; }
+/* Search leads the group, the scope rail closes it. The rail was pulled in
+   front with order: -1; dropping that is the whole change, since the markup
+   already writes the search first - which is also why the swap did not need
+   either toolbar's JSX touched. Both the party-wise and transaction-wise
+   rails use .bpx-64, so they move together and stay matched. */
 /* The same rail as .bpx-64 — the transaction-wise scope switch is the same
    control as the party-wise one and was 4px shorter on a different track. */
 :where(.bpx-35) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; box-sizing: border-box !important; padding: 3px !important; border-radius: 11px !important; background: linear-gradient(180deg, #f6feff, #f0fdff) !important; border: 1px solid #c9f8fd !important; }
 :where(.bpx-36) { width: 26px !important; height: 26px !important; border-radius: 7px !important; background: rgba(255,255,255,.75) !important; border: 1.5px solid rgba(8,145,178,.22) !important; display: flex !important; align-items: center !important; justify-content: center !important; cursor: pointer !important; color: #0891b2 !important; transition: all .15s !important; flex-shrink: 0 !important; }
 :where(.bpx-37) { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)) !important; gap: 8px !important; }
-:where(.bpx-38) { display: flex !important; align-items: flex-start !important; justify-content: space-between !important; gap: 10px !important; margin-bottom: 0 !important; }
+/* Centred, not top-aligned: with the label on a single line the 38px icon
+   tile is taller than the text column, so flex-start hung it above the
+   figure instead of sitting level with the pair. */
+:where(.bpx-38) { display: flex !important; align-items: center !important; justify-content: space-between !important; gap: 10px !important; margin-bottom: 0 !important; }
 :where(.bpx-38) svg { width: 18px !important; height: 18px !important; }
 :where(.bpx-39) { display: flex !important; align-items: center !important; justify-content: space-between !important; padding: 10px 16px 10px 20px !important; background: linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%) !important; border-bottom: 1px solid #A5F3FC !important; min-height: 52px !important; flex-shrink: 0 !important; }
 :where(.bpx-40) { font-size: 13px !important; font-weight: 800 !important; color: #0c4a6e !important; letter-spacing: -.2px !important; }
@@ -233,15 +243,35 @@ const BP_CSS = `
 /* 48px, the module-wide toolbar height — .ops-search in useOpsTheme.ts and
    .clm-search in clmShared.ts carry the same number. This box is a local copy
    rather than .ops-search, so it has to be set here too. */
-:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg,#f6feff,#f0fdff) !important; border: 1.5px solid #cef8fd !important; box-shadow: none !important; flex: 0 0 500px !important; max-width: 500px !important; min-width: 0 !important; flex-shrink: 0 !important; box-sizing: border-box !important; }
+/* Brought up to .clm-search in clmShared.ts, which is what Segment Master
+   draws. This was a local copy taken before that bar got its finish, and the
+   three things it was missing are the three that make it read as a lit field
+   rather than a painted rectangle:
+     · a THREE-stop ramp, white to accent-50. #f6feff to #f0fdff is a six-
+       value difference - too flat to travel, so the surface looked printed
+     · the inset gloss: a bright hairline along the top edge where a lit
+       surface catches light, a faint accent line along the bottom where it
+       falls away, and a 1px contact shadow pulled back by -4 to seat the
+       field on the toolbar without lifting it off a card
+     · the top highlight restated on focus - the focus ring REPLACES the whole
+       box-shadow, so without it the field goes flat at the one moment it is
+       being used */
+:where(.bpx-62) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; padding: 0 14px !important; border-radius: 11px !important; background: linear-gradient(180deg, #ffffff 0%, #f4fdff 48%, #e8fbff 100%) !important; border: 1.5px solid #cef8fd !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.95), inset 0 -1px 0 rgba(6,182,212,.07), 0 1px 2px rgba(8,145,178,.06), 0 3px 8px -4px rgba(8,145,178,.14) !important; flex: 0 0 500px !important; max-width: 500px !important; min-width: 0 !important; flex-shrink: 0 !important; box-sizing: border-box !important; transition: border-color .15s ease, box-shadow .15s ease !important; }
 :where(.bpx-62) > svg { width: 16px !important; height: 16px !important; stroke: #22d3ee !important; flex-shrink: 0 !important; }
-:where(.bpx-62):focus-within { border-color: #22d3ee !important; box-shadow: 0 0 0 3px rgba(6,182,212,.14) !important; }
+:where(.bpx-62):focus-within { border-color: #22d3ee !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 0 0 3px rgba(6,182,212,.14) !important; }
 :where(.bpx-63) { border: none !important; outline: none !important; font-size: 13px !important; font-weight: 500 !important; font-family: inherit !important; color: #0c4a6e !important; flex: 1 !important; min-width: 0 !important; background: transparent !important; }
 :where(.bpx-63)::placeholder { color: #50c0d8 !important; font-weight: 500 !important; }
 /* The CLM tab rail: gap 8 on 3px of padding, radius 11, a 1px accent
    hairline over a white wash, and no fixed height - the 40px tabs give it its
    48px. It was a 38px trough at gap 3 on a 1.5px border. */
 :where(.bpx-64) { display: flex !important; align-items: center !important; gap: 8px !important; height: 48px !important; box-sizing: border-box !important; padding: 3px !important; border-radius: 11px !important; background: linear-gradient(180deg, #f6feff, #f0fdff) !important; border: 1px solid #c9f8fd !important; }
+/* The hover .clm-tab has had all along (clmShared.ts:382) - white fill, a
+   slightly deeper accent for the ink and a small lift. These three inline
+   rails had no hover at all, so an inactive tab gave nothing back when you
+   pointed at it and so did not read as something you could click. Only the
+   INACTIVE tabs carry the class: a selected tab turning white under the
+   pointer would look like it had just been deselected. */
+:where(.bpx-tab):hover { background: #ffffff !important; border-color: transparent !important; color: #0891b2 !important; box-shadow: 0 2px 6px rgba(16,24,40,.12) !important; }
 :where(.bpx-65) { overflow: auto !important; flex: 1 !important; min-height: 0 !important; }
 :where(.bpx-66) { padding: 9px 12px !important; text-align: center !important; }
 :where(.bpx-67) { font-size: 11px !important; font-weight: 700 !important; color: #0891b2 !important; }
@@ -282,7 +312,12 @@ const BP_CSS = `
 :where(.bpx-102) { font-size: 7.5px !important; font-weight: 800 !important; padding: 1px 6px !important; border-radius: 20px !important; background: rgba(6,182,212,.12) !important; border: 1px solid rgba(6,182,212,.25) !important; color: #0891b2 !important; letter-spacing: .04em !important; }
 :where(.bpx-103) { font-size: 7.5px !important; font-weight: 800 !important; padding: 1px 6px !important; border-radius: 20px !important; background: rgba(148,163,184,.1) !important; border: 1px solid rgba(148,163,184,.2) !important; color: #64748b !important; letter-spacing: .04em !important; }
 
-.seg-page { background: #F4F6FB; min-height: 100%; padding: 8px; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+/* No horizontal padding of its own. The shell already gives the page 8px:
+   .page-content pads 8 on each side and zeroes the .container-fluid
+   inside it (app.css). Adding 8 here doubled it to 16, so the cards sat
+   twice as far from the edge as the design asks. Vertical padding stays
+   — that is what margin-top:-8px is paired with. */
+.seg-page { background: #F4F6FB; min-height: 100%; padding: 8px 0; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -425,6 +460,16 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page .bpx-94 ,
 [data-bs-theme="dark"] .seg-page .bpx-100 ,
 [data-bs-theme="dark"] .seg-page .bpx-101 { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+/* The two scope toggles' rails — International/Domestic Customers and the
+   same pair for Transactions. Both carry a near-white gradient with
+   !important, and the only dark rule that named them set border-color, so the
+   fill survived and the capsule stayed a white slab on a dark page. Their
+   siblings (.bpx-43, .bpx-62, the search bars) were given a fill here; these
+   two were missed. Same surface, so the four controls match. */
+[data-bs-theme="dark"] .seg-page .bpx-35 ,
+[data-bs-theme="dark"] .seg-page .bpx-64 { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
+[data-bs-theme="dark"] .bcm-overlay .bpx-35 ,
+[data-bs-theme="dark"] .bcm-overlay .bpx-64 { background: #0f172a !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .seg-page [style*="rgb(12, 74, 110)"],
 [data-bs-theme="dark"] .seg-page .bpx-18,
 [data-bs-theme="dark"] .seg-page .bpx-31,
@@ -573,8 +618,16 @@ const cardStyle: CSSProperties = {
    edge, which keeps it a clean 3px band. */
 const cardTopBar: CSSProperties = { position: 'absolute', top: 0, left: 0, right: 0, height: '3px', background: 'linear-gradient(90deg,#06b6d4,#0891b2)' };
 const cardIco: CSSProperties = { width: '38px', height: '38px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,.10)' };
-const cardNum: CSSProperties = { fontSize: '24px', fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 };
-const cardLabel: CSSProperties = { fontSize: '10.5px', fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px', lineHeight: 1.25 };
+/* 600, not 700. At 24px the figure was the heaviest thing on the page and
+   pulled ahead of the headings above it; the tile's job is the number's
+   VALUE, which 600 carries at this size without shouting. The label drops
+   with it so the pair stays one weight apart from nothing. */
+const cardNum: CSSProperties = { fontSize: '20px', fontWeight: 600, color: 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 };
+/* Two lines reserved, always. Agreements' labels fit one line and the
+   profile's wrap ("TOTAL INTERNATIONAL / CUSTOMERS"), so the same tile
+   stood 11px taller on one page than the other and the figures sat at
+   different heights. 23px is two lines of 9px at 1.25. */
+const cardLabel: CSSProperties = { fontSize: '9px', fontWeight: 600, color: 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 
 function cardHoverIn(e: React.MouseEvent<HTMLDivElement>) {
   e.currentTarget.style.transform = 'translateY(-2px)';
@@ -586,9 +639,16 @@ function cardHoverOut(e: React.MouseEvent<HTMLDivElement>) {
   e.currentTarget.style.borderColor = '#A5F3FC';
   e.currentTarget.style.boxShadow = '0 1px 3px rgba(6,182,212,.07)';
 }
+/* CLM's tab: 40px, 0 14px, radius 8, 12.5/650 — the same figures the
+   party-wise scope tabs above use. These were sized by padding alone (8px 16
+   at 12/700), so their height fell out of the font metrics and landed a few
+   pixels off the module's one tab height, on a different radius and weight
+   besides. Height is explicit with border-box so the row cannot drift again
+   if the label or the glyph changes. */
 const neqTabStyle = (on: boolean): CSSProperties => ({
-  display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 9, border: 'none', cursor: 'pointer',
-  fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: on ? '#fff' : '#0e7490',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+  height: 40, boxSizing: 'border-box', padding: '0 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+  fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, whiteSpace: 'nowrap', color: on ? '#fff' : '#0e7490',
   background: on ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#e0f7fa',
   boxShadow: on ? '0 2px 8px rgba(8,145,178,.35)' : 'none',
 });
@@ -690,6 +750,10 @@ function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box';
 
 const txnTableHeaderRow: CSSProperties = { background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderBottom: '1.5px solid #A5F3FC' };
 const stickyThead: CSSProperties = { position: 'sticky', top: 0, zIndex: 2, background: '#f0fdff', boxShadow: '0 1.5px 0 #A5F3FC' };
+/* Inactive tabs on this page's three inline rails carry a TRANSPARENT 1px
+   border, as .clm-tab does: the pixel exists only so selecting a tab does
+   not move the rail. Drawn for real it made every inactive tab an outlined
+   box sitting inside the rail's own outline. */
 const idChip: CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: '11px', fontWeight: 800, color: '#0891b2', background: 'linear-gradient(135deg,rgba(8,145,178,.1),rgba(6,182,212,.06))', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(6,182,212,.25)' };
 const oppChip: CSSProperties = { fontSize: '10.5px', fontWeight: 600, color: '#4338CA', background: '#EEF2FF', padding: '2px 7px', borderRadius: '6px', border: '1px solid #C7D2FE' };
 const oppChipMono: CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: '11px', fontWeight: 800, color: '#4338CA', background: '#EEF2FF', padding: '3px 8px', borderRadius: '6px', border: '1px solid #C7D2FE' };
@@ -1076,7 +1140,7 @@ export default function ClmBuyerProfilePage() {
                   {([['international', 'International Transactions'], ['domestic', 'Domestic Transactions']] as const).map(([key, label]) => {
                     const on = txnScope === key;
                     return (
-                      <button key={key} onClick={() => { setTxnScope(key); setWsEqPage(1); setWsNeqPage(1); setWosEqPage(1); setWosNeqPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden', ...(on ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' } : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid rgba(6,182,212,.25)', color: '#0e7490' }) }}>
+                      <button key={key} onClick={() => { setTxnScope(key); setWsEqPage(1); setWsNeqPage(1); setWosEqPage(1); setWosNeqPage(1); }} className={on ? undefined : 'bpx-tab'} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden', ...(on ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' } : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid transparent', color: '#0e7490' }) }}>
                         {key === 'international'
                           ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                           : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
@@ -1105,7 +1169,7 @@ export default function ClmBuyerProfilePage() {
                     <div style={cardTopBar} />
                     <div className="bpx-38">
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={cardLabel}>{c.label}</p>
+                        <p style={cardLabel} title={c.label}>{c.label}</p>
                         <div style={cardNum}>{c.num}</div>
                       </div>
                       <div style={cardIco}>{c.ico}</div>
@@ -1372,7 +1436,7 @@ export default function ClmBuyerProfilePage() {
                         <div style={cardTopBar} />
                         <div className="bpx-38">
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={cardLabel}>{c.label}</p>
+                            <p style={cardLabel} title={c.label}>{c.label}</p>
                             <div style={cardNum}>{c.num}</div>
                           </div>
                           <div style={cardIco}>{c.ico}</div>
@@ -1396,7 +1460,7 @@ export default function ClmBuyerProfilePage() {
                         <div style={cardTopBar} />
                         <div className="bpx-38">
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={cardLabel}>{c.label}</p>
+                            <p style={cardLabel} title={c.label}>{c.label}</p>
                             <div style={cardNum}>{c.num}</div>
                           </div>
                           <div style={cardIco}>{c.ico}</div>
@@ -1432,12 +1496,12 @@ export default function ClmBuyerProfilePage() {
                       {([['international', 'International Customers'], ['domestic', 'Domestic Customers']] as const).map(([key, label]) => {
                         const on = buyerScope === key;
                         return (
-                          <button key={key} onClick={() => { setBuyerScope(key); setBuyerPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box',
+                          <button key={key} onClick={() => { setBuyerScope(key); setBuyerPage(1); }} className={on ? undefined : 'bpx-tab'} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box',
                             fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap',
                             transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
                             ...(on
                               ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
-                              : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid rgba(6,182,212,.25)', color: '#0e7490' }) }}>
+                              : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid transparent', color: '#0e7490' }) }}>
                             {key === 'international'
                               ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                               : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}
@@ -1533,12 +1597,12 @@ export default function ClmBuyerProfilePage() {
                       {([['international', 'International Consignees'], ['domestic', 'Domestic Consignees']] as const).map(([key, label]) => {
                         const on = consScope === key;
                         return (
-                          <button key={key} onClick={() => { setConsScope(key); setConsPage(1); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box',
+                          <button key={key} onClick={() => { setConsScope(key); setConsPage(1); }} className={on ? undefined : 'bpx-tab'} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '0 14px', height: 40, borderRadius: 8, boxSizing: 'border-box',
                             fontFamily: 'inherit', fontSize: 12.5, fontWeight: 650, letterSpacing: 0, cursor: 'pointer', whiteSpace: 'nowrap',
                             transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
                             ...(on
                               ? { border: 0, background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent 50%),linear-gradient(135deg,#22d3ee 0%,#06b6d4 35%,#0891b2 68%,#0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -2px 6px rgba(14,116,144,.3)', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
-                              : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid rgba(6,182,212,.25)', color: '#0e7490' }) }}>
+                              : { background: 'linear-gradient(135deg,#ecfeff,#cffafe)', border: '1px solid transparent', color: '#0e7490' }) }}>
                             {key === 'international'
                               ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
                               : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>}

@@ -384,9 +384,14 @@ export default function ClmCaseToCasePage() {
       const toolbarH = (el.firstElementChild as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('table thead') as HTMLElement | null)?.offsetHeight || 0;
       const footerH  = (el.querySelector('.tc-wl-pag') as HTMLElement | null)?.offsetHeight || 0;
-      const rowH     = (el.querySelector('table tbody tr') as HTMLElement | null)?.offsetHeight || 44;
+      /* Measured, or not at all. A search that matches nothing leaves no row
+         to measure, and the old 44px fallback then produced a DIFFERENT
+         rows-per-page from the real one - so clearing the box re-laid the
+         table out again. */
+      const rowEl = el.querySelector('table tbody tr') as HTMLElement | null;
+      if (!rowEl) return;
       const avail    = fh - toolbarH - theadH - footerH - 20;
-      const rowsFit  = Math.max(1, Math.floor(avail / rowH));
+      const rowsFit  = Math.max(1, Math.floor(avail / rowEl.offsetHeight));
       setPageSize(prev => (prev === rowsFit ? prev : Math.max(PER_PAGE, rowsFit)));
     };
     recompute();
@@ -394,7 +399,18 @@ export default function ClmCaseToCasePage() {
     const tm = window.setTimeout(recompute, 120);
     window.addEventListener('resize', recompute);
     return () => { window.removeEventListener('resize', recompute); window.clearTimeout(tm); cancelAnimationFrame(raf); };
-  }, [list.length, loading, manualSize]);
+    /* NOT list.length (QA #31, Ritika 26/10: "the search bar is not static
+       while changing the tabs"). How many rows FIT is a function of the
+       viewport and the card's own chrome - it has nothing to do with how many
+       rows the filter returned. Keying it to the filtered count meant every
+       keystroke re-ran the whole routine, recomputed rows-per-page, re-sliced
+       the table to a different number of rows, and the rAF + 120ms timeout
+       below then measured the new layout and did it again. That is the page
+       shifting under the cursor as you type, and the same thing on every tab
+       switch, since the count changes there too.
+       Resize still recomputes, and so does a load - which is when the row
+       height could genuinely change. */
+  }, [loading, manualSize]);
 
   if (formOpen) {
     return <ClmCtcForm editing={editing} onClose={() => { setFormOpen(false); setEditing(null); load(); }} onSaved={() => { setFormOpen(false); setEditing(null); load(); }} />;

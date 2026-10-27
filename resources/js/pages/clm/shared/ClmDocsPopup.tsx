@@ -75,6 +75,9 @@ function dealLabel(row: DealStamped, fallback: string): string {
   return shp || opp || fallback;
 }
 
+/** One row: 14px padding, a 38px tile, 14px padding, 1px rule. */
+const ROW_H = 67;
+
 const CATEGORY_META: Record<DocCategory, { label: string; sub: string }> = {
   kyc: { label: 'OWNER KYC DETAILS',       sub: 'Owner identity, address & photograph proofs' },
   dd:  { label: 'COMPANY DUE DILIGENCE',   sub: 'Licenses, statutory documents & compliance proofs' },
@@ -135,17 +138,16 @@ function skBox(dark?: boolean): CSSProperties {
  * variants (translucent fills + lightened text) for dark mode. */
 function StatusPill({ s, dark }: { s: VaultStatus; dark?: boolean }) {
   const tone = dark
-    ? (s === 'Verified' ? { bg: 'rgba(16,185,129,.18)', fg: '#6ee7b7', dot: '#10b981' }
-      : s === 'Signed'   ? { bg: 'rgba(59,130,246,.18)', fg: '#93c5fd', dot: '#3b82f6' }
-      : s === 'Expiring' ? { bg: 'rgba(245,158,11,.18)', fg: '#fcd34d', dot: '#f59e0b' }
-      :                    { bg: 'rgba(239,68,68,.18)',  fg: '#fca5a5', dot: '#ef4444' })
-    : (s === 'Verified' ? { bg: '#d1fae5', fg: '#047857', dot: '#10b981' }
-      : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', dot: '#3b82f6' }
-      : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', dot: '#f59e0b' }
-      :                    { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' });
+    ? (s === 'Verified' ? { bg: 'rgba(16,185,129,.18)', fg: '#6ee7b7', bd: 'rgba(16,185,129,.38)' }
+      : s === 'Signed'   ? { bg: 'rgba(59,130,246,.18)', fg: '#93c5fd', bd: 'rgba(59,130,246,.38)' }
+      : s === 'Expiring' ? { bg: 'rgba(245,158,11,.18)', fg: '#fcd34d', bd: 'rgba(245,158,11,.38)' }
+      :                    { bg: 'rgba(239,68,68,.18)',  fg: '#fca5a5', bd: 'rgba(239,68,68,.38)' })
+    : (s === 'Verified' ? { bg: '#d1fae5', fg: '#047857', bd: '#a7f3d0' }
+      : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', bd: '#bfdbfe' }
+      : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', bd: '#fde68a' }
+      :                    { bg: '#fee2e2', fg: '#b91c1c', bd: '#fecaca' });
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 11px', borderRadius: 20, background: tone.bg, color: tone.fg, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot }} />
+    <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 12px', borderRadius: 20, background: tone.bg, border: `1px solid ${tone.bd}`, color: tone.fg, fontSize: 10, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
       {s}
     </span>
   );
@@ -218,7 +220,7 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
         name: '#e2e8f0', sub: '#94a3b8', muted: '#94a3b8',
         reqBg: 'rgba(234,179,8,.16)', reqBd: 'rgba(253,224,71,.32)', reqFg: '#fcd34d',
         footerBg: 'linear-gradient(110deg,#16263a,#11202f)', footerBd: 'rgba(6,182,212,.28)',
-        footerFg: '#7dd3fc', footerDot: '#22d3ee',
+        footerFg: '#7dd3fc',
       }
     : {
         card: '#fff', rowBorder: '#eef2f6',
@@ -226,7 +228,7 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
         name: '#0f172a', sub: '#94a3b8', muted: '#64748b',
         reqBg: '#fef9c3', reqBd: '#fde68a', reqFg: '#a16207',
         footerBg: 'linear-gradient(110deg,#f0fdff,#e8fafb)', footerBd: '#a5f3fc',
-        footerFg: '#0e7490', footerDot: '#0891b2',
+        footerFg: '#0e7490',
       };
 
   return createPortal(
@@ -238,20 +240,23 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        style={{ width: 'min(640px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: c.card, borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 60px rgba(8,47,73,.4)' }}
+        style={{ width: 'min(760px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: c.card, borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 60px rgba(8,47,73,.4)' }}
       >
         {/* ── Header (compact: eyebrow + name on the left; verified badge sits
             beside the close button on the right) ── */}
-        <div style={{ padding: '12px 16px', background: 'linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%)', color: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+        <div style={{ padding: '18px 20px', background: 'linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%)', color: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 9.5, fontWeight: 800, letterSpacing: '.12em', color: 'rgba(255,255,255,.85)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 9.5, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.85)' }}>
               <span style={{ width: 16, height: 2, background: 'rgba(255,255,255,.7)', borderRadius: 2 }} />
               {meta.label}
             </div>
-            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.01em', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
+            {/* 700, not 800, and the band is 18px deep rather than 12. On a saturated
+                teal the heavier cut filled in and read as a slab; the extra height
+                is what lets the pair breathe once it is lighter. */}
+            <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '-.01em', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{company}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 20, background: 'rgba(16,185,129,.22)', border: '1px solid rgba(110,231,183,.5)', color: '#d1fae5', fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 11px', borderRadius: 20, background: 'rgba(16,185,129,.22)', border: '1px solid rgba(110,231,183,.5)', color: '#d1fae5', fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
               ✓ {verified} Verified / Signed
             </span>
             <button
@@ -266,7 +271,20 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
         </div>
 
         {/* ── Body ── */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: c.card }}>
+        {/* Five rows, then scroll. A row is 14px of padding either side of a
+            38px number tile plus its 1px rule, so 67px each. Without the cap
+            the list grew to 88vh and a long bucket filled the screen, which
+            buried the footer count and the Close button on a short window.
+            88vh still applies on top, for screens shorter than five rows. */}
+        {/* A slim 6px rail on no track. The list is capped, so something has to
+            say the sixth row exists — but at 10px on a 760px dialog the bar
+            read as a second border down the edge. */}
+        <style>{`.clm-docs-list{scrollbar-width:thin;scrollbar-color:rgba(8,145,178,.4) transparent;}
+          .clm-docs-list::-webkit-scrollbar{width:6px;}
+          .clm-docs-list::-webkit-scrollbar-track{background:transparent;}
+          .clm-docs-list::-webkit-scrollbar-thumb{background:rgba(8,145,178,.4);border-radius:999px;}
+          .clm-docs-list:hover::-webkit-scrollbar-thumb{background:rgba(8,145,178,.6);}`}</style>
+        <div className="clm-docs-list" style={{ flex: 1, minHeight: 0, maxHeight: ROW_H * 5, overflowY: 'auto', background: c.card }}>
           {loading ? (
             <>
               <style>{`@keyframes clmDocsSk{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
@@ -303,8 +321,7 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
 
         {/* ── Footer ── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 22px', background: c.footerBg, borderTop: `1.5px solid ${c.footerBd}`, flexShrink: 0 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: c.footerFg }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.footerDot }} />
+          <span style={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: c.footerFg }}>
             {verified} of {total} {noun} verified
           </span>
           <button

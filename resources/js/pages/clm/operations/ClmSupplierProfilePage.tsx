@@ -100,7 +100,11 @@ const EMPTY_SP: SpData = {
 
 /* ───────────────────────── Extracted CSS ───────────────────────── */
 const CSS = `
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 0; display:flex; flex-direction:column; gap:8px; }
+/* 8px, the same gutter Customer Profile uses. Both pages declare .seg-page
+   globally, so the two rules disagreed on the page's own padding — 8 here,
+   0 there — and whichever style block loaded last decided it. The cards
+   sat flush to the viewport edge on the losing page. */
+.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 8px 0; display:flex; flex-direction:column; gap:8px; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);

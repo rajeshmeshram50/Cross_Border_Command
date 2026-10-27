@@ -402,8 +402,11 @@ function LibraryPane({ names, segments, reloadKey, reload }: { names: TdName[]; 
                 <th style={{ width: 150 }}>TRADE DOCUMENT TYPE</th>
                 <th style={{ width: 110, textAlign: 'center' }}>REGULATORY</th>
                 <th style={{ width: 130, textAlign: 'left' }}>SEGMENT</th>
-                <th>PURPOSE</th>
-                <th>APPLICABLE PARTY</th>
+                {/* Both sized. Left to auto, Purpose was squeezed under the
+                    260px its text was truncating at, so the overflow landed on
+                    Applicable Party beside it. */}
+                <th style={{ width: 220 }}>PURPOSE</th>
+                <th style={{ width: 190 }}>APPLICABLE PARTY</th>
                 <th style={{ width: 110, textAlign: 'center' }}>DOWNLOAD</th>
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>

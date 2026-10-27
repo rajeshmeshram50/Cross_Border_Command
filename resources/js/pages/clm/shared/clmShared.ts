@@ -790,7 +790,12 @@ export const CLM_CSS = `
    instead of over the name. max-width: 100% keeps the ellipsis working: the
    box still stops at the cell's cap and clips there. */
 .clm-td-name-trunc { display: inline-block; max-width: 100%; vertical-align: middle; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.clm-td-trunc { display: inline-block; max-width: 260px; vertical-align: middle; font-size: 12px; color: #475569; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 100%, not a fixed 260. The cell carries the ceiling (.clm-td-trunc-cell);
+   a fixed width on the text meant that whenever the column was squeezed
+   narrower than 260 — which a ten-column table does — the span kept its
+   260 and ran out of the cell into the next column, truncating at a width
+   the column did not have. */
+.clm-td-trunc { display: inline-block; max-width: 100%; vertical-align: middle; font-size: 12px; color: #475569; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clm-td-trunc::first-letter { text-transform: uppercase; }
 
 /* Code chip */
@@ -1067,7 +1072,12 @@ body > .dropdown-menu.master-select-menu,
 .clm-modal-head {
   position: relative; overflow: hidden;
   background: linear-gradient(110deg, #0891b2 0%, #0e7490 45%, #0c6680 100%);
-  padding: 14px 18px;
+  /* 10 on every side, the same as the body and the footer below. The three
+     bands ran 14/18, 14/16 and 10/18, so the head's icon, the body's first
+     field and the footer's buttons each started at a different distance from
+     the dialog's edge - three left margins down one narrow card.
+     10 rather than 8: at 8 the content sat against the edge of the card. */
+  padding: 10px;
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   flex-shrink: 0;
 }
@@ -1118,10 +1128,8 @@ body > .dropdown-menu.master-select-menu,
 
 .clm-modal-body {
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
-  /* Even top and bottom. It was 10 / 8, which left the first field tight
-     under the head and the last one sitting closer to the footer than to its
-     own neighbour. */
-  padding: 14px 16px;
+  /* 10 on every side, matching the head and the footer. */
+  padding: 10px;
   /* 12 between fields, against 3 inside one (.clm-field) — see the note there.
      It was 14; 12 takes ~10px off a five-field form while keeping the 4:1
      ratio that makes a label group with its own input. */
@@ -1255,17 +1263,6 @@ body > .dropdown-menu.master-select-menu,
   font-size: 14px; font-weight: 500; color: #0c4a6e;
   letter-spacing: .06em; line-height: 1;
 }
-.clm-autocode-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 4px 10px; border-radius: 20px;
-  background: rgba(6,182,212,.12);
-  border: 1px solid rgba(6,182,212,.22);
-  font-size: 9px; font-weight: 700; color: #0891b2;
-  letter-spacing: .06em; text-transform: uppercase;
-}
-.clm-autocode-badge.edit { background: rgba(245,158,11,.10); border-color: rgba(245,158,11,.22); color: #d97706; }
-.clm-autocode-dot { width: 5px; height: 5px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 4px rgba(34,197,94,.5); }
-.clm-autocode-badge.edit .clm-autocode-dot { background: #f59e0b; box-shadow: 0 0 4px rgba(245,158,11,.5); }
 /* Hairline divider under the auto-code strip (matches Figma seg-modal-divider).
  * The negative margin is the point: this is a flex child of .clm-modal-body,
  * so it collects a FULL gap on each side — 14 + 1 + 14 = 29px between the
@@ -1362,7 +1359,8 @@ body > .dropdown-menu.master-select-menu,
 .clm-modal-foot {
   background: #fff;
   border-top: 1px solid rgba(6,182,212,.15);
-  padding: 10px 18px;
+  /* 10 on every side, matching the head and the body. */
+  padding: 10px;
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   flex-shrink: 0;
 }
@@ -1942,7 +1940,6 @@ body > .dropdown-menu.master-select-menu,
 [data-bs-theme="dark"] .clm-field-hint  { color: #7dd3fc; }
 [data-bs-theme="dark"] .clm-autocode-label { color: #67e8f9; }
 [data-bs-theme="dark"] .clm-modal-divider { background: linear-gradient(90deg, transparent, rgba(6,182,212,.32), transparent); }
-[data-bs-theme="dark"] .clm-autocode-badge { background: rgba(8,145,178,.20); border-color: rgba(8,145,178,.32); color: #67e8f9; }
 [data-bs-theme="dark"] .clm-tab-body  { background: #0f172a; }
 [data-bs-theme="dark"] .clm-modal-bd  { background: rgba(2,8,23,.78); }
 [data-bs-theme="dark"] .clm-conf-bd   { background: rgba(2,8,23,.78); }

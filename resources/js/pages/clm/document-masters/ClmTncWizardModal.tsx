@@ -86,8 +86,8 @@ const NOTE_DOC_NAMES = new Set(['debit note', 'credit note']);
 const isNoteDocName = (name: string) => NOTE_DOC_NAMES.has(name.trim().toLowerCase());
 
 const STEPS = [
-  { key: 1, label: 'T&C Basic Details', sub: 'Segment & category' },
-  { key: 2, label: 'T&C Content',       sub: 'Rich text editor & clauses' },
+  { key: 1, label: 'Terms and Conditions Basic Details', sub: 'Segment & category' },
+  { key: 2, label: 'Terms and Conditions Content',       sub: 'Rich text editor & clauses' },
 ];
 
 interface Props {
@@ -132,7 +132,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     extensions: ctcExtensions({
       onLimit: (attempted, max) => toast.error(
         'Content limit reached',
-        `That paste would take this T&C to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports of whatever hosts it stop working, so it was not added.`,
+        `That paste would take this Terms and Conditions to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports of whatever hosts it stop working, so it was not added.`,
       ),
     }),
     content: '<p></p>',
@@ -212,7 +212,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   const validateStep1 = () => {
     const next: Record<string, string> = {};
     if (!category.trim()) {
-      next.category = 'T&C document name is required';
+      next.category = 'Terms and Conditions document name is required';
       setErrors(next);
       return false;
     }
@@ -239,8 +239,8 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       .replace(/\s+/g, ' ')
       .trim();
     if (!plainContent) {
-      setErrors(p => ({ ...p, content: 'T&C content is required' }));
-      toast.error('Content required', 'Enter the T&C content before saving.');
+      setErrors(p => ({ ...p, content: 'Terms and Conditions content is required' }));
+      toast.error('Content required', 'Enter the Terms and Conditions content before saving.');
       return;
     }
     setSaving(true);
@@ -328,7 +328,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
 
   const documentNameField = (
     <div className="tnw-field">
-      <label className="tnw-label">T&amp;C Document Name <span className="tnw-req">*</span></label>
+      <label className="tnw-label">Terms and Conditions Document Name <span className="tnw-req">*</span></label>
       <MasterSelect
         key={`tnw-cat-${cats.length}`}
         value={category}
@@ -344,7 +344,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       <div className="tnw-hint">
         {categoryLocked
           ? 'The document category identifies this entry, so it cannot be changed here.'
-          : 'One T&C per document · title auto-derived from name'}
+          : 'One Terms and Conditions per document · title auto-derived from name'}
       </div>
       {errors.category && <div className="tnw-err">{errors.category}</div>}
     </div>
@@ -361,7 +361,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
         {saving && (
           <div className="tnw-importing" role="status" aria-live="polite">
             <span className="tnw-importing__ring" />
-            <span className="tnw-importing__t">Saving T&amp;C…</span>
+            <span className="tnw-importing__t">Saving Terms and Conditions…</span>
             <span className="tnw-importing__s">
               {isGlobal ? 'Storing the global terms for this document type' : 'Storing the terms and their content'}
             </span>
@@ -384,15 +384,15 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
               </svg>
             </div>
             <div className="tnw-head-text">
-              <div className="tnw-head-eyebrow">{isGlobal ? 'T&C GLOBAL' : 'T&C LIBRARY'}</div>
-              <div className="tnw-head-title">{isGlobal ? (existing ? 'Edit Global T&C' : 'Add Global T&C') : (editingId ? 'Edit T&C' : 'Add New T&C')}</div>
+              <div className="tnw-head-eyebrow">{isGlobal ? 'Terms and Conditions GLOBAL' : 'Terms and Conditions LIBRARY'}</div>
+              <div className="tnw-head-title">{isGlobal ? (existing ? 'Edit Global Terms and Conditions' : 'Add Global Terms and Conditions') : (editingId ? 'Edit Terms and Conditions' : 'Add New Terms and Conditions')}</div>
               <div className="tnw-head-sub">{isGlobal ? (category ? `${category} · printed on every document of this category.` : 'One entry per document category · printed on every document of that category.') : 'Create reusable Terms & Conditions content.'}</div>
             </div>
           </div>
           <div className="tnw-head-right">
             {headerCode && (
               <div className="tnw-id-chip">
-                <div className="tnw-id-chip-label">T&amp;C ID</div>
+                <div className="tnw-id-chip-label">Terms and Conditions ID</div>
                 <div className="tnw-id-chip-val">{headerCode}</div>
               </div>
             )}
@@ -525,7 +525,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                         </button>
                       </div>
-                      <div className="tnw-hint">One segment for highly-regulated T&amp;Cs</div>
+                      <div className="tnw-hint">One segment for highly-regulated Terms and Conditions</div>
                     </>
                   ) : (
                     <>
@@ -549,7 +549,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                         </button>
                       </div>
-                      <div className="tnw-hint">Pick one or more segments this T&amp;C applies to</div>
+                      <div className="tnw-hint">Pick one or more segments this Terms and Conditions applies to</div>
                     </>
                   )}
                   {errors.segment && <div className="tnw-err">{errors.segment}</div>}
@@ -625,7 +625,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                 if (total > TNC_MAX_CHARS) {
                   toast.error(
                     'Document too long',
-                    `${file.name} would take this T&C to ${total.toLocaleString()} characters — the limit is ${TNC_MAX_CHARS.toLocaleString()}. Shorten it or split it into separate T&Cs.`,
+                    `${file.name} would take this Terms and Conditions to ${total.toLocaleString()} characters — the limit is ${TNC_MAX_CHARS.toLocaleString()}. Shorten it or split it into separate Terms and Conditions.`,
                   );
                   return;
                 }
@@ -636,10 +636,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                    stack as an update, where setContent swaps the document
                    wholesale and skips the update event. On an import this is
                    the whole document either way, and importing into a blank
-                   editor is the normal case — a new T&C starts empty.
+                   editor is the normal case — a new Terms and Conditions starts empty.
                    The agreement and trade-document wizards already take the
-                   setContent path; this is why Word import on T&C measured
-                   roughly three times theirs. Appending to a T&C that already
+                   setContent path; this is why Word import on Terms and Conditions measured
+                   roughly three times theirs. Appending to a Terms and Conditions that already
                    has text still goes the old way. */
                 if (existing === 0) {
                   editor.commands.setContent(html, { emitUpdate: true });
@@ -674,7 +674,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             ) : (
               <button type="button" className="tnw-btn tnw-btn-primary" onClick={() => void handleSave()} disabled={saving}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                {saving ? 'Saving…' : 'Save T&C'}
+                {saving ? 'Saving…' : 'Save Terms and Conditions'}
               </button>
             )}
           </div>
@@ -750,7 +750,7 @@ function TncEditor({
       <div className="tnw-editor-head">
         <div className="tnw-editor-title">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
-          T&amp;C CONTENT
+          Terms and Conditions CONTENT
         </div>
         <div className="tnw-editor-actions">
           <Tooltip label="Upload a Word document and import its content">
@@ -832,7 +832,7 @@ function TncEditor({
       </div>
 
       <div className="tnw-editor-foot">
-        <span className="tnw-editor-foot-hint">ℹ T&amp;C Content — write the actual rules / terms text using the rich editor above</span>
+        <span className="tnw-editor-foot-hint">ℹ Terms and Conditions Content — write the actual rules / terms text using the rich editor above</span>
       </div>
     </div>
   );

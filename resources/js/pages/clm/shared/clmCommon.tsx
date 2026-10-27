@@ -302,7 +302,6 @@ export function SimpleNameModal(props: {
               <div className="clm-autocode-label">{isEdit ? 'Code' : 'Auto Generated Code'}</div>
               <div className="clm-autocode-val">{code}</div>
             </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Name <span className="clm-req">*</span></label>
@@ -404,7 +403,6 @@ export function SimpleDescModal(props: {
               <div className="clm-autocode-label">{isEdit ? 'Code' : 'Auto Generated Code'}</div>
               <div className="clm-autocode-val">{code}</div>
             </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Name <span className="clm-req">*</span></label>
@@ -491,7 +489,6 @@ export function ShortCodeNameModal(props: {
               <div className="clm-autocode-label">Document Category ID</div>
               <div className="clm-autocode-val">{code}</div>
             </div>
-            <div className={`clm-autocode-badge ${isEdit ? 'edit' : ''}`}><span className="clm-autocode-dot" />{isEdit ? 'Edit' : 'Auto'}</div>
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Document Category Name <span className="clm-req">*</span></label>

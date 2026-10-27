@@ -343,13 +343,11 @@ export default function ClmAgreementsToApprovePage() {
           {/* min-width:0 is what lets the subtitle ellipsise at the band's own
               edge rather than at a made-up width. */}
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.2 }}>Agreements To Approve</div>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 20, background: 'rgba(6,182,212,.15)', border: '1px solid rgba(6,182,212,.35)' }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 5px rgba(34,197,94,.5)' }} />
-                <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#7dd3fc' : '#0e7490', letterSpacing: '.06em' }}>ACTIVE</span>
-              </span>
-            </div>
+            {/* No ACTIVE badge. It sat beside the page title and reported
+                nothing - it was hard-coded, never off, and said only that the
+                page you are looking at exists. The five KPI tiles below carry
+                the state that actually changes. */}
+            <div style={{ fontSize: 14.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0c4a6e', letterSpacing: '-.4px', lineHeight: 1.2, marginBottom: 3 }}>Agreements To Approve</div>
             <div style={{ fontSize: 10, fontWeight: 500, color: t.dark ? '#7dd3fc' : '#0e7490', opacity: .85, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Review and approve agreements received for internal approval — accept, reject, or request clarification before sending to counterparties.</div>
           </div>
         </div>
@@ -499,8 +497,8 @@ function StatCard({ t, accent, value, label, icon }: {
           IS the edge, which keeps it a clean 3px band. */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${c1},${c2})` }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 10.5, fontWeight: 700, color: t.dark ? t.textMuted : 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px' }}>{label}</p>
-        <div style={{ fontSize: 24, fontWeight: 700, color: t.dark ? t.textStrong : 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{value}</div>
+        <p style={{ fontSize: 9, fontWeight: 600, color: t.dark ? t.textMuted : 'var(--vz-secondary-color)', letterSpacing: '.05em', textTransform: 'uppercase', margin: '0 0 8px', lineHeight: 1.25, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={label}>{label}</p>
+        <div style={{ fontSize: 20, fontWeight: 600, color: t.dark ? t.textStrong : 'var(--vz-heading-color, var(--vz-body-color))', lineHeight: 1 }}>{value}</div>
       </div>
       <div style={{ width: 38, height: 38, borderRadius: 10, background: `linear-gradient(135deg,${c1},${c2})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(0,0,0,.10)' }}>{icon}</div>
     </div>
