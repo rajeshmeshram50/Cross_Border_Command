@@ -74,6 +74,25 @@ class LocationFinderService
      * meaning rather than by name: inventory_product_flags.behaviour, not the
      * tenant-editable flag_name. A renamed flag must not silently stop a rule.
      */
+    /**
+     * cm² per unit² for a zone s dim_unit.
+     *
+     * floor_area is length x width in whatever unit the zone was measured
+     * in, so the conversion follows that column rather than assuming metres.
+     * An unrecognised or missing unit falls back to metres, which is what
+     * every zone in the masters uses.
+     */
+    private function areaToCm2(?string $unit): float
+    {
+        return match (strtolower((string) $unit)) {
+            'cm'    => 1.0,
+            'mm'    => 0.01,
+            'ft'    => 929.0304,
+            'in'    => 6.4516,
+            default => 10_000.0,   // m² → cm²
+        };
+    }
+
     private function requirements(SupplierInvoice $spi, SpiBox $box): array
     {
         /* The box's own flags. This used to read p2p_spi_box_items directly,
@@ -313,8 +332,21 @@ class LocationFinderService
              * used to be "unknown". Its floor is still measurable: what the
              * boxes standing on it cover, against what there is to cover.
              * `used_basis` says which question was answered, so a caller
-             * never mistakes floor coverage for cubic fill. */
-            $floorCm2 = (float) ($z->area_sqft ?? 0) * 929.0304;
+             * never mistakes floor coverage for cubic fill.
+             *
+             * floor_area before area_sqft: it is length x width in the zone's
+             * own dim_unit, so it follows the dimensions someone actually
+             * measured, while area_sqft is typed separately and drifts from
+             * them (a 30 x 9 m zone is 270 m2 = 2,906 sqft, entered as 3,000).
+             * And usable_pct applies here as it already does to the volume —
+             * capacity is usable_volume, not volume, so the floor share has to
+             * be discounted the same way or the two bases disagree. */
+            $usableShare = ((float) ($z->usable_pct ?? 0) > 0) ? (float) $z->usable_pct / 100 : 1.0;
+
+            $floorCm2 = (float) ($z->floor_area ?? 0) > 0
+                ? (float) $z->floor_area * $this->areaToCm2($z->dim_unit) * $usableShare
+                : (float) ($z->area_sqft ?? 0) * 929.0304 * $usableShare;
+
             $usedCm2  = (float) ($load['footprint_cm2'] ?? 0);
 
             if ($capM3 > 0) {
