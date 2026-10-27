@@ -2210,7 +2210,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   </span>
                 </span>
               </div>
-              <button type="button" className="s4qm__x" onClick={() => setMethodAsk(false)} aria-label="Close">
+              <button type="button" className="s4qm__x" disabled={methodBusy} onClick={() => setMethodAsk(false)} aria-label="Close">
                 &times;
               </button>
             </div>
@@ -2368,7 +2368,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                     </div>
 
                     <label className={`s4pm-ok s4pm-ok--${methodPick}${methodOk ? ' is-on' : ''}`}>
-                      <input type="checkbox" checked={methodOk} onChange={e => setMethodOk(e.target.checked)} />
+                      <input type="checkbox" checked={methodOk} disabled={methodBusy} onChange={e => setMethodOk(e.target.checked)} />
                       <span>
                         I confirm that <b>{putId(box.code)}</b> is{' '}
                         <u>{methodPick === 'zebra' ? 'ready to be scanned' : 'already physically placed'}</u> at{' '}
@@ -2387,6 +2387,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
               <button
                 type="button"
                 className="s4-btn-back"
+                disabled={methodBusy}
                 onClick={() => (methodStage === 'detail' ? setMethodStage('select') : setMethodAsk(false))}
               >
                 {methodStage === 'detail' ? <><IcoChevL />Back</> : 'Cancel'}
@@ -2404,7 +2405,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   <IcoChevR />
                 </button>
               ) : (<>
-              <button type="button" className="s4-btn-back s4pm-cancel" onClick={() => setMethodAsk(false)}>Cancel</button>
+              <button type="button" className="s4-btn-back s4pm-cancel" disabled={methodBusy} onClick={() => setMethodAsk(false)}>Cancel</button>
               <button
                 type="button"
                 className={`s4-btn-next s4pm-go${methodPick ? ` s4pm-go--${methodPick}` : ''}`}
@@ -2415,7 +2416,8 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                   if (ok) setMethodAsk(false);
                 }}
               >
-                {methodPick === 'zebra' ? <><IcoScan />Submit for Zebra Verification</>
+                {methodBusy ? <><span className="spi-btn-spin" aria-hidden />Saving…</>
+                  : methodPick === 'zebra' ? <><IcoScan />Submit for Zebra Verification</>
                   : methodPick === 'manual' ? <><IcoCheck />Confirm Putaway Allocation</>
                   : <>Select a method <IcoChevR /></>}
               </button>

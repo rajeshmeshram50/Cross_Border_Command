@@ -595,13 +595,13 @@ export default function Step3BoxPackaging({
   const editingBox = boxes.find(b => b.id === editingId) ?? null;
 
   const isPlaced = (b: { id: number }) => placedBoxIds.includes(b.id);
-  const lockedMsg = 'Putaway is completed for this box — it is locked and can no longer be edited.';
+  const lockedMsg = 'A putaway method is selected for this box in Stage 04 — it is locked and can no longer be edited.';
   const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
   const openEdit = async (boxCode: string) => {
     if (readOnly || loadingEdit) return;
     const box = boxes.find(b => b.box_code === boxCode);
     if (!box) return;
-    if (isPlaced(box)) { toast.info(`${putId(box.box_code)} is put away`, lockedMsg); return; }
+    if (isPlaced(box)) { toast.info(`${putId(box.box_code)} is in putaway`, lockedMsg); return; }
     if (!onUpdateBox) {
       toast.info('Save the invoice first', 'A box can be edited once Stage 02 is saved.');
       return;
@@ -705,8 +705,8 @@ export default function Step3BoxPackaging({
     if (!bs.length) { clearLocal([code]); return; }
     const placed = bs.filter(isPlaced);
     if (placed.length) {
-      toast.warning('These boxes are put away',
-        `${placed.map(b => putId(b.box_code)).join(', ')} ${placed.length === 1 ? 'is' : 'are'} already on a shelf — put-away boxes cannot be removed.`);
+      toast.warning('These boxes are in putaway',
+        `${placed.map(b => putId(b.box_code)).join(', ')} ${placed.length === 1 ? 'has' : 'have'} a putaway method selected in Stage 04 — they cannot be removed.`);
       return;
     }
     const affected = [...new Set(bs.flatMap(b => b.items.map(i => codeOfItem.get(i.supplier_invoice_item_id)).filter((c): c is string => !!c)))];

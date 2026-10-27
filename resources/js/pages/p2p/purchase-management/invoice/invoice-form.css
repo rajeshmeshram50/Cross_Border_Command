@@ -1947,7 +1947,7 @@
 
 /* Dimmed rather than hidden, so the button does not move the moment a range
    becomes valid. */
-.spi-mdl-confirm.is-off { opacity: .4; cursor: not-allowed; pointer-events: none; }
+.spi-mdl-confirm.is-off { opacity: .4; cursor: not-allowed; }
 
 /* ── Selected Products · the mixed carton's contents list ──────────────────
    Eleven columns, because the identifiers are per product rather than per
@@ -10042,3 +10042,6 @@
   .invf-packed .invf-pb-pager { flex-direction: column; align-items: stretch; gap: 10px; }
   .invf-packed .invf-pb-pager .tc-wl-right { justify-content: space-between; }
 }
+.s4-root .s4pm-modal .s4qm__ft .s4-btn-back:disabled,
+.s4-root .s4pm-modal .s4qm__x:disabled { opacity: .45; cursor: not-allowed; }
+.s4-root .s4pm-modal .s4pm-go[aria-busy="true"] { cursor: progress; }
