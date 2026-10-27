@@ -115,6 +115,8 @@ Route::middleware('throttle:120,1')->prefix('scan/putaway')->group(function () {
     Route::get ('/{task}',          [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'show'])->whereNumber('task');
     Route::post('/{task}/confirm',  [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'confirm'])->whereNumber('task');
     Route::post('/{task}/complete', [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'complete'])->whereNumber('task');
+    // Clear box: the run gives back every scan it had proved.
+    Route::post('/{task}/release',  [\App\Http\Controllers\Api\P2p\SpiPutawayScanController::class, 'release'])->whereNumber('task');
 });
 
 /* The one-off /tools/attendance-backfill route and its controller are gone.
@@ -575,6 +577,8 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::get   ('/{id}/packed-boxes',        [SupplierInvoiceController::class, 'packedBoxes'])->whereNumber('id');
         // Evidence Vault of ONE invoice (the SUPPLIER's vault is /segment-uploads/supplier/{id}/vault).
         Route::get   ('/{id}/evidence-vault',      [SupplierInvoiceController::class, 'evidenceVault'])->whereNumber('id');
+        // One box. whereNumber keeps it clear of /boxes/next-codes.
+        Route::get   ('/{id}/boxes/{box}',         [SpiBoxController::class, 'show'])->whereNumber('id')->whereNumber('box');
         Route::post  ('/{id}/boxes',               [SpiBoxController::class, 'store'])->whereNumber('id');
         Route::put   ('/{id}/boxes/{box}',         [SpiBoxController::class, 'update'])->whereNumber('id')->whereNumber('box');
         /* Same handler as the PUT above. A second verb exists because PHP

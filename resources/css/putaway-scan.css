@@ -1166,3 +1166,76 @@
 .pws2-row-code { font-size: 14px; font-weight: 800; font-family: ui-monospace, monospace; }
 .pws2-row-sub { display: block; font-size: 11px; color: var(--pw-mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pws2-row-state { display: block; font-size: 11px; font-weight: 700; margin-top: 3px; }
+
+/* ── The scan field, in the light skin ────────────────────────────────────
+ *
+ * It renders as a sibling of .pws2-body rather than inside it, so it had no
+ * inset while every card beside it sat 12px in, and its prompt was a 21px
+ * centred banner against the compact panels above. Same control, same
+ * behaviour — the markup is untouched — restated at the size the rest of the
+ * screen uses. */
+.pwscan .pwscan-prompt--field {
+    margin: 0 12px 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--pw-teal);
+}
+
+.pwscan .pwscan-form {
+    margin: 0 12px 12px;
+    gap: 8px;
+}
+
+.pwscan .pwscan-input {
+    height: 50px;
+    padding: 0 13px;
+    font-size: 16px;
+    border: 1px solid var(--pw-line);
+    border-radius: 10px;
+    background: var(--pw-card);
+}
+.pwscan .pwscan-input:focus {
+    border-color: var(--pw-teal);
+    /* The old ring was a hardcoded blue, left over from the dark palette. */
+    box-shadow: 0 0 0 3px rgba(15, 110, 112, .20);
+}
+
+.pwscan .pwscan-form .pwscan-btn {
+    height: 50px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--pw-teal);
+    font-size: 14.5px;
+    font-weight: 800;
+}
+.pwscan .pwscan-form .pwscan-btn:active { background: var(--pw-teal-dark); }
+.pwscan .pwscan-form .pwscan-btn:disabled { opacity: .55; }
+
+/* The refusal sits with the field it is about, inset to match. */
+.pwscan .pwscan-alert { margin-left: 12px; margin-right: 12px; }
+
+/* The step banner that is NOT the field prompt — "both matched, press
+   Complete" and the like. A card, like everything else on the screen. */
+.pwscan .pwscan-prompt:not(.pwscan-prompt--field) {
+    margin: 0 12px 10px;
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    text-align: left;
+}
+.pwscan .pwscan-prompt.is-done {
+    border-color: var(--pw-teal);
+    background: var(--pw-teal-50);
+    color: var(--pw-teal);
+}
+
+.pwscan .pwscan-idle,
+.pwscan .pwscan-staged,
+.pwscan .pwscan-attempts { margin-left: 12px; margin-right: 12px; }
