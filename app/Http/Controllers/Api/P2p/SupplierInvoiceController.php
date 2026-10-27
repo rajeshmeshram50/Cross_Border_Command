@@ -564,7 +564,7 @@ class SupplierInvoiceController extends Controller
                     'spi_id'    => $id,
                     'items'     => is_array($request->input('items')) ? count($request->input('items')) : null,
                     'has_files' => $request->hasFile('invoice_file') || $request->hasFile('eway_file'),
-                    'disk'      => config('filesystems.documents'),
+                    'disk'      => config('filesystems.documents') ?: config('filesystems.default', 'public'),
                     'error'     => $e->getMessage(),
                     'at'        => $e->getFile() . ':' . $e->getLine(),
                 ]);
@@ -579,7 +579,8 @@ class SupplierInvoiceController extends Controller
     {
         foreach ($files as $key => $path) {
             if (!str_ends_with($key, '_path') || !$path) continue;
-            try { Storage::disk(config('filesystems.documents'))->delete($path); } catch (\Throwable) { /* nothing to do */ }
+            $disk = config('filesystems.documents') ?: config('filesystems.default', 'public');
+            try { Storage::disk($disk)->delete($path); } catch (\Throwable) { /* nothing to do */ }
         }
     }
 
@@ -1392,7 +1393,9 @@ class SupplierInvoiceController extends Controller
         $dir  = "p2p/spi/{$spi->id}";
         $data = [];
 
-        $disk = config('filesystems.documents');
+        // Never empty: store() does array_key_exists() on this and a null
+        // disk is a TypeError, which no guard below would catch.
+        $disk = config('filesystems.documents') ?: config('filesystems.default', 'public');
 
         foreach (['invoice' => 'invoice_file', 'eway' => 'eway_file'] as $kind => $field) {
             $f = $request->file($field);

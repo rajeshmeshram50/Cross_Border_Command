@@ -488,7 +488,9 @@ class SpiBoxController extends Controller
             'photos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:8192'],
         ]);
 
-        $disk  = config('filesystems.documents');
+        // See SupplierInvoiceController::storeAttachments — an empty disk
+        // name reaches store() as a TypeError rather than a clean failure.
+        $disk  = config('filesystems.documents') ?: config('filesystems.default', 'public');
         $dir   = "p2p/spi/{$box->supplier_invoice_id}/boxes/{$box->id}";
         $saved = 0;
 
