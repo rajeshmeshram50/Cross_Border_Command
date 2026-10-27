@@ -586,6 +586,24 @@
 .vti-dw-strip .vti-dw-strip-left { flex: 1 1 auto; width: auto; flex-wrap: wrap; row-gap: 2px; }
 .vti-dw-strip .vti-dw-toolbar { flex-wrap: wrap; row-gap: 8px; }
 
+/* Keep the toolbar clear of the pinned ×.
+   The × owns the corner: right:12px plus its own 40px is the right-hand 52px
+   of the strip. The toolbar stopped 14px from that edge and the sticker added
+   only its own 16px, so the button ended at 30px and the × sat 22px on top of
+   it — against a disabled sticker, on the strip's rounded corner, it read as
+   a cut-off button.
+   46px + the toolbar's 14px margin ends the row at 60px, eight clear of the ×.
+   Scoped to the single-row case on purpose: below 1500 the toolbar drops to
+   its own row, the corner above it is empty and that block sets its own
+   padding, so a base rule here would just fight it. */
+@media (min-width: 1501px) {
+  .vti-dw-modal .vti-dw-strip .vti-dw-toolbar { padding-right: 46px; }
+  /* The sticker is INSIDE the toolbar now. `margin: 0 16px 0 auto` is left
+     from when it followed the toolbar as a sibling — the auto does nothing in
+     a content-sized row and the 16px only muddles the gutter above. */
+  .vti-dw-modal .vti-dw-strip .vti-dw-toolbar > .vti-dw-sticker-btn { margin: 0; }
+}
+
 @media (max-width: 1500px) {
   /* Below this the two groups cannot share a line, so the toolbar takes its
      own full-width row rather than being squeezed against the labels.

@@ -207,13 +207,20 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
 
   const [openZones, setOpenZones] = useState<Set<number>>(new Set());
   const [openRacks, setOpenRacks] = useState<Set<number>>(new Set());
-  /* Each heading opens and shuts on its own — no accordion. Comparing two
-     racks, or two zones, means having both on screen; an accordion makes that
-     impossible and there is nothing gained by it. */
-  const flip = (set: (f: (s: Set<number>) => Set<number>) => void) => (id: number) =>
-    set(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const toggleZone = flip(setOpenZones);
-  const toggleRack = flip(setOpenRacks);
+  /* An accordion at both levels: opening a zone shuts the other, and the same
+     for racks. This is how the tree shipped, and letting both stand open was
+     the wrong call — two zones open is two warehouses of shelf tiles stacked
+     in one column when the box goes to exactly one of them, and the tiles of a
+     branch already looked at push the zone headings still being chosen between
+     off the screen. That is the wall of shelves the card replaced.
+     Opening a zone also clears the open rack, or the rack left open inside the
+     previous zone springs back expanded the next time that zone is opened. */
+  const toggleZone = (id: number) => {
+    setOpenRacks(new Set<number>());
+    setOpenZones(prev => (prev.has(id) ? new Set<number>() : new Set([id])));
+  };
+  const toggleRack = (id: number) =>
+    setOpenRacks(prev => (prev.has(id) ? new Set<number>() : new Set([id])));
 
   /* The tree opens on one zone — the one holding the engine's pick, else the
    * first with anything eligible. Its RACKS stay shut: a rack opened for you
@@ -233,14 +240,15 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
 
   /* Picking a shelf reveals it: the zone and rack holding the selection open,
    * whether it was chosen here or by "Use Recommended Spot" over in Section A.
-   * Anything already open stays open. */
+   * It opens them ALONE — adding to whatever was open would walk straight back
+   * into two zones on screen the moment a spot is picked from the other one. */
   useEffect(() => {
     if (spot === null || !state.data) return;
     for (const z of state.data.zones) {
       for (const r of z.racks) {
         if (!r.shelves.some(s => s.id === spot)) continue;
-        setOpenZones(prev => (prev.has(z.id) ? prev : new Set(prev).add(z.id)));
-        setOpenRacks(prev => (prev.has(r.id) ? prev : new Set(prev).add(r.id)));
+        setOpenZones(prev => (prev.has(z.id) && prev.size === 1 ? prev : new Set([z.id])));
+        setOpenRacks(prev => (prev.has(r.id) && prev.size === 1 ? prev : new Set([r.id])));
         return;
       }
     }
@@ -550,17 +558,19 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                                         ? <div className="s4cl-grid">{fu.map(tile)}</div>
                                         : <div className="s4cl-none">No fully utilized shelf in this rack.</div>}
                                     </div>
-                                    {/* Only when there are some. An empty
-                                        "Not Eligible" band on every rack would
-                                        be a third heading saying nothing — the
-                                        other two are always meaningful, this
-                                        one is the exception. */}
-                                    {ne.length > 0 && (
-                                      <div className="s4cl-grp s4cl-grp--ne">
-                                        <div className="s4cl-grp__hd"><i><IcoLock /></i>Not Eligible<span>{ne.length}</span></div>
-                                        <div className="s4cl-grid">{ne.map(tile)}</div>
-                                      </div>
-                                    )}
+                                    {/* Always, like the two above it. Hiding it
+                                        when empty made every rack a different
+                                        shape — the reader had to notice a
+                                        missing band to know a rack had no
+                                        refusals, instead of reading a nought.
+                                        A ban glyph, not the lock: the two
+                                        frozen bands are different answers. */}
+                                    <div className="s4cl-grp s4cl-grp--ne">
+                                      <div className="s4cl-grp__hd"><i><IcoNo /></i>Not Eligible Locations<span>{ne.length}</span></div>
+                                      {ne.length
+                                        ? <div className="s4cl-grid">{ne.map(tile)}</div>
+                                        : <div className="s4cl-none">No ineligible shelf in this rack.</div>}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -602,7 +612,11 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
   const zones: PutawayFloorZone[] = state.data?.floor ?? [];
   const rec = state.data?.floorPick ?? null;
   const avail = zones.filter(z => z.eligible);
-  const frozen = zones.filter(z => !z.eligible);
+  /* The same two refusals the rack flow draws. A floor zone is a location in
+     its own right, so "no room left" and "not for this box" are as different
+     here as they are on a shelf — this view just had them in one pile. */
+  const frozen = zones.filter(z => !z.eligible && outOfRoom(z.reason, z.used_pct));
+  const notFit = zones.filter(z => !z.eligible && !outOfRoom(z.reason, z.used_pct));
   const taken = rec !== null && spot === rec.id;
   const adds = rec ? Math.max(0, rec.used_pct_after - rec.used_pct) : 0;
   const m3 = (v: number) => `${Number.isInteger(v) ? v : Number(v.toFixed(3))} m³`;
@@ -657,7 +671,7 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
     }
     /* Amber is a zone filling up, red is one at 90 %+ or refused on a
        condition that is not occupancy at all — the legend's two bands. */
-    const full = z.used_pct >= 75;
+    const full = outOfRoom(z.reason, z.used_pct);
     const red = z.used_pct >= 90 || !full;
     return (
       <div key={z.id} className="s4cn is-fu" aria-disabled="true" title={z.reason_label || 'Not available'}>
@@ -674,7 +688,9 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
           </div>
           <div className="s4cn-ft">
             <span className={red ? 'r' : 'a'}>
-              {full ? `${pct(z.used_pct)} used · fully utilised` : (z.reason_label || 'Not available')}
+              {full && (!z.reason_label || z.reason === 'full')
+                ? `${pct(z.used_pct)} used · fully utilised`
+                : (z.reason_label || 'Not available')}
             </span>
           </div>
         </div>
@@ -818,7 +834,7 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
             <div className="s4rl-empty">No direct storage zones (without rack) in this warehouse.</div>
           ) : (
             <>
-              {/* Four tiles, as the rack flow has — but a floor warehouse is
+              {/* The rack flow's five tiles — but a floor warehouse is
                   measured in area, so Racks becomes Sq Ft. */}
               <div className="s4cl-kpis">
                 <div><span className="s4cl-kpi__i z"><IcoHome /></span><b>{zones.length}</b><em>Zones</em></div>
@@ -828,6 +844,7 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
                 </div>
                 <div><span className="s4cl-kpi__i g"><IcoCheck /></span><b>{avail.length}</b><em>Available</em></div>
                 <div><span className="s4cl-kpi__i x"><IcoLock /></span><b>{frozen.length}</b><em>Fully Utilized</em></div>
+                <div><span className="s4cl-kpi__i n"><IcoNo /></span><b>{notFit.length}</b><em>Not Eligible</em></div>
               </div>
 
               <div className="s4cl-leg">
@@ -848,6 +865,13 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
                 {frozen.length
                   ? <div className="s4cn-list">{frozen.map(zcard)}</div>
                   : <div className="s4cl-none">No fully utilized zone in this warehouse.</div>}
+              </div>
+              {/* Third band, always drawn, exactly as a rack has it. */}
+              <div className="s4cl-grp s4cl-grp--ne">
+                <div className="s4cl-grp__hd"><i><IcoNo /></i>Not Eligible Locations<span>{notFit.length}</span></div>
+                {notFit.length
+                  ? <div className="s4cn-list">{notFit.map(zcard)}</div>
+                  : <div className="s4cl-none">No ineligible zone in this warehouse.</div>}
               </div>
             </>
           )}

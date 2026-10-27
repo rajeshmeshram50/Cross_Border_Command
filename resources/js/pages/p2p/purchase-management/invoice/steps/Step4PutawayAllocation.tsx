@@ -1194,6 +1194,19 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const scanDoneRef = useRef(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [zebraOpen, setZebraOpen] = useState(false);
+  /* True only between the click and the frame that shows the dialog. The
+     button had no state at all, so a slow frame looked like a dead control. */
+  const [zebraOpening, setZebraOpening] = useState(false);
+  /* The board refresh is kicked off once the dialog is ON SCREEN, not in the
+     click that opens it. Queued in that click it put a parent-wide state
+     change and a fetch into the same render the dialog had to come up in;
+     useEffect runs after paint, so the dialog shows first and refreshes behind
+     itself. Clearing the opening mark here means the spinner lasts exactly as
+     long as that frame does — invisible when it is quick. */
+  useEffect(() => {
+    setZebraOpening(false);
+    if (zebraOpen) setBoardTick(t => t + 1);
+  }, [zebraOpen]);
   const [placedVia, setPlacedVia] = useState<{ via: string; allocation: string } | null>(null);
   const [productViewId, setProductViewId] = useState<number | null>(null);
   const [modeAsk, setModeAsk] = useState<null | { loading: boolean; rack: number; norack: number; error: string | null }>(null);
@@ -1578,9 +1591,13 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
             title="Zebra scan tasks waiting on the warehouse floor"
             aria-haspopup="dialog"
             aria-expanded={zebraOpen}
-            onClick={() => { setLogsOpen(false); setBoardTick(t => t + 1); setZebraOpen(true); }}
+            aria-busy={zebraOpening}
+            onClick={() => { setLogsOpen(false); setZebraOpening(true); setZebraOpen(true); }}
           >
-            <IcoScan />
+            {/* The glyph slot carries the mark, as the dialog's own buttons do
+                — the button keeps its colour, since a faded control that is
+                also spinning reads as broken rather than busy. */}
+            {zebraOpening ? <span className="s4ct-spin" aria-hidden /> : <IcoScan />}
             <span className="s4fs-t">Zebra Open Tasks</span>
             <span className="s4fs-c">{zebraTasks.length}</span>
           </button>
