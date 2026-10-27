@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { IcoBox, IcoPencil, IcoPrinter } from '../../../icons';
@@ -132,6 +132,36 @@ export interface PackedBox {
   flags?: string[];
 }
 
+/* The four views this table offers, in the order the step introduces the
+   scenarios. Keyed by the resolved scenario LABEL, which is what a saved box
+   already carries — nothing new has to come back from the server for the
+   split to work. */
+const CUBE = (
+  <>
+    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
+  </>
+);
+
+const SCN_TABS: Array<{ key: string; label: string; ico: ReactNode }> = [
+  { key: 'all', label: 'All Boxes', ico: (
+    <>
+      <rect x="3" y="3" width="7.5" height="7.5" rx="1.6" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.6" />
+      <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.6" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.6" />
+    </>) },
+  { key: '1 Product → 1 Box', label: '1 Product → 1 Box', ico: CUBE },
+  /* One thing becoming several: a node splitting into two. The cube is kept
+     for the two scenarios that end in a single carton, so the shape itself
+     says how many boxes come out. */
+  { key: '1 Product → Multiple Boxes', label: '1 Product → Multiple Boxes', ico: (
+    <>
+      <rect x="9" y="2.5" width="6" height="6" rx="1.6" />
+      <rect x="2.5" y="15.5" width="6" height="6" rx="1.6" /><rect x="15.5" y="15.5" width="6" height="6" rx="1.6" />
+      <path d="M12 8.5v2" /><path d="M5.5 15.5v-2a1.5 1.5 0 0 1 1.5-1.5h10a1.5 1.5 0 0 1 1.5 1.5v2" />
+    </>) },
+  { key: 'Multiple Products → 1 Box', label: 'Multiple Products → 1 Box', ico: CUBE },
+];
+
 /**
  * Packed Products — every carton that has been boxed, one row each.
  *
@@ -156,8 +186,16 @@ export default function PackedProducts({
   /* Which carton's label is being printed. Null is closed — one piece of
      state rather than an open flag that could disagree with the row. */
   const [sticker, setSticker] = useState<PackedBox | null>(null);
+  /* Which scenario the table is showing. The counts are of ALL boxes, not of
+     the current view, so an empty tab still says it is empty rather than
+     disappearing — "0 Boxes" is the answer to "did anything get split?". */
+  const [scnTab, setScnTab] = useState('all');
 
   if (boxes.length === 0) return null;
+
+  const countOf = (key: string) =>
+    key === 'all' ? boxes.length : boxes.filter(b => b.scenario === key).length;
+  const shown = scnTab === 'all' ? boxes : boxes.filter(b => b.scenario === scnTab);
 
   /* Products, not rows: one product split across five cartons is one product
      packed, and the header would otherwise claim five. */
@@ -201,6 +239,33 @@ export default function PackedProducts({
         </div>
       </div>
 
+      {/* Scenario rail. A step that offers three ways to pack should let you
+          read back what came out of each one, and the counts answer that
+          without filtering first. */}
+      <div className="invf-pb-rail" role="tablist" aria-label="Filter boxes by packaging scenario">
+        {SCN_TABS.map(t => {
+          const n = countOf(t.key);
+          const on = scnTab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={on}
+              className={`invf-pb-rtab${on ? ' is-on' : ''}`}
+              onClick={() => setScnTab(t.key)}
+            >
+              <span className="invf-pb-rtab__i" aria-hidden>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{t.ico}</svg>
+              </span>
+              <span className="invf-pb-rtab__t">{t.label}</span>
+              <span className="invf-pb-rtab__n">{n} Box{n === 1 ? '' : 'es'}</span>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="vti-table-wrap">
         <table className="vti-table invf-packed-table">
           <thead>
@@ -225,7 +290,26 @@ export default function PackedProducts({
               mixed carton that appeared three times would offer to be printed
               three times. */}
           <tbody>
-            {boxes.map((b, i) => {
+            {/* An empty scenario keeps the card's shape. Collapsing to a bare
+                header row reads as a table that broke rather than one with
+                nothing in it, and the rail above has already promised a
+                count of zero. */}
+            {shown.length === 0 && (
+              <tr className="invf-pb-none-row">
+                <td colSpan={12}>
+                  <div className="invf-pb-none">
+                    <span className="invf-pb-none__i" aria-hidden><IcoBox size={20} stroke={2.1} /></span>
+                    <div className="invf-pb-none__t">No boxes packed this way</div>
+                    <div className="invf-pb-none__s">
+                      Nothing on this invoice used{' '}
+                      <b>{SCN_TABS.find(t => t.key === scnTab)?.label ?? 'this scenario'}</b>.
+                      {' '}The other tabs hold the {boxes.length} box{boxes.length === 1 ? '' : 'es'} that were saved.
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            )}
+            {shown.map((b, i) => {
               const open = b.code === editingBoxId;
               const qty = b.items.reduce((n, it) => n + it.qty, 0);
               return (

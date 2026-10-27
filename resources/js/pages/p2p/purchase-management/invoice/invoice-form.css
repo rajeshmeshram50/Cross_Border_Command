@@ -9934,3 +9934,88 @@
 [data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown) { background: #0e2530; border-color: rgba(34,211,238,.38); }
 [data-bs-theme="dark"] .vs3t .master-datepicker-toggle .master-datepicker-value { color: #e2e8f0; }
 .s4-root .s4zt-cancel:disabled, .s4-root .s4zb-cancel:disabled, .s4zv-btn--cancel:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ── Packed Boxes · the scenario rail ────────────────────────────────────────
+   Values from the design's own block for this rail (#spiPackedBoxes .spk-sub2
+   / .p2p-sub2tab), not estimated off a screenshot. I guessed 15px/800 from a
+   zoomed crop; the design is 12.5px/700 in #94a3b8 on a 22px tile, with a
+   44px tab height and a 3px underline.
+   ────────────────────────────────────────────────────────────────────────── */
+.invf-pb-rail {
+  display: flex; align-items: stretch; gap: 24px; flex-wrap: wrap;
+  padding: 4px 20px 0; background: #fff;
+  border-bottom: 1.5px solid #e3edf1;
+}
+.invf-pb-rtab {
+  position: relative; display: inline-flex; align-items: center; gap: 8px;
+  height: 44px; padding: 0 2px; margin: 0;
+  border: 0; background: transparent; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; letter-spacing: -.1px;
+  color: #94a3b8; white-space: nowrap;
+  transition: color .18s ease;
+}
+.invf-pb-rtab__i {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+  background: #f1f5f9; color: #94a3b8;
+  transition: all .2s ease;
+}
+.invf-pb-rtab__i svg { width: 12px; height: 12px; }
+/* Drawn on every tab, coloured only on the active one, so switching cannot
+   shift the row by a pixel. */
+.invf-pb-rtab::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  border-radius: 3px 3px 0 0; background: transparent;
+  transition: background .2s ease;
+}
+.invf-pb-rtab:hover { color: #0e7490; }
+.invf-pb-rtab:hover .invf-pb-rtab__i { background: #e0f7fb; color: #0891b2; }
+.invf-pb-rtab.is-on, .invf-pb-rtab.is-on:hover { color: #0c4a6e; }
+.invf-pb-rtab.is-on .invf-pb-rtab__i {
+  background: linear-gradient(135deg,#22d3ee,#0891b2 60%,#0e7490); color: #fff;
+  box-shadow: 0 3px 8px -2px rgba(8,145,178,.5);
+}
+.invf-pb-rtab.is-on::after { background: linear-gradient(90deg,#22d3ee,#0891b2); }
+.invf-pb-rtab__n {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 999px;
+  background: #eef3f5; border: 1px solid #dde6ea; color: #84a0ab;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  transition: all .16s;
+}
+.invf-pb-rtab.is-on .invf-pb-rtab__n {
+  color: #0e7490; background: linear-gradient(135deg,#d0fbff,#a8f1fa);
+  border: 1.5px solid #67e8f9; box-shadow: 0 2px 6px -1px rgba(8,145,178,.32);
+}
+[data-bs-theme="dark"] .invf-pb-rail { background: #0b1922; border-bottom-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .invf-pb-rtab { color: #7f9aa6; }
+[data-bs-theme="dark"] .invf-pb-rtab__i { background: rgba(148,163,184,.12); color: #7f9aa6; }
+[data-bs-theme="dark"] .invf-pb-rtab:hover { color: #cbd5e1; }
+[data-bs-theme="dark"] .invf-pb-rtab:hover .invf-pb-rtab__i { background: rgba(34,211,238,.14); color: #67e8f9; }
+[data-bs-theme="dark"] .invf-pb-rtab.is-on, [data-bs-theme="dark"] .invf-pb-rtab.is-on:hover { color: #e2e8f0; }
+[data-bs-theme="dark"] .invf-pb-rtab__n { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.24); color: #94a9b6; }
+[data-bs-theme="dark"] .invf-pb-rtab.is-on .invf-pb-rtab__n { color: #0b1922; background: linear-gradient(135deg,#a8f1fa,#67e8f9); border-color: #67e8f9; }
+
+/* A scenario with no boxes. The row carries real height so the card keeps its
+   shape — a table that shrinks to its header reads as broken, not as empty,
+   and this one is legitimately empty whenever a scenario went unused. */
+.invf-pb-none-row > td { border-bottom: none !important; background: none !important; padding: 0 !important; }
+.invf-pb-none-row:hover > td { background: none !important; }
+.invf-pb-none {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; min-height: 180px; padding: 28px 20px; text-align: center;
+}
+.invf-pb-none__i {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 48px; height: 48px; margin-bottom: 2px;
+  border-radius: 14px; color: #0891b2;
+  background: linear-gradient(145deg, #eafaff, #d9f3fa);
+  border: 1px solid rgba(8,145,178,.16);
+}
+.invf-pb-none__t { font-size: 13px; font-weight: 800; color: #0c4a6e; letter-spacing: -.2px; }
+.invf-pb-none__s { max-width: 460px; font-size: 11px; font-weight: 500; color: #6b8a97; line-height: 1.55; }
+.invf-pb-none__s b { font-weight: 800; color: #0e7490; }
+[data-bs-theme="dark"] .invf-pb-none__i { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.26); color: #67e8f9; }
+[data-bs-theme="dark"] .invf-pb-none__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .invf-pb-none__s { color: #7f9aa6; }
+[data-bs-theme="dark"] .invf-pb-none__s b { color: #67e8f9; }
