@@ -123,7 +123,7 @@ const kv = (k: string, v: ReactNode) => <div key={k}><span>{k}</span><b>{v}</b><
 
 export default function PutawayConfirmPlacement({
   box, spot, warehouse, warehouseCode = null, assigned, scan = null, placedVia = null,
-  qr, locQr, onChange, onMethod, onSticker, onCancelTask, onOpenScanTask, scansDone = 0,
+  qr, locQr, onChange, onMethod, onSticker, onCancelTask, onOpenScanTask, scansDone = 0, readOnly = false,
 }: {
   box: ConfirmBox;
   spot: ConfirmSpot | null;
@@ -147,6 +147,7 @@ export default function PutawayConfirmPlacement({
   onSticker?: () => void;
   onCancelTask?: () => void;
   scansDone?: number;
+  readOnly?: boolean;
   onOpenScanTask?: () => void;
 }) {
   /** Outstanding: a task exists and the box is not in place yet. */
@@ -324,7 +325,7 @@ export default function PutawayConfirmPlacement({
                 type="button"
                 className="s4c3-chg"
                 onClick={onChange}
-                disabled={assigned || waiting}
+                disabled={assigned || waiting || readOnly}
                 title={assigned ? 'Putaway is completed — the location is locked to this box'
                   : waiting ? 'Cancel the Zebra task before changing the location' : undefined}
               >
@@ -427,7 +428,7 @@ export default function PutawayConfirmPlacement({
                 type="button"
                 className="s4zb-cancel"
                 onClick={onCancelTask}
-                disabled={scansDone > 0}
+                disabled={scansDone > 0 || readOnly}
                 title={scansDone > 0 ? 'Scanning has started on the Zebra device — the task can no longer be cancelled' : undefined}
               >
                 <IcoBan /> Cancel Task
@@ -436,7 +437,7 @@ export default function PutawayConfirmPlacement({
             </div>
           </div>
         ) : (
-          <button type="button" className="s4c3-pm" disabled={!spot} onClick={onMethod}
+          <button type="button" className="s4c3-pm" disabled={!spot || readOnly} onClick={onMethod}
             title={spot ? undefined : 'Choose a location in Step 02 first'}>
             <IcoMethodCard /> Putaway Method
           </button>

@@ -561,7 +561,7 @@ export default function InvoiceForm({
                     Every box is on its shelf, so the invoice, its boxes and their locations are view only — Map Invoice to finish.
                   </div>
                 )}
-                {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} />}
+                {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} readOnly={viewOnly} />}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
                     onChangeLine={changeLine} />

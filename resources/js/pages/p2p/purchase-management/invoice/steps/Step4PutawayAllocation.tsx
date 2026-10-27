@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from '
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
 import {
-  putId, spiApi, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
+  putId, spiApi, taskScansDone, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
 } from '../spi-api';
 import type { ProductLine } from '../invoice-products';
 import type { InvoiceDraft } from '../invoice-draft';
@@ -206,7 +206,7 @@ function BoxCard({ b, selected, readOnly, onPick, onSticker }: {
     <div
       className={`s4pkc${selected ? ' is-active' : ''}${placed ? ' is-placed' : ''}`}
       data-boxid={b.code}
-      onClick={() => { if (!readOnly) onPick(); }}
+      onClick={() => onPick()}
     >
       <div className="s4pkc__hd">
         <span className="s4pkc__ico"><IcoBoxSm size={15} /></span>
@@ -1275,7 +1275,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     if (!box || !onLoadBox) return;
     void onLoadBox(box.id);
   }, [box?.id]);
-  const boxLocked = placedAt !== null || box?.status === 'placed';
+  const boxLocked = readOnly || placedAt !== null || box?.status === 'placed' || scanTask !== null || box?.status === 'awaiting_scan';
 
   const zebraTasks = useMemo(() => {
     const open = all.filter(b => b.status === 'awaiting_scan');
@@ -1405,7 +1405,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const apiError = (e: unknown) => (e instanceof PoApiError ? e.firstError : 'Please try again.');
 
   const confirmManual = async () => {
-    if (!spiId || !box || methodBusy) return false;
+    if (!spiId || !box || methodBusy || readOnly) return false;
     const rowId = putawayIdOf(box.id);
     if (!rowId) { toast.warning('Allocate the box first', 'Choose a location in Step 02 and press Next.'); return false; }
     setMethodBusy(true);
@@ -1427,14 +1427,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   };
 
   const raiseScanTask = async () => {
-    if (!spiId || !box || methodBusy) return false;
+    if (!spiId || !box || methodBusy || readOnly) return false;
     const rowId = putawayIdOf(box.id);
     if (!rowId) { toast.warning('Allocate the box first', 'Choose a location in Step 02 and press Next.'); return false; }
     setMethodBusy(true);
     try {
       const task = await spiApi.putawayScanTask(spiId, rowId);
       scanDoneRef.current = false;
-      setScanSteps(Number(task.completed_scans) || 0);
+      setScanSteps(taskScansDone(task));
       setScanTask({ id: task.task_code, at: task.issued_at ?? new Date().toISOString(), apiId: task.id });
       setBoardTick(t => t + 1);
       toast.success(`Task ${task.task_code} raised`, `${putId(box.code)} is waiting for the Zebra handheld to scan it.`);
@@ -1448,7 +1448,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   };
 
   const cancelScanTask = async (which: 'only' | 'manual'): Promise<boolean> => {
-    if (!scanTask || cancelBusy) return false;
+    if (!scanTask || cancelBusy || readOnly) return false;
     if (scanSteps > 0) {
       toast.warning('Scanning has started', 'The Zebra device has already scanned this box — the task can no longer be cancelled.');
       setCancelAsk(false);
@@ -1507,6 +1507,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
   const pendingTask = useRef<{ code: string; kind: 'open' | 'cancel' } | null>(null);
   const taskAction = (code: string, kind: 'open' | 'cancel') => {
+    if (readOnly && kind === 'cancel') return;
     if (box && box.code === code && scanTask) {
       if (kind === 'open') setScanOpen(true); else setCancelAsk(true);
       return;
@@ -1553,7 +1554,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       spiApi.putawayTask(scanTask.apiId)
         .then(t => {
           if (!live) return;
-          setScanSteps(Math.min(2, Number(t.completed_scans) || 0));
+          setScanSteps(taskScansDone(t));
           if (t.status === 'scanned') finishFromTask(t.task_code);
           else if (t.status === 'cancelled' || t.status === 'expired' || t.status === 'failed') {
             setScanTask(null);
@@ -1580,7 +1581,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   useEffect(() => {
     if (!scanTask || !scanOpen) return;
     void spiApi.putawayTask(scanTask.apiId)
-      .then(t => setScanSteps(Math.min(2, Number(t.completed_scans) || 0)))
+      .then(t => setScanSteps(taskScansDone(t)))
       .catch(() => {});
   }, [scanOpen]);
 
@@ -1845,9 +1846,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       onChange={() => { if (!boxLocked) setLcStep(1); }}
                       scan={scanTask}
                       scansDone={scanSteps}
+                      readOnly={readOnly}
                       placedVia={placedVia}
                       warehouseCode={warehouse || null}
-                      onMethod={() => { setMethodPick(null); setMethodOk(false); setMethodStage('select'); setMethodAsk(true); }}
+                      onMethod={() => { if (readOnly) return; setMethodPick(null); setMethodOk(false); setMethodStage('select'); setMethodAsk(true); }}
                       onCancelTask={() => setCancelAsk(true)}
                       onOpenScanTask={() => setScanOpen(true)}
                     />
@@ -1883,6 +1885,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       note={noteOf(rawBox)}
                       onSticker={() => setQrOpen(true)}
                       onNext={boxLocked ? () => setLcStep(2) : askStorageMode}
+                      nextDisabled={readOnly && box.status === 'pending'}
                     />
                   )}
                 </div>
