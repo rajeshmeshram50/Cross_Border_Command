@@ -60,8 +60,9 @@ const todayIso = () => {
 
 export default function Step3BoxPackaging({
   draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
-  spiId, spiCode, onDeleteBoxPhoto,
+  spiId, spiCode, onDeleteBoxPhoto, placedBoxIds = [],
 }: {
+  placedBoxIds?: number[];
   onDeleteBoxPhoto?: (boxId: number, attachmentId: number) => Promise<boolean>;
   draft: InvoiceDraft;
   spiId?: number | null;
@@ -586,10 +587,13 @@ export default function Step3BoxPackaging({
   const [editQtyBy, setEditQtyBy] = useState<Record<string, number>>({});
   const editingBox = boxes.find(b => b.id === editingId) ?? null;
 
+  const isPlaced = (b: { id: number }) => placedBoxIds.includes(b.id);
+  const lockedMsg = 'Putaway is completed for this box — it is locked and can no longer be edited.';
   const openEdit = (boxCode: string) => {
     if (readOnly) return;
     const box = boxes.find(b => b.box_code === boxCode);
     if (!box) return;
+    if (isPlaced(box)) { toast.info(`${putId(box.box_code)} is put away`, lockedMsg); return; }
     if (!onUpdateBox) {
       toast.info('Save the invoice first', 'A box can be edited once Stage 02 is saved.');
       return;
@@ -686,6 +690,12 @@ export default function Step3BoxPackaging({
     if (readOnly) return;
     const bs = boxesOf(code);
     if (!bs.length) { clearLocal([code]); return; }
+    const placed = bs.filter(isPlaced);
+    if (placed.length) {
+      toast.warning('These boxes are put away',
+        `${placed.map(b => putId(b.box_code)).join(', ')} ${placed.length === 1 ? 'is' : 'are'} already on a shelf — put-away boxes cannot be removed.`);
+      return;
+    }
     const affected = [...new Set(bs.flatMap(b => b.items.map(i => codeOfItem.get(i.supplier_invoice_item_id)).filter((c): c is string => !!c)))];
     const line = lines.find(l => l.code === code);
     const ok = await confirm({
@@ -1090,6 +1100,7 @@ export default function Step3BoxPackaging({
         boxes={packedBoxes}
         onEditBox={readOnly ? undefined : openEdit}
         editingBoxId={editingBox?.box_code ?? null}
+        lockedCodes={boxes.filter(isPlaced).map(b => b.box_code)}
       />
     </StickerApiContext.Provider>
   );

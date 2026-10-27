@@ -9934,3 +9934,5 @@
 [data-bs-theme="dark"] .vs3t .vs3-in:not(:placeholder-shown) { background: #0e2530; border-color: rgba(34,211,238,.38); }
 [data-bs-theme="dark"] .vs3t .master-datepicker-toggle .master-datepicker-value { color: #e2e8f0; }
 .s4-root .s4zt-cancel:disabled, .s4-root .s4zb-cancel:disabled, .s4zv-btn--cancel:disabled { opacity: .45; cursor: not-allowed; }
+.invf-packed .vti-btn-single--edit:disabled,
+.invf-packed .vti-btn-single--edit:disabled:hover { opacity: .4; cursor: not-allowed; box-shadow: none; transform: none; }
