@@ -363,6 +363,24 @@ export default function InvoiceForm({
     }
   }, [spiId, reloadBoxes, toast]);
 
+  const loadBox = useCallback(async (boxId: number): Promise<SpiBox | null> => {
+    if (!spiId) return null;
+    try {
+      const { box, flags } = await spiApi.box(spiId, boxId);
+      if (box) setBoxes(list => list.map(b => (b.id === box.id ? box : b)));
+      if (flags.length) {
+        setFlagMaster(m => {
+          const byId = new Map(m.map(f => [f.id, f]));
+          for (const f of flags) byId.set(f.id, { ...byId.get(f.id), ...f });
+          return [...byId.values()];
+        });
+      }
+      return box;
+    } catch {
+      return null;
+    }
+  }, [spiId]);
+
   const deleteBoxPhoto = useCallback(async (boxId: number, attachmentId: number): Promise<boolean> => {
     if (!spiId) return false;
     try {
@@ -562,6 +580,7 @@ export default function InvoiceForm({
                     onDeleteBoxes={spiId ? deleteBoxes : undefined}
                     onDeleteBoxPhoto={spiId ? deleteBoxPhoto : undefined}
                     placedBoxIds={placedBoxIds}
+                    onLoadBox={spiId ? loadBox : undefined}
                     spiId={spiId}
                     spiCode={spiCode}
                   />
@@ -572,6 +591,7 @@ export default function InvoiceForm({
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
                     spiCode={spiCode}
                     onProgress={onPutawayProgress}
+                    onLoadBox={spiId ? loadBox : undefined}
                     warehouseInfo={{
                       code: warehouseRow?.wh_code ?? input.storage.warehouse?.code ?? null,
                       since: warehouseRow?.created_at ?? null,

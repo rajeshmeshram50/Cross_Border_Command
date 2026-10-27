@@ -145,8 +145,9 @@ export interface PackedBox {
  * floor actually asks: what is in B-001?
  */
 export default function PackedProducts({
-  boxes, onEditBox, editingBoxId = null, lockedCodes = [],
+  boxes, onEditBox, editingBoxId = null, lockedCodes = [], loadingCode = null,
 }: {
+  loadingCode?: string | null;
   lockedCodes?: string[];
   boxes: PackedBox[];
   /** Open a saved carton. Unambiguous now: the row IS the carton. */
@@ -310,10 +311,11 @@ export default function PackedProducts({
                           <button
                             type="button"
                             className={`vti-btn-single vti-btn-single--ico vti-btn-single--edit${open ? ' is-on' : ''}`}
-                            disabled={lockedCodes.includes(b.code)}
+                            disabled={lockedCodes.includes(b.code) || loadingCode !== null}
+                            aria-busy={loadingCode === b.code}
                             onClick={() => onEditBox(b.code)}
                             aria-label={`Edit ${putId(b.code)}`}
-                          ><IcoPencil size={14} /></button>
+                          >{loadingCode === b.code ? <span className="spi-btn-spin" aria-hidden style={{ margin: 0 }} /> : <IcoPencil size={14} />}</button>
                         </Tooltip>
                       )}
                       {/* The label names the box it prints, so what is on

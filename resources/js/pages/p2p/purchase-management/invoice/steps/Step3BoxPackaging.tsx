@@ -60,8 +60,9 @@ const todayIso = () => {
 
 export default function Step3BoxPackaging({
   draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
-  spiId, spiCode, onDeleteBoxPhoto, placedBoxIds = [],
+  spiId, spiCode, onDeleteBoxPhoto, placedBoxIds = [], onLoadBox,
 }: {
+  onLoadBox?: (boxId: number) => Promise<SpiBox | null>;
   placedBoxIds?: number[];
   onDeleteBoxPhoto?: (boxId: number, attachmentId: number) => Promise<boolean>;
   draft: InvoiceDraft;
@@ -594,8 +595,9 @@ export default function Step3BoxPackaging({
 
   const isPlaced = (b: { id: number }) => placedBoxIds.includes(b.id);
   const lockedMsg = 'Putaway is completed for this box — it is locked and can no longer be edited.';
-  const openEdit = (boxCode: string) => {
-    if (readOnly) return;
+  const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
+  const openEdit = async (boxCode: string) => {
+    if (readOnly || loadingEdit) return;
     const box = boxes.find(b => b.box_code === boxCode);
     if (!box) return;
     if (isPlaced(box)) { toast.info(`${putId(box.box_code)} is put away`, lockedMsg); return; }
@@ -607,6 +609,11 @@ export default function Step3BoxPackaging({
     if (!resolvable) {
       toast.warning('Cannot open this box', `${putId(box.box_code)} holds products that are no longer on this invoice.`);
       return;
+    }
+    if (onLoadBox) {
+      setLoadingEdit(box.box_code);
+      await onLoadBox(box.id);
+      setLoadingEdit(null);
     }
     setDropped([]);
     setEditQty(null);
@@ -1104,7 +1111,8 @@ export default function Step3BoxPackaging({
 
       <PackedProducts
         boxes={packedBoxes}
-        onEditBox={readOnly ? undefined : openEdit}
+        onEditBox={readOnly ? undefined : (code: string) => { void openEdit(code); }}
+        loadingCode={loadingEdit}
         editingBoxId={editingBox?.box_code ?? null}
         lockedCodes={boxes.filter(isPlaced).map(b => b.box_code)}
       />

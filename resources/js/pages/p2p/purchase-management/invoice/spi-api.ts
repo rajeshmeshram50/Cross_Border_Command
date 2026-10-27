@@ -243,7 +243,7 @@ export type SpiPackingTotals = {
   lines: number; qty_spi: number; qty_packed: number; qty_pending: number; lines_done: number; fully_packed: boolean;
 };
 
-export type ProductFlagOption = { id: number; flag_name: string | null };
+export type ProductFlagOption = { id: number; flag_name: string | null; behaviour?: string | null };
 
 export type PutawayNeed = {
   id: number; box_code: string;
@@ -406,6 +406,25 @@ export const spiApi = {
         ...box,
         items: (box.items ?? []).map(i => ({ ...i, uom: i.uom ?? label(i.uom_id) })),
       }));
+    }),
+
+  box: (spiId: number, boxId: number) =>
+    call('SPI box', () => api.get(`/p2p/spi/${spiId}/boxes/${boxId}`), (b) => {
+      const d = (b as { data?: {
+        box?: SpiBox; uoms?: Record<string, SpiUom>;
+        flags?: Record<string, { id: number; flag_name: string | null; behaviour?: string | null }>;
+      } } | null)?.data;
+      const uoms = d?.uoms ?? {};
+      const label = (id: number | null | undefined) => {
+        const u = id == null ? undefined : uoms[String(id)];
+        return u ? (u.short_code || u.title || null) : null;
+      };
+      const box = d?.box
+        ? { ...d.box, items: (d.box.items ?? []).map(i => ({ ...i, uom: i.uom ?? label(i.uom_id) })) }
+        : null;
+      const flags: ProductFlagOption[] = Object.values(d?.flags ?? {})
+        .map(f => ({ id: Number(f.id), flag_name: f.flag_name, behaviour: f.behaviour ?? null }));
+      return { box, flags };
     }),
 
   nextBoxCodes: (spiId: number, count = 20) =>
