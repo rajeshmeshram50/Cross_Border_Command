@@ -972,11 +972,10 @@ class SpiPutawayScanController extends Controller
      * is occupying the space even though nobody has put it down yet, and an
      * operator looking at a half-empty shelf needs to know it is spoken for.
      */
-    /** The handling flags the packer ticked, named, deduped across lines. */
+    /** The handling flags the packer ticked, named. */
     private function boxFlags(?SpiBox $box): array
     {
-        $ids = collect($box?->items ?? [])
-            ->flatMap(fn ($i) => is_array($i->flags) ? $i->flags : (json_decode((string) $i->flags, true) ?: []))
+        $ids = collect((array) $box?->flags)
             ->map(fn ($v) => (int) $v)->filter()->unique()->values();
 
         if ($ids->isEmpty()) return [];

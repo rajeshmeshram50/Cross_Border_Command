@@ -81,6 +81,8 @@ class SpiBoxController extends Controller
                 'invoice_items'   => $this->invoiceItemMap($boxRows),
                 // id => unit, joined from invoice_items[].uom_id
                 'uoms'            => $this->uomMap($boxRows),
+                // id => flag, for the ids on boxes[].items[].flags
+                'flags'           => $this->flagMap($boxRows),
                 'packing_summary' => $rows,
                 'totals'          => $this->svc->packingTotals($rows) + ['boxes' => $boxes->count()],
             ]], 200);
@@ -130,6 +132,8 @@ class SpiBoxController extends Controller
             'box'           => $arr + ['volumetric_weight_kg' => $box->volumetricWeightKg()],
             'invoice_items' => $this->invoiceItemMap($rows),
             'uoms'          => $this->uomMap($rows),
+            // id => flag, for the ids on box.items[].flags
+            'flags'         => $this->flagMap($rows),
         ]], 200);
     }
 
@@ -205,7 +209,8 @@ class SpiBoxController extends Controller
 
             SupplierInvoice::whereKey($spi->id)->lockForUpdate()->first();
 
-            $box = SpiBox::create(collect($data)->except('items')->all() + [
+            $box = SpiBox::create(collect($data)->except(['items', 'flags'])->all() + [
+                'flags'               => $this->boxFlagsFrom($data),
                 'supplier_invoice_id' => $spi->id,
 
                 'box_code'            => $this->nextBoxCode($spi->id),
@@ -253,7 +258,8 @@ class SpiBoxController extends Controller
             $data = $this->validateBox($request, (int) $user->client_id, (int) $spi->id, $spi->branch_id ? (int) $spi->branch_id : null);
             $this->guardOverPacking($spi, $data['items'], $box->id);
 
-            $box->forceFill(collect($data)->except('items')->all())->save();
+            $box->forceFill(collect($data)->except(['items', 'flags'])->all()
+                + ['flags' => $this->boxFlagsFrom($data)])->save();
 
             $box->items()->delete();
             $this->writeItems($box, $data['items']);
@@ -453,6 +459,41 @@ class SpiBoxController extends Controller
         return $this->resolveLines($boxes)['uoms'];
     }
 
+    /**
+     * The handling flags these boxes refer to, keyed by id.
+     *
+     * Box items store flags as an array of ids. Only the ids in hand are
+     * fetched: the master runs to dozens and a carton carries two, so
+     * shipping the whole table to name a couple of them is the wrong trade.
+     * Soft-deleted or disabled flags are still resolved — a box packed under
+     * a flag that has since been retired must still say what it was packed
+     * under.
+     */
+    private function flagMap($boxes): array
+    {
+        $ids = collect($boxes)
+            ->flatMap(fn ($b) => (array) $b->flags)
+            ->map(fn ($v) => (int) $v)->filter()->unique()->values();
+
+        if ($ids->isEmpty()) return [];
+
+        return DB::table('inventory_product_flags')
+            ->whereIn('id', $ids)
+            ->orderBy('id')
+            ->get(['id', 'code', 'flag_name', 'purpose', 'behaviour', 'status'])
+            ->keyBy('id')
+            ->map(fn ($f) => [
+                'id'        => (int) $f->id,
+                'code'      => $f->code,
+                'flag_name' => $f->flag_name,
+                'purpose'   => $f->purpose,
+                /* none | warn | block — what the floor must do about it. */
+                'behaviour' => $f->behaviour,
+                'is_active' => (int) $f->status === 1,
+            ])
+            ->all();
+    }
+
     /** Both maps from one pass — memoised so a request resolves them once. */
     private array $linesCache = [];
 
@@ -636,9 +677,7 @@ class SpiBoxController extends Controller
 
     private function boxFlags(SpiBox $box): array
     {
-        $ids = $box->items
-            ->flatMap(fn ($i) => is_array($i->flags) ? $i->flags : (array) json_decode((string) $i->flags, true))
-            ->filter()->unique()->values();
+        $ids = collect((array) $box->flags)->map(fn ($v) => (int) $v)->filter()->unique()->values();
 
         $behaviours = $ids->isEmpty() ? collect() : DB::table('inventory_product_flags')
             ->whereIn('id', $ids)->pluck('behaviour');
@@ -801,6 +840,12 @@ class SpiBoxController extends Controller
             "{$p}items.*.is_stackable"             => ['nullable', 'boolean'],
             "{$p}items.*.remark"                   => ['nullable', Rule::in(SpiBoxItem::REMARKS)],
             "{$p}items.*.remark_note"              => ['nullable', 'string', 'max:500'],
+            /* Both shapes validate. The packing screen sends one list per
+               ITEM (the same list on each); a caller may instead send one on
+               the box. Either way the ids are checked here before boxFlagsFrom()
+               decides which to keep. */
+            "{$p}flags"                            => ['nullable', 'array', 'max:20'],
+            "{$p}flags.*"                          => ['integer', $flagExists],
             "{$p}items.*.flags"                    => ['nullable', 'array', 'max:20', function ($attribute, $value, $fail) {
                 if (is_array($value) && count($value) !== count(array_unique(array_map('intval', $value)))) {
                     $fail('The same product flag is selected twice on one product.');
@@ -858,8 +903,7 @@ class SpiBoxController extends Controller
         }
 
         if ($tMin !== null || $tMax !== null) {
-            $onBox = collect($box['items'])->pluck('flags')->filter()->flatten()
-                ->map(fn ($v) => (int) $v)->unique();
+            $onBox = collect($this->boxFlagsFrom($box))->map(fn ($v) => (int) $v)->filter()->unique();
 
             if ($onBox->intersect($this->coldChainFlagIds($clientId, $branchId))->isEmpty()) {
                 $fail('temp_min_c', 'Mark the box Cold Chain before setting a temperature range.');
@@ -901,9 +945,34 @@ class SpiBoxController extends Controller
             ->all();
     }
 
+    /**
+     * The carton's flags, from whichever shape the caller sent.
+     *
+     * A box-level `flags` wins outright. Otherwise the union of the items'
+     * copies — union rather than the first line's list, because nothing ever
+     * forced the copies to match and dropping a flag someone set is worse
+     * than carrying one they did not mean.
+     */
+    private function boxFlagsFrom(array $data): array
+    {
+        if (array_key_exists('flags', $data) && is_array($data['flags'])) {
+            return collect($data['flags'])->map(fn ($v) => (int) $v)
+                ->filter()->unique()->sort()->values()->all();
+        }
+
+        return collect($data['items'] ?? [])
+            ->flatMap(fn ($i) => (array) ($i['flags'] ?? []))
+            ->map(fn ($v) => (int) $v)
+            ->filter()->unique()->sort()->values()->all();
+    }
+
     private function writeItems(SpiBox $box, array $items): void
     {
         foreach ($items as $row) {
+            /* The box holds the flags now. Leaving them on the line as well
+               would be two copies free to drift, and the readers all ask the
+               box. */
+            unset($row['flags']);
             $box->items()->create($row);
         }
     }

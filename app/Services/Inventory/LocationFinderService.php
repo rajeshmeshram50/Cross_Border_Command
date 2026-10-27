@@ -76,11 +76,11 @@ class LocationFinderService
      */
     private function requirements(SupplierInvoice $spi, SpiBox $box): array
     {
-        $flagIds = DB::table('p2p_spi_box_items')
-            ->where('box_id', $box->id)->whereNull('deleted_at')
-            ->pluck('flags')
-            ->flatMap(fn ($j) => array_map('intval', (array) json_decode((string) $j, true)))
-            ->unique()->filter()->values();
+        /* The box's own flags. This used to read p2p_spi_box_items directly,
+           bypassing the model — cold_chain and hazardous come from here and
+           drive every eligibility answer, so it has to follow the column. */
+        $flagIds = collect((array) $box->flags)
+            ->map(fn ($v) => (int) $v)->unique()->filter()->values();
 
         $behaviours = $flagIds->isEmpty() ? collect() : DB::table('inventory_product_flags')
             ->whereIn('id', $flagIds)->pluck('behaviour');
