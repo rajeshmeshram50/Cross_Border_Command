@@ -12,7 +12,7 @@ const AddProductFlagModal = lazy(() => import('../../../../inventory-management/
 const CameraCaptureModal = lazy(() => import('../../order/physical-inspection/CameraCaptureModal'));
 
 type Shot = { file: File; url: string };
-export type SavedPhoto = { id: number; name: string; path: string };
+export type SavedPhoto = { id: number; name: string; path: string; url?: string | null };
 
 import TemperatureModal, { formatRange, type TempRange } from './TemperatureModal';
 import SelectedProducts, {
@@ -28,7 +28,7 @@ function SavedShot({ photo, onRemove, busy = false }: { photo: SavedPhoto; onRem
   return (
     <div className={`vti-dw-shot${busy ? ' is-busy' : ''}`} aria-busy={busy}>
       {failed ? <span className="vti-dw-shot__ph">Not found</span>
-        : <img src={resolveFileUrl(photo.path)} alt={photo.name} onError={() => setFailed(true)} />}
+        : <img src={photo.url || resolveFileUrl(photo.path)} alt={photo.name} onError={() => setFailed(true)} />}
       {onRemove && (
         <button type="button" className="vti-dw-shot__x" onClick={onRemove} disabled={busy} aria-label={`Remove ${photo.name}`}>
           <IcoX size={10} stroke={3} />

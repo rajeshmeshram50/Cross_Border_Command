@@ -180,7 +180,7 @@ export type SpiBoxBody = {
   photos?: File[];
 };
 
-export type SpiBoxAttachment = { id: number; box_id: number; file_path: string; file_name: string | null; created_at: string | null };
+export type SpiBoxAttachment = { id: number; box_id: number; file_path: string; file_name: string | null; url?: string | null; created_at: string | null };
 
 function boxForm(body: SpiBoxBody): FormData {
   const fd = new FormData();

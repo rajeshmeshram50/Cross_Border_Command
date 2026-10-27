@@ -29,6 +29,13 @@ class SpiBoxAttachment extends Model
         'box_id', 'box_item_id', 'file_path', 'file_name', 'uploaded_by',
     ];
 
+    protected $appends = ['url'];
+
+    public function getUrlAttribute(): ?string
+    {
+        return file_url($this->file_path);
+    }
+
     public function box(): BelongsTo        { return $this->belongsTo(SpiBox::class, 'box_id'); }
     public function boxItem(): BelongsTo    { return $this->belongsTo(SpiBoxItem::class, 'box_item_id'); }
     public function uploadedBy(): BelongsTo { return $this->belongsTo(User::class, 'uploaded_by'); }

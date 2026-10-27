@@ -576,7 +576,7 @@ export default function Step3BoxPackaging({
       ...(box.temp_min_c != null && box.temp_max_c != null
         ? { temp: { min: String(box.temp_min_c), max: String(box.temp_max_c) } }
         : range.length === 2 ? { temp: { min: range[0], max: range[1] } } : {}),
-      photos: (box.attachments ?? []).map(a => ({ id: a.id, name: a.file_name ?? 'Box photo', path: a.file_path })),
+      photos: (box.attachments ?? []).map(a => ({ id: a.id, name: a.file_name ?? 'Box photo', path: a.file_path, url: a.url ?? null })),
     };
   };
 
