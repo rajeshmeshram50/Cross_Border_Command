@@ -520,6 +520,11 @@ export default function Step3BoxPackaging({
     });
   };
 
+  const closePack = (code: string) => {
+    if (boxesOf(code).length > 0) return;
+    clearLocal([code]);
+  };
+
   const clearLocal = (codes: string[]) => {
     setPacking(p => { const next = { ...p }; for (const c of codes) delete next[c]; return next; });
     setSplitCodes(m => { const next = { ...m }; for (const c of codes) delete next[c]; return next; });
@@ -995,7 +1000,8 @@ export default function Step3BoxPackaging({
                     <tr className="vti-multibox-container-row">
                       <td colSpan={BOX_TABLE_COLUMNS} style={{ padding: 0, border: 'none', background: 'transparent' }}>
                         <MultiBoxPanel line={line} boxes={pack.boxes}
-                          onClose={() => void reset(line.code)}
+                          onClose={() => closePack(line.code)}
+                          closeDisabled={boxesOf(line.code).length > 0}
                           onSaveBox={(no, qty, d) => void saveSplitBox(line, no, qty, d)}
                           savedCodes={splitCodes[line.code]}
                           previewCodes={previewCodesOf(line.code)}

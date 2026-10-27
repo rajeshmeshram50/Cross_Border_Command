@@ -123,6 +123,7 @@ export default function BoxDrawer({
   onClearContents,
   onSave,
   onClose,
+  closeDisabled = false,
   saving = false,
   saved = false,
   savedBanner,
@@ -148,6 +149,7 @@ export default function BoxDrawer({
   onSave?: (data: BoxSaveData) => void;
   onDeletePhoto?: (id: number) => Promise<boolean>;
   onClose?: () => void;
+  closeDisabled?: boolean;
   saving?: boolean;
   quantityMax?: number;
   saved?: boolean;
@@ -364,7 +366,13 @@ export default function BoxDrawer({
               {saving ? 'Saving…' : saved && !initial ? 'Saved' : 'Save'}
             </button>
             {onClose && variant !== 'modal' && (
-              <button type="button" className="vti-dw-close-btn" onClick={onClose} disabled={saving}>
+              <button
+                type="button"
+                className="vti-dw-close-btn"
+                onClick={onClose}
+                disabled={saving || closeDisabled}
+                title={closeDisabled ? 'This box is saved — it stays in Packed Boxes. Use the scenario chip to remove it.' : undefined}
+              >
                 × Close
               </button>
             )}
