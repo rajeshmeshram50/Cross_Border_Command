@@ -415,9 +415,10 @@ function flagNames(items: SpiBoxItem[], master: ProductFlagOption[]): string[] {
     .filter(Boolean);
 }
 
-const isHaz = (names: string[]) => names.some(f => f.includes('haz'));
-const isCold = (names: string[]) => names.some(f => f.includes('cold') || f.includes('chill') || f.includes('frozen'));
-const isFragile = (names: string[]) => names.some(f => f.includes('fragile') || f.includes('brittle'));
+const flagIs = (names: string[], flag: string) => names.some(f => f.trim().toLowerCase() === flag);
+const isHaz = (names: string[]) => flagIs(names, 'hazardous');
+const isCold = (names: string[]) => flagIs(names, 'cold chain');
+const isFragile = (names: string[]) => flagIs(names, 'fragile');
 
 function extraFlagNames(items: SpiBoxItem[], master: ProductFlagOption[]): string[] {
   const byId = new Map(master.map(f => [f.id, (f.flag_name ?? '').trim()]));
