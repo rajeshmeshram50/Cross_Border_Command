@@ -1153,7 +1153,9 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [showProducts, setShowProducts] = useState(false);
   const [prodPage, setProdPage] = useState(1);
   const [detailIdx, setDetailIdx] = useState<number | null>(null);
-  const [qrOpen, setQrOpen] = useState(false);
+  /** Which box's sticker is open - its own state, so a card's Sticker button
+   *  opens it straight away without switching the selected box first. */
+  const [qrFor, setQrFor] = useState<string | null>(null);
   const toast = useToast();
   const stickerBusy = useRef(false);
   const [stickerBusyKind, setStickerBusyKind] = useState<'pdf' | 'print' | null>(null);
@@ -1260,7 +1262,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const detail = detailIdx == null ? null : products[detailIdx] ?? null;
   useEffect(() => {
     setShowProducts(false); setProdPage(1); setLcStep(0); setDetailIdx(null);
-    setModeAsk(null); setModePick(null); setPutMode(null); setQrOpen(false);
+    setModeAsk(null); setModePick(null); setPutMode(null);
     setPlacedAt(null); setScanTask(null); setSpot(null); setScanOpen(false);
     setScanSteps(0); setLogsOpen(false); setAssigned(null); setAssigning(false);
   }, [selected]);
@@ -1275,6 +1277,15 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     if (!box || !onLoadBox) return;
     void onLoadBox(box.id);
   }, [box?.id]);
+
+  const qrBox = qrFor ? all.find(b => b.code === qrFor) ?? null : null;
+  const qrRaw = useMemo(() => (qrFor ? boxes.find(b => b.box_code === qrFor) : undefined), [boxes, qrFor]);
+  const qrHsn = useMemo(() => productsOf(qrRaw, lines, flagMaster)[0]?.hsn, [qrRaw, lines, flagMaster]);
+  /* The sticker's box may not be the selected one, so load its detail too. */
+  useEffect(() => {
+    if (!qrBox || !onLoadBox || qrBox.id === box?.id) return;
+    void onLoadBox(qrBox.id);
+  }, [qrBox?.id]);
   const boxLocked = readOnly || placedAt !== null || box?.status === 'placed' || scanTask !== null || box?.status === 'awaiting_scan';
 
   const zebraTasks = useMemo(() => {
@@ -1698,7 +1709,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         selected={selected === bx.code}
                         readOnly={readOnly}
                         onPick={() => setSelected(bx.code)}
-                        onSticker={() => { setSelected(bx.code); setQrOpen(true); }}
+                        onSticker={() => setQrFor(bx.code)}
                       />
                     ))}
                 </Fragment>
@@ -1842,7 +1853,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       assigned={placedAt !== null}
                       qr={<BoxQr text={box.code} size={92} bare />}
                       locQr={<BoxQr text={`${warehouse ?? ''}/${spot ?? ''}`} size={80} bare />}
-                      onSticker={() => setQrOpen(true)}
+                      onSticker={() => box && setQrFor(box.code)}
                       onChange={() => { if (!boxLocked) setLcStep(1); }}
                       scan={scanTask}
                       scansDone={scanSteps}
@@ -1883,7 +1894,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       products={products}
                       totalQty={box.qty}
                       note={noteOf(rawBox)}
-                      onSticker={() => setQrOpen(true)}
+                      onSticker={() => box && setQrFor(box.code)}
                       onNext={boxLocked ? () => setLcStep(2) : askStorageMode}
                       nextDisabled={readOnly && box.status === 'pending'}
                     />
@@ -2131,22 +2142,22 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
         />
       )}
 
-      {qrOpen && box && (
+      {qrBox && (
         <PutawayBoxSticker
-          boxId={box.code}
+          boxId={qrBox.code}
           spiNumber={draft.invoiceNumber || '—'}
-          scenario={STICKER_SCENARIO[box.scenarioKey] ?? 'S1 — Single'}
-          product={box.name}
-          code={box.productCodes[0] ?? '—'}
-          mode={SCENARIO_LABEL[box.scenarioKey] ?? box.scenario}
-          condition={CONDITION_LABEL[box.condition] ?? 'Perfect'}
-          sku={products[0]?.hsn ? `HSN ${products[0].hsn}` : '—'}
-          qty={box.qty}
-          date={packedOnOf(rawBox) ?? '—'}
-          qr={<BoxQr text={box.code} size={96} />}
-          onClose={() => setQrOpen(false)}
-          onPdf={() => { void stickerPdf(box.id, box.code); }}
-          onPrint={() => { void stickerPrint(box.id); }}
+          scenario={STICKER_SCENARIO[qrBox.scenarioKey] ?? 'S1 — Single'}
+          product={qrBox.name}
+          code={qrBox.productCodes[0] ?? '—'}
+          mode={SCENARIO_LABEL[qrBox.scenarioKey] ?? qrBox.scenario}
+          condition={CONDITION_LABEL[qrBox.condition] ?? 'Perfect'}
+          sku={qrHsn ? `HSN ${qrHsn}` : '—'}
+          qty={qrBox.qty}
+          date={packedOnOf(qrRaw) ?? '—'}
+          qr={<BoxQr text={qrBox.code} size={96} />}
+          onClose={() => setQrFor(null)}
+          onPdf={() => { void stickerPdf(qrBox.id, qrBox.code); }}
+          onPrint={() => { void stickerPrint(qrBox.id); }}
           busy={stickerBusyKind}
         />
       )}
@@ -2584,7 +2595,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                       className={`s4wz-opt s4wz-opt--${k}${modePick === k ? ' is-on' : ''}${modeAsk.loading ? ' is-loading' : ''}`}
                       aria-disabled={modeAsk.loading}
                       aria-pressed={modePick === k}
-                      onClick={() => { if (!modeAsk.loading) setModePick(k); }}
+                      /* Nothing of this kind to put the box in - not a choice. */
+                      disabled={!modeAsk.loading && n === 0}
+                      title={!modeAsk.loading && n === 0 ? `No ${unit} available in this warehouse` : undefined}
+                      onClick={() => { if (!modeAsk.loading && n > 0) setModePick(k); }}
                     >
                       <span className="s4wz-opt__ic">{k === 'rack' ? <IcoList /> : <IcoHome />}</span>
                       <span className="s4wz-opt__tx">

@@ -7829,6 +7829,14 @@
   transition: border-color .18s, box-shadow .18s, transform .18s;
 }
 .s4-root .s4wz-modal .s4wz-opt:hover:not(.is-on) { transform: translateY(-2px); }
+/* A kind with nothing available can't be picked, so it doesn't answer the hover. */
+.s4-root .s4wz-modal .s4wz-opt:disabled,
+.s4-root .s4wz-modal .s4wz-opt:disabled:hover {
+  transform: none; box-shadow: none; border-color: #dcecf2;
+  opacity: .55; cursor: not-allowed; filter: grayscale(.6);
+}
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt:disabled,
+[data-bs-theme="dark"] .s4-root .s4wz-modal .s4wz-opt:disabled:hover { border-color: rgba(148,163,184,.22); }
 /* The icon tile and the radio are the prototype's sizes too — 46px and 22px,
    with the radio pinned to the corner rather than sharing the text row. */
 .s4-root .s4wz-modal .s4wz-opt__ic { width: 46px; height: 46px; border-radius: 13px; }
