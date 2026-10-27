@@ -432,7 +432,7 @@ export const spiApi = {
       };
       const box = d?.box ? withBoxFlags(d.box, label) : null;
       const flags: ProductFlagOption[] = Object.values(d?.flags ?? {})
-        .map(f => ({ id: Number(f.id), flag_name: f.flag_name, behaviour: f.behaviour ?? null }));
+        .map(f => ({ id: Number(f.id), flag_name: f.flag_name, behaviour: f.behaviour && f.behaviour !== 'none' ? f.behaviour : null }));
       return { box, flags };
     }),
 
