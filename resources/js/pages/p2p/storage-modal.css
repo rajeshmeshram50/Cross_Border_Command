@@ -527,6 +527,13 @@
 [data-bs-theme="dark"] .smod-wh-panel { background: #0f2731; border-color: rgba(34,211,238,.26); }
 [data-bs-theme="dark"] .smod-wh-code { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.28); color: #7dd3e8; }
 [data-bs-theme="dark"] .smod-wh-area b { color: #e4f3f8; }
+/* The trigger and the panel around it already turn dark (above); the chevron
+   did not, so a #ecfeff square sat on a #0f2731 field - the brightest thing
+   in the dialog, on the one control that is only a hint. Same translucent
+   treatment as .spidd-chev on the Create SPI picker. */
+[data-bs-theme="dark"] .smod-wh-chev {
+  background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.28); color: #67e8f9;
+}
 
 /* Continue to Invoice hands off to the parent, which loads the invoice form.
    The button keeps its full colour while it works — a faded button that is

@@ -1294,7 +1294,7 @@ const TNW_CSS = `
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
   /* 16, as the Agreement wizard — both ran 22, half again as loose as the
      14px 16px the CLM modal body uses. */
-  padding: 16px;
+  padding: 10px;
 }
 .tnw-body.is-editor { overflow-y: auto; display: flex; flex-direction: column; }
 .tnw-body.is-editor > .tnw-step-body { flex: 1; min-height: 0; }
@@ -1302,8 +1302,11 @@ const TNW_CSS = `
    CLM measures, and the same ones the Agreement wizard now uses. These were
    18 and 6: not uneven here, just looser than every dialog around them, and
    6 against 18 is close enough that a label does not group with its input. */
-.tnw-step-body { display: flex; flex-direction: column; gap: 14px; }
-.tnw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px; }
+/* 10 / 12 — .clm-modal-body's padding and field gap. These wizards ran
+   16 / 14; .clm-modal-body came down from 14 to 12 itself, so they had
+   been a size looser than every other CLM modal. */
+.tnw-step-body { display: flex; flex-direction: column; gap: 12px; }
+.tnw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
 .tnw-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .tnw-label {
   font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;

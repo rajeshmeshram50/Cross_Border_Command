@@ -1959,6 +1959,20 @@
 [data-bs-theme="dark"] .spidd-panel { background: #0f2731; border-color: rgba(34,211,238,.26); }
 [data-bs-theme="dark"] .spidd-search { background: rgba(34,211,238,.07); border-bottom-color: rgba(34,211,238,.2); }
 [data-bs-theme="dark"] .spidd-search input { color: #d7eef5; }
+/* The header tile and the dropdown chevron were the two things in this modal
+   with no dark rule at all, so both kept their light fills: a .9 white tile
+   on the dark teal head, and a #ecfeff square beside the Purchase Order
+   field. On a dark surface a near-white block is the brightest thing on
+   screen, so the eye goes to the chrome instead of the content. Translucent
+   in both cases - the tile sits on a gradient, so a tint of what is behind
+   it reads as part of the head rather than a sticker on top of it. */
+[data-bs-theme="dark"] .spi-mdl-head-ico {
+  background: rgba(255,255,255,.12); color: #a5f3fc;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.2);
+}
+[data-bs-theme="dark"] .spidd-chev {
+  background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.28); color: #67e8f9;
+}
 [data-bs-theme="dark"] .spim:hover { background: rgba(34,211,238,.09); }
 [data-bs-theme="dark"] .spim.sel { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.38); }
 [data-bs-theme="dark"] .spim-code { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.28); color: #7dd3e8; }

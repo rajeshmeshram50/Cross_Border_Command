@@ -283,6 +283,8 @@
 .spi-dt-btn-close::before { content:''; position:absolute; top:0; left:0; right:0; height:50%; pointer-events:none;
   background: linear-gradient(180deg,rgba(255,255,255,.18),transparent); border-radius:12px 12px 0 0; }
 .spi-dt-btn-close:hover { filter: brightness(1.06); }
+.spi-dt-btn-close:disabled { opacity: .5; cursor: progress; filter: none; }
+.spi-dt-btn-close:disabled:hover { filter: none; }
 
 /* Step tabs (Figma .p2sc — grey inactive, teal active w/ right arrow) */
 .spi-dt-steps { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:12px; }
@@ -295,6 +297,41 @@
 .spi-dt-step--nav { cursor:pointer; transition: transform .15s, box-shadow .15s, filter .15s; }
 .spi-dt-step--nav:hover { filter:brightness(1.02); box-shadow: 0 6px 18px rgba(8,145,178,.22); }
 .spi-dt-step--nav:not(.is-active):hover { transform: translateY(-1px); }
+/* While a save is in flight the rail stops behaving like a control: no
+   pointer, no hover lift, no brightening. The click is already refused in
+   goTo; this is so the card does not keep INVITING the click. */
+.spi-dt-step--nav.is-busy { cursor: progress; }
+
+/* ── Save veil ──
+   Above the wizard's own fixed footer (1210) and its popovers (9999), below
+   the confirm overlay (2800000) and the toaster - a confirm raised DURING a
+   save, and the toast that reports the result, both still have to be seen.
+   cursor: progress rather than not-allowed: the work is running, it has not
+   been refused. */
+.spi-dt-veil {
+  position: fixed; inset: 0; z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(240,250,253,.6);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.spi-dt-veil__box {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 12px 20px; border-radius: 12px;
+  background: #fff; border: 1.5px solid #cdeaf3;
+  box-shadow: 0 18px 40px -16px rgba(8,145,178,.45);
+  font-size: 12.5px; font-weight: 700; color: #0c4a6e;
+}
+.spi-dt-veil__spin {
+  width: 15px; height: 15px; flex-shrink: 0; border-radius: 50%;
+  border: 2.2px solid #0891b2; border-top-color: transparent;
+  animation: spiDtVeilSpin .6s linear infinite;
+}
+@keyframes spiDtVeilSpin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .spi-dt-veil { background: rgba(5,20,30,.6); }
+[data-bs-theme="dark"] .spi-dt-veil__box { background: #0f2231; border-color: rgba(34,211,238,.3); color: #cfeef8; }
+@media (prefers-reduced-motion: reduce) { .spi-dt-veil__spin { animation: none; } }
+.spi-dt-step--nav.is-busy:hover { filter: none; box-shadow: none; transform: none; }
 .spi-dt-step.is-active { border:1.5px solid transparent; color:#fff; z-index:2;
   background: linear-gradient(140deg,#0e7490 0%,#0891b2 45%,#06b6d4 100%); box-shadow: 0 4px 14px rgba(8,145,178,.28); }
 /* done state (PO .p2sc-done) */

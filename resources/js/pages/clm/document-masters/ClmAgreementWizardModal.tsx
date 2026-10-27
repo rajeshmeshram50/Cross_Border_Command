@@ -1798,17 +1798,21 @@ const AGW_CSS = `
 /* 16px of gutter, down from 22. The CLM modal body runs 14px 16px; this is a
    wider shell so it keeps 16 on all four sides, but it no longer sits half
    again as loose as every other dialog in the module. */
-.agw-body { flex: 1; min-height: 0; overflow-y: auto; background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%); padding: 16px; }
-/* 14px between blocks — the CLM modal's field gap (.clm-modal-body), and the
-   same value .agw-grid-2 now uses between columns. It was 16 down and 18
-   across: one grid with two different gaps, which is what read as uneven. */
-.agw-step-body { display: flex; flex-direction: column; gap: 14px; }
+/* 10, the padding .clm-modal-body uses on every side. 16 here made the
+   wizard sit looser than every other CLM modal. */
+.agw-body { flex: 1; min-height: 0; overflow-y: auto; background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%); padding: 10px; }
+/* 12px between blocks — the CLM modal's field gap (.clm-modal-body), and the
+   same value .agw-grid-2 uses between columns, so the grid reads even on both
+   axes. The note here said 14 was that value; .clm-modal-body is 12, having
+   come down from 14 itself, so this had been a size looser than the rest of
+   CLM all along. */
+.agw-step-body { display: flex; flex-direction: column; gap: 12px; }
 /* Step 2 (editor) — the body itself does NOT scroll; the editor card fills
  * the available height and only its page-shell region scrolls internally. */
 .agw-body-editor { overflow: hidden; display: flex; flex-direction: column; }
 .agw-body-editor .agw-step-body { flex: 1; min-height: 0; }
 .agw-body-editor .agw-editor-shell { flex: 1; min-height: 0; }
-.agw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px; }
+.agw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
 /* 3px from a label to its control, against the 14px between fields — the
    ratio .clm-field uses. At 6 against 16 the two were close enough that a
    label did not group with the input it names. line-height: 1 on the label

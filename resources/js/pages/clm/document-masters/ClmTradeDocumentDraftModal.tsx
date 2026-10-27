@@ -1483,17 +1483,20 @@ const TDW_CSS = `
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
   /* 16, as the Agreement and T&C wizards. All three ran 22 — half again as
      loose as the 14px 16px the CLM modal body uses. */
-  padding: 16px;
+  padding: 10px;
 }
 /* 14 between blocks, matching .tdw-grid-2's columns below and the CLM modal's
    field gap, so this wizard measures like the two beside it. */
-.tdw-step-body { display: flex; flex-direction: column; gap: 14px; }
+/* 10 / 12 — .clm-modal-body's padding and field gap. These wizards ran
+   16 / 14; .clm-modal-body came down from 14 to 12 itself, so they had
+   been a size looser than every other CLM modal. */
+.tdw-step-body { display: flex; flex-direction: column; gap: 12px; }
 /* Step 2 (editor) — the body itself does NOT scroll; the editor card fills
  * the available height and only its page-shell region scrolls internally. */
 .tdw-body-editor { overflow: hidden; display: flex; flex-direction: column; }
 .tdw-body-editor .tdw-step-body { flex: 1; min-height: 0; }
 .tdw-body-editor .tdw-editor-shell { flex: 1; min-height: 0; }
-.tdw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 14px; }
+.tdw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
 /* 3 from a label to its control against 14 between fields — the .clm-field
    ratio. At 6 against 18 a label did not group with the input it names. */
 .tdw-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }

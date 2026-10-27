@@ -191,7 +191,11 @@ export default function InvoiceForm({
 
   useScrollLock(true, '.spi-dt-overlay');
 
-  const goTo = (i: number) => { if (i <= reached) setStage(i); };
+  /* A save in flight blocks the jump too. .spi-dt-body carries inert while
+     saving, but the step rail and Close live in the HEADER above it, so
+     both stayed live: you could change stage, or shut the wizard, on top of
+     a request that was still writing the stage you just left. */
+  const goTo = (i: number) => { if (saving) return; if (i <= reached) setStage(i); };
   const advance = () => {
     const next = stage + 1;
     setStage(next);
@@ -481,6 +485,23 @@ export default function InvoiceForm({
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form">
+      {/* One veil over the whole wizard while a save is in flight.
+          Guarding each control one at a time is a losing game - the body had
+          inert, but the step rail, Close and the footer each sat outside it
+          and had to be remembered separately, and the next control added
+          would have been forgotten too. A fixed sheet over the viewport
+          cannot be stepped around: no field edit, no tab change, no stage
+          jump, no second submit, whatever is added to the page later. It
+          also IS the loader, so the page says what it is doing in the one
+          place the user is looking. */}
+      {saving && (
+        <div className="spi-dt-veil" role="status" aria-live="polite">
+          <span className="spi-dt-veil__box">
+            <span className="spi-dt-veil__spin" aria-hidden />
+            Saving — please wait
+          </span>
+        </div>
+      )}
       <div className="spi-dt">
         <div className="spi-dt-topcard">
           <div className="spi-dt-head">
@@ -509,7 +530,8 @@ export default function InvoiceForm({
             </div>
 
             <div className="spi-dt-head-r">
-              <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
+              <button type="button" className="spi-dt-btn-close" onClick={onClose} disabled={saving}
+                title={saving ? 'Saving — please wait' : undefined}><IcoX /> Close</button>
             </div>
           </div>
 
@@ -517,13 +539,14 @@ export default function InvoiceForm({
             {STAGES.map((s, i) => (
               <Tooltip
                 key={s.title}
-                label={i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
+                label={saving ? 'Saving — please wait' : i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
                 position="bottom"
               >
               <div
-                className={`spi-dt-step spi-dt-step--nav ${i === stage ? 'is-active' : ''} ${i < stage ? 'is-done' : ''}`}
+                className={`spi-dt-step spi-dt-step--nav ${i === stage ? 'is-active' : ''} ${i < stage ? 'is-done' : ''}${saving ? ' is-busy' : ''}`}
                 role="button"
-                tabIndex={0}
+                aria-disabled={saving}
+                tabIndex={saving ? -1 : 0}
                 onClick={() => goTo(i)}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goTo(i); } }}
               >

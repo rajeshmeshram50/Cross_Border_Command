@@ -10057,14 +10057,21 @@
    and keep the viewport rules. Declared after the media blocks so it wins at
    equal specificity.
    ────────────────────────────────────────────────────────────────────────── */
-.vti-dw-modal .vti-dw-strip .vti-dw-strip-left { width: 100%; }
-.vti-dw-modal .vti-dw-strip .vti-dw-toolbar {
-  width: 100%;
-  margin-left: 0; margin-right: 0;
-  padding: 0 14px 12px;
-  justify-content: flex-start;
-}
-.vti-dw-modal .vti-dw-strip .vti-dw-strip-item { padding: 9px 14px; }
+/* Make it FIT, rather than choosing which half of a broken row to live with.
+   Forcing two rows put the toolbar under BOX ID with the rest of the strip
+   empty beside it; leaving it alone put the toolbar on the right of its own
+   row under an equally empty gap. Neither is a header.
+
+   The content was over 1640 by roughly 75px. 16px of item padding instead of
+   22 gives back 60 across the five identity items, and the product name — the
+   only value here that is free text — caps at 220 instead of 400. That lands
+   the row inside the modal with room to spare, so it does not wrap at all.
+
+   flex-wrap stays as the safety net for a genuinely long name; in that case
+   the toolbar keeps its own right-hand alignment, which is the layout the
+   base rules already describe. */
+.vti-dw-modal .vti-dw-strip .vti-dw-strip-item { padding: 9px 16px; }
+.vti-dw-modal .vti-dw-strip .vti-dw-strip-item.strip-product { max-width: 220px; }
 .s4-root .s4pm-modal .s4qm__ft .s4-btn-back:disabled,
 .s4-root .s4pm-modal .s4qm__x:disabled { opacity: .45; cursor: not-allowed; }
 .s4-root .s4pm-modal .s4pm-go[aria-busy="true"] { cursor: progress; }

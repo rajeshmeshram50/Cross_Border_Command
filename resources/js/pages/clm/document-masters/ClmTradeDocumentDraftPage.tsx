@@ -800,8 +800,11 @@ const TDW_CSS = `
   padding: 22px 22px 20px;
   box-shadow: 0 2px 10px rgba(6,182,212,.08);
 }
-.tdw-step-body { display: flex; flex-direction: column; gap: 18px; }
-.tdw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
+/* 10 / 12 — .clm-modal-body's padding and field gap. These wizards ran
+   16 / 14; .clm-modal-body came down from 14 to 12 itself, so they had
+   been a size looser than every other CLM modal. */
+.tdw-step-body { display: flex; flex-direction: column; gap: 12px; }
+.tdw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; }
 .tdw-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .tdw-label {
   font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;

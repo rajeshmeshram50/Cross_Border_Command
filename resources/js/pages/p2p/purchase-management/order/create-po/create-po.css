@@ -189,6 +189,13 @@
 [data-bs-theme="dark"] .cpf-form .master-datepicker-toggle { background: #0c1c24; }
 [data-bs-theme="dark"] .cpf-form .spi-dt-toggle { background: #0c1c24; border-color: rgba(34, 211, 238, .25); }
 [data-bs-theme="dark"] .cpf-form .spi-dt-field-lbl { color: #94a3b8; }
+/* The in-table product dropdown keeps a white edge in the dark otherwise.
+   The dark rule above sets only the background and carries two classes;
+   .cpf-form .cpd-pick .master-select-toggle carries three and sets
+   border-color: #e6eef3, so it wins the cascade and the toggle ends up dark
+   with a near-white hairline round it. Matching the specificity is the fix -
+   the border, not the background, is what was missing. */
+[data-bs-theme="dark"] .cpf-form .cpd-pick .master-select-toggle { border-color: rgba(34, 211, 238, .25); }
 
 /* "Add Supplier" — teal button sitting beside the card title. */
 .cpf-addbtn {
