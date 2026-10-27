@@ -188,11 +188,11 @@ export default function BoxStickerModal({
         <div className="spi-mdl-foot">
           <span className="spi-mdl-audit">Reprinted once the box reaches its rack</span>
           <div className="spi-mdl-foot-btns">
-            <button type="button" className="spi-mdl-cancel" disabled={busy !== null} onClick={() => void downloadPdf()}>
-              <IcoDownload size={13} /> PDF
+            <button type="button" className="spi-mdl-cancel" disabled={busy !== null} aria-busy={busy === 'pdf'} onClick={() => void downloadPdf()}>
+              {busy === 'pdf' ? <><span className="spi-btn-spin" aria-hidden />Downloading…</> : <><IcoDownload size={13} /> PDF</>}
             </button>
-            <button type="button" className="spi-mdl-confirm" disabled={busy !== null} onClick={() => void printLabel()}>
-              <IcoTag size={14} /> Print Label
+            <button type="button" className="spi-mdl-confirm" disabled={busy !== null} aria-busy={busy === 'print'} onClick={() => void printLabel()}>
+              {busy === 'print' ? <><span className="spi-btn-spin" aria-hidden />Preparing…</> : <><IcoTag size={14} /> Print Label</>}
             </button>
           </div>
         </div>

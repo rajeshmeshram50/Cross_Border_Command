@@ -9937,3 +9937,5 @@
 .s4-root .s4zt-cancel:disabled, .s4-root .s4zb-cancel:disabled, .s4zv-btn--cancel:disabled { opacity: .45; cursor: not-allowed; }
 .invf-packed .vti-btn-single--edit:disabled,
 .invf-packed .vti-btn-single--edit:disabled:hover { opacity: .4; cursor: not-allowed; box-shadow: none; transform: none; }
+.spi-btn-spin { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -2px; animation: vtiDwSpin .7s linear infinite; }
+.vsm-bpdf:disabled, .vsm-bprint:disabled { opacity: .75; cursor: progress; }

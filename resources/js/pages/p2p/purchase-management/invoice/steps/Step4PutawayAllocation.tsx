@@ -1144,12 +1144,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [qrOpen, setQrOpen] = useState(false);
   const toast = useToast();
   const stickerBusy = useRef(false);
+  const [stickerBusyKind, setStickerBusyKind] = useState<'pdf' | 'print' | null>(null);
   const stickerFailed = (e: unknown) => toast.error('Could not get the sticker',
     e instanceof PoApiError ? e.firstError : 'Please try again.');
   const stickerPdf = async (boxId: number, code: string) => {
     if (stickerBusy.current) return;
     if (!spiId) { toast.warning('Save the invoice first', 'The sticker needs a saved SPI.'); return; }
     stickerBusy.current = true;
+    setStickerBusyKind('pdf');
     try {
       const blob = await spiApi.stickerPdf(spiId, boxId);
       const url = URL.createObjectURL(blob);
@@ -1162,12 +1164,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       stickerFailed(e);
     } finally {
       stickerBusy.current = false;
+      setStickerBusyKind(null);
     }
   };
   const stickerPrint = async (boxId: number) => {
     if (stickerBusy.current) return;
     if (!spiId) { toast.warning('Save the invoice first', 'The sticker needs a saved SPI.'); return; }
     stickerBusy.current = true;
+    setStickerBusyKind('print');
     try {
       await spiApi.printSticker(spiId, boxId);
       window.print();
@@ -1175,6 +1179,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       stickerFailed(e);
     } finally {
       stickerBusy.current = false;
+      setStickerBusyKind(null);
     }
   };
   const [placedAt, setPlacedAt] = useState<string | null>(null);
@@ -2123,6 +2128,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           onClose={() => setQrOpen(false)}
           onPdf={() => { void stickerPdf(box.id, box.code); }}
           onPrint={() => { void stickerPrint(box.id); }}
+          busy={stickerBusyKind}
         />
       )}
 
