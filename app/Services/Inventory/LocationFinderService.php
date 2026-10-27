@@ -144,8 +144,10 @@ class LocationFinderService
                     $why = $this->engine->refuseShelf($need, $s, $z, $free, $hold, $userId);
                     if ($why === null) $eligible++;
 
-                    $usedBefore = $cap > 0 ? round($load['weight_kg'] / $cap * 100, 1) : 0.0;
-                    $usedAfter  = $cap > 0 ? round(($load['weight_kg'] + $need['weight_kg']) / $cap * 100, 1) : 0.0;
+                    /* null, not 0, when the shelf states no maximum: 0% used
+                       on a shelf that is holding boxes reads as empty. */
+                    $usedBefore = $cap > 0 ? round($load['weight_kg'] / $cap * 100, 1) : null;
+                    $usedAfter  = $cap > 0 ? round(($load['weight_kg'] + $need['weight_kg']) / $cap * 100, 1) : null;
 
                     $volM3  = $this->engine->shelfVolumeM3($s);
                     $usedM3 = (float) ($load['volume_cm3'] ?? 0) / 1_000_000;
@@ -233,7 +235,7 @@ class LocationFinderService
                     'usable_weight_kg' => round($rUsable, 3),
                     'usable_volume_m3' => round($rUsableM3, 3),
                     'boxes'    => $shelfRows->sum('boxes'),
-                    'used_pct' => $rCap > 0 ? round(($rCap - $rFree) / $rCap * 100, 1) : 0.0,
+                    'used_pct' => $rCap > 0 ? round(($rCap - $rFree) / $rCap * 100, 1) : null,
                     'shelves'  => $shelfRows->all(),
                     'total'    => $shelfRows->count(),
                     'eligible' => $shelfRows->where('eligible', true)->count(),
@@ -270,7 +272,7 @@ class LocationFinderService
                 'usable_weight_kg' => round($zUsable, 3),
                 'usable_volume_m3' => round($zUsableM3, 3),
                 'boxes'     => $rackRows->sum('boxes'),
-                'used_pct'  => $zCap > 0 ? round(($zCap - $zFree) / $zCap * 100, 1) : 0.0,
+                'used_pct'  => $zCap > 0 ? round(($zCap - $zFree) / $zCap * 100, 1) : null,
                 'racks'     => $rackRows->all(),
                 'total'     => $rackRows->sum('total'),
                 'eligible'  => $rackRows->sum('eligible'),
@@ -303,6 +305,31 @@ class LocationFinderService
             $usedM3 = $load['volume_cm3'] / 1_000_000;
             $freeM3 = max(0, $capM3 - $usedM3);
 
+            /* How full, from whichever measure the zone actually has.
+             *
+             * Volume is the better answer and the one a stacked zone needs,
+             * but a floor zone often records only its AREA — Cold Room 1 has
+             * 400 sqft and no height, so volume is 0 and the honest answer
+             * used to be "unknown". Its floor is still measurable: what the
+             * boxes standing on it cover, against what there is to cover.
+             * `used_basis` says which question was answered, so a caller
+             * never mistakes floor coverage for cubic fill. */
+            $floorCm2 = (float) ($z->area_sqft ?? 0) * 929.0304;
+            $usedCm2  = (float) ($load['footprint_cm2'] ?? 0);
+
+            if ($capM3 > 0) {
+                $basis = 'volume';
+                $usedPct      = round($usedM3 / $capM3 * 100, 1);
+                $usedPctAfter = round(($usedM3 + $need['volume_cm3'] / 1_000_000) / $capM3 * 100, 1);
+            } elseif ($floorCm2 > 0) {
+                $basis = 'floor';
+                $usedPct      = round($usedCm2 / $floorCm2 * 100, 1);
+                $usedPctAfter = round(($usedCm2 + (float) ($need['footprint_cm2'] ?? 0)) / $floorCm2 * 100, 1);
+            } else {
+                $basis = null;
+                $usedPct = $usedPctAfter = null;
+            }
+
             $why = $this->engine->refuseZone($need, $z, $freeM3, $hold, $userId);
             if ($why === null) $eligible++;
 
@@ -324,8 +351,15 @@ class LocationFinderService
                 'capacity_m3'    => $capM3,
                 'free_m3'        => round($freeM3, 3),
                 'boxes'          => $load['boxes'],
-                'used_pct'       => $capM3 > 0 ? round($usedM3 / $capM3 * 100, 1) : 0.0,
-                'used_pct_after' => $capM3 > 0 ? round(($usedM3 + $need['volume_cm3'] / 1_000_000) / $capM3 * 100, 1) : 0.0,
+                /* The racked branch measures weight, because a shelf states a
+                   kilo limit; a floor zone states space, so these are volume
+                   — or floor coverage where no height was ever recorded. */
+                'used_pct'       => $usedPct,
+                'used_pct_after' => $usedPctAfter,
+                'used_basis'     => $basis,
+                // What the percentage is a share OF, so the UI can label it.
+                'floor_area_cm2' => $floorCm2 > 0 ? round($floorCm2, 1) : null,
+                'used_area_cm2'  => $floorCm2 > 0 ? $usedCm2 : null,
                 'eligible'       => $why === null,
                 'state'          => $this->engine->state($why),
                 'state_label'    => $this->engine->stateLabel($why),

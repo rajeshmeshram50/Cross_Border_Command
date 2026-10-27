@@ -240,7 +240,13 @@ class PutawaySuggestionEngine
     /** A shelf's own volume in m³, from whichever columns it carries. */
     public function shelfVolumeM3(object $shelf): float
     {
-        if ((float) ($shelf->volume ?? 0) > 0) return (float) $shelf->volume;
+        /* The column is cm³, like length/width/height beside it — a
+           230x95x45 shelf stores 983250. Returned as-is it claimed 983,250
+           cubic METRES, so `box m³ <= shelf m³` passed for anything and the
+           height test was the only dimension check still doing work. */
+        if ((float) ($shelf->volume ?? 0) > 0) {
+            return round((float) $shelf->volume / 1_000_000, 3);
+        }
 
         $l = (float) ($shelf->length ?? 0);
         $w = (float) ($shelf->width ?? 0);
