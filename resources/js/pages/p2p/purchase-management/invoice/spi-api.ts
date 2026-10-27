@@ -316,6 +316,9 @@ export type PutawayFloorZone = {
   temp_min_c: number | null; temp_max_c: number | null;
   capacity_m3: number; free_m3: number; boxes: number;
   used_pct: number; used_pct_after: number;
+  used_basis?: 'volume' | 'floor' | null;
+  floor_area_cm2?: number | null;
+  used_area_cm2?: number | null;
   eligible: boolean; reason: string | null; reason_label: string | null; held_by: number | null;
 };
 
