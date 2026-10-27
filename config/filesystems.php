@@ -38,7 +38,9 @@ return [
     |
     */
 
-    'documents' => env('DOCUMENT_DISK', 'public'),
+    // ?: not the env() default: env() returns '' for a key that is PRESENT
+    // but blank, and an empty disk name resolves to no disk at all.
+    'documents' => env('DOCUMENT_DISK') ?: 'public',
 
     /*
     |--------------------------------------------------------------------------

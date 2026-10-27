@@ -174,6 +174,9 @@ const SHORT: Record<string, string> = {
   no_answer:        'No answer from the server',
 };
 
+/** The three rungs, named as the label prints them. */
+const LEVEL: Record<string, string> = { zone: 'Zone', rack: 'Rack', shelf: 'Shelf' };
+
 /** The packer's verdict on the carton, in the words the packing screen used. */
 const CONDITION: Record<string, string> = {
   perfect: 'Perfect — no damage',
@@ -227,6 +230,11 @@ export default function PutawayScan() {
 
   // The product line opened from the box's list.
   const [product, setProduct] = useState<BoxProduct | null>(null);
+  /* The box card opens its product list in place — one tap, no screen
+     change, because the operator is checking it against what is in their
+     hands and a new screen loses the box header they are checking against. */
+  const [showProducts, setShowProducts] = useState(false);
+  const [showPending, setShowPending] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   // Which rungs were already proved before the last scan, to tell a scan that
@@ -476,7 +484,14 @@ export default function PutawayScan() {
             staged_location: prior.staged_id ?? null,
             staged_kind: prior.staged_kind ?? null,
           });
-          apply(data.data, 'Scan accepted.');
+          apply(
+            data.data,
+            data.data?.box && !data.data?.location
+              ? 'Box scanned successfully'
+              : data.data?.location
+                ? `${(data.data.location.kind ?? 'Location').replace(/^./, (c: string) => c.toUpperCase())} scanned successfully`
+                : 'Scan accepted.',
+          );
           return;
         }
 
@@ -771,15 +786,14 @@ export default function PutawayScan() {
   if (!state.task && state.open && state.open.length > 0 && !staged) {
     return (
       <div className="pwscan">
-        <header className="pwscan-head">
-          <div>
-            <span className="pwscan-dot" /> {state.device.label}
-            <span className="pwscan-muted"> · {state.device.serial}</span>
-          </div>
-          <div className="pwscan-code">{state.count} open</div>
-        </header>
+        <AppBar device={state.device} count={state.count ?? state.open.length} />
 
-        <div className="pwscan-prompt">Pending put-aways</div>
+        <div className="pws2-sheet-head" style={{ border: 0 }}>
+          <span>
+            <b>Pending tasks</b>
+            <small>{state.open.length} box{state.open.length === 1 ? '' : 'es'} awaiting verification</small>
+          </span>
+        </div>
 
         {/* Why they are looking at the queue instead of the box they were
             holding. Without it the screen reads as having lost their work. */}
@@ -787,15 +801,13 @@ export default function PutawayScan() {
 
         {error && <div className="pwscan-alert pwscan-alert--bad">{error}</div>}
 
-        <ul className="pwscan-queue">
+        <ul className="pws2-rows" style={{ padding: '0 12px 16px' }}>
           {state.open.map((t) => (
-            <li key={t.id}>
-              <button onClick={() => { writeRun({ task_id: t.id }); window.location.href = `/putaway-scan/${t.id}`; }}>
-                <span className="pwscan-q-box">{t.box_code ?? `Task ${t.id}`}</span>
-                <span className="pwscan-q-dest">{t.destination}</span>
-                <span className="pwscan-q-meta">{t.task_code} · {t.spi_code}</span>
-              </button>
-            </li>
+            <TaskRow
+              key={t.id}
+              row={t}
+              onPick={() => { writeRun({ task_id: t.id }); window.location.href = `/putaway-scan/${t.id}`; }}
+            />
           ))}
         </ul>
 
@@ -907,13 +919,11 @@ export default function PutawayScan() {
         </div>
       )}
 
-      <header className="pwscan-head">
-        <div>
-          <span className="pwscan-dot" /> {state.device.label}
-          <span className="pwscan-muted"> · {state.device.serial}</span>
-        </div>
-        {task && <div className="pwscan-code">{task.task_code}</div>}
-      </header>
+      <AppBar
+        device={state.device}
+        count={state.count ?? state.open?.length}
+        onPending={() => setShowPending(true)}
+      />
 
       {/* The last minute of the idle window, and only that. A counter running
           for five minutes becomes part of the furniture; one that appears with
@@ -922,24 +932,6 @@ export default function PutawayScan() {
         <div className="pwscan-idle" role="status" aria-live="polite">
           No scanning for a while — returning to the queue in <b>{idleLeft}s</b>
         </div>
-      )}
-
-      {/* The two slots, and which one is still owed. */}
-      {task && (
-        <>
-          <div className="pwscan-slots pwscan-slots--one">
-            <Slot
-              title="Box"
-              value={state.box?.box_code ?? '—'}
-              // The invoice rides with the box id, so neither is repeated below.
-              meta={state.box?.spi_code ?? null}
-              scanned={!!task.box_scan_at}
-              confirmed={!!task.box_confirmed_at}
-              active={step === 'scan_box'}
-            />
-          </div>
-
-        </>
       )}
 
       {/* Only what a scan cannot say for itself. The step prompt lives with
@@ -968,103 +960,163 @@ export default function PutawayScan() {
           On the location read-out it goes last instead — the lists above are
           what the operator came to read. */}
 
-      {/* What was scanned, so the operator can read it back before confirming. */}
-      {state.box && (
-        <>
-          <section className="pwscan-panel">
-            <h2>Box details</h2>
-
-            {state.box.scenario_label && (
-              <div className="pwscan-boxid-m">{state.box.scenario_label}</div>
-            )}
-
-            {/* The same numbers the packer typed, read back in the same words. */}
-            <div className="pwscan-grid">
-              {([['Length', state.box.length_cm, 'cm'],
-                 ['Width', state.box.width_cm, 'cm'],
-                 ['Height', state.box.height_cm, 'cm'],
-                 ['Weight', state.box.weight_kg, 'kg'],
-                 ['Net weight', state.box.net_weight_kg, 'kg'],
-                 ['Gross weight', state.box.gross_weight_kg, 'kg'],
-                 ['Vol. weight', state.box.vol_weight_kg, 'kg']] as const)
-                .filter(([, v]) => v !== null && v !== undefined)
-                .map(([label, v, unit]) => (
-                  <div key={label}><span>{label}</span><b>{v} <i>{unit}</i></b></div>
-                ))}
+      {/* One card for the box: what it is, what is in it, and where it is
+          going. The dimensions and the weights are gone — a packer typed them
+          and nobody on the floor acts on them; what the operator checks is the
+          code, the contents and the shelf. */}
+      {/* Before the box scan: what to fetch, and nothing else. */}
+      {state.box && !task?.box_scan_at && (
+        <div className="pws2-body">
+          <section className="pws2-card">
+            <div className="pws2-card-top">
+              <span className="pws2-kicker">BOX</span>
+              <span className="pws2-code">{state.box.box_code}</span>
+              <span className="pws2-sp" />
+              <span className="pws2-chip pws2-chip--warn">PENDING_DEVICE_SCAN</span>
             </div>
-
-            <dl className="pwscan-mt">
-              <div><dt>Put-away</dt><dd>{state.box.putaway_code}</dd></div>
-              {state.box.condition && (
-                <div><dt>Box condition</dt><dd>{CONDITION[state.box.condition] ?? state.box.condition}</dd></div>
-              )}
-              {state.box.is_stackable !== null && (
-                <div><dt>Stackable</dt><dd>{state.box.is_stackable ? 'Yes' : 'No — keep on top'}</dd></div>
-              )}
-              {(state.box.temp_min_c !== null || state.box.temp_max_c !== null) && (
-                <div><dt>Temperature</dt><dd>{state.box.temp_min_c} … {state.box.temp_max_c} °C</dd></div>
-              )}
-            </dl>
-
-            {state.box.flags.length > 0 && (
-              <div className="pwscan-flags">
-                {state.box.flags.map((f) => (
-                  <span key={f.id} className={'pwscan-flag pwscan-flag--' + f.behaviour}>{f.name}</span>
-                ))}
-              </div>
-            )}
-
-            {/* The address lives here rather than in a panel of its own, and
-                it doubles as the progress: scanning the zone or the rack ticks
-                that level, so the operator sees how much of the walk is left. */}
-            {dest?.full && (
-              <div className="pwscan-loc3 pwscan-loc3--mid">
-                {([['Zone', 'zone', dest.zone],
-                   ['Rack', 'rack', dest.rack],
-                   ['Shelf', 'shelf', dest.shelf]] as const).map(([label, kind, code]) => {
-                  const rung = (task?.chain ?? []).find((c) => c.kind === kind);
-                  const cls = rung?.scanned ? ' is-done' : (kind === task?.next_level ? ' is-next' : '');
-
-                  return (
-                    <div key={kind} className={cls.trim()}>
-                      <span>{label}{rung?.scanned ? ' ✓' : ''}</span>
-                      <b>{code ?? '—'}</b>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="pws2-meta3" style={{ marginTop: 9 }}>
+              <div><span>Invoice</span><b>{state.box.spi_code ?? '—'}</b></div>
+              <div><span>Destination</span><b>{dest?.shelf ?? dest?.rack ?? dest?.zone ?? '—'}</b></div>
+              <div><span>Scans</span><b>{task?.completed_scans ?? 0}/{task?.required_scans ?? 0}</b></div>
+            </div>
           </section>
 
-          {state.box.products.length > 0 && (
-            <section className="pwscan-panel">
-              <h2>Products in this box · {state.box.products.length}</h2>
-              {/* Five rows, then it scrolls — a mixed carton can carry ten. */}
-              <ul className={'pwscan-prods' + (state.box.products.length > 5 ? ' is-scroll' : '')}>
-                {state.box.products.map((p) => (
-                  <li key={p.sr}>
-                    <button onClick={() => setProduct(p)}>
-                      <span className="pwscan-prods-sr">{p.sr}</span>
-                      <span className="pwscan-prods-img">
-                        {p.image
-                          ? <img src={p.image} alt="" loading="lazy" />
-                          : <span className="pwscan-prods-ph">▣</span>}
-                      </span>
-                      <span className="pwscan-prods-t">
-                        <b>{p.name ?? '—'}{p.code ? ` (${p.code})` : ''}</b>
-                        <small>{p.segment ?? 'No segment'}</small>
-                        <small>Qty: {p.quantity}{p.uom ? ` | Unit: ${p.uom}` : ''}</small>
-                      </span>
-                      <span className="pwscan-prods-go">›</span>
-                    </button>
+          <div className="pws2-next">
+            <span>NEXT SCAN</span>
+            <b>Box QR {state.box.box_code}</b>
+            <small>
+              Scan the label on the carton to confirm it is this one. Its
+              contents open once the box is verified.
+            </small>
+          </div>
+        </div>
+      )}
+
+      {state.box && !!task?.box_scan_at && (
+        <div className="pws2-body">
+          <section className="pws2-card">
+            <div className="pws2-card-top">
+              <span className="pws2-kicker">BOX</span>
+              <span className="pws2-code">{state.box.box_code}</span>
+              <span className="pws2-chip">
+                {state.box.products.length > 1 ? 'MIXED' : 'SINGLE'}
+              </span>
+              <span className="pws2-sp" />
+              {state.box.products.length > 0 && (
+                <button type="button" className="pws2-more" onClick={() => setShowProducts(v => !v)}>
+                  {showProducts ? 'Show Less' : 'More'}
+                  {!showProducts && <b>{state.box.products.length}</b>}
+                </button>
+              )}
+            </div>
+
+            {state.box.scenario_label && <div className="pws2-name">{state.box.scenario_label}</div>}
+
+            <div className="pws2-meta3">
+              <div>
+                <span>Products</span>
+                <b>{state.box.products.length} product{state.box.products.length === 1 ? '' : 's'}</b>
+              </div>
+              <div>
+                <span>Condition</span>
+                <b>{state.box.condition ? (CONDITION[state.box.condition] ?? state.box.condition) : '—'}</b>
+              </div>
+              <div>
+                <span>Destination</span>
+                <b>{dest?.shelf ?? dest?.rack ?? dest?.zone ?? '—'}</b>
+              </div>
+            </div>
+
+            {showProducts && state.box.products.length > 0 && (
+              /* Five rows, then it scrolls — a mixed carton can carry ten. */
+              <ul className={'pws2-prods' + (state.box.products.length > 5 ? ' is-scroll' : '')}>
+                {state.box.products.map((pr) => (
+                  <li key={pr.sr} className="pws2-prod">
+                    <div className="pws2-prod-top">
+                      <span className="pws2-prod-sr">{pr.sr}</span>
+                      <span className="pws2-prod-n">{pr.name ?? '—'}</span>
+                      <span className="pws2-prod-q">{pr.quantity}{pr.uom ? ` ${pr.uom}` : ''}</span>
+                    </div>
+                    <div className="pws2-prod-grid">
+                      <div><span>SKU</span><b>{pr.code ?? '—'}</b></div>
+                      <div><span>HSN</span><b>{pr.hsn ?? '—'}</b></div>
+                      <div><span>BATCH</span><b>{pr.batch_no ?? '—'}</b></div>
+                      <div><span>EXPIRY</span><b>{pr.expiry_date ?? '—'}</b></div>
+                      <div><span>SEGMENT</span><b>{pr.segment ?? '—'}</b></div>
+                      <div><span>LOT / SERIAL</span><b>{pr.lot_no ?? pr.serial_no ?? '—'}</b></div>
+                    </div>
+                    {pr.expiry_date && (
+                      <div className="pws2-tags">
+                        <span className="pws2-chip pws2-chip--warn">EXPIRY TRACKED</span>
+                      </div>
+                    )}
+                    {/* The full line, with its image and remark, is still one
+                        tap away — this grid carries what is read at the shelf. */}
+                    <div className="pws2-tags">
+                      <button type="button" className="pws2-ghost" style={{ height: 30, justifyContent: 'flex-start' }}
+                        onClick={() => setProduct(pr)}>
+                        View full detail ›
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
-            </section>
-          )}
-        </>
-      )}
+            )}
 
+            <div className="pws2-tags">
+              <span className={'pws2-chip ' + (task?.box_confirmed_at ? 'pws2-chip--ok' : 'pws2-chip--warn')}>
+                {task?.box_confirmed_at ? 'BOX_SCAN_VERIFIED'
+                  : task?.box_scan_at ? 'BOX_SCANNED' : 'PENDING_DEVICE_SCAN'}
+              </span>
+              {state.box.flags.map((f) => (
+                <span key={f.id} className={'pws2-chip pws2-chip--' + (f.behaviour === 'block' ? 'bad' : 'warn')}>
+                  {f.name}
+                </span>
+              ))}
+              {task && (
+                <span className="pws2-taskpill">
+                  {task.task_code} · {task.completed_scans}/{task.required_scans}
+                </span>
+              )}
+            </div>
+          </section>
+
+          {/* The walk, and how much of it is done. Scanning a level ticks it. */}
+          {dest?.full && (
+            <div className="pws2-slots">
+              {([['ZONE', 'zone', dest.zone, 'General Storage'],
+                 ['RACK', 'rack', dest.rack, dest.rack ? `Rack ${dest.rack}` : null],
+                 ['SHELF', 'shelf', dest.shelf, dest.shelf ? 'Shelf level' : null]] as const).map(
+                ([label, kind, code, sub]) => {
+                  const rung = (task?.chain ?? []).find((c) => c.kind === kind);
+                  const cls = rung?.scanned ? ' is-done' : (kind === task?.next_level ? ' is-next' : '');
+                  return (
+                    <div key={kind} className={'pws2-slot' + cls}>
+                      <span>{label}</span>
+                      <b>{code ?? '—'}</b>
+                      <small>{rung?.name ?? sub ?? '—'}</small>
+                      <i>{rung?.scanned ? 'Scanned' : (kind === task?.next_level ? 'Next' : 'Pending')}</i>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+
+          {/* What the handheld is waiting for, in the words the label carries. */}
+          {task?.next_level && !done && (
+            <div className="pws2-next">
+              <span>NEXT SCAN</span>
+              <b>
+                {LEVEL[task.next_level] ?? task.next_level} QR{' '}
+                {task.next_level === 'zone' ? dest?.zone
+                  : task.next_level === 'rack' ? dest?.rack
+                  : dest?.shelf}
+              </b>
+              <small>{task.step_label}</small>
+            </div>
+          )}
+        </div>
+      )}
       {/* A location was scanned: where this is, what is already on it, and
           what the floor still owes it. Both halves of the same question. */}
       {state.location && (
@@ -1294,13 +1346,65 @@ export default function PutawayScan() {
         />
       )}
 
-      {/* One action, and only the server says it may appear. */}
-      {!done && task?.ready_to_complete && (
-        <div className="pwscan-actions">
-          <button className="pwscan-btn pwscan-btn--go" disabled={busy}
-            onClick={() => act(`/scan/putaway/${task.id}/complete`, {}, 'Put-away complete.')}>
-            Complete put-away
+      {/* The foot is fixed: on a handheld the thumb sits here, and the panel
+          above scrolls under it. Complete only appears when the server says
+          the task may be completed; Clear box is always available, because
+          picking up the wrong carton is the common mistake. */}
+      {!done && task && (
+        <div className="pws2-foot">
+          {task.ready_to_complete && (
+            <button type="button" className="pws2-primary" disabled={busy}
+              onClick={() => act(`/scan/putaway/${task.id}/complete`, {}, 'Put-away complete.')}>
+              <i className="ri-checkbox-circle-line" />Complete put-away
+            </button>
+          )}
+          <button type="button" className="pws2-ghost" disabled={busy}
+            onClick={async () => {
+              try { await call('post', `/scan/putaway/${task.id}/release`, {}); }
+              catch { /* Leaving is not refusable — the carton is already down. */ }
+              writeRun(null);
+              window.location.href = INDEX_PATH;
+            }}>
+            <i className="ri-close-line" />Clear box
           </button>
+        </div>
+      )}
+
+      {/* The queue, without leaving the box in hand. The header badge is the
+          only way back to it mid-task; the index screen is for arriving with
+          nothing scanned. */}
+      {showPending && (
+        <div className="pws2-scrim" onClick={() => setShowPending(false)}>
+          <div className="pws2-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="pws2-sheet-head">
+              <span>
+                <b>Pending tasks</b>
+                <small>
+                  {(state.open?.length ?? 0)} box{(state.open?.length ?? 0) === 1 ? '' : 'es'} awaiting verification
+                </small>
+              </span>
+              <button type="button" className="pws2-x" onClick={() => setShowPending(false)} aria-label="Close">×</button>
+            </div>
+            <div className="pws2-sheet-body">
+              <ul className="pws2-rows">
+                {(state.open ?? []).map((t) => (
+                  <TaskRow
+                    key={t.id}
+                    row={t}
+                    current={t.id === task?.id}
+                    onPick={() => {
+                      if (t.id === task?.id) { setShowPending(false); return; }
+                      writeRun({ task_id: t.id });
+                      window.location.href = `/putaway-scan/${t.id}`;
+                    }}
+                  />
+                ))}
+              </ul>
+              {(state.open?.length ?? 0) === 0 && (
+                <div className="pwscan-attempts" style={{ marginBottom: 0 }}>Nothing else pending</div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1312,6 +1416,56 @@ export default function PutawayScan() {
  * agrees. Loud on purpose — an operator glancing down mid-aisle needs to know
  * it landed without reading anything.
  */
+/**
+ * The title bar. No settings button: nothing on this screen is configurable
+ * from the floor — enrolment installs the credential and the server owns
+ * every threshold — so a gear would open nothing.
+ */
+function AppBar({ device, count, onPending }: {
+  device: { label: string; serial: string };
+  count?: number;
+  onPending?: () => void;
+}) {
+  return (
+    <header className="pws2-appbar">
+      <span className="pws2-logo">K</span>
+      <span className="pws2-appbar-t">
+        <b>Scan &amp; Verify</b>
+        <small>{device.label} · {device.serial}</small>
+      </span>
+      {onPending && (
+        <button type="button" className="pws2-iconbtn" onClick={onPending} aria-label="Pending tasks">
+          <i className="ri-list-check-2" />
+          {!!count && count > 0 && <span className="pws2-badge">{count}</span>}
+        </button>
+      )}
+    </header>
+  );
+}
+
+/** One task, as the sheet and the index page both draw it. */
+function TaskRow({ row, current, onPick }: { row: QueueRow; current?: boolean; onPick: () => void }) {
+  const state = current ? 'Box scanned'
+    : row.started ? 'In progress'
+    : 'Not scanned';
+  return (
+    <li>
+      <button type="button" className={'pws2-row' + (current ? ' is-current' : '')} onClick={onPick}>
+        <span className="pws2-row-top">
+          <span className="pws2-row-code">{row.box_code ?? `Task ${row.id}`}</span>
+          {current && <span className="pws2-chip pws2-chip--ok">VIEWING</span>}
+          <span className="pws2-sp" />
+          <span className={'pws2-chip ' + (current ? 'pws2-chip--ok' : 'pws2-chip--warn')}>
+            {current ? 'BOX_SCAN_VERIFIED' : 'PENDING_DEVICE_SCAN'}
+          </span>
+        </span>
+        <small className="pws2-row-sub">{row.destination} · {row.task_code}</small>
+        <small className="pws2-row-state">{state}</small>
+      </button>
+    </li>
+  );
+}
+
 function Done({ box, where, onNext }: { box?: string; where?: string; onNext: () => void }) {
   return (
     <div className="pwscan-done" role="status" aria-live="polite">

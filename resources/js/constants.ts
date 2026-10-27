@@ -379,7 +379,7 @@ export const P2P_GROUPS: MenuGroup[] = [
       /* The rebuilt supplier purchase invoice. It rode on the SPI grant while
          that screen existed; with SPI gone it rides on Purchase Order instead
          (see PERM_ALIAS in IdimsHeader), so it still needs no module row. */
-      { id: 'p2p.invoice', icon: 'Receipt', label: 'Invoice' },
+      { id: 'p2p.invoice', icon: 'Receipt', label: 'Supplier Purchase Invoice (Temporary Putaway)' },
       // Temporary placement under Purchase Management until the P2P nav redesign lands.
       { id: 'p2p.payment_request', icon: 'IndianRupee', label: 'Payment Request Management' },
       { id: 'p2p.advance_refund', icon: 'FileInput', label: 'Advance Receipt Refund Adjustment' },

@@ -60,8 +60,10 @@ const todayIso = () => {
 
 export default function Step3BoxPackaging({
   draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
-  spiId, spiCode, onDeleteBoxPhoto,
+  spiId, spiCode, onDeleteBoxPhoto, placedBoxIds = [], onLoadBox,
 }: {
+  onLoadBox?: (boxId: number) => Promise<SpiBox | null>;
+  placedBoxIds?: number[];
   onDeleteBoxPhoto?: (boxId: number, attachmentId: number) => Promise<boolean>;
   draft: InvoiceDraft;
   spiId?: number | null;
@@ -371,6 +373,7 @@ export default function Step3BoxPackaging({
       is_stackable: data.stackable ? 1 : 0,
       temp_min_c: data.tempMin,
       temp_max_c: data.tempMax,
+      flags: ids,
       photos: data.photos,
       items: contents.map(c => {
         const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
@@ -519,6 +522,11 @@ export default function Step3BoxPackaging({
     });
   };
 
+  const closePack = (code: string) => {
+    if (boxesOf(code).length > 0) return;
+    clearLocal([code]);
+  };
+
   const clearLocal = (codes: string[]) => {
     setPacking(p => { const next = { ...p }; for (const c of codes) delete next[c]; return next; });
     setSplitCodes(m => { const next = { ...m }; for (const c of codes) delete next[c]; return next; });
@@ -570,7 +578,7 @@ export default function Step3BoxPackaging({
       ...(box.temp_min_c != null && box.temp_max_c != null
         ? { temp: { min: String(box.temp_min_c), max: String(box.temp_max_c) } }
         : range.length === 2 ? { temp: { min: range[0], max: range[1] } } : {}),
-      photos: (box.attachments ?? []).map(a => ({ id: a.id, name: a.file_name ?? 'Box photo', path: a.file_path })),
+      photos: (box.attachments ?? []).map(a => ({ id: a.id, name: a.file_name ?? 'Box photo', path: a.file_path, url: a.url ?? null })),
     };
   };
 
@@ -586,10 +594,14 @@ export default function Step3BoxPackaging({
   const [editQtyBy, setEditQtyBy] = useState<Record<string, number>>({});
   const editingBox = boxes.find(b => b.id === editingId) ?? null;
 
-  const openEdit = (boxCode: string) => {
-    if (readOnly) return;
+  const isPlaced = (b: { id: number }) => placedBoxIds.includes(b.id);
+  const lockedMsg = 'Putaway is completed for this box — it is locked and can no longer be edited.';
+  const [loadingEdit, setLoadingEdit] = useState<string | null>(null);
+  const openEdit = async (boxCode: string) => {
+    if (readOnly || loadingEdit) return;
     const box = boxes.find(b => b.box_code === boxCode);
     if (!box) return;
+    if (isPlaced(box)) { toast.info(`${putId(box.box_code)} is put away`, lockedMsg); return; }
     if (!onUpdateBox) {
       toast.info('Save the invoice first', 'A box can be edited once Stage 02 is saved.');
       return;
@@ -598,6 +610,11 @@ export default function Step3BoxPackaging({
     if (!resolvable) {
       toast.warning('Cannot open this box', `${putId(box.box_code)} holds products that are no longer on this invoice.`);
       return;
+    }
+    if (onLoadBox) {
+      setLoadingEdit(box.box_code);
+      await onLoadBox(box.id);
+      setLoadingEdit(null);
     }
     setDropped([]);
     setEditQty(null);
@@ -686,6 +703,12 @@ export default function Step3BoxPackaging({
     if (readOnly) return;
     const bs = boxesOf(code);
     if (!bs.length) { clearLocal([code]); return; }
+    const placed = bs.filter(isPlaced);
+    if (placed.length) {
+      toast.warning('These boxes are put away',
+        `${placed.map(b => putId(b.box_code)).join(', ')} ${placed.length === 1 ? 'is' : 'are'} already on a shelf — put-away boxes cannot be removed.`);
+      return;
+    }
     const affected = [...new Set(bs.flatMap(b => b.items.map(i => codeOfItem.get(i.supplier_invoice_item_id)).filter((c): c is string => !!c)))];
     const line = lines.find(l => l.code === code);
     const ok = await confirm({
@@ -985,7 +1008,8 @@ export default function Step3BoxPackaging({
                     <tr className="vti-multibox-container-row">
                       <td colSpan={BOX_TABLE_COLUMNS} style={{ padding: 0, border: 'none', background: 'transparent' }}>
                         <MultiBoxPanel line={line} boxes={pack.boxes}
-                          onClose={() => void reset(line.code)}
+                          onClose={() => closePack(line.code)}
+                          closeDisabled={boxesOf(line.code).length > 0}
                           onSaveBox={(no, qty, d) => void saveSplitBox(line, no, qty, d)}
                           savedCodes={splitCodes[line.code]}
                           previewCodes={previewCodesOf(line.code)}
@@ -1088,8 +1112,10 @@ export default function Step3BoxPackaging({
 
       <PackedProducts
         boxes={packedBoxes}
-        onEditBox={readOnly ? undefined : openEdit}
+        onEditBox={readOnly ? undefined : (code: string) => { void openEdit(code); }}
+        loadingCode={loadingEdit}
         editingBoxId={editingBox?.box_code ?? null}
+        lockedCodes={boxes.filter(isPlaced).map(b => b.box_code)}
       />
     </StickerApiContext.Provider>
   );

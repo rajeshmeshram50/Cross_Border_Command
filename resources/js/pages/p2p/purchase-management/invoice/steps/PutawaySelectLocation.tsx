@@ -80,7 +80,20 @@ const shortCode = (c: string) => { const m = String(c).match(/SH-\d+$/); return 
 
 /** A percentage without a precision the server did not send: 87.1 stays 87.1,
  *  100.0 reads 100. */
-const pct = (n: number) => `${Number.isInteger(n) ? n : Number(n.toFixed(1))}%`;
+const basisWords = (z: { used_basis?: 'volume' | 'floor' | null }) =>
+  z.used_basis === 'volume' ? { free: 'Space Free', used: 'space used', Used: 'Space used' }
+    : z.used_basis === 'floor' ? { free: 'Floor Free', used: 'floor covered', Used: 'Floor covered' }
+    : { free: 'Free', used: 'used', Used: 'Used' };
+
+const pct = (n: number | null | undefined) =>
+  n == null || !Number.isFinite(n) ? 'Not measured' : `${Number.isInteger(n) ? n : Number(n.toFixed(1))}%`;
+const freeOf = (used: number | null | undefined) => (used == null ? null : Math.max(0, 100 - used));
+const m2 = (cm2: number | null | undefined) => {
+  const v = Number(cm2 ?? 0) / 10_000;
+  return `${v >= 100 ? Math.round(v).toLocaleString('en-IN') : Number(v.toFixed(v < 1 ? 2 : 1))} m²`;
+};
+const floorCovered = (z: { used_basis?: string | null; floor_area_cm2?: number | null; used_area_cm2?: number | null }) =>
+  z.used_basis === 'floor' && z.floor_area_cm2 ? `${m2(z.used_area_cm2)} of ${m2(z.floor_area_cm2)} covered` : null;
 const round = (n: number) => Math.round(n);
 
 /** "1 shelf" / "7 shelves" — an irregular plural, which an "s" cannot do. */
@@ -293,7 +306,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
           </div>
           <div className="s4cl-sh__ft">
             <span>{pct(sh.used_pct)} → <b>{pct(sh.used_pct_after)}</b></span>
-            <em>{pct(Math.max(0, 100 - sh.used_pct))} free</em>
+            <em>{pct(freeOf(sh.used_pct))} free</em>
           </div>
         </div>
       );
@@ -387,7 +400,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                   up to — stated, rather than left to be inferred from a fill. */}
               <div className="s4ra-cap">
                 <div className="s4ra-cap__row">
-                  <div><span>Available Now</span><b>{pct(100 - rec.used_pct)}</b></div>
+                  <div><span>Available Now</span><b>{pct(freeOf(rec.used_pct))}</b></div>
                   <div><span>This Box Uses</span><b>{pct(adds)}</b></div>
                   <div>
                     <span>Occupancy After</span>
@@ -402,7 +415,7 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
                 <div className="s4ra-leg">
                   <span><i className="o" />Occupied {pct(rec.used_pct)}</span>
                   <span><i className="n" />This box</span>
-                  <span>{pct(Math.max(0, 100 - rec.used_pct_after))} free after</span>
+                  <span>{pct(freeOf(rec.used_pct_after))} free after</span>
                 </div>
               </div>
 
@@ -658,12 +671,13 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
             </div>
             <div className="s4cn-ft">
               <span>{pct(z.used_pct)} → <b>{pct(z.used_pct_after)}</b> after this box</span>
+              {floorCovered(z) && <span> · {floorCovered(z)}</span>}
             </div>
           </div>
           <div className="s4cn-r">
-            <span>Floor Free</span>
-            <b>{pct(Math.max(0, 100 - z.used_pct))}</b>
-            <em>{pct(z.used_pct)} occupied</em>
+            <span>{basisWords(z).free}</span>
+            <b>{pct(freeOf(z.used_pct))}</b>
+            <em>{pct(z.used_pct)} {basisWords(z).used}</em>
           </div>
           <span className="s4cl-sh__rad"><IcoCheck size={9} /></span>
         </div>
@@ -689,15 +703,15 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
           <div className="s4cn-ft">
             <span className={red ? 'r' : 'a'}>
               {full && (!z.reason_label || z.reason === 'full')
-                ? `${pct(z.used_pct)} used · fully utilised`
+                ? `${pct(z.used_pct)} ${basisWords(z).used} · fully utilised`
                 : (z.reason_label || 'Not available')}
             </span>
           </div>
         </div>
         <div className="s4cn-r is-fu">
-          <span>Floor Free</span>
-          <b>{pct(Math.max(0, 100 - z.used_pct))}</b>
-          <em>{pct(z.used_pct)} occupied</em>
+          <span>{basisWords(z).free}</span>
+          <b>{pct(freeOf(z.used_pct))}</b>
+          <em>{pct(z.used_pct)} {basisWords(z).used}</em>
         </div>
         <span className="s4cl-sh__lock"><IcoLock /></span>
       </div>
@@ -737,9 +751,9 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
                     which for a floor zone is the whole of the decision. */}
                 <div
                   className="s4ra-ring"
-                  style={{ ['--deg' as string]: `${Math.max(0, Math.min(100, 100 - rec.used_pct_after)) * 3.6}deg` }}
+                  style={{ ['--deg' as string]: `${Math.min(100, freeOf(rec.used_pct_after) ?? 0) * 3.6}deg` }}
                 >
-                  <div><b>{pct(Math.max(0, 100 - rec.used_pct_after))}</b><span>Free After</span></div>
+                  <div><b>{pct(freeOf(rec.used_pct_after))}</b><span>Free After</span></div>
                 </div>
                 <div className="s4ra-id">
                   <span className="s4ra-kind s4ra-kind--zone"><IcoHome />Direct Storage Zone</span>
@@ -756,10 +770,10 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
 
               <div className="s4ra-cap">
                 <div className="s4ra-cap__row">
-                  <div><span>Available Now</span><b>{pct(100 - rec.used_pct)}</b></div>
+                  <div><span>Available Now</span><b>{pct(freeOf(rec.used_pct))}</b></div>
                   <div><span>This Box Uses</span><b>{pct(adds)}</b></div>
                   <div>
-                    <span>Occupancy After</span>
+                    <span>{basisWords(rec).Used} After</span>
                     <b className="g">{pct(rec.used_pct_after)}</b>
                     <em>{pct(rec.used_pct)} + {pct(adds)}</em>
                   </div>
@@ -769,9 +783,9 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
                   <span className="n" style={{ width: `${Math.max(1, Math.min(100, adds))}%` }} />
                 </div>
                 <div className="s4ra-leg">
-                  <span><i className="o" />Occupied {pct(rec.used_pct)}</span>
+                  <span><i className="o" />{basisWords(rec).Used} {pct(rec.used_pct)}</span>
                   <span><i className="n" />This box</span>
-                  <span>{pct(Math.max(0, 100 - rec.used_pct_after))} free after</span>
+                  <span>{pct(freeOf(rec.used_pct_after))} free after</span>
                 </div>
               </div>
 
@@ -783,7 +797,9 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
                   ['Zone Type', (rec.purpose ?? '').trim() || 'Floor zone'],
                   ['Floor Area', sqft(rec.area_sqft) ?? 'Not measured'],
                   ['Free Space', m3(rec.free_m3)],
-                  ['Capacity', rec.capacity_m3 ? m3(rec.capacity_m3) : 'Not measured'],
+                  floorCovered(rec)
+                    ? ['Floor Covered', floorCovered(rec)]
+                    : ['Capacity', rec.capacity_m3 ? m3(rec.capacity_m3) : 'Not measured'],
                   ['Cold Chain', rec.cold_chain ? 'Yes' : 'No'],
                   ['Hazardous', rec.hazardous ? 'Yes' : 'No'],
                   ['Rack', null],

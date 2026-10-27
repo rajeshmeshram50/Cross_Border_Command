@@ -914,3 +914,328 @@
   background: #bbf7d0;
   border: 1px solid #4ade80;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Prototype skin — light, teal app bar.
+ *
+ * The note at the top of this file says dark "because the screen is read under
+ * warehouse lighting all shift", which is a real argument; the prototype this
+ * is matched to is light, so the palette is restated here rather than edited
+ * in place, and the dark values are one revert away.
+ * ══════════════════════════════════════════════════════════════════════════ */
+.pwscan {
+    --pw-bg: #e9eef0;
+    --pw-card: #ffffff;
+    --pw-line: #d7e0e3;
+    --pw-text: #0f1f2b;
+    --pw-mute: #64798a;
+    --pw-ok: #0f766e;
+    --pw-bad: #dc2626;
+    --pw-go: #0d7377;
+    --pw-warn: #b45309;
+
+    --pw-teal: #0f6e70;
+    --pw-teal-dark: #0b5456;
+    --pw-teal-50: #e6f4f4;
+
+    padding: 0 0 92px;
+}
+
+/* ── App bar ──────────────────────────────────────────────────────────── */
+.pws2-appbar {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    background: var(--pw-teal);
+    color: #fff;
+}
+.pws2-logo {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; flex-shrink: 0;
+    border-radius: 9px;
+    background: #fff; color: var(--pw-teal);
+    font-size: 17px; font-weight: 800;
+}
+.pws2-appbar-t { flex: 1 1 auto; min-width: 0; line-height: 1.15; }
+.pws2-appbar-t b { display: block; font-size: 15.5px; font-weight: 800; }
+.pws2-appbar-t small { display: block; font-size: 10.5px; opacity: .85; text-transform: uppercase; letter-spacing: .04em; }
+.pws2-iconbtn {
+    position: relative; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px;
+    border: 0; border-radius: 9px;
+    background: transparent; color: #fff;
+    font-size: 19px; cursor: pointer;
+}
+.pws2-iconbtn:active { background: rgba(255,255,255,.16); }
+.pws2-badge {
+    position: absolute; top: -2px; right: -2px;
+    min-width: 17px; height: 17px; padding: 0 4px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 999px;
+    background: #f59e0b; color: #3b2300;
+    font-size: 10px; font-weight: 800;
+}
+
+/* ── The scroll body ──────────────────────────────────────────────────── */
+.pws2-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Box card ─────────────────────────────────────────────────────────── */
+.pws2-card {
+    border: 1px solid var(--pw-line);
+    border-radius: 12px;
+    background: var(--pw-card);
+    padding: 11px 12px;
+}
+.pws2-card-top { display: flex; align-items: center; gap: 8px; }
+.pws2-kicker { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: var(--pw-mute); }
+.pws2-code { font-size: 17px; font-weight: 800; letter-spacing: .01em; font-family: ui-monospace, monospace; }
+.pws2-sp { flex: 1 1 auto; }
+.pws2-chip {
+    display: inline-flex; align-items: center;
+    height: 20px; padding: 0 7px;
+    border-radius: 5px;
+    font-size: 9.5px; font-weight: 800; letter-spacing: .05em;
+    background: #eef2f4; color: #4a5c6b;
+}
+.pws2-chip--ok   { background: var(--pw-teal-50); color: var(--pw-teal); }
+.pws2-chip--warn { background: #fef3c7; color: #92400e; }
+.pws2-chip--bad  { background: #fee2e2; color: #b91c1c; }
+.pws2-more {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 5px;
+    height: 28px; padding: 0 10px;
+    border: 1.5px solid var(--pw-teal); border-radius: 7px;
+    background: #fff; color: var(--pw-teal);
+    font-family: inherit; font-size: 12px; font-weight: 800;
+    cursor: pointer;
+}
+.pws2-more b {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 17px; height: 17px; border-radius: 999px;
+    background: var(--pw-teal); color: #fff; font-size: 10px;
+}
+.pws2-name { margin: 7px 0 9px; font-size: 14px; font-weight: 700; }
+
+/* Products · Condition · Destination */
+.pws2-meta3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pws2-meta3 > div { min-width: 0; }
+.pws2-meta3 span {
+    display: block; font-size: 9.5px; font-weight: 700;
+    color: var(--pw-mute); letter-spacing: .03em;
+}
+.pws2-meta3 b { display: block; font-size: 12.5px; font-weight: 700; margin-top: 2px; }
+
+.pws2-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.pws2-taskpill {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: auto;
+    height: 24px; padding: 0 9px;
+    border: 1px solid var(--pw-line); border-radius: 999px;
+    background: #fff; color: var(--pw-text);
+    font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700;
+}
+
+/* ── Products, expanded under the card ────────────────────────────────── */
+.pws2-prods { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pws2-prods.is-scroll { max-height: 310px; overflow-y: auto; }
+.pws2-prod {
+    border: 1px solid var(--pw-line); border-radius: 10px;
+    background: #fbfdfd; padding: 9px 10px;
+}
+.pws2-prod-top { display: flex; align-items: flex-start; gap: 8px; }
+.pws2-prod-sr {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 999px;
+    background: var(--pw-teal); color: #fff;
+    font-size: 10.5px; font-weight: 800;
+}
+.pws2-prod-n { flex: 1 1 auto; min-width: 0; font-size: 12.5px; font-weight: 700; line-height: 1.25; }
+.pws2-prod-q {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; height: 21px; padding: 0 8px;
+    border: 1px solid var(--pw-line); border-radius: 6px;
+    background: #fff; font-size: 11px; font-weight: 800;
+}
+.pws2-prod-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px; margin-top: 8px;
+}
+.pws2-prod-grid span { display: block; font-size: 9px; font-weight: 800; letter-spacing: .05em; color: var(--pw-mute); }
+.pws2-prod-grid b {
+    display: block; font-size: 11.5px; font-weight: 700; margin-top: 1px;
+    font-family: ui-monospace, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── Zone · Rack · Shelf ──────────────────────────────────────────────── */
+.pws2-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pws2-slot {
+    border: 1px solid var(--pw-line); border-radius: 10px;
+    background: var(--pw-card); padding: 8px 9px; min-width: 0;
+}
+.pws2-slot > span { display: block; font-size: 9px; font-weight: 800; letter-spacing: .06em; color: var(--pw-mute); }
+.pws2-slot > b {
+    display: block; font-size: 14px; font-weight: 800; margin-top: 2px;
+    font-family: ui-monospace, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pws2-slot > small { display: block; font-size: 10px; color: var(--pw-mute); margin-top: 1px; }
+.pws2-slot > i { display: block; font-style: normal; font-size: 10.5px; font-weight: 700; margin-top: 3px; color: var(--pw-mute); }
+.pws2-slot.is-done { border-color: var(--pw-teal); background: var(--pw-teal-50); }
+.pws2-slot.is-done > i { color: var(--pw-teal); }
+.pws2-slot.is-next { border-color: #f59e0b; }
+.pws2-slot.is-next > i { color: #b45309; }
+
+/* ── Next scan ────────────────────────────────────────────────────────── */
+.pws2-next {
+    border: 1px solid #bfe3e6; border-radius: 10px;
+    background: #eef8f9; padding: 10px 11px;
+}
+.pws2-next > span { display: block; font-size: 9px; font-weight: 800; letter-spacing: .06em; color: var(--pw-teal); }
+.pws2-next > b { display: block; font-size: 14.5px; font-weight: 800; margin-top: 3px; }
+.pws2-next > small { display: block; font-size: 11px; color: #3f5d63; margin-top: 3px; line-height: 1.35; }
+
+/* ── Sticky foot ──────────────────────────────────────────────────────── */
+.pws2-foot {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    padding: 10px 12px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    background: var(--pw-card);
+    border-top: 1px solid var(--pw-line);
+    display: flex; flex-direction: column; gap: 4px;
+}
+.pws2-primary {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; height: 50px;
+    border: 0; border-radius: 10px;
+    background: var(--pw-teal); color: #fff;
+    font-family: inherit; font-size: 15.5px; font-weight: 800;
+    cursor: pointer;
+}
+.pws2-primary:active { background: var(--pw-teal-dark); }
+.pws2-primary:disabled { opacity: .55; }
+.pws2-ghost {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%; height: 40px;
+    border: 0; background: transparent; color: var(--pw-mute);
+    font-family: inherit; font-size: 13.5px; font-weight: 700;
+    cursor: pointer;
+}
+
+/* ── Pending-tasks sheet ──────────────────────────────────────────────── */
+.pws2-scrim {
+    position: fixed; inset: 0; z-index: 40;
+    background: rgba(8, 22, 30, .45);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 56px 10px 10px;
+}
+.pws2-sheet {
+    width: 100%; max-width: 420px; max-height: 100%;
+    display: flex; flex-direction: column;
+    border-radius: 12px; background: var(--pw-card);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .35);
+    overflow: hidden;
+}
+.pws2-sheet-head {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 12px 10px;
+    border-bottom: 1px solid var(--pw-line);
+}
+.pws2-sheet-head b { display: block; font-size: 16px; font-weight: 800; }
+.pws2-sheet-head small { display: block; font-size: 11.5px; color: var(--pw-mute); margin-top: 1px; }
+.pws2-x {
+    margin-left: auto; flex-shrink: 0;
+    width: 30px; height: 30px; border: 0; border-radius: 8px;
+    background: transparent; color: var(--pw-mute); font-size: 20px; cursor: pointer;
+}
+.pws2-sheet-body { padding: 10px 12px 14px; overflow-y: auto; }
+
+/* ── Task rows — the sheet and the index page share them ──────────────── */
+.pws2-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pws2-row {
+    width: 100%; text-align: left; display: block;
+    border: 1px solid var(--pw-line); border-radius: 10px;
+    background: var(--pw-card); padding: 9px 10px;
+    font-family: inherit; color: inherit; cursor: pointer;
+}
+.pws2-row:active { background: #f3f7f8; }
+.pws2-row.is-current { border-color: var(--pw-teal); background: var(--pw-teal-50); }
+.pws2-row-top { display: flex; align-items: center; gap: 8px; }
+.pws2-row-code { font-size: 14px; font-weight: 800; font-family: ui-monospace, monospace; }
+.pws2-row-sub { display: block; font-size: 11px; color: var(--pw-mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pws2-row-state { display: block; font-size: 11px; font-weight: 700; margin-top: 3px; }
+
+/* ── The scan field, in the light skin ────────────────────────────────────
+ *
+ * It renders as a sibling of .pws2-body rather than inside it, so it had no
+ * inset while every card beside it sat 12px in, and its prompt was a 21px
+ * centred banner against the compact panels above. Same control, same
+ * behaviour — the markup is untouched — restated at the size the rest of the
+ * screen uses. */
+.pwscan .pwscan-prompt--field {
+    margin: 0 12px 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--pw-teal);
+}
+
+.pwscan .pwscan-form {
+    margin: 0 12px 12px;
+    gap: 8px;
+}
+
+.pwscan .pwscan-input {
+    height: 50px;
+    padding: 0 13px;
+    font-size: 16px;
+    border: 1px solid var(--pw-line);
+    border-radius: 10px;
+    background: var(--pw-card);
+}
+.pwscan .pwscan-input:focus {
+    border-color: var(--pw-teal);
+    /* The old ring was a hardcoded blue, left over from the dark palette. */
+    box-shadow: 0 0 0 3px rgba(15, 110, 112, .20);
+}
+
+.pwscan .pwscan-form .pwscan-btn {
+    height: 50px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--pw-teal);
+    font-size: 14.5px;
+    font-weight: 800;
+}
+.pwscan .pwscan-form .pwscan-btn:active { background: var(--pw-teal-dark); }
+.pwscan .pwscan-form .pwscan-btn:disabled { opacity: .55; }
+
+/* The refusal sits with the field it is about, inset to match. */
+.pwscan .pwscan-alert { margin-left: 12px; margin-right: 12px; }
+
+/* The step banner that is NOT the field prompt — "both matched, press
+   Complete" and the like. A card, like everything else on the screen. */
+.pwscan .pwscan-prompt:not(.pwscan-prompt--field) {
+    margin: 0 12px 10px;
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    text-align: left;
+}
+.pwscan .pwscan-prompt.is-done {
+    border-color: var(--pw-teal);
+    background: var(--pw-teal-50);
+    color: var(--pw-teal);
+}
+
+.pwscan .pwscan-idle,
+.pwscan .pwscan-staged,
+.pwscan .pwscan-attempts { margin-left: 12px; margin-right: 12px; }

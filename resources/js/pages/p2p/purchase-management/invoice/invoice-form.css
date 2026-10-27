@@ -1108,6 +1108,7 @@
 .vmb-tab.is-active .vmb-tab-chk.saved { color: #16a34a; }
 .vmb-close { flex-shrink: 0; padding: 5px 12px; border-radius: 7px; border: 1.5px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: rgba(255,255,255,.75); font-size: 10.5px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
 .vmb-close:hover { background: rgba(239,68,68,.3); border-color: rgba(239,68,68,.5); color: #fff; }
+.vmb-close:disabled, .vmb-close:disabled:hover { opacity: .45; cursor: not-allowed; background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.25); color: rgba(255,255,255,.75); }
 .vmb-panel { display: none; }
 .vmb-panel.is-active { display: block; }
 .vmb-panel .vti-dw-body { padding-bottom: 16px; }
@@ -10019,3 +10020,7 @@
 [data-bs-theme="dark"] .invf-pb-none__t { color: #e2e8f0; }
 [data-bs-theme="dark"] .invf-pb-none__s { color: #7f9aa6; }
 [data-bs-theme="dark"] .invf-pb-none__s b { color: #67e8f9; }
+.invf-packed .vti-btn-single--edit:disabled,
+.invf-packed .vti-btn-single--edit:disabled:hover { opacity: .4; cursor: not-allowed; box-shadow: none; transform: none; }
+.spi-btn-spin { display: inline-block; width: 12px; height: 12px; margin-right: 6px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -2px; animation: vtiDwSpin .7s linear infinite; }
+.vsm-bpdf:disabled, .vsm-bprint:disabled { opacity: .75; cursor: progress; }

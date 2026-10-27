@@ -13,6 +13,7 @@ use App\Models\P2p\SupplierInvoiceItem;
 use App\Services\P2p\SupplierInvoiceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
@@ -552,6 +553,23 @@ class SupplierInvoiceController extends Controller
         } catch (\Throwable $e) {
             DB::rollBack();
             $this->removeFiles($files);
+
+            /* A validation failure is an answer, not a fault — only the rest
+               earns a line. Logged here because the rethrow below reaches the
+               caller as a bare "Server Error" once APP_DEBUG is off, which
+               leaves nothing to act on. */
+            if (!$e instanceof \Illuminate\Http\Exceptions\HttpResponseException
+                && !$e instanceof \Illuminate\Validation\ValidationException) {
+                Log::error('SPI items save failed', [
+                    'spi_id'    => $id,
+                    'items'     => is_array($request->input('items')) ? count($request->input('items')) : null,
+                    'has_files' => $request->hasFile('invoice_file') || $request->hasFile('eway_file'),
+                    'disk'      => config('filesystems.documents') ?: config('filesystems.default', 'public'),
+                    'error'     => $e->getMessage(),
+                    'at'        => $e->getFile() . ':' . $e->getLine(),
+                ]);
+            }
+
             throw $e;
         }
     }
@@ -561,7 +579,8 @@ class SupplierInvoiceController extends Controller
     {
         foreach ($files as $key => $path) {
             if (!str_ends_with($key, '_path') || !$path) continue;
-            try { Storage::disk(config('filesystems.documents'))->delete($path); } catch (\Throwable) { /* nothing to do */ }
+            $disk = config('filesystems.documents') ?: config('filesystems.default', 'public');
+            try { Storage::disk($disk)->delete($path); } catch (\Throwable) { /* nothing to do */ }
         }
     }
 
@@ -1374,15 +1393,40 @@ class SupplierInvoiceController extends Controller
         $dir  = "p2p/spi/{$spi->id}";
         $data = [];
 
-        $disk = config('filesystems.documents');
+        // Never empty: store() does array_key_exists() on this and a null
+        // disk is a TypeError, which no guard below would catch.
+        $disk = config('filesystems.documents') ?: config('filesystems.default', 'public');
 
-        if ($f = $request->file('invoice_file')) {
-            $data['invoice_file_path'] = $f->store($dir, $disk);
-            $data['invoice_file_name'] = $f->getClientOriginalName();
-        }
-        if ($f = $request->file('eway_file')) {
-            $data['eway_file_path'] = $f->store($dir, $disk);
-            $data['eway_file_name'] = $f->getClientOriginalName();
+        foreach (['invoice' => 'invoice_file', 'eway' => 'eway_file'] as $kind => $field) {
+            $f = $request->file($field);
+            if (!$f) continue;
+
+            /* The upload has to have arrived before it can be stored. An
+               unwritable PHP temp directory or a body over post_max_size hands
+               back an UploadedFile that is not valid, and store() answers that
+               with a FileException — which the caller sees as "Server Error"
+               and nothing else. The box-photo path already checks this. */
+            if (!$f->isValid()) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "The {$kind} file did not upload completely ({$f->getErrorMessage()}). Try again.",
+                ], 422));
+            }
+
+            $path = $f->store($dir, $disk);
+
+            /* The documents disk carries 'throw' => false, so a refused write
+               comes back as FALSE instead of raising. Stored as-is it left a
+               saved invoice pointing at no file at all; say so instead. */
+            if (!$path) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "The {$kind} file could not be saved to storage. Check the '{$disk}' disk.",
+                ], 500));
+            }
+
+            $data["{$kind}_file_path"] = $path;
+            $data["{$kind}_file_name"] = $f->getClientOriginalName();
         }
 
         return $data;

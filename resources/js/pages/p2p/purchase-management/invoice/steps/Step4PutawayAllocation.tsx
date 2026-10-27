@@ -318,9 +318,9 @@ function productsOf(box: SpiBox | undefined, lines: ProductLine[], flagMaster: P
       uom: dash(it.uom) ?? dash(line?.uom),
       productId: line?.productId ?? null,
       remark: REMARK_LABEL[String(it.remark ?? '')] ?? 'Not marked',
-      haz: isHaz(flagNames([it], flagMaster)),
-      cold: isCold(flagNames([it], flagMaster)),
-      fragile: isFragile(flagNames([it], flagMaster)),
+      haz: behavioursOf([it], flagMaster).has('hazardous'),
+      cold: behavioursOf([it], flagMaster).has('cold_chain'),
+      fragile: behavioursOf([it], flagMaster).has('fragile'),
       stackable: it.is_stackable == null ? null : !!it.is_stackable,
       extraFlags: extraFlagNames([it], flagMaster),
       advanced: [
@@ -415,18 +415,30 @@ function flagNames(items: SpiBoxItem[], master: ProductFlagOption[]): string[] {
     .filter(Boolean);
 }
 
-const isHaz = (names: string[]) => names.some(f => f.includes('haz'));
-const isCold = (names: string[]) => names.some(f => f.includes('cold') || f.includes('chill') || f.includes('frozen'));
-const isFragile = (names: string[]) => names.some(f => f.includes('fragile') || f.includes('brittle'));
+const NAME_BEHAVIOUR: Record<string, string> = { hazardous: 'hazardous', 'cold chain': 'cold_chain', fragile: 'fragile' };
+function behavioursOf(items: SpiBoxItem[], master: ProductFlagOption[]): Set<string> {
+  const byId = new Map(master.map(f => [f.id, f]));
+  const out = new Set<string>();
+  for (const it of items) {
+    for (const id of Array.isArray(it.flags) ? it.flags : []) {
+      const f = byId.get(Number(id));
+      if (!f) continue;
+      const b = f.behaviour !== undefined ? f.behaviour : NAME_BEHAVIOUR[(f.flag_name ?? '').trim().toLowerCase()];
+      if (b) out.add(b);
+    }
+  }
+  return out;
+}
 
 function extraFlagNames(items: SpiBoxItem[], master: ProductFlagOption[]): string[] {
-  const byId = new Map(master.map(f => [f.id, (f.flag_name ?? '').trim()]));
-  const known = (n: string) => isHaz([n]) || isCold([n]) || isFragile([n]) || n.includes('stack');
+  const byId = new Map(master.map(f => [f.id, f]));
   const out: string[] = [];
   for (const it of items) {
     for (const id of Array.isArray(it.flags) ? it.flags : []) {
-      const name = byId.get(Number(id)) ?? '';
-      if (!name || known(name.toLowerCase())) continue;
+      const f = byId.get(Number(id));
+      const name = (f?.flag_name ?? '').trim();
+      const behaviour = f?.behaviour !== undefined ? f?.behaviour : NAME_BEHAVIOUR[name.toLowerCase()];
+      if (!name || behaviour || name.toLowerCase().includes('stack')) continue;
       if (!out.some(o => o.toLowerCase() === name.toLowerCase())) out.push(name);
     }
   }
@@ -471,8 +483,8 @@ function toPickBoxes(
       name: names.length > 1 ? `${names[0]}  +${names.length - 1} more` : (names[0] || '—'),
       skus: items.length,
       qty,
-      haz: isHaz(flags),
-      cold: isCold(flags) || hasRange,
+      haz: behavioursOf(items, flagMaster).has('hazardous'),
+      cold: behavioursOf(items, flagMaster).has('cold_chain') || hasRange,
       location: status === 'placed' ? (place?.destination ?? 'Placed') : null,
       status,
       destination: place?.destination ?? null,
@@ -1007,7 +1019,7 @@ function ScanLogs({ anchor, boxCode, entries, method, task, scans, done, onClose
     document.body);
 }
 
-export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false, onProgress }: {
+export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagMaster = [], spiId = null, warehouse, warehouseInfo = null, spiCode = null, readOnly = false, onProgress, onLoadBox }: {
   draft: InvoiceDraft;
   boxes: SpiBox[];
   lines?: ProductLine[];
@@ -1018,6 +1030,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   spiCode?: string | null;
   readOnly?: boolean;
   onProgress?: (placed: number, total: number) => void;
+  onLoadBox?: (boxId: number) => Promise<SpiBox | null>;
 }) {
   const [tab, setTab] = useState<'all' | Disposition>('all');
   const [selected, setSelected] = useState<string | null>(null);
@@ -1143,12 +1156,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const [qrOpen, setQrOpen] = useState(false);
   const toast = useToast();
   const stickerBusy = useRef(false);
+  const [stickerBusyKind, setStickerBusyKind] = useState<'pdf' | 'print' | null>(null);
   const stickerFailed = (e: unknown) => toast.error('Could not get the sticker',
     e instanceof PoApiError ? e.firstError : 'Please try again.');
   const stickerPdf = async (boxId: number, code: string) => {
     if (stickerBusy.current) return;
     if (!spiId) { toast.warning('Save the invoice first', 'The sticker needs a saved SPI.'); return; }
     stickerBusy.current = true;
+    setStickerBusyKind('pdf');
     try {
       const blob = await spiApi.stickerPdf(spiId, boxId);
       const url = URL.createObjectURL(blob);
@@ -1161,12 +1176,14 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       stickerFailed(e);
     } finally {
       stickerBusy.current = false;
+      setStickerBusyKind(null);
     }
   };
   const stickerPrint = async (boxId: number) => {
     if (stickerBusy.current) return;
     if (!spiId) { toast.warning('Save the invoice first', 'The sticker needs a saved SPI.'); return; }
     stickerBusy.current = true;
+    setStickerBusyKind('print');
     try {
       await spiApi.printSticker(spiId, boxId);
       window.print();
@@ -1174,6 +1191,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
       stickerFailed(e);
     } finally {
       stickerBusy.current = false;
+      setStickerBusyKind(null);
     }
   };
   const [placedAt, setPlacedAt] = useState<string | null>(null);
@@ -1253,6 +1271,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
   const coldCount = scope.filter(b => b.cold).length;
   const pct = scope.length ? Math.round((placed / scope.length) * 100) : 0;
   const box = all.find(b => b.code === selected) ?? null;
+  useEffect(() => {
+    if (!box || !onLoadBox) return;
+    void onLoadBox(box.id);
+  }, [box?.id]);
   const boxLocked = placedAt !== null || box?.status === 'placed';
 
   const zebraTasks = useMemo(() => {
@@ -2122,6 +2144,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           onClose={() => setQrOpen(false)}
           onPdf={() => { void stickerPdf(box.id, box.code); }}
           onPrint={() => { void stickerPrint(box.id); }}
+          busy={stickerBusyKind}
         />
       )}
 

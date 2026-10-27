@@ -277,15 +277,28 @@ export default function InvoiceForm({
 
   const [nextBoxCodes, setNextBoxCodes] = useState<string[]>([]);
 
+  const [placedBoxIds, setPlacedBoxIds] = useState<number[]>([]);
   const reloadBoxes = useCallback(async (id: number) => {
-    const [list, codes] = await Promise.all([
+    const [list, codes, board] = await Promise.all([
       spiApi.boxes(id),
       spiApi.nextBoxCodes(id, 50).catch(() => [] as string[]),
+      spiApi.putawayBoard(id).catch(() => null),
     ]);
     setBoxes(list);
     setNextBoxCodes(codes);
+    setPlacedBoxIds((board?.boxes ?? []).filter(r => r.status === 'placed').map(r => r.box_id));
+    if (board) setPutaway({ placed: board.counts.placed, total: board.counts.total });
     return list;
   }, []);
+
+  useEffect(() => {
+    if (!spiId) return;
+    let live = true;
+    spiApi.putawayBoard(spiId)
+      .then(b => { if (live) setPutaway({ placed: b.counts.placed, total: b.counts.total }); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [spiId]);
 
   useEffect(() => {
     if (stage < 2 || !spiId) return;
@@ -350,6 +363,24 @@ export default function InvoiceForm({
     }
   }, [spiId, reloadBoxes, toast]);
 
+  const loadBox = useCallback(async (boxId: number): Promise<SpiBox | null> => {
+    if (!spiId) return null;
+    try {
+      const { box, flags } = await spiApi.box(spiId, boxId);
+      if (box) setBoxes(list => list.map(b => (b.id === box.id ? box : b)));
+      if (flags.length) {
+        setFlagMaster(m => {
+          const byId = new Map(m.map(f => [f.id, f]));
+          for (const f of flags) byId.set(f.id, { ...byId.get(f.id), ...f });
+          return [...byId.values()];
+        });
+      }
+      return box;
+    } catch {
+      return null;
+    }
+  }, [spiId]);
+
   const deleteBoxPhoto = useCallback(async (boxId: number, attachmentId: number): Promise<boolean> => {
     if (!spiId) return false;
     try {
@@ -391,6 +422,7 @@ export default function InvoiceForm({
       return;
     }
     if (stage >= STAGES.length - 1) { void mapInvoice(); return; }
+    if (putawayLocked) { advance(); return; }
     if (stage === 0) { void saveStage1(); return; }
     if (stage === 1) { void saveStage2(); return; }
     if (stage === 2) {
@@ -408,6 +440,7 @@ export default function InvoiceForm({
   };
   const allPlaced = !!putaway && putaway.total > 0 && putaway.placed >= putaway.total;
   const mapBlocked = !viewOnly && stage === STAGES.length - 1 && !allPlaced;
+  const putawayLocked = !viewOnly && allPlaced;
   const mapHint = mapBlocked
     ? (putaway && putaway.total > 0
         ? `Put away every box first — ${putaway.placed} of ${putaway.total} placed`
@@ -522,9 +555,15 @@ export default function InvoiceForm({
                     This invoice is {spiStatus.label || spiStatus.status}, so it can no longer be changed — every step is still here to read.
                   </div>
                 )}
+                {putawayLocked && (
+                  <div className="cpf-viewonly-banner">
+                    <IcoLock /> <b>Put-away complete.</b>{' '}
+                    Every box is on its shelf, so the invoice, its boxes and their locations are view only — Map Invoice to finish.
+                  </div>
+                )}
                 {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} />}
                 {stage === 1 && (
-                  <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly}
+                  <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
                     onChangeLine={changeLine} />
                 )}
                 {stage === 2 && (
@@ -535,11 +574,13 @@ export default function InvoiceForm({
                     nextBoxCodes={nextBoxCodes}
                     flagMaster={flagMaster}
                     onFlagsChanged={() => { spiApi.productFlags().then(setFlagMaster).catch(() => {}); }}
-                    readOnly={viewOnly}
+                    readOnly={viewOnly || putawayLocked}
                     onCreateBox={spiId ? createBox : undefined}
                     onUpdateBox={spiId ? updateBox : undefined}
                     onDeleteBoxes={spiId ? deleteBoxes : undefined}
                     onDeleteBoxPhoto={spiId ? deleteBoxPhoto : undefined}
+                    placedBoxIds={placedBoxIds}
+                    onLoadBox={spiId ? loadBox : undefined}
                     spiId={spiId}
                     spiCode={spiCode}
                   />
@@ -550,6 +591,7 @@ export default function InvoiceForm({
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
                     spiCode={spiCode}
                     onProgress={onPutawayProgress}
+                    onLoadBox={spiId ? loadBox : undefined}
                     warehouseInfo={{
                       code: warehouseRow?.wh_code ?? input.storage.warehouse?.code ?? null,
                       since: warehouseRow?.created_at ?? null,
@@ -596,7 +638,7 @@ export default function InvoiceForm({
               {saving ? <WizSpinner /> : isLast ? <IcoCheck /> : null}
               {viewOnly ? (isLast ? 'Close' : 'Next')
                 : isLast ? (editing ? 'Update Invoice' : 'Map Invoice')
-                : saving ? 'Saving…' : editing ? 'Update & Next' : 'Save & Next'}
+                : saving ? 'Saving…' : putawayLocked ? 'Next' : editing ? 'Update & Next' : 'Save & Next'}
               {!isLast && !saving && <IcoChevronR />}
             </button>
           </div>

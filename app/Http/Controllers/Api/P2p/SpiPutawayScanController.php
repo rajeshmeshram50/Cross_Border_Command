@@ -235,6 +235,54 @@ class SpiPutawayScanController extends Controller
      * is given back and the task is closed — one transaction, so a box is
      * never half-placed.
      */
+    /**
+     * POST /scan/putaway/{task}/release — the operator put the box back.
+     *
+     * Everything the run had proved is given up: a scan is proof that the
+     * carton was in hand at that moment, and the moment ends when they walk
+     * away. Keeping box_scan_at across an abandoned run let the next session
+     * skip the one check that ties the label to the carton.
+     *
+     * The task itself stays open and pending — it still needs doing, by this
+     * device or another.
+     */
+    public function release(Request $request, int $taskId)
+    {
+        $device = $this->device($request);
+        $task   = $this->findTask($device, $taskId);
+
+        $had = [
+            'box'   => (bool) $task->box_scan_at,
+            'zone'  => (bool) $task->zone_scan_at,
+            'rack'  => (bool) $task->rack_scan_at,
+            'shelf' => (bool) $task->shelf_scan_at,
+        ];
+
+        $task->forceFill([
+            'box_scan_at'        => null,
+            'box_confirmed_at'   => null,
+            'zone_scan_at'       => null,
+            'rack_scan_at'       => null,
+            'shelf_scan_at'      => null,
+            'shelf_confirmed_at' => null,
+            'completed_scans'    => 0,
+            /* The handheld gave the task up; the next one to open it starts
+               clean rather than inheriting this device's half-run. */
+            'device_id'          => null,
+            'device_serial'      => null,
+        ])->save();
+
+        $this->log($task, $device, 'putaway.released', [
+            'had_scans' => array_keys(array_filter($had)),
+            'reason'    => 'cleared_on_device',
+        ]);
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Box cleared. Scan it again to start this put-away.',
+        ]);
+    }
+
     public function complete(Request $request, int $taskId)
     {
         $device = $this->device($request);
@@ -924,11 +972,10 @@ class SpiPutawayScanController extends Controller
      * is occupying the space even though nobody has put it down yet, and an
      * operator looking at a half-empty shelf needs to know it is spoken for.
      */
-    /** The handling flags the packer ticked, named, deduped across lines. */
+    /** The handling flags the packer ticked, named. */
     private function boxFlags(?SpiBox $box): array
     {
-        $ids = collect($box?->items ?? [])
-            ->flatMap(fn ($i) => is_array($i->flags) ? $i->flags : (json_decode((string) $i->flags, true) ?: []))
+        $ids = collect((array) $box?->flags)
             ->map(fn ($v) => (int) $v)->filter()->unique()->values();
 
         if ($ids->isEmpty()) return [];

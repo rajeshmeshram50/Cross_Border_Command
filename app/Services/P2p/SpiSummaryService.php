@@ -247,10 +247,12 @@ class SpiSummaryService
 
                         'is_stackable' => (int) $it->is_stackable,
 
-                        // The flag MASTER rows, not the ids the column holds.
+                        /* The flag MASTER rows, not the ids the column holds.
+                           Read off the BOX: flags describe the carton, and
+                           this line is in it. */
                         'flags'        => array_values(array_filter(array_map(
                             fn (int $id) => $master[$id] ?? null,
-                            array_map('intval', (array) ($it->flags ?? [])),
+                            array_map('intval', (array) ($b->flags ?? [])),
                         ))),
 
                         // Traceability, as entered at packing.
@@ -356,15 +358,16 @@ class SpiSummaryService
         $damaged = in_array($b->condition, ['major', 'severe'], true);
         $mismatch = false;
 
+        foreach (array_map('intval', (array) ($b->flags ?? [])) as $id) {
+            match ($behaviours[$id] ?? null) {
+                'hazardous'  => $haz = true,
+                'cold_chain' => $cold = true,
+                'fragile'    => $fragile = true,
+                default      => null,
+            };
+        }
+
         foreach ($b->items as $it) {
-            foreach (array_map('intval', (array) ($it->flags ?? [])) as $id) {
-                match ($behaviours[$id] ?? null) {
-                    'hazardous'  => $haz = true,
-                    'cold_chain' => $cold = true,
-                    'fragile'    => $fragile = true,
-                    default      => null,
-                };
-            }
             if ($it->remark === 'damaged') $damaged = true;
             if (in_array($it->remark, ['mismatch', 'mismatched'], true)) $mismatch = true;
         }
@@ -471,8 +474,12 @@ class SpiSummaryService
         $items = $boxes->flatMap->items;
         [$hazardIds, $coldIds] = $this->flagIds($spi);
 
-        $carries = fn ($item, array $ids) => (bool) array_intersect(
-            array_map('intval', (array) ($item->flags ?? [])),
+        /* Asked of the BOX now, so these count cartons rather than lines.
+           They counted lines before only because every line in a carton
+           carried the same copy — with one list per box, a line has no
+           flags of its own to count. */
+        $carries = fn ($box, array $ids) => (bool) array_intersect(
+            array_map('intval', (array) ($box->flags ?? [])),
             $ids,
         );
 
@@ -481,8 +488,8 @@ class SpiSummaryService
             'total_products'   => $this->distinctProducts($boxes),
             'total_quantity'   => round($items->sum(fn ($i) => (float) $i->quantity), 3),
             'spi_value'        => (float) $spi->grand_total,
-            'hazardous'        => $items->filter(fn ($i) => $carries($i, $hazardIds))->count(),
-            'cold_chain'       => $items->filter(fn ($i) => $carries($i, $coldIds))->count(),
+            'hazardous'        => $boxes->filter(fn ($b) => $carries($b, $hazardIds))->count(),
+            'cold_chain'       => $boxes->filter(fn ($b) => $carries($b, $coldIds))->count(),
             'damaged_rejected' => $items->where('remark', SpiBoxItem::REMARK_DAMAGED)->count(),
             'mismatched'       => $items->where('remark', SpiBoxItem::REMARK_MISMATCHED)->count(),
         ];
@@ -602,8 +609,12 @@ class SpiSummaryService
         [$hazardIds, $coldIds] = $this->flagIds($spi);
         $master = $this->flagMaster($spi);
 
-        return $b->items->values()->map(function (SpiBoxItem $it, int $i) use ($hazardIds, $coldIds, $master) {
-            $flags = array_map('intval', (array) ($it->flags ?? []));
+        /* The carton's flags, read once: they describe the box, and every
+           line in it is inside that box. */
+        $boxFlags = array_map('intval', (array) ($b->flags ?? []));
+
+        return $b->items->values()->map(function (SpiBoxItem $it, int $i) use ($hazardIds, $coldIds, $master, $boxFlags) {
+            $flags = $boxFlags;
             $line  = $it->invoiceItem;
             $prod  = $line?->product_id ? DB::table('products')->find($line->product_id) : null;
 

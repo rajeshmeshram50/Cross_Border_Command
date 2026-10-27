@@ -112,6 +112,62 @@ class ZoneController extends BaseInventoryController
         ]], 200);
     }
 
+    /**
+     * What is stored in this zone right now.
+     *
+     * Volume where the zone records one, floor coverage where it records only
+     * its dimensions, and nothing where it records neither — `used_basis`
+     * says which, because "42% of the floor" and "42% full" are different
+     * claims. Capacity is usable_volume, not volume: the difference is aisles
+     * and clearance, space no box can occupy, so measuring fill against the
+     * gross figure would make a packed zone look half empty.
+     */
+    private function stockUsage(Zone $zone): array
+    {
+        $load = app(\App\Services\Inventory\LocationOccupancyService::class)
+            ->zoneLoads([$zone->id], directOnly: true)[$zone->id]
+            ?? ['weight_kg' => 0, 'volume_cm3' => 0, 'footprint_cm2' => 0, 'boxes' => 0];
+
+        $capM3  = (float) ($zone->usable_volume ?: $zone->volume ?: 0);
+        $usedM3 = (float) $load['volume_cm3'] / 1_000_000;
+
+        $usableShare = ((float) ($zone->usable_pct ?? 0) > 0) ? (float) $zone->usable_pct / 100 : 1.0;
+        $unit = match (strtolower((string) $zone->dim_unit)) {
+            'cm' => 1.0, 'mm' => 0.01, 'ft' => 929.0304, 'in' => 6.4516, default => 10_000.0,
+        };
+        $floorCm2 = (float) ($zone->floor_area ?? 0) > 0
+            ? (float) $zone->floor_area * $unit * $usableShare
+            : (float) ($zone->area_sqft ?? 0) * 929.0304 * $usableShare;
+        $usedCm2 = (float) ($load['footprint_cm2'] ?? 0);
+
+        if ($capM3 > 0) {
+            $basis = 'volume';
+            $pct   = round($usedM3 / $capM3 * 100, 1);
+        } elseif ($floorCm2 > 0) {
+            $basis = 'floor';
+            $pct   = round($usedCm2 / $floorCm2 * 100, 1);
+        } else {
+            $basis = null;
+            $pct   = null;
+        }
+
+        return [
+            'stored_boxes'    => (int) $load['boxes'],
+            'stored_weight_kg'=> round((float) $load['weight_kg'], 3),
+            'capacity_m3'     => $capM3 ?: null,
+            'used_volume_m3'  => round($usedM3, 6),
+            /* Signed on purpose. Clamping at zero hides the one state worth
+               acting on — a zone holding more than it can take. */
+            'free_volume_m3'  => $capM3 > 0 ? round($capM3 - $usedM3, 3) : null,
+            'used_pct'        => $pct,
+            // Room still to store in, the same share read the other way.
+            'available_pct'   => $pct === null ? null : round(100 - $pct, 1),
+            'used_basis'      => $basis,
+            'floor_area_cm2'  => $floorCm2 > 0 ? round($floorCm2, 1) : null,
+            'used_area_cm2'   => $floorCm2 > 0 ? $usedCm2 : null,
+        ];
+    }
+
     /** GET /inventory/zones/{id} */
     public function show(Request $request, int $id)
     {
@@ -122,7 +178,13 @@ class ZoneController extends BaseInventoryController
             $zone = $this->ownedQuery(Zone::query(), $user)
                 ->with('warehouse:id,wh_name,wh_type')->withCount('racks')->findOrFail($id);
 
-            $body = $this->row($zone) + ['free_area_sqft' => $this->svc->freeZoneAreaSqft($zone)];
+            /* free_area_sqft is a LAYOUT figure — floor not yet taken by racks,
+               which is what you need when adding one. It says nothing about
+               stock, so a zone holding a hundred boxes still reports its whole
+               floor free. The occupancy block below is the stock answer. */
+            $body = $this->row($zone)
+                + ['free_area_sqft' => $this->svc->freeZoneAreaSqft($zone)]
+                + $this->stockUsage($zone);
 
             DB::commit();
 

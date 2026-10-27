@@ -44,7 +44,7 @@ const IcoTickSm = () => (
 
 export default function PutawayBoxSticker({
   boxId, spiNumber, scenario, product, code, mode, condition,
-  sku, qty, date, qr, onClose, onPdf, onPrint,
+  sku, qty, date, qr, onClose, onPdf, onPrint, busy = null,
 }: {
   boxId: string;
   spiNumber: string;
@@ -61,6 +61,7 @@ export default function PutawayBoxSticker({
   onClose: () => void;
   onPdf?: () => void;
   onPrint?: () => void;
+  busy?: 'pdf' | 'print' | null;
 }) {
   useScrollLock(true);
   const ref = useRef<HTMLDivElement>(null);
@@ -129,9 +130,13 @@ export default function PutawayBoxSticker({
         <div className="vsm-mft">
           <span className="vsm-hint">{spiNumber}</span>
           <div className="vsm-acts">
-            <button type="button" className="vsm-bpdf" onClick={onPdf ?? onClose}><IcoDown />PDF</button>
-            <button type="button" className="vsm-bprint" onClick={onPrint ?? (() => window.print())}>
-              <IcoPrint />Print Label
+            <button type="button" className="vsm-bpdf" onClick={onPdf ?? onClose}
+              disabled={busy !== null} aria-busy={busy === 'pdf'}>
+              {busy === 'pdf' ? <><span className="spi-btn-spin" aria-hidden />Downloading…</> : <><IcoDown />PDF</>}
+            </button>
+            <button type="button" className="vsm-bprint" onClick={onPrint ?? (() => window.print())}
+              disabled={busy !== null} aria-busy={busy === 'print'}>
+              {busy === 'print' ? <><span className="spi-btn-spin" aria-hidden />Preparing…</> : <><IcoPrint />Print Label</>}
             </button>
           </div>
         </div>

@@ -29,6 +29,10 @@ class SpiBoxAttachment extends Model
         'box_id', 'box_item_id', 'file_path', 'file_name', 'uploaded_by',
     ];
 
+    /* file_path is relative to a disk whose identity the caller does not
+       know, so the row answers with a usable address instead. */
+    protected $appends = ['url', 'is_image'];
+
     public function box(): BelongsTo        { return $this->belongsTo(SpiBox::class, 'box_id'); }
     public function boxItem(): BelongsTo    { return $this->belongsTo(SpiBoxItem::class, 'box_item_id'); }
     public function uploadedBy(): BelongsTo { return $this->belongsTo(User::class, 'uploaded_by'); }
@@ -37,6 +41,27 @@ class SpiBoxAttachment extends Model
     public function isForProduct(): bool
     {
         return $this->box_item_id !== null;
+    }
+
+    /**
+     * Where the browser can fetch it.
+     *
+     * file_url() rather than Storage::url() directly: it normalises the
+     * storage/ and public/ prefixes older rows carry, refuses a bare
+     * basename instead of inventing a confident 404, and — the reason it
+     * exists — falls back to a constructed URL when the disk cannot build
+     * one, which is the misconfigured-Azure case. Returning null there
+     * would blank the edit drawer on exactly the deployment that needs it.
+     */
+    public function getUrlAttribute(): ?string
+    {
+        return file_url($this->file_path);
+    }
+
+    /** Whether it can be shown inline, or only downloaded. */
+    public function getIsImageAttribute(): bool
+    {
+        return $this->isImage();
     }
 
     public function isImage(): bool

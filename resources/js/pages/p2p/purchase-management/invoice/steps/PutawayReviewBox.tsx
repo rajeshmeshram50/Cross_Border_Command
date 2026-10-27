@@ -81,10 +81,10 @@ const IcoFragileSm = () => (
  * name before it reaches this component — hence the title-casing on the way
  * back out, so "cold chain" is not shouted at the operator in lower case. */
 function flagTone(name: string): { cls: string; ico: ReactNode } {
-  const n = name.toLowerCase();
-  if (n.includes('haz')) return { cls: ' is-haz', ico: <IcoWarnSm /> };
-  if (n.includes('cold') || n.includes('chill') || n.includes('frozen')) return { cls: ' is-cold', ico: <IcoColdSm /> };
-  if (n.includes('fragile') || n.includes('brittle')) return { cls: ' is-fragile', ico: <IcoFragileSm /> };
+  const n = name.trim().toLowerCase();
+  if (n === 'hazardous') return { cls: ' is-haz', ico: <IcoWarnSm /> };
+  if (n === 'cold chain') return { cls: ' is-cold', ico: <IcoColdSm /> };
+  if (n === 'fragile') return { cls: ' is-fragile', ico: <IcoFragileSm /> };
   /* Everything else is a flag off the master. It keeps the neutral pill, but
      it still carries the tag mark the packing step gives it — without one a
      custom flag read as a stray word rather than a flag. */

@@ -21,11 +21,12 @@ export function splitQuantity(total: number, boxes: number): SplitBox[] {
 }
 
 export default function MultiBoxPanel({
-  line, boxes, onClose, onSaveBox, savedCodes = {}, previewCodes = {}, savingNo = null, readOnly = false, customFlags, onFlagCreated, onBoxQty,
+  line, boxes, onClose, closeDisabled = false, onSaveBox, savedCodes = {}, previewCodes = {}, savingNo = null, readOnly = false, customFlags, onFlagCreated, onBoxQty,
 }: {
   line: ProductLine;
   boxes: SplitBox[];
   onClose: () => void;
+  closeDisabled?: boolean;
   onSaveBox: (boxNo: number, qty: number, data: BoxSaveData) => void;
   savedCodes?: Record<number, string>;
   previewCodes?: Record<number, string>;
@@ -94,7 +95,13 @@ export default function MultiBoxPanel({
           ))}
         </div>
 
-        <button type="button" className="vmb-close" onClick={onClose}>× Close</button>
+        <button
+          type="button"
+          className="vmb-close"
+          onClick={onClose}
+          disabled={closeDisabled}
+          title={closeDisabled ? 'Boxes in this set are saved — they stay in Packed Boxes. Use the scenario chip to remove them.' : undefined}
+        >× Close</button>
       </div>
 
       <div className="vmb-panel is-active">

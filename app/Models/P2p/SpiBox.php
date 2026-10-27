@@ -36,6 +36,9 @@ class SpiBox extends Model
     public const VOLUMETRIC_DIVISOR = 5000;
 
     protected $fillable = [
+        // One list for the carton: the packing screen has only ever
+        // offered one picker, and every reader wants one answer.
+        'flags',
         'client_id', 'branch_id', 'supplier_invoice_id',
         'scenario', 'box_code',
         'length_cm', 'width_cm', 'height_cm',
@@ -47,6 +50,7 @@ class SpiBox extends Model
     ];
 
     protected $casts = [
+        'flags' => 'array',
         // 0/1, not a boolean: a carton is not stackable until someone says so,
         // and the column is the 0/1 flag convention the masters use.
         'is_stackable'       => 'integer',
