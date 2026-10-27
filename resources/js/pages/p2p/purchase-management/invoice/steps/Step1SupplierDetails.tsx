@@ -50,8 +50,8 @@ const GUIDELINES = [
   },
 ];
 
-export default function Step1SupplierDetails({ draft, set, error = null }: {
-  draft: InvoiceDraft; set: SetDraft; error?: string | null;
+export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false }: {
+  draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
 }) {
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
@@ -72,6 +72,7 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
   const hasSupplier = !!supplier;
 
   const hasPo = !!poNumber;
+  const locked = hasPo || readOnly;
 
   /* The same seven fields the purchase order shows for an international
      document. With a PO they are the PO's, read-only; a standalone invoice
@@ -262,13 +263,13 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
         <div className="spi-dt-sec-body">
           <div className="spi-dt-grid4">
             <Field label="PO Type" req>
-              <EditSelect readOnly={hasPo} value={poType} options={PO_TYPES} onChange={v => set({ poType: v })} />
+              <EditSelect readOnly={locked} value={poType} options={PO_TYPES} onChange={v => set({ poType: v })} />
             </Field>
             <Field label="Document Type" req>
-              <EditSelect readOnly={hasPo} value={docType} options={DOC_TYPES} onChange={v => set({ docType: v })} />
+              <EditSelect readOnly={locked} value={docType} options={DOC_TYPES} onChange={v => set({ docType: v })} />
             </Field>
             <Field label="Mode of Transport" req>
-              <EditSelect readOnly={hasPo} value={transport} options={TRANSPORT_MODES} onChange={v => set({ transport: v })} />
+              <EditSelect readOnly={locked} value={transport} options={TRANSPORT_MODES} onChange={v => set({ transport: v })} />
             </Field>
             <Field label="PO Date">
               <div className="spi-dt-inp-auto">
@@ -277,17 +278,17 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
               </div>
             </Field>
             <Field label="Expected Delivery Date" req>
-              {hasPo
+              {locked
                 ? <input className="spi-dt-inp" value={formatDmy(deliveryDate)} readOnly />
                 : <MasterDatePicker value={deliveryDate} onChange={v => set({ deliveryDate: v })} />}
             </Field>
             <Field label="Delivery Location" req>
-              <input className="spi-dt-inp" readOnly={hasPo}
-                placeholder={hasPo ? '—' : 'Enter delivery location'} maxLength={255}
+              <input className="spi-dt-inp" readOnly={locked}
+                placeholder={locked ? '—' : 'Enter delivery location'} maxLength={255}
                 value={deliveryLocation} onChange={e => set({ deliveryLocation: e.target.value })} />
             </Field>
             <Field label="Payment Type" req>
-              <EditSelect readOnly={hasPo} value={paymentType} options={PAYMENT_TYPES} onChange={v => set({ paymentType: v })} />
+              <EditSelect readOnly={locked} value={paymentType} options={PAYMENT_TYPES} onChange={v => set({ paymentType: v })} />
             </Field>
             <Field label="Physical Inspection Status">
               <div className="spi-dt-inp-auto">
@@ -299,15 +300,15 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
             {isInternational && (
               <>
                 <Field label="Currency" req>
-                  <EditSelect readOnly={hasPo} value={currency} options={currencies}
+                  <EditSelect readOnly={locked} value={currency} options={currencies}
                     onChange={v => set({ currency: v })} />
                 </Field>
                 <Field label="Exchange Rate" req>
                   {/* Digits and one point only, and capped the way the PO caps
                       it: a rate is a multiplier, so a typo does not add one
                       digit to the invoice, it adds as many as the typo. */}
-                  <input className="spi-dt-inp" readOnly={hasPo} inputMode="decimal"
-                    placeholder={hasPo ? '—' : 'e.g. 83.25'} value={exchangeRate}
+                  <input className="spi-dt-inp" readOnly={locked} inputMode="decimal"
+                    placeholder={locked ? '—' : 'e.g. 83.25'} value={exchangeRate}
                     onChange={e => {
                       const v = e.target.value.replace(/[^d.]/g, '').slice(0, 16);
                       if (v !== '' && Number(v) > FX_RATE_MAX) return;
@@ -315,26 +316,26 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                     }} />
                 </Field>
                 <Field label="INCO Term" req>
-                  <EditSelect readOnly={hasPo} value={incoTerm} options={INCO_TERMS}
+                  <EditSelect readOnly={locked} value={incoTerm} options={INCO_TERMS}
                     onChange={v => set({ incoTerm: v })} />
                 </Field>
                 <Field label="Port of Loading" req>
-                  <input className="spi-dt-inp" readOnly={hasPo} maxLength={255}
-                    placeholder={hasPo ? '—' : 'e.g. Nhava Sheva'} value={portLoading}
+                  <input className="spi-dt-inp" readOnly={locked} maxLength={255}
+                    placeholder={locked ? '—' : 'e.g. Nhava Sheva'} value={portLoading}
                     onChange={e => set({ portLoading: e.target.value })} />
                 </Field>
                 <Field label="Port of Discharge" req>
-                  <input className="spi-dt-inp" readOnly={hasPo} maxLength={255}
-                    placeholder={hasPo ? '—' : 'e.g. Jebel Ali'} value={portDischarge}
+                  <input className="spi-dt-inp" readOnly={locked} maxLength={255}
+                    placeholder={locked ? '—' : 'e.g. Jebel Ali'} value={portDischarge}
                     onChange={e => set({ portDischarge: e.target.value })} />
                 </Field>
                 <Field label="Final Destination" req>
-                  <input className="spi-dt-inp" readOnly={hasPo} maxLength={128}
-                    placeholder={hasPo ? '—' : 'Enter final destination'} value={finalDestination}
+                  <input className="spi-dt-inp" readOnly={locked} maxLength={128}
+                    placeholder={locked ? '—' : 'Enter final destination'} value={finalDestination}
                     onChange={e => set({ finalDestination: e.target.value })} />
                 </Field>
                 <Field label="Country of Origin" req>
-                  <EditSelect readOnly={hasPo} value={countryOrigin} options={countries}
+                  <EditSelect readOnly={locked} value={countryOrigin} options={countries}
                     onChange={v => set({ countryOrigin: v })} />
                 </Field>
               </>
@@ -580,11 +581,11 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                       : <MasterDatePicker value={scrutinyDate} onChange={v => set({ scrutinyDate: v })} />}
                   </Field>
                   <Field label="GST NUMBER">
-                    <input className="spi-dt-inp" placeholder={hasPo ? '—' : '15-digit GSTIN'} maxLength={15} readOnly={hasPo}
+                    <input className="spi-dt-inp" placeholder={locked ? '—' : '15-digit GSTIN'} maxLength={15} readOnly={locked}
                       value={gstNumber} onChange={e => set({ gstNumber: e.target.value.toUpperCase() })} />
                   </Field>
                   <Field label="GST STATUS">
-                    <EditSelect readOnly={hasPo} value={gstStatus} options={GST_STATUSES} onChange={v => set({ gstStatus: v })} />
+                    <EditSelect readOnly={locked} value={gstStatus} options={GST_STATUSES} onChange={v => set({ gstStatus: v })} />
                   </Field>
                   <Field label="LAST FILING DATE">
                     {hasPo
@@ -592,8 +593,8 @@ export default function Step1SupplierDetails({ draft, set, error = null }: {
                       : <MasterDatePicker value={filingDate} onChange={v => set({ filingDate: v })} />}
                   </Field>
                   <Field label="PREV. INVOICE / REMARKS" full>
-                    <textarea className="spi-dt-textarea" readOnly={hasPo}
-                      placeholder={hasPo ? '—' : 'Notes on previous invoices, filing history or scrutiny remarks…'}
+                    <textarea className="spi-dt-textarea" readOnly={locked}
+                      placeholder={locked ? '—' : 'Notes on previous invoices, filing history or scrutiny remarks…'}
                       value={remarks} onChange={e => set({ remarks: e.target.value })} />
                   </Field>
                 </div>

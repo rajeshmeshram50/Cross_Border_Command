@@ -114,7 +114,7 @@ export default function InvoiceForm({
           setSpiBranchId(existing.branch_id ?? null);
           const resumeAt = Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1);
           setReached(resumeAt);
-          setStage(resumeAt);
+          setStage(spiViewOnlyReason(existing.status) ? 0 : resumeAt);
         }
         if (!poId) {
           setPoError('This invoice is not linked to a purchase order.');
@@ -286,7 +286,7 @@ export default function InvoiceForm({
     ]);
     setBoxes(list);
     setNextBoxCodes(codes);
-    setPlacedBoxIds((board?.boxes ?? []).filter(r => r.status === 'placed').map(r => r.box_id));
+    setPlacedBoxIds((board?.boxes ?? []).filter(r => r.status === 'placed' || r.status === 'awaiting_scan').map(r => r.box_id));
     if (board) setPutaway({ placed: board.counts.placed, total: board.counts.total });
     return list;
   }, []);
@@ -561,7 +561,7 @@ export default function InvoiceForm({
                     Every box is on its shelf, so the invoice, its boxes and their locations are view only — Map Invoice to finish.
                   </div>
                 )}
-                {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} />}
+                {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} readOnly={viewOnly} />}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
                     onChangeLine={changeLine} />

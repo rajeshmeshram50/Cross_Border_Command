@@ -334,7 +334,7 @@ export default function PackedProducts({
                   {/* The id is the way back in: pressing it reopens the box. */}
                   <td className="invf-c-box">
                     <Tooltip label={lockedCodes.includes(b.code)
-                      ? `${putId(b.code)} is put away — locked`
+                      ? `${putId(b.code)} is in putaway — locked`
                       : onEditBox
                       ? `Open ${putId(b.code)} — its size, weight, flags and what is inside it`
                       : `Carton ${putId(b.code)}`}>
@@ -403,7 +403,7 @@ export default function PackedProducts({
                     <span className="vti-packed-acts">
                       {onEditBox && (
                         <Tooltip label={lockedCodes.includes(b.code)
-                          ? `${putId(b.code)} is put away — it can no longer be edited`
+                          ? `${putId(b.code)} has a putaway method selected in Stage 04 — it can no longer be edited`
                           : `Edit ${putId(b.code)} — its size, weight and flags`}>
                           <button
                             type="button"

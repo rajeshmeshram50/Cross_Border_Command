@@ -90,7 +90,7 @@ export interface StorageWarehouse {
   addedOn?: string;
 }
 
-export const SPI_EDITABLE_STATUSES = ['draft', 'mapped'];
+export const SPI_EDITABLE_STATUSES = ['draft'];
 
 export const SPI_STATUS_LABELS: Record<string, string> = {
   draft: 'Draft', mapped: 'Mapped', grn_pending: 'GRN Pending', closed: 'Closed', cancelled: 'Cancelled',
