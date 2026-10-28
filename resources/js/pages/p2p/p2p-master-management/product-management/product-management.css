@@ -8524,3 +8524,10 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   box-shadow: none;
 }
 [data-bs-theme="dark"] .prd-fbtn:disabled { background: transparent; color: #71717a; border-color: rgba(255,255,255,.12); }
+
+/* Header tab row: 8px from the panel edge, not 12 (+1px border ≈ 14) — QA #27.
+   The cards below take the same 8px sides and top so their left edge stays
+   level with the first tab. */
+.prd-toolbar { padding: 8px 8px 1px; }
+.prd-panel .prd-grid,
+.prd-panel .prd-list { padding: 8px; }
