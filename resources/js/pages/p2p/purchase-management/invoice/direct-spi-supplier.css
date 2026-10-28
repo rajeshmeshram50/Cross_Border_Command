@@ -65,16 +65,24 @@
 .sdx-sup__tick svg { width: 10px; height: 10px; }
 .sdx-sup__opt.is-sel .sdx-sup__tick { color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2); }
 
+/* No box, no dividers. This was a bordered, filled panel with a vertical rule
+   between each of its four cells, sitting inside the row's own bordered card,
+   inside the popover's border — three frames deep, and with ten of them down
+   the list the whole menu read as a stack of boxes rather than a list of
+   suppliers. The grid stays, because columns that line up down the list are
+   the actual reason to lay these four facts out this way; it is only the
+   chrome around them that goes. Column spacing does the separating the rules
+   used to do, which is why the gap opens from 0 to 18. */
 .sdx-sup__grid {
-  display: grid; grid-template-columns: .9fr 1fr 1.4fr .8fr; gap: 0; margin-top: 6px;
-  border: 1px solid #e6f1f5; border-radius: 9px; background: #fbfeff; overflow: hidden;
+  display: grid; grid-template-columns: .9fr 1fr 1.4fr .8fr; gap: 2px 18px; margin-top: 7px;
+  border: 0; border-radius: 0; background: none; overflow: visible;
 }
-.sdx-sup__c { display: flex; flex-direction: column; gap: 1px; padding: 5px 9px; min-width: 0; }
-.sdx-sup__c + .sdx-sup__c { border-left: 1px solid #e6f1f5; }
-.sdx-sup__cl { font-size: 7.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #8aa5b2; white-space: nowrap; }
-.sdx-sup__cv { font-size: 10.5px; font-weight: 700; color: #0c4a6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sdx-sup__cv.is-mono { font-size: 10px; color: #0e7490; font-variant-numeric: tabular-nums; }
-.sdx-sup__opt.is-sel .sdx-sup__grid { background: #fff; border-color: #cdeff6; }
+.sdx-sup__c { display: flex; flex-direction: column; gap: 1px; padding: 0; min-width: 0; }
+.sdx-sup__c + .sdx-sup__c { border-left: 0; }
+/* A point larger each, now that neither is squeezed into a 5px-padded cell. */
+.sdx-sup__cl { font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #8aa5b2; white-space: nowrap; }
+.sdx-sup__cv { font-size: 11px; font-weight: 700; color: #0c4a6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sdx-sup__cv.is-mono { font-size: 10.5px; color: #0e7490; font-variant-numeric: tabular-nums; }
 /* Risk is the one value here that can stop a choice, so it is the one value
    that carries a colour of its own. */
 .sdx-risk--low    { color: #047857; }
@@ -83,12 +91,9 @@
 
 /* The popover is only as wide as its trigger, so in a narrow dialog four
    columns leave every value too thin to read. Two by two keeps each label
-   whole; the third cell starts a row, so it loses the divider on its left and
-   the bottom pair gain one above. */
+   whole; with the dividers gone the second row only needs room above it. */
 @media (max-width: 620px) {
-  .sdx-sup__grid { grid-template-columns: 1fr 1fr; }
-  .sdx-sup__c:nth-child(3) { border-left: 0; }
-  .sdx-sup__c:nth-child(n+3) { border-top: 1px solid #e6f1f5; }
+  .sdx-sup__grid { grid-template-columns: 1fr 1fr; row-gap: 7px; }
 }
 
 /* ── Dark ────────────────────────────────────────────────────────────────── */
@@ -97,15 +102,11 @@
 [data-bs-theme="dark"] .sdx-sup__nm { color: #e2e8f0; }
 [data-bs-theme="dark"] .sdx-sup__opt:hover { background: rgba(34,211,238,.08); border-color: rgba(34,211,238,.2); }
 [data-bs-theme="dark"] .sdx-sup__opt.is-sel { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.34); }
-[data-bs-theme="dark"] .sdx-sup__grid { background: rgba(148,163,184,.08); border-color: rgba(34,211,238,.16); }
-[data-bs-theme="dark"] .sdx-sup__c + .sdx-sup__c { border-left-color: rgba(34,211,238,.16); }
-@media (max-width: 620px) {
-  [data-bs-theme="dark"] .sdx-sup__c:nth-child(n+3) { border-top-color: rgba(34,211,238,.16); }
-}
+/* Dark loses the same panel it does in light — the fill and the dividers are
+   gone, so there is nothing here left to recolour. */
 [data-bs-theme="dark"] .sdx-sup__cl { color: #7f9aa6; }
 [data-bs-theme="dark"] .sdx-sup__cv { color: #cbd5e1; }
 [data-bs-theme="dark"] .sdx-sup__cv.is-mono { color: #67e8f9; }
-[data-bs-theme="dark"] .sdx-sup__opt.is-sel .sdx-sup__grid { background: rgba(34,211,238,.08); }
 [data-bs-theme="dark"] .sdx-sup__kind--manufacturer { background: rgba(34,211,238,.16); color: #67e8f9; }
 [data-bs-theme="dark"] .sdx-sup__kind--trader { background: rgba(124,58,237,.2); color: #c4b5fd; }
 [data-bs-theme="dark"] .sdx-sup__kind--service { background: rgba(245,158,11,.18); color: #fcd34d; }

@@ -35,6 +35,17 @@ export const EMPTY_DIRECT: DirectSpiState = {
   shipment: null, shipmentId: null, procMode: null, procurementId: null, supplier: null,
 };
 
+/* Step 02 (Procurement) is deferred — that side of a Direct SPI is not built
+   yet, so the step stays on screen as a permanently locked placeholder and the
+   flow runs 01 → 03.
+   It is ONE flag rather than three edits because the step is load-bearing in
+   three unrelated places: the card's own lock state, step 03's unlock gate,
+   and the ready check that drives Confirm. Freezing it by hand in the panel
+   alone would leave Confirm waiting on a step nobody can answer. Setting this
+   back to true restores the original 01 → 02 → 03 flow with nothing else to
+   put back. */
+export const PROCUREMENT_STEP_ENABLED = false;
+
 /* A step counts as answered only when its id RESOLVES to a row, not merely
    when the field is non-empty. A value that no longer matches the list — a
    supplier that has gone, a stale id left behind by an earlier shape of this
@@ -54,7 +65,9 @@ export const directStepDone = (s: DirectSpiState) => ({
 
 export const directReady = (s: DirectSpiState) => {
   const d = directStepDone(s);
-  return d.shipment && d.procurement && d.supplier;
+  /* While the procurement step is frozen there is no way to answer it, so
+     requiring it would leave Confirm permanently dead. */
+  return d.shipment && (!PROCUREMENT_STEP_ENABLED || d.procurement) && d.supplier;
 };
 
 const IcoTruck = (
@@ -164,12 +177,17 @@ export function DirectSpiSummary({ state }: { state: DirectSpiState }) {
   const shipment = SHIPMENTS.find(r => r.code === state.shipmentId);
   const procurement = PROCUREMENTS.find(r => r.code === state.procurementId);
   const supplier = SUPPLIERS.find(r => r.code === state.supplier);
-  const n = [done.shipment, done.procurement, done.supplier].filter(Boolean).length;
-  /* Out of the three steps, not the four summary rows: the design reads 0 on
-     arrival, then 33 and 67. SPI Type is listed as context, not as progress —
-     it is already decided by the time this panel exists. */
-  const pct = Math.round((n / 3) * 100);
-  const left = 3 - n;
+  /* Out of the steps that can actually be answered, not the four summary rows:
+     SPI Type is listed as context, not as progress — it is already decided by
+     the time this panel exists. With procurement frozen the denominator drops
+     to 2, so the ring still reaches 100% and "steps left" still counts down to
+     zero; against a fixed 3 it would have stalled at 67% on a complete form. */
+  const steps = PROCUREMENT_STEP_ENABLED
+    ? [done.shipment, done.procurement, done.supplier]
+    : [done.shipment, done.supplier];
+  const n = steps.filter(Boolean).length;
+  const pct = Math.round((n / steps.length) * 100);
+  const left = steps.length - n;
 
   return (
     <div className="sdx-sum">
@@ -191,12 +209,21 @@ export function DirectSpiSummary({ state }: { state: DirectSpiState }) {
             : 'Not selected'}
           sub={shipment?.title}
           done={done.shipment} />
-        <SumRow ico={IcoCase} label="Procurement Case ID"
-          code={done.procurement ? (state.procMode === 'auto' ? NEXT_PROCUREMENT : state.procurementId ?? undefined) : undefined}
-          value={done.procurement ? '' : 'Not selected'}
-          badge={done.procurement ? (state.procMode === 'auto' ? 'new' : 'existing') : undefined}
-          sub={state.procMode === 'link' ? procurement?.title : state.procMode === 'auto' ? 'Auto-created' : undefined}
-          done={done.procurement} />
+        {/* Frozen, it still has a row — the summary mirrors the steps, and a
+            missing row would read as a step that does not exist rather than
+            one that is not ready. "Not selected" would be wrong though: it
+            implies something the user could go and select. */}
+        {PROCUREMENT_STEP_ENABLED ? (
+          <SumRow ico={IcoCase} label="Procurement Case ID"
+            code={done.procurement ? (state.procMode === 'auto' ? NEXT_PROCUREMENT : state.procurementId ?? undefined) : undefined}
+            value={done.procurement ? '' : 'Not selected'}
+            badge={done.procurement ? (state.procMode === 'auto' ? 'new' : 'existing') : undefined}
+            sub={state.procMode === 'link' ? procurement?.title : state.procMode === 'auto' ? 'Auto-created' : undefined}
+            done={done.procurement} />
+        ) : (
+          <SumRow ico={IcoCase} label="Procurement Case ID"
+            value="Coming soon" sub="Not part of this release" done={false} />
+        )}
         <SumRow ico={IcoPerson} label="Supplier"
           value={supplier?.name ?? 'Not selected'}
           sub={supplier ? `${supplier.code} · ${supplier.location.split(', ').pop()}` : undefined}
@@ -330,6 +357,9 @@ export default function DirectSpiSetup({ state, onChange }: {
 }) {
   const done = directStepDone(state);
   const picked = PROCUREMENTS.find(r => r.code === state.procurementId);
+  /* With procurement frozen, step 03 opens off step 01 — otherwise it waits
+     on a step that can never be answered and the wizard dead-ends at 02. */
+  const supplierOpen = PROCUREMENT_STEP_ENABLED ? done.procurement : done.shipment;
 
   return (
     <div className="sdx-main">
@@ -337,7 +367,11 @@ export default function DirectSpiSetup({ state, onChange }: {
         <span className="sdx-main__ico">{IcoBolt}</span>
         <div>
           <div className="sdx-main__t">Direct SPI setup</div>
-          <div className="sdx-main__s">Link this invoice to a shipment and a procurement, then choose the supplier.</div>
+          <div className="sdx-main__s">
+            {PROCUREMENT_STEP_ENABLED
+              ? 'Link this invoice to a shipment and a procurement, then choose the supplier.'
+              : 'Link this invoice to a shipment, then choose the supplier.'}
+          </div>
         </div>
       </div>
 
@@ -395,13 +429,20 @@ export default function DirectSpiSetup({ state, onChange }: {
           no="02"
           eyebrow="Step 02 · Procurement"
           title="Link a Procurement Case ID to this Direct SPI"
-          state={done.shipment ? (done.procurement ? 'done' : 'active') : 'locked'}
-          locked={done.shipment ? undefined : 'Complete step 01 to unlock'}
-          tag={done.shipment
-            ? (done.procurement
-              ? <span className="sdx-tag sdx-tag--done">Done</span>
-              : <span className="sdx-tag sdx-tag--req">Required</span>)
-            : <span className="sdx-tag sdx-tag--lock">{IcoLock}Locked</span>}
+          /* Frozen: locked regardless of step 01, and the card's body is not
+             rendered at all in the locked state (see Step), so the two options
+             below are unreachable rather than merely dimmed. */
+          state={!PROCUREMENT_STEP_ENABLED ? 'locked' : done.shipment ? (done.procurement ? 'done' : 'active') : 'locked'}
+          locked={!PROCUREMENT_STEP_ENABLED
+            ? 'Coming soon — this step is not part of the current release'
+            : done.shipment ? undefined : 'Complete step 01 to unlock'}
+          tag={!PROCUREMENT_STEP_ENABLED
+            ? <span className="sdx-tag sdx-tag--lock">{IcoLock}Coming soon</span>
+            : done.shipment
+              ? (done.procurement
+                ? <span className="sdx-tag sdx-tag--done">Done</span>
+                : <span className="sdx-tag sdx-tag--req">Required</span>)
+              : <span className="sdx-tag sdx-tag--lock">{IcoLock}Locked</span>}
         >
           <div className="sdx-opts">
             <Opt
@@ -464,9 +505,11 @@ export default function DirectSpiSetup({ state, onChange }: {
           no="03"
           eyebrow="Step 03 · Supplier"
           title="Select the supplier"
-          state={done.procurement ? (done.supplier ? 'done' : 'active') : 'locked'}
-          locked={done.procurement ? undefined : 'Complete step 02 to unlock'}
-          tag={done.procurement
+          state={supplierOpen ? (done.supplier ? 'done' : 'active') : 'locked'}
+          locked={supplierOpen
+            ? undefined
+            : `Complete step ${PROCUREMENT_STEP_ENABLED ? '02' : '01'} to unlock`}
+          tag={supplierOpen
             ? (done.supplier
               ? <span className="sdx-tag sdx-tag--done">Done</span>
               : <span className="sdx-tag sdx-tag--req">Required</span>)

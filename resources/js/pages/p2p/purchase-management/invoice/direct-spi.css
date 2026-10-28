@@ -15,8 +15,16 @@
    replacing the first; easing it keeps the one you clicked in front of you
    while it makes room. Scoped to --wide, which only this chooser uses, so no
    other .spi-mdl picks up a width transition. */
+/* max-height rides with the other two. The base dialog is 92vh and --sdx is
+   calc(100vh - 32px), so without it the box's vertical bound snapped the
+   instant the class landed while its width was still easing over 300ms — two
+   dimensions on two different clocks, which is most of what read as the
+   dialog breaking rather than growing. */
 .spi-mdl--wide {
-  transition: max-width .3s cubic-bezier(.16,1,.3,1), width .3s cubic-bezier(.16,1,.3,1);
+  transition:
+    max-width .3s cubic-bezier(.16,1,.3,1),
+    width .3s cubic-bezier(.16,1,.3,1),
+    max-height .3s cubic-bezier(.16,1,.3,1);
 }
 .spi-mdl.spi-mdl--sdx {
   max-width: 1240px;
@@ -55,11 +63,18 @@
 @keyframes sdxIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .spi-mdl--sdx .sdx-aside,
 .spi-mdl--sdx .sdx-main { animation: sdxIn .24s cubic-bezier(.16,1,.3,1) both; }
+/* The summary sits inside .sdx-aside, which is one stable element across the
+   skeleton-to-content swap, so it would otherwise cut over with no fade of
+   its own. Opacity only, and shorter: it is already inside a panel that is
+   easing up, and a second lift on top of that reads as a wobble. */
+@keyframes sdxFade { from { opacity: 0; } to { opacity: 1; } }
+.spi-mdl--sdx .sdx-sum { animation: sdxFade .2s ease-out both; }
 
 @media (prefers-reduced-motion: reduce) {
   .spi-mdl--wide { transition: none; }
   .spi-mdl--sdx .sdx-aside,
-  .spi-mdl--sdx .sdx-main { animation: none; }
+  .spi-mdl--sdx .sdx-main,
+  .spi-mdl--sdx .sdx-sum { animation: none; }
 }
 .spi-mdl--sdx .spi-mdl-body {
   background: linear-gradient(180deg, #f6fbfd 0%, #eef7fa 100%);

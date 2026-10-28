@@ -93,7 +93,23 @@
   .smod-step.is-active .smod-step-num::before,
   .smod-step.is-active + .smod-step-line::before { animation: none; }
 }
-.smod-body { padding: 20px 22px 18px; }
+/* The design's own wash: a 600×180 pool of #f0fdff anchored to the body's top
+   left corner, out to transparent by 70%, over white. It is what keeps the
+   step's content from reading as a plain white sheet under a coloured header —
+   the tint carries the header's teal a little way down the panel and then
+   lets go, so the warehouse row sits on a surface rather than on nothing.
+   Anchored at 0% 0% and sized in px, not %, so the pool stays the same shape
+   whether the step holds one warehouse row or eight. */
+.smod-body {
+  padding: 20px 22px 18px;
+  background: radial-gradient(600px 180px at 0% 0%, #f0fdff, transparent 70%), #fff;
+}
+/* Dark takes the same shape at the same corner, in the panel's own teal at a
+   twelfth opacity — a flat #f0fdff here would be a grey smear. */
+[data-bs-theme="dark"] .smod-body,
+[data-layout-mode="dark"] .smod-body {
+  background: radial-gradient(600px 180px at 0% 0%, rgba(34,211,238,.08), transparent 70%), #0b1922;
+}
 /* 15.5/800 at -.25px in #0c4a6e, as a flex row so the accent bar can sit
    beside it. The bar (.smod-question::before) is the design's own mark for
    this heading; without it the question read as plain body copy. */
@@ -546,3 +562,18 @@
   animation: smodSpin .6s linear infinite;
 }
 .smod-next[aria-busy="true"] { opacity: 1; pointer-events: none; cursor: progress; }
+/* While the hand-off runs, every other way out of the dialog is shut, and it
+   has to look shut — these three had no :disabled state at all, so they kept
+   their full contrast and their hover lift under a disabled attribute. */
+.smod-cancel:disabled,
+.smod-back:disabled,
+.smod-close:disabled {
+  opacity: .45; cursor: not-allowed; transform: none;
+  box-shadow: 0 1px 4px rgba(15,23,42,.06);
+}
+.smod-cancel:disabled:hover,
+.smod-back:disabled:hover,
+.smod-close:disabled:hover {
+  border-color: #E2E8F0; color: #64748B; transform: none;
+  box-shadow: 0 1px 4px rgba(15,23,42,.06);
+}

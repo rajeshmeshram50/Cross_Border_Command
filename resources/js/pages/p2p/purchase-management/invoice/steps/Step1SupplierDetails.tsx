@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { EditSelect, Field, WizSpinner } from '../../order/create-po/form-fields';
@@ -50,12 +50,15 @@ const GUIDELINES = [
   },
 ];
 
-export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false, direct = false }: {
+export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false, direct = false, directSupplier }: {
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
   /* A Direct SPI stands on its own: there is no purchase order to describe,
      so the whole Purchase Order section goes rather than standing there with
      nothing in its fields. */
   direct?: boolean;
+  /* Who the Direct SPI setup named. A label and a code, not a record — see
+     the seeding effect below for why that distinction decides everything. */
+  directSupplier?: { code?: string; name?: string };
 }) {
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
@@ -237,6 +240,40 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
       setPicking(false);
     }
   };
+
+  /* The setup already asked who the supplier is, so this step should not ask
+     again — it should arrive filled in and read-only.
+     What it must NOT do is paste the chosen name into the draft: the save is
+     keyed on a vendor id, and a name alone would lock the field on a record
+     the server may never have heard of. So the chosen code is RESOLVED
+     against the master first and, on a hit, goes through the very same
+     loadSupplier the picker uses — the draft then holds a real id and
+     hasSupplier flips the field to its read-only form on its own.
+     A miss leaves the live picker exactly as it is today, which is the right
+     fallback: the setup named someone this master does not carry, and the
+     only honest thing to do is ask. */
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!direct || hasSupplier || seeded.current) return;
+    const want = (directSupplier?.code ?? '').trim().toLowerCase();
+    const wantName = (directSupplier?.name ?? '').trim().toLowerCase();
+    if (!want && !wantName) return;
+    seeded.current = true;
+    let live = true;
+    setPicking(true);
+    poLookupApi.suppliers()
+      .then(rows => {
+        if (!live) return undefined;
+        const hit = (want && rows.find(r => (r.code ?? '').trim().toLowerCase() === want))
+          || (wantName && rows.find(r => r.name.trim().toLowerCase() === wantName))
+          || null;
+        return hit ? loadSupplier(hit.id) : undefined;
+      })
+      .catch(() => undefined)
+      .finally(() => { if (live) setPicking(false); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direct, hasSupplier, directSupplier?.code, directSupplier?.name]);
 
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';

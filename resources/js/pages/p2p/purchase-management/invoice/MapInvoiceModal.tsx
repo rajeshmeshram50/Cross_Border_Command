@@ -9,7 +9,7 @@ import { PoApiError, poApi, type PoListRow } from '../order/api/po-api';
 import PoPicker from './PoPicker';
 import DirectSpiSetup, {
   DirectSpiSummary, DirectSpiSummarySkeleton, DirectSpiStepsSkeleton,
-  EMPTY_DIRECT, directReady, type DirectSpiState,
+  EMPTY_DIRECT, directReady, PROCUREMENT_STEP_ENABLED, type DirectSpiState,
 } from './DirectSpiSetup';
 import { SUPPLIERS, NEXT_PROCUREMENT } from './direct-spi-data';
 import './direct-spi.css';
@@ -164,10 +164,33 @@ export default function MapInvoiceModal({
      and the layout changes once, at the size it will keep. Leaving is
      immediate, which is the half that already worked. */
   const [sdxReady, setSdxReady] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isDirect) { setSdxReady(false); return; }
-    const t = window.setTimeout(() => setSdxReady(true), 300);
-    return () => window.clearTimeout(t);
+    const box = boxRef.current;
+    /* Reduced motion turns the width transition off entirely (see the media
+       query in direct-spi.css), so the dialog is already at its full size —
+       a wait here would be 300ms of skeleton over a box that finished
+       growing in the first frame. */
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!box || still) { setSdxReady(true); return; }
+
+    /* The panel now waits for the transition to actually END rather than for
+       a timer set to the same number. A 300ms timer racing a 300ms CSS
+       duration lands the heavy mount on the exact frame the layout settles —
+       the worst frame available — and goes wrong outright whenever the two
+       do not match: an interrupted transition, a dialog already at its final
+       width, or a stylesheet whose duration someone later changes. */
+    let done = false;
+    const finish = () => { if (!done) { done = true; setSdxReady(true); } };
+    const onEnd = (e: TransitionEvent) => {
+      if (e.target === box && (e.propertyName === 'width' || e.propertyName === 'max-width')) finish();
+    };
+    box.addEventListener('transitionend', onEnd);
+    /* A transition that never fires must not leave the skeleton up for good:
+       if the width happened not to change, transitionend never comes. */
+    const t = window.setTimeout(finish, 420);
+    return () => { box.removeEventListener('transitionend', onEnd); window.clearTimeout(t); };
   }, [isDirect]);
 
   const canConfirm = mode === 'with-po' ? !!poPicked
@@ -203,12 +226,15 @@ export default function MapInvoiceModal({
        even when the shipment question had not been answered yet, which points
        at a field three steps away and still locked. */
     : !direct.shipment ? 'Answer step 01 — is this raised against a customer shipment?'
-    : !direct.procurementId ? 'Link a Procurement Case ID in step 02 to continue.'
+    /* Only while step 02 is live. Frozen, procurementId is always null, so
+       this branch would catch every incomplete form and point the user at a
+       locked step while the supplier is the field actually waiting. */
+    : PROCUREMENT_STEP_ENABLED && !direct.procurementId ? 'Link a Procurement Case ID in step 02 to continue.'
     : 'Please select a supplier to continue.';
 
   return createPortal(
     <div className="spi-mdl-backdrop">
-      <div className={`spi-mdl spi-mdl--wide${isDirect ? ' spi-mdl--sdx' : ''}`} role="dialog" aria-modal="true" aria-labelledby="inv-map-title">
+      <div ref={boxRef} className={`spi-mdl spi-mdl--wide${isDirect ? ' spi-mdl--sdx' : ''}`} role="dialog" aria-modal="true" aria-labelledby="inv-map-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
             {/* A receipt, which is what a supplier invoice is — the clipboard
@@ -270,12 +296,22 @@ export default function MapInvoiceModal({
           {/* The running answer, under the cards that start it. The skeleton
               holds its place while the dialog widens, so the column is never
               an empty half-screen waiting for something to appear in it. */}
-          {isDirect && (sdxReady ? <DirectSpiSummary state={direct} /> : <DirectSpiSummarySkeleton />)}
+          {/* The keys are what make the swap a fade rather than a cut. Both
+              sides render a plain <div> in the same position, so without them
+              React keeps the one node and only rewrites its className — the
+              skeleton's bars are simply replaced by the real content in a
+              single frame, and the sdxIn fade (which is bound to the element,
+              not the class) never replays. Distinct keys make the incoming
+              panel a new node, so it eases up into place the way it was
+              always meant to. */}
+          {isDirect && (sdxReady
+            ? <DirectSpiSummary key="sum" state={direct} />
+            : <DirectSpiSummarySkeleton key="sum-sk" />)}
           </div>
 
           {isDirect && (sdxReady
-            ? <DirectSpiSetup state={direct} onChange={setDirect} />
-            : <DirectSpiStepsSkeleton />)}
+            ? <DirectSpiSetup key="main" state={direct} onChange={setDirect} />
+            : <DirectSpiStepsSkeleton key="main-sk" />)}
 
           {/* What the chosen type still needs, in a panel of its own under
               both cards — it belongs to whichever is selected, and hanging it
