@@ -10,6 +10,7 @@ import { IcoAlert, IcoArrowR, IcoCard, IcoStar, IcoChat, IcoCheck, IcoChevron, I
 import DeclineReasonModal from './DeclineReasonModal';
 const PaymentRequestDetail = lazy(() => import('./PaymentRequestDetail'));
 import {  fetchPaymentRequests, STATUS_LABEL, SUPPLIER_TAG_LABEL,  type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,} from './paymentRequestData';
+import '../../../../components/ui/DataTable.css';
 import '../../p2p-detail.css';
 import '../../purchase-management/order/po-list/order.css';
 import '../../p2p-master-management/supplier-management/supplier-management.css';
@@ -245,21 +246,22 @@ export default function PaymentRequestManagement() {
 
       <div className="spi-card ord-list">
         <div className="spi-segrow">
-          <div className="spi-seg" role="tablist" aria-label="Payment request views">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={t.key === tab}
-                className={`spi-seg-btn${t.key === tab ? ' is-active' : ''}`}
-                onClick={() => setTab(t.key)}
-              >
-                <span className="spi-seg-ico">{t.icon}</span>
-                {t.label}
-                <span className="spi-seg-c">{counts[t.key]}</span>
-              </button>
-            ))}
+          <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="teal">
+            <div className="dt-tabs" role="tablist" aria-label="Payment request views">
+              {TABS.map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={t.key === tab}
+                  className={`dt-tab ${t.key === tab ? 'on' : 'off'}`}
+                  onClick={() => setTab(t.key)}
+                >
+                  {t.icon} {t.label}
+                  <span className="dt-tab-count">{counts[t.key]}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="spi-search ui-search-abs">

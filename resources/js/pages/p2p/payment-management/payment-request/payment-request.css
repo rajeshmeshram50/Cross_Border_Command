@@ -159,39 +159,27 @@
   border-color: rgba(34, 211, 238, .25);
 }
 
-.prm-page .spi-seg-btn {
-  padding: 13px 15px;
+.prm-page .ord-list .dt-tabrail.hr-dt {
+  min-height: 46px;
 }
 
-.prm-page .ord-list .spi-segrow .spi-seg-btn {
-  height: 40px;
+.prm-page .ord-list .dt-tabrail.hr-dt .dt-tab {
+  height: 38px;
   font-size: 12.5px;
 }
 
-.prm-page .spi-seg-btn:not(.is-active) {
-  color: #6b8499;
-}
-
-.prm-page .spi-seg-c {
-  height: 22px;
-}
-
-.prm-page .spi-seg-btn:not(.is-active) .spi-seg-c {
-  background: #dce9f0;
+.prm-page .ord-list .dt-tabrail.hr-dt .dt-tabs .dt-tab {
+  transition: background-color .16s, color .16s, box-shadow .16s, border-color .16s;
 }
 
 .prm-page .ord-list>.spi-segrow {
   flex-wrap: nowrap;
 }
 
-.prm-page .ord-list .spi-segrow .spi-seg {
-  flex: 0 0 auto;
-}
-
 .prm-page .ord-list .spi-segrow .spi-search {
-  height: auto;
+  height: 46px;
   min-height: 46px;
-  align-self: stretch;
+  align-self: center;
   flex: 1 1 594px;
   min-width: 260px;
   max-width: 594px;
@@ -541,10 +529,6 @@
   background: rgba(239, 68, 68, .18);
 }
 
-[data-bs-theme="dark"] .prm-page .spi-seg-btn:not(.is-active) .spi-seg-c {
-  background: rgba(148, 163, 184, .22);
-}
-
 @media (max-width: 1100px) {
 
   .prm-page .ord-list>.spi-segrow {
@@ -554,8 +538,8 @@
   .prm-page .ord-list .spi-segrow .spi-search {
     flex: 1 1 100%;
     max-width: none;
-    min-height: 44px;
-    height: 44px;
+    min-height: 46px;
+    height: 46px;
     align-self: auto;
   }
 }
