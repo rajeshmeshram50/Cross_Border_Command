@@ -2,6 +2,7 @@ import { lazy, memo, Suspense, useCallback, useMemo, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../../icons';
 const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
@@ -35,6 +36,27 @@ export default function ProductTable({
      no column at all. The last line stays: an invoice with no products is
      not a state this form can save. */
   const canRemove = !!onRemove && !readOnly;
+
+  /* Nothing undoes this. The line comes off the invoice and, with it, out of
+     the boxes and the put-away that are built from these lines downstream —
+     and the next person to open this table is not the person who set it up.
+     So it asks first, naming the product and what the totals become, the way
+     the box step asks before unpacking one. */
+  const confirm = useConfirm();
+  const askRemove = useCallback(async (index: number) => {
+    const line = lines[index];
+    if (!line || !onRemove) return;
+    const after = tableTotals(lines.filter((_, i) => i !== index), taxMode, twoWay);
+    const ok = await confirm({
+      title: `Remove ${line.spiName || line.piName} from this invoice?`,
+      message: <>It comes off the product match, and the invoice total drops from{' '}
+        <strong>{money(totals.cost)}</strong> to <strong>{money(after.cost)}</strong>.{' '}
+        Add it back by reopening the invoice against the PI.</>,
+      tone: 'danger',
+      confirmLabel: 'Remove it',
+    });
+    if (ok) onRemove(index);
+  }, [confirm, lines, onRemove, taxMode, twoWay, totals.cost]);
   const catalogue = useMemo(() => {
     const seen = new Map<string, { value: string; label: string; name: string; productId?: number }>();
     for (const l of lines) {
@@ -157,9 +179,13 @@ export default function ProductTable({
               {!twoWay && <th className="cpd-th-amt">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>}
               <th className="cpd-th-amt cpd-c cpd-edh">Product Rate (SPI)</th>
               <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
+              {/* The percent headers were the only ones in the row with no
+                  width floor of their own, so they were sized by content and
+                  "IGST (%)" came out clipped to "GST (%)" — a different tax
+                  entirely, and one nobody would question on sight. */}
               {inter
-                ? <th>{exportSpi ? 'Tax (%)' : 'IGST (%)'}</th>
-                : <><th>CGST (%)</th><th>SGST (%)</th></>}
+                ? <th className="cpd-th-pct">{exportSpi ? 'Tax (%)' : 'IGST (%)'}</th>
+                : <><th className="cpd-th-pct">CGST (%)</th><th className="cpd-th-pct">SGST (%)</th></>}
               {inter
                 ? <th className="cpd-th-amt cpd-th-amt--tax">{exportSpi ? 'Tax Amount' : 'IGST Amount'}</th>
                 : <><th className="cpd-th-amt cpd-th-amt--tax">CGST Amount</th>
@@ -176,7 +202,7 @@ export default function ProductTable({
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
-                onRemove={canRemove && lines.length > 1 ? onRemove : undefined}
+                onRemove={canRemove && lines.length > 1 ? askRemove : undefined}
                 showAction={canRemove}
               />
             ))}

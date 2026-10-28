@@ -234,14 +234,17 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
      master rather than the single read-only value a With-PO invoice shows. */
   const [supplierOpts, setSupplierOpts] = useState<SupplierOption[]>([]);
   const [picking, setPicking] = useState(false);
+  /* Loaded whenever the picker is live, not only while it is empty. It used
+     to stop at the first supplier, which is what left the control a dead box
+     with nothing behind it to reopen. */
   useEffect(() => {
-    if (!direct || hasSupplier) return;
+    if (!direct || hasPo || readOnly) return;
     let live = true;
     poLookupApi.suppliers()
       .then(rows => { if (live) setSupplierOpts(rows); })
       .catch(() => { if (live) setSupplierOpts([]); });
     return () => { live = false; };
-  }, [direct, hasSupplier]);
+  }, [direct, hasPo, readOnly]);
 
   const pickSupplier = async (id: number) => {
     if (picking) return;
@@ -501,7 +504,18 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
               <div className="spi-dt-grid4 cpf-grid5">
                 <Field label="SELECT SUPPLIER" req>
                   <div className="cpf-supsel">
-                    {hasSupplier ? (
+                    {/* The picker stays live after a supplier is chosen. It
+                        used to become a dead read-only box, so the only way
+                        to correct a wrong supplier was to leave the form and
+                        start the invoice again. It is also the one control on
+                        this step that SHOULD be editable: every other field
+                        here is the master's answer to this question, which is
+                        why picking again refills them all through the same
+                        loadSupplier path.
+                        Still read-only where it genuinely is not a choice —
+                        a With-PO invoice inherits its supplier from the order,
+                        and a view-only SPI changes nothing. */}
+                    {hasPo || readOnly ? (
                       <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
                     ) : (
                       <MasterSelect
@@ -511,9 +525,13 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
                         options={supplierOpts.map(o => ({
                           value: String(o.id), label: o.name, code: o.code, fullLabel: `${o.code} · ${o.name}`,
                         }))}
+                        /* The chosen supplier is shown from the draft, so the
+                           field reads correctly before the list has landed
+                           and on a vendor the list does not happen to carry. */
+                        currentValueLabel={supplier || undefined}
                         placeholder={picking ? 'Loading supplier…' : '— Select Supplier —'}
                         searchPlaceholder="Search supplier code or name"
-                        disabled={picking || readOnly}
+                        disabled={picking}
                         onChange={v => { if (v) void pickSupplier(Number(v)); }}
                       />
                     )}

@@ -18,9 +18,109 @@ export interface SupplierRow {
   code: string;
   name: string;
   kind: SupplierKind;
-  segment: string;
+  /** One segment or several. A comma-separated string counts as several. */
+  segment: string | string[];
   location: string;
   risk: 'Low Risk' | 'Medium Risk' | 'High Risk';
+}
+
+/* A supplier can trade in more than one segment, and the cell only had room
+   for the word it was given — a second segment would have widened the column
+   or been silently lost. Both shapes are accepted because the field is a
+   plain string wherever it comes from a master today, and a supplier carrying
+   two of them there will arrive comma-separated rather than as an array. */
+export const segmentsOf = (r: SupplierRow): string[] =>
+  (Array.isArray(r.segment) ? r.segment : r.segment.split(','))
+    .map(s => s.trim())
+    .filter(Boolean);
+
+/* The panel the "+N" opens: wide enough for a segment name, short enough that
+   it never becomes the thing you are reading instead of the list of suppliers.
+   Both are needed before it is drawn, to decide which side of the pill it goes
+   on and how far from the right edge it may start. */
+const SEG_POP_W = 236;
+const SEG_POP_H = 180;
+
+/* The first segment, then "+N" for the rest — the same shape the app's other
+   multi-value cells use, so the column stays one line wide however many
+   segments a supplier carries.
+
+   The "+N" opens the full list on a click. It used to be a `title` and nothing
+   else: a native tooltip is slow to appear, cannot be reached from the
+   keyboard, and on a count the whole point of which is "there is more here"
+   that made the extra segments effectively unreadable. Same behaviour as
+   SegmentTags in bulk-sourcing — its styling is scoped to another screen's
+   table, so only the pattern is shared, not the markup. */
+function SegmentCell({ row }: { row: SupplierRow }) {
+  const all = segmentsOf(row);
+  const [at, setAt] = useState<{ x: number; y: number; flip: boolean } | null>(null);
+
+  useEffect(() => {
+    if (!at) return;
+    const close = () => setAt(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    /* Capture, so a scroll of the picker's own list closes it too: the pill
+       travels with its row while the panel is pinned to the viewport, and a
+       panel left behind would be pointing at the wrong supplier. */
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [at]);
+
+  if (all.length === 0) return <span className="sdx-sup__cv">—</span>;
+  const [first, ...rest] = all;
+  return (
+    <span className="sdx-sup__cv sdx-sup__seg">
+      <span className="sdx-sup__seg1" title={first}>{first}</span>
+      {rest.length > 0 && (
+        <button
+          type="button"
+          className="sdx-sup__segmore"
+          aria-expanded={!!at}
+          title={at ? 'Hide the segments' : `Show all ${all.length} segments`}
+          /* The row under this pill picks the supplier. Asking what the other
+             two segments are is not choosing the company that trades in
+             them, so neither press reaches it — and mousedown has to be
+             stopped as well as click, or the document listener above closes
+             the panel in the same gesture that opened it. */
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => {
+            e.stopPropagation();
+            e.preventDefault();
+            if (at) { setAt(null); return; }
+            const b = e.currentTarget.getBoundingClientRect();
+            setAt({
+              x: Math.max(8, Math.min(b.left, window.innerWidth - SEG_POP_W - 8)),
+              /* Below the pill unless that would run off the bottom — near
+                 the foot of a long supplier list, it always would. */
+              flip: b.bottom + 6 + SEG_POP_H > window.innerHeight,
+              y: b.bottom + 6 + SEG_POP_H > window.innerHeight ? b.top - 6 : b.bottom + 6,
+            });
+          }}
+        >+{rest.length}</button>
+      )}
+      {at && createPortal(
+        <div
+          className="sdx-segpop"
+          style={{ left: at.x, top: at.y, transform: at.flip ? 'translateY(-100%)' : undefined }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <div className="sdx-segpop__hd">Segments ({all.length})</div>
+          <div className="sdx-segpop__list">
+            {all.map(s => <span key={s} className="sdx-segpop__item">{s}</span>)}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </span>
+  );
 }
 
 const KIND_LABEL: Record<SupplierKind, string> = {
@@ -63,7 +163,11 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick }: {
   const picked = rows.find(r => r.code === value) ?? null;
   const hit = q.trim().toLowerCase();
   const shown = hit
-    ? rows.filter(r => `${r.code} ${r.name} ${r.segment} ${r.location} ${r.risk} ${KIND_LABEL[r.kind]}`.toLowerCase().includes(hit))
+    /* segmentsOf, not r.segment: the hidden ones behind "+N" have to be
+       searchable, or a supplier is unfindable by a segment it actually
+       trades in — and the array shape would otherwise stringify with
+       commas and no spaces, which breaks a two-word match across the join. */
+    ? rows.filter(r => `${r.code} ${r.name} ${segmentsOf(r).join(' ')} ${r.location} ${r.risk} ${KIND_LABEL[r.kind]}`.toLowerCase().includes(hit))
     : rows;
 
   useLayoutEffect(() => {
@@ -92,12 +196,27 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick }: {
 
   useEffect(() => {
     if (!open) return;
+    /* A segment panel is opened FROM this popover but portalled to the body,
+       so it is not inside `popRef` and both handlers below would treat using
+       it as leaving — clicking a segment would shut the picker, and Escape
+       would shut the picker rather than the panel. Neither is what the press
+       meant, so the panel is checked for by its class: it belongs to a row of
+       this list, whatever it is parented to. */
+    const inSegPop = (n: Node | null) =>
+      !!(n instanceof Element ? n : n?.parentElement)?.closest('.sdx-segpop');
     const out = (e: MouseEvent) => {
       const n = e.target as Node;
-      if (popRef.current?.contains(n) || trigRef.current?.contains(n)) return;
+      if (popRef.current?.contains(n) || trigRef.current?.contains(n) || inSegPop(n)) return;
       setOpen(false);
     };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      /* Let the open panel take this one. It closes on Escape itself, and
+         propagation is deliberately not stopped so that listener still runs. */
+      if (document.querySelector('.sdx-segpop')) return;
+      e.stopPropagation();
+      setOpen(false);
+    };
     document.addEventListener('mousedown', out, true);
     document.addEventListener('keydown', esc, true);
     return () => {
@@ -170,7 +289,7 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick }: {
                         find out. */}
                     <span className="sdx-sup__grid">
                       <span className="sdx-sup__c"><span className="sdx-sup__cl">Supplier Code</span><span className="sdx-sup__cv is-mono">{r.code}</span></span>
-                      <span className="sdx-sup__c"><span className="sdx-sup__cl">Segment</span><span className="sdx-sup__cv">{r.segment}</span></span>
+                      <span className="sdx-sup__c"><span className="sdx-sup__cl">Segment</span><SegmentCell row={r} /></span>
                       <span className="sdx-sup__c"><span className="sdx-sup__cl">Location</span><span className="sdx-sup__cv">{r.location}</span></span>
                       <span className="sdx-sup__c">
                         <span className="sdx-sup__cl">Risk</span>

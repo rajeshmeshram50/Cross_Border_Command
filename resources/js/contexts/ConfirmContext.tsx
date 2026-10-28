@@ -173,9 +173,16 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             }
             .cfm-message strong { color: #0f172a; }
             .cfm-actions { display: flex; gap: 8px; padding: 4px 18px 18px; }
+            /* 40, the height every button in the app stands at. It was sized
+               off 9px of padding, which landed around 37 and left the two
+               buttons shorter than the controls on the screen behind them.
+               box-sizing matters here: Cancel carries a 1px border and
+               Confirm does not, so on content-box they would end at two
+               different heights from the same rule. */
             .cfm-btn {
               flex: 1; border: none; border-radius: 999px;
-              padding: 9px 18px; font-size: 13px; font-weight: 600;
+              box-sizing: border-box; height: 40px; min-height: 40px;
+              padding: 0 18px; font-size: 13px; font-weight: 600;
               cursor: pointer; transition: all .18s ease;
               display: inline-flex; align-items: center; justify-content: center; gap: 6px;
             }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -550,7 +550,7 @@ export default function InvoiceForm({
   const stageLabel = (i: number) => (isDirect && DIRECT_STAGES[i]) || STAGES[i];
 
   return createPortal(
-    <div className="spi-dt-overlay cpf-form">
+    <div className="spi-dt-overlay cpf-form spi-invform">
       {/* One veil over the whole wizard while a save is in flight.
           Guarding each control one at a time is a losing game - the body had
           inert, but the step rail, Close and the footer each sat outside it
@@ -562,10 +562,8 @@ export default function InvoiceForm({
           place the user is looking. */}
       {saving && (
         <div className="spi-dt-veil" role="status" aria-live="polite">
-          <span className="spi-dt-veil__box">
-            <span className="spi-dt-veil__spin" aria-hidden />
-            Saving — please wait
-          </span>
+          <span className="spi-dt-veil__spin" aria-hidden />
+          <span className="spi-dt-veil__lbl">Saving — please wait</span>
         </div>
       )}
       <div className="spi-dt">
@@ -593,19 +591,30 @@ export default function InvoiceForm({
             <div className="spi-dt-pills">
               <HeadPill icon={<IcoRefLines />} label="INVOICE NO" value={spiCode ?? invoiceNo} mono />
               <span className="spi-dt-dots">⋮</span>
-              {isDirect ? (
-                <>
-                  <HeadPill icon={<IcoVan />} label="SHIPMENT ID"
-                    value={draft.shipmentId || 'All Other’s'} alt mono={!!draft.shipmentId} />
-                  <span className="spi-dt-dots">⋮</span>
-                  <HeadPill icon={<IcoBriefcase />} label="PROCUREMENT CASE ID"
-                    value={draft.procurementCode || '—'} mono />
-                  <span className="spi-dt-dots">⋮</span>
-                  <HeadPill icon={<IcoUser />} label="SUPPLIER" value={draft.supplier || input.supplier} alt />
-                  <span className="spi-dt-dots">⋮</span>
-                  <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={savedWarehouse ?? warehouseLabel(input.storage)} />
-                </>
-              ) : (
+              {/* The shipment pill is dropped outright on an "All Other's"
+                  Direct SPI rather than shown reading "All Other's" — the
+                  header names what this invoice answers to, and a pill whose
+                  value is "there isn't one" is not a reference, it is a line
+                  of text that looks like a shipment at a glance.
+                  Built as a list because the tints alternate: hard-coded
+                  `alt` flags would have inverted every pill after the gap the
+                  moment one was removed. */}
+              {isDirect ? (() => {
+                const pills = [
+                  draft.shipmentId
+                    ? { key: 'ship', icon: <IcoVan />, label: 'SHIPMENT ID', value: draft.shipmentId, mono: true }
+                    : null,
+                  { key: 'proc', icon: <IcoBriefcase />, label: 'PROCUREMENT CASE ID', value: draft.procurementCode || '—', mono: true },
+                  { key: 'sup', icon: <IcoUser />, label: 'SUPPLIER', value: draft.supplier || input.supplier },
+                  { key: 'wh', icon: <IcoWarehouse />, label: 'WAREHOUSE', value: savedWarehouse ?? warehouseLabel(input.storage) },
+                ].filter((p): p is NonNullable<typeof p> => p !== null);
+                return pills.map((p, i) => (
+                  <Fragment key={p.key}>
+                    <HeadPill icon={p.icon} label={p.label} value={p.value} mono={p.mono} alt={i % 2 === 0} />
+                    {i < pills.length - 1 && <span className="spi-dt-dots">⋮</span>}
+                  </Fragment>
+                ));
+              })() : (
                 <>
                   <HeadPill icon={<IcoRefLines />} label="PO NUMBER" value={input.poNo ?? '—'} alt mono />
                   <span className="spi-dt-dots">⋮</span>

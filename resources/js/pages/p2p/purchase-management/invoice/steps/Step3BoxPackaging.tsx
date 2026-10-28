@@ -14,7 +14,10 @@ import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
 import { putId, type ProductFlagOption, type SpiBox, type SpiBoxBody, type SpiBoxItem } from '../spi-api';
 
-const BOX_TABLE_COLUMNS = 11;
+/* Checkbox, Sr. No, Product, Description, Qty, Remaining, Missing, Extra,
+   Sub-Box Count, Actions. Code moved into the product cell and the disabled
+   Mode select went with the design, so this came down from 11. */
+const BOX_TABLE_COLUMNS = 10;
 
 type Packing =
   | { scenario: 's1'; qty: number }
@@ -821,7 +824,11 @@ export default function Step3BoxPackaging({
         )}
 
         <div className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}>
-          <table className="vti-table">
+          {/* `vti-boxgen` names this table apart from the packed-products one
+              beside it, which wears the same chrome. They no longer have the
+              same columns in the same places, and the shared rules key off
+              position. */}
+          <table className="vti-table vti-boxgen">
             <thead>
               <tr>
                 <th>
@@ -835,8 +842,8 @@ export default function Step3BoxPackaging({
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSelectAll(); } }}
                   />
                 </th>
-                <th>Product (SPI)</th>
-                <th>Code</th>
+                <th className="vti-sr-h">Sr. No</th>
+                <th className="vti-prod-h">Product (SPI)</th>
                 <th className="vti-desc-h">Description</th>
                 <th>Qty (SPI)</th>
                 <th>
@@ -846,7 +853,6 @@ export default function Step3BoxPackaging({
                 </th>
                 <th>Missing Qty</th>
                 <th>Extra Qty</th>
-                <th>Mode</th>
                 <th>Sub-Box Count</th>
                 <th>Actions</th>
               </tr>
@@ -893,13 +899,24 @@ export default function Step3BoxPackaging({
                         />
                       )}
                     </td>
-                    <td>
+                    <td className="vti-sr-td"><span className="vti-sr">{i + 1}</span></td>
+                    <td className="vti-prod-td">
                       <div className="vti-prod-cell">
                         <div>
                           <Tooltip label={line.spiName} disabled={line.spiName.length <= NAME_MAX}>
                             <div className="vti-prod-name">{truncateName(line.spiName)}</div>
                           </Tooltip>
-                          <div className="vti-prod-sku">HSN {line.hsn}</div>
+                          {/* The design keeps the code with the product, not in
+                              a column of its own: it identifies this row rather
+                              than answering a question of its own, and sitting
+                              beside the HSN and the GST it reads as one line of
+                              identifiers under the name. */}
+                          <div className="vti-prod-meta">
+                            <span className="vti-code">{line.code}</span>
+                            <span className="vti-prod-sku">HSN <b>{line.hsn}</b></span>
+                            <span className="vti-prod-dot" />
+                            <span className="vti-prod-sku">GST <b>{line.gst}%</b></span>
+                          </div>
                           {pack && (
                             <Tooltip label="Reset the packaging scenario for this product">
                               <span className="vti-scn-chip is-on"
@@ -913,7 +930,6 @@ export default function Step3BoxPackaging({
                         </div>
                       </div>
                     </td>
-                    <td><span className="vti-code">{line.code}</span></td>
                     <td className="vti-desc">
                       <Tooltip label={line.description} disabled={line.description.length <= DESC_MAX}>
                         <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
@@ -934,11 +950,6 @@ export default function Step3BoxPackaging({
                     </td>
                     <td>
                       <span className={`cpd-qtypill${extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{extra}</span>
-                    </td>
-                    <td>
-                      <select className="vti-mode-sel" disabled defaultValue="auto">
-                        <option value="auto">Auto</option>
-                      </select>
                     </td>
                     <td>
                       {single || mixed ? (
