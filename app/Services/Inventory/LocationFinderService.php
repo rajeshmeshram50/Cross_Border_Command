@@ -42,6 +42,12 @@ class LocationFinderService
             'modes' => $counts,
         ];
 
+        /* A dead end the counts cannot show. "3 shelves · 2 zones" reads as
+           plenty while nothing in the warehouse is marked for what this box
+           carries, and switching mode or waiting will never help. */
+        $diag = $this->diagnose($need, $zones);
+        if ($diag && $diag['unsatisfiable']) $body['diagnosis'] = $diag;
+
         if ($mode === null) return $body;
 
         $tree = $mode === 'rack'
@@ -51,6 +57,10 @@ class LocationFinderService
         $body['zones']       = $tree['zones'];
         $body['eligible']    = $tree['eligible'];
         $body['total']       = $tree['total'];
+
+        // Nothing eligible: say why, including when the handling is fine and
+        // only space or a lock stands in the way.
+        if ($tree['eligible'] === 0 && $diag) $body['diagnosis'] = $diag;
 
         /* The same three buckets for the whole warehouse, so the header can
            say "2 available · 1 not valid for this box · 0 full" without the
@@ -408,6 +418,128 @@ class LocationFinderService
         })->values();
 
         return ['zones' => $out->all(), 'total' => $total, 'eligible' => $eligible, 'recommended' => $best];
+    }
+
+    /* ═══════════════════ WHY NOTHING FITS ═══════════════════ */
+
+    /**
+     * "0 of 2 zones eligible" is a count, not an answer. Two zones refused for
+     * two different reasons read as bad luck, when the truth is usually that
+     * no location in the warehouse is marked for what the box carries — and
+     * no amount of switching mode or trying again will change that.
+     *
+     * Counts, per requirement the box carries, how many active locations could
+     * satisfy it, and how many satisfy all of them at once.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function diagnose(array $need, $zones): ?array
+    {
+        $wants = [];
+        if ($need['cold_chain']) $wants['cold_chain'] = 'cold chain';
+        if ($need['hazardous'])  $wants['hazardous']  = 'hazardous goods';
+        if ($need['temp_min_c'] !== null || $need['temp_max_c'] !== null) {
+            $wants['temperature'] = 'this temperature range';
+        }
+        if (!$wants) return null;
+
+        $places = $this->handlingPlaces($zones);
+        if (!$places) return null;
+
+        $meets = fn (array $p, string $key): bool => match ($key) {
+            'cold_chain'  => $p['cold_chain'],
+            'hazardous'   => $p['hazardous'],
+            'temperature' => $this->engine->refuseTemperature($need, $p['zone']) === null,
+            default       => true,
+        };
+
+        $needs = [];
+        foreach ($wants as $key => $label) {
+            $n = 0;
+            foreach ($places as $p) if ($meets($p, $key)) $n++;
+            $needs[] = ['key' => $key, 'label' => $label, 'locations' => $n];
+        }
+
+        $matching = 0;
+        foreach ($places as $p) {
+            foreach (array_keys($wants) as $key) if (!$meets($p, $key)) continue 2;
+            $matching++;
+        }
+
+        $missing = array_values(array_filter($needs, fn ($n) => $n['locations'] === 0));
+        $total   = count($places);
+        $box     = $need['box_code'];
+
+        if ($missing) {
+            $names = implode(' or ', array_column($missing, 'label'));
+
+            return [
+                'headline'      => "No location in this warehouse is set up for {$names}.",
+                'detail'        => "{$box} needs it, and none of the {$total} active locations here is marked for it. "
+                                 . 'Mark a zone or shelf for it, or send this box to a warehouse that has one.',
+                'unsatisfiable' => array_column($missing, 'key'),
+                'needs'         => $needs,
+                'matching'      => $matching,
+                'places'        => $total,
+            ];
+        }
+
+        if ($matching === 0) {
+            $names = implode(' and ', array_column($needs, 'label'));
+
+            return [
+                'headline'      => "No single location here is set up for {$names} together.",
+                'detail'        => "Each one is met somewhere, but {$box} needs them in the same place. A carton carrying "
+                                 . 'two handling classes can only go where both are allowed — repack it, or mark a location for both.',
+                'unsatisfiable' => ['combination'],
+                'needs'         => $needs,
+                'matching'      => 0,
+                'places'        => $total,
+            ];
+        }
+
+        return [
+            'headline'      => $matching === 1
+                ? '1 location can handle this box, but it has no room or is in use.'
+                : "{$matching} locations can handle this box, but none has room or they are in use.",
+            'detail'        => 'The handling flags are not the problem here — space, weight or another operator holding the spot is.',
+            'unsatisfiable' => [],
+            'needs'         => $needs,
+            'matching'      => $matching,
+            'places'        => $total,
+        ];
+    }
+
+    /** Every place a box can land, racked or not, with the handling it offers. */
+    private function handlingPlaces($zones): array
+    {
+        $active = $zones->where('status', 1);
+        $out = [];
+
+        foreach ($active->where('rack_mode', 'norack') as $z) {
+            $out[] = ['cold_chain' => (bool) $z->cold_chain, 'hazardous' => (bool) $z->hazardous, 'zone' => $z];
+        }
+
+        $rackZones = $active->where('rack_mode', 'rack')->keyBy('id');
+        if ($rackZones->isEmpty()) return $out;
+
+        $shelves = DB::table('inventory_shelves as s')
+            ->join('inventory_racks as r', 'r.id', '=', 's.rack_id')
+            ->whereIn('r.zone_id', $rackZones->keys()->all())
+            ->where('s.status', 1)->where('r.status', 1)
+            ->get(['s.cold_chain', 's.hazardous', 'r.zone_id']);
+
+        foreach ($shelves as $sh) {
+            $z = $rackZones[$sh->zone_id];
+            $out[] = [
+                // A shelf inherits its zone's handling: every shelf in a cold room is cold.
+                'cold_chain' => (bool) $sh->cold_chain || (bool) $z->cold_chain,
+                'hazardous'  => (bool) $sh->hazardous  || (bool) $z->hazardous,
+                'zone'       => $z,
+            ];
+        }
+
+        return $out;
     }
 
     /** Shelves already holding a box from this same invoice. */

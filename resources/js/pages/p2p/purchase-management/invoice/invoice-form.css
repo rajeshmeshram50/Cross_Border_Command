@@ -10075,3 +10075,39 @@
 .s4-root .s4pm-modal .s4qm__ft .s4-btn-back:disabled,
 .s4-root .s4pm-modal .s4qm__x:disabled { opacity: .45; cursor: not-allowed; }
 .s4-root .s4pm-modal .s4pm-go[aria-busy="true"] { cursor: progress; }
+/* ═══ WHY NOTHING FITS ═══
+   Replaces the dashed "0 of 2 eligible" box. A dead end the warehouse cannot
+   clear reads red; a spot that is merely full or held reads amber. */
+.s4-root .s4nofit {
+  margin: 0; padding: 14px 15px; border-radius: 12px;
+  border: 1px solid #fde68a; background: #fffbeb; text-align: left;
+}
+.s4-root .s4nofit--hard { border-color: #fecaca; background: #fef2f2; }
+.s4-root .s4nofit-head { display: flex; align-items: flex-start; gap: 8px; color: #b45309; }
+.s4-root .s4nofit--hard .s4nofit-head { color: #b91c1c; }
+.s4-root .s4nofit-head svg { flex-shrink: 0; margin-top: 2px; }
+.s4-root .s4nofit-head b { font-size: 12.5px; font-weight: 800; line-height: 1.35; }
+.s4-root .s4nofit-why { margin: 7px 0 0; font-size: 11.5px; line-height: 1.5; color: #78716c; font-weight: 500; }
+.s4-root .s4nofit-needs { margin-top: 11px; display: flex; flex-direction: column; gap: 5px; }
+.s4-root .s4nofit-needs div {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 9px; border-radius: 8px; background: rgba(255, 255, 255, .75);
+  border: 1px solid rgba(0, 0, 0, .05); font-size: 11px;
+}
+.s4-root .s4nofit-needs span { text-transform: capitalize; color: #57534e; font-weight: 600; }
+.s4-root .s4nofit-needs b { font-weight: 700; color: #15803d; white-space: nowrap; }
+/* The requirement that cannot be met anywhere — the line to act on. */
+.s4-root .s4nofit-needs .is-zero { border-color: #fca5a5; background: #fff; }
+.s4-root .s4nofit-needs .is-zero b { color: #dc2626; text-transform: uppercase; letter-spacing: .04em; font-size: 10px; }
+.s4-root .s4nofit-count { display: block; margin-top: 9px; font-size: 10.5px; font-weight: 600; color: #a8a29e; }
+
+[data-bs-theme="dark"] .s4-root .s4nofit { border-color: rgba(251, 191, 36, .3); background: rgba(251, 191, 36, .07); }
+[data-bs-theme="dark"] .s4-root .s4nofit--hard { border-color: rgba(248, 113, 113, .32); background: rgba(248, 113, 113, .08); }
+[data-bs-theme="dark"] .s4-root .s4nofit-head { color: #fcd34d; }
+[data-bs-theme="dark"] .s4-root .s4nofit--hard .s4nofit-head { color: #fca5a5; }
+[data-bs-theme="dark"] .s4-root .s4nofit-why { color: #94a3b8; }
+[data-bs-theme="dark"] .s4-root .s4nofit-needs div { background: rgba(255, 255, 255, .04); border-color: rgba(148, 163, 184, .18); }
+[data-bs-theme="dark"] .s4-root .s4nofit-needs span { color: #cbd5e1; }
+[data-bs-theme="dark"] .s4-root .s4nofit-needs b { color: #86efac; }
+[data-bs-theme="dark"] .s4-root .s4nofit-needs .is-zero { background: rgba(248, 113, 113, .1); border-color: rgba(248, 113, 113, .35); }
+[data-bs-theme="dark"] .s4-root .s4nofit-needs .is-zero b { color: #fca5a5; }

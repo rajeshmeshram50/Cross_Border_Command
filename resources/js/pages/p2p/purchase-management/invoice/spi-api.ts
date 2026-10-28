@@ -389,12 +389,25 @@ export type PutawayRow = {
   verify_method: string | null;
 };
 
+/** Why nothing fits. "0 of 2 eligible" is a count; this is the reason, and
+ *  whether any location in the warehouse could ever take the box. */
+export type PutawayDiagnosis = {
+  headline: string;
+  detail: string;
+  /** Non-empty = a dead end no retry or mode switch can clear. */
+  unsatisfiable: string[];
+  needs: Array<{ key: string; label: string; locations: number }>;
+  matching: number;
+  places: number;
+};
+
 export type PutawayLocations = {
   box: PutawayNeed;
   modes: { rack: number; norack: number };
   zones: PutawayZone[];
   total: number; eligible: number;
   recommended: PutawayPick | null;
+  diagnosis?: PutawayDiagnosis | null;
   floor?: PutawayFloorZone[];
   floorPick?: PutawayFloorZone | null;
 };

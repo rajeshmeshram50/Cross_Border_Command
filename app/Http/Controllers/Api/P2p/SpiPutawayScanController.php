@@ -272,7 +272,7 @@ class SpiPutawayScanController extends Controller
             'device_serial'      => null,
         ])->save();
 
-        $this->log($task, $device, 'putaway.released', [
+        $this->log($task, $device, PutawayActivityLog::RELEASED, [
             'had_scans' => array_keys(array_filter($had)),
             'reason'    => 'cleared_on_device',
         ]);

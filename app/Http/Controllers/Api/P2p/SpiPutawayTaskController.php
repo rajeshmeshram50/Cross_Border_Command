@@ -12,9 +12,30 @@ use App\Models\P2p\SupplierInvoice;
 use App\Services\Inventory\LocationLockService;
 use App\Services\Inventory\LocationOccupancyService;
 use App\Services\Inventory\PutawayActivityLogger;
+use App\Services\Inventory\StickerKey;
 use App\Services\P2p\SupplierInvoiceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+
+/* The scan API stores the refusal CODE and throws the sentence away, so the
+   history has to say it again. Anything not listed reads as its own code. */
+const PUTAWAY_REFUSALS = [
+    'wrong_box'           => 'Wrong box for this task',
+    'wrong_location'      => 'Wrong location for this task',
+    'wrong_label_type'    => 'Wrong kind of label for this step',
+    'already_scanned'     => 'Already scanned on this run',
+    'already_placed'      => 'Box is already put away',
+    'unknown_box'         => 'No box behind this sticker',
+    'unknown_location'    => 'No location behind this label',
+    'unreadable'          => 'Label could not be read',
+    'bad_signature'       => 'Sticker signature did not verify',
+    'box_not_packed'      => 'Box is not packed yet',
+    'location_unusable'   => 'Location is inactive or in another warehouse',
+    'no_task'             => 'No open task for this box',
+    'device_wrong_client' => 'Device belongs to another client',
+    'device_wrong_branch' => 'Device belongs to another branch',
+    'inactive'            => 'Run dropped after sitting idle',
+];
 
 /**
  * P2P · Zebra verification tasks. /api/p2p/spi/{id}/putaway/... and /putaway/tasks
@@ -269,21 +290,70 @@ class SpiPutawayTaskController extends Controller
 
         if (!$task) $this->missing("No put-away task found with id {$taskId}.");
 
-        $rows = PutawayActivityLog::where('task_id', $task->id)
-            ->orderBy('id')
-            ->get()
-            ->map(fn (PutawayActivityLog $l) => [
+        $log = PutawayActivityLog::where('task_id', $task->id)->orderBy('id')->get();
+
+        /* Two lookups, once each, instead of a users query per row — a task
+           with 40 scans was running 40 of them. */
+        $names = $log->pluck('actor_id')->filter()->unique();
+        $names = $names->isEmpty() ? collect()
+            : DB::table('users')->whereIn('id', $names)->pluck('name', 'id');
+
+        /* WHICH handheld, not just its id. The task's own device_serial is
+           cleared when a run is released, so after a Clear box the log rows
+           are the only record of the device that held it. */
+        $devs = $log->pluck('device_id')->filter()->unique();
+        $devs = $devs->isEmpty() ? collect()
+            : DB::table('scan_devices')->whereIn('id', $devs)->get(['id', 'serial', 'label'])->keyBy('id');
+
+        /* Which sticker each row scanned, and what it is called. A 60-char
+           signed URL names nothing a person can check against a carton. */
+        $targets = $this->stickerTargets($log);
+
+        $tries = [];
+
+        $rows = $log->map(function (PutawayActivityLog $l) use ($names, $devs, $targets, &$tries) {
+            $act = is_array($l->meta) ? ($l->meta['act'] ?? null) : null;
+            $dev = $l->device_id ? $devs->get($l->device_id) : null;
+            $val = is_array($l->meta) ? ($l->meta['value'] ?? null) : null;
+
+            /* The same sticker scanned four times is four rows that look
+               identical. Numbering them is what makes the repetition
+               readable: "attempt 3 of this label". */
+            $try = null;
+            if ($val !== null && $act === 'scan') {
+                $id = $targets[$val]['key'] ?? $val;
+                $tries[$id] = ($tries[$id] ?? 0) + 1;
+                $try = $tries[$id];
+            }
+
+            return [
                 'id'         => (int) $l->id,
                 'at'         => optional($l->created_at)->toIso8601String(),
-                'event'      => $l->event,
+                // Rows written before the constant was used read as their own event.
+                'event'      => $l->event === 'putaway.released' ? PutawayActivityLog::RELEASED : $l->event,
                 'ok'         => $l->event !== PutawayActivityLog::SCAN_FAILED,
+                /* A refused scan and the idle timeout are both filed as
+                   scan_failed, and they are not the same thing: one is an
+                   operator scanning the wrong label, the other is the server
+                   dropping a run nobody came back to. */
+                'kind'       => $act === 'stale_reset' ? 'stale_reset' : ($act === 'scan' ? 'scan' : 'lifecycle'),
+                'reason'       => is_array($l->meta) ? ($l->meta['reason'] ?? null) : null,
+                'reason_label' => $this->refusalLabel(is_array($l->meta) ? ($l->meta['reason'] ?? null) : null),
+                // Nth time THIS label was scanned on this task.
+                'attempt'    => $try,
+                'target'     => $val === null ? null : ($targets[$val] ?? null),
                 'actor_type' => $l->actor_type,
                 'actor_id'   => $l->actor_id ? (int) $l->actor_id : null,
-                'actor'      => $l->actor_id ? DB::table('users')->where('id', $l->actor_id)->value('name') : null,
+                'actor'      => $l->actor_id ? $names->get($l->actor_id) : null,
                 'device_id'  => $l->device_id ? (int) $l->device_id : null,
+                'device'     => $dev ? ($dev->label ?: $dev->serial) : null,
+                'device_serial' => $dev->serial ?? null,
                 'meta'       => $l->meta,
                 'to'         => $l->to_location,
-            ]);
+            ];
+        });
+
+        $stickers = $this->stickerAttempts($rows);
 
         return response()->json(['status' => true, 'data' => [
             'task' => [
@@ -305,12 +375,165 @@ class SpiPutawayTaskController extends Controller
                 'device_serial'      => $task->device_serial,
             ],
             'timeline' => $rows,
+            /* One row per LABEL, not per scan. A sticker tried four times and
+               refused three reads as three unrelated failures in a timeline;
+               here it reads as one label somebody could not get accepted. */
+            'stickers' => $stickers,
             'counts'   => [
                 'total'  => $rows->count(),
-                'passed' => $rows->where('ok', true)->count(),
-                'failed' => $rows->where('ok', false)->count(),
+                'passed' => $rows->where('kind', 'scan')->where('ok', true)->count(),
+                // Bad scans only. A stale reset is not an operator's mistake.
+                'failed' => $rows->where('kind', 'scan')->where('ok', false)->count(),
+                'resets' => $rows->where('kind', 'stale_reset')->count(),
+                'labels' => count($stickers),
+                // Labels that took more than one go.
+                'retried' => collect($stickers)->where('tries', '>', 1)->count(),
             ],
         ]], 200);
+    }
+
+    /** The sentence the scan API threw away, back from the code it kept. */
+    private function refusalLabel(?string $code): ?string
+    {
+        if ($code === null || $code === '') return null;
+
+        return PUTAWAY_REFUSALS[$code] ?? ucfirst(str_replace('_', ' ', $code));
+    }
+
+    /**
+     * Every distinct scanned value on a task, named.
+     *
+     * The stored value is the signed sticker URL. It identifies the box or the
+     * location exactly and tells a person nothing, so it is parsed back to the
+     * code printed on the label they are holding.
+     *
+     * @return array<string,array<string,mixed>>
+     */
+    private function stickerTargets($log): array
+    {
+        $values = $log
+            ->map(fn (PutawayActivityLog $l) => is_array($l->meta) ? ($l->meta['value'] ?? null) : null)
+            ->filter()->unique()->values();
+
+        if ($values->isEmpty()) return [];
+
+        $kinds = ['BOX' => 'box', 'SHELF' => 'shelf', 'RACK' => 'rack', 'ZONE' => 'zone'];
+
+        // Parse first, then one lookup per KIND rather than one per sticker.
+        $parsed = [];
+        foreach ($values as $v) {
+            $hit  = StickerKey::parse((string) $v);
+            $kind = $hit ? ($kinds[$hit['type']] ?? null) : null;
+
+            $id = $hit && ctype_digit((string) $hit['id']) ? (int) $hit['id'] : null;
+
+            $parsed[$v] = [
+                'value'  => (string) $v,
+                /* One carton, one row. A DataWedge read sends the bare key
+                   and the camera sends the whole URL around it; both are the
+                   same sticker, so the thing it points at is the identity. */
+                'key'    => $kind && $id ? "{$kind}:{$id}" : trim((string) $v),
+                'kind'   => $kind,
+                'id'     => $id,
+                'signed' => (bool) $hit,
+                'code'   => null,
+            ];
+        }
+
+        $tables = [
+            'box'   => ['p2p_spi_boxes', 'box_code'],
+            'shelf' => ['inventory_shelves', 'code'],
+            'rack'  => ['inventory_racks', 'code'],
+            'zone'  => ['inventory_zones', 'code'],
+        ];
+
+        foreach ($tables as $kind => [$table, $col]) {
+            $ids = collect($parsed)->where('kind', $kind)->pluck('id')->filter()->unique();
+            if ($ids->isEmpty()) continue;
+
+            $codes = DB::table($table)->whereIn('id', $ids->all())->pluck($col, 'id');
+
+            foreach ($parsed as $v => $row) {
+                if ($row['kind'] === $kind && $row['id']) {
+                    $parsed[$v]['code'] = $codes[$row['id']] ?? null;
+                }
+            }
+        }
+
+        foreach ($parsed as $v => $row) {
+            $parsed[$v]['label'] = $row['code']
+                ? ucfirst((string) $row['kind']) . ' ' . $row['code']
+                : ($row['kind'] ? ucfirst($row['kind']) . ' #' . ($row['id'] ?? '?') : 'Unreadable label');
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * The timeline folded by label: how many times each sticker was scanned,
+     * how many of those were refused, and for what.
+     *
+     * A carton whose label took four goes to accept is the single most useful
+     * thing in this history — a bad print, a worn sticker, or a picker at the
+     * wrong pallet — and in a flat timeline it is four rows that look like
+     * four unrelated failures.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function stickerAttempts($rows): array
+    {
+        $out = [];
+
+        foreach ($rows as $r) {
+            if ($r['kind'] !== 'scan' || !$r['target']) continue;
+
+            $key = $r['target']['key'] ?? $r['target']['value'];
+
+            $out[$key] ??= [
+                'value'    => $r['target']['value'],
+                'kind'     => $r['target']['kind'],
+                'id'       => $r['target']['id'],
+                'code'     => $r['target']['code'],
+                'label'    => $r['target']['label'],
+                'tries'    => 0,
+                'passed'   => 0,
+                'failed'   => 0,
+                'reasons'  => [],
+                'first_at' => $r['at'],
+                'last_at'  => $r['at'],
+                'devices'  => [],
+                'accepted' => false,
+            ];
+
+            // The most recent form the label arrived in, for a support query.
+            $out[$key]['value'] = $r['target']['value'];
+            $out[$key]['tries']++;
+            $out[$key][$r['ok'] ? 'passed' : 'failed']++;
+            $out[$key]['last_at'] = $r['at'];
+            /* The LAST word on a label. Refused three times then accepted is a
+               different story from accepted once and refused after. */
+            $out[$key]['accepted'] = (bool) $r['ok'];
+
+            if (!$r['ok'] && $r['reason']) {
+                $out[$key]['reasons'][$r['reason']] = ($out[$key]['reasons'][$r['reason']] ?? 0) + 1;
+            }
+
+            if ($r['device'] && !in_array($r['device'], $out[$key]['devices'], true)) {
+                $out[$key]['devices'][] = $r['device'];
+            }
+        }
+
+        // Reasons as a list, commonest first: a map keyed by code is awkward to
+        // render and loses its order on the way through JSON.
+        foreach ($out as $key => $row) {
+            arsort($row['reasons']);
+            $out[$key]['reasons'] = collect($row['reasons'])
+                ->map(fn ($n, $code) => ['code' => $code, 'label' => $this->refusalLabel($code), 'count' => $n])
+                ->values()->all();
+        }
+
+        // Worst first: the label nobody could get accepted is the one to read.
+        return collect($out)->sortByDesc('failed')->values()->all();
     }
 
     /* ══════════════════════════ CANCEL ══════════════════════════ */

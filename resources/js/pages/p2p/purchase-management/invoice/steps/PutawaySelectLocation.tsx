@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { putId, type PutawayFloorZone, type PutawayLocations, type PutawayShelf, type PutawayZone } from '../spi-api';
+import { putId, type PutawayDiagnosis, type PutawayFloorZone, type PutawayLocations, type PutawayShelf, type PutawayZone } from '../spi-api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * STAGE 04 · STEP 02 — Select Putaway Location.
@@ -120,6 +120,37 @@ const CAPACITY_REASONS = new Set(['full', 'over_weight', 'over_capacity']);
 const FULL_PCT = 75;
 const outOfRoom = (reason: string | null, usedPct: number) =>
   reason ? CAPACITY_REASONS.has(reason) : usedPct >= FULL_PCT;
+
+/**
+ * Nothing fits.
+ *
+ * "0 of 2 zones eligible" is true and useless: two zones refused for two
+ * different reasons read as bad luck, when the usual cause is that no location
+ * in this warehouse is marked for what the box carries. The server says which
+ * requirement nothing can meet; printing that is the difference between an
+ * operator retrying forever and one who goes and marks a zone.
+ */
+const NoFit = ({ what, count, diag }: { what: string; count: string; diag?: PutawayDiagnosis | null }) => {
+  if (!diag) {
+    return <div className="s4rl-empty">No eligible {what} in this warehouse can take this box. {count}</div>;
+  }
+
+  return (
+    <div className={`s4nofit${diag.unsatisfiable.length ? ' s4nofit--hard' : ''}`}>
+      <div className="s4nofit-head"><IcoNo /><b>{diag.headline}</b></div>
+      <p className="s4nofit-why">{diag.detail}</p>
+      <div className="s4nofit-needs">
+        {diag.needs.map(n => (
+          <div key={n.key} className={n.locations ? undefined : 'is-zero'}>
+            <span>{n.label}</span>
+            <b>{n.locations === 0 ? 'nowhere' : many(n.locations, 'location', 'locations')}</b>
+          </div>
+        ))}
+      </div>
+      {count ? <small className="s4nofit-count">{count}</small> : null}
+    </div>
+  );
+};
 
 /** Refused because there is no room — frees up when stock moves out. */
 const isFull = (s: PutawayShelf) => !s.eligible && outOfRoom(s.reason, s.used_pct);
@@ -364,10 +395,11 @@ export default function PutawaySelectLocation({ box, mode, state, spot, onSpot, 
           ) : !rec ? (
             /* Nowhere eligible is an ANSWER, not an error, and the tree beside
                it says which condition each shelf failed. */
-            <div className="s4rl-empty">
-              No eligible shelf in this warehouse can take this box.
-              {state.data ? ` ${state.data.eligible} of ${state.data.total} shelves eligible.` : ''}
-            </div>
+            <NoFit
+              what="shelf"
+              diag={state.data?.diagnosis}
+              count={state.data ? `${state.data.eligible} of ${state.data.total} shelves eligible.` : ''}
+            />
           ) : (
             <>
               <div className="s4ra-top">
@@ -740,10 +772,11 @@ function FloorSelect({ box, state, spot, onSpot, need, warehouse }: {
           ) : state.loading ? (
             <div className="s4rl-empty">Ranking the zones for this box…</div>
           ) : !rec ? (
-            <div className="s4rl-empty">
-              No eligible floor zone in this warehouse can take this box.
-              {state.data ? ` ${avail.length} of ${zones.length} zones eligible.` : ''}
-            </div>
+            <NoFit
+              what="floor zone"
+              diag={state.data?.diagnosis}
+              count={state.data ? `${avail.length} of ${zones.length} zones eligible.` : ''}
+            />
           ) : (
             <>
               <div className="s4ra-top">
