@@ -98,11 +98,15 @@ function validate(d: Draft, hasStates: boolean): Partial<Record<keyof Draft, str
   if (!d.address.trim()) e.address = 'Enter the warehouse address';
   if (!d.country) e.country = 'Select the country';
   if (!d.state.trim()) e.state = hasStates ? 'Select the state' : 'Enter the state';
-  if (!d.city.trim()) e.city = 'Enter the city';
+  const city = d.city.trim();
+  if (!city) e.city = 'Enter the city';
+  else if (!/^\p{L}[\p{L}\p{M}\s.'(),-]*$/u.test(city)) e.city = 'City must contain letters only — no numbers or symbols';
   const pin = d.pin.trim();
   if (!pin) e.pin = 'Enter the pin code';
   else if (india && !/^[1-9]\d{5}$/.test(pin)) e.pin = 'Pin code must be 6 digits';
-  if (!d.contact.trim()) e.contact = 'Enter the contact person’s name';
+  const contact = d.contact.trim();
+  if (!contact) e.contact = 'Enter the contact person’s name';
+  else if (!/^\p{L}[\p{L}\p{M}\s.'-]*$/u.test(contact)) e.contact = 'Contact person must contain letters only — no numbers or symbols';
   const mobile = d.mobile.replace(/[\s-]/g, '');
   if (!mobile) e.mobile = 'Enter the mobile number';
   /* India is the one country whose numbering this form actually knows: a

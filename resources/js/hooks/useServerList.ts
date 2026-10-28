@@ -38,7 +38,9 @@ export function useServerList<T, M extends ServerPageMeta>(
   const errRef = useRef(onError);
   errRef.current = onError;
 
-  const load = useCallback((p: number, mode: 'replace' | 'append') => {
+  /* 'silent' replaces the rows like 'replace' but keeps them on screen while
+     it loads — for refreshing counts and filters behind an optimistic edit. */
+  const load = useCallback((p: number, mode: 'replace' | 'append' | 'silent') => {
     const id = ++seq.current;
     setRefreshing(true);
     setReplacing(mode === 'replace');
@@ -81,5 +83,11 @@ export function useServerList<T, M extends ServerPageMeta>(
     if (append) { setPage(1); load(1, 'replace'); } else load(page, 'replace');
   };
 
-  return { rows, meta, page, loading, refreshing, replacing, goTo, loadMore, hasMore, reload };
+  /** Change rows in place — for an optimistic edit that should not reload (and skeleton) the page. */
+  const patch = useCallback((fn: (cur: T[]) => T[]) => setRows(fn), []);
+
+  /** Same page again, with no skeleton — tab counts and filters catch up quietly. */
+  const refresh = () => load(page, 'silent');
+
+  return { rows, meta, page, loading, refreshing, replacing, goTo, loadMore, hasMore, reload, patch, refresh };
 }

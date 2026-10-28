@@ -43,6 +43,8 @@ export interface ZoneWarehouse {
   name: string;
   type: 'own' | 'tpl';
   area: number;
+  /** Sq. ft already claimed by its zones — the form shows area minus this. */
+  used: number;
   city: string;
   state: string;
   pin: string;
@@ -128,6 +130,7 @@ type WarehouseRow = {
   wh_name: string | null;
   wh_type: 'own' | 'tpl';
   area_sqft: number | null;
+  zones_area_sqft?: number | null;
   city: string | null;
   state: string | null;
   pincode: string | null;
@@ -198,6 +201,7 @@ const toWarehouse = (r: WarehouseRow): ZoneWarehouse => ({
   name: r.wh_name ?? '',
   type: r.wh_type === 'tpl' ? 'tpl' : 'own',
   area: num(r.area_sqft),
+  used: num(r.zones_area_sqft),
   city: r.city ?? '',
   state: r.state ?? '',
   pin: r.pincode ?? '',
