@@ -299,13 +299,6 @@ export default function Products() {
     return out;
   }, [filters, hsnLabel]);
 
-  /* The search term is NOT a chip (QA #19).
-     A filter is a choice you made inside the Filters panel and then cannot see
-     any more, which is exactly why the Applied strip exists. The search term is
-     sitting in the box at the top of the screen with its own clear button —
-     repeating it below as something "applied" says a filter is in force that
-     the user cannot find in the panel, and makes a one-word search look like a
-     state to be undone. */
   const toolbarChips = useMemo<FilterChip[]>(() => {
     const out: FilterChip[] = [];
     if (segment !== 'All Segments')  out.push({ id: 'segment', group: 'Segment', label: segment,      onRemove: () => setSegment('All Segments') });
@@ -339,8 +332,6 @@ export default function Products() {
     return () => clearTimeout(t);
   }, [q]);
 
-  /* Same treatment for the Custom "last N days" box — otherwise typing "30"
-     would refetch once for "3" and again for "30". */
   const [debouncedDays, setDebouncedDays] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setDebouncedDays(filters.createdCustomDays.trim()), 400);
@@ -495,10 +486,6 @@ export default function Products() {
 
   return (
     <div className="prd-root">
-
-      {/* Header strip + "What We Are Doing Here" — the same markup and classes
-          the Customer, Consignee and Supplier lists use (.sup-fig .cstrip and
-          .bref-box, inside .smc-root for their shared edge/height overrides). */}
       <div className="smc-root">
       <div className="sup-fig">
         <div className="cstrip">
@@ -817,8 +804,6 @@ export default function Products() {
             >
               Clear All
             </button>
-            {/* Same drawer, same reason: above .prd-filter-drawer or the tip
-                opens behind the panel it belongs to. */}
             <Tooltip label="Close" zIndex={2000010}>
               <button
                 type="button"
@@ -1010,19 +995,8 @@ function FrozenRows(props: { options: string[] }) {
 }
 
 function CheckRow(props: { label: string; checked: boolean; onChange: () => void; tip?: string; segment?: boolean }) {
-  /* A segment's tooltip carries its regulatory tier as well as its name.
-     The badge sits at the end of the row, so on a long name it is the first
-     thing to go out of view — and the tier is the one fact that would change
-     whether somebody ticks the row. Putting it in the tooltip means the
-     answer is still reachable when the badge is not. */
   const segStatus = useSegmentStatusByName();
   const tip = props.tip ?? (props.segment ? segmentLabel(props.label, segStatus(props.label)) : props.label);
-  /* The tooltip used to depend on the label being longer than 28 characters,
-     which is a guess about width, not a measurement of it. A segment row also
-     carries its regulatory badge, so the text has whatever the badge leaves —
-     "Lemon Lemon Lemon Lemon L…" was cut at 25 characters and showed nothing on
-     hover (QA #20). This measures instead: tooltip exactly when the text is
-     actually clipped, re-checked when the panel resizes. */
   const ref = useRef<HTMLSpanElement | null>(null);
   const [cut, setCut] = useState(false);
   useLayoutEffect(() => {
@@ -1039,10 +1013,6 @@ function CheckRow(props: { label: string; checked: boolean; onChange: () => void
   return (
     <label className="prd-filter-row">
       <input type="checkbox" checked={props.checked} onChange={props.onChange} />
-      {/* An explicit tip is a different sentence from the label, so it always shows.
-          zIndex above .prd-filter-drawer (2000001): the tooltip portals to
-          <body> at 260000 by default, which puts it UNDER the drawer it was
-          opened from — it rendered, and nobody could see it. */}
       <Tooltip label={tip} disabled={props.tip === undefined && !cut} zIndex={2000010}>{span}</Tooltip>
       {props.segment && <SegmentNameBadge name={props.label} style={{ flex: '0 0 auto', alignSelf: 'center', marginLeft: 'auto' }} />}
     </label>
