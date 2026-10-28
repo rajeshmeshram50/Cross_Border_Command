@@ -2585,7 +2585,6 @@ export function CreateQuotationModal(props: {
 
         <div className="qpi-modal-foot">
           <div className="qpi-modal-foot-actions">
-            <button className="qpi-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             {step === 2 && (
               <button className="qpi-btn-back" onClick={() => setStep(1)} disabled={saving}>
                 ← Back
@@ -2963,7 +2962,6 @@ export function CreatePIModal(props: {
 
         <div className="qpi-modal-foot">
           <div className="qpi-modal-foot-actions">
-            <button className="qpi-btn-cancel" onClick={onClose} disabled={saving || docChecking}>Cancel</button>
             {step === 2 && (
               <button className="qpi-btn-back" onClick={() => setStep(1)} disabled={saving || docChecking}>
                 ← Back
@@ -5094,13 +5092,6 @@ const SCOPED_CSS = `
   border-top: 1px solid #e2e8f0;
 }
 .qpi-modal-foot-actions { display: flex; align-items: center; gap: 8px; }
-.qpi-btn-cancel {
-  display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 40px;
-  padding: 0 18px; border-radius: 10px;
-  border: 1px solid #e2e8f0; background: #fff;
-  color: #475569; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
-}
-
 .qpi-btn-back {
   display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 40px;
   padding: 0 18px; border-radius: 10px;
@@ -5165,13 +5156,11 @@ const SCOPED_CSS = `
   opacity: .55;
   transition: opacity .15s ease;
 }
-.qpi-btn-cancel:disabled,
 .qpi-btn-back:disabled,
 .qpi-btn-next:disabled {
   opacity: .55; cursor: not-allowed; transform: none; box-shadow: none;
 }
 .qpi-modal-close:disabled { opacity: .45; cursor: not-allowed; }
-.qpi-btn-cancel:hover:not(:disabled) { background: #f8fafc; }
 
 [data-bs-theme="dark"] .qpi-root {
   background: transparent;
@@ -5387,12 +5376,6 @@ const SCOPED_CSS = `
   background: #1a1530;
   border-top-color: rgba(167,139,250,.20);
 }
-[data-bs-theme="dark"] .qpi-btn-cancel {
-  background: rgba(255,255,255,.05);
-  border-color: rgba(167,139,250,.40);
-  color: #e9d5ff;
-}
-[data-bs-theme="dark"] .qpi-btn-cancel:hover { background: rgba(167,139,250,.15); }
 [data-bs-theme="dark"] .qpi-btn-back {
   background: rgba(167,139,250,.10);
   border-color: rgba(167,139,250,.45);
@@ -5454,7 +5437,7 @@ const SCOPED_CSS = `
   .qpi-modal-pill-value { font-size: 11px; }
   .qpi-modal-body { padding: 12px 14px; }
   .qpi-modal-foot { padding: 10px 14px; }
-  .qpi-btn-cancel, .qpi-btn-back, .qpi-btn-next, .qpi-btn-submit {
+  .qpi-btn-back, .qpi-btn-next, .qpi-btn-submit {
     padding: 0 14px; font-size: 11.5px;
   }
 
