@@ -1,7 +1,7 @@
 import { memo, useCallback } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import { IcoCheck, IcoX } from '../../../icons';
+import { IcoCheck, IcoTrash, IcoX } from '../../../icons';
 import { DESC_MAX, NAME_MAX, truncateDesc, truncateName, type ProductLine } from '../invoice-products';
 
 export interface ProductIdentity {
@@ -278,11 +278,13 @@ const AdvRow = memo(function AdvRow({
               onClick={() => onRemove(line.code)}
               aria-label={`Remove ${line.spiName}`}
             >
-              {/* A cross, not a bin. This takes the product out of THIS box —
-                  it goes back to Pending and can be packed again. A bin says
-                  the thing is being destroyed, which is a different promise
-                  from the one the button keeps. */}
-              <IcoX size={15} stroke={2.8} />
+              {/* A bin, matching the action column everywhere else in the
+                  app. This was a cross on the argument that the product is
+                  only taken OUT of this box - it returns to Pending and can
+                  be packed again - but an action column that uses a different
+                  glyph from every other table costs more in recognition than
+                  the distinction buys. The tooltip still says what it does. */}
+              <IcoTrash size={15} stroke={2.2} />
             </button>
           </Tooltip>
         ) : (

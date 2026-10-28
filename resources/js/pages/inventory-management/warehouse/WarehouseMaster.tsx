@@ -6,6 +6,7 @@ import '../../p2p/p2p-common.css';
 import '../../p2p/purchase-management/order/po-list/order.css';
 import './warehouse-master.css';
 import SearchClear from '../../../components/ui/SearchClear';
+import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
 import { useToast } from '../../../contexts/ToastContext';
@@ -111,6 +112,16 @@ const TABS: Array<{ key: Tab; label: string; icon: ReactNode }> = [
    an address, a city over a pin code, a person over their phone and email.
    The design aligns those to the column's left edge, header and all: a ragged
    block centred in its column has no edge to read down. */
+/* CS-939: a column is only as wide as its widest cell, so one long value set
+   the width of the whole list. CSS ellipsis alone was not enough here - the
+   cut has to be the SAME on every row whatever the viewport does, so it is
+   made in characters and the full value goes on the title.
+   35 for a warehouse name, 30 for the location and the contact: a name is
+   the column people scan down and earns the extra room. */
+const NAME_MAX = 35;
+const TEXT_MAX = 30;
+const clip = (s: string, max: number) => (s.length > max ? s.slice(0, max).trimEnd() + '…' : s);
+
 const COLUMNS: Array<{ label: string; left?: boolean }> = [
   { label: 'Sr. No' },
   { label: 'Warehouse ID' },
@@ -133,8 +144,13 @@ export default function WarehouseMaster() {
   const debouncedQuery = useDebouncedValue(query.trim(), 400);
 
   const [counts, setCounts] = useState<WarehouseCounts>({ all: 0, own: 0, tpl: 0 });
+  /* The counts open at 0/0/0 and are replaced when the request lands, so on
+     entering the module the rail showed three real-looking zeros and then
+     snapped to the truth (CS-939 #13). Zero is a legitimate count, so there
+     was no way to tell a loading rail from an empty one. This says which. */
+  const [countsReady, setCountsReady] = useState(false);
   const loadCounts = useCallback(() => {
-    warehouseApi.counts().then(setCounts).catch(() => {});
+    warehouseApi.counts().then(setCounts).catch(() => {}).finally(() => setCountsReady(true));
   }, []);
   useEffect(() => { loadCounts(); }, [loadCounts]);
 
@@ -255,7 +271,9 @@ export default function WarehouseMaster() {
               >
                 <span className="spi-seg-ico">{t.icon}</span>
                 {t.label}
-                <span className="spi-seg-c">{counts[t.key]}</span>
+                <span className="spi-seg-c">
+                  {countsReady ? counts[t.key] : <Shimmer width={12} height={9} radius={5} />}
+                </span>
               </button>
             ))}
           </div>
@@ -280,8 +298,38 @@ export default function WarehouseMaster() {
           </div>
         </div>
 
-        {loading && rows.length === 0 ? (
-          <div className="ord-empty">Loading warehouses…</div>
+        {/* CS-939: a search replaced the table with a line of text, so the
+            header, the column widths and the card's height all vanished and
+            came back - the list flashed empty on every query. The shimmer
+            goes INSIDE the real table instead: the same <thead> stays on
+            screen and only the rows are stand-ins, so nothing moves between
+            the loading state and the result.
+            Shown for ANY replacing load - first paint, search, tab switch,
+            page change - not only when the rows happen to be empty. That
+            `&& rows.length === 0` was the bug behind the tab switch (CS-939
+            #8): a switch keeps the previous rows until the response lands,
+            so the test failed and the table was left holding the OLD tab's
+            rows, then briefly none at all while the footer still read
+            "Showing 1-2 of 2". useServerList raises `replacing` for exactly
+            this and says so in its own comment: show the skeleton rather
+            than dim stale rows. */}
+        {loading ? (
+          <div className="ord-table-scroll">
+            <table className="ord-table">
+              <thead>
+                <tr>
+                  {COLUMNS.map(c => (
+                    <th key={c.label} scope="col" className={c.left ? 'whm-th-l' : undefined}>
+                      {c.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <ShimmerTableRows rows={6} cols={COLUMNS.length} height={13} cellClassName="whm-shimcell" />
+              </tbody>
+            </table>
+          </div>
         ) : total === 0 ? (
           <div className="ord-empty">
             {debouncedQuery ? 'No warehouses match your search.' : 'No warehouses in this view yet.'}
@@ -368,10 +416,12 @@ function Row({ w, sr, off, busy, opening, onToggle, onQr, onEdit }: {
           <span className="whm-namecell__ico">
             {w.type === 'own' ? <IcoOwn size={15} /> : <IcoTpl size={15} />}
           </span>
+          {/* title on each line: the cell truncates at a fixed width now
+              (CS-939), so the full value has to stay reachable. */}
           <div className="whm-namecell__t">
-            <b>{w.name}</b>
-            <span>{w.address}</span>
-            <span className="whm-namecell__loc"><IcoPin size={11} />{place}</span>
+            <b title={w.name}>{clip(w.name, NAME_MAX)}</b>
+            <span title={w.address}>{clip(w.address, TEXT_MAX)}</span>
+            <span className="whm-namecell__loc" title={place}><IcoPin size={11} />{clip(place, TEXT_MAX)}</span>
           </div>
         </div>
       </td>
@@ -389,7 +439,9 @@ function Row({ w, sr, off, busy, opening, onToggle, onQr, onEdit }: {
 
       <td className="whm-td-l">
         <div className="whm-loc">
-          <div className="whm-loc__city"><b>{w.city}</b>{w.state ? `, ${w.state}` : ''}</div>
+          <div className="whm-loc__city" title={[w.city, w.state].filter(Boolean).join(', ')}>
+            <b>{clip(w.city, TEXT_MAX)}</b>{w.state ? `, ${w.state}` : ''}
+          </div>
           <div className="whm-loc__row">
             <span className="whm-loc__pin">{w.pin}</span>
             {w.map ? (
@@ -406,9 +458,9 @@ function Row({ w, sr, off, busy, opening, onToggle, onQr, onEdit }: {
 
       <td className="whm-td-l">
         <div className="whm-contact">
-          <b>{w.contact}</b>
+          <b title={w.contact}>{clip(w.contact, TEXT_MAX)}</b>
           <span><IcoPhone />{[w.dial, w.mobile].filter(Boolean).join(' ')}</span>
-          <span><IcoMail /><a href={`mailto:${w.email}`}>{w.email}</a></span>
+          <span title={w.email}><IcoMail /><a href={`mailto:${w.email}`}>{clip(w.email, TEXT_MAX)}</a></span>
         </div>
       </td>
 

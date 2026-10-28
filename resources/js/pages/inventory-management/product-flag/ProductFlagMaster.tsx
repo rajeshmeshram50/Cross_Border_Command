@@ -5,6 +5,7 @@ import '../../p2p/purchase-management/order/po-list/order.css';
 import '../warehouse/warehouse-master.css';
 import './product-flag.css';
 import SearchClear from '../../../components/ui/SearchClear';
+import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
 import { useToast } from '../../../contexts/ToastContext';
@@ -193,7 +194,12 @@ export default function ProductFlagMaster() {
               >
                 <span className="spi-seg-ico">{t.icon}</span>
                 {t.label}
-                <span className="spi-seg-c">{counts[t.key]}</span>
+                {/* The counts ride on the list meta, which is null until the
+                    first response - `tabs?.all ?? 0` meant the rail showed
+                    zeros meanwhile, and zero is a real count. */}
+                <span className="spi-seg-c">
+                  {list.meta ? counts[t.key] : <Shimmer width={12} height={9} radius={5} />}
+                </span>
               </button>
             ))}
           </div>
@@ -218,8 +224,24 @@ export default function ProductFlagMaster() {
           </div>
         </div>
 
-        {loading && rows.length === 0 ? (
-          <div className="ord-empty">Loading product flags…</div>
+        {/* The shimmer goes INSIDE the real table: the same <thead> stays
+            on screen and only the rows are stand-ins, so nothing moves
+            between loading and result. Shown for any REPLACING load -
+            first paint, search, tab switch, page change - not only when
+            the rows happen to be empty: a tab switch keeps the previous
+            rows until the response lands, so `rows.length === 0` was false
+            and the table sat holding the old tab's rows (CS-939 #7/#8). */}
+        {loading ? (
+          <div className="ord-table-scroll">
+            <table className="ord-table">
+              <thead>
+                <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
+              </thead>
+              <tbody>
+                <ShimmerTableRows rows={6} cols={COLUMNS.length} height={13} />
+              </tbody>
+            </table>
+          </div>
         ) : total === 0 ? (
           <div className="ord-empty">
             {debouncedQuery ? 'No product flags match your search.' : 'No product flags in this view yet.'}

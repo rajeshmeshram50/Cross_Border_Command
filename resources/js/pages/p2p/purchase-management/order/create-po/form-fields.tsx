@@ -108,7 +108,7 @@ export function Field({ label, children, full, wide, req, error, hint, labelEnd 
    The options here are plain strings, so each is both value and label.
    Also used outside this form (Refund Adjustment, Payment Request), which
    pass `invalid` to flag a required field — keep that prop working. */
-export function EditSelect({ value, options, onChange, placeholder, invalid, readOnly, locked, onLockedClick, badges, listBadgesOnly }: {
+export function EditSelect({ value, options, onChange, placeholder, invalid, readOnly, locked, onLockedClick, badges, listBadgesOnly, shortLabels }: {
   value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; invalid?: boolean;
   /** Show the value in the wizard's locked-select box instead of a dropdown. */
   readOnly?: boolean;
@@ -120,6 +120,12 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
   badges?: Record<string, { text: string; tone: 'green' | 'gray' | 'red' | 'violet' }>;
   /** Keep the badges in the open list and off the closed field. */
   listBadgesOnly?: boolean;
+  /* Option → a shorter text for the OPEN LIST, where a badge competes with
+     the label for the row. The option itself stays the value, the closed
+     field keeps the full text (it has the whole width to itself), and the
+     full option is what the hover tooltip shows. Left out, every option
+     renders exactly as before. */
+  shortLabels?: Record<string, string>;
 }) {
   if (readOnly) {
     return (
@@ -132,10 +138,18 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
   return (
     <MasterSelect
       value={value}
-      options={options.map((o) => (locked?.[o]
-        ? { value: o, label: o, disabled: true, disabledReason: locked[o], badge: { text: 'Locked', tone: 'gray' as const, lock: true },
-          ...(badges?.[o] ? { badges: [badges[o]] } : {}) }
-        : { value: o, label: o, ...(badges?.[o] ? { badge: badges[o] } : {}) }))}
+      options={options.map((o) => {
+        const short = shortLabels?.[o];
+        /* `fullLabel` feeds the tooltip and `selectedLabel` the closed field,
+           so shortening touches the list row only. */
+        const base = short
+          ? { value: o, label: short, fullLabel: o, selectedLabel: o }
+          : { value: o, label: o };
+        return locked?.[o]
+          ? { ...base, disabled: true, disabledReason: locked[o], badge: { text: 'Locked', tone: 'gray' as const, lock: true },
+            ...(badges?.[o] ? { badges: [badges[o]] } : {}) }
+          : { ...base, ...(badges?.[o] ? { badge: badges[o] } : {}) };
+      })}
       onChange={onChange}
       listBadgesOnly={listBadgesOnly}
       placeholder={placeholder ?? '— Select —'}

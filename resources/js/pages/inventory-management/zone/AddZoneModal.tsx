@@ -32,6 +32,11 @@ const TEMP_PRESETS = [
 
 const WAREHOUSE_LABEL = (id: string, name: string) => `${id} · ${name}`;
 
+/* How much of a warehouse name an option row can hold beside its ownership
+   badge. An ellipsis replaces the rest, and the tooltip carries the whole. */
+const WH_NAME_MAX = 20;
+const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max).trimEnd()}…` : s);
+
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 
@@ -151,6 +156,37 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
     () => uniqueLabels(warehouses, w => w.apiId, w => WAREHOUSE_LABEL(w.id, w.name), w => w.city),
     [warehouses],
   );
+  /* The ownership badge on each option (CS-940 #8). EditSelect already takes
+     a badge per option; this call site simply never passed one.
+     It earns its place on the EDIT path rather than the add path: adding a
+     zone lists active own warehouses only, so every badge there reads the
+     same. An edit also lists the warehouse the zone is already in, even if
+     that one is third-party or has since been switched off - and that is the
+     row where the badge is the only thing saying so. */
+  const whBadges = useMemo(() => {
+    const m: Record<string, { text: string; tone: 'green' | 'gray' }> = {};
+    for (const w of activeWarehouses) {
+      const label = whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name);
+      m[label] = w.type === 'own'
+        ? { text: 'Own Warehouse', tone: 'green' }
+        : { text: 'Third Party (3PL)', tone: 'gray' };
+    }
+    return m;
+  }, [activeWarehouses, whLabels]);
+  /* A long warehouse name squeezed the ownership badge against the right edge
+     of the option and left the name itself unreadable. The name is cut at 20
+     characters for the list row only — the closed field and the hover tooltip
+     both keep it whole. Built from the same labels the options are, so a
+     label the uniqueness pass changed still matches its own entry. */
+  const whShortLabels = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const w of activeWarehouses) {
+      const label = whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name);
+      const short = truncate(w.name, WH_NAME_MAX);
+      if (short !== w.name) m[label] = label.replace(w.name, short);
+    }
+    return m;
+  }, [activeWarehouses, whLabels]);
   const zoneWarehouse = zone?.warehouseId ? warehouses.find(w => w.apiId === zone.warehouseId) : undefined;
   const cm = zone?.dims?.unit === 'cm';
   const fromCm = (v: number) => String(cm ? round(v / 100, 3) : v);
@@ -374,6 +410,12 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                 value={d.wh}
                 options={activeWarehouses.map(w => whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name))}
                 placeholder="Select warehouse"
+                badges={whBadges}
+                shortLabels={whShortLabels}
+                /* List only: the closed field keeps the name, and the
+                   Warehouse Type box beside it already states the type of
+                   whichever one is selected. */
+                listBadgesOnly
                 invalid={!!errors.wh}
                 onChange={v => { set({ wh: v }); clear('wh'); clear('area'); }}
               />

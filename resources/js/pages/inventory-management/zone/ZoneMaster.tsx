@@ -7,6 +7,7 @@ import '../../p2p/purchase-management/order/po-list/order.css';
 import '../warehouse/warehouse-master.css';
 import './zone.css';
 import SearchClear from '../../../components/ui/SearchClear';
+import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import Tooltip from '../../../components/ui/Tooltip';
 import { useFitPageSize } from '../../../hooks/useFitPageSize';
@@ -141,8 +142,12 @@ export default function ZoneMaster() {
   const warehouseById = useMemo(() => new Map(warehouses.map(w => [w.apiId, w])), [warehouses]);
 
   const [counts, setCounts] = useState<ZoneCounts>({ all: 0, rack: 0, norack: 0 });
+  /* The counts open at zeros and are replaced when the request lands, so
+     entering the module showed real-looking zeros and then the truth. Zero is
+     a legitimate count, so nothing told a loading rail from an empty one. */
+  const [countsReady, setCountsReady] = useState(false);
   const loadCounts = useCallback(() => {
-    zoneApi.counts().then(setCounts).catch(() => {});
+    zoneApi.counts().then(setCounts).catch(() => {}).finally(() => setCountsReady(true));
   }, []);
   useEffect(() => { loadCounts(); }, [loadCounts]);
 
@@ -263,7 +268,9 @@ export default function ZoneMaster() {
               >
                 <span className="spi-seg-ico">{t.icon}</span>
                 {t.label}
-                <span className="spi-seg-c">{counts[t.key]}</span>
+                <span className="spi-seg-c">
+                  {countsReady ? counts[t.key] : <Shimmer width={12} height={9} radius={5} />}
+                </span>
               </button>
             ))}
           </div>
@@ -288,8 +295,24 @@ export default function ZoneMaster() {
           </div>
         </div>
 
-        {loading && rows.length === 0 ? (
-          <div className="ord-empty">Loading zones…</div>
+        {/* The shimmer goes INSIDE the real table: the same <thead> stays
+            on screen and only the rows are stand-ins, so nothing moves
+            between loading and result. Shown for any REPLACING load -
+            first paint, search, tab switch, page change - not only when
+            the rows happen to be empty: a tab switch keeps the previous
+            rows until the response lands, so `rows.length === 0` was false
+            and the table sat holding the old tab's rows (CS-939 #7/#8). */}
+        {loading ? (
+          <div className="ord-table-scroll">
+            <table className="ord-table">
+              <thead>
+                <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
+              </thead>
+              <tbody>
+                <ShimmerTableRows rows={6} cols={COLUMNS.length} height={13} />
+              </tbody>
+            </table>
+          </div>
         ) : total === 0 ? (
           <div className="ord-empty">
             {debouncedQuery ? 'No zones match your search.' : 'No zones in this view yet.'}
