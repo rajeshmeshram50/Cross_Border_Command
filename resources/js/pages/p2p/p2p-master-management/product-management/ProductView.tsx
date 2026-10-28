@@ -69,8 +69,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const navigate = useNavigate();
   const goBack = () => { if (props.onClose) props.onClose(); else navigate('/products'); };
   const toast = useToast();
-  // Department-based gating: Sales can't manage suppliers; Purchase can't see
-  // the selling price. Super-admins / admins (no department) see everything.
   const { user } = useAuth();
   const dept = (user?.department || '').trim().toLowerCase();
   const isSalesDept    = dept === 'sales';
@@ -81,25 +79,10 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const [tab, setTab] = useState<'desc' | 'brand' | 'confidential' | 'qc' | 'suppliers'>('desc');
   const [activeImg, setActiveImg] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
-  // Qty stepper for the buy bar (presentation only — mirrors the prototype).
-  // Declared with the other hooks so it always runs before any early return.
   const [qty, setQty] = useState(1);
-  /* Mapped Suppliers is AddProductModal's popup running in supplier-only mode
-     — this page owns no second copy of that list or of the Map Supplier form,
-     so the two entry points can't drift apart. False = the modal is either
-     shut or open on the normal Edit Product wizard. */
   const [supplierOnly, setSupplierOnly] = useState(false);
-
-  /* QC documents come from the same `segment_doc_uploads` table the Add
-   * Product wizard writes to (category = 'qc'). Surfaced here so the
-   * read-only product view shows what's been attached against each
-   * QC slot from the product's segment rule. */
   type QcUpload = { id: number; doc_code: string; doc_name: string; attachment_name: string | null; attachment_url: string | null; requirement: 'M' | 'O' | null };
   const [qcUploads, setQcUploads] = useState<QcUpload[]>([]);
-
-  /* Map a raw segment_uploads row (server shape) into the QcUpload UI shape.
-   * Shared between the bundled extract inside load() and the standalone
-   * loadQcUploads() fallback used by onReload after individual QC uploads. */
   const mapQcRow = (r: any): QcUpload => ({
     id:              Number(r.id),
     doc_code:        String(r.doc_code ?? ''),
@@ -109,10 +92,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
     requirement:     r.requirement ?? null,
   });
 
-  /* Standalone QC reload — kept as the `onReload` callback for individual
-   * QC upload actions (QcRowActions). The initial page load no longer
-   * calls this — segment_uploads now arrives bundled in /products/{id}
-   * (see load() below), saving one round-trip on first paint. */
   const loadQcUploads = useCallback(async () => {
     if (!id) return;
     try {
@@ -120,31 +99,16 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
       const rows = Array.isArray(res.data?.data) ? res.data.data : [];
       setQcUploads(rows.map(mapQcRow));
     } catch {
-      /* silent — empty table just means "no QC docs uploaded yet" */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const load = async (silent = false) => {
     if (!id || props.preview) return;
-    // Silent reloads (triggered from inside the edit modal's Save & Next)
-    // must NOT flip the shimmer flag — doing so swaps the whole page out
-    // for the placeholder, unmounts the open <AddProductModal>, and then
-    // re-mounts it fresh after the fetch. That re-mount resets the
-    // wizard's local tab state back to 'core', which manifested as
-    // "Save & Next on Product Core re-renders the same step".
     if (!silent) setLoading(true);
     try {
       const res = await api.get<ProductDto & { segment_uploads?: { data?: any[] } }>(`/products/${id}`);
       setProduct(res.data);
       setActiveImg(0);
-      /* QC uploads embedded in the same response — drop the separate
-       * GET /segment-uploads/product/{id}?category=qc round-trip.
-       * Production network panel showed that call costing ~1.7s on
-       * cbc.idims.in (boot tax + network latency). Backwards-compat:
-       * if the server hasn't been deployed with the bundled key yet,
-       * segment_uploads is undefined and we fall back to the standalone
-       * fetch so the QC table still hydrates. */
       const bundled = res.data?.segment_uploads?.data;
       if (Array.isArray(bundled)) {
         setQcUploads(bundled.map(mapQcRow));
@@ -173,8 +137,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
       .filter((s): s is string => Boolean(s));
   }, [product]);
 
-  // Auto-advance the hero gallery every 4s, looping through all images.
-  // Pauses while the user hovers the main image so they can inspect it.
   const [galleryPaused, setGalleryPaused] = useState(false);
   useEffect(() => {
     if (images.length < 2 || galleryPaused) return;
@@ -182,19 +144,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
     return () => clearInterval(t);
   }, [images.length, galleryPaused]);
 
-  /* Keep the active thumbnail scrolled into view as the hero gallery
-   * auto-advances (or the user clicks a dot), so the highlighted thumb never
-   * hides off the edge of the strip.
-   *
-   * This scrolls the strip itself rather than calling scrollIntoView on the
-   * thumb. scrollIntoView walks EVERY scrollable ancestor, the document
-   * included: on mobile, once the user has scrolled down to read the
-   * description the strip is off-screen above, so each 4s auto-advance yanked
-   * the page back to the top mid-sentence. Nothing outside the strip should
-   * move because a carousel ticked.
-   *
-   * Mirrors inline:'nearest' — scroll only when the thumb is actually outside
-   * the visible strip, and only far enough to bring it back in. */
   const thumbsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = thumbsRef.current;
@@ -203,8 +152,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
     if (!active) return;
 
     const PAD = 8; // breathing room so the thumb isn't flush to the edge
-    // Offsets resolved from rects rather than offsetLeft, which is relative to
-    // the nearest positioned ancestor and needn't be the strip.
     const left = active.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft;
     const right = left + active.offsetWidth;
 
@@ -217,12 +164,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   }, [activeImg]);
 
   if (loading) {
-    /* Shimmer placeholder that mirrors the CURRENT detail layout
-       (.pv2pd-*): purple hero bar, then the two-column body — gallery
-       (main image / thumb strip / price card / buy bar) on the left,
-       Product Details highlight tiles + tab card on the right. It reuses
-       the real layout containers, so every block lands in exactly the box
-       its real counterpart will occupy and nothing jumps on load. */
     const line = (w: string | number, h = 11) => (
       <div className="pv2-shimmer pv2pd-skel-line" style={{ width: w, height: h }} />
     );
@@ -317,9 +258,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const segmentName    = (product.segment?.title as string) ?? '—';
   const hazClassName   = (product.haz_class?.name as string) ?? '—';
   const uomName        = (product.uom?.short_code as string) ?? (product.uom?.title as string) ?? '—';
-  // Full UOM label — "Metric Ton (MT)" — mirroring the edit form's
-  // `title (short_code)` composition, for the UOM detail card. (`uomName` stays
-  // the short code for the compact "per MT" pricing line.)
   const uomTitle       = (product.uom?.title as string) ?? '';
   const uomShort       = (product.uom?.short_code as string) ?? '';
   const uomFull        = uomTitle
@@ -329,17 +267,11 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const conditionName  = (product.condition?.title as string) ?? '—';
   const packagingName  = (product.packaging_material?.title as string) ?? '—';
   const gstPct         = Number(product.gst_percentage?.percentage ?? 0);
-  // Preserve decimal GST rates (QA #49): show 1.2% / 0.25% as-is instead of
-  // rounding to a whole number. toFixed(2) then Number() trims trailing zeros
-  // (18.00 → 18, 1.20 → 1.2). The amount/total below already come from the
-  // stored server values, so only this label needed fixing.
   const gstPctStr      = String(Number(gstPct.toFixed(2)));
 
   const fmtMoney = (v: string | number | null | undefined) =>
     v == null || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
-  // Long product names ran under the hero action buttons, so the title shows
-  // the first 25 characters only; the full name stays in the tooltip.
   const NAME_MAX = 25;
   const fullName = String(product.name ?? '');
   const displayName = fullName.length > NAME_MAX
@@ -367,15 +299,9 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
           <div className="pv2pd-hero-btns">
             {!props.preview && !props.readOnly && (
             <button className="pv2pd-hbtn pv2pd-hbtn--edit" onClick={() => setEditOpen(true)}>
-              {/* Exact prototype icon (Feather "edit" — pen-to-square). */}
-              {/* The trailing words collapse on narrow screens (see the 480px
-                  block in the CSS) so all three actions hold one row instead of
-                  wrapping "Back to Product List" onto a line of its own. */}
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> <span>Edit<span className="pv2pd-hbtn-more"> Product</span></span>
             </button>
             )}
-            {/* Sales can't manage suppliers — the button is hidden entirely
-                (not just disabled) so there's no dead control / denial toast. */}
             {!isSalesDept && !props.preview && !props.readOnly && (
               <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => { setSupplierOnly(true); setEditOpen(true); }}>
                 {/* Exact prototype icon (Feather "users" — two people). */}
@@ -444,8 +370,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             </>
           )}
 
-          {/* Dark purple price card — the Purchase department can't see the
-              selling price, so it's replaced with a locked placeholder. */}
+
           {isPurchaseDept ? (
             <Tooltip label="You don't have permission for this">
             <div
@@ -477,7 +402,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             </div>
           )}
 
-          {/* Buy bar (presentation only) — not in the read-only popup. */}
           {!props.readOnly && (
           <div className="pv2pd-buybar">
             <div className="pv2pd-qty">
@@ -485,9 +409,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
               <input value={qty} readOnly />
               <button onClick={() => setQty(q => q + 1)} aria-label="Increase">+</button>
             </div>
-            {/* "Add to" is dropped on phones (see the 520px block in the CSS) so
-                the stepper and both actions fit on one row without truncating —
-                the icon already carries the verb. */}
             <button className="pv2pd-act pv2pd-act--wish" onClick={() => toast.info('Wishlist', `${product.name} added to wishlist`)}>
               <i className="ri-heart-line" /> <span><span className="pv2pd-act-verb">Add to </span>Wishlist</span>
             </button>
@@ -498,10 +419,8 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
           )}
         </div>
 
-        {/* RIGHT: Product Details highlights + tabs */}
         <div className="pv2pd-infocol">
           <div className="pv2pd-info">
-            {/* Product Details card */}
             <div className="pv2pd-sec pv2pd-details">
               <div className="pv2pd-sec__title">
                 <span className="pv2pd-sec__ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></span>
@@ -513,9 +432,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                 </Tooltip>
               </div>
               <div className="pv2pd-highlights">
-                {/* Tile icons are the EXACT Feather SVGs from the P2P Figma
-                  prototype (.pd-hl__ico): briefcase / tag / check-circle
-                  (or alert-triangle when hazardous) / box / tag / package. */}
                 <div className="pv2pd-hl pv2pd-hl--v">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></span>
                   <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">HSN Code</span><Tooltip label={hsnCode}><span className="pv2pd-hl__v">{hsnCode}</span></Tooltip></span>
@@ -575,17 +491,10 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
       {editOpen && (
         <AddProductModal
           productId={product.id}
-          /* Hand the already-loaded product so the modal can skip its
-           * own /products/{id} refetch. Production network panel
-           * showed that duplicate call costing ~2 sec. */
           initialProduct={product}
           supplierOnly={supplierOnly}
           onClose={() => { setEditOpen(false); setSupplierOnly(false); }}
           onSaved={(_pid, finalised) => {
-            // Silent refresh — see load()'s note. We want the underlying
-            // ProductView card to reflect the new data once the user
-            // closes the modal, but we must NOT unmount the modal while
-            // it's still mid-wizard, or its local tab/step state resets.
             void load(true);
             if (finalised) setEditOpen(false);
           }}
@@ -594,98 +503,3 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
     </div>
   );
 }
-
-/* View / Download / Re-upload — mirrors the Evidence Vault action set so
- * the read-only product page can swap a QC attachment without bouncing
- * through the full Add Product wizard. Re-upload posts to the same
- * segment-uploads endpoint that the wizard writes to. */
-function QcRowActions({ doc, productId, onReload, toast }: {
-  doc: { id: number; doc_code: string; doc_name: string; attachment_name: string | null; attachment_url: string | null };
-  productId: number;
-  onReload: () => Promise<void> | void;
-  toast: ReturnType<typeof useToast>;
-}) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const [busy, setBusy] = useState(false);
-  const canViewOrDownload = !!doc.attachment_url;
-
-  const download = () => {
-    if (!doc.attachment_url) return;
-    const a = document.createElement('a');
-    a.href = doc.attachment_url;
-    a.download = doc.attachment_name || '';
-    a.target = '_blank';
-    a.rel = 'noreferrer';
-    document.body.appendChild(a); a.click(); a.remove();
-  };
-
-  const onPick = async (f: File | undefined) => {
-    if (!f) return;
-    setBusy(true);
-    try {
-      const fd = new FormData();
-      fd.append('category', 'qc');
-      fd.append('doc_code', doc.doc_code);
-      fd.append('doc_name', doc.doc_name || doc.doc_code);
-      fd.append('attachment', f);
-      await api.post(`/segment-uploads/product/${productId}`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      await onReload();
-      toast.success('Re-uploaded', f.name);
-    } catch (err: any) {
-      toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the QC document.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="d-inline-flex align-items-center gap-1">
-      <input
-        ref={fileRef}
-        type="file"
-        hidden
-        accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
-        onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
-      />
-      <Tooltip label={canViewOrDownload ? `View ${doc.attachment_name}` : 'No attachment yet'}>
-        <a
-          href={canViewOrDownload ? doc.attachment_url! : undefined}
-          target={canViewOrDownload ? '_blank' : undefined}
-          rel="noreferrer"
-          aria-disabled={!canViewOrDownload}
-          className={`btn btn-sm btn-soft-info ${!canViewOrDownload ? 'disabled' : ''}`}
-          onClick={e => { if (!canViewOrDownload) e.preventDefault(); }}
-          aria-label="View"
-        >
-          <i className="ri-eye-line" />
-        </a>
-      </Tooltip>
-      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment_name}` : 'No attachment yet'}>
-        <button
-          type="button"
-          disabled={!canViewOrDownload}
-          onClick={download}
-          className="btn btn-sm btn-soft-secondary"
-          aria-label="Download"
-        >
-          <i className="ri-download-2-line" />
-        </button>
-      </Tooltip>
-      <Tooltip label={busy ? 'Uploading…' : (doc.attachment_name ? 'Re-upload (replace file)' : 'Upload')}>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => fileRef.current?.click()}
-          className="btn btn-sm btn-soft-primary"
-          aria-label={doc.attachment_name ? 'Re-upload' : 'Upload'}
-        >
-          <i className={busy ? 'ri-loader-4-line' : (doc.attachment_name ? 'ri-refresh-line' : 'ri-upload-2-line')} />
-        </button>
-      </Tooltip>
-    </div>
-  );
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */

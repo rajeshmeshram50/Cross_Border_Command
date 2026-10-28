@@ -167,22 +167,33 @@ export default function WarehouseMaster() {
   const rowCount = list.rows.length;
   useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
 
-  const [busyId, setBusyId] = useState<number | null>(null);
+  /* The switch flips the moment it is clicked and the save runs behind it
+     (CS-939 #15). It used to wait for the PUT and then reload the whole page
+     through the skeleton — 2–3 s before the click showed. The server's row
+     replaces the guess when it lands; a refused save flips it back. Busy is
+     per row, so one pending save does not swallow clicks on the others. */
+  const patchRows = list.patch;
+  const [busyIds, setBusyIds] = useState<ReadonlySet<number>>(new Set());
+  const busyRef = useRef(busyIds);
+  busyRef.current = busyIds;
   const toggle = useCallback(async (w: Warehouse) => {
-    if (busyId || !w.apiId) return;
+    const apiId = w.apiId;
+    if (!apiId || busyRef.current.has(apiId)) return;
     const activate = w.status !== 'active';
-    setBusyId(w.apiId);
+    const put = (row: Warehouse) => patchRows(rs => rs.map(r => (r.apiId === apiId ? row : r)));
+    setBusyIds(s => new Set(s).add(apiId));
+    put({ ...w, status: activate ? 'active' : 'inactive' });
     try {
-      await warehouseApi.setStatus(w.apiId, activate);
+      put(await warehouseApi.setStatus(apiId, activate));
       if (activate) toast.success(`${w.id} marked Active`, 'Its zones and racks stay inactive until you switch them back on.');
       else toast.warning(`${w.id} marked Inactive`, 'It stays in the list, dimmed.');
-      reload();
     } catch (e) {
+      put(w);
       toast.error('Could not change the status', e instanceof WarehouseApiError ? e.message : 'Please try again.');
     } finally {
-      setBusyId(null);
+      setBusyIds(s => { const n = new Set(s); n.delete(apiId); return n; });
     }
-  }, [busyId, reload, toast]);
+  }, [patchRows, toast]);
 
   const [qrFor, setQrFor] = useState<Warehouse | null>(null);
   const [formFor, setFormFor] = useState<Warehouse | 'new' | null>(null);
@@ -349,7 +360,7 @@ export default function WarehouseMaster() {
               </thead>
               {rows.map((w, i) => (
                 <tbody key={w.apiId ?? w.id}>
-                  <Row w={w} sr={start + i + 1} off={w.status !== 'active'} busy={busyId === w.apiId}
+                  <Row w={w} sr={start + i + 1} off={w.status !== 'active'} busy={!!w.apiId && busyIds.has(w.apiId)}
                     opening={openingId === w.apiId}
                     onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={t => void openEdit(t)} />
                 </tbody>

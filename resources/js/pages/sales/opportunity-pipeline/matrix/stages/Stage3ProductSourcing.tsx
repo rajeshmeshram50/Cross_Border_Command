@@ -5,6 +5,7 @@ import { formatProductCode } from '../../../../../utils/formatProductCode';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../../components/ui/Tooltip';
+import '../../../../../components/ui/DataTable.css';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import CreateProcurementModal, { type SelectedProduct } from './CreateProcurementModal';
 import ProcurementDetailsModal from './ProcurementDetailsModal';
@@ -379,11 +380,14 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
       </div>
 
       <div className="smd-stg-body">
-        {/* Pill tabs */}
-        <div className="s3-tabs">
+        {/* Tabs = the Customers list tab rail (.dt-tabrail) */}
+        <div className="s3-tabs dt-tabrail hr-dt" data-accent="violet">
+          <div className="dt-tabs" role="tablist">
           <button
             type="button"
-            className={`s3-tab s3-tab-details ${tab === 'details' ? 'active' : ''}`}
+            role="tab"
+            aria-selected={tab === 'details'}
+            className={`dt-tab ${tab === 'details' ? 'on' : 'off'}`}
             onClick={() => setTab('details')}
           >
             <span className="s3-tab-ico">
@@ -392,12 +396,14 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
               </svg>
             </span>
             <span>Product Details</span>
-            <span className="s3-tab-count">{detailsRows.length}</span>
+            <span className="dt-tab-count">{detailsRows.length}</span>
           </button>
 
           <button
             type="button"
-            className={`s3-tab s3-tab-req ${tab === 'required' ? 'active' : ''}`}
+            role="tab"
+            aria-selected={tab === 'required'}
+            className={`dt-tab ${tab === 'required' ? 'on' : 'off'}`}
             onClick={() => setTab('required')}
           >
             <span className="s3-tab-ico">
@@ -406,12 +412,14 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
               </svg>
             </span>
             <span>Sourcing Required</span>
-            <span className="s3-tab-count">{requiredRows.length}</span>
+            <span className="dt-tab-count">{requiredRows.length}</span>
           </button>
 
           <button
             type="button"
-            className={`s3-tab s3-tab-not ${tab === 'not_required' ? 'active' : ''}`}
+            role="tab"
+            aria-selected={tab === 'not_required'}
+            className={`dt-tab ${tab === 'not_required' ? 'on' : 'off'}`}
             onClick={() => setTab('not_required')}
           >
             <span className="s3-tab-ico">
@@ -420,8 +428,9 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
               </svg>
             </span>
             <span>Sourcing Not Required</span>
-            <span className="s3-tab-count">{notRequiredRows.length}</span>
+            <span className="dt-tab-count">{notRequiredRows.length}</span>
           </button>
+          </div>
         </div>
 
         {/* ─── PRODUCT DETAILS TAB ─── */}
@@ -1088,39 +1097,9 @@ const STAGE3_CSS = `
 }
 
 /* ═══════════════════════════════ TABS ═══════════════════════════════ */
-.s3-tabs { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.s3-tab {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 5px 12px; border-radius: 9px;
-  border: 1.5px solid; background: #fff;
-  font-family: inherit; font-size: 11px; font-weight: 700;
-  cursor: pointer; transition: all .15s;
-}
+.s3-tabs { align-self: flex-start; width: fit-content; max-width: 100%; margin-bottom: 16px; }
+.s3-tabs .dt-tab { height: 40px; font-size: 12.5px; }
 .s3-tab-ico { display: inline-flex; align-items: center; justify-content: center; }
-.s3-tab-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
-  font-size: 10px; font-weight: 800;
-}
-/* Product Details — violet */
-.s3-tab-details          { color: #7c3aed; border-color: #ddd6fe; }
-.s3-tab-details:hover    { background: #faf5ff; }
-.s3-tab-details.active   { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border-color: #6d28d9; box-shadow: 0 4px 12px rgba(124,58,237,.30); }
-.s3-tab-details .s3-tab-count          { background: #ede9fe; color: #6d28d9; }
-.s3-tab-details.active .s3-tab-count   { background: rgba(255,255,255,.22); color: #fff; }
-/* Sourcing Required — amber */
-/* Required + Not-Required tabs share the Sales-Matrix violet theme so the
-   stage matches the rest of the matrix (was amber / mint). */
-.s3-tab-req              { color: #7c3aed; border-color: #ddd6fe; }
-.s3-tab-req:hover        { background: #faf5ff; }
-.s3-tab-req.active       { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border-color: #6d28d9; box-shadow: 0 4px 12px rgba(124,58,237,.30); }
-.s3-tab-req .s3-tab-count          { background: #ede9fe; color: #6d28d9; }
-.s3-tab-req.active .s3-tab-count   { background: rgba(255,255,255,.22); color: #fff; }
-.s3-tab-not              { color: #7c3aed; border-color: #ddd6fe; }
-.s3-tab-not:hover        { background: #faf5ff; }
-.s3-tab-not.active       { background: linear-gradient(135deg,#7c3aed,#6d28d9); color: #fff; border-color: #6d28d9; box-shadow: 0 4px 12px rgba(124,58,237,.30); }
-.s3-tab-not .s3-tab-count          { background: #ede9fe; color: #6d28d9; }
-.s3-tab-not.active .s3-tab-count   { background: rgba(255,255,255,.22); color: #fff; }
 
 /* ═══════════════════════════════ WARN BANNER ═══════════════════════════════ */
 .s3-warn {
@@ -1519,13 +1498,6 @@ const STAGE3_CSS = `
 }
 
 /* Dark mode */
-[data-bs-theme="dark"] .s3-tab { background: #1a1538; }
-[data-bs-theme="dark"] .s3-tab-details          { color: #c4b5fd; border-color: rgba(167,139,250,.35); }
-[data-bs-theme="dark"] .s3-tab-details:hover    { background: #2a2150; }
-[data-bs-theme="dark"] .s3-tab-req              { color: #c4b5fd; border-color: rgba(167,139,250,.35); }
-[data-bs-theme="dark"] .s3-tab-req:hover        { background: #2a2150; }
-[data-bs-theme="dark"] .s3-tab-not              { color: #c4b5fd; border-color: rgba(167,139,250,.35); }
-[data-bs-theme="dark"] .s3-tab-not:hover        { background: #2a2150; }
 [data-bs-theme="dark"] .s3-card { background: #14102a; }
 [data-bs-theme="dark"] .s3-card-violet { border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .s3-card-amber  { border-color: rgba(167,139,250,.30); background: #1a1538; }

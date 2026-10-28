@@ -193,9 +193,9 @@ const SCOPED_CSS = `
 .pdv-head-title { font-size: 16px; font-weight: 800; letter-spacing: .01em; }
 .pdv-head-sub   { font-size: 11.5px; color: rgba(255,255,255,.82); margin-top: 2px; }
 .pdv-close {
-  width: 30px; height: 30px; flex-shrink: 0;
+  width: 40px; height: 40px; flex-shrink: 0;
   background: rgba(255,255,255,.18); border: none; cursor: pointer;
-  color: #fff; border-radius: 7px;
+  color: #fff; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
   transition: background .15s;
 }
@@ -236,8 +236,9 @@ const SCOPED_CSS = `
   background: #fff; border-top: 1px solid #e5e7eb;
 }
 .pdv-btn {
-  padding: 8px 22px; border-radius: 8px;
-  font-family: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer;
+  box-sizing: border-box; height: 40px;
+  padding: 0 22px; border-radius: 10px;
+  font-family: inherit; font-weight: 700; font-size: 11.5px; cursor: pointer;
   border: 1.5px solid transparent;
   min-width: 110px;
   transition: all .15s;

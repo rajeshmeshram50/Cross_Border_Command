@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../../../../api';
+import '../../../../../components/ui/DataTable.css';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import Tooltip from '../../../../../components/ui/Tooltip';
@@ -661,36 +662,40 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       <div className="smd-stg-body">
         {/* Segmented tab toggle + Create buttons (figma action row) */}
         <div className="s5-actionrow">
-          <div className="s5-seg">
+          <div className="s5-seg dt-tabrail hr-dt" data-accent="violet">
+            <div className="dt-tabs" role="tablist">
             <button
               type="button"
-              className={`s5-seg-btn ${docType === 'quotation' ? 'active' : ''}`}
+              role="tab"
+              aria-selected={docType === 'quotation'}
+              className={`dt-tab ${docType === 'quotation' ? 'on' : 'off'}`}
               onClick={() => setDocType('quotation')}
               disabled={anyActing}
               title={anyActing ? 'Please wait — an action is in progress…' : undefined}
             >
-              <span className="s5-seg-dot" />
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
                 <line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/>
               </svg>
               <span>Quotation</span>
-              <span className="s5-seg-count">{liveQuotationsCount}</span>
+              <span className="dt-tab-count">{liveQuotationsCount}</span>
             </button>
             <button
               type="button"
-              className={`s5-seg-btn ${docType === 'pi' ? 'active' : ''}`}
+              role="tab"
+              aria-selected={docType === 'pi'}
+              className={`dt-tab ${docType === 'pi' ? 'on' : 'off'}`}
               onClick={() => setDocType('pi')}
               disabled={anyActing}
               title={anyActing ? 'Please wait — an action is in progress…' : undefined}
             >
-              <span className="s5-seg-dot" />
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6M9 11h6M9 15h4"/>
               </svg>
               <span>Proforma Invoice</span>
-              <span className="s5-seg-count">{livePisCount}</span>
+              <span className="dt-tab-count">{livePisCount}</span>
             </button>
+            </div>
           </div>
           <div className="s5-create-group">
             {/* Once a (non-cancelled) PI exists on this opportunity, a new
@@ -796,7 +801,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                   <th style={{ width: 90 }}>Currency</th>
                   <th className="ta-r" style={{ width: 150 }}>{docType === 'quotation' ? 'Quotation Value' : 'PI Value'}</th>
                   {docType === 'pi' && <th className="ta-c" style={{ width: 100 }}>Status</th>}
-                  <th className="ta-r">Action</th>
+                  <th className="ta-c">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -1714,61 +1719,31 @@ const STAGE5_CSS = `
 .s5-actionrow {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 35%, #f3f0ff 65%, #faf5ff 100%);
-  border: 1.5px solid rgba(167,139,250,.55); border-radius: 14px;
-  padding: 8px 10px 8px 8px; margin-bottom: 12px;
-  box-shadow: 0 2px 16px rgba(124,58,237,.10), inset 0 1px 0 rgba(255,255,255,.8);
+  /* No band behind the row — the tab rail and buttons sit on the card, as the
+     My Workplace / Customers toolbars do. */
+  margin-bottom: 12px;
 }
-.s5-actionrow::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; background: linear-gradient(180deg, rgba(255,255,255,.55), transparent); pointer-events: none; border-radius: 14px 14px 0 0; }
-.s5-seg {
-  position: relative; z-index: 1;
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 4px 5px; border-radius: 12px;
-  background: rgba(255,255,255,.6); border: 1.5px solid rgba(167,139,250,.4);
-  box-shadow: 0 1px 6px rgba(124,58,237,.08), inset 0 1px 0 rgba(255,255,255,.9);
-}
-.s5-seg-btn {
-  position: relative; display: inline-flex; align-items: center; gap: 7px;
-  box-sizing: border-box; height: 40px;
-  padding: 0 18px; border-radius: 9px; cursor: pointer; white-space: nowrap;
-  font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: .01em;
-  background: rgba(255,255,255,.75); color: #6d28d9;
-  border: 1.5px solid rgba(124,58,237,.2);
-  box-shadow: 0 1px 4px rgba(124,58,237,.08);
-  transition: all .22s cubic-bezier(.4,0,.2,1);
-}
-.s5-seg-btn:hover:not(.active) { background: #fff; border-color: rgba(124,58,237,.32); }
-.s5-seg-btn.active {
-  font-weight: 700; color: #fff; border: none;
-  background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%);
-  box-shadow: 0 4px 14px rgba(124,58,237,.45), inset 0 1px 0 rgba(255,255,255,.2);
-  text-shadow: 0 1px 2px rgba(0,0,0,.2);
-}
-.s5-seg-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: #a78bfa; box-shadow: 0 0 4px rgba(167,139,250,.5); }
-.s5-seg-btn.active .s5-seg-dot { background: rgba(255,255,255,.85); box-shadow: 0 0 6px rgba(255,255,255,.6); }
-.s5-seg-btn svg { flex-shrink: 0; }
-/* Count chip on each segmented tab — number of live quotations / PIs. */
-.s5-seg-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px; margin-left: 2px;
-  border-radius: 9px; background: rgba(124,58,237,.14); color: #7c3aed;
-  font-size: 10.5px; font-weight: 800; line-height: 1;
-}
-.s5-seg-btn.active .s5-seg-count { background: rgba(255,255,255,.28); color: #fff; }
+/* Tabs = the Customers list tab rail (.dt-tabrail): 40px tabs, 12.5px, count chips. */
+.s5-seg { position: relative; z-index: 1; }
+.s5-seg .dt-tab { height: 40px; font-size: 12.5px; }
+.s5-seg .dt-tab svg { flex-shrink: 0; }
+.s5-seg .dt-tab:disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
 
 .s5-create-group { position: relative; z-index: 1; display: flex; align-items: center; gap: 7px; }
 .s5-create-div { width: 1px; height: 26px; flex-shrink: 0; background: linear-gradient(180deg, transparent, rgba(124,58,237,.25), transparent); }
+/* Create Quotation / Create PI = the Supplier / Customers header Add button. */
 .s5-create-btn {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 7px;
   box-sizing: border-box; height: 40px;
-  padding: 0 16px; border-radius: 9px; cursor: pointer; white-space: nowrap;
-  font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: .02em;
-  transition: all .22s cubic-bezier(.4,0,.2,1);
+  padding: 0 18px; border-radius: 12px; cursor: pointer; white-space: nowrap;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .02em;
+  color: #fff; border: none;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
+  box-shadow: 0 4px 16px rgba(124,58,237,.45), 0 1px 3px rgba(91,33,182,.30), inset 0 1px 0 rgba(255,255,255,.20);
+  text-shadow: 0 1px 2px rgba(0,0,0,.20);
+  transition: all .2s;
 }
-.s5-create-q { color: #5b21b6; border: 1.5px solid rgba(124,58,237,.3); background: linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%); box-shadow: 0 2px 8px rgba(124,58,237,.15), inset 0 1px 0 rgba(255,255,255,.9); }
-.s5-create-q:hover { background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff; border-color: transparent; box-shadow: 0 6px 18px rgba(124,58,237,.45); transform: translateY(-2px); }
-.s5-create-p { color: #fff; border: none; background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); box-shadow: 0 4px 14px rgba(124,58,237,.4), inset 0 1px 0 rgba(255,255,255,.2); }
-.s5-create-p:hover { background: linear-gradient(135deg, #6d28d9, #4c1d95); box-shadow: 0 6px 18px rgba(124,58,237,.55); transform: translateY(-2px); }
+.s5-create-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.55), inset 0 1px 0 rgba(255,255,255,.20); }
 
 /* ─── Table card ─── */
 .s5-tbl-card { border: 1.5px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.06); background: #fff; }
@@ -1833,7 +1808,7 @@ const STAGE5_CSS = `
 .s5-st-recalled { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 
 /* ─── Action cell ─── */
-.s5-acts { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: nowrap; }
+.s5-acts { display: flex; align-items: center; justify-content: center; gap: 5px; flex-wrap: nowrap; }
 .s5-act-sep { width: 1px; height: 20px; background: #e2e8f0; flex-shrink: 0; }
 .s5-convert2 {
   display: inline-flex; align-items: center; gap: 5px;
@@ -1882,7 +1857,7 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .s5-pagelock-spin { border-color: #2b2450; border-top-color: #a78bfa; }
 /* Lock the tab switcher + summary button while a row action (PDF view /
    download / email) is in flight, so context can't change mid-load. */
-.s5-seg-btn:disabled, .s5-summary-btn:disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
+.s5-summary-btn:disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
 /* Default neutral hover — applies to the plain buttons (view / reminder) and
    any variant that doesn't define its own accent. */
 .s5-icn:hover:not(:disabled):not(.s5-icn-cooling) { background: #475569; color: #fff; border-color: transparent; transform: translateY(-1px); }
@@ -2029,18 +2004,7 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .s5-head-divider { background: rgba(165,243,252,.25); }
 /* Action row (tabs + create buttons) — dark surface instead of the light
    cyan gradient so it reads as part of the dark panel. */
-[data-bs-theme="dark"] .s5-actionrow {
-  background: linear-gradient(110deg, #14102a 0%, #1a1538 45%, #14102a 100%);
-  border-color: rgba(124,58,237,.30);
-  box-shadow: 0 2px 16px rgba(0,0,0,.30);
-}
-[data-bs-theme="dark"] .s5-actionrow::before { display: none; }
-[data-bs-theme="dark"] .s5-seg { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.25); box-shadow: none; }
-[data-bs-theme="dark"] .s5-seg-btn { color: #c4b5fd; background: rgba(167,139,250,.08); border-color: rgba(167,139,250,.20); box-shadow: none; }
-[data-bs-theme="dark"] .s5-seg-btn:hover:not(.active) { background: rgba(167,139,250,.16); border-color: rgba(167,139,250,.35); }
-[data-bs-theme="dark"] .s5-seg-btn.active { color: #fff; background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%); border: none; }
 [data-bs-theme="dark"] .s5-create-div { background: linear-gradient(180deg, transparent, rgba(167,139,250,.30), transparent); }
-[data-bs-theme="dark"] .s5-create-q { background: #1f1845; color: #c4b5fd; border-color: rgba(167,139,250,.40); box-shadow: none; }
 [data-bs-theme="dark"] .s5-tbl-card { background: #14102a; border-color: rgba(167,139,250,.25); }
 [data-bs-theme="dark"] .s5-tbl tbody td { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .s5-tbl tbody tr:nth-child(even),

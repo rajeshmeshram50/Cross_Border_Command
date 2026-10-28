@@ -250,11 +250,6 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                 Add New Reason
               </button>
             )}
-            {latestBucket && (
-              <span className={`smd-st2-status-current ${BUCKET_META[latestBucket].pill}`}>
-                {BUCKET_META[latestBucket].label}
-              </span>
-            )}
           </div>
 
           <div className="smd-st2-pills">
@@ -437,9 +432,6 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
             <div className={`st2-pick-foot ${BUCKET_META[pickerBucket].pill}`}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span className="st2-pick-count">{selected.size} selected</span>
-                {canAddReason && (
-                  <button type="button" className="st2-pick-addlink" onClick={() => openAddReason(pickerBucket)}>+ Add New Reason</button>
-                )}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="st2-pick-btn st2-pick-btn-ghost" onClick={closePicker}>Cancel</button>
@@ -809,22 +801,18 @@ const STAGE2_CSS = `
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 11px; border-radius: 20px; cursor: pointer;
   font-family: inherit; font-size: 9.5px; font-weight: 700;
-  color: #6d28d9; background: #f5f3ff; border: 1.5px dashed #a78bfa;
+  /* The violet fill of the status badge that used to sit beside it. */
+  color: #fff; background: linear-gradient(115deg, #6d28d9, #7c3aed, #8b5cf6);
+  border: 1.5px solid transparent; box-shadow: 0 2px 8px rgba(124,58,237,.35);
   transition: all .18s; white-space: nowrap;
 }
 .smd-st2-add-reason:hover {
-  background: #ede9fe; border-style: solid; color: #5b21b6;
-  transform: translateY(-1px); box-shadow: 0 3px 10px rgba(124,58,237,.18);
+  background: linear-gradient(115deg, #5b21b6, #6d28d9, #7c3aed); color: #fff;
+  transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.45);
 }
-.st2-pick-addlink {
-  border: none; background: none; padding: 0; cursor: pointer;
-  font-family: inherit; font-size: 11.5px; font-weight: 700; color: #7c3aed;
-}
-.st2-pick-addlink:hover { text-decoration: underline; color: #5b21b6; }
 /* ── Dark mode ─────────────────────────────────────────────── */
-[data-bs-theme="dark"] .smd-st2-add-reason { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.55); color: #c4b5fd; }
-[data-bs-theme="dark"] .smd-st2-add-reason:hover { background: rgba(124,58,237,.30); color: #ede9fe; }
-[data-bs-theme="dark"] .st2-pick-addlink { color: #c4b5fd; }
+[data-bs-theme="dark"] .smd-st2-add-reason { background: linear-gradient(115deg, #6d28d9, #7c3aed, #8b5cf6); border-color: transparent; color: #fff; }
+[data-bs-theme="dark"] .smd-st2-add-reason:hover { background: linear-gradient(115deg, #5b21b6, #6d28d9, #7c3aed); color: #fff; }
 [data-bs-theme="dark"] .smd-st2-status-block {
   background: #14102a;
   border-color: rgba(167,139,250,.30);

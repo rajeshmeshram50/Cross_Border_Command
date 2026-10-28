@@ -9,7 +9,7 @@ import '../zone/zone-form.css';
 import './rack-form.css';
 import './shelf-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
-import { InventoryApiError, type Rack } from './rack-data';
+import { InventoryApiError, blockNonNumericKeys, type Rack } from './rack-data';
 import { SHELF_PURPOSES, SHELF_TYPES, shelfApi, type Shelf, type ShelfPayload } from './shelf-data';
 
 const PURPOSES = SHELF_PURPOSES;
@@ -161,12 +161,15 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
   const save = async () => {
     if (saving) return;
     const e: Partial<Record<keyof Draft, string>> = {};
-    if (!/^\d+$/.test(d.level.trim()) || Number(d.level) < 1) e.level = 'Enter a level, 1 or more';
     if (!d.name.trim()) e.name = 'Enter a shelf name';
     if (!d.type) e.type = 'Choose a shelf type';
-    if (!(parseFloat(d.max) > 0)) e.max = 'Enter the weight it can hold';
-    (['len', 'wid', 'ht'] as const).forEach(k => {
-      if (!(parseFloat(d[k]) > 0)) e[k] = 'Required';
+    if (!d.max.trim()) e.max = 'Enter the weight it can hold';
+    else if (!(Number(d.max) > 0)) e.max = 'Enter a valid weight';
+    /* Empty and invalid are told apart (QA CS-942 #10) — "Required" under a
+       field that visibly holds "456e" read as the form not seeing it. */
+    ([['len', 'length'], ['wid', 'width'], ['ht', 'height']] as const).forEach(([k, word]) => {
+      if (!d[k].trim()) e[k] = `Enter the ${word}`;
+      else if (!(Number(d[k]) > 0)) e[k] = `Enter a valid ${word}`;
     });
     const hCm = unit === 'm' ? parseFloat(d.ht) * 100 : parseFloat(d.ht);
     if (Number.isFinite(hCm) && hCm > freeCm) {
@@ -188,8 +191,9 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
       shelf_type: d.type,
       max_weight_kg: parseFloat(d.max),
       purpose: d.purpose === 'Other' ? d.purposeOther.trim() : d.purpose,
-      cold_chain: d.cold && r.cold ? 1 : 0,
-      hazardous: d.haz && r.haz ? 1 : 0,
+      // The rack's own flags — the server copies them down regardless.
+      cold_chain: r.cold ? 1 : 0,
+      hazardous: r.haz ? 1 : 0,
       dim_unit: unit,
       length: L,
       width: W,
@@ -299,12 +303,14 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
                 <span className="whm-auto__tag">AUTO</span>
               </div>
             </Field>
-            <Field label="Shelf Level" req error={errors.level}>
-              <input
-                className={`spi-dt-inp${errors.level ? ' is-invalid' : ''}`}
-                type="number" min={1} step={1} placeholder={`e.g. ${next}`}
-                value={d.level} onChange={e => { set({ level: e.target.value }); clear('level'); }}
-              />
+            {/* Assigned, not typed (QA CS-942 #12): the level is the "SH-07"
+                in the Shelf ID, so a new shelf takes the next level and an
+                existing one keeps its own — the server enforces both. */}
+            <Field label="Shelf Level" error={errors.level}>
+              <div className="whm-auto is-filled">
+                <input className="spi-dt-inp" value={d.level} readOnly tabIndex={-1} />
+                <span className="whm-auto__tag">AUTO</span>
+              </div>
             </Field>
             <Field label="Shelf Name" req error={errors.name}>
               <input
@@ -327,6 +333,7 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
                 <input
                   className={`spi-dt-inp${errors.max ? ' is-invalid' : ''}`}
                   type="number" min={0} step={1} placeholder="e.g. 500"
+                  onKeyDown={blockNonNumericKeys}
                   value={d.max} onChange={e => { set({ max: e.target.value }); clear('max'); }}
                 />
                 <span>kg</span>
@@ -359,6 +366,7 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
                       <input
                         className={`spi-dt-inp${errors[key] ? ' is-invalid' : ''}`}
                         type="number" min={0} step="0.01" placeholder={ph}
+                        onKeyDown={blockNonNumericKeys}
                         value={d[key]}
                         onChange={e => { set({ [key]: e.target.value } as Partial<Draft>); clear(key); }}
                       />
@@ -392,19 +400,21 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
 
           <Card icon={<IcoFlag />} title="Shelf Flag Details">
             <Field label="Cold Chain">
+              {/* Follows the rack (QA CS-942 #14) — on and locked in a
+                  cold-chain rack, off and locked otherwise. */}
               <Switch
-                on={d.cold}
-                disabled={!r.cold}
-                label={r.cold ? (d.cold ? 'Cold chain shelf' : 'Not Allowed') : 'Not allowed in this rack'}
-                onToggle={() => set({ cold: !d.cold })}
+                on={r.cold}
+                disabled
+                label={r.cold ? 'Cold chain shelf · set by the rack' : 'Not allowed in this rack'}
+                onToggle={() => {}}
               />
             </Field>
             <Field label="Hazardous">
               <Switch
-                on={d.haz}
-                disabled={!r.haz}
-                label={r.haz ? (d.haz ? 'Hazardous shelf' : 'Not Allowed') : 'Not allowed in this rack'}
-                onToggle={() => set({ haz: !d.haz })}
+                on={r.haz}
+                disabled
+                label={r.haz ? 'Hazardous shelf · set by the rack' : 'Not allowed in this rack'}
+                onToggle={() => {}}
               />
             </Field>
             {/* "Other" swaps the list for a box you type in, with an × back to
@@ -484,7 +494,7 @@ function AutoField({ label, value, mono }: { label: string; value: string; mono?
 function Switch({ on, disabled, label, onToggle }: {
   on: boolean; disabled?: boolean; label: string; onToggle: () => void;
 }) {
-  const live = on && !disabled;
+  const live = on;
   return (
     <div
       className={`znm-tg${live ? ' is-on' : ''}${disabled ? ' is-locked' : ''}`}

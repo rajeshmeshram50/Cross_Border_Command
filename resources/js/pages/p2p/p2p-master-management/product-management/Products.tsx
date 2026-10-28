@@ -4,6 +4,7 @@ import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
 import './product-management.css';
 import '../supplier-management/supplier-management.css';   // .sup-fig .cstrip / .bref-box — the shared list header
 import '../../../sales/core-masters/customer/SalesCustomers.css';   // .smc-root header overrides
+import '../../../../components/ui/DataTable.css';   // .dt-tabrail — the Customer list's tabs
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -299,13 +300,6 @@ export default function Products() {
     return out;
   }, [filters, hsnLabel]);
 
-  /* The search term is NOT a chip (QA #19).
-     A filter is a choice you made inside the Filters panel and then cannot see
-     any more, which is exactly why the Applied strip exists. The search term is
-     sitting in the box at the top of the screen with its own clear button —
-     repeating it below as something "applied" says a filter is in force that
-     the user cannot find in the panel, and makes a one-word search look like a
-     state to be undone. */
   const toolbarChips = useMemo<FilterChip[]>(() => {
     const out: FilterChip[] = [];
     if (segment !== 'All Segments')  out.push({ id: 'segment', group: 'Segment', label: segment,      onRemove: () => setSegment('All Segments') });
@@ -339,8 +333,6 @@ export default function Products() {
     return () => clearTimeout(t);
   }, [q]);
 
-  /* Same treatment for the Custom "last N days" box — otherwise typing "30"
-     would refetch once for "3" and again for "30". */
   const [debouncedDays, setDebouncedDays] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setDebouncedDays(filters.createdCustomDays.trim()), 400);
@@ -495,10 +487,6 @@ export default function Products() {
 
   return (
     <div className="prd-root">
-
-      {/* Header strip + "What We Are Doing Here" — the same markup and classes
-          the Customer, Consignee and Supplier lists use (.sup-fig .cstrip and
-          .bref-box, inside .smc-root for their shared edge/height overrides). */}
       <div className="smc-root">
       <div className="sup-fig">
         <div className="cstrip">
@@ -569,25 +557,21 @@ export default function Products() {
 
       <div className="prd-panel">
       <div className="prd-toolbar">
-        <div className="prd-tabs">
-          <button
-            type="button"
-            className={`prd-tab ${statusTab === 'active' ? 'is-active' : ''}`}
-            onClick={() => setStatusTab('active')}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
-            <span className="prd-tab-label">Supplier Mapped Products</span>
-            <span className="prd-tab-badge prd-tab-badge--active"><span className="prd-tab-badge-dot" />Active<span className="prd-tab-badge-count">{stats.active}</span></span>
-          </button>
-          <button
-            type="button"
-            className={`prd-tab ${statusTab === 'inactive' ? 'is-active' : ''}`}
-            onClick={() => setStatusTab('inactive')}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /><line x1="3.5" y1="20.5" x2="20.5" y2="3.5" /></svg>
-            <span className="prd-tab-label">Zero Supplier Products</span>
-            <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
-          </button>
+        {/* The Customer list's tab rail (dt-tabrail / dt-tab); icons and the
+            Active / Inactive badges are the Product list's own. */}
+        <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+          <div className="dt-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={statusTab === 'active'} className={`dt-tab ${statusTab === 'active' ? 'on' : 'off'}`} onClick={() => setStatusTab('active')}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+              Supplier Mapped Products
+              <span className="prd-tab-badge prd-tab-badge--active"><span className="prd-tab-badge-dot" />Active<span className="prd-tab-badge-count">{stats.active}</span></span>
+            </button>
+            <button type="button" role="tab" aria-selected={statusTab === 'inactive'} className={`dt-tab ${statusTab === 'inactive' ? 'on' : 'off'}`} onClick={() => setStatusTab('inactive')}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /><line x1="3.5" y1="20.5" x2="20.5" y2="3.5" /></svg>
+              Zero Supplier Products
+              <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
+            </button>
+          </div>
         </div>
         <div className="prd-toolbar-find">
         <div className="prd-search">
@@ -817,8 +801,6 @@ export default function Products() {
             >
               Clear All
             </button>
-            {/* Same drawer, same reason: above .prd-filter-drawer or the tip
-                opens behind the panel it belongs to. */}
             <Tooltip label="Close" zIndex={2000010}>
               <button
                 type="button"
@@ -1010,19 +992,8 @@ function FrozenRows(props: { options: string[] }) {
 }
 
 function CheckRow(props: { label: string; checked: boolean; onChange: () => void; tip?: string; segment?: boolean }) {
-  /* A segment's tooltip carries its regulatory tier as well as its name.
-     The badge sits at the end of the row, so on a long name it is the first
-     thing to go out of view — and the tier is the one fact that would change
-     whether somebody ticks the row. Putting it in the tooltip means the
-     answer is still reachable when the badge is not. */
   const segStatus = useSegmentStatusByName();
   const tip = props.tip ?? (props.segment ? segmentLabel(props.label, segStatus(props.label)) : props.label);
-  /* The tooltip used to depend on the label being longer than 28 characters,
-     which is a guess about width, not a measurement of it. A segment row also
-     carries its regulatory badge, so the text has whatever the badge leaves —
-     "Lemon Lemon Lemon Lemon L…" was cut at 25 characters and showed nothing on
-     hover (QA #20). This measures instead: tooltip exactly when the text is
-     actually clipped, re-checked when the panel resizes. */
   const ref = useRef<HTMLSpanElement | null>(null);
   const [cut, setCut] = useState(false);
   useLayoutEffect(() => {
@@ -1039,10 +1010,6 @@ function CheckRow(props: { label: string; checked: boolean; onChange: () => void
   return (
     <label className="prd-filter-row">
       <input type="checkbox" checked={props.checked} onChange={props.onChange} />
-      {/* An explicit tip is a different sentence from the label, so it always shows.
-          zIndex above .prd-filter-drawer (2000001): the tooltip portals to
-          <body> at 260000 by default, which puts it UNDER the drawer it was
-          opened from — it rendered, and nobody could see it. */}
       <Tooltip label={tip} disabled={props.tip === undefined && !cut} zIndex={2000010}>{span}</Tooltip>
       {props.segment && <SegmentNameBadge name={props.label} style={{ flex: '0 0 auto', alignSelf: 'center', marginLeft: 'auto' }} />}
     </label>

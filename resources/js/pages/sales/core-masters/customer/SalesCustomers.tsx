@@ -27,24 +27,12 @@ import PartyFilterModal, {
 } from '../PartyFilterModal';
 import { lazyPage } from '../../../../utils/lazyPage';
 
-// Heavy modals are code-split: their chunks (and TipTap/face-api/pdf deps)
-// download only when first opened, not on the customer list's first paint.
 const AddCustomerModal = lazyPage(() => import('./AddCustomerModal'));
 const CustomerConsigneesModal = lazyPage(() => import('./CustomerConsigneesModal'));
 const CustomerEvidenceVaultModal = lazyPage(() => import('./CustomerEvidenceVaultModal'));
-
-/* A segment pill that reveals its full name on hover — but ONLY when the label
- * is actually cut by .smc-seg's 150px cap. The clip is measured from the DOM
- * (scrollWidth vs clientWidth) instead of guessed from a character count: the
- * old `length > 18` test both missed short-but-wide names and hung a pointless
- * tooltip on names that fit. Used by the table cell AND the "+N" popover — the
- * popover pills had no hover reveal at all, so a long name like
- * "Travel & Luggagewww…" was unreadable there. */
 function SegChip({ name, status, split = false }: { name: string; status?: string | null; split?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   const clipped = useIsClipped(ref, name);
-  /* List cell: one pill carrying the badge. Popup row (`split`): the name pill and
-     the Reg badge are separate chips, badge pinned to the right of the row. */
   if (split) {
     const pill = <span ref={ref} className="smc-seg">{name}</span>;
     return (
@@ -75,8 +63,6 @@ type Customer = {
   country: string; country_iso?: string | null; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No'; consignees: number;
   riskLevel?: string | null; city?: string | null;
-  // True = Recurring (has ≥1 lead), false = Fresh. Drives the tab split and
-  // counts client-side. See CustomerController::index().
   recurring?: boolean;
   hasSameAsCustomerConsignees?: boolean;
   sameAsCustomerConsigneeCount?: number;
@@ -103,13 +89,7 @@ const titleCase = (s: string): string => {
 
 const TruncatedCell = ({ value, className, max = 60, caseSensitive = false, maxWidth = '100%' }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean; maxWidth?: number | string }) => {
   const ref = useRef<HTMLSpanElement>(null);
-  /* A cell is cut two different ways: by the character cap below, and by the
-   * column being narrower than the text. Only the first is knowable from the
-   * string, so the second is measured - and measured with a ResizeObserver,
-   * because a table column settles AFTER first paint and keeps moving as rows
-   * load or the window changes. Measuring once on mount answered "not
-   * clipped" before the column had a width, and nothing ever asked again,
-   * which is why a visibly cut email offered no tooltip. */
+
   const raw = (value ?? '').trim();
   const v = raw ? (caseSensitive ? raw : titleCase(raw)) : '';
   const clipped = useIsClipped(ref, v);
@@ -129,19 +109,7 @@ function useDebouncedValue<T>(value: T, ms = 300): T {
   return v;
 }
 
-/* How much of the viewport bottom the card must leave alone.
- *
- * The card is sized to `innerHeight - top - reserve`, so if the reserve is too
- * small the card runs past the bottom of the screen -- and because the page
- * FOOTER sits below the card, the page ends up taller than the viewport by
- * exactly the footer's height. That is a short, jerky scroll range on a page
- * that should not scroll at all, which is what reads as lag here.
- *
- * A flat 15 ignored the footer entirely. Measured instead, the same way
- * components/ui/DataTable does it, including its one exception: the
- * auto-hiding footer is position: fixed, owns no height in the flow, and
- * comes back over the table -- reserving its 40px would leave exactly the
- * white band it exists to remove. */
+
 const bottomReserve = (): number => {
   if (typeof document === 'undefined') return 15;
   const f = document.querySelector('footer.footer') as HTMLElement | null;
@@ -160,27 +128,12 @@ export default function SalesCustomers() {
   const canEdit   = isSuperAdmin || !!customerPerm?.can_edit;
 
   const [tab, setTab] = useState<'all' | 'fresh' | 'recurring'>('all');
-  /* Customer Type (Domestic/India vs International), Segment, Country and
-   * Whatsapp — a separate axis from the Fresh/Recurring tabs, so they're
-   * filters rather than more pills; the two combine.
-   *
-   * Applied client-side: /customers returns the whole list in one response and
-   * the table paginates it locally, so there's nothing to ask the server for.
-   * (Replaces the old standalone "Region" dropdown, which is now the modal's
-   * Customer Type facet — same rule, same client-side application.) */
+
   const [filters, setFilters] = useState<PartyFilters>({});
   const [filterOpen, setFilterOpen] = useState(false);
 
   const [tabSwitching, setTabSwitching] = useState(false);
-  /* Shimmer on every tab change. The three tabs slice an already-loaded set
-   * client-side, so there is no fetch to await — but repainting instantly
-   * reads as "nothing happened": the columns are identical and the rows often
-   * overlap, so only the pill counts visibly move. The shimmer is what says
-   * the table underneath was replaced.
-   *
-   * Same shape and duration as HrEmployees, which is where this pattern
-   * already lives. The cleanup is what makes a fast All → Fresh → Recurring
-   * run restart ONE shimmer rather than stack three that end at odd moments. */
+
   useEffect(() => {
     setTabSwitching(true);
     const t = window.setTimeout(() => setTabSwitching(false), 450);
@@ -189,10 +142,7 @@ export default function SalesCustomers() {
   const [q, setQ] = useState('');
   const [wdhOpen, setWdhOpen] = useState(false);
   const [segOpen, setSegOpen] = useState<{ id: string | number; items: { name: string; status?: string | null }[]; x: number; y: number } | null>(null);
-  /* The segments popover is pinned to fixed x/y captured on click, so anything
-     that moves the badge underneath leaves it stranded: a scroll, a resize, or
-     switching tab — it used to stay open over the next tab's rows (CS-31/35).
-     Scrolling the long list inside it is not a move, and does not close it. */
+
   useDismissPopover(!!segOpen, () => setSegOpen(null), { inside: '.smc-seg-pop', watch: tab });
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<EditCustomer | null>(null);
@@ -212,62 +162,28 @@ export default function SalesCustomers() {
   const [loading, setLoading]     = useState(true);
   const tableCardRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize] = useState(ROWS_PER_PAGE);
-  // Once the user picks a Rows-per-page value, stop the viewport auto-fit from
-  // overriding it so the manual choice sticks.
   const [manualSize, setManualSize] = useState(false);
   useEffect(() => {
     const el = tableCardRef.current;
     if (!el) return;
     const fit = (heightOnly = false) => {
-      /* First, and unconditionally. tbody's max-height is
-         `calc(100% - var(--smc-thead-h))`, so this has to be published on every
-         pass -- including the unpinned one, which returns early. Measured
-         rather than a constant because these headers wrap to two lines on a
-         narrow column, which is exactly when a fixed value would be wrong. */
+
       const headH = (el.querySelector('.smc-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
       if (headH) el.style.setProperty('--smc-thead-h', `${headH}px`);
       const footH = (el.querySelector('.smc-table-wrap .tc-wl-pag') as HTMLElement | null)?.offsetHeight || 0;
       if (footH) el.style.setProperty('--smc-foot-h', `${footH}px`);
 
-      /* Measured INSIDE the scroller, not against the viewport.
-       *
-       * getBoundingClientRect().top is viewport-relative, so it shrinks as the
-       * page scrolls -- and `innerHeight - top` therefore GROWS. Measured on
-       * the real page: unscrolled the card wanted 459px, and 40px down the
-       * same code asked for 499. The card gets taller, the page gets taller
-       * with it, so there is more to scroll, so the next measurement is taken
-       * from further down and asks for more again. That loop is the lag and
-       * the bouncing.
-       *
-       * An earlier version clamped `top` at zero, which only caught the card
-       * scrolling fully off the top -- at 246px it passes straight through.
-       *
-       * The card's offset within the scrolling element does not move when you
-       * scroll, so this answer is the same at any scroll position and there is
-       * no loop to start. */
+
       const scroller = (el.closest('.main-content') as HTMLElement | null) ?? null;
       const offsetTop = scroller
         ? el.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
         : el.getBoundingClientRect().top + (document.scrollingElement?.scrollTop ?? 0);
       const spaceH = scroller ? scroller.clientHeight : window.innerHeight;
       const cardSpace = spaceH - offsetTop - bottomReserve();
-      /* A floor, not an escape hatch.
-         This briefly released the pin whenever cardSpace fell under 240 -- added
-         while chasing the bounce, before the cause was known. It makes things
-         worse where it fires: zoomed to 150%, with the banner open, the card
-         then takes its NATURAL height, so the page carries a full table instead
-         of a compact 240px one with its own scroll, and there is far more page
-         to drag.
-         The bounce turned out to be the viewport-relative measurement above,
-         which is fixed, so the floor can simply be a floor again: the card is
-         never smaller than 240, and where that overruns the viewport the page
-         scrolls -- by a predictable amount, without feeding back. */
+
       delete el.dataset.unpinned;
       const h = Math.max(240, cardSpace);
-      /* Only write when the value actually changes. fit() runs from a
-         ResizeObserver, and writing styles inside an observer callback
-         re-enters layout -- so an unchanged height still cost a reflow on
-         every notification, which is the rest of the judder. */
+
       const next = `${h}px`;
       if (el.style.height !== next) {
         el.style.flex = 'none';
@@ -277,33 +193,19 @@ export default function SalesCustomers() {
 
       if (heightOnly || manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smc-toolbar') as HTMLElement | null)?.offsetHeight || 0;
-      /* The filter-chips bar only exists when filters are active. It sits above
-       * the table and used to be left OUT of the subtraction, so turning a
-       * filter on pushed the last row under the pager (over-count by one). */
+
       const filterbarH = (el.querySelector('.smc-filterbar') as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('.smc-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
-      /* Footer is the worklist pager `.tc-wl-pag` (TableContainerReactTable);
-       * the old `.smc-table-wrap > .row` selector matched the non-worklist
-       * pager, which this table doesn't render — so footerH came back 0 and the
-       * auto-fit over-counted rows by one (QA #31). Measure the real pager. */
+
       const footerH  = (el.querySelector('.tc-wl-pag, .smc-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
       const rowEl    = el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null;
       const rowH     = rowEl?.getBoundingClientRect().height || 44;
-      /* Measure the space the rows actually get — the scroll box minus the
-         header — instead of estimating it from the card's height. The estimate
-         also took off a spare 8px and missed the card's border, which was just
-         enough to round a fitting last row down and leave a row-sized gap. */
+
       const scrollBox = el.querySelector('.smc-table-wrap .table-responsive') as HTMLElement | null;
       const avail = scrollBox
         ? scrollBox.clientHeight - theadH
         : h - toolbarH - filterbarH - theadH - footerH - 8;
-      /* The page size is EXACTLY how many rows fit — not `max(10, fit)`. Flooring
-       * at 10 was the "always 10" bug: on a screen that fits 8 it still asked for
-       * 10 (so 2 rows sat under the pager and it never looked full), and it
-       * masked the real fit on taller screens too. Now it shrinks and grows with
-       * the viewport like the Lead Worksheet. Floor of 5 just avoids a silly
-       * 1–2-row page on a very short window. */
-      // +2: sub-pixel row heights must not cost a whole row.
+
       const rowsFit = Math.max(5, Math.floor((avail + 2) / rowH));
       setPageSize(rowsFit);
     };
@@ -315,22 +217,9 @@ export default function SalesCustomers() {
     let roSettle: (() => void) | undefined;
     const banner = document.querySelector('.smc-bref');
     if (banner && typeof ResizeObserver !== 'undefined') {
-      /* HEIGHT only. This observer is here for one thing: the banner being
-         expanded or collapsed. But a ResizeObserver reports WIDTH too, and
-         width is exactly what changes when a vertical scrollbar appears --
-         which is the loop. fit() sets the card's height, the page height
-         changes, the scrollbar toggles, the page narrows, the banner's width
-         changes, the observer fires, fit() runs again. The page oscillating
-         between the two states is the bouncing.
-         Ignoring width-only notifications breaks it: the scrollbar can come
-         and go without re-running the measurement. */
+
       let lastH = (banner as HTMLElement).getBoundingClientRect().height;
-      /* The card's HEIGHT follows the banner on every frame of its open/close
-         animation, so banner + card always add up to the same page height. When
-         the card only caught up after the animation, the page was briefly taller
-         than the viewport: a scrollbar appeared for the length of the animation,
-         narrowed the page, and everything shook. The row count is the expensive,
-         visible part, so that still waits until the banner has settled. */
+
       let settle: number | undefined;
       ro = new ResizeObserver(entries => {
         const h = entries[0]?.contentRect.height ?? 0;
@@ -352,15 +241,9 @@ export default function SalesCustomers() {
   }, [wdhOpen, loading, manualSize]);
 
   const debouncedQ = useDebouncedValue(q, 300);
-  /* Monotonic request id — only the newest in-flight fetch may write state.
-   * Rapidly clicking All → Fresh → Recurring fires overlapping requests, and
-   * without this an earlier/slower response could land last and paint the
-   * wrong tab's rows (and drop the shimmer early). */
+
   const reqIdRef = useRef(0);
-  /* Always fetch the FULL set (no tab param) — the tabs, facet filters and all
-   * pill counts are derived from it client-side, so switching tabs or filters
-   * is instant and never needs another round-trip. Only the search box hits the
-   * server, so this re-runs on search alone. */
+
   const fetchCustomers = useCallback(() => {
     const reqId = ++reqIdRef.current;
     setLoading(true);
@@ -380,19 +263,7 @@ export default function SalesCustomers() {
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
-  /* Matches on `country` (the full name, e.g. "India") — the same field the
-   * Add/Edit form and the consignee mapping guard key off. Not country_iso:
-   * that's null whenever the stored country doesn't resolve to a master row,
-   * which would silently drop those rows from EVERY filter.
-   *
-   * The predicate lives in PartyFilterModal (applyPartyFilters) so the
-   * modal that collects the selections and the page that applies them can't
-   * drift on what a filter means. */
-  /* Facet filters apply FIRST, across every tab; the pill counts are then the
-     Fresh/Recurring split of that filtered set, and the visible rows are the
-     active tab's slice of it. Doing it in this order is what makes the counts
-     react to the filters — apply International and every pill drops to its
-     International total. */
+
   const facetFiltered = useMemo(
     () => applyPartyFilters(customers, filters),
     [customers, filters],
@@ -407,10 +278,6 @@ export default function SalesCustomers() {
     return facetFiltered;
   }, [facetFiltered, tab]);
   const activeFilterCount = countPartyFilterValues(filters);
-
-  // Active filters as removable chips (shown above the table with a Clear all,
-  // like the My Workplace / Lead Worksheet filter bar). Customer has no
-  // "Same as Customer" facet, so it's not chipped here.
   const filterChips: { label: string; onRemove: () => void }[] = [];
   if (filters.region) filterChips.push({ label: `Customer Type: ${filters.region === 'domestic' ? 'Domestic' : 'International'}`, onRemove: () => setFilters(f => ({ ...f, region: undefined })) });
   (filters.segments ?? []).forEach(s => filterChips.push({ label: `Segment: ${s}`, onRemove: () => setFilters(f => ({ ...f, segments: (f.segments ?? []).filter(x => x !== s) })) }));
@@ -480,12 +347,6 @@ export default function SalesCustomers() {
       cell: (info: any) => <TruncatedCell value={info.getValue()} className="smc-company" />,
     },
     {
-      /* Retailer / Wholesaler — was headed "Customer Type" until that name was
-         handed to the Domestic/International column below. Only the header
-         changed; the accessor is still `type`.
-         Abbreviated to "Cust Category": every column is sized to its content
-         now, so the full header was the widest thing in the column and set its
-         width all by itself — the values ("Retailer") are far shorter. */
       header: 'Cust Category',
       accessorKey: 'type',
       meta: { align: 'start' },
@@ -501,10 +362,7 @@ export default function SalesCustomers() {
       },
     },
     {
-      /* Domestic vs International — DERIVED from the country, not a stored
-         column, so it always agrees with the address on the form and with the
-         filter's Customer Type facet (both call isDomesticParty). Sorting and
-         the global search work off `country` for the same reason. */
+
       header: 'Customer Type',
       id: 'tradeType',
       accessorFn: (row: Customer) => (isDomesticParty(row) ? 'Domestic' : 'International'),
@@ -558,10 +416,6 @@ export default function SalesCustomers() {
       } },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
     { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'start' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
-    /* Email is the ONE column left free to absorb the table's leftover width
-       (see SalesCustomers.css). Its caps are raised to match: at 18 chars /
-       220px it truncated long before the column ran out, so the width it soaked
-       up showed as blank space instead of address. */
     { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" caseSensitive /> },
     {
       header: () => <div className="text-center">WhatsApp</div>,
@@ -634,8 +488,6 @@ export default function SalesCustomers() {
   return (
     <div className="smc-root">
 
-      {/* Header strip + "What We Are Doing Here" — the Supplier list's header
-          (.sup-fig .cstrip) and step-card banner, in one .sup-fig as on that page. */}
       <div className="sup-fig">
         <div className="cstrip">
           <span className="cstrip__accent" />
@@ -716,12 +568,7 @@ export default function SalesCustomers() {
               </button>
             </div>
           </div>
-          {/* Filter — independent of the tabs above (a customer is Fresh OR
-              Recurring, and separately Domestic OR International), so it sits
-              beside them rather than becoming a fourth pill. Opens the same
-              two-pane modal the Lead Worksheet uses. The badge shows how many
-              values are active, so a filtered table is never mistaken for an
-              empty one. */}
+
           <button
             type="button"
             className={`dt-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
@@ -733,19 +580,6 @@ export default function SalesCustomers() {
           </button>
           <div className="dt-search">
             <i className="ri-search-line dt-search-icon" />
-            {/* Chrome was dropping the customer's email in here after Add
-                Customer was saved (QA #8) — intermittently, which is what
-                autofill looks like. Nothing in this page ever writes to `q`;
-                the browser filled the field, its input event reached onChange,
-                and the value landed in state for real.
-                Chrome IGNORES autocomplete="off" on a field it classifies as
-                contact info, and this one invites that: no name, and a
-                placeholder with the word "email" in it. autocomplete
-                ="new-password" is the token it does honour — the same one this
-                app already uses to keep autofill off other plain-text fields —
-                and type="search" plus an explicit name keep its heuristics away
-                from the field in the first place. The data-* pair does the same
-                for LastPass and Dashlane. */}
             <input
               type="search"
               name="customer-list-search"
@@ -764,8 +598,6 @@ export default function SalesCustomers() {
           </div>
         </div>
 
-        {/* Active filter chips + Clear all — applied filters shown outside the
-            modal, each removable, mirroring the My Workplace filter bar. */}
         <FilterChipsBar chips={filterChips} onClearAll={() => setFilters({})} prefix="smc" />
 
         <div className="smc-table-wrap">
@@ -786,10 +618,7 @@ export default function SalesCustomers() {
               onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}
-          {/* Says WHY the table is empty — a bare "No customers found" while a
-              filter is on reads as "there is no data" rather than "nothing
-              matches this filter", and the user can't see the selections from
-              here (they live inside the modal). Offers the way out too. */}
+
           {!loading && !tabSwitching && visibleCustomers.length === 0 && (
             <div className="smc-empty py-4">
               {customers.length > 0 && activeFilterCount > 0 ? (
@@ -804,10 +633,6 @@ export default function SalesCustomers() {
         </div>
       </div>
 
-      {/* Options are derived from `customers` (the whole loaded tab), NOT
-          visibleCustomers — deriving from the already-filtered rows would make
-          each pick narrow the choices left, so a user could never widen a
-          filter without resetting it first. */}
       <PartyFilterModal
         open={filterOpen}
         onClose={() => setFilterOpen(false)}
@@ -889,12 +714,6 @@ export default function SalesCustomers() {
       )}
 
       {segOpen && (() => {
-        // Keep the popover fully on-screen — clamp its anchor so it never bleeds
-        // below the fold when the "+N" is near the bottom of the list. The box
-        // is at most 280px tall (maxHeight, then it scrolls); reserve the real
-        // height (short lists) or that cap so the bottom rows stay visible.
-        // Show ~3 segment rows at a time; the rest go behind the scrollbar.
-        // Title stays pinned — only the rows list scrolls.
         const ROWS_MAX_H = 108;            // ≈ 3 rows (~34px each)
         const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.items.length * 34);
         const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 230));

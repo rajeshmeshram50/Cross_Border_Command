@@ -1,6 +1,3 @@
-// The transaction's own paper trail — not the supplier's KYC vault. The order
-// the request sits on, the trade documents generated off it, and every
-// supplier invoice mapped to it.
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -12,9 +9,7 @@ import type { PaymentRequestDetail, TradeDoc } from './paymentRequestDetailData'
 type VaultRow = {
   id: string; sub: string; name: string; nameSub: string;
   date: string; amount: number | null; pill: ReactNode;
-  /** The file on record; empty when nothing has been generated or uploaded. */
   file: string;
-  /** Fetches the bytes — absent when the row has no file to open. */
   fetch?: () => Promise<Blob>;
 };
 
@@ -41,7 +36,6 @@ export default function TxnVaultModal({ detail, onClose }: { detail: PaymentRequ
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // The PO is also a trade document; it is listed once, with its signature state.
   const poDoc = tradeDocs.find(d => d.name === 'Purchase Order');
   const poRows: VaultRow[] = po ? [{
     id: po.po, sub: poDoc?.code ?? 'Order', name: 'Purchase Order', nameSub: row.supplier,
@@ -55,7 +49,6 @@ export default function TxnVaultModal({ detail, onClose }: { detail: PaymentRequ
     file: d.hasFile ? (d.attachment || `${d.code.replace(/[^0-9A-Za-z]+/g, '_')}.pdf`) : '',
     fetch: d.hasFile ? () => fileOf(d) : undefined,
   }));
-  // Invoices mapped to the order; a direct SPI is its own single invoice.
   const spiRows: VaultRow[] = po
     ? po.invoices.map(l => ({
       id: l.spi, sub: 'Invoice', name: 'Supplier Purchase Invoice', nameSub: row.supplier,
@@ -72,9 +65,6 @@ export default function TxnVaultModal({ detail, onClose }: { detail: PaymentRequ
   const total = poRows.length + tdRows.length + spiRows.length;
   const [busy, setBusy] = useState<string | null>(null);
 
-  /* A signed document comes back from Zoho Sign; anything else is the file we
-     hold on the PO. Both stream through the API, so an off-origin store (Azure)
-     is no obstacle. */
   function fileOf(d: TradeDoc): Promise<Blob> {
     return d.status === 'signed' && d.signatureRequestId != null
       ? poSignatureApi.signedFile(d.signatureRequestId, d.signatureIndex ?? 0)
@@ -97,7 +87,6 @@ export default function TxnVaultModal({ detail, onClose }: { detail: PaymentRequ
     }
   };
 
-  // Download All takes every row that actually has a file, one after another.
   const withFiles = [...poRows, ...tdRows, ...spiRows].filter(r => r.fetch);
   const downloadAll = async () => {
     if (!withFiles.length || busy) return;
@@ -111,7 +100,7 @@ export default function TxnVaultModal({ detail, onClose }: { detail: PaymentRequ
         setTimeout(() => URL.revokeObjectURL(url), 60000);
         done += 1;
         await new Promise((ok) => setTimeout(ok, 350));
-      } catch { /* one failure must not stop the rest */ }
+      } catch { }
     }
     setBusy(null);
     if (done === withFiles.length) toast.success('Download started', `${done} document${done === 1 ? '' : 's'}.`);
@@ -146,7 +135,6 @@ export default function TxnVaultModal({ detail, onClose }: { detail: PaymentRequ
               <span className="ptv-c ptv-c--amt">{r.amount !== null ? money(r.amount) : <span className="ptv-dash">—</span>}</span>
               <span className="ptv-c ptv-c--st">{r.pill}</span>
               <span className="ptv-c ptv-c--file">
-                {/* An icon on its own said nothing; no file reads as a dash. */}
                 {r.file ? (
                   <span className="ptv-file"><span className="ptv-file__ico"><IcoFile size={13} /></span><span className="ptv-file__n" title={r.file}>{r.file}</span></span>
                 ) : <span className="ptv-dash">—</span>}

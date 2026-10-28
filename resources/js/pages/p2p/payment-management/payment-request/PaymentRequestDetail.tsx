@@ -1,5 +1,3 @@
-// Payment Request Management → View Request. Opens full screen over the list,
-// so Back returns to the queue with its tab, search and page untouched.
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
@@ -7,7 +5,6 @@ import { useAuth } from '../../../../contexts/AuthContext';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
-// Named apart from the inspection helper of the same name imported below.
 import { downloadFile as downloadProofUrl } from '../../../../utils/downloadFile';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import { ORDER_COLUMNS, OrderRowBody, type OrderRow } from '../../purchase-management/order/po-list/Order';
@@ -39,9 +36,7 @@ import {
 import TxnVaultModal from './TxnVaultModal';
 import api from '../../../../api';
 import type { SupplierVaultTarget } from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
-// The supplier's own vault (KYC, DD, licences) — loaded only when opened.
 const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
-// Supplier master wizard, opened on its GST Scrutiny tab (supplier-maintenance permission only).
 const AddVendorModal = lazy(() => import('../../p2p-master-management/supplier-management/AddVendorModal'));
 import PaymentRequestDecisionModal, { type DecisionMode } from './PaymentRequestDecisionModal';
 import type { PaymentRequestRow } from './paymentRequestData';
@@ -56,8 +51,6 @@ import './payment-request-decision.css';
 import { ccySymbol } from '../../../../utils/currency';
 import { poInspectionApi } from '../../purchase-management/order/api/po-api';
 
-/* An earlier order of this supplier opens the same two screens the PO list
-   opens. They used to answer "coming soon" (CS-417). */
 const PhysicalInspectionModal = lazy(() => import('../../purchase-management/order/physical-inspection/PhysicalInspectionModal'));
 const ManagePaymentRequestsModal = lazy(() => import('../../purchase-management/order/manage-payment/ManagePaymentRequestsModal'));
 
@@ -74,18 +67,13 @@ const SUBS: { k: SubTab; t: string; ico: Icon }[] = [
   { k: 'status', t: 'Current Transaction Status', ico: IcoClock },
 ];
 
-/* Amounts print in the PO's OWN currency. An import is raised in the supplier's
-   currency (AUD, USD …), so a hard-coded rupee sign said one thing while the PO
-   said another (CS-436 / CS-437). */
 const moneyOf = (ccy?: string | null) => (n: number) => `${ccySymbol(ccy)}${Math.round(n).toLocaleString('en-IN')}`;
 
-/** 20/07/2026 — the stamp under the request id. */
 function shortDate(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
-/** 16 Jun 2026 — the second line of a header chip. */
 function longDate(iso?: string | null) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -100,19 +88,16 @@ const statusText = (r: LinkedRequest | Detail['row']) =>
 
 const NO_APPROVE_TIP = 'You need Approve permission on Payment Request Management to decide requests';
 
-// A popup opened from this page owns Esc while it is up.
 const POPUP_LAYERS = '.spi-mdl-backdrop, .cgst-backdrop, .prd-detail-overlay, .prd-vault, .cev-overlay';
 
 export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
   requestId: number;
   onBack: () => void;
-  /** A request was approved or declined here — the list behind should reload. */
   onChanged?: () => void;
 }) {
   useScrollLock(true, '.prd-root');
   const toast = useToast();
   const { user } = useAuth();
-  // Deciding a request needs Approve on this module; viewing it only needs View.
   const canApprove = user?.user_type === 'super_admin' || !!user?.permissions?.['p2p.payment_request']?.can_approve;
 
   const [detail, setDetail] = useState<Detail | null | undefined>(undefined);
@@ -120,11 +105,8 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
   const [sub, setSub] = useState<SubTab>('supplier');
   const [vaultOpen, setVaultOpen] = useState(false);
   const [decide, setDecide] = useState<{ mode: DecisionMode; request: PaymentRequestRow } | null>(null);
-  /* The request id just decided here: the detail is re-read after a decision,
-     and until it lands the buttons must already be closed (CS-433 / CS-434). */
   const [justDecided, setJustDecided] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
-  /* An earlier order opened from the history table. */
   const [histInspect, setHistInspect] = useState<OrderRow | null>(null);
   const [histManage, setHistManage] = useState<OrderRow | null>(null);
 
@@ -148,10 +130,6 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
     return () => document.removeEventListener('keydown', onKey);
   }, [onBack]);
 
-  /* The approver decides on their own screen; this one read the request once,
-     when it opened, so it went on saying "Awaiting Approval" until the page was
-     reloaded (CS-423). While the request is with an approver it is re-read every
-     20s, and at once when this tab or window is looked at again. */
   const awaiting = detail?.row.status === 'awaiting';
   useEffect(() => {
     if (!awaiting) return;
@@ -166,20 +144,18 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
     };
   }, [awaiting]);
 
-  /* Somebody else's decision lands quietly otherwise — say what happened. */
   const lastStatus = useRef<string | null>(null);
   useEffect(() => {
     const now = detail?.row.status ?? null;
     const was = lastStatus.current;
     lastStatus.current = now;
     if (!now || was !== 'awaiting' || now === 'awaiting') return;
-    if (justDecided === detail?.row.requestId) return;   // this screen said it already
+    if (justDecided === detail?.row.requestId) return;
     if (now === 'approved') toast.success(`${detail?.row.requestId} approved`, 'Payment can now be released.');
     else toast.warning(`${detail?.row.requestId} declined`, 'Nothing can be paid against it.');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.row.status]);
 
-  // Only a request still awaiting approval can be decided.
   const openDecision = (mode: DecisionMode, request: PaymentRequestRow) => {
     if (request.status !== 'awaiting') {
       toast.warning(`${request.requestId} has already been ${request.status === 'approved' ? 'approved' : 'declined'}`);
@@ -189,7 +165,6 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
   };
   const onDecided = (r: PaymentRequestRow) => {
     setDecide(null);
-    // The re-read takes a moment; the buttons must close the instant it is decided.
     setJustDecided(r.requestId);
     setVersion(v => v + 1);
     onChanged?.();
@@ -250,8 +225,6 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
 
   return createPortal(
     <div className="prd-root">
-      {/* An earlier order opened from the history table — the same two screens
-          the PO list opens, instead of a "coming soon" (CS-417). */}
       {histInspect && (
         <Suspense fallback={null}>
           <PhysicalInspectionModal
@@ -288,9 +261,6 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
               <div className="prd-chips">
                 {chip(i9(IcoFile), `${D} Number`, doc.id, longDate(doc.date))}
                 {chip(i9(IcoBuilding), 'Supplier', supplier?.code ?? '—', row.supplier)}
-{/* A PO raised without a shipment, opportunity or procurement reads "N/A",
-                    the same as the PO list — a dash looked like the value had failed
-                    to load (CS-427). */}
                 {chip(i9(IcoShip), 'Shipment ID', row.shipment?.id ?? 'N/A', longDate(row.shipment?.date))}
                 {chip(i9(IcoTarget), 'Opportunity ID', row.opportunity?.id ?? 'N/A', row.opportunity?.date ? longDate(row.opportunity.date) : '')}
                 {chip(i9(IcoCart), 'Procurement ID', row.procurement?.id ?? 'N/A', row.procurement?.date ? longDate(row.procurement.date) : '')}
@@ -421,7 +391,6 @@ export default function PaymentRequestDetail({ requestId, onBack, onChanged }: {
   );
 }
 
-/* ── Empty state, shared by every tab that has nothing to show ── */
 function Empty({ ico: I, title, sub }: { ico: Icon; title: string; sub: string }) {
   return (
     <div className="prd-empty">
@@ -432,9 +401,6 @@ function Empty({ ico: I, title, sub }: { ico: Icon; title: string; sub: string }
   );
 }
 
-/* ══ Supplier Details ══
-   The Create PO supplier stage, read-only: an approver reads this record,
-   they don't maintain it. Every box still collapses from its header. */
 type BoxKey = 'basic' | 'address' | 'legal' | 'gst' | 'risk';
 
 function SupBox({ open, onToggle, icon, title, extras, children }: {
@@ -462,13 +428,10 @@ function RO({ label, value, full }: { label: string; value: string; full?: boole
 
 function SupplierPanel({ supplier: s, vendorId, international, onSupplierChanged }: {
   supplier: Supplier | undefined; vendorId: number | null;
-  /** An import: no GST applies, so nothing GST-related is shown or checked. */
   international: boolean;
-  /** Re-load the request after the supplier's GST scrutiny is updated, so the check re-runs. */
   onSupplierChanged: () => void;
 }) {
   const { user } = useAuth();
-  // Only supplier maintainers get the shortcut into the supplier's GST Scrutiny.
   const canEditSupplier = user?.user_type === 'super_admin' || user?.user_type === 'client_admin'
     || !!user?.permissions?.['p2p.supplier']?.can_edit;
   const [scrutinyOpen, setScrutinyOpen] = useState(false);
@@ -482,7 +445,6 @@ function SupplierPanel({ supplier: s, vendorId, international, onSupplierChanged
     return <Empty ico={IcoBuilding} title="Supplier Details" sub="The supplier record could not be loaded." />;
   }
 
-  // The vault is keyed on the supplier's DB id; match on company name (codes differ between masters).
   const openVault = async () => {
     let dbId: number | undefined;
     try {
@@ -490,7 +452,7 @@ function SupplierPanel({ supplier: s, vendorId, international, onSupplierChanged
       const rows = (res.data?.data ?? []) as { id: number; company_name?: string }[];
       const norm = (v?: string) => (v ?? '').trim().toLowerCase();
       dbId = rows.find(v => norm(v.company_name) === norm(s.legalName) || norm(v.company_name) === norm(s.key))?.id;
-    } catch { /* opens with the vault's empty state */ }
+    } catch { }
     setVault({
       id: s.code, db_id: dbId, company: s.legalName, risk: s.risk, type: s.type,
       country: s.country, contact: s.contact, contactCity: s.city, email: s.email,
@@ -596,9 +558,6 @@ function SupplierPanel({ supplier: s, vendorId, international, onSupplierChanged
         </div>
       </SupBox>
 
-      {/* An international supplier has no GSTIN, no returns and no scrutiny, so
-          the whole block is left out rather than shown empty (CS-427). The risk
-          checks say as much in their own words. */}
       {!international && (
       <SupBox open={open.gst} onToggle={() => toggle('gst')} icon={<IcoDocSm />} title="Supplier GST Scrutiny Details"
         extras={<span className="spi-dt-fields-badge">5 Fields</span>}>
@@ -616,9 +575,6 @@ function SupplierPanel({ supplier: s, vendorId, international, onSupplierChanged
                 {filingAge !== null && <span className="cpf-gst__age">{filingAge.toFixed(1)} mo ago</span>}
               </span>
             </span>
-            {/* Read-only here: this view reports the supplier's GST position, it
-                does not act on it. Sending a PO for senior approval belongs to
-                the PO itself, not to a payment request raised against it. */}
           </div>
           <div className="spi-dt-grid4">
             <RO label="SCRUTINY DATE" value={formatDmy(s.scrutiny)} />
@@ -683,7 +639,6 @@ function SupplierPanel({ supplier: s, vendorId, international, onSupplierChanged
   );
 }
 
-/* ── Running totals, shared by Linked Payment Requests and Payment Summary ── */
 function StatCards({ detail }: { detail: Detail }) {
   const money = moneyOf(detail.row.currency);
   const { ledger, linked, doc } = detail;
@@ -727,9 +682,6 @@ function IdCell({ id, date, extra }: { id: string; date: string; extra?: ReactNo
   );
 }
 
-/* A long table stays inside its own box: the first rows stand, the rest come on
-   the scroll, under the header that is already sticky. Measured rather than a
-   fixed height — a row grows with a wrapped supplier name or an extra chip. */
 function RowWindow({ rows, count, className = '', children }: { rows: number; count: number; className?: string; children: ReactNode }) {
   const box = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -737,7 +689,6 @@ function RowWindow({ rows, count, className = '', children }: { rows: number; co
     const table = el?.querySelector('table');
     if (!el || !table) return;
     const apply = () => {
-      // The transaction table renders one tbody per row; the others, one tbody of rows.
       const bodies = Array.from(table.tBodies);
       const list = (bodies.length > 1 ? bodies : Array.from(bodies[0]?.rows ?? [])) as HTMLElement[];
       const want = list.length <= rows ? ''
@@ -766,8 +717,6 @@ function Panel({ title, count, sub, children }: { title: string; count: number; 
   );
 }
 
-/* ══ Linked Payment Requests ══ every request on the same document, the open one pinned first. */
-// The action well is fixed: three labelled buttons never shrink.
 const LINKED_COLS: [string, number][] = [
   ['Sr No', 52], ['Payment Request ID', 124], ['Request Raised Against', 132], ['Payment Type', 118], ['Payment %', 76],
   ['Requested Payment Amount', 118], ['Requested By', 150], ['Requested To', 140], ['Request Approval Status', 148],
@@ -797,7 +746,6 @@ function LinkedPanel({ detail, canApprove, onDecide }: {
             <tbody>
               {linked.map((r, i) => {
                 const isCurrent = r.requestId === current.requestId;
-                // Any request sent to this user can be decided from here (CS-436).
                 const canDecide = r.status === 'awaiting' && canApprove && r.canDecide;
                 const lockTip = r.status !== 'awaiting' ? `Already ${r.status === 'approved' ? 'approved' : 'declined'}`
                   : !canApprove ? NO_APPROVE_TIP
@@ -839,7 +787,6 @@ function LinkedPanel({ detail, canApprove, onDecide }: {
   );
 }
 
-/* CS-436: one earlier request on this order, read-only, over the table. */
 function LinkedRequestPopup({ request: r, doc, onClose }: {
   request: LinkedRequest; doc: Detail['doc']; onClose: () => void;
 }) {
@@ -886,8 +833,6 @@ function LinkedRequestPopup({ request: r, doc, onClose }: {
             {ro('Approved Amount', r.approvedAmount !== null ? money(r.approvedAmount) : '—', 'is-amt')}
             {ro('Paid Amount', r.paid > 0 ? money(r.paid) : '—', 'is-amt')}
           </div>
-          {/* Always shown: on a full-screen popup an absent remark is worth
-              stating, and it is what fills the height under the fields. */}
           <div className="prd-dec__field prd-peek__notefield">
             <label>{r.status === 'declined' ? 'Rejection Reason' : 'Approval Remark'}</label>
             <div className={`prd-dec__ro prd-peek__note${r.decision?.note ? '' : ' is-empty'}`}>
@@ -914,7 +859,6 @@ function Person({ name }: { name: string }) {
   );
 }
 
-/* ══ Payment Summary ══ the running totals, then every release made against the document. */
 const PAY_COLS = ['Paid Against Request ID', 'Request Raised Against', 'Paid Amount', 'Bank Name',
   'UTR / Cheque Number', 'UTR / Cheque Date', 'Proof Of Payment'];
 
@@ -938,7 +882,6 @@ function SummaryPanel({ detail }: { detail: Detail }) {
               <tbody>
                 {payments.map(p => {
                   const cheque = /cheque|draft/i.test(p.mode);
-                  // The proof as filed. A name made up from the UTR named no real file.
                   const file = p.proofName || '';
                   return (
                     <tr key={`${p.requestId}-${p.ref}`} className="is-first is-last">
@@ -978,10 +921,6 @@ function SummaryPanel({ detail }: { detail: Detail }) {
   );
 }
 
-/* ══ Physical Inspection ══
-   The PO module's inspection table against the order behind this request:
-   mark each line and attach its proof. A direct SPI has no order, so no gate. */
-
 function InspectionPanel({ detail }: { detail: Detail }) {
   const toast = useToast();
   const { po, inspection } = detail;
@@ -998,18 +937,12 @@ function InspectionPanel({ detail }: { detail: Detail }) {
   }
 
   const done = inspection.completed;
-  /* Read from the record, never from this screen: the inspection is taken on the
-     PO list, and here it is only reported. */
   const markOf = (code: string) => inspection.marks.find(m => m.code === code);
   const lineOf = (code: string): InspectionLine => {
     const m = markOf(code);
     return { verdict: (m?.verdict ?? null) as Verdict | null, files: m?.files ?? [] } as InspectionLine;
   };
   const viewFile = (f: ProofFile) => { if (!openFile(f)) toast.info('Preview', `${f.name} — logic coming soon`); };
-  /* A stored proof is fetched through our own API and saved from there. Linking
-     straight at the file only opens it once the disk is remote: on the server
-     the proofs sit on Azure Blob, a different origin, where the browser drops
-     the `download` hint and a fetch is refused by CORS (CS-567). */
   const dlFile = async (f: ProofFile, itemId: number | null) => {
     const poId = detail.row.poId;
     if (f.index === undefined || !poId) {
@@ -1110,18 +1043,12 @@ function InspectionPanel({ detail }: { detail: Detail }) {
   );
 }
 
-/* ══ Current Transaction Status / History ══
-   The Purchase Order list's own row, Action column dropped — actions belong
-   on the PO list, not here. */
-/* The request view shows the order as it stands: no Action, and none of the
-   cancellation columns, which belong to the Purchase Order list. */
 const TX_DROP = ['Action', 'Advance Receipt Refund Adjustment', 'Payment Recovery Status', 'PO Status'];
 const TX_COLUMNS = ORDER_COLUMNS.filter(c => !TX_DROP.includes(c.label));
 const TX_WIDTH = TX_COLUMNS.reduce((s, c) => s + c.width, 0);
 
 function OrderTable({ rows, onInspect, onManage, window: win = 0 }: {
   rows: OrderRow[]; onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
-  /** Rows to show before the rest go on the scroll; 0 shows them all. */
   window?: number;
 }) {
   return (
@@ -1155,7 +1082,6 @@ function StatusPanel({ po, onInspect, onManage }: { po: OrderRow | null; onInspe
   );
 }
 
-// One purchase order is one transaction: every other order with this supplier.
 function HistoryPanel({ detail, onInspect, onManage }: {
   detail: Detail; onInspect: (row: OrderRow) => void; onManage: (row: OrderRow) => void;
 }) {
@@ -1172,15 +1098,11 @@ function HistoryPanel({ detail, onInspect, onManage }: {
           {rows.length} earlier purchase order{rows.length === 1 ? '' : 's'} raised on {detail.row.supplier} · one order is one transaction
         </span>
       </div>
-      {/* Four earlier orders stand; the rest scroll inside the table, so the page
-          itself does not grow with the supplier's history. */}
       <OrderTable rows={rows} window={4} onInspect={onInspect} onManage={onManage} />
     </div>
   );
 }
 
-/* Shimmer while the request loads, laid out like the real page (header, chips, the two
-   detail columns and the tables below) so nothing jumps when the data arrives. */
 function DetailSkeleton({ onBack }: { onBack: () => void }) {
   const bar = (w: number | string, h = 12) => <span className="spi-sk-bar" style={{ width: w, height: h }} />;
   const field = (k: number) => (

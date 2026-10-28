@@ -167,7 +167,7 @@ class ShelfController extends BaseInventoryController
                shelves already in it. Two shelves added at once both read the
                same free height and the same free level; the second now waits. */
             $rack = $this->ownedQuery(Rack::query(), $user)->with('zone')->lockForUpdate()->findOrFail($rackId);
-            $data = $request->validate($this->rules());
+            $data = $this->settle($request->validate($this->rules()), $rack, null);
 
             $this->guard($data, $rack, null);
 
@@ -207,7 +207,7 @@ class ShelfController extends BaseInventoryController
             $rackId = $this->ownedQuery(Shelf::query(), $user)->whereKey($id)->value('rack_id') ?? abort(404);
             $rack   = Rack::with('zone')->lockForUpdate()->findOrFail($rackId);
             $shelf  = Shelf::lockForUpdate()->findOrFail($id);
-            $data   = $request->validate($this->rules());
+            $data   = $this->settle($request->validate($this->rules()), $rack, $shelf);
 
             $this->guard($data, $rack, $shelf);
 
@@ -396,7 +396,8 @@ class ShelfController extends BaseInventoryController
             'shelf_name'    => ['required', 'string', 'max:180'],
             // Upper bounds are the columns' (smallint, numeric) — past them is
             // a database error, not a 422.
-            'level_no'      => ['required', 'integer', 'min:1', 'max:32767'],
+            // Ignored — settle() assigns it. Optional so an older form still saves.
+            'level_no'      => ['nullable', 'integer', 'min:1', 'max:32767'],
             'shelf_type'    => ['required', Rule::in(Shelf::TYPES)],
             'max_weight_kg' => ['required', 'numeric', 'min:1', 'max:999999999999'],
             // Free text once the dropdown is on 'Other', so no Rule::in here.
@@ -411,6 +412,26 @@ class ShelfController extends BaseInventoryController
             'volume'        => ['nullable', 'numeric', 'min:0', 'max:9999999999999'],
             // No 'status' — setStatus() only, which refuses a shelf holding boxes.
         ];
+    }
+
+    /**
+     * The fields the server decides, not the form.
+     *
+     * Level (QA CS-942 #12): the shelf code is the rack code plus the level
+     * (RC-004-SH-07), so the level IS the shelf's identity. A new shelf takes
+     * the next level; an existing one keeps its own — a level edited after
+     * the QR sticker was printed left the sticker pointing at another shelf.
+     *
+     * Flags (QA CS-942 #14): a shelf in a cold-chain or hazardous rack is
+     * cold-chain or hazardous too — the rack's flags are copied down.
+     */
+    private function settle(array $data, Rack $rack, ?Shelf $editing): array
+    {
+        $data['level_no']   = $editing ? (int) $editing->level_no : $this->svc->nextShelfLevel($rack);
+        $data['cold_chain'] = (int) $rack->cold_chain;
+        $data['hazardous']  = (int) $rack->hazardous;
+
+        return $data;
     }
 
     /** Everything that is a comparison against the parent rack. */
@@ -437,8 +458,16 @@ class ShelfController extends BaseInventoryController
         if ($levelTaken) {
             $this->reject("Level {$d['level_no']} already exists in this rack.", 'level_no');
         }
-        if ($this->nameTaken(Shelf::where('rack_id', $rack->id), 'shelf_name', $d['shelf_name'], $editing?->id)) {
-            $this->reject('This rack already has a shelf with this name.', 'shelf_name');
+        /* Unique across the whole warehouse, not just the rack (QA CS-942 #11):
+           put-away and pick lists name a shelf within the warehouse, and two
+           "Shelf - 1"s there cannot be told apart by name. */
+        $clash = Shelf::with('rack:id,code')
+            ->whereIn('rack_id', Rack::where('warehouse_id', $rack->warehouse_id)->select('id'))
+            ->whereRaw('lower(trim(shelf_name)) = lower(trim(?))', [$d['shelf_name']])
+            ->when($editing, fn ($q) => $q->where('id', '!=', $editing->id))
+            ->first();
+        if ($clash) {
+            $this->reject("This warehouse already has a shelf with this name ({$clash->shelf_code}).", 'shelf_name');
         }
 
         /* Length, width and height are capped by the rack — all compared in

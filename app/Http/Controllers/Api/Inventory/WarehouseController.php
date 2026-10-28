@@ -81,6 +81,9 @@ class WarehouseController extends BaseInventoryController
                Subqueries, so a page of ten costs two extra queries, not twenty. */
             $q = $base->with(['country:id,name', 'state:id,name'])
                 ->withCount(['zones', 'racks'])
+                // Area the zones already claim — the Add Zone form shows what is
+                // still free from it (CS-940 #11). Same sum as freeWarehouseAreaSqft().
+                ->withSum('zones', 'area_sqft')
                 ->orderByDesc('id');
 
             $this->applyTab($q, $f['tab'] ?? null);
@@ -166,10 +169,11 @@ class WarehouseController extends BaseInventoryController
             DB::beginTransaction();
 
             $user   = $this->tenantUser($request);
-            $data   = $request->validate($this->rules());
+            $data   = $request->validate($this->rules(), self::MESSAGES);
             $branch = $this->writeBranch($request, $user);
 
             $this->guardName($data['wh_name'], $user, $branch, null);
+            $this->guardEmail($data['contact_email'], $user, null);
 
             $warehouse = new Warehouse($data);
             $warehouse->client_id  = $user->client_id;
@@ -203,9 +207,10 @@ class WarehouseController extends BaseInventoryController
             // Locked: a zone saved meanwhile is what guardSettled() is judging.
             $warehouse = $this->ownedQuery(Warehouse::query(), $user)->lockForUpdate()->findOrFail($id);
             // The branch is fixed at create — fill() must not move it.
-            $data      = collect($request->validate($this->rules()))->except('branch_id')->all();
+            $data      = collect($request->validate($this->rules(), self::MESSAGES))->except('branch_id')->all();
 
             $this->guardName($data['wh_name'], $user, $warehouse->branch_id, $warehouse->id);
+            $this->guardEmail($data['contact_email'], $user, $warehouse->id);
             $this->guardSettled($warehouse, $data);
 
             $warehouse->fill($data);
@@ -459,6 +464,11 @@ class WarehouseController extends BaseInventoryController
         ], 422));
     }
 
+    private const MESSAGES = [
+        'city.regex'           => 'City must contain letters only — no numbers or symbols.',
+        'contact_person.regex' => 'Contact person must contain letters only — no numbers or symbols.',
+    ];
+
     private function rules(): array
     {
         return [
@@ -472,11 +482,14 @@ class WarehouseController extends BaseInventoryController
                country takes a typed province. One of the two is required. */
             'state_id'       => ['nullable', 'required_without:state_name', 'integer', Rule::exists('master_states', 'id')],
             'state_name'     => ['nullable', 'required_without:state_id', 'string', 'max:100'],
-            'city'           => ['required', 'string', 'max:100'],
+            /* City and contact person are names (QA CS-939): they start with a
+               letter and hold only letters, spaces and . ' - (city also ( ) ,).
+               Blocking just /^\d+$/ still let "123 45", "12.5" and "---" in. */
+            'city'           => ['required', 'string', 'max:100', "regex:/^\\p{L}[\\p{L}\\p{M}\\s.'(),-]*$/u"],
             // 6 digits in India, longer postal codes elsewhere.
             'pincode'        => ['required', 'string', 'max:20'],
             'map_url'        => ['nullable', 'url', 'max:500'],
-            'contact_person' => ['required', 'string', 'max:150'],
+            'contact_person' => ['required', 'string', 'max:150', "regex:/^\\p{L}[\\p{L}\\p{M}\\s.'-]*$/u"],
             'contact_dial'   => ['nullable', 'string', 'max:8'],
             // Digits only — the form strips spaces; 10 in India, 6–15 elsewhere.
             'contact_mobile' => ['required', 'string', 'regex:/^\d{6,15}$/'],
@@ -497,6 +510,76 @@ class WarehouseController extends BaseInventoryController
 
         if ($this->nameTaken($q, 'wh_name', $name, $exceptId)) {
             $this->reject('A warehouse with this name already exists.', 'wh_name');
+        }
+    }
+
+    /**
+     * The warehouse contact email must not already belong to anyone else on the
+     * platform (QA CS-939): a customer, consignee or supplier email here sends
+     * stock and dispatch mail for our own site to an outside inbox, and any
+     * other match makes the address ambiguous wherever mail is routed by it.
+     *
+     * Checked client-wide — parties and people belong to the whole client, not
+     * one branch. Each row: who it is, table, email columns, display name, and
+     * the parent [table, fk] that carries client_id when the row itself does
+     * not. Soft-deleted rows are ignored. Left out on purpose: logs, OTP and
+     * reset tokens, pending onboarding invites, previous employers' HR, and
+     * sourcing-product supplier copies (no tenant column to scope them by).
+     */
+    private function guardEmail(string $email, $user, ?int $exceptId): void
+    {
+        $email = mb_strtolower(trim($email));
+
+        $sources = [
+            ['customer',     'customers',               ['primary_email'],                 'company_name'],
+            ['customer',     'customer_addresses',      ['cp_email'],                      'customers.company_name',  ['customers', 'customer_id']],
+            ['customer',     'customer_owners',         ['official_email'],                'customers.company_name',  ['customers', 'customer_id']],
+            ['consignee',    'consignees',              ['primary_email'],                 'company_name'],
+            ['consignee',    'consignee_addresses',     ['cp_email'],                      'consignees.company_name', ['consignees', 'consignee_id']],
+            ['consignee',    'consignee_owners',        ['official_email'],                'consignees.company_name', ['consignees', 'consignee_id']],
+            ['supplier',     'vendors',                 ['primary_email'],                 'company_name'],
+            ['supplier',     'vendor_addresses',        ['email'],                         'vendors.company_name',    ['vendors', 'vendor_id']],
+            ['supplier',     'p2p_suppliers',           ['email'],                         'name'],
+            ['supplier',     'master_vendor_directory', ['email_id'],                      'vendor_company_name'],
+            ['supplier',     'product_vendor_maps',     ['email'],                         'product_vendor_maps.vendor_name', ['products', 'product_id']],
+            ['lead',         'leads',                   ['sender_email', 'sender_email_alt'], 'sender_name'],
+            ['lead contact', 'lead_task_managers',      ['email'],                         'name'],
+            ['meeting',      'sales_meetings',          ['email'],                         'customer'],
+            ['user',         'users',                   ['email'],                         'name'],
+            ['employee',     'employees',               ['email', 'official_email'],       'display_name'],
+            ['candidate',    'candidates',              ['email'],                         'name'],
+            ['branch',       'branches',                ['email'],                         'name'],
+            ['company',      'master_company',          ['email'],                         'company_name'],
+            ['department',   'master_departments',      ['email'],                         'name'],
+            ['organisation', 'clients',                 ['email'],                         'org_name'],
+            ['warehouse',    'inventory_warehouses',    ['contact_email'],                 'wh_name'],
+        ];
+        // Rows that are soft-deleted themselves (child rows go with their parent).
+        $soft = ['customers', 'consignees', 'vendors', 'p2p_suppliers', 'leads', 'sales_meetings',
+                 'users', 'employees', 'candidates', 'branches', 'clients'];
+
+        foreach ($sources as $src) {
+            [$kind, $table, $cols, $name] = $src;
+            $parent = $src[4] ?? null;
+
+            $q = DB::table($table);
+            if ($parent) {
+                [$pt, $fk] = $parent;
+                $q->join($pt, "$pt.id", '=', "$table.$fk")
+                  ->where("$pt.client_id", $user->client_id)
+                  ->whereNull("$pt.deleted_at");
+            } else {
+                $q->where($table === 'clients' ? 'clients.id' : "$table.client_id", $user->client_id);
+            }
+            if (in_array($table, $soft, true)) $q->whereNull("$table.deleted_at");
+            if ($table === 'inventory_warehouses' && $exceptId) $q->where('inventory_warehouses.id', '!=', $exceptId);
+            $q->where(function ($w) use ($table, $cols, $email) {
+                foreach ($cols as $c) $w->orWhereRaw("LOWER(TRIM($table.$c)) = ?", [$email]);
+            });
+
+            if (($found = $q->value($name)) !== null) {
+                $this->reject("This email is already used by {$kind} \"{$found}\". Use a different contact email for the warehouse.", 'contact_email');
+            }
         }
     }
 
@@ -561,6 +644,7 @@ class WarehouseController extends BaseInventoryController
             'card_url'       => file_url($w->card_path),
             'zones_count'    => $w->zones_count ?? null,
             'racks_count'    => $w->racks_count ?? null,
+            'zones_area_sqft' => isset($w->zones_sum_area_sqft) ? (float) $w->zones_sum_area_sqft : null,
             'status'         => (int) $w->status,
             'created_at'     => $w->created_at?->toDateString(),
             'updated_at'     => $w->updated_at?->toDateTimeString(),

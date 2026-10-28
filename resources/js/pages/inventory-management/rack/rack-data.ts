@@ -192,3 +192,13 @@ export function rackKind(r: Rack): string {
   if (r.haz) return 'Hazardous rack';
   return 'Standard rack';
 }
+
+/**
+ * onKeyDown for a positive number field. A number input lets "e", "+" and "-"
+ * through (scientific notation, sign) and then reports the half-typed value
+ * as "", so "456e" read as an empty field and was told "Required" (QA CS-942
+ * #10). None of them belongs in a length or a weight.
+ */
+export const blockNonNumericKeys = (e: { key: string; preventDefault: () => void }) => {
+  if (e.key === 'e' || e.key === 'E' || e.key === '+' || e.key === '-') e.preventDefault();
+};

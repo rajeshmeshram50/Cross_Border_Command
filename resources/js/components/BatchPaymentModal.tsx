@@ -26,7 +26,8 @@ type PayableClaim = {
 };
 type Emp = { id: number; first_name?: string; last_name?: string; display_name?: string; emp_code?: string };
 
-const PAGE = 8;
+/* History rows per page. The claims table does not page — it scrolls. */
+const PAGE = 5;
 // The proof link opens in a new tab (plain browser navigation), so it can't
 // send the Authorization header. Append the Sanctum token as ?token= — the
 // batch-payment-proof route authenticates from the query token. Without this
@@ -55,7 +56,6 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
   const [saving, setSaving] = useState(false);
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [histPage, setHistPage] = useState(1);
-  const [claimPage, setClaimPage] = useState(1);
   // Per-claim review (pending → approve) / view (approved) drill-in.
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [viewId, setViewId] = useState<number | null>(null);
@@ -110,7 +110,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
   }, [open]);
 
   const resetForm = () => {
-    setEmpId(''); setPayable([]); setSelected(new Set()); setClaimPage(1);
+    setEmpId(''); setPayable([]); setSelected(new Set());
     setReference(''); setPaymentType('Bank Transfer'); setExpenseType('Goods'); setNote(''); setProof(null);
   };
 
@@ -119,7 +119,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
     api.get('/expense-claims/batch-payments').then(r => setHistory(r.data?.data ?? [])).catch(() => setHistory([])).finally(() => setLoading(false));
   };
   const loadPayable = (id: number) => {
-    setSelected(new Set()); setClaimPage(1); setLoading(true);
+    setSelected(new Set()); setLoading(true);
     api.get('/expense-claims/batch-payable', { params: { employee_id: id } })
       .then(r => setPayable(r.data?.data ?? [])).catch(() => setPayable([])).finally(() => setLoading(false));
   };
@@ -178,7 +178,6 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
   };
 
   const histSlice = history.slice((histPage - 1) * PAGE, histPage * PAGE);
-  const claimSlice = payable.slice((claimPage - 1) * PAGE, claimPage * PAGE);
 
   return createPortal(
     <>
@@ -306,13 +305,14 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                   );
                 })}
               </div>
+
             </div>
 
           <div className="bpw-body" style={body}>
             {/* ───── STEP 1 — select employee + claims ───── */}
             {view === 'select' && (
               <>
-                <div style={{ maxWidth: 420, marginBottom: 14 }}>
+                <div style={{ maxWidth: 520, marginBottom: 14 }}>
                   <label style={lbl}>Employee <span style={req}>*</span></label>
                   <SearchableSelect
                     menuMaxHeight={188}
@@ -337,10 +337,10 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                       {empId === '' ? <tr><td colSpan={10} style={emptyTd}><i className="ri-user-search-line" style={{ fontSize: 18, display: 'block', marginBottom: 4 }} />Select an employee above to see their approved, unpaid claims.</td></tr>
                         : loading ? <tr><td colSpan={10} style={emptyTd}>Loading…</td></tr>
                           : payable.length === 0 ? <tr><td colSpan={10} style={emptyTd}>No unpaid claims for this employee.</td></tr>
-                            : claimSlice.map((c, i) => (
+                            : payable.map((c, i) => (
                               <tr key={c.id} style={selected.has(c.id) ? { background: 'var(--bpw-row-sel)' } : undefined}>
                                 <td style={td}>{c.payable ? <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} /> : <span title="Approve it first" style={{ color: 'var(--bpw-muted-2)' }}>—</span>}</td>
-                                <td style={td}>{(claimPage - 1) * PAGE + i + 1}</td>
+                                <td style={td}>{i + 1}</td>
                                 <td style={{ ...td, fontFamily: 'monospace' }}>{c.exp_no}</td>
                                 <td style={td}>{fmtDate(c.expense_date)}</td>
                                 <td style={td}>{c.category_name || '—'}</td>
@@ -358,7 +358,6 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                     </tbody>
                   </table>
                 </div>
-                {payable.length > PAGE && <WorklistPager total={payable.length} page={claimPage} pageSize={PAGE} onPage={setClaimPage} />}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 12, color: 'var(--bpw-muted)' }}><i className="ri-information-line" /> Only <b>approved</b> claims are selectable. Approve a pending one with <b>Review &amp; Approve</b> to include it.</div>
                   {selected.size > 0 && <div style={selChip}><b>{selected.size}</b> selected · <b>{inr(total)}</b></div>}
@@ -387,13 +386,13 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                   </div>
                   <div>
                     <label style={lbl}>Method <span style={req}>*</span></label>
-                    <select style={input} value={paymentType} onChange={e => setPaymentType(e.target.value)}>
+                    <select style={selectInput} value={paymentType} onChange={e => setPaymentType(e.target.value)}>
                       {['Bank Transfer', 'UPI', 'PhonePe', 'Cheque'].map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   <div>
                     <label style={lbl}>Goods / Service <span style={req}>*</span></label>
-                    <select style={input} value={expenseType} onChange={e => setExpenseType(e.target.value as 'Goods' | 'Service')}>
+                    <select style={selectInput} value={expenseType} onChange={e => setExpenseType(e.target.value as 'Goods' | 'Service')}>
                       <option value="Goods">Goods</option><option value="Service">Service</option>
                     </select>
                   </div>
@@ -435,7 +434,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                       </div>
                     ) : (
                       <div style={attachZone} onClick={() => proofInputRef.current?.click()}>
-                        <i className="ri-attachment-2" style={{ fontSize: 18 }} /> <span style={{ fontWeight: 700, letterSpacing: .3 }}>ATTACH PROOF</span>
+                        <i className="ri-attachment-2" style={{ fontSize: 16 }} /> <span style={{ fontWeight: 700, letterSpacing: .3 }}>ATTACH PROOF</span>
                       </div>
                     )}
                   </div>
@@ -453,7 +452,6 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {view === 'pay' && <button style={ghostBtn} onClick={() => setView('select')}>← Back</button>}
-              {view === 'select' && <button style={ghostBtn} onClick={() => { resetForm(); setView('history'); }}>← History</button>}
               <button style={ghostBtn} onClick={onClose}>Close</button>
               {view === 'select' && (
                 <button style={{ ...primaryBtn, opacity: selected.size === 0 ? .5 : 1 }} disabled={selected.size === 0} onClick={() => setView('pay')}>Next → {inr(total)}</button>
@@ -537,7 +535,7 @@ const card: React.CSSProperties = {
    read as a different typeface (#61). No font-family was ever set here. */
 const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 22px 12px', background: 'linear-gradient(120deg,#6d28d9,#7c5cfc 55%,#a78bfa)', color: '#fff', flexShrink: 0 };
 const heroIco: React.CSSProperties = { width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 };
-const rail: React.CSSProperties = { display: 'flex', gap: 28, padding: '12px 26px', borderBottom: '1px solid var(--bpw-border)', background: 'var(--bpw-surface-2)', flexShrink: 0 };
+const rail: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 28, padding: '12px 26px', borderBottom: '1px solid var(--bpw-border)', background: 'var(--bpw-surface-2)', flexShrink: 0 };
 const selChip: React.CSSProperties = { background: '#6d28d9', color: '#fff', borderRadius: 999, padding: '6px 14px', fontWeight: 700, fontSize: 13 };
 // flex-grow 0 so the body sizes to its content (never stretches to fill the
 // card, which produced a spurious vertical scrollbar when everything already
@@ -551,14 +549,19 @@ const footer: React.CSSProperties = { display: 'flex', justifyContent: 'space-be
 const headerCta: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, height: 34, padding: '0 14px', background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.30)', color: '#fff', borderRadius: 999, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap' };
 const xBtn: React.CSSProperties = { background: 'rgba(255,255,255,.18)', color: '#fff', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 17, lineHeight: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const rowBetween: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 };
-const tableWrap: React.CSSProperties = { overflowX: 'auto', border: '1px solid var(--bpw-border)', borderRadius: 12 };
-const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
+const tableWrap: React.CSSProperties = {
+  /* About five rows before it gives way. The thead is sticky, so the column
+     labels stay with the rows being scrolled past. */
+  overflowX: 'auto', overflowY: 'auto', maxHeight: 300,
+  border: '1px solid var(--bpw-border)', borderRadius: 12,
+};
+const table: React.CSSProperties = { width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 };
 /* Matched to .cpay-cols--head on the SPI Payment History table: 8.5px / 800 /
    .05em, uppercase, over a soft vertical wash. The colour is the violet
    equivalent of that table's #6b8a97 — muted, not the saturated violet it
    used before, which at this size and weight read as a second heading rather
    than a column label. */
-const th: React.CSSProperties = { textAlign: 'left', padding: '9px 12px', background: 'var(--bpw-th-bg)', color: 'var(--bpw-th-fg)', borderBottom: '1px solid var(--bpw-accent-border)', fontSize: 8.5, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' };
+const th: React.CSSProperties = { position: 'sticky', top: 0, zIndex: 2, textAlign: 'left', padding: '9px 12px', background: 'var(--bpw-th-bg), var(--bpw-surface)', color: 'var(--bpw-th-fg)', borderBottom: '1px solid var(--bpw-accent-border)', fontSize: 8.5, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' };
 /* 500 body / 600 emphasis, the same two weights .dt-table uses on the page
    behind this dialog — it carried no weight at all, so cells fell to the
    body default while the amounts ran at 700 and read heavier than anything
@@ -567,7 +570,22 @@ const td: React.CSSProperties = { padding: '10px 12px', borderTop: '1px solid va
 const emptyTd: React.CSSProperties = { padding: 26, textAlign: 'center', color: 'var(--bpw-muted-2)' };
 const lbl: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--bpw-label)', textTransform: 'uppercase', letterSpacing: .3, marginBottom: 5 };
 const req: React.CSSProperties = { color: '#ef4444' };
-const input: React.CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid var(--bpw-input-border)', borderRadius: 9, fontSize: 14, background: 'var(--bpw-surface)', boxSizing: 'border-box' };
+/* 42px stated, not implied: the attach zone and the uploaded-proof row have
+   to match it, and three controls agreeing by padding alone is how they
+   drifted apart. */
+const FIELD_H = 42;
+const input: React.CSSProperties = { width: '100%', height: FIELD_H, padding: '0 12px', border: '1px solid var(--bpw-input-border)', borderRadius: 9, fontSize: 14, background: 'var(--bpw-surface)', boxSizing: 'border-box' };
+/* The text input, minus the browser's own arrow. The chevron is drawn here
+   so it follows the theme; a native one does not. */
+const selectInput: React.CSSProperties = {
+  ...input,
+  appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none',
+  paddingRight: 34, cursor: 'pointer',
+  backgroundImage:
+    "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c5cfc' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\")",
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 12px center',
+};
 const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14 };
 const grid2: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: 14 };
 /* Teal, drawn from the header gradient above (#6d28d9 -> #7c5cfc -> #a78bfa)
@@ -580,8 +598,8 @@ const ghostSm: React.CSSProperties = { background: 'var(--bpw-surface)', color: 
 const warnSm: React.CSSProperties = { background: 'var(--bpw-warn-bg)', color: 'var(--bpw-warn-fg)', border: '1px solid var(--bpw-warn-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 const disabledSm: React.CSSProperties = { background: 'var(--bpw-surface-2)', color: 'var(--bpw-muted-2)', border: '1px solid var(--bpw-border)', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'not-allowed', whiteSpace: 'nowrap' };
 const noteCell: React.CSSProperties = { maxWidth: 220, color: 'var(--bpw-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
-const attachZone: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 14px', border: '1.5px dashed var(--bpw-accent-dash)', borderRadius: 10, background: 'var(--bpw-accent-soft)', color: 'var(--bpw-accent-fg)', cursor: 'pointer', fontSize: 13 };
-const proofBox: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', border: '1px solid var(--bpw-input-border)', borderRadius: 10, background: 'var(--bpw-surface-2)' };
+const attachZone: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: FIELD_H, padding: '0 14px', boxSizing: 'border-box', border: '1.5px dashed var(--bpw-accent-dash)', borderRadius: 9, background: 'var(--bpw-accent-soft)', color: 'var(--bpw-accent-fg)', cursor: 'pointer', fontSize: 13 };
+const proofBox: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, height: FIELD_H, padding: '0 12px', boxSizing: 'border-box', border: '1px solid var(--bpw-input-border)', borderRadius: 9, background: 'var(--bpw-surface-2)' };
 const proofBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--bpw-surface)', color: 'var(--bpw-accent-fg)', border: '1px solid var(--bpw-accent-border)', borderRadius: 7, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 const syncBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#7c5cfc', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 /* Reuses --bpw-ok-*, which already has a dark-mode pair, so the badge does
@@ -673,7 +691,7 @@ const BPW_CSS = `
 /* No max-width: the rail is two steps, and capping it at 640px while every
    step was flex:1 is what truncated "Payment details" to "Payment deta…".
    Matches the Generate Document stepper, which sizes steps to content. */
-.bpw-stepper{display:flex;align-items:center;gap:0;}
+.bpw-stepper{display:flex;align-items:center;gap:0;width:50%;}
 /* SHORT VIEWPORTS — trim the chrome before the body starts scrolling.
    The header, step rail and footer are fixed-height and carry generous
    padding; on a laptop or at browser zoom they ate enough of the card that
@@ -685,19 +703,23 @@ const BPW_CSS = `
   .bpw-body{padding:14px !important;}
   .bpw-foot{padding:10px 22px !important;}
 }
+@media (max-width: 900px){
+  /* A quarter of a narrow card is a sliver, not a step. */
+  .bpw-stepper{width:100% !important;}
+}
 @media (max-height: 680px){
   .bpw-head{padding:10px 18px !important;}
   .bpw-rail{padding:6px 18px !important;}
   .bpw-body{padding:10px !important;}
   .bpw-foot{padding:8px 18px !important;}
 }
-.bpw-connector{flex:1 1 28px;min-width:28px;max-width:72px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.bpw-connector{flex:0 1 auto;min-width:28px;max-width:140px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .bpw-line{height:3px;width:100%;border-radius:2px;background:var(--bpw-border);}
 .bpw-line[data-done="1"]{background:linear-gradient(90deg,#22c55e,#16a34a);}
-.bpw-step{flex:0 1 auto;padding:11px 14px;border-radius:14px;display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;transition:all .25s;cursor:pointer;min-width:0;}
+.bpw-step{flex:1 1 0;padding:8px 13px;border-radius:12px;display:flex;align-items:center;gap:10px;position:relative;overflow:hidden;transition:all .25s;cursor:pointer;min-width:0;}
 .bpw-badge-wrap{position:relative;flex-shrink:0;width:40px;height:40px;}
-.bpw-badge{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;transition:all .25s;}
-.bpw-num{position:absolute;bottom:-4px;right:-4px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;border:2px solid var(--bpw-surface);line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.15);}
+.bpw-badge{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .25s;}
+.bpw-num{position:absolute;bottom:-3px;right:-3px;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:900;border:2px solid var(--bpw-surface);line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.15);}
 .bpw-text{min-width:0;flex:1;}
 .bpw-title{font-size:12.5px;font-weight:800;letter-spacing:-.2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bpw-sub{font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}

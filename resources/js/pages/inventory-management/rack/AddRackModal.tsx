@@ -9,7 +9,7 @@ import '../zone/zone-form.css';
 import './rack-form.css';
 import { Field, EditSelect } from '../../p2p/purchase-management/order/create-po/form-fields';
 import {
-  InventoryApiError, rackApi, type InventoryLookups, type Rack, type RackPayload,
+  InventoryApiError, blockNonNumericKeys, rackApi, type InventoryLookups, type Rack, type RackPayload,
 } from './rack-data';
 import { uniqueLabels } from '../zone/zone-data';
 
@@ -229,9 +229,10 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
     if (!d.wh) e.wh = 'Select the warehouse';
     if (!d.zone || !zone) e.zone = picked ? 'Select a zone (with rack)' : 'Select the warehouse first';
     if (!d.name.trim()) e.name = 'Enter the rack name';
-    if (!(parseFloat(d.len) > 0)) e.len = 'Enter the length';
-    if (!(parseFloat(d.wid) > 0)) e.wid = 'Enter the width';
-    if (!(parseFloat(d.ht) > 0)) e.ht = 'Enter the height';
+    ([['len', 'length'], ['wid', 'width'], ['ht', 'height']] as const).forEach(([k, word]) => {
+      if (!d[k].trim()) e[k] = `Enter the ${word}`;
+      else if (!(Number(d[k]) > 0)) e[k] = `Enter a valid ${word}`;
+    });
     setErrors(e);
     const first = Object.keys(e)[0];
     if (first) {
@@ -243,8 +244,9 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
     const payload: RackPayload = {
       zone_id: zone.apiId,
       rack_name: d.name.trim(),
-      cold_chain: d.cold && zone.cold ? 1 : 0,
-      hazardous: d.haz && zone.haz ? 1 : 0,
+      // The zone's own flags — the server copies them down regardless.
+      cold_chain: zone.cold ? 1 : 0,
+      hazardous: zone.haz ? 1 : 0,
       dim_unit: unit,
       length: parseFloat(d.len),
       width: parseFloat(d.wid),
@@ -387,23 +389,25 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
               />
             </Field>
             <Field label="Cold Chain">
+              {/* Follows the zone (QA CS-941 #13): a rack in a cold-chain
+                  zone is cold chain — on and locked; off and locked otherwise. */}
               <Switch
-                on={d.cold}
-                disabled={!zone?.cold}
+                on={!!zone?.cold}
+                disabled
                 label={zone
-                  ? zone.cold ? 'Cold chain rack' : 'Not allowed in this zone'
+                  ? zone.cold ? 'Cold chain rack · set by the zone' : 'Not allowed in this zone'
                   : 'Select a zone first'}
-                onToggle={() => set({ cold: !d.cold })}
+                onToggle={() => {}}
               />
             </Field>
             <Field label="Hazardous">
               <Switch
-                on={d.haz}
-                disabled={!zone?.haz}
+                on={!!zone?.haz}
+                disabled
                 label={zone
-                  ? zone.haz ? 'Hazardous rack' : 'Not allowed in this zone'
+                  ? zone.haz ? 'Hazardous rack · set by the zone' : 'Not allowed in this zone'
                   : 'Select a zone first'}
-                onToggle={() => set({ haz: !d.haz })}
+                onToggle={() => {}}
               />
             </Field>
 
@@ -430,6 +434,7 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
                       <input
                         className={`spi-dt-inp${errors[key] ? ' is-invalid' : ''}`}
                         type="number" min={0} step="0.01" placeholder={ph}
+                        onKeyDown={blockNonNumericKeys}
                         value={d[key]}
                         onChange={e => { set({ [key]: e.target.value } as Partial<Draft>); clear(key); }}
                       />
@@ -494,7 +499,7 @@ function AutoField({ label, value, from }: { label: string; value: string; from:
 function Switch({ on, disabled, label, onToggle }: {
   on: boolean; disabled?: boolean; label: string; onToggle: () => void;
 }) {
-  const live = on && !disabled;
+  const live = on;
   return (
     <div
       className={`znm-tg${live ? ' is-on' : ''}${disabled ? ' is-locked' : ''}`}

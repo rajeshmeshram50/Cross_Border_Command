@@ -1,5 +1,3 @@
-// Reason For Decline — read-only record of a declined payment request.
-// Shell, header and footer come from the Bulk Sourcing modal styles (srpt-* / pl-*).
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalGuard } from '../../procurement-management/bulk-sourcing/useModalGuard';
@@ -72,7 +70,6 @@ export default function DeclineReasonModal({ row, onClose }: { row: PaymentReque
         </div>
 
         <div className="srpt-body prm-dc-body">
-          {/* Same header as the page's "What We Are Doing Here" strip (spi-bref-*). */}
           <div className={`spi-bref prm-dc-panel${open ? '' : ' is-collapsed'}`}>
             <div
               className="spi-bref-head"

@@ -781,7 +781,16 @@ export default function HrRecruitment() {
               emptyMessage={
                 <>
                   <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  No recruitments match your filters
+                  {/* An empty TAB and an over-filtered one are different
+                      answers. "Match your filters" on an untouched tab sends
+                      the reader looking for a filter to clear. */}
+                  {q.trim()
+                    ? 'No recruitments match your search'
+                    : tab === 'In Progress' ? 'No recruitments in progress'
+                    : tab === 'Completed'   ? 'No completed recruitments'
+                    : tab === 'Cancelled'   ? 'No cancelled recruitments'
+                    : tab === 'Expired'     ? 'No expired recruitments'
+                    : 'No recruitments yet'}
                 </>
               }
             />

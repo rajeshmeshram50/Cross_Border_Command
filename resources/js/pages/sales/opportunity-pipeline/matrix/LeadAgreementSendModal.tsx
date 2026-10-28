@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import SegmentBadge, { SegmentNameList } from '../../../../components/ui/SegmentBadge';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
+import '../../../../components/ui/DataTable.css';
 /* Force-download helper. A cross-origin <a download> is IGNORED by the browser
    (see downloadFile.ts) — on Azure the signed PDFs are a different origin, so
    the link opened the file instead of saving it. */
@@ -2033,20 +2034,22 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
             <>
               {/* Regulatory tier tabs — High / Less. Selecting a tier filters
                   the segment tabs below to that tier's segments. */}
-              <div className="lasm-tier-tabs" role="tablist">
-                {(['highly', 'less'] as const).map(t => (
-                  <button
-                    key={t}
-                    type="button"
-                    role="tab"
-                    aria-selected={tierTab === t}
-                    className={`lasm-tier-tab lasm-tier-tab-${t} ${tierTab === t ? 'is-on' : ''}`}
-                    onClick={() => setTierTab(t)}
-                  >
-                    {t === 'highly' ? 'Highly Regulated' : 'Less Regulated'}
-                    <span className="lasm-tier-tab-count">{tierCounts[t]}</span>
-                  </button>
-                ))}
+              <div className="lasm-tier-tabs dt-tabrail hr-dt" data-accent="violet">
+                <div className="dt-tabs" role="tablist">
+                  {(['highly', 'less'] as const).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="tab"
+                      aria-selected={tierTab === t}
+                      className={`dt-tab ${tierTab === t ? 'on' : 'off'}`}
+                      onClick={() => setTierTab(t)}
+                    >
+                      {t === 'highly' ? 'Highly Regulated' : 'Less Regulated'}
+                      <span className="dt-tab-count">{tierCounts[t]}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {visibleSegments.length === 0 ? (
@@ -2097,19 +2100,21 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   buyer differs from the consignee. Classified by each
                   agreement's `party` field set on the draft. */}
               {!buyerEqualsConsignee && (
-                <div className="lasm-subtabs lasm-subtabs-inset" role="tablist">
-                  {([['buyer', 'Customer'], ['consignee', 'Consignee'], ['both', 'Customer + Consignee']] as const).map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      role="tab"
-                      aria-selected={agrPartyTab === key}
-                      className={`lasm-subtab ${agrPartyTab === key ? 'is-on' : ''}`}
-                      onClick={() => setAgrPartyTab(key)}
-                    >
-                      {label}<span className="lasm-subtab-count">{agrPartyCounts[key]}</span>
-                    </button>
-                  ))}
+                <div className="lasm-subtabs-inset dt-tabrail hr-dt" data-accent="violet">
+                  <div className="dt-tabs" role="tablist">
+                    {([['buyer', 'Customer'], ['consignee', 'Consignee'], ['both', 'Customer + Consignee']] as const).map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        role="tab"
+                        aria-selected={agrPartyTab === key}
+                        className={`dt-tab ${agrPartyTab === key ? 'on' : 'off'}`}
+                        onClick={() => setAgrPartyTab(key)}
+                      >
+                        {label}<span className="dt-tab-count">{agrPartyCounts[key]}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -2144,35 +2149,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     </tr>
                   </thead>
                   <tbody>
-                    {activeAgreements.length === 0 ? (
-                      <tr><td colSpan={8} className="lasm-empty-row">
-                        {activeSegId === COMBINED_SEG_ID ? (
-                          // Combined-segment tab: empty only because the party sub-tab filters it out.
-                          <span>
-                            No <strong>{partyLabel}</strong> agreement in the combined-segment group.
-                            {!buyerEqualsConsignee && ' Check the other party tabs above.'}
-                          </span>
-                        ) : (!buyerEqualsConsignee && activeSegRawAgreements.length > 0) ? (
-                          // Segment HAS agreements, just none for the party sub-tab in view.
-                          <span>
-                            No <strong>{partyLabel}</strong> agreement
-                            for <strong>{activeSeg?.name}</strong> in this segment. Check the other party tabs above,
-                            or create one for this party from the <strong>Agreements Master</strong>.
-                          </span>
-                        ) : activeSegHasCombined ? (
-                          <span>
-                            <strong>{activeSeg?.name}</strong> has no separate agreement of its own — it’s covered by a
-                            shared agreement that spans multiple segments. Open the
-                            <strong> “Combined Segment Agreements”</strong> tab to view and send it.
-                          </span>
-                        ) : (
-                          <span>
-                            No agreement exists for <strong>{activeSeg?.name}</strong> yet — create one for this
-                            segment from the <strong>Agreements Master</strong>, then it will appear here to send.
-                          </span>
-                        )}
-                      </td></tr>
-                    ) : pagedAgreements.map((a, idx) => {
+                    {activeAgreements.length > 0 && pagedAgreements.map((a, idx) => {
                       const sig = a.signature_request;
                       const sigStatus = sig?.status ?? 'draft';
                       // Only inprogress / completed lock the row; a declined /
@@ -2349,6 +2326,36 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     })}
                   </tbody>
                 </table>
+                {/* Empty state: fills the space under the header and centres the message. */}
+                {activeAgreements.length === 0 && (
+                  <div className="lasm-empty-fill">
+                    {activeSegId === COMBINED_SEG_ID ? (
+                      // Combined-segment tab: empty only because the party sub-tab filters it out.
+                      <span>
+                        No <strong>{partyLabel}</strong> agreement in the combined-segment group.
+                        {!buyerEqualsConsignee && ' Check the other party tabs above.'}
+                      </span>
+                    ) : (!buyerEqualsConsignee && activeSegRawAgreements.length > 0) ? (
+                      // Segment HAS agreements, just none for the party sub-tab in view.
+                      <span>
+                        No <strong>{partyLabel}</strong> agreement
+                        for <strong>{activeSeg?.name}</strong> in this segment. Check the other party tabs above,
+                        or create one for this party from the <strong>Agreements Master</strong>.
+                      </span>
+                    ) : activeSegHasCombined ? (
+                      <span>
+                        <strong>{activeSeg?.name}</strong> has no separate agreement of its own — it’s covered by a
+                        shared agreement that spans multiple segments. Open the
+                        <strong> “Combined Segment Agreements”</strong> tab to view and send it.
+                      </span>
+                    ) : (
+                      <span>
+                        No agreement exists for <strong>{activeSeg?.name}</strong> yet — create one for this
+                        segment from the <strong>Agreements Master</strong>, then it will appear here to send.
+                      </span>
+                    )}
+                  </div>
+                )}
                 </div>
                 {/* Pagination footer — same WorklistPager (Rows-per-page +
                     page/total + arrows) used on the Customer / master lists. */}
@@ -2403,6 +2410,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               )}
             </>
           )}
+        </div>
+
+        {/* ── FOOTER — the Customer / Consignee evidence vault footer ── */}
+        <div className="lasm-foot">
+          <button type="button" className="lasm-foot-btn" onClick={onClose}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="20 6 9 17 4 12"/></svg>
+            Close
+          </button>
         </div>
       </div>
 
@@ -2700,10 +2715,17 @@ const LASM_CSS = `
 .lasm-head-text { flex: 1; min-width: 0; }
 .lasm-head-title { font-size: 17px; font-weight: 800; letter-spacing: -.2px; }
 .lasm-head-sub { font-size: 12px; opacity: .85; margin-top: 2px; }
-.lasm-close { width: 32px; height: 32px; border-radius: 8px; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.16); color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease; }
+.lasm-close { width: 40px; height: 40px; border-radius: 10px; border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.16); color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease; }
 .lasm-close:hover { background: rgba(255,255,255,.28); }
 .lasm-body { padding: 0; display: flex; flex-direction: column; overflow: hidden; flex: 1; min-height: 0; }
+/* Footer = the Customer / Consignee evidence vault footer (.lev-footer). */
+.lasm-foot { flex-shrink: 0; background: #fff; border-top: 1px solid #ECEEF3; padding: 10px 18px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.lasm-foot-btn { box-sizing: border-box; height: 40px; padding: 0 18px; border-radius: 10px; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; border: none; color: #fff; background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); box-shadow: 0 6px 14px rgba(124,58,237,.32), inset 0 1px 0 rgba(255,255,255,.20); transition: all .22s cubic-bezier(.22,1,.36,1); }
+.lasm-foot-btn svg { width: 14px; height: 14px; stroke: currentColor; }
+.lasm-foot-btn:hover { transform: translateY(-1px); box-shadow: 0 10px 20px rgba(124,58,237,.40), inset 0 1px 0 rgba(255,255,255,.25); }
+[data-bs-theme="dark"] .lasm-foot { background: #0f172a; border-top-color: rgba(148,163,184,.18); }
 .lasm-empty { padding: 32px; text-align: center; color: #94a3b8; font-size: 13px; }
+.lasm-empty:not(.lasm-empty-warn) { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; font-style: italic; font-size: 12px; }
 /* Skeleton — violet-tinted to sit inside this popup rather than the slate
    used on the worksheet, but the same 1.1s sweep so the two read as one
    loading language across the app. */
@@ -2748,6 +2770,8 @@ const LASM_CSS = `
   box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); }
 /* Rows scroll here; the pager below stays pinned to the panel bottom. */
 .lasm-table-scroll, .lasm-td-scroll { flex: 1 1 0; min-height: 0; overflow: auto; }
+.lasm-table-scroll { display: flex; flex-direction: column; }
+.lasm-table-scroll > .lasm-table { flex-shrink: 0; }
 .lasm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 /* Header row matches the popup's violet header — a flat fill so every column
    reads as one continuous bar (a per-cell gradient would segment). */
@@ -2755,7 +2779,14 @@ const LASM_CSS = `
 .lasm-table tbody td { padding: 14px 18px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #1e293b; }
 .lasm-table tbody tr:last-child td { border-bottom: none; }
 .lasm-table tbody tr:hover td { background: #fafbff; }
-.lasm-empty-row { text-align: center; color: #94a3b8; padding: 22px !important; }
+/* Empty state: the block under the table header fills the rest of the card and
+   centres its message, in the faint italic every other list uses. */
+.lasm-empty-fill {
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
+  padding: 24px 48px; text-align: center;
+  color: #94a3b8; font-size: 12px; font-weight: 400; font-style: italic; line-height: 1.6;
+}
+.lasm-empty-fill strong { color: inherit; font-weight: 600; }
 .lasm-mono { font-family: 'Geist Mono', ui-monospace, monospace; color: #64748b; }
 .lasm-doc-name { font-weight: 700; color: #4c1d95; }
 .lasm-doc-sub  { font-size: 10.5px; color: #94a3b8; margin-top: 2px; }
@@ -2764,13 +2795,10 @@ const LASM_CSS = `
 .lasm-pill-opt { background: #fef3c7; color: #92400e; }
 
 /* ── Top-level regulatory tier tabs: Highly / Less Regulated ── */
-.lasm-tier-tabs { display: inline-flex; flex-shrink: 0; gap: 6px; padding: 6px; margin: 14px 22px 4px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 12px; }
-.lasm-tier-tab { display: inline-flex; align-items: center; gap: 8px; padding: 9px 18px; border: none; background: transparent; border-radius: 9px; color: #475569; font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer; transition: all .15s; }
-.lasm-tier-tab:hover { background: rgba(15,23,42,.05); }
-.lasm-tier-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: rgba(15,23,42,.08); color: #475569; font-size: 10.5px; font-weight: 800; }
-.lasm-tier-tab-highly.is-on { background: linear-gradient(135deg,#4c1d95,#6d28d9); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.32); }
-.lasm-tier-tab-less.is-on { background: linear-gradient(135deg,#7c3aed,#a78bfa); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.28); }
-.lasm-tier-tab.is-on .lasm-tier-tab-count { background: rgba(255,255,255,.28); color: #fff; }
+/* Tier and party tabs = the Customer / Consignee vault tab rail (.dt-tabrail):
+   40px tabs, 12.5px, count chips, 48px rail. Only placement is set here. */
+.lasm-tier-tabs { align-self: flex-start; flex-shrink: 0; margin: 14px 22px 4px; }
+.lasm-tier-tabs .dt-tab, .lasm-subtabs-inset .dt-tab { height: 40px; font-size: 12.5px; }
 
 /* ── Party tabs (Trade Documents view): Customer / Consignee. Each tab is a
       detail card — role + name + email + doc count. ── */
@@ -2831,13 +2859,7 @@ const LASM_CSS = `
 .lasm-party-tab.is-on .lasm-party-tab-count { background: rgba(15,23,42,.10); color: #0f172a; }
 
 /* ── Sub-tabs within a segment (e.g. Buyer / Consignee / Both agreements) ── */
-.lasm-subtabs { display: inline-flex; flex-shrink: 0; gap: 4px; padding: 4px; margin: 4px 0 12px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 10px; }
-.lasm-subtabs-inset { align-self: flex-start; margin: 10px 22px 2px; }
-.lasm-subtab { display: inline-flex; align-items: center; gap: 7px; padding: 7px 14px; border: none; background: transparent; border-radius: 7px; color: #64748b; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
-.lasm-subtab:hover { background: rgba(124,58,237,.08); color: #6d28d9; }
-.lasm-subtab.is-on { background: linear-gradient(135deg,#8b5cf6,#6d28d9); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.32); }
-.lasm-subtab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: rgba(124,58,237,.14); color: #6d28d9; font-size: 10px; font-weight: 800; }
-.lasm-subtab.is-on .lasm-subtab-count { background: rgba(255,255,255,.28); color: #fff; }
+.lasm-subtabs-inset { align-self: flex-start; flex-shrink: 0; margin: 10px 22px 2px; }
 .lasm-party-cell { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .lasm-party-agr { background: #ede9fe; color: #5b21b6; }
 /* Clickable "+N" party badge — opens the applicable-party popover. */
@@ -3011,7 +3033,7 @@ const LASM_CSS = `
   border-bottom-color: rgba(139,92,246,.10);
 }
 [data-bs-theme="dark"] .lasm-table tbody tr:hover td { background: rgba(124,58,237,.10); }
-[data-bs-theme="dark"] .lasm-empty-row { color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-empty-fill { color: #94a3b8; }
 [data-bs-theme="dark"] .lasm-mono { color: #94a3b8; }
 [data-bs-theme="dark"] .lasm-doc-name { color: #c4b5fd; }
 [data-bs-theme="dark"] .lasm-doc-sub  { color: #94a3b8; }
@@ -3064,11 +3086,6 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-st-recalled { background: rgba(245,158,11,.18); color: #fde68a; }
 [data-bs-theme="dark"] .lasm-st-expired  { background: rgba(168,85,247,.22); color: #d8b4fe; }
 [data-bs-theme="dark"] .lasm-st-draft    { background: rgba(148,163,184,.20); color: #cbd5e1; }
-[data-bs-theme="dark"] .lasm-tier-tabs { background: rgba(30,41,59,.55); border-color: rgba(148,163,184,.18); }
-[data-bs-theme="dark"] .lasm-tier-tab { color: #cbd5e1; }
-[data-bs-theme="dark"] .lasm-tier-tab:hover { background: rgba(148,163,184,.12); }
-[data-bs-theme="dark"] .lasm-tier-tab-count { background: rgba(148,163,184,.18); color: #cbd5e1; }
-[data-bs-theme="dark"] .lasm-tier-tab.is-on .lasm-tier-tab-count { background: rgba(255,255,255,.28); color: #fff; }
 
 [data-bs-theme="dark"] .lasm-party-tab { background: rgba(30,41,59,.55); border-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .lasm-party-tab:hover { border-color: rgba(148,163,184,.32); }
@@ -3080,11 +3097,6 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-party-tab-consignee.is-on { border-color: #a78bfa; background: rgba(124,58,237,.16); }
 [data-bs-theme="dark"] .lasm-party-tab.is-on .lasm-party-tab-count { background: rgba(255,255,255,.16); color: #f1f5f9; }
 
-[data-bs-theme="dark"] .lasm-subtabs { background: rgba(30,41,59,.55); border-color: rgba(148,163,184,.18); }
-[data-bs-theme="dark"] .lasm-subtab { color: #cbd5e1; }
-[data-bs-theme="dark"] .lasm-subtab:hover { background: rgba(124,58,237,.16); color: #c4b5fd; }
-[data-bs-theme="dark"] .lasm-subtab-count { background: rgba(124,58,237,.22); color: #ddd6fe; }
-[data-bs-theme="dark"] .lasm-subtab.is-on .lasm-subtab-count { background: rgba(255,255,255,.28); color: #fff; }
 [data-bs-theme="dark"] .lasm-party-agr { background: rgba(124,58,237,.20); color: #ddd6fe; }
 [data-bs-theme="dark"] .lasm-td-panel { background: #1e293b; border-color: rgba(139,92,246,.22); box-shadow: 0 1px 3px rgba(0,0,0,.30), 0 8px 18px rgba(0,0,0,.25); }
 [data-bs-theme="dark"] .lasm-td-head { background: rgba(124,58,237,.14); color: #c4b5fd; border-bottom-color: rgba(148,163,184,.18); }

@@ -283,6 +283,12 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
   }, [areaFromFloor, derivedArea, d.area]);
 
   const shownArea = d.area;
+  /* Sq. ft still free in the picked warehouse (CS-940 #11). On an edit the
+     zone's own area is given back — it is being replaced, not added — the
+     same exclusion the server's freeWarehouseAreaSqft() makes. */
+  const freeArea = picked
+    ? Math.max(0, picked.area - picked.used + (zone && zone.warehouseId === picked.apiId ? Number(zone.area) || 0 : 0))
+    : NaN;
 
   const other: Unit = unit === 'm' ? 'ft' : 'm';
   const k = unit === 'm' ? FEET_PER_METRE : 1 / FEET_PER_METRE;
@@ -295,9 +301,11 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
     if (!d.wh || !picked) e.wh = 'Select the warehouse';
     if (!d.name.trim()) e.name = 'Enter the zone name';
     const areaNum = Number(shownArea);
-    /* Only empty or 0 here. Whether it fits is the SERVER's answer — it alone
-       sees the other zones, and replies "Only 3,500 Sq. Ft is still free". */
+    /* Checked here against the free area the list last reported, so the user
+       hears it before Save; the server re-checks under a lock and still has
+       the final word ("Only 3,500 Sq. Ft is still free"). */
     if (!(areaNum > 0)) e.area = 'Enter the zone area in square feet';
+    else if (picked && areaNum > freeArea) e.area = `Only ${inWhole.format(freeArea)} Sq. Ft is still free in ${picked.id}`;
     if (!d.type) e.type = 'Select the zone type';
     if (noRack) {
       if (!d.storage) e.storage = 'Choose Refrigerator Storage or Regular Storage';
@@ -475,7 +483,7 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
               label="Zone Area (Sq. Ft)" req error={errors.area}
               hint={areaFromFloor
                 ? 'Taken from the measured floor area'
-                : picked ? `Must fit within ${picked.id}'s ${inWhole.format(picked.area)} Sq. Ft`
+                : picked ? `${inWhole.format(freeArea)} of ${inWhole.format(picked.area)} Sq. Ft still free in ${picked.id}`
                   : 'Must fit within the warehouse area'}
             >
               <div className="whm-suf">

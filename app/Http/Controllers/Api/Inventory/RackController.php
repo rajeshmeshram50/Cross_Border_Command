@@ -155,6 +155,7 @@ class RackController extends BaseInventoryController
             $data = $request->validate($this->rules());
 
             [$zone, $area] = $this->guard($data, null, $user);
+            $data = $this->inheritFlags($data, $zone);
 
             $rack = new Rack($data);
             // The zone's tenancy, never the user's — see ZoneController::store.
@@ -181,6 +182,20 @@ class RackController extends BaseInventoryController
         }
     }
 
+    /**
+     * A rack takes its cold-chain and hazardous flags from its zone (QA CS-941
+     * #13). A cold-chain zone is a refrigerated room and a hazardous zone a
+     * segregated one — every rack standing in it is the same, so the form's
+     * switch is shown locked and whatever it sent is overridden here.
+     */
+    private function inheritFlags(array $data, Zone $zone): array
+    {
+        $data['cold_chain'] = (int) $zone->cold_chain;
+        $data['hazardous']  = (int) $zone->hazardous;
+
+        return $data;
+    }
+
     /** PUT /inventory/racks/{id} */
     public function update(Request $request, int $id)
     {
@@ -193,6 +208,7 @@ class RackController extends BaseInventoryController
             $data = $request->validate($this->rules());
 
             [$zone, $area] = $this->guard($data, $rack, $user);
+            $data = $this->inheritFlags($data, $zone);
 
             $this->guardChildren($data, $rack);
 
@@ -437,8 +453,15 @@ class RackController extends BaseInventoryController
             $this->reject("{$zone->zone_name} does not allow hazardous goods.", 'hazardous');
         }
 
-        if ($this->nameTaken(Rack::where('zone_id', $zone->id), 'rack_name', $d['rack_name'], $editing?->id)) {
-            $this->reject('This zone already has a rack with this name', 'rack_name');
+        /* Unique across the whole warehouse, not just the zone (QA CS-941 #18):
+           racks are picked and scanned by name within a warehouse, and two
+           "Rack A"s in different zones of it cannot be told apart. */
+        $clash = Rack::where('warehouse_id', $zone->warehouse_id)
+            ->whereRaw('lower(trim(rack_name)) = lower(trim(?))', [$d['rack_name']])
+            ->when($editing, fn ($q) => $q->where('id', '!=', $editing->id))
+            ->first();
+        if ($clash) {
+            $this->reject("This warehouse already has a rack with this name ({$clash->rack_code}).", 'rack_name');
         }
 
         $area = Rack::areaSqft((float) $d['length'], (float) $d['width'], $d['dim_unit']);
