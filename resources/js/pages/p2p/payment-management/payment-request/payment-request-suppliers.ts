@@ -1,4 +1,3 @@
-
 import type { RiskSubject } from '../../purchase-management/order/create-po/supplier-checks';
 export { RISK_GUIDELINES, isRiskMandatory } from '../../purchase-management/order/create-po/supplier-checks';
 
@@ -23,7 +22,6 @@ export type Supplier = {
   risk: 'Low Risk' | 'Medium Risk' | 'High Risk';
   category: string;
   segment: string;
-  // Address & contact
   addr: string;
   country: string;
   state: string;
@@ -33,7 +31,6 @@ export type Supplier = {
   desig: string;
   phone: string;
   email: string;
-  // GST scrutiny
   scrutiny: string;
   gstNo: string;
   gstStatus: string;
@@ -56,13 +53,11 @@ export function legalSections(s: Supplier) {
   });
 }
 
-/** Overall documents completed across all five checklists. */
 export function legalTotals(s: Supplier) {
   const total = LEGAL_PARAMS.reduce((sum, _p, i) => sum + need(s, i), 0);
   const done = LEGAL_PARAMS.reduce((sum, _p, i) => sum + have(s, i), 0);
   return { done, total, pct: ratio(done, total) };
 }
-
 
 export const toRiskSubject = (s: Supplier, international = false): RiskSubject => ({
   risk: s.risk, category: s.category, gstStatus: s.gstStatus, gstNo: s.gstNo,

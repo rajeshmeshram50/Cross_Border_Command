@@ -121,7 +121,6 @@ function Party({ party }: { party: PartyRef }) {
   );
 }
 
-
 function RaisedAgainst({ row }: { row: PaymentRequestRow }) {
   return (
     <div className="prm-against">
@@ -147,24 +146,19 @@ export default function PaymentRequestManagement() {
   const [loading, setLoading] = useState(true);
   const [guideOpen, setGuideOpen] = useState(true);
   const [tab, setTab] = useState<TabKey>('all');
-  // Awaiting requests have nothing approved yet, so that column is left out (CS-429).
   const columns = useMemo(() => columnsFor(tab), [tab]);
   const showApproved = tab !== 'awaiting';
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  // Rows per page as in the Segment Master: what fits the table, never fewer than 10.
   const tableRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize, refitSize] = useFitPageSize(tableRef);
   const [reasonRow, setReasonRow] = useState<PaymentRequestRow | null>(null);
   const [viewId, setViewId] = useState<number | null>(null);
   const closeView = useCallback(() => setViewId(null), []);
 
-  // Tabs, search and paging run on the server; a newer request wins over a slower older one.
   const debouncedSearch = useDebouncedValue(search.trim(), 400);
   const [reload, setReload] = useState(0);
   const latest = useRef(0);
-  /* Which query the rows on screen answer. While a different one is in flight
-     the list shimmers rather than showing the previous tab's rows (CS-430). */
   const queryKey = `${tab}|${debouncedSearch}|${page}|${pageSize}`;
   const [shownKey, setShownKey] = useState('');
   useEffect(() => {
@@ -176,13 +170,11 @@ export default function PaymentRequestManagement() {
       .finally(() => { if (ticket === latest.current) setLoading(false); });
   }, [tab, debouncedSearch, page, pageSize, reload, toast]);
   const refresh = useCallback(() => setReload(n => n + 1), []);
-  // Re-measure once real rows are on screen; a larger fit fetches that many.
   useEffect(() => { if (rows.length) refitSize(); }, [rows.length, refitSize]);
 
   const counts = meta?.counts ?? { all: 0, awaiting: 0, approved: 0, declined: 0 };
   const total = meta?.total ?? 0;
 
-  // Page 1 whenever the result set changes underneath the pager.
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, pageSize]);
 
   const start = (page - 1) * pageSize;
@@ -287,7 +279,6 @@ export default function PaymentRequestManagement() {
           </div>
         ) : (
           <div className={`ord-table-scroll${loading ? ' is-refreshing' : ''}`} ref={tableRef}>
-            {/* Columns keep their widths, but the table still fills a wide screen. */}
             <table className="ord-table" style={{ minWidth: tableWidth(columns), width: '100%' }}>
               <colgroup>
                 {columns.map(c => <col key={c.label} style={{ width: c.width }} />)}

@@ -16,9 +16,13 @@
   font-weight: 700;
 }
 
-
 .prm-page .spi-seg-btn {
   padding: 13px 15px;
+}
+
+.prm-page .ord-list .spi-segrow .spi-seg-btn {
+  height: 40px;
+  font-size: 12.5px;
 }
 
 .prm-page .spi-seg-btn:not(.is-active) {
@@ -59,14 +63,11 @@
   padding-bottom: 6px;
 }
 
-/* ── Table ──────────────────────────────────────────────────────────────── */
-
 .prm-page .ord-table td {
   padding: 8px 10px;
   font-size: 11px;
 }
 
-/* Figma .bst-row--head, one line per label. */
 .prm-page .ord-table th {
   padding: 9px 10px;
   font-size: 8.5px;
@@ -77,7 +78,6 @@
   background: linear-gradient(180deg, #e9f9fc, #f2fcfd);
 }
 
-/* Figma .bst-sr: a plain number, not the PO list's teal chip. */
 .prm-page .ord-srnum {
   width: auto;
   height: auto;
@@ -130,7 +130,6 @@
 [data-bs-theme="dark"] .prm-row.is-closed {
   background: rgba(239, 68, 68, .1);
 }
-
 
 .prm-status {
   margin-top: 5px;
@@ -281,7 +280,6 @@
   line-height: 1.25;
 }
 
-
 .prm-acts {
   display: inline-flex;
   align-items: center;
@@ -349,7 +347,6 @@
   outline-offset: 2px;
 }
 
-
 [data-bs-theme="dark"] .prm-page .ord-table th {
   color: #94a3b8;
   background: linear-gradient(180deg, rgba(8, 145, 178, .16), rgba(8, 145, 178, .08)), #0f172a;
@@ -405,10 +402,8 @@
   background: rgba(148, 163, 184, .22);
 }
 
-
 @media (max-width: 1100px) {
 
-  /* Too narrow for both: stack them, the search taking the full row at a fixed height. */
   .prm-page .ord-list>.spi-segrow {
     flex-wrap: wrap;
   }
@@ -432,10 +427,6 @@
   }
 }
 
-/* ── Reason For Decline popup ───────────────────────────────────────────────
- * Shell, header and footer are the Bulk Sourcing modal's (srpt-* / pl-*).
- * Only the header meta chips, the field grid and the footer note live here. */
-
 .prm-dc-box {
   width: min(1460px, calc(100vw - 24px));
 }
@@ -450,8 +441,6 @@
   background: #f87171;
 }
 
-/* Header: Figma white glyph, neutral ID pill, wider subtitle tracking.
-   The right-hand chips are the Order payment popup's shared Chip. */
 .prm-dc-box .srpt-hicon {
   color: #fff;
 }
@@ -470,7 +459,6 @@
   letter-spacing: .3px;
 }
 
-/* The title never gives way; a long supplier name shortens with an ellipsis instead. */
 .prm-dc-box .srpt-title-wrap {
   flex-shrink: 0;
 }
@@ -509,7 +497,6 @@
   padding: 10px 12px;
 }
 
-/* The panel IS the shared guide strip (spi-bref); only its heading weight and body differ. */
 .prm-dc-panel {
   margin: 0;
 }
@@ -539,7 +526,6 @@
   min-width: 0;
 }
 
-/* Declined By takes two columns, the reason the remaining four. */
 .prm-dc-field:nth-child(7) {
   grid-column: span 2;
 }
@@ -556,13 +542,11 @@
   color: #0c4a6e;
 }
 
-/* Panel strip text in the same navy instead of the shared cyan-blue. */
 .prm-dc-panel .spi-bref-label,
 .prm-dc-panel .spi-bref-sub {
   color: #0c4a6e;
 }
 
-/* Long values wrap inside the field instead of widening the grid. */
 .prm-dc-value {
   display: flex;
   flex-direction: column;
@@ -599,7 +583,6 @@
   color: #7c8da3;
 }
 
-/* The reason is the one field that carries the decision's colour. */
 .prm-dc-reason {
   color: #2b4353;
   font-weight: 600;
@@ -616,7 +599,6 @@
   min-height: 64px;
 }
 
-/* Declined By sits as tall as the reason beside it. */
 .prm-dc-field:nth-child(7) .prm-dc-value {
   min-height: 64px;
 }

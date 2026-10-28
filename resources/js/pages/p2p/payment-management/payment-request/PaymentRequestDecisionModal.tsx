@@ -73,7 +73,6 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { (approve ? cardRef.current : noteRef.current)?.focus(); }, [approve]);
-  // The blob links live as long as the dialog does.
   const filesRef = useRef(files);
   filesRef.current = files;
   useEffect(() => () => { filesRef.current.forEach(f => URL.revokeObjectURL(f.url)); }, []);
@@ -97,7 +96,6 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
     : amtText !== '' && amount <= 0 ? 'Enter the amount being approved.'
     : amtText !== '' && amount < 1 ? `The approved amount must be at least ${money(1)}.` : '';
 
-  // Figures as the requester saw them when raising the request.
   const awaiting = linked.filter(r => r.status === 'awaiting').reduce((s, r) => s + r.requestedAmount, 0);
   const approvedUnpaid = Math.max(0, ledger.approvedTotal - ledger.paid);
   const progPct = ledger.total > 0 ? Math.round((ledger.paid / ledger.total) * 100) : 0;
@@ -109,8 +107,6 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   const addFiles = (e: ChangeEvent<HTMLInputElement>, cam: boolean) => {
     const picked = Array.from(e.target.files ?? []);
     e.target.value = '';
-    // Anything that is not a PDF or a photo is refused by name, so the user is
-    // told which file was dropped rather than finding it missing (CS-433).
     const refused = picked.filter(f => !isProofFile(f));
     const list = picked.filter(isProofFile).map(f => ({
       name: f.name || `photo_${Date.now()}.jpg`, size: f.size, cam, url: URL.createObjectURL(f),
@@ -122,7 +118,6 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
     }
     if (list.length) setFiles(cur => [...cur, ...list]);
   };
-  /** Photos from the live camera arrive as real Files, same as picked ones. */
   const addShots = (shots: File[]) => {
     if (!shots.length) return;
     setFiles(cur => [...cur, ...shots.map(f => ({
@@ -209,7 +204,6 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
             </div>
             <div className="mpr-hero__sub">Decision recorded as {by.name} · {by.role}</div>
           </div>
-          {/* A PO request shows the PO's own strip (with its SPIs); a direct SPI has no PO row. */}
           {po ? <HeroRefChips row={po} /> : <div className="mpr-hero__chips">
             <Chip label="Supplier" value={request.supplier} meta={supplier?.code} mod="mpr-hero__chip--sup" />
             <Chip label={`${D} Number`} value={doc.id} meta={fmtDate(doc.date)} />
@@ -298,7 +292,6 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
                   {files.map((f, i) => (
                     <span className="prd-dec__file" key={`${f.name}-${i}`}>
                       <span className="prd-dec__fileico">{f.cam ? ICON_CAM : ICON_FILE}</span>
-                      {/* The chip opens what was attached — a name alone gives the approver nothing to check. */}
                       <a className="prd-dec__filen" href={f.url} target="_blank" rel="noopener noreferrer" title={`Open ${f.name}`}>{f.name}</a>
                       {f.size > 0 && <span className="prd-dec__filesz">{kb(f.size)}</span>}
                       <button type="button" className="prd-dec__filex" title="Remove" disabled={saving} onClick={() => dropFile(i)}>{ICON_X}</button>
