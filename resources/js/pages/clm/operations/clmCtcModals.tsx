@@ -78,7 +78,7 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
   const jumpTo = (no: number) => { setActiveVer(no); scrollRef.current?.querySelector(`[data-ver="${no}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const overall = sorted[0] ? pillOf(sorted[0]) : null;
   return (
-    <div onClick={() => { if (busy === null) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div onClick={() => { if (busy === null) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(10px, 3vh, 24px)' }}>
       <style>{`
         @keyframes ctcm-spin { to { transform: rotate(360deg); } }
         @keyframes ctcm-bar { 0% { left: -45%; } 100% { left: 100%; } }
@@ -86,7 +86,7 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
         .ctcm-prog { position: relative; height: 5px; border-radius: 4px; overflow: hidden; background: rgba(124,58,237,.16); margin-top: 9px; }
         .ctcm-prog::before { content: ''; position: absolute; top: 0; height: 100%; width: 45%; border-radius: 4px; background: linear-gradient(90deg, transparent, #7C3AED 40%, #a78bfa 60%, transparent); animation: ctcm-bar 1.05s ease-in-out infinite; }
       `}</style>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '84vh', background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: 'calc(100vh - 20px)', background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
         {/* Header */}
         <div style={{ padding: '13px 16px', backgroundImage: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -115,7 +115,7 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
           </div>
         )}
         {/* Timeline list */}
-        <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px 16px' }}>
+        <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin', scrollbarColor: `${t.dark ? 'rgba(167,139,250,.5)' : '#C4B5FD'} transparent`, padding: '14px 16px' }}>
           {sorted.length === 0 && <div style={{ fontSize: 11, color: t.textMuted, textAlign: 'center', padding: 28 }}>No versions recorded yet.</div>}
           {sorted.map((ver, idx) => {
             const pill = pillOf(ver);
@@ -239,9 +239,13 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
       ? { ring: '#DC2626,#B91C1C', pill: t.dark ? '#fca5a5' : '#DC2626', pillBg: t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2', pillBd: t.dark ? 'rgba(239,68,68,.4)' : '#FECACA', label: 'Rejected' }
       : { ring: t.dark ? '#475569,#334155' : '#CBD5E1,#94A3B8', pill: t.dark ? '#94a3b8' : '#64748B', pillBg: t.dark ? 'rgba(148,163,184,.12)' : '#F1F5F9', pillBd: t.dark ? 'rgba(148,163,184,.25)' : '#E2E8F0', label: 'Pending' };
 
+  /* The gutter shrinks with the viewport: 24px around a dialog on a laptop is
+     breathing room, but on a 430px-tall window — a short screen, or one with
+     devtools open — it is a tenth of the height spent on margin while the six
+     steps inside fight over what is left. */
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '86vh', background: t.surface, borderRadius: 18, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(10px, 3vh, 24px)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: 'calc(100vh - 20px)', background: t.surface, borderRadius: 18, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
         {/* Self-contained spin keyframe so the certificate spinner rotates on
             BOTH host pages (CTC list + Agreements Sent), not just where CTC_CSS
             happens to define it. */}
@@ -288,7 +292,10 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
           <div style={{ height: 6, borderRadius: 4, background: t.dark ? 'rgba(255,255,255,.08)' : '#E0D9FB', overflow: 'hidden' }}><div style={{ height: '100%', width: `${(doneCount / 6) * 100}%`, borderRadius: 4, background: 'linear-gradient(90deg,#7C3AED,#059669)', transition: 'width .3s' }} /></div>
         </div>
         {/* timeline */}
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 18px' }}>
+        {/* `overscrollBehavior` keeps the page behind from taking over at the
+            ends of this list, and the thin track is the only thing on screen
+            saying the steps continue below the fold. */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin', scrollbarColor: `${t.dark ? 'rgba(167,139,250,.5)' : '#C4B5FD'} transparent`, padding: '16px 18px' }}>
           <div style={{ fontSize: 8, fontWeight: 800, color: t.textMuted, letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 12 }}>Agreement Timeline</div>
           {timelineRows.map((s, i) => {
             const c = tone(s.status); const last = i === timelineRows.length - 1;
