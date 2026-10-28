@@ -759,8 +759,11 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-clm-collapse:hover { background: rgba(255,255,255,.28); }
 
 /* Group cards — lavender gradient with hover lift */
+/* The first group starts 12px under the header, like the stage body and the
+   Task Manager rail, so all three columns' content starts level. */
+.smd-clm-header + .smd-clm-group { margin-top: 12px; }
 .smd-clm-group {
-  margin: 8px 10px;
+  margin: 8px 14px;
   padding: 10px 12px;
   background: linear-gradient(135deg, #f5f3ff, #ede9fe);
   border: 1.5px solid #ddd6fe;
@@ -918,32 +921,19 @@ export const SALES_MATRIX_DETAIL_CSS = `
 }
 
 /* Tab strip — lavender pill container */
-.smd-deal-tabs {
-  display: flex; gap: 3px;
-  margin: 8px 8px 0;
-  padding: 3px;
-  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
-  border-radius: 10px;
-  border-bottom: none;
-  box-shadow: inset 0 1px 4px rgba(124,58,237,.07);
+/* Tabs = the Customers list tab rail (.dt-tabrail): 40px tabs in the 48px
+   violet rail. Four tabs share the narrow column, so they split it evenly
+   at 11.5px; the SOON tag sits inside the tab's top-right corner. */
+.smd-deal-tabs { margin: 12px 14px 0; } /* = .smd-stg-body padding, so the rail and the stage card start level */
+.smd-deal-tabs .dt-tabs { display: flex; width: 100%; }
+.smd-deal-tabs .dt-tab.smd-deal-tab {
+  position: relative; flex: 1 1 0; min-width: 0;
+  height: 40px; padding: 0 6px; font-size: 11.5px;
+  justify-content: center; white-space: nowrap;
 }
-.smd-deal-tab {
-  position: relative; flex: 1;
-  padding: 5px 3px; border-radius: 7px;
-  background: transparent; border: none;
-  font-family: inherit;
-  font-size: 9px; font-weight: 700; color: #c4b5fd;
-  cursor: pointer; transition: all .18s;
-  white-space: nowrap;
-}
-.smd-deal-tab-active {
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  color: #fff;
-  box-shadow: 0 2px 6px rgba(124,58,237,.38);
-}
-.smd-deal-tab:disabled { opacity: .65; cursor: not-allowed; }
+.smd-deal-tabs .dt-tab.smd-deal-tab:disabled { opacity: .65; cursor: not-allowed; }
 .smd-deal-tab-soon {
-  position: absolute; top: -5px; right: 1px;
+  position: absolute; top: 2px; right: 3px;
   font-size: 5px; font-weight: 800; letter-spacing: .05em;
   padding: 1px 3px;
   background: #ede9fe; color: #a78bfa;
@@ -1539,20 +1529,6 @@ export const SALES_MATRIX_DETAIL_CSS = `
   color: #fff;
 }
 /* Tab strip — was light lavender pill in light mode; needs dark wash here. */
-[data-bs-theme="dark"] .smd-root .smd-deal-tabs {
-  background: linear-gradient(135deg, #1f1845, #2a2150);
-  border-bottom-color: rgba(167, 139, 250, .22);
-  box-shadow: inset 0 1px 4px rgba(0, 0, 0, .35);
-}
-[data-bs-theme="dark"] .smd-root .smd-deal-tab { color: rgba(196, 181, 253, .55); }
-[data-bs-theme="dark"] .smd-root .smd-deal-tab-active {
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, .50);
-}
-[data-bs-theme="dark"] .smd-root .smd-deal-tab.on {
-  color: #ede9fe; border-bottom-color: #a78bfa;
-}
 [data-bs-theme="dark"] .smd-root .smd-deal-tab-soon {
   background: rgba(167, 139, 250, .14);
   border-color: rgba(167, 139, 250, .35);

@@ -3,6 +3,7 @@ import { SegmentNameBadge } from '../../../../../components/ui/SegmentBadge';
 import api from '../../../../../api';
 import { formatProductCode } from '../../../../../utils/formatProductCode';
 import Tooltip from '../../../../../components/ui/Tooltip';
+import '../../../../../components/ui/DataTable.css';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 
@@ -481,10 +482,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
           <>
             {/* Pill tabs + Map Product CTA (always visible — mirrors IDIMS) */}
             <div className="s4-tab-row">
-              <div className="s4-tabs">
+              <div className="s4-tabs dt-tabrail hr-dt" data-accent="violet">
+                <div className="dt-tabs" role="tablist">
                 <button
                   type="button"
-                  className={`s4-tab s4-tab-toshare ${tab === 'to_share' ? 'active' : ''}`}
+                  role="tab"
+                  aria-selected={tab === 'to_share'}
+                  className={`dt-tab ${tab === 'to_share' ? 'on' : 'off'}`}
                   onClick={() => setTab('to_share')}
                   disabled={isSubmittingAny}
                 >
@@ -495,11 +499,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                     </svg>
                   </span>
                   Price To Be Share
-                  <span className="s4-tab-count">{toShareCount}</span>
+                  <span className="dt-tab-count">{toShareCount}</span>
                 </button>
                 <button
                   type="button"
-                  className={`s4-tab s4-tab-toshare ${tab === 'shared' ? 'active' : ''}`}
+                  role="tab"
+                  aria-selected={tab === 'shared'}
+                  className={`dt-tab ${tab === 'shared' ? 'on' : 'off'}`}
                   onClick={() => setTab('shared')}
                   disabled={isSubmittingAny}
                 >
@@ -509,8 +515,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                     </svg>
                   </span>
                   Shared Price
-                  <span className="s4-tab-count">{sharedCount}</span>
+                  <span className="dt-tab-count">{sharedCount}</span>
                 </button>
+                </div>
               </div>
             </div>
 
@@ -564,7 +571,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                             <td>
                               <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
+                              {r.product_category && <Tooltip label={r.product_category} themed maxWidth={320}><span className="s4-cat-badge"><span className="s4-cat-name">{r.product_category}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
                             </td>
                             <td>
                               <span className={`s4-pill ${statusLc === 'active' ? 's4-pill-active' : statusLc === 'draft' ? 's4-pill-draft' : 's4-pill-inactive'}`}>
@@ -685,7 +692,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
                               <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: '100%' }}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{r.product_category.toUpperCase()}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
+                              {r.product_category && <Tooltip label={r.product_category} themed maxWidth={320}><span className="s4-cat-badge"><span className="s4-cat-name">{r.product_category}</span><SegmentNameBadge name={r.product_category} style={{ marginLeft: 0, flexShrink: 0 }} /></span></Tooltip>}
                             </td>
                             <td><span className="s4-dt">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
@@ -775,44 +782,11 @@ const STAGE4_CSS = `
 }
 .s4-map-btn:hover { background: linear-gradient(135deg, #7c3aed, #8b5cf6); transform: translateY(-1px); box-shadow: 0 5px 14px rgba(124,58,237,.40); }
 
-/* ═══════════════════════════ TABS — segmented control ═══════════════════════════
-   A single rounded "track" holds both tabs. The active tab is a filled,
-   slightly-raised pill; the inactive tab is flat text inside the track.
-   Clean, modern, premium — one cohesive control instead of two pills. */
-.s4-tabs {
-  display: flex; align-items: center; gap: 6px;
-  padding: 4px; border-radius: 14px;
-  background: #faf5ff; border: 1.5px solid #e9d5ff;
-  flex-wrap: wrap;
-}
-.s4-tab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 18px; border-radius: 10px;
-  border: none; background: transparent;
-  color: #6d28d9;
-  font-family: inherit; font-size: 11.5px; font-weight: 700;
-  cursor: pointer; white-space: nowrap;
-  transition: all .2s cubic-bezier(.34, 1.2, .64, 1);
-}
-.s4-tab:hover:not(.active) { background: rgba(124,58,237,.08); }
-/* Frozen while a price submit is in flight — blocks the click, keeps the look. */
-.s4-tab:disabled { cursor: not-allowed; }
-.s4-tab:disabled:hover:not(.active) { background: transparent; }
-.s4-tab.active {
-  background: linear-gradient(135deg, #7c3aed, #4c1d95);
-  color: #fff;
-  box-shadow: 0 4px 14px rgba(124,58,237,.35);
-  transform: translateY(-0.5px);
-}
+/* Tabs = the Customers list tab rail (.dt-tabrail): 40px tabs, 12.5px, count
+   chips, 48px rail. A price submit in flight still freezes them (disabled). */
+.s4-tabs .dt-tab { height: 40px; font-size: 12.5px; }
+.s4-tabs .dt-tab:disabled { cursor: not-allowed; }
 .s4-tab-ico { display: inline-flex; align-items: center; justify-content: center; }
-.s4-tab-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
-  font-size: 11px; font-weight: 800;
-  background: rgba(124,58,237,.12); color: #6d28d9;
-  transition: background .18s ease, color .18s ease;
-}
-.s4-tab.active .s4-tab-count { background: rgba(255,255,255,.25); color: #fff; }
 
 /* ═══════════════════════════════ CARDS ═══════════════════════════════ */
 .s4-card {
@@ -868,16 +842,19 @@ const STAGE4_CSS = `
 .s4-card-count-navy    { background: linear-gradient(135deg,#5b21b6,#7c3aed); }
 .s4-card-count-emerald { background: linear-gradient(135deg,#10b981,#047857); }
 
+/* Back = the lead page's Back to My Workplace button (.smd-back-btn). */
 .s4-back-btn {
-  display: inline-flex; align-items: center; gap: 5px;
+  display: inline-flex; align-items: center; gap: 7px;
   box-sizing: border-box; height: 40px;
-  padding: 0 16px; border-radius: 10px;
-  background: #fff; border: 1.5px solid #ddd6fe;
-  color: #5b21b6; font-weight: 700; font-size: 12px;
-  cursor: pointer; font-family: inherit;
-  transition: all .12s;
+  padding: 0 18px; border-radius: 12px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #5b21b6 100%);
+  border: none; color: #fff; font-weight: 700; font-size: 11.5px; letter-spacing: .02em;
+  cursor: pointer; font-family: inherit; white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(124,58,237,.40), inset 0 1px 0 rgba(255,255,255,.20);
+  text-shadow: 0 1px 2px rgba(0,0,0,.20);
+  transition: all .2s;
 }
-.s4-back-btn:hover { background: #f5f3ff; border-color: #5b21b6; }
+.s4-back-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.50), inset 0 1px 0 rgba(255,255,255,.20); }
 
 /* Search box */
 .s4-search {
@@ -966,7 +943,15 @@ const STAGE4_CSS = `
    the price columns off-screen. Cap + ellipsize; full value is on the hover
    tooltip. max-width:100% keeps it inside the product cell (table-layout:fixed);
    vertical-align keeps the clipped chip aligned with the name above it. */
-.s4-cat-badge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; background: #ede9fe; color: #6d28d9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* Segment = the Customers list segment pill: name + Reg badge in one rounded pill. */
+.s4-cat-badge {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
+  margin-top: 4px; padding: 2px 3px 2px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; color: #5b21b6;
+  background: #f3eeff; border: 1px solid #ddd6fe;
+  vertical-align: bottom;
+}
+.s4-cat-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 .s4-pill {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1036,15 +1021,19 @@ const STAGE4_CSS = `
 
 .s4-row-actions { display: flex; align-items: center; gap: 8px; }
 .s4-submit-btn {
-  padding: 6px 14px; border: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; height: 40px;
+  padding: 0 18px; border: none; cursor: pointer;
   min-width: 108px; text-align: center;   /* stable width so "Submit" → "Submitting…" doesn't jump */
   background: linear-gradient(135deg, #5b21b6, #7c3aed);
   color: #fff;
   font-family: inherit; font-size: 11.5px; font-weight: 700;
-  border-radius: 8px;
+  border-radius: 10px;
   box-shadow: 0 2px 6px rgba(124,58,237,.30);
   transition: all .12s;
 }
+/* The eye beside Submit matches its 40px height. */
+.s4-icon-btn.s4-eye-btn { width: 40px; height: 40px; border-radius: 10px; }
 .s4-submit-btn:hover:not(:disabled) { background: linear-gradient(135deg, #7c3aed, #8b5cf6); transform: translateY(-1px); }
 .s4-submit-btn:disabled { opacity: .55; cursor: not-allowed; }
 /* While submitting, keep the button bright so the white spinner reads clearly. */
@@ -1121,16 +1110,6 @@ const STAGE4_CSS = `
 /* Dark mode */
 /* Segmented control on dark — the track is a subtle translucent panel,
    the active tab a bright purple pill that clearly stands out. */
-[data-bs-theme="dark"] .s4-tabs { background: rgba(167,139,250,.10); border-color: rgba(167,139,250,.20); }
-[data-bs-theme="dark"] .s4-tab { color: #c4b5fd; background: transparent; }
-[data-bs-theme="dark"] .s4-tab:hover:not(.active) { background: rgba(167,139,250,.16); }
-[data-bs-theme="dark"] .s4-tab.active {
-  background: linear-gradient(135deg, #7c3aed, #a78bfa);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(124,58,237,.55), inset 0 1px 0 rgba(255,255,255,.18);
-}
-[data-bs-theme="dark"] .s4-tab-count { background: rgba(167,139,250,.20); color: #c4b5fd; }
-[data-bs-theme="dark"] .s4-tab.active .s4-tab-count { background: rgba(0,0,0,.28); color: #fff; }
 [data-bs-theme="dark"] .s4-card { background: #14102a; }
 [data-bs-theme="dark"] .s4-card-navy    { border-color: rgba(167,139,250,.30); border-top-color: #7c3aed; }
 [data-bs-theme="dark"] .s4-card-emerald { border-color: rgba(110,231,183,.30); }
@@ -1144,8 +1123,7 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-card-head-emerald .s4-card-title { color: #6ee7b7; }
 [data-bs-theme="dark"] .s4-card-sub { color: rgba(196,181,253,.55); }
 [data-bs-theme="dark"] .s4-history-code { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
-[data-bs-theme="dark"] .s4-back-btn { background: #1f1845; border-color: rgba(167,139,250,.35); color: #ddd6fe; }
-[data-bs-theme="dark"] .s4-back-btn:hover { background: #2a2150; }
+
 [data-bs-theme="dark"] .s4-search { background: #1f1845; border-color: rgba(167,139,250,.35); color: #c4b5fd; }
 [data-bs-theme="dark"] .s4-search input { color: #ede9fe; }
 [data-bs-theme="dark"] .s4-table-wrap { background: #14102a; scrollbar-color: rgba(148,163,184,.45) transparent; }
@@ -1163,7 +1141,7 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-code-navy    { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s4-code-emerald { background: rgba(110,231,183,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
 [data-bs-theme="dark"] .s4-prod-name { color: #ede9fe; }
-[data-bs-theme="dark"] .s4-cat-badge { background: rgba(124,58,237,.22); color: #c4b5fd; }
+[data-bs-theme="dark"] .s4-cat-badge { background: rgba(124,58,237,.22); border-color: rgba(167,139,250,.35); color: #c4b5fd; }
 [data-bs-theme="dark"] .s4-pill-active   { background: rgba(16,185,129,.18); color: #6ee7b7; }
 [data-bs-theme="dark"] .s4-pill-inactive { background: rgba(239,68,68,.18); color: #fca5a5; }
 [data-bs-theme="dark"] .s4-pill-draft    { background: rgba(245,158,11,.18); color: #fde68a; }
