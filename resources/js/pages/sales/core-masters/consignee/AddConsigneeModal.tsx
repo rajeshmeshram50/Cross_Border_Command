@@ -10,8 +10,6 @@ import BaseTooltip from '../../../../components/ui/Tooltip';
 import '../../../../components/ui/DataTable.css';
 import '../../../p2p/p2p-master-management/supplier-management/add-vendor-modal.css';
 import { downloadFile } from '../../../../utils/downloadFile';
-// Consignee-form tooltips follow the active app theme (light pill in light
-// mode) instead of the shared component's always-dark default — QA #34.
 const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
@@ -25,19 +23,11 @@ import {
   bustCustomerMasterBundle,
 } from '../customer/customerBundleCache';
 
-/* Truncate a long attachment file name so it never spills out of the
- * ATTACHMENT cell into the ACTIONS column. The full name is shown on
- * hover via the wrapping Tooltip. Caps at 25 chars + ellipsis. */
 const truncFileName = (s: string | undefined | null, n = 25): string => {
   const v = String(s ?? '');
   return v.length > n ? v.slice(0, n) + '…' : v;
 };
 
-/* Issuing Authority cell — a document can list several issuing authorities.
- * Show the FIRST one and collapse the rest behind a "+N" chip that opens a
- * portalled popup listing them all (QA #68). Accepts either the backend
- * `authority_list` array (preferred — reliable, since a name may contain a
- * comma) or a single string for legacy/free-text authorities. */
 function AuthorityCell({ value }: { value?: string[] | string | null }) {
   const { theme } = useTheme();
   const dark = theme === 'dark';
@@ -48,16 +38,8 @@ function AuthorityCell({ value }: { value?: string[] | string | null }) {
   if (names.length === 0) return <span style={{ color: '#9ca3af' }}>—</span>;
   const first = names[0];
   const extra = names.length - 1;
-  // Match the consignee "Segment" cell design (first green chip + a "View all N"
-  // pill that opens a green-pill popover). The popover shows 3 rows at a time,
-  // the rest scroll.
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', maxWidth: '100%' }}>
-      {/* inline-BLOCK, not inline-flex: text-overflow has no effect on a flex
-          container, so the name was hard-clipped mid-character ("Income Tax
-          Department (I") with no ellipsis to say it had been cut. As a block
-          box the ellipsis applies to the text itself, and the full name stays
-          on the tooltip. (QA #62) */}
       <Tooltip label={first}>
         <span style={{ display: 'inline-block', verticalAlign: 'middle', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, color: dark ? '#6ee7b7' : '#0f766e', background: dark ? 'rgba(16,185,129,.16)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(16,185,129,.30)' : '#a7f3d0'}`, borderRadius: 12, padding: '2px 10px' }}>{first}</span>
       </Tooltip>
@@ -74,7 +56,6 @@ function AuthorityCell({ value }: { value?: string[] | string | null }) {
           <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
           <div style={{ position: 'fixed', left: Math.min(pop.x, window.innerWidth - 260), top: pop.y, zIndex: 13001, width: 240, background: dark ? '#103129' : '#fff', border: `1px solid ${dark ? 'rgba(16,185,129,.30)' : '#d1fae5'}`, borderRadius: 12, boxShadow: dark ? '0 14px 34px rgba(0,0,0,.5)' : '0 14px 34px rgba(13,148,136,.18), 0 4px 12px rgba(0,0,0,.08)', padding: 10 }}>
             <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.5px', color: dark ? '#6ee7b7' : '#0f766e', marginBottom: 8 }}>Issuing Authorities ({names.length})</div>
-            {/* 3 rows visible; the rest scroll. */}
             <div style={{ maxHeight: 108, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 2 }}>
               {names.map((n, i) => (
                 <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: dark ? '#d1fae5' : '#134e4a', background: dark ? 'rgba(16,185,129,.14)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(16,185,129,.28)' : '#a7f3d0'}`, borderRadius: 20, padding: '5px 12px' }}>
@@ -91,9 +72,6 @@ function AuthorityCell({ value }: { value?: string[] | string | null }) {
   );
 }
 
-/* Stage 3 → Trade Documents → Send for Signature.
- * Same shape used by AddCustomerModal / AddVendorModal so the Zoho
- * Sign send modal accepts any of the three flows interchangeably. */
 type TdSigStatus = 'idle' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
 type TdDocRow = {
   id: string; db_id: number | null;
@@ -101,18 +79,8 @@ type TdDocRow = {
   status?: TdSigStatus;
   signature_request_id?: number;
   signed_url?: string;
-  /* Zoho Sign completion-certificate URL — populated by the polling
-   * effect from clm_signature_requests.certificate_path on completed
-   * rows. Drives the third action-column button. */
   certificate_url?: string;
-  /* Set by the parent right before rendering — true when this row's
-   * signature_request_id is inside the active 60-second Resend
-   * cooldown. The button locks so a multi-doc bundle can't fire one
-   * reminder per doc. */
   cooldownActive?: boolean;
-  /* Reminder counter + last-sent timestamp from clm_signature_requests.
-   * Drives the "× N" badge on the Resend button so users know how many
-   * times the recipient has already been nudged. */
   reminder_count?: number;
   last_reminder_sent_at?: string | null;
 };
@@ -125,39 +93,25 @@ const TD_STATUS_BADGE: Record<TdSigStatus, { label: string; bg: string; fg: stri
   expired:    { label: 'Expired',            bg: '#fee2e2', fg: '#7f1d1d' },
 };
 
-/* Render a saved segment value (a name, or a comma-joined / array list of
- * names) as "S-001: Name" using the segment master codes. Falls back to the
- * bare name when no code is known. Keeps every read-only display in sync with
- * the "code: name" labels the segment dropdown now shows. */
-/** Segment ids → badge items, in order; unknown ids are dropped. */
 function segItemsById(ids: (string | number)[] | null | undefined, segs: { id?: number; name: string; code?: string | null; regulatory_status?: string | null }[]): SegmentItem[] {
   return (ids ?? []).map(v => segs.find(s => String(s.id) === String(v))).filter((s): s is NonNullable<typeof s> => !!s)
     .map(s => ({ name: s.name, code: s.code ?? null, regulatory_status: s.regulatory_status ?? null }));
 }
 const segItemsText = (items: SegmentItem[]) => items.map(s => (s.code ? `${s.code}: ${s.name}` : s.name)).join(', ');
 
-/* Each row in the Address & Contact Details table — mirrors the
- * shape used by AddCustomerModal so the JSX patterns line up. */
 interface LocationRow {
   id: string;
   type: string; line: string; country: string; state: string; city: string; pin: string;
   cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: 'yes' | 'no' | '';
 }
-/* Stage 2 KYC rows. Company Due Diligence + Trade Licence share the
- * same shape (distinguished by `kind`). Owner KYC has its own. */
 interface KycDocRow {
   id: string;
   kind: 'dd' | 'tl';
   name: string;
   license_number?: string;
   issuing_authority?: string;
-  issue_date?: string;        // YYYY-MM-DD
-  expiry_date?: string;       // YYYY-MM-DD
-  /* _path is the disk-relative storage path (e.g.
-   * "consignee_documents/12/doc-abcd.pdf") — what the backend always
-   * returns. _url is the optional pre-built public URL (returns
-   * null on server configs where Storage::url() throws). View links
-   * prefer _url when present, fall back to resolveFileUrl(_path). */
+  issue_date?: string;
+  expiry_date?: string;
   attachment_path?: string;
   attachment_url?: string | null;
   attachment_name?: string;
@@ -177,19 +131,8 @@ interface KycOwnerRow {
 type KycSubTab = 'company-dd' | 'owner-kyc' | 'trade-licence';
 type EvSubTab  = 'dd' | 'kyc' | 'tl';
 
-/* Master value — must match the seeded address_types row exactly so
- * the dropdown selects it instead of inserting a synthetic fallback. */
 const DEFAULT_ADDRESS_TYPE = 'Registered Office';
 
-/* PIN / ZIP rules, copied verbatim from the shipment module
- * (CreateShipmentOrderModal + ShipmentOrderController) and kept identical to
- * AddCustomerModal's copy: India → exactly 6 digits; every other country →
- * letters/digits plus spaces and hyphens (UK "SL7 1TB"), capped at 12.
- * Replaces the previous single 3–10 alphanumeric rule, which accepted a
- * 5-digit Indian PIN and rejected spaced foreign codes.
- *
- * Label, maxLength and sanitiser branch on country too — keep the helpers
- * together so a rule change can't update one and miss another. */
 const isDomesticCountry = (country?: string) => (country ?? '').trim() === 'India';
 const PIN_DOMESTIC_RE = /^[0-9]{6}$/;
 const ZIP_INTL_RE = /^[A-Za-z0-9\s\-]+$/;
@@ -199,10 +142,6 @@ const pinMaxLen = (country?: string) => (isDomesticCountry(country) ? 6 : 12);
 const pinPlaceholder = (country?: string) =>
   isDomesticCountry(country) ? 'Enter 6-digit PIN code' : 'Enter zip code';
 
-/* Both branches strip at the keystroke so a character that can never be valid
- * simply doesn't appear — the user never types "745223@@@@" and then reads an
- * error about it. Domestic keeps digits only; international also keeps spaces
- * and hyphens, legitimate in foreign codes ("SL7 1TB", "K1A 0B1"). */
 const pinSanitize = (v: string, country?: string) =>
   isDomesticCountry(country)
     ? v.replace(/\D/g, '').slice(0, 6)
@@ -222,9 +161,6 @@ function pinError(v: string, country?: string): string | undefined {
     : 'Zip Code can contain only letters, digits, spaces and hyphens';
 }
 
-/* Payload normaliser: anything failing the country's rule is sent as null
- * rather than as a bad string, so a legacy value lands empty and the user
- * fixes it on the next edit instead of the save 422-ing on an untouched field. */
 const cleanPinFor = (v: any, country?: string): string | null => {
   const s = String(v ?? '').trim();
   return s && !pinError(s, country) ? s : null;
@@ -233,10 +169,6 @@ const cleanPinFor = (v: any, country?: string): string | null => {
 const newLocId = () => `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 const newKycId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-/* Esc-to-close keyboard shortcut, scoped to whichever sub-modal is
- * currently mounted. We attach to keydown only while the modal is
- * open; passing it to every sub-modal keeps the keyboard UX uniform
- * (Location / KycDoc / KycOwner all close the same way). */
 const useEscapeKey = (onEscape: () => void) => {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onEscape(); };
@@ -245,30 +177,12 @@ const useEscapeKey = (onEscape: () => void) => {
   }, [onEscape]);
 };
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Add Consignee — two-phase wizard
- *
- * Phase A: small "Add New Consignee" picker — select the customer this
- *          consignee will be linked to.
- * Phase B: full-page wizard with 3 stages
- *          1. Consignee Legal Identity (forms)
- *          2. KYC / Due Diligence (forms)
- *          3. Evidence Vault (KYC + Trade Documents)
- *
- * No DB yet — the page collects state in memory and "Save Consignee" just
- * fires a toast. Replace handleSave with api.post('/consignees', form) once
- * the backend lands.
- * ──────────────────────────────────────────────────────────────────────── */
 
 export type ConsigneeRow = {
   id: string;
-  /** Numeric primary key — present once the row has been saved to the
-   *  consignees table. Required to fire PUT/DELETE during edit. */
   db_id?: number;
   customerId: string;
   customer_db_id?: number;
-  /** All customers this consignee is mapped to (many-to-many). The
-   *  `customerId` above stays the primary for backward compatibility. */
   customers?: {
     id: number; code: string | null; name: string | null;
     segment?: string | null; type?: string | null; risk?: string | null; status?: string | null;
@@ -276,10 +190,6 @@ export type ConsigneeRow = {
   }[];
   company: string;
   segment: string;
-  /* Free-text master value coming back from /master/risk_levels.
-   * Common values are Low / Medium / High but the master can hold
-   * any tenant-defined tier (Tier-1, Critical, etc.) so we keep the
-   * type honest as a plain string. */
   risk: string;
   contact: string;
   email: string;
@@ -287,25 +197,14 @@ export type ConsigneeRow = {
   country: string;
   country_iso?: string | null;
   countryDetail: string;
-  /* Whatsapp-enabled flag of the PRIMARY address contact. The list endpoint has
-   * always returned it (ConsigneeController::shape); it just wasn't declared
-   * here until the Whatsapp filter facet needed to read it. */
   whatsapp?: 'Yes' | 'No' | null;
-  /* True iff this consignee was created with "Same as Customer" on.
-   * Lets the edit flow keep the toggle ticked + lets the front-end
-   * differentiate "this row IS the mirror" from "another consignee
-   * is the mirror" when gating the toggle. */
   same_as_customer?: boolean;
 };
 
-/* Customer option shape consumed by the consignee picker. Fields
- * are sourced from the live /api/customers response (the one
- * populated by SalesCustomers' Add Customer flow), so creating a
- * customer there makes them selectable here. */
 type CustomerOption = {
-  id: string;        // C-001 (display code from server)
-  db_id?: number;    // numeric PK — needed if/when the consignee POST stores customer_id
-  initials: string;  // SE
+  id: string;
+  db_id?: number;
+  initials: string;
   name: string;
   legalName: string;
   segment: string;
@@ -313,10 +212,6 @@ type CustomerOption = {
   segments: SegmentItem[];
   type: string;
   classification: string;
-  /* Optional fields surfaced from /customers — used by the "Same as
-   * Customer" checkbox on Stage 1 to fully copy the customer onto the
-   * consignee in one click. Older list responses may omit some of
-   * these so all extras stay nullable. */
   risk?: string;
   website?: string;
   addressType?: string;
@@ -330,16 +225,10 @@ type CustomerOption = {
   phone: string;
   email: string;
   whatsapp: 'Yes' | 'No';
-  /* True when this customer already has a same-as-customer consignee
-   * attached. Drives the disabled state on the "Same as Customer"
-   * banner so the user can't create / convert a second mirror — the
-   * business rule is one mirror per customer. */
   hasSameAsCustomerConsignees?: boolean;
   sameAsCustomerConsigneeCount?: number;
 };
 
-/* Derive two-letter initials from a company name — used by the
- * picker's avatar tile when the API response doesn't carry one. */
 const initialsOf = (name: string): string => {
   const parts = (name || '').trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return '—';
@@ -349,48 +238,20 @@ const initialsOf = (name: string): string => {
 
 interface Props {
   open: boolean;
-  consignee: ConsigneeRow | null; // null = create; non-null = edit (skip phase A)
+  consignee: ConsigneeRow | null;
   onClose: () => void;
-  /** Fired after a successful POST or PUT so the parent list can refetch. */
   onSaved?: () => void;
-  /** When set, the picker is bypassed and this customer is used as the
-   *  pre-selected link. Used by SalesCustomers' "Map Consignee" flow
-   *  (the user is already on a specific customer — they shouldn't have
-   *  to pick again, and they should NOT be able to switch). The string
-   *  format is the customer's display code (e.g. "C-001"). */
   preselectedCustomerId?: string;
-  /** Alternative pre-select handle: numeric DB primary key. Used by
-   *  callers (like the lead-matrix toolbar) that only have the lead's
-   *  `customer_id` foreign key; the modal will resolve it against the
-   *  /customers list's `db_id` if `preselectedCustomerId` doesn't match. */
   preselectedCustomerDbId?: number;
-  /** Live count of existing same-as-customer consignees for the
-   *  preselected customer, passed in by CustomerConsigneesModal which
-   *  has just-fetched the list. Source of truth for the "max 1
-   *  mirror per customer" guard — beats the /customers withCount
-   *  which can lag behind during a session. */
   existingMirrorCount?: number;
-  /** Optional landing stage. When set (typically 2 for KYC or 3 for
-   *  Trade Docs/Evidence Vault), the modal opens on that stage instead
-   *  of Stage 1 — used by the CLM panel deep-link from the opportunity
-   *  detail page. Only respected in Edit mode (consignee present);
-   *  ignored on create. */
   initialStage?: Stage;
 }
 
 type Phase = 'pick-customer' | 'wizard';
-/* Evidence Vault (the former Stage 3) was removed from the consignee form —
- * those uploads now live in the standalone ConsigneeEvidenceVaultModal. The
- * form is a 2-stage flow: Legal Identity → KYC / Due Diligence. */
 type Stage = 1 | 2;
 type IdentityTab = 'identification' | 'address-contact';
 type VaultTab = 'kyc' | 'trade';
 
-/* ── Stage memory ──────────────────────────────────────────────────
- * Module-level map keyed by consignee.db_id (edit mode) that survives
- * close/reopen. A user who accidentally dismisses the modal on Stage 2
- * or Stage 3 lands back on the same stage when they reopen — not on
- * Stage 1. Cleared after a successful final submit. */
 type ConsigneeStageMemoryEntry = { stage: Stage; idTab: IdentityTab; kycSub: KycSubTab; vaultTab: VaultTab };
 const consigneeStageMemory = new Map<number, ConsigneeStageMemoryEntry>();
 
@@ -399,7 +260,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
   useEffect(() => {
     if (!open) return;
     const b = document.body.style.overflow;
@@ -411,31 +271,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
   const [phase, setPhase]   = useState<Phase>('pick-customer');
   const [stage, setStage]   = useState<Stage>(1);
-  /* Furthest stage the user has reached — drives which steps the
-   * stepper lets you click back/forward to (parallels AddCustomerModal).
-   * Editing an existing consignee unlocks all three immediately; a fresh
-   * create grows it as the user advances via Save & Next. */
   const [maxStage, setMaxStage] = useState<Stage>(1);
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
-  /* Additional customers this consignee is ALSO mapped to (many-to-many),
-   * beyond the primary `customer` above. Stored as customer DB ids. The
-   * payload sends [primary, ...these]. "Same as Customer" is disabled while
-   * any extras are selected (the KYC mirror is intrinsically 1:1). */
   const [extraCustomerIds, setExtraCustomerIds] = useState<number[]>([]);
   const [extraSearch, setExtraSearch] = useState('');
-  /* Which mapped customer's details the LINKED CUSTOMER "Show" panel displays.
-   * null = the primary. Set by clicking a chip in the linked-customer row. */
   const [activeLinkedId, setActiveLinkedId] = useState<number | null>(null);
   const [search, setSearch]     = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  /* Customer-context (Map Consignee) only: show the "Same as Customer? Yes/No"
-   * question before the customer list. Skipped when the customer already has a
-   * mirror (can't create a second one). */
   const [mirrorStep, setMirrorStep] = useState(false);
   const pickerWrapRef = useRef<HTMLDivElement | null>(null);
-  /* Close the multi-select customer dropdown when the user clicks anywhere
-   * outside it (the list stays open across ticks so several customers can be
-   * chosen in one go). */
   useEffect(() => {
     if (!searchOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -446,31 +290,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [searchOpen]);
-  /* Linked-customer panel starts COLLAPSED — when the user picks a
-   * customer they only see the bar with the customer's id + name,
-   * not the full address/contact details. Detail block expands when
-   * the user ticks "Same as Customer" (handled in the setter wired
-   * to Stage1's setSameAsCustomer) OR when they click the chevron. */
-  // Expanded by default so the parent-customer recap grid is visible on open
-  // (matches the Figma). User can still collapse it via the bar / chevron.
   const [linkedHidden, setLinkedHidden] = useState(false);
-  /* Live customer list pulled from /api/customers when the modal
-   * opens. This is the same endpoint SalesCustomers populates via
-   * its Add Customer flow, so a freshly-created customer shows up
-   * here without a refresh on the consignee side. */
   const [customerOptions, setCustomerOptions] = useState<CustomerOption[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
 
-  /* Master-data backed dropdowns. Pulled in parallel on modal open.
-   * Each list is normalized to { value, label } for MasterSelect.
-   * Segments use `title`; the rest use `name`. */
   type Opt = { value: string; label: string };
   type StateOpt = Opt & { countryId: number };
   const [mSegments,        setMSegments]        = useState<Opt[]>([]);
-  /* Parallel `{ id, name }` view of mSegments — kept so we can map the
-   * segment name stored in form1.segment back to its DB id for the
-   * /clm/segment-rules/for-segment/{id} call that drives Stage 2 doc
-   * auto-population. MasterSelect itself only needs {value,label}. */
   const [mSegmentIds, setMSegmentIds] = useState<{ id: number; name: string; code?: string; regulatory_status?: string | null }[]>([]);
   const [mClassifications, setMClassifications] = useState<Opt[]>([]);
   const [mRiskLevels,      setMRiskLevels]      = useState<Opt[]>([]);
@@ -478,13 +304,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const [mCountries,       setMCountries]       = useState<(Opt & { id: number })[]>([]);
   const [mStates,          setMStates]          = useState<StateOpt[]>([]);
   const [mDesignations,    setMDesignations]    = useState<Opt[]>([]);
-  /* Document Type master — backs the DD Document / License Name and
-   * Trade Licence Name dropdowns in the Stage 2 sub-modal. Field key
-   * on the master is `title` (managed in Master → Document Types). */
   const [mDocumentTypes,   setMDocumentTypes]   = useState<Opt[]>([]);
-  /* Each segment's Domestic/International rule types (from the DCP), keyed by
-   * segment NAME to match how the consignee stores its segments — drives the
-   * Intl / Dom / +2 badges on the (read-only, customer-inherited) segment box. */
   const { typesByCode: segTypesByCode } = useRuledSegments(open);
   const segTypesById = useMemo(() => {
     const m = new Map<string, Set<SegDocType>>();
@@ -494,76 +314,26 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     }
     return m;
   }, [mSegmentIds, segTypesByCode]);
-  /** Segment id (as held in form1.segment) → name, for messages and name-keyed maps. */
   const segNameOf = (v: string) => mSegmentIds.find(s => String(s.id) === String(v))?.name ?? String(v);
 
-  // Stage 1 — Consignee Legal Identity
   const [idTab, setIdTab]         = useState<IdentityTab>('identification');
-  /* "Same as Customer" toggle. When on, Stage 1's Basic Company +
-   * Primary Address & Contact fields mirror the linked customer's
-   * details and the inputs lock to read-only. Untick to edit
-   * individually. The flag itself isn't persisted server-side — it's
-   * a UX shortcut for copy-once-and-edit. */
   const [sameAsCustomer, setSameAsCustomer] = useState(false);
-  /* Inline validation errors for Stage 1 fields. Keyed by form1 field
-   * name. Each `goNext` from Stage 1 runs validateStage1() and refuses
-   * to advance if any required field is empty/invalid; the error map
-   * drives the red border + helper text under each affected Field. */
   const [errors1, setErrors1] = useState<Record<string, string>>({});
 
-  /* Saving state — disables the Save button while api.post/put is in
-   * flight so a double-click can't fire two creates. */
   const [saving, setSaving] = useState(false);
-  /* Numeric PK of the saved consignee (created at Stage 1→2 transition
-   * for new records, or pre-filled from the edit-mode prop). Drives all
-   * Stage 2 KYC POSTs to /consignees/{id}/documents and /owners. */
   const [savedDbId, setSavedDbId] = useState<number | null>(null);
-  /* Synchronous re-entry lock — `saving` state is async and React
-   * batches updates, so two rapid clicks on "Save & Next" can both
-   * pass the saving check before either has set saving=true. A ref
-   * flips immediately on the synchronous tick, blocking the second
-   * call cold. This is the actual fix for the duplicate row issue
-   * the user saw on rapid clicks. */
   const inFlightRef = useRef(false);
 
-  /* True after persistStage1 has POSTed or PUT a row in this session.
-   * If the user closes via X/Cancel before the Stage 3 final submit,
-   * we still fire onSaved so the parent list refreshes — otherwise a
-   * brand-new consignee created on Stage 1 stays invisible until the
-   * page is reloaded. Reset on modal open. */
   const dirtySavedRef = useRef(false);
 
-  /* Skip-once cache for the parent customer's `locations` array.
-   * Stashed by the edit-mode hydration from the bundled
-   * /consignees/{id} response (customer_locations key). Consumed by
-   * the same-as-customer effect below to skip its own
-   * GET /customers/{customer.db_id} round-trip on initial open —
-   * production network panel showed that fetch costing ~3 sec.
-   * Subsequent toggles off/on or linked-customer changes still
-   * fetch as before since the ref is cleared after a single use. */
   const bundledCustomerLocationsRef = useRef<{ customerId: number; rows: any[] } | null>(null);
 
-  /* Tracks which parent-customer's segment we've already pre-filled onto a
-   * NEW consignee's Segment field, so the inherit-once logic never fights
-   * the user's later add/remove edits. Reset to null on every modal open
-   * and re-prefills when the linked customer changes. */
   const segPrefillCustomerRef = useRef<string | null>(null);
 
-  /* Stage 3 → Trade Documents → Send for Signature. Mirrors what
-   * [[AddCustomerModal]] does — tdDocs is the table state (per-row
-   * checkbox + status badge), sendForSignature holds the IDs the user
-   * just clicked Send on so the wizard pops with them pre-checked. */
   const [tdDocs, setTdDocs] = useState<TdDocRow[]>([]);
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TdSigStatus; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }>>({});
 
-  /* Resend cooldown — Zoho's remind API operates per-REQUEST; one
-   * 3-doc bundle gets ONE reminder email no matter which row in it
-   * the user clicks Resend on. To stop that bundle from firing three
-   * separate reminders if the user clicks each row, we seed a 60s
-   * cooldown on the signature_request_id; every sibling row's Resend
-   * button locks visually until the timer expires. Same pattern as
-   * the customer modal. */
   const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
   useEffect(() => {
     const expiries = Object.values(recentReminds);
@@ -586,49 +356,25 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     return Math.max(0, Math.ceil(((recentReminds[reqId] ?? 0) - Date.now()) / 1000));
   };
 
-  /* True while the edit-mode hydration fetch is in flight. Renders a
-   * shimmer skeleton over Stage 1 so the user sees the form shape
-   * resolving in rather than empty inputs flashing into populated. */
   const [hydrating, setHydrating] = useState(false);
-  /* True until /customers/master-bundle resolves (or sessionStorage cache
-   * hits). The modal renders a shimmer skeleton while either this OR
-   * `hydrating` is true via the derived `showShimmer` flag below. */
   const [mastersLoading, setMastersLoading] = useState<boolean>(true);
   const showShimmer = hydrating || mastersLoading;
   const [form1, setForm1] = useState({
-    /* Basic company. `segment` is multi-valued — array of segment
-     * names — so a consignee can be tagged with several segments and
-     * the rule-resolver unions all their KYC/DD/TL/TD/QC docs. */
     companyName: '', legalName: '', website: '', segment: [] as string[], classification: '', risk: '',
-    /* Primary address (registered office) */
     addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
-    /* Primary contact at the registered office */
     contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
   });
 
-  /* A domestic (India) customer trades only within India, so its consignees are
-     India-only. Freeze the consignee country to India the moment such a customer
-     is linked (the Country field is also disabled in the UI). Keeps the SAVED
-     value correct even in the blank/normal flow where nothing seeds it.
-     International customers leave the country free. */
   useEffect(() => {
     if (isDomesticCountry(customer?.country)) {
       setForm1(f => (f.country === 'India' ? f : { ...f, country: 'India', state: '' }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.country]);
 
-  /* Address & Contact table — each row carries an address plus the
-   * contact person who is authoritative at that location. Mirrors
-   * AddCustomerModal so the JSX stays uniform. */
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [locModal, setLocModal]   = useState<{ open: boolean; editing: string | null }>({ open: false, editing: null });
   const [delModal, setDelModal]   = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
 
-  /* Real-time duplicate detection for the primary contact phone & email.
-   * Fires the inline error the moment the user types a value already
-   * used by an additional location row, so they don't get bounced back
-   * after clicking Save & Next. Mirrors AddCustomerModal. */
   useEffect(() => {
     const phone = (form1.contactNo || '').trim();
     const email = (form1.email     || '').trim().toLowerCase();
@@ -644,13 +390,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       else if (next.email === dupEmailMsg) delete next.email;
       return next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form1.contactNo, form1.email, locations]);
 
-  /* Stage 2 — KYC / Due Diligence
-   * Table-driven now (matches AddCustomerModal): docs covers both
-   * Company DD and Trade Licence (filtered by `kind`); owners are
-   * separate. All state is in-memory until the backend lands. */
   const [kycSub, setKycSub]       = useState<KycSubTab>('company-dd');
   const [kycSearch, setKycSearch] = useState('');
   const [kycDocs, setKycDocs]     = useState<KycDocRow[]>([]);
@@ -658,63 +399,27 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   const [docModal, setDocModal]   = useState<{ open: boolean; sub: KycSubTab; editingId: string | null }>({ open: false, sub: 'company-dd', editingId: null });
   const [ownerModal, setOwnerModal] = useState<{ open: boolean; editingId: string | null }>({ open: false, editingId: null });
   const [kycDelModal, setKycDelModal] = useState<{ open: boolean; kind: 'doc' | 'owner' | null; id: string | null; label?: string }>({ open: false, kind: null, id: null });
-  /* In-flight flag for the Stage 2 delete confirm — drives spinner +
-   * disabled state on the confirm dialog while the DELETE request
-   * is going. */
   const [kycDeleting, setKycDeleting] = useState(false);
 
-  /* Stage 3 — Evidence Vault. Outer tab = KYC vs Trade. Inner sub-tab
-   * (when on KYC) = which KYC kind to view. */
   const [vaultTab, setVaultTab] = useState<VaultTab>('kyc');
   const [evSub, setEvSub]       = useState<EvSubTab>('dd');
 
-  /* Segment-rule template — resolved KYC/DD/TL/TD/QC master rows for
-   * the segment chosen on Stage 1. Drives Stage 2's Trade Licence
-   * reference list and the Company DD required-doc banner so the user
-   * sees what's expected for the segment without manual lookup. */
   type SegDocRow = { id:number; code:string; name:string; authority?:string|null; authority_list?:string[]|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
-  /* segment name → its required KYC/DD/Trade-License doc codes (from the DCP
-   * rules). Lets us block removing a segment in edit mode once any of its
-   * documents have been uploaded. Built alongside the Stage 2 doc fetch. */
   const [segCodeMap, setSegCodeMap] = useState<Record<string, string[]>>({});
-  /* True while the Stage 2 segment-rule document catalog is being fetched from
-   * the DB — drives the table shimmer so the Company-DD / Owner-KYC / Trade-
-   * Licence grids don't flash empty while the call is in flight (it fires after
-   * hydration, so the page-level shimmer is already off). Mirrors [[AddCustomerModal]]. */
   const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
 
-  /* Per-row file uploads against the segment-rule reference rows.
-   * Key: `${sub-tab}::${doc.code}`. Value: File + blob URL used by the
-   * View / Download actions. Lifted here (parent) so sub-tab switches
-   * don't drop in-progress uploads. */
-  /* issueDate / expiryDate ride along so the document tables can show them.
-     The API has always returned issue_date and expiry_date; hydration simply
-     dropped them, so the columns had nothing to read. */
   type SegRefUpload = { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
-  /* Persist a segment-rule reference upload to /segment-uploads/consignee/{id}
-   * so the Evidence Vault sees it. Mirrors AddCustomerModal's helper —
-   * without this round-trip the upload only lives in browser memory. */
-  /* Sub-tab → backend category. The sub-tab key is 'trade-licence'
-   * (British spelling — matches the KycSubTab type). The American
-   * 'trade-license' spelling here used to return undefined and
-   * silently kill the segment-ref upload (file shown as blob in
-   * the current session, never reached the server, vanished on
-   * re-edit). */
   const SUB_TO_CAT_CO: Record<string, 'kyc' | 'dd' | 'tl'> = {
     'company-dd':    'dd',
     'owner-kyc':     'kyc',
     'trade-licence': 'tl',
   };
   const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, dates?: { issueDate?: string; expiryDate?: string }) => {
-    // File-type / size guard at the upload chokepoint — the picker's accept=
-    // hint is bypassable, so reject a .txt / .php / .exe / oversize file
-    // instantly with a clear message before it reaches the server (which
-    // enforces the same mimes rule too).
     const check = isAcceptedFile(file);
     if (!check.ok) {
       toast.error('Unsupported file', check.reason);
@@ -733,8 +438,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     fd.append('doc_code', doc_code);
     fd.append('doc_name', docName || doc_code);
     fd.append('attachment', file);
-    // Omitted entirely when not given — the endpoint's rules are nullable, and
-    // sending an empty string would fail their `date` check.
     if (dates?.issueDate) fd.append('issue_date', dates.issueDate);
     if (dates?.expiryDate) fd.append('expiry_date', dates.expiryDate);
     try {
@@ -759,23 +462,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     }
   };
 
-  // Reset everything when modal opens fresh.
   useEffect(() => {
     if (!open) return;
     dirtySavedRef.current = false;
     if (consignee) {
-      // Edit mode — skip the customer picker. The matching customer
-      // is populated by the fetch effect below once it lands; until
-      // then we keep `customer` null but jump straight to the wizard.
       setCustomer(null);
       setPhase('wizard');
     } else if (preselectedCustomerId || preselectedCustomerDbId) {
-      // Map-Consignee flow — the caller's customer is the LOCKED primary. Open
-      // the consignee FORM directly (QA #29): both the customer-selection
-      // dropdown AND the "Same as Customer?" question are redundant, because the
-      // form itself carries a "Same as Customer" toggle the user can flip
-      // inside. `customer` is resolved (as the locked primary) by the fetch
-      // effect below and is included in customer_ids on save.
       setCustomer(null);
       setPhase('wizard');
       setMirrorStep(false);
@@ -784,34 +477,16 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setPhase('pick-customer');
       setMirrorStep(false);
     }
-    /* Both create and edit modes always land on Stage 1 so the user
-     * reviews identity first before stepping forward. The sub-tab
-     * memory (KYC sub-tab, vault tab) is still restored so a user
-     * returning to Stage 2/3 doesn't lose their inner navigation
-     * if they manually advance again. */
     const memKey = consignee?.db_id ?? null;
     const remembered = memKey ? consigneeStageMemory.get(memKey) : null;
-    /* Deep-link: when a consignee is present and the caller wants to
-     * land on Stage 2 (KYC) or Stage 3 (Trade Docs), honour it. Create
-     * mode always lands on Stage 1 — there's no identity to skip past
-     * yet. */
-    /* Clamp to ≤2 — the form is now a 2-stage flow. A caller could still
-     * pass the legacy initialStage=3 (Evidence Vault); never land past
-     * Stage 2. */
     const landing = Math.min(2, consignee ? (initialStage ?? 1) : 1) as Stage;
     setStage   (landing);
-    // Existing consignee = a saved record → both stages are reachable
-    // for review. Fresh create starts locked to Stage 1.
     setMaxStage((consignee ? 2 : landing) as Stage);
     setIdTab   ('identification');
     setKycSub  (remembered?.kycSub   ?? 'company-dd');
     setVaultTab(remembered?.vaultTab ?? 'kyc');
     setSearch('');
     setSearchOpen(false);
-    /* Panel collapsed by default — picking a customer alone shows
-     * only the id+name bar. Ticking "Same as Customer" (or clicking
-     * the chevron) expands it. Hydration below re-opens it for an
-     * existing same-as-customer consignee. */
     setLinkedHidden(true);
     setErrors1({});
     setSameAsCustomer(false);
@@ -820,13 +495,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setActiveLinkedId(null);
     setEvSub('dd');
     setLocations([]);
-    /* Reset Stage 1 form to empty defaults — CREATE mode only. In edit
-     * mode the hydration effect below replays the consignee's saved
-     * payload, so wiping here would just cause an empty flash before
-     * the GET resolves. Create mode lands on a clean form so picking
-     * a customer never reveals stale residue from a prior session;
-     * mirror copy only happens after the user ticks Same-as-Customer. */
-    // New open → allow the parent-customer segment to pre-fill again.
     segPrefillCustomerRef.current = null;
     if (!consignee?.db_id) {
       setForm1({
@@ -846,18 +514,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setSegmentDocs(EMPTY_SEG_DOCS);
     Object.values(segmentRefUploads).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
     setSegmentRefUploads({});
-    /* Edit mode arrives with db_id; create mode starts null and gets
-     * filled by the Stage 1→2 auto-save POST. */
     setSavedDbId(consignee?.db_id ?? null);
-    /* Shimmer only when there's actually something to fetch (edit
-     * mode). Create mode lands on an empty form instantly. */
     setHydrating(!!consignee?.db_id);
   }, [open, consignee]);
 
-  /* Persist stage/tab into module-level memory whenever they change.
-   * Closing the modal leaves the last-known stage in the map ready
-   * for the next open. Edit mode only — create mode has no anchor
-   * key to remember it by. */
   useEffect(() => {
     if (!open) return;
     const memKey = consignee?.db_id ?? null;
@@ -865,20 +525,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     consigneeStageMemory.set(memKey, { stage, idTab, kycSub, vaultTab });
   }, [open, consignee?.db_id, stage, idTab, kycSub, vaultTab]);
 
-  /* Fetch the live customer list when the modal opens. Maps the API
-   * response (the same shape SalesCustomers consumes) into the
-   * picker's CustomerOption type. On edit mode the matching row is
-   * also resolved here so the linked-customer card prefills. */
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setCustomersLoading(true);
-    /* `tab=all` is critical — /customers defaults to `tab=fresh`, which
-     * hides any customer that already has a lead (Recurring bucket).
-     * Without it, editing a consignee whose customer turned recurring
-     * after creation leaves `customer` null on this modal, the
-     * Same-as-Customer panel renders empty, and persistStage1 trips
-     * the "Hold on, loading the linked customer" toast forever. */
     api.get('/customers', { params: { tab: 'all' } })
       .then(r => {
         if (cancelled) return;
@@ -911,16 +561,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           sameAsCustomerConsigneeCount: typeof c.sameAsCustomerConsigneeCount === 'number' ? c.sameAsCustomerConsigneeCount : 0,
         }));
         setCustomerOptions(opts);
-        // Resolve the linked customer for edit mode now that we have the list.
         if (consignee) {
           const found = opts.find(o => o.id === consignee.customerId) || null;
           setCustomer(found);
         } else if (preselectedCustomerId || preselectedCustomerDbId) {
-          // Map-Consignee flow — find the customer the parent locked us
-          // to. Try the display code first (legacy callers), then fall
-          // back to the numeric db_id (lead-matrix toolbar). Resilient to
-          // legacy customer rows where customer_code may be missing or
-          // formatted differently from the picker's id.
           const found =
             (preselectedCustomerId
               ? opts.find(o => o.id === preselectedCustomerId)
@@ -937,25 +581,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     return () => { cancelled = true; };
   }, [open, consignee]);
 
-  /* Inherit the parent customer's Segment on a NEW consignee.
-   *
-   * A consignee created under a customer defaults its Segment to that
-   * customer's selected segment(s) — but the field stays a normal
-   * editable multi-select: the user can add their own segments on top, or
-   * remove (×) the inherited ones if the consignee doesn't share them.
-   *
-   * Runs once per resolved/picked customer (tracked via segPrefillCustomerRef)
-   * so re-renders never re-add a segment the user just removed. Skipped in
-   * edit mode (keeps the saved segment) and while Same-as-Customer is on
-   * (that path copies the full identity, segment included). */
   useEffect(() => {
     if (!open) return;
-    if (consignee?.db_id) return;          // edit mode — keep saved segment
-    if (sameAsCustomer) return;            // full-copy effect owns segment here
+    if (consignee?.db_id) return;
+    if (sameAsCustomer) return;
     if (!customer) return;
-    // Union of EVERY mapped customer's segments (primary + extras),
-    // de-duplicated (case-insensitive). Re-runs only when the selected-customer
-    // SET changes, so re-renders don't clobber the user's own edits.
     const allSelected = [customer, ...extraCustomerIds
       .map(id => customerOptions.find(c => c.db_id === id))
       .filter((c): c is CustomerOption => !!c)];
@@ -969,12 +599,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setForm1(prev => ({ ...prev, segment: segs }));
   }, [open, customer, extraCustomerIds, customerOptions, sameAsCustomer, consignee?.db_id]);
 
-  /* "Same as Customer" copy effect. When the toggle flips on (or the
-   * linked customer changes while it's on), mirror every Stage 1
-   * field from the customer onto form1. Untick is a no-op: the
-   * already-copied values stay and become editable again — so the
-   * user can copy → tweak one field → save without losing their
-   * inputs. */
   useEffect(() => {
     if (!sameAsCustomer || !customer) return;
     setForm1(prev => ({
@@ -982,17 +606,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       companyName:    customer.name ?? '',
       legalName:      customer.legalName ?? '',
       website:        customer.website ?? '',
-      /* Customer's segment is a single comma-joined string (legacy
-       * scalar column); split back into an array for the consignee's
-       * multi-select. A Same-as-Customer consignee mirrors exactly ONE
-       * customer (multi-mapping is blocked below), so the primary
-       * customer's segment IS the full set. */
       segment:        (customer.segment_ids ?? []).map(String),
       classification: customer.classification ?? '',
       risk:           customer.risk ?? '',
-      // Primary address type is locked to "Registered Office" in the UI
-      // — normalise on hydration so the form state stays in sync with
-      // the disabled dropdown shown to the user.
       addressType:    'Registered Office',
       address:        customer.address ?? '',
       country:        customer.country ?? '',
@@ -1005,21 +621,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       email:          customer.email ?? '',
       whatsapp:       customer.whatsapp === 'Yes' ? 'Yes' : 'No',
     }));
-    setErrors1({}); // a full copy from a saved customer is presumed clean
+    setErrors1({});
 
-    /* Pull the customer's *additional* locations too — Stage 1's
-     * Address & Contact Details table should mirror those when the
-     * checkbox is ticked. CustomerOption is the picker shape and
-     * doesn't carry locations, so we hit /customers/{db_id} for the
-     * full record. The primary address already flows through the
-     * `customer.address/country/state/city/pin` block above. */
     if (customer.db_id) {
-      /* Skip-once: edit-mode hydration may have already cached the
-       * parent customer's locations from the bundled /consignees/{id}
-       * response (customer_locations key). When the cached customerId
-       * matches the picked customer, consume the cached rows and skip
-       * the network round-trip. Subsequent toggles/customer changes
-       * still fetch normally because the ref is cleared after use. */
       const cached = bundledCustomerLocationsRef.current;
       if (cached && cached.customerId === customer.db_id) {
         const extra = cached.rows;
@@ -1060,15 +664,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             cpWhatsapp:    a.cp_whatsapp === 'no' ? 'no' : 'yes',
           })));
         })
-        .catch(() => { /* silent — the rest of the mirror still works */ });
+        .catch(() => {});
       return () => { cancelled = true; };
     }
   }, [sameAsCustomer, customer]);
 
-  /* Edit-mode hydration. When the parent opens the modal with a row
-   * that already has db_id, fetch /consignees/{db_id} and replay the
-   * payload into form1 + locations. The customer-list effect above
-   * resolves the linked customer card; this one fills the wizard. */
   useEffect(() => {
     if (!open) return;
     if (!consignee?.db_id) return;
@@ -1085,14 +685,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           companyName:    d.company       ?? '',
           legalName:      d.legalName     ?? '',
           website:        d.website       ?? '',
-          /* Server still stores `segment` as a comma-joined string;
-           * split back into the multi-select's array shape. Arrays
-           * from a future PATCH also land here. */
           segment:        Array.isArray(d.segment_ids) ? d.segment_ids.map(String) : [],
           classification: d.classification ?? '',
           risk:           d.riskLevel     ?? '',
-          // Locked to "Registered Office" in the UI — see the disabled
-          // MasterSelect in Stage 1's Primary Address section.
           addressType:    'Registered Office',
           address:        d.primary_address?.address_line ?? '',
           country:        d.primary_address?.country    ?? '',
@@ -1105,12 +700,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           email:          d.primary_address?.cp_email       ?? '',
           whatsapp:       wa === 'yes' ? 'Yes' : 'No',
         });
-        /* Stash the bundled parent customer locations so the
-         * same-as-customer effect above can skip its own
-         * /customers/{customer.db_id} fetch on this initial open.
-         * Only valid when same_as_customer is true AND a customer is
-         * linked — otherwise the effect bails before reaching the
-         * cache check, so stashing harmlessly. */
         if (Array.isArray(root.customer_locations) && d.customer_id) {
           bundledCustomerLocationsRef.current = {
             customerId: Number(d.customer_id),
@@ -1118,24 +707,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           };
         }
 
-        // Restore the toggle from the server so the user sees the
-        // same banner state they left in — and so Save & Next keeps
-        // the consignee flagged as same-as-customer on update.
         if (typeof d.same_as_customer === 'boolean') {
           setSameAsCustomer(d.same_as_customer);
-          // Linked Customer panel stays collapsed by default — the
-          // user can click the bar to expand it on demand. (Previous
-          // behavior auto-expanded for same-as-customer rows, but
-          // the summary section is noisy on first open.)
         }
-        // Hydrate the extra customer mappings (everything except the primary).
         if (Array.isArray(d.customer_ids)) {
           const primaryId = Number(d.customer_id);
           setExtraCustomerIds(
             d.customer_ids.map((x: any) => Number(x)).filter((x: number) => x && x !== primaryId),
           );
-          // Warn once when editing a consignee shared by MULTIPLE customers —
-          // whatever the user changes here reflects for all of them.
           if (d.customer_ids.length > 1) {
             toast.info(
               'Shared by multiple customers',
@@ -1159,12 +738,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           cpWhatsapp:    (a.cp_whatsapp ?? '').toLowerCase() === 'no' ? 'no' : 'yes',
         })));
 
-        // Stage 2 data — now arrives in the same response as `documents`,
-        // `owners`, and `segment_uploads`. Top-level keys, not inside `data`.
-        // Mirrors the AddCustomerModal hydration shape — ConsigneeController::show()
-        // bundles these in via safeDelegate() so we no longer need the 3
-        // parallel /consignees/{id}/documents + /owners + /segment-uploads
-        // round-trips that used to fire here via refetchKyc().
         const docs: any[] = Array.isArray(root.documents) ? root.documents : [];
         const owners: any[] = Array.isArray(root.owners) ? root.owners : [];
         setKycDocs(docs.map((x: any) => ({
@@ -1198,10 +771,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           status: x.status === 'Inactive' ? 'Inactive' : 'Active',
         })));
 
-        // Stage 3 segment-rule reference uploads. Same hydration pattern
-        // as before — only the source moved from a separate call to this
-        // bundled response. British 'trade-licence' spelling matches the
-        // KycSubTab type + render's refKey lookup.
         const refs: any[] = Array.isArray(root.segment_uploads?.data) ? root.segment_uploads.data : [];
         const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-licence' };
         const hydrated: Record<string, SegRefUpload> = {};
@@ -1218,19 +787,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         }
         if (Object.keys(hydrated).length > 0) setSegmentRefUploads(hydrated);
       })
-      .catch(() => { /* silent — toast was added on the save path; on hydration just keep the empty form */ })
+      .catch(() => {})
       .finally(() => { if (!cancelled) setHydrating(false); });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, consignee?.db_id]);
 
-  /* Bundled master fetch — /customers/master-bundle returns every dropdown
-   * (segments, customer_classifications, risk_levels, address_types,
-   * countries, states, designations, document_type) in ONE round-trip.
-   * Shared with AddCustomerModal via the same sessionStorage cache key,
-   * so opening one modal warms the cache for the other. Replaces 8
-   * separate /master/* fetches. The unused `customer_types` field in
-   * the bundle is silently ignored — payload cost is negligible. */
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -1259,30 +820,23 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       .filter(o => o.value);
 
     const hydrate = (b: Bundle) => {
-      // Segments — server returns `name`; the model also appends `title`
-      // (alias) for legacy consumers. Read whichever is present.
       const segmentRows = (b.segments || []).map(x => ({
         id: Number(x.id),
         name: String(x.title ?? x.name ?? ''),
         code: String(x.code ?? ''),
         regulatory_status: x.regulatory_status ?? null,
       })).filter(s => s.name);
-      // Label shows "<segment code>: <name>" (e.g. "S-001: Tobacco") in the
-      // dropdown/chips; value stays the plain name so saving + DCP rule lookup
-      // logic is unchanged.
       setMSegments(segmentRows.map(s => ({ value: String(s.id), label: s.code ? `${s.code}: ${s.name}` : s.name })));
       setMSegmentIds(segmentRows);
 
       setMClassifications(pickName(b.customer_classifications));
       setMRiskLevels(pickName(b.risk_levels));
       setMAddressTypes(pickName(b.address_types));
-      // Countries — alpha-sort mirrors the previous client-side sort.
       const sortedCountries = [...(b.countries ?? [])].sort((a, b) =>
         String(a.name ?? '').localeCompare(String(b.name ?? '')));
       setMCountries(pickCountriesFromBundle(sortedCountries));
       setMStates(pickStatesFromBundle(b.states));
       setMDesignations(pickName(b.designations));
-      // Document Type master uses `title` (not `name`).
       setMDocumentTypes(
         (b.document_type || [])
           .map(r => ({ value: String(r.title ?? ''), label: String(r.title ?? '') }))
@@ -1290,9 +844,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       );
     };
 
-    // Cache hit — hydrate immediately for an instant render, then STILL refetch
-    // fresh below (stale-while-revalidate) so a newly-added master — e.g. a NEW
-    // SEGMENT — appears instead of being stuck behind the cached bundle.
     const cached = readCustomerMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
@@ -1306,7 +857,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         hydrate(res.data);
         writeCustomerMasterBundle(res.data);
       } catch {
-        // Dropdowns stay empty; validation will catch missing values.
       } finally {
         if (!cancelled) setMastersLoading(false);
       }
@@ -1315,34 +865,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     return () => { cancelled = true; };
   }, [open]);
 
-  /* Segment-rule template fetch (multi-segment). For each chosen
-   * segment, resolve its DB id from mSegmentIds and pull the rule's
-   * KYC / DD / TL / TD / QC docs in parallel. Category arrays are
-   * merged and deduped by `code` so a doc that's required by multiple
-   * segments only renders once in Stage 2 + Stage 3. Mandatory wins
-   * on dedupe — if any selected segment marks a code as 'M', the
-   * merged row stays 'M'. */
   useEffect(() => {
     if (!open) return;
-    /* Lazy gate — only fire the CLM segment-rules + trade-doc-library
-     * fetches once the user reaches Stage 2 or higher. Stage 1 only
-     * edits identity + address; it doesn't need this data. Previously
-     * these calls fired on modal open and added 1-2 sec to the Stage 1
-     * open even for users who only edit Stage 1. The `stage` value is
-     * in the dep array below so the fetch fires exactly when the user
-     * clicks the Stage 2 (or Stage 3) tab.
-     *
-     * Mirrors the same gate added to AddCustomerModal. We deliberately
-     * do NOT clear segmentDocs when stage<2 — if the user navigates
-     * Stage 2 → Stage 1, the previously-loaded docs stay cached and
-     * are immediately usable when they go back. We ALSO load when
-     * maxStage>=2 (e.g. editing an existing consignee while sitting on
-     * Stage 1) so the stepper's per-stage completeness is accurate
-     * rather than defaulting later stages to a false "done". */
-    /* In EDIT mode always load (even on Stage 1 with maxStage=1): the
-     * segment-remove guard needs segCodeMap to know which documents each
-     * segment owns, otherwise a segment with uploaded docs on an existing
-     * consignee could be removed. */
     if (stage < 2 && maxStage < 2 && !consignee) return;
     const picked = (form1.segment ?? []).filter(Boolean);
     if (picked.length === 0) { setSegmentDocs(EMPTY_SEG_DOCS); setSegmentDocsLoading(false); return; }
@@ -1353,10 +877,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
     let cancelled = false;
     setSegmentDocsLoading(true);
-    /* Fetch the KYC/DD/TL set for the rule matching the consignee's trade type:
-     * India (primary address) → domestic rule, any other country → international.
-     * Keeps the consignee's Stage-2 documents aligned with its own country the
-     * same way the customer form does. */
     const consDocType: SegDocType = isDomesticCountry(form1.country) ? 'domestic' : 'international';
     Promise.all([
       Promise.all(
@@ -1366,10 +886,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             .catch(() => ({}))
         )
       ),
-      /* Party filter for the consignee form: only trade docs whose
-       * `party` CSV mentions "Consignee" reach the td bucket. We
-       * intersect with segment-rule td below. */
-      // view=list — only `code` is read from these rows; see AddCustomerModal.
       api.get('/clm/trade-doc-library/for-party/consignee', { params: { view: 'list' } })
         .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
         .catch(() => [] as Array<{ code: string }>),
@@ -1400,8 +916,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         td:  mergedTd,
         qc:  mergeCat('qc'),
       });
-      /* Per-segment doc-code map (KYC/DD/Trade License) — `results[i]`
-       * aligns with `segRows[i]`. Drives the remove-segment guard. */
       const codeMap: Record<string, string[]> = {};
       results.forEach((r: any, i: number) => {
         const seg = segRows[i];
@@ -1414,32 +928,19 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         codeMap[String(seg.id)] = Array.from(codes);
       });
       setSegCodeMap(codeMap);
-      // Parallel state for the Send-for-Signature flow — same shape
-      // as in [[AddCustomerModal]] so Stage3TradeDocs is portable.
       setTdDocs(mergedTd.map(d => ({
         id: `td_${d.code}`,
         db_id: partyById.get(d.code) ?? null,
         name: d.name,
-        // No default selection — the user explicitly ticks the rows they
-        // want to send. Pre-checking Mandatory rows surprised users who
-        // opened the tab and saw signatures queued up without intent.
         selected: false,
         sent: false,
         status: 'idle' as TdSigStatus,
       })));
     }).finally(() => { if (!cancelled) setSegmentDocsLoading(false); });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, stage, maxStage, form1.segment, form1.country, mSegmentIds]);
 
-  /* Poll the live signature-request list every 15s while the user is on
-   * Stage 3 → Trade Documents. The backend's ?sync=true triggers a Zoho
-   * round-trip per inprogress row, so completed signings, declines and
-   * recalls show up in the badges without the user having to refresh. */
   useEffect(() => {
-    // Dormant since the Evidence Vault (Stage 3) was removed from this form:
-    // `vaultTab` can no longer become 'trade' here, so this poller never
-    // fires. Kept for the standalone Evidence Vault flow's parity.
     const partyId = consignee?.db_id ?? savedDbId;
     if (!open || vaultTab !== 'trade' || !partyId) return;
     let cancelled = false;
@@ -1468,18 +969,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           for (let i = 0; i < ids.length; i++) {
             const docId = Number(ids[i]);
             if (!docId || map[docId]) continue;
-            // Resolve a usable URL from whatever the backend populated.
-            // Production sometimes returns signed_document_paths=null
-            // (the Zoho-download queue job hadn't run yet) while the
-            // webhook-set certificate_path is already there. Fall back
-            // through the chain so the View / Download buttons enable
-            // as soon as ANY signed artefact exists, instead of staying
-            // disabled until the queue worker catches up.
-            // Backend transforms the response with file_url() now (see
-            // ClmSignatureController::index), so .url / .file_url on each
-            // signed_document_paths entry is already absolute (Azure blob
-            // URL on prod, /storage/… on local). Prefer those over raw
-            // paths so we don't double-resolve.
             const signedArr = row.signed_document_paths;
             let rawSignedUrl: string | null = null;
             if (Array.isArray(signedArr)) {
@@ -1489,20 +978,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             }
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-            /* file_url and certificate_* are NOT fallbacks here. When
-             * Zoho mints the certificate before the signed PDF lands
-             * (signed_document_paths: []), Laravel's model accessor
-             * fills file_url with the cert URL — using that as a signed
-             * URL fallback silently routes the View / Download buttons
-             * to the certificate. Keep them strictly separate so the
-             * signed-doc buttons stay disabled until the real signed
-             * PDF appears, and the cert lives only on its own button. */
             const rawCertUrl = row.certificate_url || row.certificate_path || null;
-            // Resolve via resolveFileUrl so the URL picks up the right
-            // base (VITE_API_URL on the deployed SPA, current origin in
-            // dev). Without this the View / Download icons get a bare
-            // /storage/… relative URL that 404s when the SPA origin
-            // differs from the API host.
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
@@ -1514,14 +990,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           }
         }
         setSigStatusByDoc(map);
-      } catch { /* silent — polling failures shouldn't toast every 15s */ }
+      } catch {}
     };
     fetchAndUpdate(false);
     const iv = window.setInterval(() => fetchAndUpdate(true), 15000);
     return () => { cancelled = true; window.clearInterval(iv); };
   }, [open, stage, vaultTab, consignee?.db_id, savedDbId]);
 
-  // Project the polled status into the tdDocs rows.
   useEffect(() => {
     setTdDocs(prev => prev.map(d => {
       if (!d.db_id) return d;
@@ -1540,10 +1015,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     }));
   }, [sigStatusByDoc]);
 
-  // useMemo MUST come before any conditional return — React enforces a
-  // stable hook order across renders. Putting `if (!open) return null;`
-  // before this trips "change in the order of Hooks called by
-  // AddConsigneeModal" the first time the modal opens.
   const filteredCustomers = useMemo(() => {
     if (!search) return customerOptions;
     const lo = search.toLowerCase();
@@ -1558,14 +1029,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
   if (!open) return null;
 
-  /* Wrapper around the prop's onClose — if persistStage1 ran during
-   * this session (dirtySavedRef), fire onSaved so the parent list
-   * refreshes even when the user dismisses via X/Cancel before the
-   * Stage 3 final submit. The final submit path at goSubmit() already
-   * fires onSaved + onClose directly, so this only matters for early
-   * dismissal. */
   const handleClose = () => {
-    if (inFlightRef.current || saving) return;   // don't allow closing mid-save
+    if (inFlightRef.current || saving) return;
     if (dirtySavedRef.current) {
       onSaved?.();
       dirtySavedRef.current = false;
@@ -1573,15 +1038,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     onClose();
   };
 
-  /* When the modal is opened from a specific customer's "Map Consignee"
-   * flow (preselected), that customer is the LOCKED primary — the user is
-   * already inside that customer's context, so it can't be removed. They can
-   * still add more customers via the picker. Not applicable in edit mode. */
   const primaryLocked = !consignee && (!!preselectedCustomerId || !!preselectedCustomerDbId);
 
-  /* Multi-select on the picker. The FIRST customer picked becomes the
-   * "primary" (`customer`); every additional one goes into
-   * `extraCustomerIds`. Un-ticking the primary promotes the next extra. */
   const isCustomerPicked = (opt: CustomerOption): boolean =>
     (!!opt.db_id && customer?.db_id === opt.db_id) || (!!opt.db_id && extraCustomerIds.includes(opt.db_id));
 
@@ -1589,9 +1047,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     const id = opt.db_id;
     if (!id) return;
     if (customer?.db_id === id) {
-      // The locked primary (customer-context flow) can't be un-picked.
       if (primaryLocked) return;
-      // Un-ticking the primary → promote the first extra (if any).
       if (extraCustomerIds.length > 0) {
         const nextId = extraCustomerIds[0];
         setCustomer(customerOptions.find(c => c.db_id === nextId) ?? null);
@@ -1602,23 +1058,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     } else if (extraCustomerIds.includes(id)) {
       setExtraCustomerIds(prev => prev.filter(x => x !== id));
     } else if (!customer) {
-      setCustomer(opt);            // first pick = primary
+      setCustomer(opt);
     } else {
-      // "Same as Customer" is intrinsically 1:1 — block mapping additional
-      // customers while it's on (the consignee mirrors that ONE customer).
       if (sameAsCustomer) {
         toast.warning('Same as Customer is on', '"Same as Customer" links the consignee to exactly one customer. Turn it off to map additional customers.');
         return;
       }
-      /* Every mapped customer must sit on the SAME side of the border.
-       *
-       * One consignee has one address, so it is either in India or outside it
-       * — it cannot be domestic for one customer and international for another.
-       * The server already refuses the save (it compares each customer against
-       * the consignee's own country), but only after the whole form is filled
-       * in, and the message then names the consignee's country rather than the
-       * pick that caused it. Catch it at the click, where the two countries are
-       * on screen next to each other. */
       const pickedDomestic = isDomesticCountry(customer.country);
       if (isDomesticCountry(opt.country) !== pickedDomestic) {
         toast.warning(
@@ -1633,19 +1078,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   };
 
   const pickedCount = (customer ? 1 : 0) + extraCustomerIds.length;
-  /* All selected customers (primary first) resolved to options — drives the
-   * uniform grid shown once more than one customer is picked. */
   const selectedCustomerOptions: CustomerOption[] = customer
     ? [customer, ...extraCustomerIds
         .map(id => customerOptions.find(c => c.db_id === id))
         .filter((c): c is CustomerOption => !!c)]
     : [];
-  /* Customer whose details show in the LINKED CUSTOMER "Show" panel — the one
-   * whose chip was clicked (null → primary). Falls back to primary. */
   const activeLinkedCust = (activeLinkedId != null
     ? customerOptions.find(c => c.db_id === activeLinkedId)
     : null) ?? customer;
-  // By id: two segments may share a name (Less / High), so a name lookup picks the wrong one.
   const linkedSegItems: SegmentItem[] = (() => {
     const c = activeLinkedCust as { segments?: SegmentItem[]; segment_ids?: number[] } | null | undefined;
     return c?.segments?.length ? c.segments : segItemsById(c?.segment_ids, mSegmentIds);
@@ -1660,18 +1100,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setStage(1);
   };
 
-  /* Single source of truth for Stage 1 field rules. Returns the error
-   * message for one field (or null when clean). Used by both the full
-   * Save-&-Next validator below and the per-keystroke validator in
-   * Stage1.set() — so the inline red error appears in real time as
-   * the user types, instead of waiting for the Save button. */
   const stage1FieldRule = (k: string, f: typeof form1): string | null => {
     switch (k) {
       case 'companyName':
         if (!f.companyName.trim()) return 'Company name is required';
         if (f.companyName.trim().length < 2) return 'Company name must be at least 2 characters';
         if (f.companyName.trim().length > 30) return 'Company name must be 30 characters or fewer';
-        // \p{L}/\p{N} (u flag) allow non-Latin / Unicode names (e.g. 中文, العربية).
         if (!/^[\p{L}\p{N} .,'&()\-\/]+$/u.test(f.companyName.trim()))
           return 'Company name has invalid characters — letters, numbers and . , & \' - ( ) / only';
         if (!/\p{L}/u.test(f.companyName)) return 'Company name must contain at least one letter';
@@ -1691,9 +1125,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           return 'Enter a valid website (e.g. https://example.com)';
         return null;
       case 'segment':
-        /* The field is read-only ("Inherited from customer"), so "select one"
-           was advice the user could not act on — there is nothing to select.
-           Empty here means the CUSTOMER has no segment, so point there. */
         if (!Array.isArray(f.segment) || f.segment.length === 0)
           return 'The selected customer has no segment — add it on the customer first';
         return null;
@@ -1707,9 +1138,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         if (!f.address.trim()) return 'Address is required';
         if (f.address.trim().length < 4) return 'Address must be at least 4 characters';
         if (f.address.trim().length > 75) return 'Address must be 75 characters or fewer';
-        // Must contain at least one letter — blocks gibberish like "1234"
-        // or "...." while still allowing genuine addresses that mix
-        // letters, numbers, commas, hyphens, etc.
         if (!/[A-Za-z]/.test(f.address)) return 'Address must contain at least one letter';
         return null;
       case 'country':
@@ -1725,7 +1153,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        // Country decides the rule — see pinError() near the top of the file.
         return pinError(f.pin, f.country) ?? null;
       case 'contactName':
         if (!f.contactName.trim()) return 'Contact name is required';
@@ -1738,8 +1165,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         return null;
       case 'contactNo':
         if (!f.contactNo.trim()) return 'Contact number is required';
-        // India → exactly 10 digits (the +91 prefix is display-only, not
-        // stored); other countries keep the flexible 7–15 rule.
         if (isDomesticCountry(f.country)) { if (!/^\d{10}$/.test(f.contactNo)) return 'Enter a valid 10-digit mobile number'; }
         else if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo)) return 'Phone must be 7-15 digits';
         if (locations.some(l => (l.cpContact || '').trim() === f.contactNo.trim()))
@@ -1763,9 +1188,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     'country','state','city','pin','contactName','designation','contactNo','email','whatsapp',
   ];
 
-  /* Validate every required Stage 1 field. Returns the error map (empty
-   * when valid). The map keys match form1 field names so we can wire
-   * inline error display via the Field's `error` prop in Stage1. */
   const validateStage1 = (): Record<string, string> => {
     const e: Record<string, string> = {};
     for (const k of STAGE1_FIELD_KEYS) {
@@ -1775,19 +1197,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     return e;
   };
 
-  /* ── Real per-stage completeness for the stepper ──────────────────
-   * Mirrors AddCustomerModal: the stepper must not paint a stage green
-   * just because the user advanced past it. A visited-but-empty stage
-   * shows amber "incomplete" instead. Plain const (not useMemo) on
-   * purpose — it must sit after STAGE1_FIELD_KEYS/stage1FieldRule, which
-   * are declared below the `if (!open) return null` early-return, so a
-   * hook here would break React's stable hook order.
-   *
-   *   Stage 1 — every required identity field is valid.
-   *   Stage 2 & 3 — share ONE segment-rule upload set (dd/kyc/tl). Done
-   *     when every MANDATORY doc is uploaded; an all-optional rule is
-   *     done once at least one is uploaded; a rule with no docs at all
-   *     has nothing to satisfy → done. */
   const stageComplete: [boolean, boolean, boolean] = (() => {
     const s1 = STAGE1_FIELD_KEYS.every(k => !stage1FieldRule(k, form1));
 
@@ -1809,12 +1218,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     return [s1, docsComplete, docsComplete];
   })();
 
-  /* Guarded tab switcher handed to the Stage 1 tab buttons. The user can't
-     jump straight to "Address & Contact" until the Identification fields are
-     valid — clicking it validates first and only switches when clean (else it
-     surfaces the inline errors + scrolls to the first one). Going back to
-     "identification" is always allowed. Internal flows (goNext / goPrev /
-     reset) keep calling setIdTab directly, so they're unaffected. */
   const requestIdTab = (t: IdentityTab) => {
     if (t === 'address-contact' && idTab !== 'address-contact') {
       const e = validateStage1();
@@ -1830,10 +1233,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setIdTab(t);
   };
 
-  /* Per-keystroke validator passed down to Stage1. Runs the single-field
-   * rule against the post-change form and updates errors1 with just that
-   * field's error — so the inline red shows up as the user types instead
-   * of waiting for Save & Next. */
   const validateField1 = (k: string, nextForm: typeof form1) => {
     const msg = stage1FieldRule(k, nextForm);
     setErrors1(prev => {
@@ -1844,10 +1243,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     });
   };
 
-  /* Refetch KYC docs + owners from the server. Called after every
-   * Stage 2 sub-modal save so the table picks up the canonical row
-   * (with auto-generated codes, attachment URLs, etc.) instead of
-   * the optimistic in-memory copy. */
   const refetchKyc = async (id: number | null = savedDbId) => {
     if (!id) return;
     try {
@@ -1858,11 +1253,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       ]);
       const refs: any[] = Array.isArray(refsR.data?.data) ? refsR.data.data : [];
       const hydrated: Record<string, SegRefUpload> = {};
-      // British 'trade-licence' on purpose — matches the KycSubTab
-      // type + the render's refKey lookup. American 'trade-license'
-      // here broke hydration of trade-licence segment uploads on
-      // re-edit (key in segmentRefUploads didn't match the one the
-      // render rebuilt from `sub`).
       const CAT_TO_SUB: Record<string, string> = { dd: 'company-dd', kyc: 'owner-kyc', tl: 'trade-licence' };
       for (const r of refs) {
         const sub = CAT_TO_SUB[r.category];
@@ -1902,39 +1292,19 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         photograph_name:    x.photograph_name ?? '',
         status: x.status === 'Inactive' ? 'Inactive' : 'Active',
       })));
-    } catch { /* silent — KYC table just stays empty until next fetch */ }
+    } catch {}
   };
 
-  /* Auto-save Stage 1 on the way to Stage 2. Creates the consignee
-   * row (POST) the first time, then PUTs on subsequent transitions
-   * to keep the saved record in sync with any edits made via the
-   * Previous button. Without this, Stage 2 KYC POSTs have no
-   * consignee_id to nest under. */
   const persistStage1 = async (): Promise<number | null> => {
-    // Guard: in the Map-Consignee flow we receive a preselected
-    // customer code but `customer` resolves only after /customers
-    // returns. If the user mashes Save & Next during that window, we
-    // would POST with customer_id = null and the server 422s. Refuse
-    // to advance and surface a clear info toast instead — far better
-    // than a cryptic backend error.
     if (!customer) {
       toast.info('Hold on', 'Loading the linked customer. Try again in a moment.');
       return null;
     }
-    // Re-entry lock — if a previous save is still in flight, return
-    // the id we already have (or null) instead of firing a second POST.
-    // Without this, rapid Save-&-Next clicks created duplicate rows
-    // because the second click read savedDbId before the first POST's
-    // response had updated it.
     if (inFlightRef.current) {
       return consignee?.db_id ?? savedDbId;
     }
     inFlightRef.current = true;
     setSaving(true);
-    // Min-display window — on fast networks the save can complete in
-    // <50ms and the Save & Next spinner flashes imperceptibly. Force
-    // ≥350ms of loader so users get clear "something happened"
-    // feedback before the stage advances.
     const _saveStart = Date.now();
     try {
       const payload = buildPayload();
@@ -1946,17 +1316,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         dbId = r.data?.data?.db_id ?? null;
         if (dbId) setSavedDbId(dbId);
       }
-      // Mark this session as dirty so an early X/Cancel still triggers
-      // the parent list refresh (without it the new row stays invisible
-      // until the page reloads).
       dirtySavedRef.current = true;
       return dbId;
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors ?? null;
       if (apiErrors && typeof apiErrors === 'object') {
-        // Backend "max 1 same-as-customer per customer" rejection.
-        // Auto-untick the toggle so the user can save with their own
-        // details — staying ticked would just trip the same 422 again.
         if (apiErrors.same_as_customer) {
           const msg = Array.isArray(apiErrors.same_as_customer)
             ? String(apiErrors.same_as_customer[0])
@@ -2009,36 +1373,20 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setErrors1(e);
       if (Object.keys(e).length > 0) {
         const firstKey = Object.keys(e)[0];
-        // Toast suppressed — the inline red error + auto-scroll below
-        // already surface the rejection without a second popup layer.
         setIdTab('identification');
-        // Scroll the first offending field into view so the red
-        // border is visible even when the body has scrolled past it.
         setTimeout(() => {
           document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 0);
         return;
       }
-      /* Sub-tab cycling: persist Stage 1 on the first Save & Next so
-       * the Identification tab edits are committed, then move to the
-       * Address & Contact sub-tab. The second Save & Next from
-       * Address & Contact crosses into Stage 2. Mirrors AddCustomerModal
-       * so both modals behave the same way. */
       if (idTab === 'identification') {
         const id = await persistStage1();
         if (!id) return;
         setIdTab('address-contact');
         return;
       }
-      // Leaving Stage 1 entirely → persist so Stage 2 KYC has a target.
       const id = await persistStage1();
       if (!id) return;
-      /* If "Same as Customer" is ticked, fire the deep-clone endpoint.
-       * The backend uses replace semantics — each call wipes the
-       * consignee's existing Stage 2 KYC and re-mirrors fresh from
-       * the customer. So re-ticking + re-saving always produces an
-       * exact mirror, even after the customer's KYC has been edited
-       * since the consignee was first created. */
       if (sameAsCustomer && customer?.db_id) {
         try {
           const r = await api.post(`/consignees/${id}/clone-from-customer`, { customer_id: customer.db_id });
@@ -2054,10 +1402,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       return;
     }
     if (stage === 2) {
-      /* Stage 2 (final): walk Company DD → Owner KYC → Trade Licence,
-       * each getting its own Save & Next step. On the last sub-tab the
-       * primary button submits the consignee — there is no Stage 3
-       * (Evidence Vault) to step into anymore. */
       if (kycSub === 'company-dd')  { setKycSub('owner-kyc');    return; }
       if (kycSub === 'owner-kyc')   { setKycSub('trade-licence'); return; }
       handleSave();
@@ -2069,30 +1413,19 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       if (idTab === 'address-contact') setIdTab('identification');
       return;
     }
-    // Stage 2: step backwards through the sub-tabs before falling back
-    // to Stage 1's last sub-tab.
     if (kycSub === 'trade-licence') { setKycSub('owner-kyc'); return; }
     if (kycSub === 'owner-kyc')     { setKycSub('company-dd'); return; }
     setStage(1); setIdTab('address-contact');
   };
 
-  /* Jump straight to any already-reached stage from the stepper (click
-   * a step header). Mirrors AddCustomerModal.gotoStage: forward jumps to
-   * not-yet-reached stages are blocked; landing on Stage 1 resets its
-   * sub-tab so the user sees Identification first. */
   const gotoStage = (s: Stage) => {
     if (s > maxStage || s === stage) return;
     setStage(s);
     if (s === 1) setIdTab('identification');
   };
 
-  /* Build the POST/PUT payload from form1 + locations. Mirrors the
-   * shape declared in ConsigneeController::validatePayload(). The
-   * additional `locations` table is included; Stage 2 KYC docs + Owner
-   * KYC rows stay in-memory until the KYC backend lands. */
   const buildPayload = () => {
     const primaryId = customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null);
-    // Full many-to-many mapping = primary + any additionally-checked customers.
     const customerIds = Array.from(new Set(
       [primaryId, ...extraCustomerIds].filter((x): x is number => typeof x === 'number' && !!x),
     ));
@@ -2101,18 +1434,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     customer_ids:     customerIds,
     company_name:     form1.companyName,
     legal_name:       form1.legalName || null,
-    /* Multi-segment is comma-joined for the legacy scalar column. The
-     * first entry stays the "primary" segment so existing list-row
-     * callers keep working. */
     segment:          (form1.segment ?? []).length > 0 ? (form1.segment ?? []).map(segNameOf).join(', ') : null,
     classification:   form1.classification || null,
     risk_level:       form1.risk || null,
     website:          form1.website || null,
     status:           'Active' as const,
-    /* Persist the "Same as Customer" toggle so the Customers list
-     * knows which customers have mirrored consignees attached. The
-     * Edit Customer button uses this flag to prompt a confirmation
-     * warning before opening the wizard. */
     same_as_customer: sameAsCustomer,
     primary_address: {
       type:           form1.addressType,
@@ -2144,20 +1470,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   };
 
   const handleSave = async () => {
-    // Synchronous re-entry lock — see comment on inFlightRef. The
-    // saving state is async; a ref blocks duplicate calls on the
-    // very same tick.
     if (inFlightRef.current || saving) return;
-    // Final Stage 1 validation — a user can navigate back from Stage 3
-    // and edit the form before Save Consignee, so the gate has to fire
-    // here too. Snap back to Stage 1 / identification tab if anything
-    // is missing so the inline red borders are visible.
     const e = validateStage1();
     if (Object.keys(e).length > 0) {
       setErrors1(e);
       setStage(1);
       setIdTab('identification');
-      // Toast suppressed — inline red errors handle this.
       return;
     }
 
@@ -2165,12 +1483,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setSaving(true);
     try {
       const payload = buildPayload();
-      // Prefer consignee.db_id (edit mode) BUT fall back to savedDbId
-      // (the id of the row persistStage1 just created in this session).
-      // Without that fallback, the final Save Consignee click would POST
-      // a *second* row for a consignee that persistStage1 already
-      // created — silent duplicate on the list. Same pattern as
-      // persistStage1's own idempotent check.
       const persistedDbId = consignee?.db_id ?? savedDbId;
       if (persistedDbId) {
         await api.put(`/consignees/${persistedDbId}`, payload);
@@ -2179,16 +1491,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         const newId = r.data?.data?.db_id ?? null;
         if (newId) setSavedDbId(newId);
       }
-      // Final submit succeeded → drop the remembered stage so a future
-      // re-open of this consignee starts fresh on Stage 1 instead of
-      // bouncing back to Stage 3 (where this submit fired from).
       if (persistedDbId) consigneeStageMemory.delete(persistedDbId);
       toast.success('Consignee saved', `${form1.companyName} linked to ${customer?.name ?? 'customer'}`);
       onSaved?.();
       onClose();
     } catch (err: any) {
-      // Surface Laravel 422 errors back to the matching field. Server
-      // sends { errors: { 'primary_address.cp_email': [...] } }.
       const apiErrors = err?.response?.data?.errors ?? null;
       if (apiErrors && typeof apiErrors === 'object') {
         const map: Record<string, string> = {
@@ -2228,16 +1535,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     }
   };
 
-  /* ─── Render: phase A0 — "Same as Customer?" question (customer-context) ───
-     When opened from a customer's Map-Consignee button and that customer has
-     no mirror yet, ask up-front. Yes → straight to the form as a mirror;
-     No → fall through to the customer list so the user can map more. */
   const customerHasMirror = (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0;
   if (phase === 'pick-customer' && !consignee && mirrorStep && primaryLocked && !customerHasMirror) {
     return (
       <div className="acm-overlay">
         <style>{SCOPED_CSS}</style>
-        {/* Height auto so the short question doesn't leave a big empty gap. */}
         <div className="acm-pick" style={{ height: 'auto' }} onMouseDown={e => e.stopPropagation()}>
           <div className="acm-pick-header">
             <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
@@ -2282,12 +1584,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     );
   }
 
-  /* ─── Render: phase A — customer picker ─── */
-  /* Never show the picker in edit mode (or the Map-Consignee preselect flow):
-     `phase` initialises to 'pick-customer' and only flips to 'wizard' in a
-     post-render effect, which briefly flashed the picker before the wizard.
-     Guarding the render here goes straight to the wizard (its hydration
-     shimmer covers the moment before the customer resolves). */
   if (phase === 'pick-customer' && !consignee) {
     return (
       <div className="acm-overlay">
@@ -2331,9 +1627,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 {filteredCustomers.map(c => {
                   const picked = isCustomerPicked(c);
                   const isPrimary = !!c.db_id && customer?.db_id === c.db_id;
-                  /* Sits on the other side of the border from the customer
-                   * already picked — can't be mapped to the same consignee, so
-                   * dim it and say why instead of letting it look selectable. */
                   const crossBorder = !picked && !!customer
                     && isDomesticCountry(c.country) !== isDomesticCountry(customer.country);
                   return (
@@ -2364,8 +1657,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                   </button>
                   );
                 })}
-                {/* Explicit close for the multi-select list (click-outside also
-                    closes it). */}
                 <div className="acm-picker-donewrap">
                   <button
                     type="button"
@@ -2380,7 +1671,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             )}
             </div>
 
-            {/* Single selection → the detailed green card. */}
             {customer && pickedCount === 1 && (
               <div className="acm-picked">
                 <div className="acm-picked-avatar">{customer.initials}</div>
@@ -2401,8 +1691,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               </div>
             )}
 
-            {/* Multiple selections → uniform 2-column grid (≈3 rows visible,
-                the rest scroll). No oversized primary card. */}
             {pickedCount > 1 && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxHeight: 320, overflowY: 'auto', paddingRight: 2 }}>
                 {selectedCustomerOptions.map((o, idx) => {
@@ -2447,21 +1735,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     );
   }
 
-  /* ─── Render: phase B — full-page wizard ─── */
-  /* Blur the parent wizard whenever a sub-modal is open on top of it
-   * (Add/Edit Location, or the Delete confirm). Pure visual cue —
-   * pointer events also turn off so stray clicks don't reach the
-   * fields behind the popup. */
   const subOpen = locModal.open || delModal.open || docModal.open || ownerModal.open || kycDelModal.open;
   return (
     <>
     <div className="acm-overlay">
       <style>{SCOPED_CSS}</style>
       <div className={`acm-wiz ${subOpen ? 'acm-wiz-blurred' : ''}`}>
-        {/* Header — title flips to Edit mode when the modal opens with
-             an existing consignee row attached (db_id present), so the
-             user can tell at a glance whether they're creating or
-             modifying. Subtitle changes too for parallel symmetry. */}
         <div className="acm-wiz-header">
           <div className="acm-wiz-hicon"><IconTruck size={20} /></div>
           <div className="acm-wiz-htxt">
@@ -2481,9 +1760,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                   <div className="acg-linked-icon"><IconUser /></div>
                   <div className="acg-linked-title">
                     <span className="acg-linked-tag">LINKED CUSTOMER</span>
-                    {/* Click a chip to show that customer's details in the panel
-                        below. The primary chip (id + name) is one option; each
-                        extra mapped customer is another. */}
                     <span
                       role="button"
                       onClick={(e) => { e.stopPropagation(); setActiveLinkedId(null); setLinkedHidden(false); }}
@@ -2521,7 +1797,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 </div>
                 <div className="acg-linked-actions">
                   {sameAsCustomer && <span className="acg-linked-badge">Same as Customer</span>}
-                  {/* Figma: a "Show / Hide" pill (text + chevron), not a bare arrow. */}
                   <span className="acg-linked-toggle">
                     {linkedHidden ? 'Show' : 'Hide'}
                     <span className={`acg-linked-chev ${linkedHidden ? '' : 'is-open'}`}><IconChevronDown /></span>
@@ -2529,20 +1804,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 </div>
               </div>
               {!linkedHidden && (
-                /* Own capped scroll: this panel sits above .acm-wiz-body, so
-                   opened at full height it squeezed the form below to a sliver
-                   with nothing to scroll. */
                 <div className="acg-linked-scroll">
                   <div className="acg-hs-mirror">
-                    {/* Shows the details of whichever customer chip is active
-                        (primary by default) — one customer at a time. */}
                     <div className="acg-hs-grid">
                       <ReadInlineG label="Customer ID"          value={activeLinkedCust?.id} />
                       <ReadInlineG label="Company Name"         value={activeLinkedCust?.name} />
                       <ReadInlineG label="Company Legal Name"    value={activeLinkedCust?.legalName} />
-                      {/* The linked customer's Retailer/Wholesaler value — renamed
-                          to Category alongside the customer form, since "Type"
-                          now means Domestic vs International. */}
                       <ReadInlineG label="Customer Category"    value={activeLinkedCust?.type} />
 
                       <ReadInlineG label="Customer Segment"     value={segItemsText(linkedSegItems)} node={<SegmentNameList compact items={linkedSegItems} />} tip={<SegmentNameList items={linkedSegItems} />} />
@@ -2565,12 +1832,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     </div>
                   </div>
 
-                  {/* Stage 2 KYC stat cards — merged into the Linked
-                      Customer panel when Same as Customer is on so the
-                      user sees ONE consolidated read-only block instead
-                      of a redundant "What you did in previous stages"
-                      panel below. Shown from Stage 2 onwards (the stats
-                      are meaningless before the user reaches KYC). */}
                   {sameAsCustomer && stage >= 2 && (() => {
                     const segKeys = Object.keys(segmentRefUploads);
                     const segDd  = segKeys.filter(k => k.startsWith('company-dd::')).length;
@@ -2596,33 +1857,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             </div>
           )}
 
-        {/* "Also map to other customers" removed — customer selection happens
-            in the multi-select picker (create) or the Mapped Customers popup's
-            "Map Customer" action (from the Consignee list). */}
 
-        {/* Pinned top — stepper + Linked Customer summary stay
-            visible while the rest of the body scrolls below them.
-            Both elements appear in all three stages so keeping them
-            anchored saves the user from scrolling back up to check
-            which stage they're on or which customer they're linked
-            to. Sits OUTSIDE .acm-wiz-body so the body's overflow
-            scroll only affects the form / table content below. */}
         <div className="acm-wiz-pinned-top">
-          {/* Linked Customer summary — uses the same slim collapsible
-              panel + compact 4-col "Label : Value" grid as the "What
-              you did in previous stages" recap, so every read-only
-              data block in the modal looks identical. */}
 
 
-          {/* 3-step indicator — sits BELOW the Linked Customer summary so the
-              order matches the Figma: header → customer summary → stepper →
-              tabs. */}
           <div className="acm-steps">
-            {/* Completion 'done' tick removed (user request) — a green ✓ used
-                to appear even with nothing uploaded / trade docs unsent
-                (Evidence Vault is design-only), which read as "done" and
-                confused users. Visited steps now stay neutral ('incomplete')
-                showing just their number; no ✓ on any step. */}
             <StepNode
               n={1}
               title="Consignee Legal Identity"
@@ -2637,29 +1876,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               n={2}
               title="KYC / Due Diligence"
               sub="Docs, identity & compliance"
-              /* 'done' only when we've actually moved PAST this step (stage > 2),
-                 NOT merely because it was completed in a prior session. On the
-                 edit form opened at stage 1, KYC therefore shows as a reachable
-                 (clickable) numbered step — you can jump straight to it, but it
-                 isn't marked complete, which avoided the confusion of both
-                 stages looking done on open. */
               status={stage === 2 ? 'active' : stage > 2 ? 'done' : 2 <= maxStage ? 'incomplete' : 'idle'}
               icon={<IconDoc />}
               clickable={stage !== 2 && 2 <= maxStage}
               onClick={() => gotoStage(2)}
             />
-            {/* Stage 3 (Evidence Vault) removed — KYC / Trade-document
-                uploads now live in the standalone ConsigneeEvidenceVaultModal. */}
           </div>
         </div>
 
-        {/* Scrolling body — only the stage-specific form / tables /
-            banners scroll. The pinned section above stays put. */}
         <div className="acm-wiz-body">
-          {/* Hydration UX — show the full-form shimmer while EITHER
-              /consignees/:id resolves (edit mode) OR the initial
-              master-bundle load is in flight. The skeleton swaps to
-              the populated form in one frame once everything lands. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && (
             <Stage1
@@ -2678,18 +1903,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               validateField={validateField1}
               sameAsCustomer={sameAsCustomer}
               setSameAsCustomer={(v) => {
-                /* Block-on-tick: if the user tries to enable
-                 * Same-as-Customer for a customer that already has its
-                 * one allowed mirror (and we're not editing that mirror
-                 * ourselves), surface the constraint *immediately* via
-                 * toast instead of letting them fill the form and then
-                 * hit a 422 at Save & Next. Toggle stays unticked
-                 * because we return before setSameAsCustomer fires.
-                 *
-                 * `existingMirrorCount` from the parent popup is the
-                 * source of truth when provided — it's computed from a
-                 * just-refreshed consignee list. Falls back to the
-                 * customer-list count for standalone usage. */
                 const mirrorCount = existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0;
                 const alreadyMirrored =
                   mirrorCount > 0 && !(consignee?.same_as_customer === true);
@@ -2697,61 +1910,18 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                   toast.error('Only one Same-as-Customer allowed', 'This customer already has one.');
                   return;
                 }
-                // Same-as-Customer is 1:1 — not allowed when the consignee is
-                // mapped to additional customers.
                 if (v && extraCustomerIds.length > 0) {
                   toast.error('Not available with multiple customers', 'Remove the extra mapped customers to use “Same as Customer”.');
                   return;
                 }
 
                 setSameAsCustomer(v);
-                /* Auto-toggle the linked-customer detail panel with the
-                 * checkbox so the rule "customer details visible iff
-                 * Same-as-Customer is ticked" actually holds. Picking a
-                 * customer from the dropdown alone leaves the panel
-                 * collapsed (just the id + name bar). */
                 setLinkedHidden(!v);
-                /* Tick  = useEffect mirrors customer's Stage 1 fields +
-                 *         additional addresses onto form1 + locations[].
-                 *         After Stage 1 save, persistStage1 then fires the
-                 *         clone-from-customer backend endpoint to copy KYC
-                 *         docs + owners (with file attachments).
-                 * Untick = KEEP the mirrored values in form1 + locations
-                 *         and just unlock the inputs so the user can
-                 *         tweak any field. Wiping on untick (the old
-                 *         behaviour) forced users to start over even
-                 *         though most of the customer data was almost
-                 *         certainly what they wanted — they just needed
-                 *         to edit one or two fields. Stage 2 KYC lives
-                 *         on the server so it isn't touched here either.
-                 */
                 if (!v) {
                   setErrors1({});
-                  /* Clear the auto-filled preview on untick — but ONLY
-                   * while this consignee hasn't been saved yet (no Save &
-                   * Next done). Before the first save, ticking
-                   * Same-as-Customer is just an autofill preview, so
-                   * unticking should undo it and leave a blank form. Once
-                   * it's been persisted (edit mode, or savedDbId set after
-                   * a Save & Next) the mirrored values are the user's own
-                   * committed data, so we keep them and just unlock the
-                   * fields for editing instead of wiping their work. */
                   const notYetSaved = !consignee?.db_id && !savedDbId;
                   if (notYetSaved) {
-                    /* Segment is INHERITED from the linked customer (it's not
-                     * part of the "same as customer" copy — it comes from the
-                     * customer regardless). So on untick, clear the mirrored
-                     * fields but KEEP the customer's segment instead of wiping
-                     * it to []. */
                     const inheritedSegs = (customer?.segment_ids ?? []).map(String);
-                    /* Country survives the wipe for a DOMESTIC customer.
-                       Such a customer trades only within India, so the field
-                       is locked to India and disabled — the user cannot put it
-                       back. Blanking it here left a disabled, empty, required
-                       field: Save & Next then failed with "Select country" and
-                       "Select state" over a control nothing could edit (QA #6).
-                       The India-forcing effect does not rescue it either — it
-                       is keyed on the customer's country, which has not changed. */
                     const lockedCountry = isDomesticCountry(customer?.country) ? 'India' : '';
                     setForm1({
                       companyName: '', legalName: '', website: '', segment: inheritedSegs, classification: '', risk: '',
@@ -2763,48 +1933,19 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 }
               }}
               customer={customer}
-              /* Block ticking when this customer already has another
-               * same-as-customer consignee. Editing the mirror itself
-               * stays allowed (the row being edited IS the mirror, so
-               * keeping the tick is just preservation).
-               *
-               * Prefer `existingMirrorCount` (live count from the
-               * parent popup) when provided; otherwise fall back to
-               * the customer-list withCount. */
               mirrorAlreadyTakenByOther={
                 (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
                 !(consignee?.same_as_customer === true)
               }
-              /* Lock the toggle once the Consignee Identification Details tab
-                 is COMPLETE (all required fields filled) on a self-entered
-                 consignee — so a later click on "Same as Customer" can't wipe
-                 the details the user already typed. A same-as-customer row
-                 (toggle already on) is NOT locked, so a mistaken mirror can
-                 still be unticked + edited; the "one mirror per customer"
-                 constraint above still guards re-ticking. */
               mirrorLocked={
-                // Editing a consignee already SAVED as Same-as-Customer → lock
-                // it ON so it can't be unticked here.
                 (sameAsCustomer && consignee?.same_as_customer === true) ||
-                /* Saved as a mirror in THIS session — Save & Next has run, so
-                   the row exists on the server as Same-as-Customer and its KYC
-                   docs and owners have been cloned from the customer. Coming
-                   back from Stage 2 and unticking left the form and the saved
-                   row disagreeing about what this consignee is (QA #6). Same
-                   rule as the edit-mode lock above, just recognised from the id
-                   this session created rather than the one it was opened with. */
                 (sameAsCustomer && savedDbId !== null) ||
-                // OR self-entered consignee with completed basic details → lock
-                // it OFF so a later tick can't overwrite the typed details.
                 (!sameAsCustomer &&
                   !!form1.companyName?.trim() &&
                   !!form1.legalName?.trim() &&
                   (form1.segment?.length ?? 0) > 0 &&
                   !!form1.risk)
               }
-              /* Clicking the DISABLED toggle still surfaces a short toast so
-                 the user knows why it's locked (a native disabled input is
-                 silent). */
               onBlockedClick={() => {
                 const alreadyMirrored =
                   (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0 &&
@@ -2867,11 +2008,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               segments={mSegmentIds}
             />
           )}
-          {/* Stage 3 (Evidence Vault) body removed — KYC / Trade-document
-              uploads now live in the standalone ConsigneeEvidenceVaultModal. */}
         </div>
 
-        {/* Footer — no Cancel here; the header's X closes the popup (QA #99). */}
         <div className="acm-wiz-footer">
           <div className="acm-footer-right">
             {stage > 1 && (
@@ -2880,10 +2018,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               </button>
             )}
             {(() => {
-              /* Single primary action button: cycles sub-tabs while there
-               * are more ahead, then morphs into Save Consignee on the
-               * final Stage 2 › Trade Licence sub-tab. goNext owns the
-               * final dispatch (there's no Stage 3 / Evidence Vault). */
               const onFinalTab = stage === 2 && kycSub === 'trade-licence';
               return onFinalTab ? (
                 <button
@@ -2909,7 +2043,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             })()}
           </div>
         </div>
-        {/* While saving, lock the whole form so no field/step can be edited mid-save. */}
         {saving && (
           <div className="acm-save-lock" aria-live="polite" aria-busy="true">
             <span className="acm-save-lock-spinner" />
@@ -2920,11 +2053,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     </div>
 
     {locModal.open && (() => {
-      /* Collect every email + phone already used on this consignee —
-       * primary contact (Stage 1) plus every additional location the
-       * user has already added — minus the row currently being edited.
-       * The sub-modal blocks save (and surfaces a real-time error)
-       * when the user tries to enter a value already in this set. */
       const editingId = locModal.editing;
       const otherLocs = editingId
         ? locations.filter(l => l.id !== editingId)
@@ -2939,19 +2067,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         primaryPhone,
         ...otherLocs.map(l => (l.cpContact || '').trim()),
       ].filter(Boolean);
-      /* Address type uniqueness — every type already used on this
-       * consignee (primary + other locations) is blocked from the
-       * dropdown so each type can only appear once. The row being
-       * edited keeps its own value visible (handled inside the
-       * sub-modal's availableAddressTypes filter). */
       const usedAddressTypes = [
         (form1.addressType || '').trim(),
         ...otherLocs.map(l => (l.type || '').trim()),
       ].filter(Boolean);
-      /* primaryCountry reads form1 — this component's Stage-1 state is named
-         `form1`. It said `form.country`, an identifier that doesn't exist here,
-         so opening Add More Address threw a ReferenceError instead of rendering
-         the sub-modal. */
       return (
         <LocationSubModal
           editing={editingId ? locations.find(l => l.id === editingId) ?? null : null}
@@ -3033,11 +2152,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           setKycDelModal({ open: false, kind: null, id: null });
           return;
         }
-        // Server rows are stored under id = 'db_<numeric>' so we can
-        // map back to the persisted row. Bare in-memory rows (no db_
-        // prefix) can only be dropped from the table since they were
-        // never persisted (shouldn't happen now that we auto-save
-        // Stage 1, but kept as a defensive branch).
         if (id.startsWith('db_')) {
           const numericId = Number(id.replace('db_', ''));
           setKycDeleting(true);
@@ -3055,7 +2169,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             setKycDelModal({ open: false, kind: null, id: null });
           }
         } else {
-          // Optimistic local-only drop fallback.
           if (kind === 'owner') setKycOwners(prev => prev.filter(o => o.id !== id));
           else if (kind === 'doc') setKycDocs(prev => prev.filter(d => d.id !== id));
           setKycDelModal({ open: false, kind: null, id: null });
@@ -3063,23 +2176,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       }}
     />
 
-    {/* Stage 3 Trade Documents → Send for Signature (Zoho Sign).
-        Opens the Zoho Sign wizard pre-checked with the docs the user
-        picked. modelName='Consignee' tells the backend to resolve the
-        {{consignee.*}} token namespace from this consignee's data. */}
     <SalesCustomerSendForSignatureModal
-      /* Bigger signature box — a company signature is routinely wider than the
-         150pt default and Zoho prints it past the field, over the next one.
-         Opt-in, so Quotation / PI keep their tuned placements. */
       boxSize={{ width: 240, height: 55 }}
       open={Array.isArray(sendForSignature)}
       modelName="Consignee"
-      /* multiBox: the ONE resolved signer can be asked to sign the same
-         document in several places (Legal Team #9 / BR-03). Matches the
-         supplier form and both evidence vaults, which already send this
-         way - the requirement belongs to the document, not the screen it
-         was sent from. Single-signer trade-doc mode only; roleMode takes
-         precedence when a multi-party send sets tradeSigners. */
       multiBox
       customer={(() => {
         const partyId = (consignee?.db_id ?? savedDbId) ?? null;
@@ -3106,7 +2206,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
   );
 }
 
-/* ─── Sub-components ─── */
 
 const LinkedField = ({ label, value }: { label: string; value: React.ReactNode }) => (
   <div className="acm-linked-field">
@@ -3129,7 +2228,6 @@ const StepNode = ({ n, title, sub, status, icon, clickable = false, onClick }: {
     tabIndex={clickable ? 0 : undefined}
   >
     <div className="acm-step-badge">
-      {/* Figma: completed step shows a white ✓ on the green badge. */}
       {status === 'done' ? <IconCheck /> : status === 'active' ? icon : <span>{n}</span>}
     </div>
     <div className="acm-step-text">
@@ -3154,22 +2252,9 @@ const SectionHeader = ({ icon, title, sub, accent }: { icon: React.ReactNode; ti
   );
 };
 
-/* Truncated table cell. Empty → muted dash. Short → render as-is.
- * Long → trim with an ellipsis and wrap in the project's portal-based
- * Tooltip so the full text shows on hover (clears table overflow
- * clipping, matches the look used everywhere else in the project). */
-/* Attachment cell — renders a clickable View link when there's any
- * path or URL, an em-dash when not. Prefers the server-built `url`
- * (works when the public disk has its `url` key configured); falls
- * back to resolveFileUrl(path) for servers where Storage::url()
- * threw and `url` came back null. Always opens in a new tab. */
 const AttachmentLink = ({ url, path, label = 'View' }: { url?: string | null; path?: string; label?: string }) => {
   const href = url || (path ? resolveFileUrl(path) : '');
   if (!href) return <span style={{ color: '#9ca3af' }}>—</span>;
-  // Cache-bust on click so a freshly-uploaded replacement opens the
-  // new file instead of the browser's cached copy. Done in onClick (not
-  // in href) so the link doesn't churn every re-render — and so the
-  // user can still middle-click / copy a stable URL if they want.
   return (
     <a
       href={href}
@@ -3209,15 +2294,6 @@ const Field = ({ label, required, error, fieldKey, children }: { label: string; 
   </div>
 );
 
-/* ─── Stage 1 skeleton ─────
- * Rendered while the edit-mode hydration fetch is in flight so the
- * user sees the section + field shape resolve in instead of empty
- * inputs flashing into populated state. Layout mirrors the actual
- * Stage 1 form: the Same-as-Customer banner row, Basic Company
- * Details (6 fields in a 2-col grid), and Primary Address & Contact
- * (Address Type+Address row, then 4-col Country/State/City/Pin, then
- * 4-col contact, then the WhatsApp radio row). Light + dark mode
- * inherit from the shared `.shimmer` styles in app.css. */
 function Stage1FormShimmer() {
   const FieldShim = ({ short }: { short?: boolean }) => (
     <div className="acm-field avm-field">
@@ -3242,7 +2318,6 @@ function Stage1FormShimmer() {
   );
   return (
     <>
-      {/* Tabs + Same-as-Customer banner */}
       <div className="acm-id-tabs-row">
         <div className="acm-id-tabs">
           <Shimmer height={14} width={220} radius={4} style={{ margin: '0 14px 10px' }} />
@@ -3256,7 +2331,6 @@ function Stage1FormShimmer() {
           </div>
         </div>
       </div>
-      {/* Basic Company Details · Company Address · Primary Contact — same rows as the form */}
       <Card rows={[{ cols: 2 }, { cols: 4 }]} />
       <Card rows={[{ cols: 2 }, { cols: 4 }]} />
       <Card rows={[{ cols: 4 }, { cols: 1, short: true }]} />
@@ -3264,10 +2338,8 @@ function Stage1FormShimmer() {
   );
 }
 
-/* ─── Stage 1 — Consignee Legal Identity ─── */
 type Stage1Masters = {
   segments:        { value: string; label: string }[];
-  /** Full rows (id → Reg status) behind `segments`. */
   segmentRows?:    { id: number; name: string; code?: string; regulatory_status?: string | null }[];
   classifications: { value: string; label: string }[];
   riskLevels:      { value: string; label: string }[];
@@ -3277,8 +2349,6 @@ type Stage1Masters = {
   designations:    { value: string; label: string }[];
 };
 
-/* Append the current value as a fallback option when it isn't in the
- * fetched list yet — keeps already-saved values visible during edit. */
 const optsWith = (
   opts: { value: string; label: string }[],
   current?: string,
@@ -3302,68 +2372,35 @@ const Stage1 = ({
   masters: Stage1Masters;
   errors: Record<string, string>;
   clearErr: (k: string) => void;
-  /** Per-keystroke validator from the parent. Receives the field key
-   *  and the post-change form so the inline red error appears in real
-   *  time without waiting for Save & Next. */
   validateField: (k: string, nextForm: any) => void;
   sameAsCustomer: boolean;
   setSameAsCustomer: (v: boolean) => void;
   customer: CustomerOption | null;
-  /** True when this customer already has a *different* consignee
-   *  marked same-as-customer. Disables the toggle so the user can't
-   *  create a second mirror — the business rule is 1 mirror / customer. */
   mirrorAlreadyTakenByOther: boolean;
-  /** True when editing a consignee that was SAVED as same-as-customer.
-   *  Locks the toggle so it can't be unticked from the edit screen — a
-   *  saved mirror stays a mirror; change the source on the Customer. */
   mirrorLocked: boolean;
-  /** Fired when the user clicks the toggle while it's disabled, so the parent
-   *  can show a short toast explaining why it can't be ticked. */
   onBlockedClick?: () => void;
   locations: LocationRow[];
   onAddLocation: () => void;
   onEditLocation: (id: string) => void;
   onDeleteLocation: (id: string) => void;
-  /** segment name → its required KYC/DD/TL doc codes (DCP rules). */
   segCodeMap?: Record<string, string[]>;
-  /** Doc codes that actually have an uploaded file/URL. */
   uploadedCodes?: string[];
-  /** Fired with the segment names the user tried (and failed) to remove. */
   onBlockedSegmentRemove?: (segs: string[]) => void;
-  /** Segment NAME → its Domestic/International rule types, for the Intl/Dom/+2
-   *  badges shown on the inherited-segment box. */
   segTypesById?: Map<string, Set<SegDocType>>;
 }) => {
-  /* When the "Same as Customer" toggle is on, Stage 1's basic
-   * company + primary address fields lock to read-only — every
-   * input + MasterSelect receives `disabled={lock}` so the user can
-   * tell at a glance the values are being mirrored. */
-  /* Lock whenever Same-as-Customer is on — including edit mode where the
-     linked `customer` object may not be re-resolved yet. (Earlier the
-     `&& !!customer` guard let a saved mirror's fields stay editable on edit.) */
   const lock = sameAsCustomer;
   const [segPopOpen, setSegPopOpen] = useState(false);
-  /* Segment names whose "+2" badge has been clicked open — those show the
-   * individual Intl + Dom badges instead of the collapsed +2 (same as the
-   * customer form). */
   const [expandedSegBadges, setExpandedSegBadges] = useState<Set<string>>(new Set());
   const toggleSegBadge = (name: string) => setExpandedSegBadges(prev => {
     const next = new Set(prev);
     next.has(name) ? next.delete(name) : next.add(name);
     return next;
   });
-  /* Segment "View all N segments" popover. It used to catch outside clicks with
-   * a full-screen fixed overlay, but that overlay also swallowed wheel events,
-   * so the form behind it couldn't scroll (QA #27 — "form gets stuck and does
-   * not scroll back to the top"). Instead close the popover from document-level
-   * listeners: an outside mousedown, any scroll outside it, or a resize. That
-   * keeps the page fully scrollable while the popover is open. */
   const segBoxRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!segPopOpen) return;
     const isInside = (t: EventTarget | null) => !!segBoxRef.current?.contains(t as Node);
     const onDown = (e: MouseEvent) => { if (!isInside(e.target)) setSegPopOpen(false); };
-    // Scrolling INSIDE the popover (its own list) must not close it.
     const onScroll = (e: Event) => { if (!isInside(e.target)) setSegPopOpen(false); };
     const onResize = () => setSegPopOpen(false);
     document.addEventListener('mousedown', onDown);
@@ -3386,13 +2423,6 @@ const Stage1 = ({
     : [];
   return (
     <>
-      {/* Sub-tabs + Same-as-Customer banner sit on the SAME row so the
-          banner fills the otherwise-empty space next to the two tab
-          pills. On narrow viewports the row wraps and the banner
-          drops below the tabs as a full-width strip.
-          Same-as-Customer governs the entire Stage 1 (both tabs lock
-          when ticked), so it stays visible on BOTH Identification and
-          Address & Contact tabs. */}
       <div className="acm-id-tabs-row">
         <div className="acm-id-tabs">
           <button className={`acm-id-tab ${tab === 'identification' ? 'on' : ''}`} onClick={() => setTab('identification')}>
@@ -3402,30 +2432,15 @@ const Stage1 = ({
             <IconUser /> Contact Person Details
           </button>
         </div>
-        {/* "Same as Customer" toggle. Three visual states:
-              - normal:   regular emerald banner, click toggles
-              - is-on:    emerald-filled, fields mirroring customer
-              - is-blocked: amber warning style, customer already has
-                          its one allowed mirror. Click still fires
-                          but the parent's setSameAsCustomer wrapper
-                          intercepts and shows a toast — user gets
-                          *immediate* feedback instead of waiting
-                          until Save & Next.
-              - is-disabled: greyed out, no customer resolved yet */}
         <label
           className={`acm-same-banner acm-same-banner-inline ${sameAsCustomer ? 'is-on' : ''} ${(!customer || mirrorLocked || mirrorAlreadyTakenByOther) ? 'is-disabled' : ''} ${mirrorAlreadyTakenByOther && customer ? 'is-blocked' : ''}`}
           title={mirrorLocked ? (sameAsCustomer ? "This consignee mirrors the customer — you can't untick Same as Customer here." : "You already completed this consignee's basic details, so you can't mark it as Same as Customer.") : undefined}
-          // Native disabled inputs are silent on click — fire a toast via the
-          // label so the user gets feedback on why the toggle is locked.
           onClick={() => { if (!customer || mirrorLocked || mirrorAlreadyTakenByOther) onBlockedClick?.(); }}
           style={(!customer || mirrorLocked || mirrorAlreadyTakenByOther) ? { cursor: 'not-allowed' } : undefined}
         >
           <input
             type="checkbox"
             checked={sameAsCustomer}
-            /* Disabled when: no customer yet, identification details already
-               filled (mirrorLocked), OR this customer already has its one
-               allowed mirror — disabled UPFRONT instead of tick-then-toast. */
             disabled={!customer || mirrorLocked || mirrorAlreadyTakenByOther}
             onChange={e => { if (mirrorLocked || mirrorAlreadyTakenByOther) return; setSameAsCustomer(e.target.checked); }}
           />
@@ -3461,8 +2476,6 @@ const Stage1 = ({
         <>
           <div className="acm-sec-card">
           <SectionHeader icon={<IconHome />} title="Basic Company Details"     sub="Company identity, segment, and risk classification" accent="#10b981" />
-          {/* Figma layout: row 1 = Company Name | Legal Name (2-col),
-              row 2 = Website | Segment | Classification | Risk (4-col). */}
           <div className="acm-sec-pad">
             <div className="acm-grid-2">
             <Field label="Company Name" required error={errors.companyName} fieldKey="companyName">
@@ -3484,20 +2497,10 @@ const Stage1 = ({
               <input className={`avm-input ${errors.website ? 'acm-input-error' : ''}`} placeholder="https://example.com" value={form.website} onChange={e => set('website', e.target.value)} disabled={lock} />
             </Field>
             <Field label="Consignee Segment" required error={errors.segment} fieldKey="segment">
-              {/* Segment is INHERITED from the parent customer and is NOT
-                  editable here — a consignee must not pick its own segment.
-                  The field is locked (read-only chips) and a hint points the
-                  user to the customer to change it. */}
-              {/* Read-only inherited-segment box: shows just the FIRST segment
-                  chip, then a "View all N" pill inline right after it. Clicking
-                  the pill opens the full segment popover. */}
               {(() => {
                 const segVals = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
                 const labels = segVals.map((v: string) => masters.segments.find(s => s.value === v)?.label ?? v);
                 const regOf = (v: string) => masters.segmentRows?.find(s => String(s.id) === String(v))?.regulatory_status ?? null;
-                /* Intl / Dom / +2 badge for a segment NAME (form.segment holds
-                 * names). Same visual language + clickable-"+2" as the customer
-                 * segment dropdown: clicking +2 reveals the individual badges. */
                 const badgeEl = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
                   <span className="seg-type-badge" title={title} onClick={onClick} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.02em', padding: '1px 5px', borderRadius: 9, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined, '--sb-dk': SEG_TAG_DARK[text] } as React.CSSProperties}>{text}</span>
                 );
@@ -3533,12 +2536,9 @@ const Stage1 = ({
                     {segPopOpen && labels.length > 1 && (
                       <div className="acm-seg-pop">
                         <div className="acm-seg-pop-title">SEGMENTS ({labels.length})</div>
-                        {/* Show ~3 rows, then scroll — keeps the popover compact
-                            however many segments are inherited. */}
                         <div className="acm-seg-pop-scroll" style={{ maxHeight: 132, overflowY: 'auto', paddingRight: 4 }}>
                           {labels.map((l: string, i: number) => (
                             <div key={i} title={l} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                              {/* Name keeps the pill; the Reg and INT/DOM badges are separate chips beside it. */}
                               <span className="acm-seg-pop-row" style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, marginBottom: 0 }}>
                                 <span className="acm-seg-dot" style={{ flexShrink: 0 }} />
                                 <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l}</span>
@@ -3586,17 +2586,12 @@ const Stage1 = ({
           <div className="acm-sec-pad">
             <div className="acm-grid-2">
               <Field label="Address Type" required error={errors.addressType} fieldKey="addressType">
-                {/* Primary address is, by definition, the registered
-                   office — locked here so a user can't pick anything
-                   else for the primary slot. Other types (Warehouse,
-                   Billing, etc.) belong on the Address & Contact
-                   Details tab. */}
                 <MasterSelect
                   value="Registered Office"
                   options={[{ value: 'Registered Office', label: 'Register Office Address' }]}
                   placeholder="Select Address Type"
                   disabled
-                  onChange={() => { /* locked */ }}
+                  onChange={() => {}}
                 />
               </Field>
               <Field label="Address" required error={errors.address} fieldKey="address">
@@ -3605,10 +2600,6 @@ const Stage1 = ({
             </div>
             <div className="acm-grid-4 acm-mt-12">
               <Field label="Country" required error={errors.country} fieldKey="country">
-                {/* A domestic (India) customer trades only within India, so its
-                    consignees are India-only — freeze the Country to India,
-                    exactly like the customer's own address rule. International
-                    customers keep the country free. */}
                 <MasterSelect
                   value={isDomesticCountry(customer?.country) ? 'India' : form.country}
                   options={isDomesticCountry(customer?.country)
@@ -3617,12 +2608,7 @@ const Stage1 = ({
                   placeholder="Select Country"
                   invalid={!!errors.country}
                   disabled={lock || isDomesticCountry(customer?.country)}
-                  /* PIN and ZIP are different rules, so the code already typed
-                     has to be re-judged against the NEW country — otherwise a
-                     valid "SL7 1TB" stays green after switching to India. */
                   onChange={v => {
-                    // Switching to India scrubs the contact number to bare 10
-                    // digits for the +91-prefixed field; re-judge PIN/ZIP too.
                     const nextTel = isDomesticCountry(v) ? (form.contactNo || '').replace(/\D/g, '').slice(0, 10) : form.contactNo;
                     const nf = { ...form, country: v, state: '', contactNo: nextTel };
                     setForm(nf); validateField('country', nf); validateField('state', nf); validateField('pin', nf); validateField('contactNo', nf);
@@ -3633,9 +2619,6 @@ const Stage1 = ({
                 <MasterSelect
                   value={form.state}
                   options={optsWith(filteredStates, form.state)}
-                  /* State is required for every country, but only 86 of the 249
-                     in the master have states seeded. Point at where to add them
-                     rather than showing an empty "Select State" list. */
                   placeholder={!form.country
                     ? 'Select country first'
                     : (filteredStates.length === 0 ? 'Add states in Master → States' : 'Select State')}
@@ -3662,9 +2645,6 @@ const Stage1 = ({
           </div>
           </div>
 
-          {/* Primary Contact Details — split into its own section (Figma):
-              the address section above carries only the registered-office
-              fields; the contact person lives here under a green header. */}
           <div className="acm-sec-card">
           <SectionHeader icon={<IconUser />} title="Primary Contact Details" sub="Key contact person for this consignee" accent="#10b981" />
           <div className="acm-sec-pad">
@@ -3673,10 +2653,6 @@ const Stage1 = ({
                 <input className={`avm-input ${errors.contactName ? 'acm-input-error' : ''}`} placeholder="Enter contact name" value={form.contactName} onChange={e => set('contactName', e.target.value)} disabled={lock} />
               </Field>
               <Field label="Designation" required error={errors.designation} fieldKey="designation">
-                {/* Free-text input — users were asked to type the
-                    designation manually instead of picking from the
-                    /master/designations dropdown. Master fetch still
-                    runs (harmless) but no longer drives the UI here. */}
                 <input
                   className={`avm-input ${errors.designation ? 'acm-input-error' : ''}`}
                   placeholder="Enter designation"
@@ -3739,8 +2715,6 @@ const Stage1 = ({
           onEdit={onEditLocation}
           onDel={onDeleteLocation}
           onEditPrimary={() => setTab('identification')}
-          /* lock = Same-as-Customer is on → table is read-only mirror;
-             user must untick the toggle to edit addresses & contacts. */
           locked={lock}
         />
       )}
@@ -3748,11 +2722,6 @@ const Stage1 = ({
   );
 };
 
-/* ─── Stage 1 — Address & Contact table ─────
- * Renders the primary address (captured on the Consignee Identification
- * tab) as the first row, followed by any additional locations. The
- * primary row is read-only here — edit jumps back to the Identification
- * tab and delete is disabled, since the primary address is required. */
 type PrimaryRowData = {
   type: string; line: string; country: string; state: string; city: string; pin: string;
   cpName: string; cpDesignation: string; cpContact: string; cpEmail: string; cpWhatsapp: string;
@@ -3764,11 +2733,6 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
   onEdit: (id: string) => void;
   onDel: (id: string) => void;
   onEditPrimary: () => void;
-  /** When the consignee is mirroring its customer ("Same as Customer"
-   *  enabled), the user can't add/edit/delete addresses here — they
-   *  must untick the toggle first so a manual entry no longer overrides
-   *  the mirrored data. Disables the Add button + per-row actions and
-   *  surfaces a tooltip explaining the lock. */
   locked?: boolean;
 }) => {
   type DisplayRow = PrimaryRowData & { id: string; isPrimary: boolean };
@@ -3811,7 +2775,6 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
           <tbody>
             {allRows.map((l, i) => {
               const place = [l.city, l.state, l.country].filter(Boolean).join(' • ');
-              // Figma "Address Details" column merges type + line + city/state/country.
               const addressDetails = [l.type, l.line, place].filter(Boolean).join(', ');
               return (
                 <tr key={l.id} className={l.isPrimary ? 'acm-loc-primary-row' : undefined}>
@@ -3838,7 +2801,6 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
                           disabled={locked}
                           style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                         >
-                          {/* Same edit-box icon as the Consignee list page. */}
                           <i className="ri-edit-box-line" style={{ fontSize: 15 }} />
                         </button>
                       </Tooltip>
@@ -3868,34 +2830,12 @@ const LocationsTable = ({ primary, locations, onAdd, onEdit, onDel, onEditPrimar
   );
 };
 
-/* ─── Stage 2 — KYC / Due Diligence ─── */
-/* ─── Stage 2 — KYC / Due Diligence (table-driven) ─── */
 const KYC_SUB_META: Record<KycSubTab, { title: string; sub: string; nameCol: string; placeholder: string; addLabel: string }> = {
   'company-dd':   { title: 'COMPANY DUE DILIGENCE', sub: 'Licenses, statutory documents, and compliance proofs', nameCol: 'DD Document Name',  placeholder: 'Search DD document name…',    addLabel: 'Add Document / License' },
   'owner-kyc':    { title: 'OWNER KYC DETAILS',     sub: 'Owner identity proofs, address proofs, and photographs', nameCol: 'KYC Document Name', placeholder: 'Search owner name…',          addLabel: 'Add Owner KYC' },
   'trade-licence':{ title: 'TRADE LICENCE',         sub: 'Trade licence documents and regulatory approvals',     nameCol: 'Document Name',       placeholder: 'Search trade licence…',       addLabel: 'Add Trade Licence' },
 };
 
-/* Per-row actions cell for the segment-rule reference rows. Starts as
- * a single Upload icon; on file pick it flips to View / Download /
- * Delete using a blob URL the parent caches. Delete revokes the URL
- * and restores the initial Upload state. */
-/* Asks for the document's expiry before the upload goes up.
- *
- * segment_doc_uploads has an expiry_date column and the endpoint accepts it,
- * but this form never sent one — so every document uploaded here was stored
- * with a null expiry, and the vault's Expiry column had nothing to print. The
- * Supplier vault asks at exactly this moment (VaultReuploadPopup); this is the
- * same question in this form's own styling.
- *
- * "No expiry" is a real answer — a PAN card does not lapse — so it is a choice
- * rather than an empty date field the user has to guess at. */
-/* A date captured by the upload dialog, or "N/A".
- *
- * N/A rather than an empty cell: these rows are a compliance checklist, and a
- * blank reads as "not loaded yet" where the point is to say the document
- * carries no such date. An expiry already past is called out, since that is
- * the one value on the row somebody has to act on. */
 function DocDateCell({ value, expiry = false }: { value?: string | null; expiry?: boolean }) {
   if (!value) return <span className="acm-doc-date acm-doc-date--na">N/A</span>;
   const d = new Date(value);
@@ -3916,11 +2856,6 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
   onConfirm: (dates: { issueDate?: string; expiryDate?: string }) => void;
 }) {
   const toast = useToast();
-  /* Starts on "No", the way the Evidence Vault's dialog does for a document
-     with no expiry on file. Starting on "Yes" put an empty required date in
-     front of every upload: press Save and it refuses with "Expiry required",
-     so the user had to click No first on every document that does not expire.
-     Nothing is lost by asking — clicking Yes reveals the picker. */
   const [hasExpiry, setHasExpiry] = useState(false);
   const [date, setDate] = useState('');
   const [issue, setIssue] = useState('');
@@ -3932,8 +2867,6 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
       toast.error('Expiry required', 'Pick an expiry date, or switch Expiry to “No”.');
       return;
     }
-    // A licence cannot lapse before it was granted. The server enforces this
-    // too (after_or_equal:issue_date); this is the immediate answer.
     if (issue && hasExpiry && date && date < issue) {
       toast.error('Dates out of order', 'The expiry date cannot be earlier than the issue date.');
       return;
@@ -3953,9 +2886,6 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
           </div>
         </div>
         <div className="acm-upx-body">
-          {/* The same four facts the vault's dialog shows, so a user who has
-              seen one recognises the other. The first three are read-only —
-              they come from the segment rule, not from the person uploading. */}
           <div className="acm-upx-grid">
             <div className="acm-upx-fld">
               <label>Auto Code</label>
@@ -3967,20 +2897,14 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
             </div>
             <div className="acm-upx-fld">
               <label>Issuing Authority</label>
-              {/* Truncated in the box; the full list is one hover away. Some
-                  rules name half a dozen authorities. */}
               <div className="acm-upx-ro" title={authority || undefined}>{authority && authority !== '—' ? authority : '—'}</div>
             </div>
-            {/* When the document was granted. Optional — plenty carry no
-                meaningful issue date, and capped at today because nothing can
-                have been issued in the future. */}
             <div className="acm-upx-fld">
               <label>Issue Date <span className="acm-upx-hint">Optional</span></label>
               <MasterDatePicker value={issue} maxDate={today} placeholder="Select issue date" onChange={(v: string) => setIssue(v)} disabled={busy} popupClassName="acm-upx-cal" />
             </div>
             <div className="acm-upx-fld">
               <label>Expiry {!hasExpiry && <span className="acm-upx-hint">Has an expiry date?</span>}</label>
-              {/* Toggle and date on ONE line — same shape as the vault dialog. */}
               <div className="acm-upx-exp">
                 <div className="acm-upx-seg">
                   <button type="button" className={hasExpiry ? 'is-on' : ''} onClick={() => setHasExpiry(true)} disabled={busy}>Yes</button>
@@ -3988,8 +2912,6 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
                 </div>
                 {hasExpiry && (
                   <div className="acm-upx-date">
-                    {/* Can't already be expired on the day it is filed. */}
-                    {/* Floor is the LATER of today and the issue date. */}
                     <MasterDatePicker value={date} minDate={issue && issue > today ? issue : today} placeholder="Select expiry date" onChange={(v: string) => setDate(v)} disabled={busy} popupClassName="acm-upx-cal" />
                   </div>
                 )}
@@ -4016,45 +2938,21 @@ function ConsigneeUploadExpiryPopup({ docName, docCode, authority, category, fil
 function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploads, setUploads, persistUpload, disabled = false }: {
   refKey: string;
   docName: string;
-  /* Shown read-only in the upload dialog, so it carries the same four facts the
-     Evidence Vault's dialog does. Both come off the row being uploaded to. */
   docCode: string;
   authority?: string;
   uploads: Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>;
   setUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>>>;
   persistUpload: (refKey: string, file: File, docName: string, dates?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
-  /* When true (Same as Customer on), hide the Upload / Re-upload labels
-   * and show only View / Download — the consignee's segment-rule uploads
-   * are mirrored read-through from the linked customer, so writing here
-   * would split the mirror. */
   disabled?: boolean;
 }) {
   const toast = useToast();
   const uploaded = uploads[refKey];
-  /* Single picker — drives both first-time Upload and Re-upload. Shows
-   * the blob URL immediately for snappy feedback and fires the server
-   * upload; the persist callback swaps the blob URL for the permanent
-   * attachment_url once it lands in segment_doc_uploads.
-   *
-   * isAcceptedFile() enforces the extension allow-list (PDF / JPG /
-   * PNG / DOC / DOCX) AND the 2 MB cap up front, so a 50 MB junk
-   * file can never reach the persist call. Server runs the same
-   * check — this is the client-side bounce for immediate feedback. */
-  /* The picked file waits here while the expiry popup is open. Nothing is
-     shown in the table and nothing is sent until the question is answered, so
-     cancelling leaves the row exactly as it was. */
   const [pending, setPending] = useState<File | null>(null);
   const [reupOpen, setReupOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  // refKey is `${sub-tab}::${doc_code}` — the sub-tab half names the bucket.
   const category: 'kyc' | 'dd' | 'tl' =
     refKey.startsWith('company-dd') ? 'dd' : refKey.startsWith('trade-licence') ? 'tl' : 'kyc';
 
-  /* `file` is passed directly by the re-upload dialog. setPending() is a state
-     write, so a commit called in the same tick would still read the previous
-     value -- the dialog hands the file over rather than routing it through
-     state it cannot see yet. The old two-step flow has no file to pass and
-     keeps reading `pending`. */
   const commit = async (dates: { issueDate?: string; expiryDate?: string }, file?: File) => {
     const f = file ?? pending;
     if (!f) return;
@@ -4092,9 +2990,6 @@ function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploa
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           </button>
         </Tooltip>
-        {/* The same dialog as Re-upload, so a first upload and a replacement
-            are one flow. With no file yet it titles itself "Upload ..." and
-            shows no Current File row. */}
         {reupOpen && (
           <VaultUploadPopup
             doc={{
@@ -4137,13 +3032,6 @@ function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploa
           </button>
         </Tooltip>
       )}
-      {/* The same dialog the Customer form opens, rather than this form's own
-          two-step flow. Re-upload used to open the OS file picker first and
-          only then ask about dates, so you chose the file before seeing which
-          document you were replacing -- and the little dialog that followed
-          showed none of the code, name or authority the Customer's does.
-          VaultUploadPopup puts all of it in one place, with the current file
-          named, and the two screens now behave identically. */}
       {reupOpen && (
         <VaultUploadPopup
           doc={{
@@ -4168,9 +3056,6 @@ function ConsigneeSegmentRefActions({ refKey, docName, docCode, authority, uploa
   );
 }
 
-/* Compact reference callout — Company DD sub-tab, rendered when the
- * selected segment's rule defines required DD documents. Read-only; the
- * "+ Add Document" button is still where the user attaches files. */
 function ConsigneeSegmentBanner({ segmentName, label, rows }: {
   segmentName: string;
   label: string;
@@ -4230,19 +3115,12 @@ const Stage2 = ({
   locations: LocationRow[];
   consigneeCode?: string;
   sameAsCustomer: boolean;
-  /** Segment-rule resolver output + per-row upload state. Driven by
-   *  the chosen segment's rule — Stage 2 sub-tabs (Company DD, Owner
-   *  KYC, Trade Licence) render from these and the row actions cell
-   *  uses segmentRefUploads for per-row file pickers. */
   segmentName: string;
   segmentDocs: { kyc:any[]; dd:any[]; tl:any[]; td:any[]; qc:any[] };
-  /** True while the segment-rule catalog is loading from the DB — drives the
-   *  in-table shimmer. */
   loading?: boolean;
   segmentRefUploads: Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>;
   setSegmentRefUploads: React.Dispatch<React.SetStateAction<Record<string, { file: File | null; url: string; name: string; issueDate?: string | null; expiryDate?: string | null }>>>;
   persistSegmentRefUpload: (refKey: string, file: File, docName: string, dates?: { issueDate?: string; expiryDate?: string }) => Promise<void> | void;
-  /** Segment master rows (name + code) for the "S-001: Name" review display. */
   segments?: { name: string; code?: string }[];
 }) => {
   const meta = KYC_SUB_META[sub];
@@ -4261,9 +3139,6 @@ const Stage2 = ({
         || (o.designation || '').toLowerCase().includes(q)
         || (o.official_email || '').toLowerCase().includes(q);
   });
-  /* Segment-rule REFERENCE rows are the default table view before any upload.
-     The search box must filter them too — otherwise it looks broken whenever
-     only reference rows are shown (QA #24, Stage 2 search not working). */
   const authText = (d: any) => Array.isArray(d?.authority_list) ? d.authority_list.join(' ') : String(d?.authority_list ?? d?.authority ?? '');
   const segMatch = (d: any) => !q
     || String(d?.name || '').toLowerCase().includes(q)
@@ -4271,22 +3146,9 @@ const Stage2 = ({
     || authText(d).toLowerCase().includes(q);
   const hasRealDocs = (docs || []).some(d => d.kind === kind);
   const segKyc = (segmentDocs.kyc || []).filter(segMatch);
-  /* Count what the table ACTUALLY renders so the badge never lags behind the
-     list. It previously counted only real uploaded `docs`, so the default
-     segment-rule reference rows (Company DD / Trade Licence / Owner KYC) that
-     the table shows before any upload made the badge read "0 documents" even
-     though rows were visible (QA #67). Mirror the table's own row source:
-       • owner-kyc showing segment refs → segmentDocs.kyc
-       • owner-kyc with real owners      → filteredOwners
-       • dd/tl with real docs or a search→ filteredDocs
-       • dd/tl showing segment refs      → segmentDocs.dd / .tl */
   const segRefDocs = sub === 'company-dd' ? (segmentDocs.dd || []).filter(segMatch)
                    : sub === 'trade-licence' ? (segmentDocs.tl || []).filter(segMatch)
                    : [];
-  /* No segmentDocs.kyc requirement (#91). A segment with no standard KYC docs
-     used to fall through to the owners table, so the same tab showed Owner
-     Name / Designation / ID Proof headers when empty and document headers once
-     docs existed. Same fix as AddCustomerModal. */
   const showingOwnerRefs = isOwners && filteredOwners.length === 0;
   const totalRows = isOwners
     ? (showingOwnerRefs ? segKyc.length : filteredOwners.length)
@@ -4300,14 +3162,6 @@ const Stage2 = ({
 
   return (
     <>
-      {/* "What you did in previous stage" — compact summary panel
-          (collapsed by default) showing Stage 1 entries in a dense
-          4-column Label : Value grid. Mirrors AddCustomerModal.
-          When "Same as Customer" is on, the Linked Customer panel
-          above already shows the exact same data + each KYC table
-          carries its own "Locked — mirroring customer" pill, so we
-          collapse the previously-large banner to a single-line note
-          that costs almost no vertical real estate. */}
       {sameAsCustomer ? (
         <div className="acg-mirror-inline">
           <span className="acg-mirror-inline-icon"><IconUser /></span>
@@ -4319,7 +3173,6 @@ const Stage2 = ({
         </ConsigneeHistoryPanel>
       )}
 
-      {/* Same tab rail as the list pages (Customers list), in this form's emerald. */}
       <div className="acm-kyc-subtabs">
         <div className="dt-tabrail hr-dt" data-accent="emerald">
         <div className="dt-tabs" role="tablist">
@@ -4351,11 +3204,6 @@ const Stage2 = ({
             <div className="acm-kyc-count">
               {totalRows} {(isOwners && !showingOwnerRefs) ? `owner${totalRows === 1 ? '' : 's'}` : `document${totalRows === 1 ? '' : 's'}`}
             </div>
-            {/* Stage 2 sub-tab headers no longer carry a "+ Add" pill.
-                Rows now come exclusively from the selected segment's
-                rule (Company DD / Owner KYC / Trade Licence reference
-                tables below). Same-as-Customer still mirrors the
-                customer's data — the lock chip surfaces that state. */}
             {sameAsCustomer && (
               <Tooltip label="Same as Customer is on — untick it on Stage 1 to capture different details.">
                 <span className="acm-add-pill acm-add-pill-locked" aria-disabled="true">
@@ -4381,8 +3229,6 @@ const Stage2 = ({
         <div className="acm-kyc-body">
           <div className="acm-loc-table-wrap acm-kyc-table-wrap dt-root hr-dt" data-accent="emerald">
             {loading ? (
-              /* Segment-rule catalog still loading from the DB — table shimmer
-                 (real headers + shimmer rows) so the grid doesn't flash empty. */
               <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
@@ -4402,12 +3248,6 @@ const Stage2 = ({
                 <tbody><ShimmerTableRows rows={4} cols={isOwners ? 9 : 9} /></tbody>
               </table>
             ) : showingOwnerRefs ? (
-              /* Owner KYC sub-tab — segment-rule reference table.
-                 Mirrors the Trade Licence + Company DD layout when the
-                 segment's rule defines required KYC documents and no
-                 owners have been captured yet. The "+ Add Owner KYC"
-                 pill still opens the existing owner-form to capture
-                 real entries on top of these references. */
               <table className="acm-loc-table dt-table">
                 <thead>
                   <tr>
@@ -4428,7 +3268,6 @@ const Stage2 = ({
                         <td><span className="acm-kyc-code">{d.code}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}</td>
                         <td><AuthorityCell value={d.authority_list ?? d.authority} /></td>
-                        {/* Requirement — Mandatory / Optional, same as Company DD. */}
                         <td>
                           {d.requirement === 'M'
                             ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
@@ -4439,9 +3278,6 @@ const Stage2 = ({
                             ? <Tooltip label={uploaded.name}><a href={uploaded.url} target="_blank" rel="noreferrer" style={{ color:'#0d9488', fontWeight:600, whiteSpace:'nowrap' }}>{truncFileName(uploaded.name)}</a></Tooltip>
                             : <span style={{ color: '#9ca3af', fontStyle: 'italic' }}>Not uploaded</span>}
                         </td>
-                        {/* Issue Date / Expiry — the dates captured by the
-                            upload dialog. "N/A" rather than blank so a row
-                            with no dates still reads as answered. */}
                         <td><DocDateCell value={uploaded?.issueDate} /></td>
                         <td><DocDateCell value={uploaded?.expiryDate} expiry /></td>
                         <td>
@@ -4523,21 +3359,7 @@ const Stage2 = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Segment-rule reference rows. Shown above the live
-                      filteredDocs table only when no real docs are
-                      captured yet AND the user isn't searching. Source
-                      per sub-tab:
-                        company-dd   → segmentDocs.dd
-                        trade-licence → segmentDocs.tl
-                      Both come straight from the segment's rule in the
-                      Document Control Panel. When the DCP leaves a
-                      category empty, NOTHING renders here (no dummy
-                      placeholder) — the empty message below takes over.
-                      Once a real upload lands the live row takes over. */}
                   {(() => {
-                    // Reference rows show whenever there are no real uploaded docs of
-                    // this kind — filtered by the search box (QA #24) so the search
-                    // works on the default reference table too.
                     if (hasRealDocs) return null;
                     let segSrc: any[] = [];
                     if (sub === 'company-dd')   segSrc = (segmentDocs.dd || []).filter(segMatch).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', authority_list:d.authority_list, expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
@@ -4553,7 +3375,6 @@ const Stage2 = ({
                             {tl.name}{tl.isMandatory ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                           </td>
                           <td><AuthorityCell value={tl.authority_list ?? tl.authority} /></td>
-                          {/* Requirement — Mandatory / Optional, shown up-front. */}
                           <td>
                             {tl.isMandatory
                               ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
@@ -4644,37 +3465,18 @@ const Stage2 = ({
   );
 };
 
-/* ─── Stage 3 — Evidence Vault ─── */
-/* Stage 3 → Trade Documents → interactive table. Mirrors the Customer
- * modal's Stage3TradeDocs — same row shape, same status badge styling,
- * different launch context (signs as Consignee). Per-row Send and footer
- * "Send Selected Documents for Signature" both open the Zoho wizard
- * with the chosen library ids pre-checked. */
 function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSelected, sameAsCustomer }: {
   docs: TdDocRow[];
   onToggle: (id: string) => void;
   onToggleAll: (checked: boolean) => void;
   onSend: (id: string) => void;
   onSendSelected: () => void;
-  /* When the consignee is flagged "Same as Customer", its Stage 3 Trade
-   * Documents come straight from the linked customer (the backend swaps
-   * party_id transparently). Sending a fresh signature request from the
-   * consignee side would split the mirror, so the Send / Send Selected
-   * controls are locked here too. */
   sameAsCustomer: boolean;
 }) {
-  // Signed (completed) docs are locked — they're excluded from select-all
-  // and the bulk send, so the counts work off the selectable subset only.
   const selectable = docs.filter(d => d.status !== 'completed');
   const selCount = selectable.filter(d => d.selected).length;
-  // Roll-up "all signed" — every TD row has hit Zoho's completed state.
-  // When that's true, no further send is meaningful (Resend on a signed
-  // doc creates a fresh request against the archived PDF, which the
-  // per-row button already blocks). Use this to lock the bulk controls
-  // too — header select-all checkbox and footer "Send Selected" button.
   const allSigned = docs.length > 0 && docs.every(d => d.status === 'completed');
   const bulkLocked = sameAsCustomer || allSigned;
-  // "All checked" reflects only the selectable (unsigned) rows.
   const allChecked = !allSigned && selectable.length > 0 && selCount === selectable.length;
   return (
     <div className="acm-kyc-card" style={{ marginTop: 12 }}>
@@ -4720,12 +3522,6 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                   <td style={{ fontWeight: 600, color: '#1f2937' }}>{d.name}</td>
                   <td>
                     {(() => {
-                      // Once `completed` the signer has finished — a
-                      // Resend would create a brand-new request against
-                      // the archived PDF. Lock the button + checkbox.
-                      // declined / recalled / expired stay re-sendable.
-                      // Same-as-Customer also locks the controls — see
-                      // the banner above for the rationale.
                       const isSigned   = d.status === 'completed';
                       const onCooldown = !!d.cooldownActive;
                       const locked     = isSigned || sameAsCustomer || onCooldown;
@@ -4819,11 +3615,6 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         </a>
                       </Tooltip>
-                      {/* Certificate of Completion — third action button,
-                          only shown once the request is completed and Zoho
-                          has minted the certificate. Distinct cyan styling
-                          so it doesn't blend with the View / Download
-                          buttons that target the signed PDF. */}
                       {d.status === 'completed' && d.certificate_url && (
                         <Tooltip label="Download Certificate of Completion">
                           <a
@@ -4899,12 +3690,6 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
   onSendTd: (id: string) => void;
   onSendSelectedTd: () => void;
 }) => {
-  /* Combined counts: legacy hand-added docs (kycDocs / kycOwners) PLUS
-   * segment-rule reference uploads keyed by `${sub-tab}::${doc.code}`.
-   * Counting only the legacy arrays left the Stage 3 summary stuck at
-   * 0 even when the user had uploaded files against the segment-rule
-   * rows on Stage 2 — mirrors the same fix applied to the Customer
-   * modal's HistoryStage2. */
   const segKeys = Object.keys(segmentRefUploads);
   const segDd  = segKeys.filter(k => k.startsWith('company-dd::')).length;
   const segOwn = segKeys.filter(k => k.startsWith('owner-kyc::')).length;
@@ -4914,14 +3699,6 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
   const ownerCount = kycOwners.length + segOwn;
   return (
     <>
-      {/* "What you did in previous stages" — compact summary panel
-          (Stage 1 entries as a 4-col Label : Value grid + Stage 2
-          KYC counts as inline stats).
-          When Same as Customer is on, the Linked Customer panel above
-          already shows the full Stage 1 data AND now hosts the Stage 2
-          stat cards inline, so this panel becomes a pure duplicate —
-          suppress it entirely. When OFF, the consignee has its own
-          Stage 1 data so the panel still earns its place. */}
       {!sameAsCustomer && (
         <ConsigneeHistoryPanel stagesCompleted={2}>
           <ConsigneeHistoryStage1 form={form1} locations={locations} segments={segments} />
@@ -4929,7 +3706,6 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
         </ConsigneeHistoryPanel>
       )}
 
-      {/* Vault tabs */}
       <div className="acm-id-tabs">
         <button className={`acm-id-tab ${vaultTab === 'kyc' ? 'on' : ''}`} onClick={() => setVaultTab('kyc')}>
           <IconDoc /> KYC Documents
@@ -4951,10 +3727,6 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
           </div>
 
           {(() => {
-            /* Stage 3 KYC vault now rolls up Stage 2's segment-rule
-             * uploads (the source of truth post-rule consolidation).
-             * Map each EvSubTab to the matching Stage 2 ref-key prefix
-             * + the segmentDocs category that drives the row list. */
             const stage2Key = evSub === 'dd' ? 'company-dd'
                             : evSub === 'kyc' ? 'owner-kyc'
                             : 'trade-licence';
@@ -4995,13 +3767,11 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                               {d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                             </td>
                             <td><AuthorityCell value={d.authority_list ?? d.authority} /></td>
-                            {/* Requirement — is this doc required or optional. */}
                             <td>
                               {d.requirement === 'M'
                                 ? <span className="acm-badge acm-badge--mand">★ Mandatory</span>
                                 : <span className="acm-badge acm-badge--opt">Optional</span>}
                             </td>
-                            {/* Status — completed only when an attachment was uploaded. */}
                             <td>
                               {uploaded
                                 ? <span className="acm-badge acm-badge--done">✓ Completed</span>
@@ -5054,11 +3824,6 @@ const RecapField = ({ label, value }: { label: string; value?: string }) => (
   </div>
 );
 
-/* ─── ReadInlineG — emerald-themed compact "Label : Value" pair.
- * Mirror of AddCustomerModal's `ReadInline`. Used inside the
- * Stage 2 / Stage 3 history panel so the data carried forward from
- * Stage 1 reads as a dense 4-column grid instead of card-styled
- * sub-panels. */
 const ReadInlineG = ({ label, value, span, node: rich, tip }: { label: string; value?: string | null; span?: number; node?: React.ReactNode; tip?: React.ReactNode }) => {
   const v = (value ?? '').toString().trim();
   const node = (
@@ -5070,9 +3835,6 @@ const ReadInlineG = ({ label, value, span, node: rich, tip }: { label: string; v
   return v ? <Tooltip label={tip ? <>{label}: {tip}</> : `${label}: ${v}`}>{node}</Tooltip> : node;
 };
 
-/* ─── Stage 1 summary — dense 4-column "Label : Value" grid of every
- * Stage 1 field the user filled. Same compact layout the Customer
- * modal uses, just emerald-themed via .acg-hs-* classes. */
 function ConsigneeHistoryStage1({ form, locations, consigneeCode, segments = [] }: {
   form: { companyName: string; legalName: string; website: string; segment: string[]; classification: string; risk: string; addressType: string; address: string; country: string; state: string; city: string; pin: string; contactName: string; designation: string; contactNo: string; email: string; whatsapp: string };
   locations: LocationRow[];
@@ -5113,7 +3875,6 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode, segments = [] 
   );
 }
 
-/* ─── Stage 2 summary — compact KYC counts shown as inline stats. */
 function ConsigneeHistoryStage2({ ddCount, ownerCount, tlCount }: { ddCount: number; ownerCount: number; tlCount: number }) {
   const total = ddCount + ownerCount + tlCount;
   return (
@@ -5128,10 +3889,6 @@ function ConsigneeHistoryStage2({ ddCount, ownerCount, tlCount }: { ddCount: num
   );
 }
 
-/* ─── Collapsible "What you did in previous stages" wrapper —
- * emerald variant of the Customer modal's `acm-history` panel.
- * Renders a slim header (icon + title + stage count chip + chevron)
- * that toggles a body containing one or more summary sub-blocks. */
 function ConsigneeHistoryPanel({ stagesCompleted, children }: { stagesCompleted: number; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
@@ -5160,32 +3917,15 @@ function ConsigneeHistoryPanel({ stagesCompleted, children }: { stagesCompleted:
   );
 }
 
-/* ─── Polished file-upload field ─────
- * Replaces the bare `<input type="file">` (browser's grey "Choose File"
- * looks out of place inside the emerald sub-modal). Hands the parent
- * the actual File object so it can be POSTed via multipart/form-data,
- * along with a display name. `displayName` allows pre-filling the
- * filename when editing an already-uploaded row (no File available
- * but we know the name from the server).
- *
- * Client-side file-type guard:
- *   The HTML `accept` attribute is only a HINT — users can switch the
- *   file picker to "All Files" and pick a .php / .exe / .zip anyway.
- *   So we re-validate the chosen file against the allowed extensions
- *   here and reject + toast if it doesn't match. The server enforces
- *   the same list (mimes:jpg,jpeg,png,pdf) so a manipulated request
- *   can't slip through either. Word / Excel are NOT accepted — browsers
- *   can't preview them (they download), which broke the View flow. */
 const DEFAULT_ACCEPT = '.pdf,.jpg,.jpeg,.png';
 const MAX_MB = 2;
 function parseAcceptExts(accept?: string): string[] {
   if (!accept) return [];
   return accept.split(',')
     .map(s => s.trim().toLowerCase().replace(/^\./, ''))
-    .filter(s => s && !s.includes('/'));  // skip mime patterns like "image/*"
+    .filter(s => s && !s.includes('/'));
 }
 function isAcceptedFile(file: File, accept?: string): { ok: true } | { ok: false; reason: string } {
-  // image/* shortcut — accept any image
   if (accept?.includes('image/')) {
     if (file.type.startsWith('image/')) return { ok: true };
     return { ok: false, reason: 'Only image files (JPG, JPEG, PNG) are allowed.' };
@@ -5204,12 +3944,7 @@ function isAcceptedFile(file: File, accept?: string): { ok: true } | { ok: false
 function FileUploadField({ value, displayName, existingUrl, onPick, onRemoveExisting, accept, hint }: {
   value: File | null;
   displayName?: string;
-  /** Direct URL to the existing server-side file, used by Preview when
-   *  no new file has been picked. Falsy ⇒ Preview is hidden. */
   existingUrl?: string | null;
-  /** Fires when the user clicks the X on a server-side (existing) file
-   *  — distinct from `onPick(null)` which clears a newly-picked file.
-   *  Parent uses this to flag `remove_<field>=1` for the save call. */
   onRemoveExisting?: () => void;
   onPick: (file: File | null) => void;
   accept?: string;
@@ -5218,8 +3953,6 @@ function FileUploadField({ value, displayName, existingUrl, onPick, onRemoveExis
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  // Blob URL for the newly-picked file so Preview opens it without
-  // a round trip. Revoke on unmount / file-change to avoid leaks.
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!value) { setBlobUrl(null); return; }
@@ -5229,9 +3962,6 @@ function FileUploadField({ value, displayName, existingUrl, onPick, onRemoveExis
   }, [value]);
   const labelText = value ? value.name : (displayName || '');
   const hasFile = !!labelText;
-  // Preview source: blob URL for a fresh pick, server URL for an
-  // existing file. Falls back to null when neither is available
-  // (e.g. file picked offline or backend isn't returning the URL yet).
   const previewUrl = value ? blobUrl : (existingUrl || null);
   const effectiveAccept = accept || DEFAULT_ACCEPT;
   const hintText = hint || (effectiveAccept.includes('image/')
@@ -5252,9 +3982,6 @@ function FileUploadField({ value, displayName, existingUrl, onPick, onRemoveExis
                 className="acm-file-chip-preview"
                 aria-label="Preview"
                 onClick={() => {
-                  // Cache-bust server URLs (not blob URLs) so a fresh
-                  // upload renders instead of the browser's cached copy.
-                  // Evaluated on click so the URL doesn't churn each render.
                   let url = previewUrl;
                   if (!value) {
                     const sep = url.includes('?') ? '&' : '?';
@@ -5274,9 +4001,6 @@ function FileUploadField({ value, displayName, existingUrl, onPick, onRemoveExis
             onClick={() => {
               setErr(null);
               if (inputRef.current) inputRef.current.value = '';
-              // New pick → clear the in-memory file. Existing only →
-              // tell the parent to flag the saved file for backend
-              // deletion via remove_<field>=1.
               if (value) onPick(null);
               else if (onRemoveExisting) onRemoveExisting();
               else onPick(null);
@@ -5327,7 +4051,6 @@ function FileUploadField({ value, displayName, existingUrl, onPick, onRemoveExis
   );
 }
 
-/* ─── Stage 3 — read-only Evidence Vault tables ─── */
 const VaultDocsTable = ({ docs, kind }: { docs: KycDocRow[]; kind: 'dd' | 'tl' }) => {
   const codeFor = (k: string, sr: number) => `${k.toUpperCase()}-${String(sr).padStart(3, '0')}`;
   const fmtMy = (s?: string) => {
@@ -5395,21 +4118,12 @@ const VaultOwnersTable = ({ owners }: { owners: KycOwnerRow[] }) => (
   </div>
 );
 
-/* ─── Stage 2 — Add/Edit KYC Document sub-modal (DD + Trade Licence) ─── */
 function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onSaved }: {
   sub: KycSubTab;
-  /** Document Type master rows — backs the Name dropdown. Parent
-   *  fetches once on modal open; we also refetch locally as a safety
-   *  net in case the parent's fetch hasn't landed yet. */
   documentTypes: { value: string; label: string }[];
   editing: KycDocRow | null;
-  /** Parent consignee's numeric PK — needed to POST/PUT under
-   *  /consignees/{id}/documents. Null if Stage 1 hasn't auto-saved
-   *  yet; in that case the submit shows a guidance error. */
   consigneeId: number | null;
   onClose: () => void;
-  /** Fires with the server-saved row so the parent can refetch the
-   *  full KYC docs list (keeps codes/URLs consistent with the DB). */
   onSaved: () => void;
 }) {
   const titleLabel = sub === 'company-dd' ? 'DD Document / License' : 'Trade Licence';
@@ -5421,23 +4135,12 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
     expiry_date: editing?.expiry_date ?? '',
     status: (editing?.status ?? 'Active') as 'Active' | 'Inactive',
   });
-  /* Separate file slot — `file` is the just-picked File, ready to
-   * POST. `existingAttachmentName` is the filename returned by the
-   * server when editing (so the chip still shows the existing
-   * attachment even though no File is in memory yet). */
   const [file, setFile] = useState<File | null>(null);
   const existingAttachmentName = editing?.attachment_name ?? '';
   const existingAttachmentUrl  = editing?.attachment_url ?? '';
-  // Flag: user clicked the X on the existing server-side attachment.
-  // Submit forwards this as remove_attachment=1 so the backend nulls
-  // the column + deletes the disk file.
   const [removeAttachment, setRemoveAttachment] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  // Inline "Add Document Type" master popup — opens from the `+`
-  // button next to the Name dropdown. Posts to /master/document_type
-  // so the new row immediately joins the dropdown without losing the
-  // user's in-progress license entry.
   const [typeModal, setTypeModal] = useState(false);
   useEscapeKey(() => { if (!saving) onClose(); });
   const set = <K extends keyof typeof d>(k: K, v: (typeof d)[K]) => {
@@ -5445,10 +4148,6 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
     setErrs(prev => { if (!prev[k as string]) return prev; const n = { ...prev }; delete n[k as string]; return n; });
   };
 
-  /* Defensive local fetch — same pattern as LocationSubModal. If the
-   * parent's fetch hasn't landed yet, this one ensures the dropdown
-   * is still populated. The effective list prefers whichever side has
-   * data. */
   const [localDocTypes, setLocalDocTypes] = useState<{ value: string; label: string }[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -5459,7 +4158,7 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
         .map((x: any) => ({ value: String(x.title ?? ''), label: String(x.title ?? '') }))
         .filter((o: any) => o.value);
       setLocalDocTypes(rows);
-    }).catch(() => { /* silent — parent copy is usually enough */ });
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
   const docOptions = (() => {
@@ -5472,11 +4171,6 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
 
   const submit = async () => {
     if (saving) return;
-    /* Validation parity with AddCustomerModal's DocSubModal so the
-     * same fields are mandatory on both sides — testers shouldn't
-     * find a looser gate on consignee. Backend stays nullable for all
-     * non-name fields (intentional — bulk seeds / data backfills),
-     * the UI just makes them required at capture time. */
     const next: Record<string, string> = {};
     if (!d.name.trim())                                   next.name              = 'Document name is required';
     if (!(d.license_number ?? '').trim())                 next.license_number    = 'License / document number is required';
@@ -5484,23 +4178,17 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
     if (!(d.issuing_authority ?? '').trim())              next.issuing_authority = 'Issuing authority is required';
     if (!d.issue_date)                                    next.issue_date        = 'Issue date is required';
     else {
-      // Backstop: documents can't be issued in the future even if a
-      // stale picker or paste slips a future date past the maxDate cap.
       const today = new Date().toISOString().slice(0, 10);
       if (d.issue_date > today) next.issue_date = 'Issue date cannot be in the future';
     }
     if (!d.expiry_date)                                   next.expiry_date       = 'Expiry date is required';
     else {
-      // Expiry must not be earlier than today — an already-expired
-      // document isn't useful and shouldn't be captured against an
-      // active KYC record.
       const today = new Date().toISOString().slice(0, 10);
       if (d.expiry_date < today) next.expiry_date = 'Expiry date cannot be in the past';
       else if (d.issue_date && d.expiry_date < d.issue_date) next.expiry_date = 'Expiry date must be on or after the issue date';
     }
     setErrs(next);
     if (Object.keys(next).length > 0) {
-      // Bring the first offending field into view so the user sees the red border.
       const firstKey = Object.keys(next)[0];
       document.querySelector<HTMLElement>(`[data-field="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
@@ -5522,22 +4210,13 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
     if (file) {
       fd.append('attachment', file);
     } else if (removeAttachment && existingAttachmentUrl) {
-      // No new pick + user clicked the X on the existing file → tell
-      // the backend to wipe it (column null + disk delete).
       fd.append('remove_attachment', '1');
     }
 
     setSaving(true);
     try {
-      /* Explicit multipart header — the project's default api
-       * instance defaults to application/json, which strips the file
-       * out of the FormData (Laravel then sees `attachment` as a
-       * string field and 422s with "must be a file"). The Customer
-       * modal sets this same header for the same reason. */
       const cfg = { headers: { 'Content-Type': 'multipart/form-data' } };
       if (editing?.id && editing.id.startsWith('db_')) {
-        // db_-prefixed id encodes the server PK so we can find the
-        // row again across refetches without re-keying.
         const numericId = Number(editing.id.replace('db_', ''));
         await api.post(`/consignees/${consigneeId}/documents/${numericId}`, fd, cfg);
       } else {
@@ -5620,9 +4299,6 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
           <div className="acm-loc-grid-2 acm-mt-12">
             <div className="acm-field avm-field avm-master-select" data-field="issue_date">
               <label className="avm-field-label">Issue Date<span className="avm-req">*</span></label>
-              {/* maxDate caps at the earlier of today and the chosen
-                  expiry — a document can never be issued in the future,
-                  and the two date fields can never disagree. */}
               <MasterDatePicker
                 value={d.issue_date ?? ''}
                 maxDate={(() => {
@@ -5640,11 +4316,6 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
             </div>
             <div className="acm-field avm-field avm-master-select" data-field="expiry_date">
               <label className="avm-field-label">Expiry Date<span className="avm-req">*</span></label>
-              {/* minDate forces expiry ≥ the later of (today, issue
-                  date) — a document can't already be expired and
-                  can't be valid before it was even issued. The
-                  submit-time validator below is the backstop in case
-                  a stale picker / paste slips a past value through. */}
               <MasterDatePicker
                 value={d.expiry_date ?? ''}
                 minDate={(() => {
@@ -5667,7 +4338,7 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
                 existingUrl={removeAttachment ? null : existingAttachmentUrl}
                 onPick={(f) => {
                   setFile(f);
-                  if (f) setRemoveAttachment(false);   // new pick supersedes any prior "remove"
+                  if (f) setRemoveAttachment(false);
                 }}
                 onRemoveExisting={() => setRemoveAttachment(true)}
                 accept=".pdf,.jpg,.jpeg,.png"
@@ -5692,10 +4363,6 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
         <AddDocumentTypeMasterPopup
           onClose={() => setTypeModal(false)}
           onSaved={(name) => {
-            /* Append the new master row to the dropdown source via a
-             * local state slot, then auto-select it on the form so
-             * the user can save the in-progress doc without losing
-             * any inputs. */
             setLocalDocTypes(prev => prev.some(o => o.value === name) ? prev : [...prev, { value: name, label: name }]);
             set('name', name);
             setTypeModal(false);
@@ -5706,11 +4373,6 @@ function KycDocSubModal({ sub, documentTypes, editing, consigneeId, onClose, onS
   );
 }
 
-/* ───── Inline "Add Document Type" master popup ─────
- * Mirrors AddCustomerModal's AddDocumentTypeMasterModal — posts to
- * /master/document_type so the new row immediately joins the dropdown.
- * Stays modal on top of the KYC Doc sub-modal so the user never loses
- * their in-progress license entry. */
 function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
   onClose: () => void;
   onSaved: (name: string) => void;
@@ -5741,8 +4403,6 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
       });
       const row = data?.data ?? data;
       onSaved(String(row?.title ?? title.trim()));
-      // Cached customer/consignee bundle now stale — bust it so the next
-      // open of either modal refetches the fresh doctype list.
       bustCustomerMasterBundle();
     } catch (err: any) {
       const apiErrors = err?.response?.data?.errors;
@@ -5752,7 +4412,6 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
           next2[k] = Array.isArray(msgs) ? String((msgs as any[])[0]) : String(msgs);
         }
         setErrs(next2);
-        // Toast suppressed — inline red errors handle this.
       } else {
         toast.error('Save failed', err?.response?.data?.message ?? 'Could not save the document type. Try again.');
       }
@@ -5762,8 +4421,6 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
   };
 
   return (
-    // Backdrop is purely visual — closing only via the X / Cancel button
-    // so accidental outside-clicks don't wipe an in-progress entry.
     <div className="acm-loc-sub-overlay" style={{ zIndex: 10002 }}>
       <div className="acm-loc-sub-card" style={{ maxWidth: 480 }}>
         <div className="acm-loc-sub-header">
@@ -5836,13 +4493,9 @@ function AddDocumentTypeMasterPopup({ onClose, onSaved }: {
   );
 }
 
-/* ─── Stage 2 — Add/Edit Owner KYC sub-modal ─── */
 function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved }: {
   editing: KycOwnerRow | null;
   consigneeId: number | null;
-  /** Designations master rows — backs the Designation dropdown so the
-   *  owner KYC form pulls from the same source as the rest of the
-   *  app (was previously a free-text input that bypassed the master). */
   designations: { value: string; label: string }[];
   onClose: () => void;
   onSaved: () => void;
@@ -5854,9 +4507,6 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
     phone_number: editing?.phone_number ?? '',
     status: (editing?.status ?? 'Active') as 'Active' | 'Inactive',
   });
-  /* Three separate file slots — each holds the just-picked File, ready
-   * to POST. Existing filenames (when editing) live alongside so the
-   * chip still shows the existing upload before the user replaces it. */
   const [idProof,      setIdProof]      = useState<File | null>(null);
   const [addressProof, setAddressProof] = useState<File | null>(null);
   const [photograph,   setPhotograph]   = useState<File | null>(null);
@@ -5866,9 +4516,6 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
   const existingIdProofUrl       = editing?.id_proof_url ?? '';
   const existingAddressProofUrl  = editing?.address_proof_url ?? '';
   const existingPhotographUrl    = editing?.photograph_url ?? '';
-  // Per-slot "remove existing" flags — forwarded as remove_<field>=1
-  // on submit when no new file has been picked, so the backend nulls
-  // the column and deletes the disk file.
   const [removeIdProof,      setRemoveIdProof]      = useState(false);
   const [removeAddressProof, setRemoveAddressProof] = useState(false);
   const [removePhotograph,   setRemovePhotograph]   = useState(false);
@@ -5907,10 +4554,6 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
 
     setSaving(true);
     try {
-      /* Explicit multipart header — the project's api default
-       * application/json strips File uploads from FormData. Without
-       * this the 3 identity-proof files arrive as empty strings and
-       * Laravel 422s with "must be a file". */
       const cfg = { headers: { 'Content-Type': 'multipart/form-data' } };
       if (editing?.id && editing.id.startsWith('db_')) {
         const numericId = Number(editing.id.replace('db_', ''));
@@ -5955,10 +4598,6 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
             </div>
             <div className="acm-field avm-field avm-master-select">
               <label className="avm-field-label">Designation</label>
-              {/* Free-text input — was a MasterSelect tied to
-                  /master/designations; switched to a plain input so
-                  users can type any designation (Director, Owner,
-                  Authorised Signatory, etc.) without master upkeep. */}
               <input
                 className="avm-input"
                 placeholder="e.g. Director, Owner, Authorised Signatory"
@@ -6045,7 +4684,6 @@ function KycOwnerSubModal({ editing, consigneeId, designations, onClose, onSaved
   );
 }
 
-/* ─── Add/Edit Location & Contact sub-modal ─── */
 type LocSubModalMasters = {
   addressTypes: { value: string; label: string }[];
   countries:    { value: string; label: string; id: number }[];
@@ -6056,19 +4694,9 @@ type LocSubModalMasters = {
 function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], primaryCountry, onClose, onSave }: {
   editing: LocationRow | null;
   masters: LocSubModalMasters;
-  /** Address types already claimed elsewhere (e.g. Registered Office on
-   *  the primary address). Filtered out of the dropdown so a consignee
-   *  doesn't end up with two registered offices. The currently-editing
-   *  row's own type is still shown to avoid hiding existing data. */
   disallowedTypes?: string[];
-  /** Emails / phones already used by other addresses (primary + other
-   *  locations) on this consignee — used to block duplicates within
-   *  the same form before the user can save and run into a backend
-   *  conflict. Lower-cased emails, trimmed phones. */
   existingEmails?: string[];
   existingPhones?: string[];
-  /** The consignee's PRIMARY country. Domestic (India) → extra addresses are
-   *  India-only (locked); international → extras exclude India. */
   primaryCountry?: string;
   onClose: () => void;
   onSave: (rec: Omit<LocationRow, 'id'>) => void;
@@ -6076,22 +4704,15 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
   const toast = useToast();
   const primaryDomestic = (primaryCountry ?? '').trim() === 'India';
   const primarySet = !!(primaryCountry ?? '').trim();
-  // Skip the default "Registered Office" prefill when that type is
-  // disallowed — otherwise the user lands on a value they can't save.
   const initialType = editing
     ? editing.type
     : (disallowedTypes?.includes(DEFAULT_ADDRESS_TYPE) ? '' : DEFAULT_ADDRESS_TYPE);
   const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
-    // Domestic consignee → extra addresses are India too, so pre-fill + lock it.
     type: initialType, line: '', country: primaryDomestic ? 'India' : '', state: '', city: '', pin: '',
     cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: 'yes' as 'yes' | 'no' | '',
   });
   const [errs, setErrs] = useState<Record<string, string>>({});
   useEscapeKey(onClose);
-  /* Per-field validator — single source of truth shared with submit().
-   * Returns the error message for one field (or null when clean) so
-   * the inline red can fire on each keystroke instead of waiting for
-   * the user to hit Save. */
   const locFieldRule = (k: string, dd: typeof d): string | null => {
     switch (k) {
       case 'type':
@@ -6116,7 +4737,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        // Same country-driven rule as the primary address — see pinError().
         return pinError(dd.pin, dd.country) ?? null;
       case 'cpName':
         if (!dd.cpName.trim()) return 'Contact name required';
@@ -6129,7 +4749,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpContact':
         if (!dd.cpContact.trim()) return 'Phone required';
-        // India → exactly 10 digits (+91 shown, not stored); else flexible 7–15.
         if (isDomesticCountry(dd.country)) { if (!/^\d{10}$/.test(dd.cpContact)) return 'Enter a valid 10-digit mobile number'; }
         else if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7-15 digits';
         if (existingPhones.includes(dd.cpContact.trim()))
@@ -6158,10 +4777,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
       return next;
     });
   };
-  /* Real-time duplicate check — fires the inline error the moment the
-   * user types a phone or email already in use by the primary contact
-   * or another location on this consignee. Mirrors the click-time
-   * validator in submit() so behaviour stays consistent. */
   useEffect(() => {
     const phone = (d.cpContact || '').trim();
     const email = (d.cpEmail   || '').trim().toLowerCase();
@@ -6177,10 +4792,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     });
   }, [d.cpContact, d.cpEmail, existingPhones, existingEmails]);
 
-  /* Defensive local refetch — the parent fires the same masters on
-   * modal open, but if the user clicks Add before that lands (or one
-   * of those calls failed silently), the dropdowns would render empty.
-   * Holding a local copy and merging keeps the popup self-sufficient. */
   const [local, setLocal] = useState<LocSubModalMasters>({ addressTypes: [], countries: [], states: [], designations: [] });
   useEffect(() => {
     let cancelled = false;
@@ -6210,14 +4821,10 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     return () => { cancelled = true; };
   }, []);
 
-  /* Effective lists — prefer whichever side actually has data so the
-   * dropdown is populated as soon as either fetch resolves. */
   const addressTypesAll = masters.addressTypes.length ? masters.addressTypes : local.addressTypes;
   const countries    = masters.countries.length    ? masters.countries    : local.countries;
   const states       = masters.states.length       ? masters.states       : local.states;
   const designations = masters.designations.length ? masters.designations : local.designations;
-  // Strip disallowed types but always keep the row's own value so an
-  // existing selection never silently disappears mid-edit.
   const addressTypes = (!disallowedTypes || disallowedTypes.length === 0)
     ? addressTypesAll
     : addressTypesAll.filter(t => !disallowedTypes.includes(t.value) || t.value === d.type);
@@ -6234,7 +4841,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     }
     setErrs(next);
     if (Object.keys(next).length === 0) { onSave(d); return; }
-    // Toast suppressed — inline red errors handle this.
   };
 
   return (
@@ -6274,8 +4880,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               <label className="avm-field-label">Country<span className="avm-req">*</span></label>
               <MasterSelect
                 value={d.country}
-                /* Domestic consignee → India only (locked). International → every
-                   country EXCEPT India. No primary yet → all countries. */
                 options={
                   primaryDomestic
                     ? countries.filter(c => c.value === 'India')
@@ -6287,7 +4891,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 placeholder={primaryDomestic ? 'India' : 'Select country'}
                 invalid={!!errs.country}
                 onChange={v => {
-                  // Switching to India scrubs the contact number to bare 10 digits.
                   const nextTel = isDomesticCountry(v) ? (d.cpContact || '').replace(/\D/g, '').slice(0, 10) : d.cpContact;
                   const nd = { ...d, country: v, state: '', cpContact: nextTel } as typeof d;
                   setD(nd);
@@ -6308,7 +4911,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               <MasterSelect
                 value={d.state}
                 options={optsWith(filteredStates, d.state)}
-                // Mirrors the primary address — see the note there.
                 placeholder={!d.country
                   ? 'Select country first'
                   : (filteredStates.length === 0 ? 'Add states in Master → States' : 'Select state')}
@@ -6354,10 +4956,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
             </div>
             <div className="acm-field avm-field avm-master-select">
               <label className="avm-field-label">Designation<span className="avm-req">*</span></label>
-              {/* Free-text input — was a MasterSelect tied to
-                  /master/designations; switched to a plain input so
-                  the location's contact designation can be anything
-                  the user types. */}
               <input
                 className={`avm-input ${errs.cpDesignation ? 'acm-input-error' : ''}`}
                 placeholder="e.g. Sales Manager"
@@ -6423,7 +5021,6 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
   );
 }
 
-/* ─── Icons ─── */
 const IconTruck = ({ size = 16 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M10 17h4V5H2v12h3" /><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5" />
@@ -6476,9 +5073,6 @@ const IconCheck = ({ size = 14 }: { size?: number }) => (
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
-/* Inline spinner used by the wizard footer buttons while a save/persist
- * request is in flight. Rendered as currentColor so it picks up the
- * button's existing text color on both light and dark mode. */
 const IconSpinner = ({ size = 14 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="acg-spin">
     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
@@ -6519,8 +5113,6 @@ const IconPlus = ({ size = 11 }: { size?: number }) => (
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
-/* Padlock — used to mark the Stage 2 KYC tables as locked while
- * Same-as-Customer is on. Reads more clearly than a faded button. */
 const IconLock = ({ size = 12 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="11" width="18" height="11" rx="2" />
@@ -6542,8 +5134,6 @@ const IconTrash = ({ size = 12 }: { size?: number }) => (
   </svg>
 );
 
-/* Expiry-on-upload popup. Its own sheet because the dialog is portalled to
-   <body>, outside the .acm-root that SCOPED_CSS hangs off. */
 const ACM_UPX_CSS = `
 .acm-upx-ov {
   position: fixed; inset: 0; z-index: 12000;
@@ -6574,12 +5164,6 @@ const ACM_UPX_CSS = `
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .acm-upx-body { padding: 16px 18px 6px; }
-/* Two columns, like the vault's dialog: Auto Code / Document Name on one row,
-   Issuing Authority / Expiry on the next. */
-/* minmax(0,1fr), not 1fr: a grid item's default min-width is AUTO, so a long
-   Issuing Authority value would hold its column open and push the other one off
-   the card — and .acm-upx-ro's ellipsis would never trigger, because its box was
-   never squeezed. */
 .acm-upx-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 16px; }
 .acm-upx-fld { min-width: 0; margin-bottom: 12px; }
 .acm-upx-grid .acm-upx-fld { margin-bottom: 0; }
@@ -6603,8 +5187,6 @@ const ACM_UPX_CSS = `
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .acm-upx-file i { font-size: 16px; flex-shrink: 0; }
-/* Yes / No and the date on ONE line — a stacked pair made the Expiry cell
-   twice the height of the three fields beside it and pulled the grid out. */
 .acm-upx-exp { display: flex; align-items: center; gap: 8px; }
 .acm-upx-seg { display: flex; gap: 0; flex-shrink: 0; }
 .acm-upx-seg button {
@@ -6618,9 +5200,6 @@ const ACM_UPX_CSS = `
 .acm-upx-seg button:hover:not(:disabled) { border-color: #5eead4; color: #0f766e; }
 .acm-upx-seg button.is-on { background: #0d9488; border-color: #0d9488; color: #fff; }
 .acm-upx-date { flex: 1 1 160px; min-width: 0; }
-/* Pinned to the same 38px the read-only boxes and the Yes / No pair come out
-   at — the picker sizes itself from its own padding and lands a shade taller,
-   which reads as crooked on a row of three controls. */
 .acm-upx-date .master-datepicker-toggle { height: 38px; box-sizing: border-box; }
 .acm-upx-ft {
   display: flex; justify-content: flex-end; gap: 9px; padding: 16px 18px 16px;
@@ -6635,11 +5214,6 @@ const ACM_UPX_CSS = `
   background: linear-gradient(135deg, #0f766e, #0d9488); border: none; color: #fff;
   box-shadow: 0 4px 12px rgba(13,148,136,.30);
 }
-/* This dialog sits at z-index 12000; the date picker's global z-index is
-   11100, so its calendar opened BEHIND the dialog and looked like nothing
-   happened. Raised for calendars opened from in here only, via the picker's
-   own popupClassName hook — the global value stays where it is, which is what
-   the Evidence Vault's dialog does too (.cev-reup-cal). */
 .master-datepicker-popup.acm-upx-cal { z-index: 12010 !important; }
 
 [data-bs-theme="dark"] .acm-upx-card { background: #0f172a; }
@@ -6648,8 +5222,6 @@ const ACM_UPX_CSS = `
 [data-bs-theme="dark"] .acm-upx-code { color: #fbbf24; }
 [data-bs-theme="dark"] .acm-upx-file { background: rgba(13,148,136,.12); border-color: rgba(94,234,212,.30); color: #5eead4; }
 [data-bs-theme="dark"] .acm-upx-seg button { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
-/* Light-mode hover paints #0f766e text, which is near-invisible on the dark
-   surface — the hover needs its own pair, not just the resting state. */
 [data-bs-theme="dark"] .acm-upx-seg button:hover:not(:disabled):not(.is-on) {
   background: rgba(13,148,136,.18); border-color: rgba(94,234,212,.45); color: #5eead4;
 }
@@ -6657,10 +5229,7 @@ const ACM_UPX_CSS = `
 [data-bs-theme="dark"] .acm-upx-btn { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
 `;
 
-/* ─── Scoped CSS ─── */
 const SCOPED_CSS = `
-/* Requirement + completion badges — theme-aware (Stage 2 upload table + Stage 3
-   review). Light defaults plus dark overrides so they never wash out. */
 .acm-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:700; border:1px solid transparent; white-space:nowrap; }
 .acm-badge--mand   { background:#dcfce7; color:#15803d; border-color:#86efac; }
 .acm-badge--opt    { background:#f3f4f6; color:#4b5563; border-color:#e5e7eb; }
@@ -6678,12 +5247,6 @@ const SCOPED_CSS = `
   -webkit-backdrop-filter: blur(7px) saturate(118%);
           backdrop-filter: blur(7px) saturate(118%);
   display: flex; align-items: center; justify-content: center;
-  /* Same base z-index as AddCustomerModal so any modal launched from
-   * a sibling popup (e.g. CustomerConsigneesModal at 1090) stacks
-   * predictably. The full project stack: customer-consignee popup
-   * 1090 < wizard 10000 < wizard sub-modals (loc/KYC) 10001 < doc
-   * type popup-on-popup 10002 < MasterSelect 11000 < DeleteConfirm
-   * 11050 < MasterDatePicker 11100. */
   z-index: 10000;
   font-family: var(--font-sans);
   padding: 24px;
@@ -6708,29 +5271,18 @@ const SCOPED_CSS = `
 }
 .acm-wiz-header .acm-close:hover { background: rgba(255,255,255,.22); }
 
-/* ─── Phase A — Customer picker ─── */
 .acm-pick {
   width: 100%; max-width: 460px;
-  /* Locked height so the picker doesn't grow / shrink when the search
-     dropdown opens or the customer list lands. The body scrolls
-     internally — header + footer stay anchored at top / bottom. */
   height: min(660px, calc(100vh - 32px));
   background: #fff; border-radius: 18px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.30);
   display: flex; flex-direction: column;
 }
-/* Picker header — same mint→teal gradient used by the listing hero,
-   WDH banner, and modal header so the picker feels like one piece
-   of the consignee chrome. White text + glassy icon on the wash. */
 .acm-pick-header {
   position: relative; padding: 28px 20px 24px;
-  /* Brighter, more even teal (Figma) — drops the dark emerald corner that
-     made the old 135deg ramp read as a harsh dark-green → light diagonal. */
   background: linear-gradient(150deg, #0e9f86 0%, #14b8a6 45%, #20c9b6 75%, #2dd4bf 100%);
   color: #fff; text-align: center;
   overflow: hidden;
-  /* Never let the body's growth (when the search dropdown opens) squeeze the
-     header — it would clip the subtitle. Header stays fixed; body scrolls. */
   flex-shrink: 0;
 }
 .acm-pick-header::before {
@@ -6766,9 +5318,6 @@ const SCOPED_CSS = `
 }
 .acm-pick-body  {
   padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 12px;
-  /* overflow VISIBLE so the absolutely-positioned search dropdown can float
-     over the picked-customer card + info below it (the dropdown has its own
-     internal scroll). Body content itself is small and fixed. */
   flex: 1 1 auto; min-height: 0; overflow: visible;
 }
 .acm-label {
@@ -6788,9 +5337,6 @@ const SCOPED_CSS = `
 }
 .acm-picker input::placeholder { color: #6b7280; }
 .acm-picker-wrap { position: relative; }
-/* Float the dropdown as an OVERLAY over the picked-customer card + info note
-   below it, so it always shows even after a customer is selected (it used to
-   get pushed off the bottom of the fixed-height popup). */
 .acm-picker-list {
   position: absolute;
   top: calc(100% + 8px); left: 0; right: 0;
@@ -6800,7 +5346,6 @@ const SCOPED_CSS = `
   background: #fff;
   box-shadow: 0 14px 36px rgba(13,148,136,.22), 0 4px 12px rgba(0,0,0,.08);
 }
-/* Sticky "Done" bar at the bottom of the multi-select list. */
 .acm-picker-donewrap {
   position: sticky; bottom: 0; padding: 8px;
   border-top: 1px solid #d1fae5; background: #fff;
@@ -6808,24 +5353,15 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-picker-donewrap {
   background: #103129; border-top-color: rgba(16,185,129,.30);
 }
-/* Read-only inherited-segment box (looks like an input): first chip + an
-   inline "View all N" pill. */
 .acm-seg-box {
   position: relative;
-  /* Single row: the first (truncating) chip + the "View all N" pill stay on one
-     line — a long segment name no longer wraps the pill onto a second row. */
   display: flex; align-items: center; flex-wrap: nowrap; gap: 8px;
   min-height: 40px; padding: 5px 12px;
   border: 1.5px solid #e2e8f0; border-radius: 10px; background: #fff;
-  /* NOT overflow:hidden — that clipped the "View all N" popover (absolutely
-     positioned just below). The first chip truncates via its own overflow
-     rule, so the box itself doesn't need to clip. */
   overflow: visible;
 }
 [data-bs-theme="dark"] .acm-seg-box { background: #0f1a17; border-color: rgba(148,163,184,.22); }
 .acm-seg-firstchip {
-  /* inline-block (not inline-flex) so a long name ellipsis-truncates; min-width:0
-     lets the flex item shrink below its content so the "View all" pill fits. */
   display: inline-block; vertical-align: middle;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 12.5px; font-weight: 600; color: #0f766e;
@@ -6833,7 +5369,6 @@ const SCOPED_CSS = `
   border-radius: 12px; padding: 2px 10px;
 }
 [data-bs-theme="dark"] .acm-seg-firstchip { color: #6ee7b7; background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.30); }
-/* "View all N segments" trigger — inline, right after the first chip. */
 .acm-seg-morebtn {
   display: inline-block; cursor: pointer;
   font-size: 11px; font-weight: 700; letter-spacing: .2px;
@@ -6842,7 +5377,6 @@ const SCOPED_CSS = `
 }
 .acm-seg-morebtn:hover { background: #d1fae5; }
 [data-bs-theme="dark"] .acm-seg-morebtn { color: #6ee7b7; background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.30); }
-/* Popover listing every inherited segment (teal-dotted pills). */
 .acm-seg-pop {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
   min-width: 190px; max-width: 360px; max-height: 260px; overflow-y: auto;
@@ -6913,8 +5447,6 @@ const SCOPED_CSS = `
 }
 .acm-info-icon { flex-shrink: 0; margin-top: 1px; }
 
-/* Customer picker: the consignee page's emerald (not teal) and the list
-   view's type. Scoped to .acm-pick so the wizard behind it is unchanged. */
 .acm-pick .acm-pick-header { background: linear-gradient(150deg, #047857 0%, #059669 45%, #10b981 75%, #34d399 100%); }
 .acm-pick .acm-pick-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
 .acm-pick .acm-pick-sub { font-size: 12px; font-weight: 500; }
@@ -6939,10 +5471,6 @@ const SCOPED_CSS = `
   background: rgba(255,255,255,.08); color: #64748b;
 }
 
-/* ─── Linked Customer panel — slim collapsible header + dense
-   4-col Label : Value grid (mirrors the "What you did in previous
-   stages" recap). Same look as the recap so all read-only blocks
-   feel identical. */
 .acg-linked {
   margin-bottom: 12px;
   border-radius: 12px;
@@ -6955,11 +5483,8 @@ const SCOPED_CSS = `
 .acg-linked-bar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
-  /* Same side insets as the stepper below (22px, +8px scrollbar gutter on the
-     right), so the icon and the Show toggle line up with the step cards. */
   padding: 10px 30px 10px 22px;
   cursor: pointer;
-  /* Figma: clean white bar — no left accent stripe. */
   background: #ffffff;
   user-select: none;
 }
@@ -7008,7 +5533,6 @@ const SCOPED_CSS = `
   white-space: nowrap;
   letter-spacing: .04em;
 }
-/* "Show / Hide" pill (Figma) — text + chevron in a light bordered capsule. */
 .acg-linked-toggle {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 12px; border-radius: 8px;
@@ -7046,10 +5570,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acg-linked.is-open .acg-linked-bar { border-bottom-color: rgba(16,185,129,0.18); }
 
 .acm-pick-footer {
-  /* Right-aligned button group so the primary action sits at the
-     button-bar's natural anchor point instead of stretching to fill
-     leftover space. At 125–175% browser zoom the previous flex:1
-     primary made Cancel look like a tiny chip next to a huge bar. */
   display: flex; align-items: center; justify-content: flex-end; gap: 10px;
   padding: 14px 20px 18px;
   border-top: 1px solid #f0fdf4;
@@ -7070,7 +5590,6 @@ const SCOPED_CSS = `
   background: linear-gradient(135deg, #14b8a6, #0d9488, #0f766e);
   box-shadow: 0 6px 18px rgba(13,148,136,.45), 0 1px 0 rgba(255,255,255,.2) inset;
   text-shadow: 0 1px 2px rgba(0,0,0,.18);
-  /* Keeps the primary CTA prominent; the footer row overrides it with flex:1 for Previous + Save & Next. */
   min-width: 180px;
 }
 .acm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(13,148,136,.55), 0 1px 0 rgba(255,255,255,.2) inset; }
@@ -7078,16 +5597,9 @@ const SCOPED_CSS = `
 .acm-btn:disabled {
   opacity: .60; cursor: not-allowed; transform: none !important; box-shadow: none !important;
 }
-/* Spin animation for the footer Save & Next / Save Consignee buttons
-   while a persist request is in flight — gives the user immediate
-   visual feedback that the click was registered and work is happening. */
 @keyframes acg-spin { to { transform: rotate(360deg); } }
 .acg-spin { animation: acg-spin .9s linear infinite; transform-origin: 50% 50%; }
 
-/* Edit-mode hydration progress strip — thin indeterminate bar above
-   the Stage 1 form while /consignees/:id resolves. Replaces the
-   previous full-form skeleton so the user sees the pre-filled form
-   immediately and the strip just signals "more data on its way". */
 .acg-hydrate-strip {
   display: flex; align-items: center; gap: 10px;
   padding: 6px 12px;
@@ -7114,11 +5626,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acg-hydrate-strip { background: rgba(16,185,129,.10); border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .acg-hydrate-strip-text { color: #6ee7b7; }
 
-/* ─── Phase B — Wizard ─── */
 .acm-wiz {
-  /* Cap width at 1440 so the 2-col / 4-col field rows get room. Height is
-     locked (like the Customer form) so switching stages / tabs never makes
-     the modal grow or shrink; the body scrolls internally. */
   width: 100%; max-width: 1440px;
   height: min(92vh, calc(100vh - 24px));
   background:
@@ -7130,10 +5638,9 @@ const SCOPED_CSS = `
   box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
   color: #134e4a;
   display: flex; flex-direction: column;
-  position: relative;   /* positioning context for the saving lock overlay */
+  position: relative;
 }
 
-/* Saving lock — blankets the whole wizard so no field/step/button can be edited mid-save. */
 .acm-save-lock {
   position: absolute; inset: 0; z-index: 60;
   display: flex; flex-direction: column; gap: 12px;
@@ -7153,10 +5660,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-save-lock { background: rgba(16, 49, 41, 0.66); }
 [data-bs-theme="dark"] .acm-save-lock-spinner { border-color: rgba(94, 234, 212, 0.22); border-top-color: #2dd4bf; }
 [data-bs-theme="dark"] .acm-save-lock-text { color: #5eead4; }
-/* Modal header — same mint→teal gradient used by the listing page
-   hero strip + WDH banner + table header. Keeps a single emerald
-   palette across the whole consignee surface. White-on-mint-teal
-   text reads sharp against the wash. */
 .acm-wiz-header {
   position: relative;
   display: flex; align-items: center; gap: 12px;
@@ -7192,16 +5695,8 @@ const SCOPED_CSS = `
 .acm-wiz-htitle { position: relative; z-index: 1; font-size: 18px; font-weight: 800; letter-spacing: -0.4px; line-height: 1.1; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
 .acm-wiz-hsub   { position: relative; z-index: 1; font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; line-height: 1.4; max-width: 860px; }
 
-/* Pinned top — stepper + Linked Customer summary. Sits between the
-   wizard header (gradient bar) and the scrolling body. Compact,
-   non-scrolling, present on every stage so the user always sees
-   which step they're on + which customer this consignee belongs to.
-   Background matches the body's mint wash so it reads as one piece
-   with the form below. */
 .acm-wiz-pinned-top {
   flex-shrink: 0;
-  /* Same side insets as .acm-wiz-body below: 22px, plus its 8px reserved
-     scrollbar gutter on the right, so the step cards end where the cards do. */
   padding: 14px 30px 2px 22px;
   display: flex; flex-direction: column; gap: 6px;
   background: transparent;
@@ -7218,7 +5713,6 @@ const SCOPED_CSS = `
 .acm-wiz-body::-webkit-scrollbar-thumb { background: #a7f3d0; border-radius: 99px; }
 .acm-wiz-body::-webkit-scrollbar-thumb:hover { background: #5eead4; }
 
-/* Linked customer summary */
 .acm-linked {
   background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 50%, #a7f3d0 100%);
   border: 1px solid rgba(16,185,129,.40); border-radius: 12px;
@@ -7267,7 +5761,6 @@ const SCOPED_CSS = `
   font-size: 10.5px; font-weight: 700;
 }
 
-/* Step indicator — Supplier form stepper, teal */
 .acm-steps { display: flex; align-items: stretch; gap: 0; padding: 0; }
 .acm-step {
   position: relative;
@@ -7305,19 +5798,14 @@ const SCOPED_CSS = `
 .acm-step-incomplete .acm-step-badge { background: linear-gradient(135deg, #cbd5e1, #94a3b8); box-shadow: none; }
 .acm-step-incomplete .acm-step-title { color: #475569; }
 .acm-step-incomplete .acm-step-sub { color: #94a3b8; }
-/* Connector between the two steps — a plain line, as on the Supplier form. */
 .acm-steps-arrow { flex: 0 0 26px; align-self: center; height: 2px; border-radius: 2px; background: #a7f3d0; }
 .acm-steps-arrow > * { display: none; }
 
-/* Identification / vault tabs */
 .acm-id-tabs {
   display: flex; align-items: flex-end; gap: 6px;
   padding: 0;
   border-bottom: 1.5px solid #ccf3ea;
 }
-/* Row that places the sub-tabs + Same-as-Customer banner side-by-side.
-   Tabs stay their natural width on the left; banner takes the rest of
-   the row. Wraps to two stacked rows on narrow viewports. */
 .acm-id-tabs-row {
   display: flex; align-items: flex-end; gap: 10px;
   flex-wrap: wrap;
@@ -7326,10 +5814,6 @@ const SCOPED_CSS = `
 }
 .acm-id-tabs-row .acm-id-tabs { flex: 0 0 auto; padding: 0; border-bottom: none; }
 .acm-id-tabs-row .acm-same-banner-inline { margin-bottom: 6px; }
-/* Inline variant of the Same-as-Customer banner — slimmer padding +
-   compact typography so it fits next to the tab pills without
-   dominating the row. Title + sub stack tightly to keep the height
-   close to the 38px tab pill height. */
 .acm-same-banner-inline {
   flex: 1 1 320px;
   min-width: 0;
@@ -7345,7 +5829,6 @@ const SCOPED_CSS = `
 @media (max-width: 820px) {
   .acm-same-banner-inline { flex: 1 1 100%; }
 }
-/* Underline tabs (Supplier form), teal */
 .acm-id-tab {
   display: inline-flex; align-items: center; gap: 7px;
   background: none; border: none; border-bottom: 2.5px solid transparent; border-radius: 0;
@@ -7356,11 +5839,6 @@ const SCOPED_CSS = `
 .acm-id-tab:hover, .acm-id-tab.on { color: #0f766e; }
 .acm-id-tab.on { border-bottom-color: #0d9488; }
 
-/* Section header */
-/* Section cards — white card with the Supplier form's left gradient strip, teal */
-/* The strip is a background layer, not a clipped ::before: backgrounds follow the
-   border radius on their own, so the card needs no overflow:hidden and the
-   inherited-segment popover can open past the card's edge. */
 .acm-sec-card {
   position: relative; border: 1px solid #d5f3ea; border-radius: 14px; flex-shrink: 0;
   background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #fff;
@@ -7384,7 +5862,6 @@ const SCOPED_CSS = `
 .acm-sec-sep   { color: #99f6e4; margin: 0 7px; font-weight: 600; }
 .acm-sec-sub   { font-size: 10.5px; color: #14b8a6; font-weight: 500; }
 
-/* Forms */
 .acm-sec-pad { background: #fff; border: 1px solid #d5f3ea; border-top: none; border-radius: 0 0 14px 14px; padding: 8px 14px 10px; }
 .acm-sec-card > .acm-sec-pad { border: none; border-radius: 0; background: transparent; }
 .acm-grid-2  { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -7392,9 +5869,6 @@ const SCOPED_CSS = `
 .acm-grid-4  { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .acm-mt-12   { margin-top: 12px; }
 .acm-field   { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-/* Field chrome (label, input, placeholder, +91 addon, radio, error, dropdown)
-   comes from the Supplier form's add-vendor-modal.css via the avm-* classes.
-   Only the teal colours replace its violet ones here. */
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-field-label { color: #134e4a; font-weight: 500; }
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input { border-color: color-mix(in srgb, #2dd4bf 22%, var(--vz-border-color, #e9ebec)); background: color-mix(in srgb, #2dd4bf 5%, var(--vz-card-bg, #fff)); }
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:hover:not(:disabled):not([readonly]) { border-color: rgba(13,148,136,.55); box-shadow: 0 2px 6px rgba(13,148,136,.08); }
@@ -7407,20 +5881,9 @@ const SCOPED_CSS = `
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-phone-cc { background: color-mix(in srgb, #2dd4bf 14%, var(--vz-card-bg, #fff)); border-color: color-mix(in srgb, #2dd4bf 22%, var(--vz-border-color, #e9ebec)); }
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-radio { color: #134e4a; }
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-radio input { accent-color: #0d9488; }
-/* Same-as-Customer locks the whole form: the mirrored values must stay readable,
-   not the Supplier sheet's washed-out disabled grey. */
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:disabled, :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input[disabled] { background: #f4f7f6 !important; color: #4b5563 !important; }
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-toggle:disabled,
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-master-select .master-select-wrap.disabled .master-select-toggle { background: #f4f7f6 !important; color: #4b5563 !important; }
-/* Upload dialog, as launched FROM THIS FORM.
-   The dialog is shared with the Customer and Supplier vaults, whose header is
-   violet -- correct there, foreign here: this form is the teal ramp, and a
-   violet dialog opening on top of it reads as a piece of another screen.
-
-   The Consignee VAULT already solves this with .cnev-reup, but that palette
-   lives in a <style> rendered inside the vault component, so it only exists
-   while the vault is open -- borrowing the class from here would theme
-   nothing. Same hues, scoped to .acm-reup, which only this form passes. */
 .cev-reup-ov.acm-reup .cev-reup-hd {
   background: linear-gradient(125deg, #083344 0%, #0c4a6e 25%, #0e7490 50%, #0891b2 75%, #06b6d4 100%);
 }
@@ -7430,9 +5893,6 @@ const SCOPED_CSS = `
 }
 .cev-reup-ov.acm-reup .cev-reup-drop:hover,
 .cev-reup-ov.acm-reup .cev-reup-drop.has { border-color: #06b6d4; background: #ecfeff; color: #0e7490; }
-/* Dark pairs for the three tints above: these selectors carry two classes and
-   beat the shared sheet's dark rules, so without them a hover lit a white slab
-   on a dark dialog. Low alpha so they read as a tint, not a panel. */
 [data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-drop:hover,
 [data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-drop.has {
   background: rgba(6,182,212,.12); border-color: #0891b2; color: #67e8f9;
@@ -7445,21 +5905,10 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .cev-reup-ov.acm-reup .cev-reup-cur:hover { background: rgba(6,182,212,.20); }
 
-/* Issue Date / Expiry cells in the document tables. */
 .acm-doc-date { font-size: 12px; font-weight: 600; color: #475569; white-space: nowrap; }
 .acm-doc-date--na { color: #9aa4b2; font-weight: 500; }
 .acm-doc-date--past { color: #b91c1c; }
 
-/* Autofill.
-   Chrome paints its own background over any field it filled, which no
-   ordinary background can override -- so on this form the two fields it
-   remembered sat blue-grey while everything typed beside them stayed on the
-   form's colour. The inset shadow is the only thing that covers it, and it
-   has to be opaque; these inputs are opaque anyway, so unlike the login card
-   there is nothing translucent to preserve.
-   The transition is the belt to that brace: Chrome applies the background as
-   a transition, so a long enough delay means it never arrives at all.
-   (QA #37 / #44) */
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill,
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill:hover,
 :is(.acm-overlay, .acm-loc-sub-overlay) .avm-input:-webkit-autofill:focus {
@@ -7467,18 +5916,10 @@ const SCOPED_CSS = `
   -webkit-box-shadow: 0 0 0 1000px #f7fdfb inset;
   caret-color: #495057;
   transition: background-color 9999s ease-out 0s;
-  /* Chrome brings its own font along with the background, so a remembered
-     value could come out a different size from a typed one. */
   font-family: inherit !important;
   font-size: 13px !important;
 }
 
-/* ─── "What you did in previous stages" — compact emerald-themed
-   recap panel that mirrors AddCustomerModal's .acm-history.
-   Collapsed by default; expanding reveals a dense 4-column
-   Label : Value grid of Stage 1 entries (and KYC count stats on
-   Stage 3). Lives at the top of Stage 2 and Stage 3 so the user
-   can verify what they carried forward without scrolling away. */
 .acg-history {
   margin-bottom: 12px;
   border-radius: 12px;
@@ -7510,7 +5951,6 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-/* Type sizes follow the Supplier form's recap (.avm-prev-*). */
 .acg-history-title { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: #064e3b; white-space: nowrap; }
 .acg-history-meta  { font-size: 10.5px; font-weight: 500; color: #047857; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acg-history-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -7531,11 +5971,6 @@ const SCOPED_CSS = `
 .acg-history-chevron.acg-open { transform: rotate(180deg); }
 .acg-history-body {
   overflow-y: auto;
-  /* Cap the expanded panel height so a fully-populated Stage 1 +
-     Stage 2 stats recap doesn't blow out the modal. Anything past
-     this scrolls inside the panel — the rest of the wizard body
-     stays on screen. Custom thin emerald scrollbar matches the
-     other internal-scroll wrappers in the modal. */
   max-height: 260px;
   border-top: 1px solid #d1fae5;
   background: #fff;
@@ -7547,9 +5982,6 @@ const SCOPED_CSS = `
 }
 .acg-history-body::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
 
-/* Body content — dense 4-column "Label : Value" grid (Stage 1) +
-   inline stat tiles (Stage 2). Tight row spacing keeps the panel
-   compact even with 18+ fields. */
 .acg-hs-mirror { padding: 10px 16px 12px; }
 .acg-linked-scroll {
   max-height: 30vh; overflow-y: auto; overscroll-behavior: contain;
@@ -7569,7 +6001,7 @@ const SCOPED_CSS = `
 .acg-hs-inline {
   display: flex; align-items: baseline; gap: 6px;
   font-size: 11.5px; min-width: 0; max-width: 100%;
-  overflow: hidden;   /* keep long values (e.g. Registered Address) inside the column — the rest shows on hover via the tooltip */
+  overflow: hidden;
   cursor: default;
   padding: 1px 2px;
   border-radius: 4px;
@@ -7593,10 +6025,6 @@ const SCOPED_CSS = `
 }
 .acg-hs-inline-val.is-empty { color: #cbd5e1; font-weight: 500; }
 
-/* "Stage 1 mirrors the linked customer" — slim inline note that
-   replaces the full recap when Same-as-Customer is on. Kept
-   compact so it reads as a one-line affordance, not a heavy
-   banner. */
 .acg-mirror-note {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 10px;
@@ -7658,11 +6086,6 @@ const SCOPED_CSS = `
   color: #d1fae5;
 }
 
-/* Stage 2 count stats — inline pill row under the Stage 1 grid /
- * mirror notice. Dashed separator removed + top padding tightened
- * so the mirror block and stat tiles sit in a single continuous
- * band (matches the customer modal). The .acg-history-body prefix
- * out-ranks the adjacent-sibling 4px top padding rule. */
 .acg-history-body .acg-hs-mirror.acg-hs-stats-wrap {
   border-top: none;
   padding-top: 2px;
@@ -7684,7 +6107,6 @@ const SCOPED_CSS = `
 .acg-hs-stat-num { font-size: 18px; font-weight: 800; color: #047857; line-height: 1; }
 .acg-hs-stat-lbl { font-size: 10.5px; font-weight: 700; color: #065f46; text-transform: uppercase; letter-spacing: .05em; }
 
-/* Dark-mode flips for the recap panel. */
 [data-bs-theme="dark"] .acg-history {
   background: rgba(16,185,129,0.08);
   border-color: rgba(16,185,129,0.30);
@@ -7710,7 +6132,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acg-hs-stat-num { color: #6ee7b7; }
 [data-bs-theme="dark"] .acg-hs-stat-lbl { color: #a7f3d0; }
 
-/* Responsive — drop to 2 columns on tablets, 1 column on phones. */
 @media (max-width: 1024px) {
   .acg-hs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .acg-hs-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -7721,7 +6142,6 @@ const SCOPED_CSS = `
   .acg-history-meta { display: none; }
 }
 
-/* Stage 3 — recap */
 .acm-recap {
   background: #f0fdf4;
   border: 1px solid #a7f3d0; border-radius: 12px;
@@ -7791,11 +6211,6 @@ const SCOPED_CSS = `
   font-size: 11.5px; font-weight: 700;
 }
 
-/* Stage 3 — vault. Inner KYC sub-tabs (Company DD / Owner KYC /
- * Trade Licence) were a flat underline strip; restyled to match the
- * pill design used by AddCustomerModal's .acm-nested-tab so both
- * modals carry the same sub-tab affordance. Keeps the green palette
- * (consignee theme) instead of customer-purple. */
 .acm-vault-tabs { display: flex; gap: 8px; padding: 0; margin-bottom: 16px; flex-wrap: wrap; border-bottom: none; }
 .acm-vault-tab {
   display: inline-flex; align-items: center; gap: 6px;
@@ -7812,10 +6227,6 @@ const SCOPED_CSS = `
   color: #fff; border-color: #10b981;
   box-shadow: 0 3px 10px rgba(16,185,129,.35);
 }
-/* Trade Documents tab — "Same as Customer is on" advisory strip.
- * Was previously a hardcoded cyan inline style (#ecfeff / #155e75)
- * that read as a bright white slab in dark mode. Routed through a
- * class so both themes can paint it in the consignee green palette. */
 .acm-td-mirror-note {
   padding: 10px 14px;
   background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 100%);
@@ -7888,26 +6299,17 @@ const SCOPED_CSS = `
 .acm-trade-empty-title { font-size: 14px; font-weight: 800; color: #047857; margin-top: 4px; }
 .acm-trade-empty-sub   { font-size: 12px; color: #6b7280; max-width: 480px; line-height: 1.5; }
 
-/* Footer */
 .acm-wiz-footer {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 22px;
   background: #f2fbf8;
   border-top: 1px solid #dcf3ec;
   flex-shrink: 0;
-  /* Allow wrap so narrow viewports stack Cancel above Previous +
-     Save & Next instead of overflowing. flex-shrink stays 0 so the
-     footer never disappears even when the body is overflowing. */
   flex-wrap: wrap;
   row-gap: 8px;
 }
 .acm-footer-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px; margin-left: auto; }
 
-/* When a popup-on-popup is open, blur the wizard underneath so the
- * focus is squarely on the sub-modal. Disable pointer events too so
- * clicks intended for the sub-modal don't accidentally hit fields
- * behind it. The sub-modal sits in its own overlay outside .acm-wiz,
- * so it isn't affected by this filter. */
 .acm-wiz-blurred {
   filter: blur(4px) saturate(.85);
   pointer-events: none;
@@ -7915,7 +6317,6 @@ const SCOPED_CSS = `
   transition: filter .18s ease;
 }
 
-/* ─── Polished file upload ─── */
 .acm-file-zone { width: 100%; }
 .acm-file-drop {
   display: flex; align-items: center; gap: 12px;
@@ -8020,20 +6421,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-file-chip-preview { background: #103129; color: #6ee7b7; border-color: rgba(16,185,129,.40); }
 [data-bs-theme="dark"] .acm-file-chip-preview:hover { background: rgba(16,185,129,.20); color: #d1fae5; }
 
-/* ─── "Same as Customer" banner (Stage 1) ─── */
 .acm-same-banner {
   display: flex; align-items: flex-start; gap: 12px;
   padding: 12px 16px;
-  /* margin-bottom removed — Stage 1's flex body gap already provides
-     separation, and the banner now sits in the same row as the sub-
-     tabs so a static bottom margin would create dead space below the
-     row. */
   margin-bottom: 0;
-  /* Saturated emerald gradient with a clear green undertone — the
-     previous #ecfdf5 mix read as cream/yellow on low-contrast displays
-     and certain sRGB profiles, which is why the banner looked yellow in
-     some browsers. Anchoring both stops in the green-100 → green-200
-     range keeps the hue unambiguous across all renderers. */
   background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
   border: 1px solid rgba(16,185,129,.45);
   border-radius: 12px;
@@ -8048,11 +6439,6 @@ const SCOPED_CSS = `
   box-shadow: 0 2px 10px rgba(16,185,129,.25);
 }
 .acm-same-banner.is-disabled { opacity: 0.55; cursor: not-allowed; }
-/* "Blocked" state — customer already has its one mirror. Muted slate
- * accent so it reads as "informationally unavailable" instead of the
- * harsh yellow warning the user found jarring. The label stays
- * clickable (cursor unchanged) because the click fires the toast —
- * that's the whole point. */
 .acm-same-banner.is-blocked {
   background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
   border-color: rgba(100,116,139,.40);
@@ -8101,8 +6487,6 @@ const SCOPED_CSS = `
 .acm-same-banner-title { font-size: 13px; font-weight: 600; color: #065f46; letter-spacing: .01em; }
 .acm-same-banner-sub   { font-size: 12px; font-weight: 500; color: #047857; }
 .acm-same-banner-sub strong { color: #065f46; font-weight: 600; }
-/* Locked-input visual cue — pairs with the disabled prop wired on
- * every field in the Basic Company + Primary Address sections. */
 [data-bs-theme="dark"] .acm-same-banner    { background: linear-gradient(135deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-color: rgba(16,185,129,.35); }
 [data-bs-theme="dark"] .acm-same-banner.is-on { background: linear-gradient(135deg, rgba(16,185,129,.28) 0%, rgba(16,185,129,.16) 100%); }
 [data-bs-theme="dark"] .acm-same-banner-box   { background: #0a1f1a; border-color: #10b981; }
@@ -8110,28 +6494,16 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-same-banner-sub   { color: #34d399; }
 [data-bs-theme="dark"] .acm-same-banner-sub strong { color: #d1fae5; }
 
-/* ─── Stage 2 — KYC sub-tabs + card ─── */
 .acm-kyc-subtabs {
   display: flex; gap: 8px; flex-wrap: wrap;
-  /* Margin removed — the parent .acm-wiz-body already provides a
-     14px flex gap between Stage 2 children, so an extra 12px margin
-     stacked on top made the tab row feel disconnected from the
-     table card below. Now they sit a single flex-gap apart. */
   margin-bottom: 0;
 }
 .acm-kyc-subtabs .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
-/* KYC card = the Stage 1 section card (left teal strip as a background layer,
-   white header with the count on the right), full-width search, and the table
-   inset as its own bordered box — same layout as the Supplier / Customer forms. */
 .acm-kyc-card {
   position: relative;
   background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #fff;
   border: 1px solid #d5f3ea;
   border-radius: 14px;
-  /* Don't let the flex column body squash the card below its
-     intrinsic height — without this, the table can be clipped at
-     the bottom and .acm-wiz-body's overflow-y never trips, so the
-     user has no scrollbar to reach hidden rows. */
   flex-shrink: 0;
 }
 .acm-kyc-head {
@@ -8190,9 +6562,6 @@ const SCOPED_CSS = `
   font-size: 11.5px; color: #047857; font-weight: 600;
   word-break: break-all;
 }
-/* Anchor-variant: the chip becomes clickable + underlined on hover
- * when wired through AttachmentLink. Keeps the same emerald palette
- * so the View link still reads as part of the KYC table styling. */
 .acm-kyc-attach-link {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 10px; border-radius: 6px;
@@ -8207,16 +6576,12 @@ const SCOPED_CSS = `
   box-shadow: 0 2px 6px rgba(16,185,129,.25);
 }
 
-/* ─── Address & Contact table card ─── */
 .acm-loc-card {
   position: relative;
   background: #fff;
   border: 1px solid #d5f3ea;
   border-radius: 14px;
   overflow: hidden;
-  /* Same as .acm-kyc-card: without this the flex-column body squashed the
-     card to fit (overflow:hidden then clipped it), so .acm-wiz-body never
-     overflowed and the Contact Person tab had no scrollbar. */
   flex-shrink: 0;
 }
 .acm-loc-card::before {
@@ -8251,10 +6616,6 @@ const SCOPED_CSS = `
 }
 .acm-add-pill:hover { background: #10b981; color: #fff; border-color: #10b981; }
 
-/* Row that places the doc-type dropdown alongside a small "+"
-   button — opens the inline Add Document Type master popup so the
-   user can extend the master without leaving the in-progress
-   license entry. Mirrors AddCustomerModal's .acm-doc-name-row class. */
 .acg-doc-name-row {
   display: flex; align-items: stretch; gap: 8px; width: 100%;
 }
@@ -8275,9 +6636,6 @@ const SCOPED_CSS = `
   box-shadow: 0 4px 12px rgba(5,150,105,.45);
 }
 [data-bs-theme="dark"] .acg-doc-plus-btn { box-shadow: 0 2px 6px rgba(16,185,129,.45); }
-/* Locked variant — shown in place of the Add pill while Same-as-
-   Customer mirrors the customer's KYC. Muted slate look reads as
-   intentionally locked rather than a faded / broken button. */
 .acm-add-pill-locked {
   background: rgba(100,116,139,0.10);
   color: #475569;
@@ -8295,20 +6653,8 @@ const SCOPED_CSS = `
   color: #cbd5e1;
   border-color: rgba(148,163,184,0.30);
 }
-/* The table sits inset inside the card as its own bordered box. */
 .acm-loc-body { padding: 10px 14px 12px 18px; }
 .acm-loc-body .acm-loc-table-wrap.acm-loc-table-wrap { border: 1px solid #d5f3ea; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(13,148,136,.06); }
-/* Horizontal + vertical scroll wrapper. The inner table sets a
-   min-width of 860px (Stage 1 location table) or 980px (Stage 2 KYC
-   tables) so columns stay legible — this wrapper picks up the
-   horizontal scroll when the viewport is narrower. width: 100% +
-   max-width: 100% pin it to the parent (the wizard body's flex
-   column) so it never punches out of the modal on small screens.
-   max-height + overflow-y prevents the table from pushing the
-   sticky footer off-screen when there are lots of rows.
-   -webkit-overflow-scrolling: touch smooths the scroll on
-   iPad/Android, and the thin scrollbar style keeps the rail from
-   dominating the table on narrow screens. */
 .acm-loc-table-wrap {
   width: 100%;
   max-width: 100%;
@@ -8323,13 +6669,6 @@ const SCOPED_CSS = `
   background: rgba(16,185,129,.35); border-radius: 999px;
 }
 .acm-loc-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(16,185,129,.55); }
-/* Stage 2 KYC tables — let the table grow with its rows and rely on
-   the outer .acm-wiz-body as the single scroll surface. An inner
-   max-height here used to capture wheel events when the cursor was
-   over the table, so users on Stage 2 (especially edit mode with many
-   rows) couldn't scroll the modal at all. The footer stays anchored
-   because .acm-wiz-footer is outside .acm-wiz-body with flex-shrink: 0.
-   Horizontal scroll is still local to the wrap on narrow viewports. */
 .acm-kyc-body .acm-loc-table-wrap {
   overflow-x: auto;
   scrollbar-width: thin;
@@ -8338,37 +6677,20 @@ const SCOPED_CSS = `
 .acm-loc-table {
   width: 100%; border-collapse: collapse;
   font-size: 13px; color: #1f2937;
-  /* Stage 1 location table has 9 cols (SR / Type / Address / City-
-     State-Country / Contact / Phone / Email / WhatsApp / Actions);
-     anchor the table to a min-width so columns keep their natural
-     widths and the wrapper scrolls horizontally on narrow viewports
-     instead of cramming everything into illegible strips. */
   min-width: 860px;
 }
-/* Stage 2 KYC tables carry more columns (ID Proof, Address Proof,
-   Photograph, Status, Actions …) than the Stage 1 location table.
-   Wider min-width so columns stay readable and the wrap div picks
-   up horizontal scroll on narrow viewports. */
 .acm-kyc-body .acm-loc-table { min-width: 980px; }
 .acm-loc-table { border-collapse: separate; border-spacing: 0; }
 .acm-loc-table thead tr {
   background: #f9fafb;
   border-bottom: 1px solid #e5e7eb;
 }
-/* Sticky header — keeps the column labels glued to the top of the
-   scroll wrapper while rows scroll underneath. Needs an OWN
-   background on the <th> (the <tr>'s background doesn't follow a
-   positioned cell), and a box-shadow as the bottom border because a
-   real border on a sticky cell scrolls away with the row above it. */
 .acm-loc-table thead th {
   position: sticky;
   top: 0;
   z-index: 5;
   background: #f9fafb;
   padding: 10px 12px; text-align: left;
-  /* Slightly smaller + tighter so the table header strip reads as a
-     muted label row rather than competing with the row content for
-     attention. */
   font-weight: 700; font-size: 10px; letter-spacing: .05em;
   color: #6b7280; text-transform: uppercase;
   white-space: nowrap;
@@ -8378,11 +6700,6 @@ const SCOPED_CSS = `
   padding: 12px; border-bottom: 1px solid #f3f4f6;
   vertical-align: middle;
 }
-/* KYC / DD / Owner KYC / Trade Licence tables — long Document Names and
-   Issuing Authority values were overflowing (no wrapping), stretching the
-   column and clipping text. Let text cells wrap + break long unbroken
-   strings, with a sane per-cell cap, while badges / buttons / links stay on
-   one line. (QA: DD document names not wrapping.) */
 .acm-kyc-body .acm-loc-table tbody td {
   white-space: normal;
   word-break: break-word;
@@ -8402,22 +6719,13 @@ const SCOPED_CSS = `
   text-align: center; padding: 32px 16px !important;
   color: #6b7280; font-size: 13px;
 }
-/* Primary-address row marker — same row as additional locations but
-   sourced from the Consignee Identification tab. Subtle green wash +
-   pill so users can tell it apart from added locations. */
 .acm-loc-primary-row td { background: linear-gradient(180deg, #f0fdf4, #dcfce7); }
 .acm-loc-primary-row:hover td { background: #d1fae5; }
-/* Placeholder rows in the Trade Licence sub-tab + Stage 3 Trade
-   Documents — softly tinted + slightly muted so the user knows these
-   are reference items, not real captured data. */
 .acm-loc-placeholder-row td { background: #f9fafb; color: #4b5563; }
 .acm-loc-placeholder-row:hover td { background: #f3f4f6; }
 [data-bs-theme="dark"] .acm-loc-placeholder-row td { background: rgba(255,255,255,0.02); color: #cbd5e1; }
 [data-bs-theme="dark"] .acm-loc-placeholder-row:hover td { background: rgba(255,255,255,0.04); }
 .acm-loc-type-cell { display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-/* Contact Persons table = the Consignee list table (dt-root hr-dt + dt-table,
-   emerald accent). The modal's own .acm-loc-table header/cell rules come later
-   in the cascade, so the list values are restated for this table only. */
 :is(.acm-cp-table-wrap, .acm-kyc-table-wrap).dt-root { display: block; border: 0; border-radius: 0; box-shadow: none; overflow-x: auto; overflow-y: auto; }
 :is(.acm-cp-table-wrap, .acm-kyc-table-wrap) .acm-loc-table.dt-table thead th {
   font-size: 9.5px; font-weight: 800; letter-spacing: .07em;
@@ -8460,12 +6768,6 @@ const SCOPED_CSS = `
 .acm-loc-btn:hover { background: #ecfdf5; border-color: #10b981; color: #047857; }
 .acm-loc-btn-del:hover { background: #fef2f2; border-color: #ef4444; color: #b91c1c; }
 
-/* ─── Add/Edit Location & Contact sub-modal ─── */
-/* z-index 10001 = above the wizard overlay (1080) but BELOW the
- * MasterSelect portal (11000) and MasterDatePicker portal (11100),
- * so dropdowns + calendars opened from inside the sub-modal aren't
- * clipped by this overlay. DeleteConfirmModal (11050) layers on top
- * correctly without further adjustment. */
 .acm-loc-sub-overlay {
   position: fixed; inset: 0;
   background: rgba(15,42,35,.55);
@@ -8482,7 +6784,6 @@ const SCOPED_CSS = `
   display: flex; flex-direction: column;
   box-shadow: 0 24px 60px rgba(15,42,35,.30);
 }
-/* Same teal header as the Edit Consignee wizard (.acm-wiz-header). */
 .acm-loc-sub-header {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
@@ -8531,7 +6832,6 @@ const SCOPED_CSS = `
   font-weight: 600; font-size: 12.5px; color: #374151;
   cursor: pointer; transition: all .15s ease;
 }
-/* Drawn radio: the native one has a dark grey ring when unselected. */
 .acm-loc-radio input {
   -webkit-appearance: none; appearance: none; flex-shrink: 0;
   width: 16px; height: 16px; margin: 0; border-radius: 50%;
@@ -8547,16 +6847,11 @@ const SCOPED_CSS = `
 .acm-loc-radio input:checked::before { transform: scale(1); }
 .acm-loc-radio.on { background: #ecfdf5; border-color: #10b981; color: #065f46; }
 .acm-input-error { border-color: #ef4444 !important; }
-/* Location & Contact sub-modal: the list view's type. Scoped to the card so
-   the wizard's own fields are unchanged. */
 .acm-loc-sub-card .acm-loc-sub-title { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
 .acm-loc-sub-card .acm-loc-radio { font-size: 12.5px; font-weight: 500; }
 .acm-loc-sub-card .acm-loc-sub-footer .acm-btn { font-size: 12.5px; font-weight: 700; }
 
-/* ─── Dark mode ─── */
 [data-bs-theme="dark"] .acm-overlay { background: rgba(0,0,0,.65); }
-/* Phase-A "Add New Consignee" picker — dark theme (the teal header stays
-   colored; the body / list / footer go dark to match the rest of the app). */
 [data-bs-theme="dark"] .acm-pick       { background: #0a1f1a; }
 [data-bs-theme="dark"] .acm-pick-body  { background: #0a1f1a; }
 [data-bs-theme="dark"] .acm-label      { color: #6ee7b7; }
@@ -8572,14 +6867,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-picked     { background: rgba(16,185,129,.12); border-color: #10b981; }
 [data-bs-theme="dark"] .acm-picked-name { color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-picked-meta { color: #94a3b8; }
-/* The clear button was the one part of this card with no dark rule, so it
-   kept its light #fef2f2 fill and read as a white disc on the dark card. */
 [data-bs-theme="dark"] .acm-picked-clear {
   background: rgba(220,38,38,.16); border-color: rgba(248,113,113,.45); color: #fca5a5;
 }
 [data-bs-theme="dark"] .acm-picked-clear:hover { background: rgba(220,38,38,.28); color: #fecaca; }
-/* Same omission on the PRIMARY badge beside the name: it is an inline style,
-   so it had no dark branch at all. Moved to a class that does. */
 .acm-picked-primary {
   margin-left: 6px; font-size: 10px; font-weight: 700;
   color: #0f766e; background: #ccfbf1; border-radius: 20px; padding: 1px 7px;
@@ -8587,13 +6878,9 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-picked-primary { color: #5eead4; background: rgba(45,212,191,.16); }
 [data-bs-theme="dark"] .acm-info       { background: rgba(30,64,175,.20); border-color: rgba(96,165,250,.30); color: #93c5fd; }
 [data-bs-theme="dark"] .acm-pick-footer { border-top-color: rgba(16,185,129,.20); background: #0a1f1a; }
-/* Cancel button (scoped to the picker) — dark surface to match. */
 [data-bs-theme="dark"] .acm-pick .acm-btn-light { background: #14241f; color: #ecfdf5; border-color: rgba(16,185,129,.30); }
 [data-bs-theme="dark"] .acm-pick .acm-btn-light:hover { background: #1c3329; border-color: rgba(110,231,183,.50); color: #f0fdf4; box-shadow: none; transform: none; }
 [data-bs-theme="dark"] .acm-btn-light  { background: #1a3d34; color: #ecfdf5; border-color: rgba(16,185,129,.30); }
-/* Dark-mode hover — needs a clearly stronger background + border lift
-   so the user gets a tactile cue. The previous flat #234d42 was too
-   close to the base color to read as "hover". */
 [data-bs-theme="dark"] .acm-btn-light:hover {
   background: #2c5e51;
   border-color: rgba(110,231,183,.55);
@@ -8602,10 +6889,6 @@ const SCOPED_CSS = `
   transform: translateY(-1px);
 }
 
-/* Table cell text colors — several rows are styled inline with
-   color:#1f2937 (slate-800) which disappears against the dark
-   canvas. Flip those to a high-contrast off-white via the inline-
-   style attribute selector. Same trick the Customer modal uses. */
 [data-bs-theme="dark"] .acm-loc-table tbody td[style*="color: rgb(31, 41, 55)"],
 [data-bs-theme="dark"] .acm-loc-table tbody td[style*="color:#1f2937"] {
   color: #f1f5f9 !important;
@@ -8684,13 +6967,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-loc-body .acm-loc-table-wrap.acm-loc-table-wrap { background: transparent; border-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-loc-head-icon { background: rgba(16,185,129,.15); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
 
-/* The dropdowns match the text inputs beside them.
-   MasterSelect's toggle is background: var(--vz-card-bg) and this modal
-   never overrode it, so every select sat on Velzon's grey card colour while
-   the inputs around it used this form's own near-black green. On a row of
-   Address Type / Country / State / City the two alternated. (QA #37 / #44)
-   Stated for both themes, not just dark: the light values were a near-match
-   by luck rather than by rule, and only one of them would have drifted. */
 .acm-overlay .master-select-toggle {
   height: 40px;
   border: 1.5px solid #e5e7eb;
@@ -8712,19 +6988,11 @@ const SCOPED_CSS = `
   color: #ecfdf5;
 }
 [data-bs-theme="dark"] .acm-overlay .master-select-toggle:disabled { background: #14241f; color: #6b8a7e; }
-/* A placeholder and a locked VALUE were the same colour (#6b8a7e), so on a
-   form where half the fields come from the customer there was no telling an
-   empty field from one holding data -- "https://example.com" and "wasdfgh"
-   read identically. The value is now plainly readable and the placeholder
-   plainly secondary. */
 [data-bs-theme="dark"] .acm-doc-date { color: #cbd5e1; }
 [data-bs-theme="dark"] .acm-doc-date--na { color: #6b8a7e; }
 [data-bs-theme="dark"] .acm-doc-date--past { color: #fca5a5; }
 [data-bs-theme="dark"] .acm-overlay .master-select-toggle:disabled { color: #a7c7bc; }
 
-/* Segment multi-select chips → emerald, to match the consignee form. The
-   shared master chip is violet (inline styles), which read as an out-of-theme
-   sticker on the green form. Scoped to .acm-wiz so other pages are untouched. */
 .acm-wiz .master-multi-chip { background: #ecfdf5 !important; color: #047857 !important; border: 1px solid #a7f3d0 !important; }
 .acm-wiz .master-multi-chip [role="button"] { color: #059669 !important; }
 [data-bs-theme="dark"] .acm-wiz .master-multi-chip { background: rgba(16,185,129,0.14) !important; color: #6ee7b7 !important; border-color: rgba(110,231,183,0.40) !important; }
@@ -8769,7 +7037,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-trade-empty-sub   { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-wiz-footer  { background: #103129; border-top-color: rgba(16,185,129,.20); }
 
-/* Address & Contact table — dark */
 [data-bs-theme="dark"] .acm-loc-card     { background: #0f2a23; border-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-loc-head     { background: linear-gradient(180deg, rgba(16,185,129,.18) 0%, rgba(16,185,129,.10) 100%); border-bottom-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-loc-head-title { color: #6ee7b7; }
@@ -8777,9 +7044,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-add-pill     { background: #103129; color: #6ee7b7; border-color: rgba(16,185,129,.40); }
 [data-bs-theme="dark"] .acm-add-pill:hover { background: #10b981; color: #fff; }
 [data-bs-theme="dark"] .acm-loc-table thead tr { background: #103129; border-bottom-color: rgba(16,185,129,.20); }
-/* Sticky <th> needs its OWN opaque background in dark mode so rows
-   don't scroll through it. Solid color (not gradient) so cells
-   don't show a seam where the gradient repeats per-cell. */
 [data-bs-theme="dark"] .acm-loc-table thead th {
   color: #94a3b8;
   background: #103129;
@@ -8797,7 +7061,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-loc-primary-row:hover td { background: rgba(16,185,129,0.18); }
 [data-bs-theme="dark"] .acm-loc-primary-tag { background: rgba(16,185,129,0.22); color: #a7f3d0; border-color: rgba(110,231,183,0.40); }
 
-/* Location sub-modal — dark */
 [data-bs-theme="dark"] .acm-loc-sub-overlay { background: rgba(0,0,0,.65); }
 [data-bs-theme="dark"] .acm-loc-sub-card    { background: #0f2a23; }
 [data-bs-theme="dark"] .acm-loc-sub-footer  { background: #103129; border-top-color: rgba(16,185,129,.20); }
@@ -8808,7 +7071,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-loc-radio input:checked { border-color: #2dd4bf; }
 [data-bs-theme="dark"] .acm-input-error     { border-color: #ef4444 !important; }
 
-/* Polished file upload — dark */
 [data-bs-theme="dark"] .acm-file-drop          { background: #103129; border-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-file-drop:hover    { background: rgba(16,185,129,.12); border-color: #10b981; }
 [data-bs-theme="dark"] .acm-file-drop-icon     { background: #0f2a23; border-color: rgba(16,185,129,.25); color: #6ee7b7; }
@@ -8820,7 +7082,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-file-chip-x        { background: #103129; color: #fca5a5; border-color: rgba(239,68,68,.30); }
 [data-bs-theme="dark"] .acm-file-chip-x:hover  { background: rgba(239,68,68,.15); }
 
-/* KYC sub-tabs + card — dark */
 [data-bs-theme="dark"] .acm-kyc-card       { background: linear-gradient(180deg, rgba(94,234,212,.85), rgba(13,148,136,.85), rgba(15,118,110,.85)) left / 4px 100% no-repeat, #0f2a23; border-color: rgba(16,185,129,.25); }
 [data-bs-theme="dark"] .acm-kyc-head       { background: transparent; border-bottom-color: rgba(16,185,129,.20); }
 [data-bs-theme="dark"] .acm-kyc-head-icon  { background: rgba(16,185,129,.15); color: #6ee7b7; border-color: rgba(16,185,129,.30); }
@@ -8834,11 +7095,6 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-kyc-exp        { background: rgba(255,255,255,.06); color: #ecfdf5; }
 [data-bs-theme="dark"] .acm-kyc-exp.na     { color: #6b7280; }
 [data-bs-theme="dark"] .acm-kyc-attach     { color: #6ee7b7; }
-/* "View" attachment chip in dark mode — the light-mode #ecfdf5 wash
-   blended into the dark green modal so the badge looked washed out
-   and the dark-emerald text faded against it. Deep emerald fill with
-   bright mint text gives the chip the same prominence it has in
-   light mode. */
 [data-bs-theme="dark"] .acm-kyc-attach-link {
   background: rgba(16,185,129,.18);
   border-color: rgba(16,185,129,.45);
@@ -8851,32 +7107,13 @@ const SCOPED_CSS = `
   box-shadow: 0 2px 8px rgba(16,185,129,.50);
 }
 
-/* ============================================================
- *  RESPONSIVE — tablet & mobile
- *  Mirrors AddCustomerModal's responsive block. Consignee modal
- *  uses the same .acm-* class names + a few consignee-specific
- *  ones (acm-id-tabs, acm-grid-N, acm-loc-*, acm-kyc-*, acm-same-
- *  banner). All those collapse cleanly down to single-column on
- *  phones so a full Add Consignee flow is usable from any device.
- * ============================================================ */
 
-/* ── Small laptop (≤ 1440px) ─────────────────────────────────
-   1366×768 / 1440×900 are the most common laptop sizes. The
-   modal caps at max-width: 1440 so on a 1440px viewport it fills
-   the entire screen edge-to-edge — give it breathing room. */
 @media (max-width: 1440px) {
   .acm-overlay { padding: 10px; }
   .acm-wiz {
     max-width: min(1440px, calc(100vw - 20px));
     max-height: min(94vh, calc(100vh - 16px));
   }
-  /* Only the HEIGHT is capped here. This used to set
-     max-width: calc(100vw - 20px), copied from .acm-wiz above — but the
-     wizard is a full-width form and the picker is a 460px card, so on any
-     screen at or under 1440 (i.e. every normal laptop, at 100% zoom) the
-     override threw away the 460px cap and stretched a single search field
-     across the whole viewport. min() keeps the card its own size and only
-     lets the viewport shrink it further on very narrow screens. */
   .acm-pick {
     max-width: min(460px, calc(100vw - 20px));
     max-height: min(94vh, calc(100vh - 16px));
@@ -8890,12 +7127,6 @@ const SCOPED_CSS = `
   .acm-sec-pad { padding: 14px; }
 }
 
-/* ── Compact laptop (≤ 1280px) ────────────────────────────────
-   Common HP/Dell business laptops (1280×800, 1366×768). 4-col
-   grids start to feel cramped — collapse to 2x2 and tighten the
-   stepper chrome. Linked-customer 7-col strip drops to 4 cols so
-   each detail still gets a readable column instead of waiting for
-   the 1024 breakpoint where it collapses all the way to 2. */
 @media (max-width: 1280px) {
   .acm-grid-4 { grid-template-columns: repeat(2, 1fr); }
   .acm-loc-grid-4 { grid-template-columns: repeat(2, 1fr); }
@@ -8903,52 +7134,34 @@ const SCOPED_CSS = `
   .acm-step { padding: 9px 11px; }
   .acm-step-title { font-size: 11.5px; }
   .acm-step-sub   { font-size: 9px; }
-  /* Wizard body padding shrinks slightly so the form has more
-     horizontal room on 1366-wide screens. */
   .acm-wiz-pinned-top { padding: 10px 22px 8px 14px; gap: 10px; }
   .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 14px; padding-right: 22px; }
   .acm-wiz-body { padding: 12px 14px 14px; }
   .acm-sec-pad { padding: 12px; }
 }
 
-/* ── Tablet landscape (≤ 1024px) ─────────────────────────────── */
 @media (max-width: 1024px) {
   .acm-overlay { padding: 8px; }
   .acm-wiz {
     max-width: calc(100vw - 16px);
     max-height: min(96vh, calc(100vh - 12px));
   }
-  /* Picker keeps its card width (see the 1440 block) — only the height and
-     the screen-edge gutter follow the breakpoint. */
   .acm-pick {
     max-width: min(460px, calc(100vw - 16px));
     max-height: min(96vh, calc(100vh - 12px));
   }
-  /* Form section grids collapse */
   .acm-grid-4 { grid-template-columns: repeat(2, 1fr); }
   .acm-grid-3 { grid-template-columns: repeat(2, 1fr); }
   .acm-grid-2 { grid-template-columns: 1fr 1fr; }
-  /* Sub-modal location grids */
   .acm-loc-grid-4 { grid-template-columns: repeat(2, 1fr); }
-  /* Linked customer card */
   .acm-linked-grid { grid-template-columns: repeat(2, 1fr); }
-  /* Section paddings */
   .acm-sec-pad { padding: 12px; }
-  /* Stepper: hide connector chevrons + allow wrap so the steps
-     don't squeeze into unreadable widths. */
   .acm-steps { flex-wrap: wrap; gap: 8px; padding: 10px 12px 8px; }
   .acm-steps-arrow { display: none; }
   .acm-step { flex: 1 1 calc(50% - 6px); min-width: 0; }
-  /* Primary CTA min-width was 180px for desktop prominence — at
-     tablet that forces the footer's button row to overflow when
-     all three buttons sit side by side. Drop the floor here. */
   .acm-btn-primary { min-width: 0; }
 }
 
-/* ── Tablet portrait (≤ 820px) ───────────────────────────────────
-   iPad portrait + small tablets land here. Two-up form grids start
-   to crowd — collapse to single column, slim down headers, drop the
-   stepper sub-text so each step still fits two-up. */
 @media (max-width: 820px) {
   .acm-wiz {
     max-width: calc(100vw - 12px);
@@ -8970,18 +7183,11 @@ const SCOPED_CSS = `
   .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 14px; padding-right: 22px; }
   .acm-wiz-body { padding: 12px 14px 14px; }
   .acm-sec-pad { padding: 12px; }
-  /* Sub-modal stays a centered card on portrait tablet — only goes
-     fullscreen on actual phones (640 breakpoint below). */
   .acm-loc-sub-card { width: min(96vw, 640px); max-height: min(94vh, calc(100vh - 16px)); }
 }
 
-/* ── Mobile (≤ 640px) ───────────────────────────────────────── */
 @media (max-width: 640px) {
   .acm-overlay { padding: 8px; align-items: center; }
-  /* The wizard stays fullscreen on real phones — multi-stage form
-     needs every inch of space — but the picker keeps its compact
-     card shape so it doesn't look sparse at high zoom levels where
-     the layout viewport drops into this breakpoint. */
   .acm-wiz {
     border-radius: 0;
     max-height: 100vh;
@@ -8996,16 +7202,11 @@ const SCOPED_CSS = `
     max-height: calc(100vh - 16px);
     border-radius: 16px;
   }
-  /* Phase A picker fits the viewport */
   .acm-pick-body { padding: 14px; }
   .acm-pick-header { padding: 16px 14px 14px; }
   .acm-pick-icon { width: 42px; height: 42px; margin-bottom: 8px; }
   .acm-pick-title { font-size: 16px; }
   .acm-pick-sub   { font-size: 11px; padding: 0 8px; }
-  /* Phase A picker footer: Cancel on top, primary action on bottom
-     (thumb-reach). Reset align-items so the column children fill
-     full width — the base rule uses align-items: center which would
-     otherwise shrink them to content width. */
   .acm-pick-footer {
     padding: 12px 14px 14px;
     flex-direction: column;
@@ -9013,41 +7214,29 @@ const SCOPED_CSS = `
     gap: 8px;
   }
   .acm-pick-footer .acm-btn { width: 100%; flex: 0 0 auto; }
-  /* Wizard header */
   .acm-wiz-header { padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 8px; }
   .acm-wiz-hicon { width: 38px; height: 38px; }
   .acm-wiz-htitle { font-size: 16px; }
   .acm-wiz-hsub   { font-size: 11.5px; }
   .acm-close { position: absolute; top: 12px; right: 12px; }
-  /* Steps: stack vertically, hide arrows */
   .acm-steps { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px; }
   .acm-steps-arrow { display: none; }
   .acm-step { width: 100%; }
-  /* Identification / Vault sub-tabs */
   .acm-id-tabs { overflow-x: auto; scrollbar-width: none; gap: 0; padding: 0; }
   .acm-id-tab { flex: 0 0 auto; font-size: 11.5px; padding: 8px 10px; }
-  /* Body padding */
   .acm-wiz-pinned-top { padding: 10px 12px 8px; gap: 8px; }
   .acg-linked-bar, .acg-linked-scroll .acg-hs-mirror { padding-left: 12px; padding-right: 12px; }
   .acm-wiz-body { padding: 12px; }
-  /* ALL grids → single col on phone */
   .acm-grid-4, .acm-grid-3, .acm-grid-2 { grid-template-columns: 1fr; }
   .acm-loc-grid-2, .acm-loc-grid-4 { grid-template-columns: 1fr; }
   .acm-mt-12 { margin-top: 10px; }
-  /* Section header */
   .acm-sec-header { padding: 10px 12px; }
   .acm-sec-title { font-size: 13px; }
   .acm-sec-sub   { display: none; }
   .acm-sec-pad   { padding: 10px; }
-  /* Linked customer card */
   .acm-linked { padding: 12px; }
   .acm-linked-grid { grid-template-columns: 1fr 1fr; padding: 8px; gap: 8px; }
   .acm-linked-hide { font-size: 11px; padding: 4px 10px; }
-  /* Wizard footer: Cancel on top, primary action group on bottom
-     (Previous + Save & Next sit as a 2-up row inside .acm-footer-right).
-     Reset align-items so column children fill width — base rule has
-     align-items: center which otherwise shrinks Cancel to content
-     width and centres it (that's what looked broken in mobile). */
   .acm-wiz-footer {
     padding: 10px 12px 14px;
     flex-direction: column;
@@ -9058,17 +7247,13 @@ const SCOPED_CSS = `
   .acm-footer-right { width: 100%; display: flex; gap: 8px; }
   .acm-footer-right .acm-btn { flex: 1 1 0; min-width: 0; }
   .acm-btn { padding: 10px 12px; font-size: 13px; justify-content: center; }
-  /* Address & Contact table card */
   .acm-loc-head-row { flex-wrap: wrap; gap: 8px; }
   .acm-loc-head-text { flex: 1 1 100%; }
   .acm-add-pill { width: 100%; justify-content: center; font-size: 12px; padding: 8px 12px; }
-  /* Sub-modal (Location / KYC Doc / KYC Owner) */
   .acm-loc-sub-overlay { padding: 0; align-items: stretch; }
   .acm-loc-sub-card { border-radius: 0; max-height: 100vh; height: 100vh; width: 100vw; }
   .acm-loc-sub-header { padding: 14px 16px; }
   .acm-loc-sub-body   { padding: 14px; }
-  /* Sub-modal footer: Cancel on top, primary save on bottom.
-     align-items: stretch so column children fill width. */
   .acm-loc-sub-footer {
     padding: 12px 14px 14px;
     flex-direction: column;
@@ -9076,23 +7261,17 @@ const SCOPED_CSS = `
     gap: 8px;
   }
   .acm-loc-sub-footer .acm-btn { width: 100%; flex: 0 0 auto; }
-  /* Stage 2 KYC sub-tabs */
   .acm-kyc-subtabs .dt-tabrail { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
-  /* KYC toolbar (search + count + add) */
   .acm-kyc-head-row { flex-wrap: wrap; gap: 8px; }
   .acm-kyc-head-text { flex: 1 1 100%; }
   .acm-kyc-toolbar { padding: 10px 12px 0 14px; }
   .acm-kyc-body { padding: 10px 12px 12px 14px; }
-  /* Same-as-Customer banner */
   .acm-same-banner { padding: 10px 12px; gap: 10px; }
   .acm-same-banner-sub { font-size: 11.5px; }
-  /* Recap (Stage 3) */
   .acm-recap-grid { grid-template-columns: 1fr; }
   .acm-recap-header { flex-direction: column; align-items: flex-start; gap: 8px; }
-  /* Vault sub-tabs */
   .acm-vault-tabs { flex-wrap: wrap; gap: 6px; }
   .acm-vault-tab  { flex: 1 1 45%; font-size: 12px; padding: 8px 10px; }
-  /* File upload zone */
   .acm-file-drop { padding: 12px; }
   .acm-file-drop-title { font-size: 12px; }
   .acm-file-drop-sub { font-size: 10.5px; }
