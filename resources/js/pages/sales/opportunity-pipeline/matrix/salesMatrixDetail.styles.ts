@@ -619,7 +619,7 @@ export const SALES_MATRIX_DETAIL_CSS = `
    already use, so nothing new is being invented here; it just has to survive
    the panel that was supplying it going away. */
 .smd-body-clm-collapsed,
-.smd-body-deal-collapsed { min-height: calc(100vh - 300px); }
+.smd-body-deal-collapsed { min-height: 480px; }
 
 /* ── Collapsed side rail ── */
 .smd-rail {
@@ -666,12 +666,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
   border-radius: 14px;
   overflow: hidden; display: flex; flex-direction: column;
   min-width: 0;
-  /* Fill at least the viewport (minus nav + banner + stepper + toolbar
-     ~300px) so a short stage isn't stranded at the top. The SIDE panels
-     keep this min-height and grow with their content, driving the grid
-     row height; the centre opts out (min-height:0 below) and stretches to
-     match them, scrolling its own overflow internally. */
-  min-height: calc(100vh - 300px);
+  /* A 480px floor, not the full viewport: filling the screen left a large
+     empty band under short stages and pushed Save & Next / Save to the
+     bottom. The SIDE panels keep this floor and grow with their content,
+     driving the grid row height; the centre opts out (min-height:0 below)
+     and stretches to match them, scrolling its own overflow internally. */
+  min-height: 480px;
   box-shadow: 0 2px 16px rgba(124,58,237,.10);
 }
 /* Per-card flex sizing (CLM 20% · Stage fills · Deal 30%). */

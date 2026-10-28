@@ -6,6 +6,7 @@ import api from '../../../api';
 import Tooltip from '../../../components/ui/Tooltip';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
+import '../../../components/ui/DataTable.css';
 import { useToast } from '../../../contexts/ToastContext';
 import { downloadFile } from '../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
@@ -538,13 +539,17 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
           {!sameAsCustomer && (<>
           {/* ── TABS ── */}
           <div className="lev-tabs">
-            {TABS.map(t => (
-              <button key={t.key} type="button" className={`lev-tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
-                <TabSvg name={t.icon} />
-                {t.label}
-                <span className="lev-tab-count">{mandatoryCount(t.key)}</span>
-              </button>
-            ))}
+            <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+              <div className="dt-tabs" role="tablist">
+                {TABS.map(t => (
+                  <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} className={`dt-tab ${tab === t.key ? 'on' : 'off'}`} onClick={() => setTab(t.key)}>
+                    <TabSvg name={t.icon} />
+                    {t.label}
+                    <span className="dt-tab-count">{mandatoryCount(t.key)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* ── BODY ── */}
@@ -873,7 +878,7 @@ const LEV_CSS = `
 }
 .lev-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,.55); flex-shrink: 0; }
 .lev-hero-close {
-  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; cursor: pointer;
   background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.40); color: #fff;
   display: inline-flex; align-items: center; justify-content: center; transition: all .18s ease; position: relative; z-index: 1;
 }
@@ -1034,32 +1039,14 @@ const LEV_CSS = `
 /* ── Tabs — filled violet "pill" style, matching the Product Sourcing
    popup (.psm-tab): white outlined pill that fills with a violet gradient
    when active. */
-.lev-tabs { background: #fff; display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap; }
-.lev-tab {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 6px 14px; border: 1.5px solid #ddd6fe; border-radius: 9px;
-  background: #fff; color: #6d28d9;
-  font-size: 12px; font-weight: 700; letter-spacing: .01em;
-  cursor: pointer; font-family: inherit; transition: all .15s;
-}
-.lev-tab svg { width: 15px; height: 15px; stroke: currentColor; flex-shrink: 0; }
-.lev-tab .lev-tab-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 22px; padding: 1px 8px; border-radius: 999px;
-  background: #ede9fe; color: #6d28d9;
-  font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums;
-}
-.lev-tab:hover:not(.active) { background: #faf5ff; }
-.lev-tab.active {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
-  border-color: transparent; color: #fff;
-  box-shadow: 0 4px 12px rgba(124,58,237,.35);
-}
-.lev-tab.active svg { color: #fff; }
-.lev-tab.active .lev-tab-count { background: rgba(255,255,255,.25); color: #fff; }
+.lev-tabs { background: #FAFBFF; display: flex; align-items: center; gap: 10px; padding: 12px 18px 8px; border-bottom: none; flex-wrap: wrap; }
+/* Tabs = the Customers / My Workplace list tab rail (.dt-tabrail): 40px tabs,
+   12.5px, count chips, 48px rail. */
+.lev-tabs .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+.lev-tabs .dt-tabrail .dt-tab svg { width: 15px; height: 15px; stroke: currentColor; flex-shrink: 0; }
 
 /* ── Body ── */
-.lev-body { flex: 1; overflow-y: auto; padding: 12px 18px; background: linear-gradient(180deg, #FAFBFF 0%, #F1F5F9 100%); }
+.lev-body { flex: 1; overflow-y: auto; padding: 8px 18px 12px; background: linear-gradient(180deg, #FAFBFF 0%, #F1F5F9 100%); }
 .lev-section-card {
   background: linear-gradient(135deg, #FAFBFF 0%, #F5F3FF 100%);
   border: 1px solid #E9D5FF; border-radius: 14px; padding: 18px 22px; margin-bottom: 18px;
@@ -1156,7 +1143,7 @@ const LEV_CSS = `
 .lev-footer-info { font-size: 12.5px; color: #64748B; font-weight: 500; }
 .lev-footer-info strong { color: #1E293B; font-weight: 700; }
 .lev-footer-actions { display: flex; gap: 10px; }
-.lev-footer-btn { height: 38px; padding: 0 18px; border-radius: 10px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; font-family: inherit; border: 1.5px solid transparent; transition: all .22s cubic-bezier(.22,1,.36,1); }
+.lev-footer-btn { box-sizing: border-box; height: 40px; padding: 0 18px; border-radius: 10px; font-size: 11.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; font-family: inherit; border: 1.5px solid transparent; transition: all .22s cubic-bezier(.22,1,.36,1); }
 .lev-footer-btn svg { width: 14px; height: 14px; stroke: currentColor; }
 .lev-footer-btn.outline { background: #fff; border-color: #E2E8F0; color: #475569; }
 .lev-footer-btn.outline:hover:not(:disabled) { background: #F5F3FF; border-color: #ddd6fe; color: #6d28d9; transform: translateY(-1px); }
@@ -1166,13 +1153,8 @@ const LEV_CSS = `
 
 /* ── Dark mode — keep the hero/table chrome, tint the surfaces ── */
 [data-bs-theme="dark"] .lev-modal { background: #0f172a; }
-[data-bs-theme="dark"] .lev-tabs { background: #0f172a; border-bottom-color: rgba(148,163,184,.18); }
-[data-bs-theme="dark"] .lev-tab { color: #c4b5fd; background: #1e293b; border-color: rgba(167,139,250,.30); }
-[data-bs-theme="dark"] .lev-tab .lev-tab-count { background: rgba(167,139,250,.18); color: #ddd6fe; }
+[data-bs-theme="dark"] .lev-tabs { background: #0b1220; border-bottom: none; }
 /* Active keeps the violet gradient pill from the base rule. */
-[data-bs-theme="dark"] .lev-tab.active { color: #fff; border-color: transparent; }
-[data-bs-theme="dark"] .lev-tab.active .lev-tab-count { background: rgba(255,255,255,.22); color: #fff; }
-[data-bs-theme="dark"] .lev-tab:hover:not(.active) { background: rgba(124,58,237,.20); }
 [data-bs-theme="dark"] .lev-body { background: #0b1220; }
 [data-bs-theme="dark"] .lev-section-card { background: rgba(124,58,237,.10); border-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .lev-section-title { color: #f1f5f9; }
