@@ -1163,7 +1163,18 @@
         .onb-doc-cat-count { font-size: 11px; color: var(--vz-secondary-color); }
         .onb-doc-cat-pct { font-size: 10.5px; font-weight: 800; padding: 3px 9px; border-radius: 999px; background: #eef2f6; color: var(--vz-secondary-color); }
 
-        .onb-doc-row { display: flex; align-items: center; gap: 11px; padding: 10px 14px; border-top: 1px solid #f1eff7; }
+        .onb-doc-row { display: flex; align-items: center; gap: 11px; padding: 10px 14px; border-top: 1px solid #f1eff7; transition: background .15s ease, box-shadow .15s ease; }
+        /* A required document the gate refused on. The left bar carries it
+           — a full border would fight the row separators above and below. */
+        .onb-doc-row.is-missing {
+          background: rgba(240, 101, 72, .07);
+          box-shadow: inset 3px 0 0 #f06548;
+        }
+        .onb-doc-row.is-missing .onb-doc-row-name { color: #b1401d; }
+        .onb-doc-row.is-missing .onb-doc-row-icon { background: rgba(240,101,72,.14); color: #b1401d; }
+        [data-bs-theme="dark"] .onb-doc-row.is-missing { background: rgba(240, 101, 72, .12); }
+        [data-bs-theme="dark"] .onb-doc-row.is-missing .onb-doc-row-name { color: #fca5a5; }
+        [data-bs-theme="dark"] .onb-doc-row.is-missing .onb-doc-row-icon { color: #fca5a5; }
         [data-bs-theme="dark"] .onb-doc-row { border-color: var(--vz-border-color); }
         .onb-doc-row-icon { width: 32px; height: 32px; border-radius: 8px; background: #f3f0ff; color: #7c3aed; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .onb-doc-row-meta { min-width: 0; flex-grow: 1; }

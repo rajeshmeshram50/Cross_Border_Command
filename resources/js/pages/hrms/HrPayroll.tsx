@@ -2602,7 +2602,7 @@ export default function HrPayroll() {
         <div className="d-flex align-items-start gap-2 mb-3 pay-joiners-note">
           <i className="ri-user-add-line" style={{ fontSize: 15, marginTop: 1 }} />
           <span>
-            {pendingJoiners.length} employee{pendingJoiners.length === 1 ? '' : 's'} joined after this payroll was generated and {pendingJoiners.length === 1 ? 'is' : 'are'} not included — re-run payroll to add them:{' '}
+            {pendingJoiners.length === 1 ? '1 employee is' : `${pendingJoiners.length} employees are`} now eligible for this payroll but {pendingJoiners.length === 1 ? 'was' : 'were'} not in it when it was generated — re-run payroll to pay {pendingJoiners.length === 1 ? 'them' : 'them'}:{' '}
             <span style={{ fontWeight: 700 }}>
               {pendingJoiners.slice(0, 5).map(p => `${p.empId} ${p.name}`).join(', ')}
               {pendingJoiners.length > 5 ? ` +${pendingJoiners.length - 5} more` : ''}

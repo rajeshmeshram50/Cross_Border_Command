@@ -4263,13 +4263,24 @@ class EmployeeController extends Controller
             ? ['required', 'numeric', 'min:0.01', "max:{$salaryMax}"]
             : ['nullable',  'numeric', 'min:0',    "max:{$salaryMax}"];
         $salaryFreqRule = $requireSalary ? ['required', 'string', 'max:30']   : ['nullable', 'string', 'max:30'];
-        /* The first salary runs from the day the employee joined, so the
-         * effective date IS the joining date. Both forms mirror it and show it
-         * read-only; enforced here too because the form is not the only way in
-         * — a direct API call could still date the salary structure wrongly,
-         * and salary_structures.effective_from is what payroll reads.
+        /* A salary cannot start before the person does — but it may start
+         * later, because that is what a revision IS.
          *
-         * Only checked when a joining date is present in the same payload or
+         * This was date_equals: the effective date had to BE the joining
+         * date, forever. Correct for the first structure and a deadlock for
+         * every one after it, because the employee screen dates new versions
+         * today and SalaryStructureController refuses anything earlier than
+         * the newest version. An employee onboarded even a day after joining
+         * could never be saved again: the form could only send the joining
+         * date, and the server would only accept today or later.
+         *
+         * after_or_equal keeps the half that was protecting something — a
+         * structure dated before the employment it prices is nonsense in any
+         * payroll run — and drops the half that was only pinning.
+         *
+         * Enforced here because the form is not the only way in, and
+         * salary_structures.effective_from is what payroll reads. Only
+         * checked when a joining date is present in the same payload or
          * already on the record: a partial update that touches neither has
          * nothing to compare against. */
         $joiningForSalary = $request->input('date_of_joining')
@@ -4280,7 +4291,7 @@ class EmployeeController extends Controller
 
         $salaryFromRule = $requireSalary ? ['required', 'date'] : ['nullable', 'date'];
         if ($joiningForSalary) {
-            $salaryFromRule[] = 'date_equals:' . $joiningForSalary;
+            $salaryFromRule[] = 'after_or_equal:' . $joiningForSalary;
         }
 
         $noTags = ['not_regex:/[<>]/'];

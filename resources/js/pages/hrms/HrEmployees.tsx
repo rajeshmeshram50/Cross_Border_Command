@@ -2840,13 +2840,16 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy,
     eOvertimeApplicable, eOvertime]);
 
-  /* Keep the salary effective date locked to the joining date.
-     The field on screen is read-only, but the VALUE still has to be written —
-     it is what the payload turns into salary_structures.effective_from, and
-     editing the joining date has to carry through rather than leaving the old
-     date behind on the structure. */
+  /* Seed the salary effective date from the joining date — do not lock it.
+     It becomes salary_structures.effective_from, and a REVISION has to be
+     able to start later than the day the employee joined. Locked, this form
+     could only ever ask for a date the server had already moved past, since
+     SalaryStructureController refuses anything before the newest version.
+     Only fills a date that is missing, or one left behind a joining date
+     that has since moved forward. */
   useEffect(() => {
-    setESalaryFrom(prev => (prev === (eJoinDate || '') ? prev : (eJoinDate || '')));
+    if (!eJoinDate) return;
+    setESalaryFrom(prev => (!prev || prev < eJoinDate) ? eJoinDate : prev);
     clearEErr('salary_effective_from');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eJoinDate]);
@@ -2894,8 +2897,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       e.salary_effective_from = 'Set the joining date — the salary effective date follows it';
     } else if (!eSalaryFrom) {
       e.salary_effective_from = 'Effective-from date is required';
-    } else if (eSalaryFrom !== eJoinDate) {
-      e.salary_effective_from = 'Salary effective date must be the same as the joining date';
+    } else if (eSalaryFrom < eJoinDate) {
+      /* A salary cannot start before the person does. Later is a revision. */
+      e.salary_effective_from = 'Salary effective date cannot be before the joining date';
     }
     if (eDetailedBreakup) {
       const hasRowErrors = Object.keys(breakupErrors.earnings).length > 0
@@ -5799,15 +5803,15 @@ const STEP_SAFE_FIELDS = new Set([
                       <Col md={6}>
                         <label className="emp-label">
                           Salary Effective From
-                          <span className="hint">(same as joining date)</span>
+                          <span className="hint">(joining date or later)</span>
                         </label>
-                        <input
-                          className="emp-input is-readonly"
-                          readOnly
-                          tabIndex={-1}
-                          value={eJoinDate ? new Date(eJoinDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
-                          placeholder="Set the joining date first"
-                          title="Always the joining date — the first salary structure starts the day the employee joins."
+                        <MasterDatePicker
+                          placeholder="dd-mm-yyyy"
+                          value={eSalaryFrom}
+                          invalid={!!eErrors.salary_effective_from}
+                          minDate={eJoinDate || undefined}
+                          disabled={!eJoinDate}
+                          onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }}
                         />
                         {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
                       </Col>
