@@ -23,12 +23,14 @@ const ICON_PICK_CAMERA = (
 );
 
 export default function Step2InvoiceProducts({
-  draft, set, lines, onChangeLine, taxMode, onPickFile, readOnly = false, direct = false,
+  draft, set, lines, onChangeLine, onRemoveLine, taxMode, onPickFile, readOnly = false, direct = false,
 }: {
   draft: InvoiceDraft;
   set: SetDraft;
   lines: ProductLine[];
   onChangeLine: (index: number, patch: Partial<ProductLine>) => void;
+  /** Drop a line the supplier did not invoice. The design's Action column. */
+  onRemoveLine?: (index: number) => void;
   taxMode: TaxMode;
   onPickFile: (kind: 'invoice' | 'eway', file: File) => void;
   readOnly?: boolean;
@@ -111,7 +113,7 @@ export default function Step2InvoiceProducts({
         </div>
 
         <div className="spi-dt-sec-body">
-          <ProductTable lines={lines} onChange={onChangeLine} taxMode={taxMode} readOnly={readOnly}
+          <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
             twoWay={direct} sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
         </div>
       </div>

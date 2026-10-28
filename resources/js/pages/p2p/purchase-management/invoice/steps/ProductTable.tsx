@@ -2,7 +2,7 @@ import { lazy, memo, Suspense, useCallback, useMemo, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../../contexts/ToastContext';
-import { IcoPencil, IcoPlus } from '../../../icons';
+import { IcoPencil, IcoPlus, IcoTrash } from '../../../icons';
 const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
 import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, type ProductLine, type TaxMode } from '../invoice-products';
@@ -12,10 +12,13 @@ const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFr
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
-  lines, onChange, taxMode = 'intra', readOnly = false, twoWay = false, sourceNote,
+  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, sourceNote,
 }: {
   lines: ProductLine[];
   onChange: (index: number, patch: Partial<ProductLine>) => void;
+  /** Drop a line the supplier did not invoice. Without it the Action column
+   *  has nothing to do, so it is not drawn at all. */
+  onRemove?: (index: number) => void;
   readOnly?: boolean;
 
   taxMode?: TaxMode;
@@ -27,12 +30,29 @@ export default function ProductTable({
   sourceNote?: string;
 }) {
   const totals = tableTotals(lines, taxMode, twoWay);
+  /* The column exists only when there is something behind it and the invoice
+     can still be changed — a view-only SPI showing a dead bin is worse than
+     no column at all. The last line stays: an invoice with no products is
+     not a state this form can save. */
+  const canRemove = !!onRemove && !readOnly;
   const catalogue = useMemo(() => {
     const seen = new Map<string, { value: string; label: string; name: string; productId?: number }>();
     for (const l of lines) {
       if (l.productId == null) continue;
       const value = String(l.productId);
-      if (!seen.has(value)) seen.set(value, { value, label: `${l.code} — ${l.poName}`, name: l.poName, productId: l.productId });
+      /* The label is cut at the same 30 the PI column beside it uses. The
+         select is a fixed-width control in a sticky column, so a long name
+         did not wrap or ellipsise — it simply ran past the control. `name`
+         stays whole: it is what the line records when a product is picked,
+         and what the tooltip has to show. */
+      if (!seen.has(value)) {
+        seen.set(value, {
+          value,
+          label: `${l.code} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
+          name: l.poName,
+          productId: l.productId,
+        });
+      }
     }
     return [...seen.values()];
   }, [lines]);
@@ -121,6 +141,9 @@ export default function ProductTable({
                   the group goes rather than standing empty over the rows. */}
               {!twoWay && <th colSpan={1}>Purchase Order (PO)</th>}
               <th colSpan={4 + 2 * (inter ? 1 : 2)}>Supplier Invoice (SPI)</th>
+              {/* Belongs to no group, so it spans both header rows the way
+                  Sr. No and Description do. */}
+              {canRemove && <th rowSpan={2} className="cpd-c cpd-th-act">Action</th>}
             </tr>
             <tr>
               <th className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>
@@ -132,7 +155,7 @@ export default function ProductTable({
               <th>Missing Qty</th>
               <th>Extra Qty</th>
               {!twoWay && <th className="cpd-th-amt">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>}
-              <th className="cpd-th-amt cpd-c cpd-edh">Product Rate</th>
+              <th className="cpd-th-amt cpd-c cpd-edh">Product Rate (SPI)</th>
               <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
               {inter
                 ? <th>{exportSpi ? 'Tax (%)' : 'IGST (%)'}</th>
@@ -153,6 +176,8 @@ export default function ProductTable({
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
+                onRemove={canRemove && lines.length > 1 ? onRemove : undefined}
+                showAction={canRemove}
               />
             ))}
           </tbody>
@@ -176,6 +201,7 @@ export default function ProductTable({
                     <td className="cpd-r">{money(totals.sgst)}</td></>}
                 <td className="cpd-r">{money(totals.gstAmount)}</td>
                 <td className="cpd-r cpd-foot-final">{money(totals.cost)}</td>
+                {canRemove && <td />}
               </tr>
             </tfoot>
           )}
@@ -187,6 +213,7 @@ export default function ProductTable({
 
 const Row = memo(function Row({
   line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly, twoWay,
+  onRemove, showAction,
 }: {
   line: ProductLine;
   index: number;
@@ -200,6 +227,10 @@ const Row = memo(function Row({
   taxMode: TaxMode;
   catalogue: Array<{ value: string; label: string; name: string; productId?: number }>;
   readOnly: boolean;
+  /* Undefined on the last remaining line, so the button is drawn but refuses
+     - the column stays aligned and the reason is on the hover. */
+  onRemove?: (index: number) => void;
+  showAction: boolean;
 }) {
   const t = lineTotals(line, taxMode, twoWay);
   const inter = taxMode === 'inter' || taxMode === 'export';
@@ -318,6 +349,22 @@ const Row = memo(function Row({
         : <><td className="cpd-r">{money(t.cgst)}</td><td className="cpd-r">{money(t.sgst)}</td></>}
       <td className="cpd-r">{money(t.gstAmount)}</td>
       <td className="cpd-r">{money(t.cost)}</td>
+      {showAction && (
+        <td className="cpd-c cpd-td-act">
+          <Tooltip label={onRemove
+            ? `Remove ${line.spiName || line.piName} from this invoice`
+            : 'An invoice needs at least one product'}>
+            <button
+              type="button" className="cpd-del"
+              aria-label={`Remove ${line.spiName || line.piName}`}
+              disabled={!onRemove}
+              onClick={() => onRemove?.(index)}
+            >
+              <IcoTrash />
+            </button>
+          </Tooltip>
+        </td>
+      )}
     </tr>
   );
 });

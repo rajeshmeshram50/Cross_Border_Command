@@ -93,6 +93,15 @@ export default function InvoiceForm({
   /* No purchase order behind this invoice, now or ever: either it was set up
      as a Direct SPI in this session, or it was saved as one and has no PO to
      come back to. Several parts of the form read differently for it. */
+  /* A Direct SPI reads its supplier out of the master before step 1 can show
+     anything, which is the same kind of wait a With-PO invoice has while its
+     purchase order loads — so it gets the same answer: the full StageSkeleton,
+     not a few shimmer bars inside otherwise-real cards.
+     Step 1 stays mounted behind it (hidden, the way `saving` already does it)
+     because the lookup lives in that component's effect — unmount it and the
+     thing the skeleton is waiting for never runs. */
+  const [directSupLoading, setDirectSupLoading] = useState(!!input.direct?.supplierCode);
+
   const [noPo, setNoPo] = useState(!!input.direct);
   const isDirect = !!input.direct || noPo;
 
@@ -219,6 +228,14 @@ export default function InvoiceForm({
       .catch(() => { if (live) setWarehouseRow(null); });
     return () => { live = false; };
   }, [warehouseId]);
+
+  /* The design's Action column. A line the supplier did not actually invoice
+     has to be removable here — it comes in from the PI, and without this the
+     only way to drop one was to leave it at zero, which still carries it into
+     the boxes and the put-away. */
+  const removeLine = useCallback((index: number) => {
+    setLines(ls => ls.filter((_, i) => i !== index));
+  }, []);
 
   const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
@@ -524,7 +541,7 @@ export default function InvoiceForm({
     }
   };
 
-  const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || (stage === 0 && (poLoading || !!poError)) || (stage === 2 && boxesLoading);
+  const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || (stage === 0 && (poLoading || directSupLoading || !!poError)) || (stage === 2 && boxesLoading);
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
@@ -641,7 +658,8 @@ export default function InvoiceForm({
           ) : (
             <>
               {saving && <StageSkeleton stage={stage + 1} />}
-              <div className="cpf-stepwrap" hidden={saving}>
+              {!saving && stage === 0 && directSupLoading && <StageSkeleton stage={0} />}
+              <div className="cpf-stepwrap" hidden={saving || (stage === 0 && directSupLoading)}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
@@ -661,11 +679,12 @@ export default function InvoiceForm({
                        same question a second time. */
                     directSupplier={input.direct
                       ? { code: input.direct.supplierCode, name: input.supplier }
-                      : undefined} />
+                      : undefined}
+                    onResolved={() => setDirectSupLoading(false)} />
                 )}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
-                    onChangeLine={changeLine} direct={isDirect} />
+                    onChangeLine={changeLine} onRemoveLine={removeLine} direct={isDirect} />
                 )}
                 {stage === 2 && (
                   <Step3BoxPackaging

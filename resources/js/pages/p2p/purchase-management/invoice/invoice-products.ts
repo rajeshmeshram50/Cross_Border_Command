@@ -312,7 +312,10 @@ export function truncateName(text: string): string {
   return truncate(text, NAME_MAX);
 }
 
+/* Cut at the same 30 the PI column beside it uses. The select is a fixed-width
+   control in a sticky column, so a long name neither wrapped nor ellipsised —
+   it simply ran past the control. */
 export const PRODUCT_CATALOGUE = PRODUCT_LINES.map(l => ({
   value: l.code,
-  label: `${l.code} — ${l.spiName}`,
+  label: `${l.code} — ${truncate(l.spiName, MATCH_NAME_MAX)}`,
 }));

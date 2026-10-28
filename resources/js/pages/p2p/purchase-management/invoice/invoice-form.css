@@ -9810,6 +9810,34 @@
    create-po.css and the Purchase Order module's own tables use it, so editing
    it there would restyle a screen nobody asked about.
    ────────────────────────────────────────────────────────────────────────── */
+/* The design's Action column: a red-outlined bin, square, on the row's own
+   centre line. Scoped to .spi-prodtbl so the Purchase Order module's tables,
+   which share .cpd-*, are untouched. */
+.spi-prodtbl .cpd-th-act { width: 74px; }
+.spi-prodtbl .cpd-td-act { text-align: center; }
+.spi-prodtbl .cpd-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+  border: 1.5px solid #fecaca; border-radius: 10px;
+  background: #fef2f2; color: #ef4444; cursor: pointer;
+  transition: background .14s, border-color .14s, color .14s, box-shadow .14s;
+}
+.spi-prodtbl .cpd-del:hover:not(:disabled) {
+  background: #fee2e2; border-color: #f87171; color: #dc2626;
+  box-shadow: 0 2px 8px -2px rgba(239,68,68,.45);
+}
+.spi-prodtbl .cpd-del:disabled { opacity: .4; cursor: not-allowed; }
+[data-bs-theme="dark"] .spi-prodtbl .cpd-del {
+  background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.32); color: #fca5a5;
+}
+
+/* The rate and quantity cells were sized by whatever the column had left
+   once the four tax columns took their share, so 3200 came out as "3…". A
+   stated floor on the two editable numbers keeps four digits and a decimal
+   readable; the table already scrolls horizontally, which is where the
+   surplus belongs. */
+.spi-prodtbl .cpd-in--num { min-width: 86px; }
+
 .spi-prodtbl .cpd-in {
   height: 40px; min-height: 40px;
   padding: 0 10px;

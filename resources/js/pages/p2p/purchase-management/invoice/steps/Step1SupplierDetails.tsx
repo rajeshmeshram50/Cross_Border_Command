@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { EditSelect, Field, WizSpinner } from '../../order/create-po/form-fields';
+import { Shimmer } from '../../../../../components/ui/Shimmer';
 import {
   SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
@@ -39,6 +40,17 @@ const GST_STATUSES = ['Active', 'Suspended', 'Cancelled'];
 const COUNTRIES = ['India', 'United Arab Emirates', 'Singapore', 'United States'];
 const STATES = ['Maharashtra', 'Gujarat', 'Karnataka', 'Delhi', 'Tamil Nadu'];
 
+/* Every field in these two cards is filled from the supplier record, so while
+   that record is being fetched the honest thing on screen is the shape of what
+   is coming — not a grid of empty inputs, which reads as a form waiting for
+   you to type into it when in fact it is about to answer itself. 38px is the
+   height of .spi-dt-inp, so nothing moves when the real controls land. */
+const SUPPLIER_SK = ['SELECT SUPPLIER', 'COMPANY LEGAL NAME', 'SUPPLIER TYPE', 'RISK LEVEL', 'SUPPLIER CATEGORY'];
+const ADDRESS_SK = ['COUNTRY', 'STATE', 'STATE CODE', 'CITY', 'CONTACT PERSON NAME', 'DESIGNATION', 'CONTACT NUMBER', 'EMAIL ID'];
+function FieldSk({ label, full }: { label: string; full?: boolean }) {
+  return <Field label={label} full={full}><Shimmer height={38} radius={10} /></Field>;
+}
+
 const GUIDELINES = [
   {
     title: 'Physical inspection is mandatory',
@@ -50,7 +62,7 @@ const GUIDELINES = [
   },
 ];
 
-export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false, direct = false, directSupplier }: {
+export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false, direct = false, directSupplier, onResolved }: {
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
   /* A Direct SPI stands on its own: there is no purchase order to describe,
      so the whole Purchase Order section goes rather than standing there with
@@ -59,6 +71,11 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
   /* Who the Direct SPI setup named. A label and a code, not a record — see
      the seeding effect below for why that distinction decides everything. */
   directSupplier?: { code?: string; name?: string };
+  /* Fired once, when the setup's supplier has been resolved (or found not to
+     resolve). The form holds the stage skeleton until it hears this, so it
+     must fire on every path out of that effect — including the ones with no
+     work to do — or the skeleton never lifts. */
+  onResolved?: () => void;
 }) {
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
@@ -254,10 +271,13 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
      only honest thing to do is ask. */
   const seeded = useRef(false);
   useEffect(() => {
-    if (!direct || hasSupplier || seeded.current) return;
+    if (!direct || seeded.current) return;
     const want = (directSupplier?.code ?? '').trim().toLowerCase();
     const wantName = (directSupplier?.name ?? '').trim().toLowerCase();
-    if (!want && !wantName) return;
+    /* Nothing to resolve — but the form above is holding a skeleton until it
+       hears back, so every exit from this effect has to report, including the
+       ones that do no work at all. */
+    if (hasSupplier || (!want && !wantName)) { seeded.current = true; onResolved?.(); return; }
     seeded.current = true;
     let live = true;
     setPicking(true);
@@ -270,10 +290,15 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
         return hit ? loadSupplier(hit.id) : undefined;
       })
       .catch(() => undefined)
-      .finally(() => { if (live) setPicking(false); });
+      .finally(() => { if (live) { setPicking(false); onResolved?.(); } });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [direct, hasSupplier, directSupplier?.code, directSupplier?.name]);
+
+  /* A record is on its way in and none of these fields can be answered yet —
+     either the setup's supplier is being resolved, or one was just picked by
+     hand. Both go through loadSupplier, so both raise `picking`. */
+  const resolving = picking && !hasSupplier;
 
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
@@ -462,7 +487,12 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
               <span className="spi-dt-fields-badge cpf-push">5 FIELDS</span>
               <span className={`cpf-chev ${supCardOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
             </div>
-            {supCardOpen && (
+            {supCardOpen && resolving && (
+              <div className="spi-dt-grid4 cpf-grid5">
+                {SUPPLIER_SK.map(l => <FieldSk key={l} label={l} />)}
+              </div>
+            )}
+            {supCardOpen && !resolving && (
               <div className="spi-dt-grid4 cpf-grid5">
                 <Field label="SELECT SUPPLIER" req>
                   <div className="cpf-supsel">
@@ -529,7 +559,13 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
               <span className="spi-dt-fields-badge cpf-push">9 FIELDS</span>
               <span className={`cpf-chev ${addrOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
             </div>
-            {addrOpen && (
+            {addrOpen && resolving && (
+              <div className="spi-dt-grid4">
+                <FieldSk label="REGISTERED OFFICE ADDRESS" full />
+                {ADDRESS_SK.map(l => <FieldSk key={l} label={l} />)}
+              </div>
+            )}
+            {addrOpen && !resolving && (
               <div className="spi-dt-grid4">
                 <Field label="REGISTERED OFFICE ADDRESS" full>
                   <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Building / street / area / landmark, with PIN code"} readOnly={hasSupplier}
