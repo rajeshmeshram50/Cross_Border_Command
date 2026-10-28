@@ -3840,17 +3840,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <Col md={4} data-field="expense_policy"><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select expense policy" value={s1.expense_policy} invalid={!!s1Errors.expense_policy} onChange={(v) => { setS1(p => ({ ...p, expense_policy: v })); setS1Errors(p => ({ ...p, expense_policy: '' })); }} />{s1Errors.expense_policy && <div className="onb-error-msg">{s1Errors.expense_policy}</div>}</Col>
                 </Row>
 
-                <div
-                  className="onb-init-toggle-row"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setS1(p => ({ ...p, attendance_tracking: !p.attendance_tracking }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setS1(p => ({ ...p, attendance_tracking: !p.attendance_tracking })); } }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <span className={`onb-init-toggle${s1.attendance_tracking ? '' : ' off'}`} aria-pressed={s1.attendance_tracking} />
-                  <span className="onb-init-toggle-label">Attendance Tracking {s1.attendance_tracking ? 'Enabled' : 'Disabled'}</span>
-                </div>
+                {/* The Attendance Tracking switch was here. It is off the form
+                    until payroll understands it: the importer and the roster
+                    both honour the flag, payroll does not, and an employee
+                    with no attendance records is charged a full month of LOP.
+                    s1.attendance_tracking stays true and is still saved, so
+                    nothing downstream changes — only the way in is closed. */}
 
                 <p className="onb-init-subgroup">Assets &amp; Security</p>
                 <Row className="g-3">
