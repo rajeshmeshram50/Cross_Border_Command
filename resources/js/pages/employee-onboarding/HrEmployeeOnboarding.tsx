@@ -1956,7 +1956,11 @@ function InitiateOnboardingModal({
   const [obPt, setObPt]                 = useState(false);
   const [obBreakupLoading, setObBreakupLoading] = useState(false);
   const [obSalaryVersion, setObSalaryVersion] = useState<{ version: number; from: string | null } | null>(null);
-  const obLoadedForRef  = useRef<number | null>(null);
+  const obLoadedForRef  = useRef<string | null>(null);
+  /* Bumped after a salary save so the loader runs again — see the loader's
+     once-per-employee guard, which a new version would otherwise never get
+     past. */
+  const [obReloadTick, setObReloadTick] = useState(0);
   const obSeededForRef  = useRef<string | null>(null);
   const obBaselineRef   = useRef<string | null>(null);
 
@@ -1972,12 +1976,20 @@ function InitiateOnboardingModal({
   useEffect(() => {
     if (!isOpen || !emp?.dbId) { obLoadedForRef.current = null; return; }
     if (!coreReady) return;
-    if (obLoadedForRef.current === emp.dbId) return;
-    obLoadedForRef.current = emp.dbId;
-    let cancelled = false;
+    /* The employee AND the reload tick: a save bumps the tick, which is what
+       lets the same employee be loaded a second time. */
+    const runKey = `${emp.dbId}:${obReloadTick}`;
+    if (obLoadedForRef.current === runKey) return;
+    obLoadedForRef.current = runKey;
+
+    /* Does this run still own the breakup state? A later run for a DIFFERENT
+       employee restamps the ref, and closing the modal nulls it; either way
+       this run must not write. A re-run for the SAME employee returns early
+       without refetching, so this run is still the one that has to finish. */
+    const ownsRun = () => obLoadedForRef.current === runKey;
 
     const seedFresh = () => {
-      if (cancelled) return;
+      if (!ownsRun()) return;
       setObEarnings(seedBreakup(obMonthlyOf(obSalaryRef.current)));
       setObDeductions([]);
       setObEsi(false);
@@ -1987,14 +1999,18 @@ function InitiateOnboardingModal({
 
     setObBreakupLoading(true);
     setObSalaryVersion(null);
+    /* The bootstrap's copy answers the FIRST load without a round trip, and
+       is then dropped: it was captured when the modal opened, so a reload
+       after a save must go to the server or the form re-applies the version
+       it just replaced. Also falls through to the request when the bootstrap
+       skipped the key — it is only included when an employee_id was passed. */
     const parked = bootstrapSalaryRef.current;
-    /* Fall back to the request when the bootstrap skipped the key — it is only
-       included when an employee_id was passed. */
+    bootstrapSalaryRef.current = null;
     (parked !== null
       ? Promise.resolve({ data: parked })
       : api.get('/salary-structures', { params: { employee_id: emp.dbId, active_only: 1 } }))
       .then((res: any) => {
-        if (cancelled) return;
+        if (!ownsRun()) return;
         const rows = res.data?.data ?? [];
         const active = Array.isArray(rows) && rows.length ? rows[0] : null;
         if (active && Array.isArray(active.earnings) && active.earnings.length) {
@@ -2016,13 +2032,12 @@ function InitiateOnboardingModal({
       })
       .catch(seedFresh)
       .finally(() => {
-        if (cancelled) return;
+        if (!ownsRun()) return;
         setObBreakupLoading(false);
         obSeededForRef.current = obSalaryRef.current;
       });
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, emp?.dbId, coreReady]);
+  }, [isOpen, emp?.dbId, coreReady, obReloadTick]);
 
   const [obRecalcing, setObRecalcing] = useState(false);
 
@@ -2152,6 +2167,18 @@ function InitiateOnboardingModal({
   };
 
   const persistObBreakup = async (empId: number): Promise<void> => {
+    /* The saved breakup is still in flight.
+
+       The "has anything changed?" test below compares against
+       obBaselineRef, which is not set until GET /salary-structures
+       resolves. Posting before then compares against null, never matches,
+       and sends the CTC-seeded placeholder as though somebody had authored
+       it — overwriting a real breakup wherever the server does not happen
+       to refuse it on the effective date. Nothing can have been edited
+       while the panel reads "Loading breakup…", so there is nothing to
+       save; the next pass has the real one to compare against. */
+    if (obBreakupLoading) return;
+
     const monthly = obMonthlyOf(s1.annual_salary);
     const typed = obEarnings
       .filter(c => c.label.trim() && Number(c.amount) >= 0)
@@ -2179,6 +2206,11 @@ function InitiateOnboardingModal({
       pt_applicable: obPt,
     });
     obBaselineRef.current = sig;
+
+    /* Re-read what was just written: the badge, the components and the
+       effective date all come from the saved structure, and the server may
+       have adjusted the figures (PF recomputed, Special rebalanced). */
+    setObReloadTick(t => t + 1);
   };
 
   const [noticeCustomOpen, setNoticeCustomOpen] = useState(false);
@@ -2369,12 +2401,19 @@ const joinDateOrig = emp?.raw?.date_of_joining
 const isRehired = !!emp?.raw?.exit?.rehired_at;
 const joinMin = (!isRehired && joinDateOrig && joinDateOrig < joinTodayIso) ? joinDateOrig : joinTodayIso;
 
+/* Seeded from the joining date, not chained to it. This used to overwrite
+   the field on every render, so a revision could never carry a later date —
+   and the employee screen dates its own versions today, which the server
+   then refuses to go behind. Only fills a date that is MISSING, or one that
+   has fallen before a joining date the user has since moved forward. */
 useEffect(() => {
   const doj = s1.date_of_joining || '';
-  setS1(p => (p.salary_effective_from === doj ? p : { ...p, salary_effective_from: doj }));
-  setS1Errors(p => (p.salary_effective_from ? { ...p, salary_effective_from: '' } : p));
+  if (!doj) return;
+  setS1(p => (!p.salary_effective_from || p.salary_effective_from < doj)
+    ? { ...p, salary_effective_from: doj }
+    : p);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [s1.date_of_joining, s1.salary_effective_from]);
+}, [s1.date_of_joining]);
 
 const onbProbation = resolveProbation(s1.probation_policy, s1.date_of_joining);
 
@@ -2516,9 +2555,11 @@ const stage1Errors = (): Record<string, string> => {
     }
     const sef = (s1.salary_effective_from?.trim() || doj);
     if (!doj) {
-      errors.salary_effective_from = 'Set the joining date — the salary effective date follows it';
-    } else if (sef !== doj) {
-      errors.salary_effective_from = 'Salary effective date must be the same as the joining date';
+      errors.salary_effective_from = 'Set the joining date — the salary effective date starts from it';
+    } else if (sef < doj) {
+      /* A salary cannot start before the person does. Later IS allowed:
+         that is a revision. */
+      errors.salary_effective_from = 'Salary effective date cannot be before the joining date';
     }
     if (s1.pf_eligible !== true && s1.pf_eligible !== false) {
       errors.pf_applicable = 'Select whether PF applies to this employee';
@@ -2732,17 +2773,31 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (!isOpen || !emp?.dbId) { stage2DocsLoadedForRef.current = null; return; }
     if (!coreReady) return;
     if (stage2DocsLoadedForRef.current === emp.dbId) return;
-    stage2DocsLoadedForRef.current = emp.dbId;
-    let cancelled = false;
-    api.get(`/employees/${emp.dbId}/documents`)
+
+    /* Empty them FIRST. These feed Stage 2's row list through initialDocs,
+       and holding the last employee's rows while the next one loads is how
+       one person's documents end up listed under another's name — and how a
+       delete can be aimed at an id that was never on this screen. */
+    setStage2Docs([]);
+    setStage2DocsFull([]);
+
+    const loadFor = emp.dbId;
+    stage2DocsLoadedForRef.current = loadFor;
+    /* Ownership, not cancellation: a re-run for the SAME employee returns
+       early without refetching, so this run is still the one that has to
+       finish. A different employee restamps the ref and this run stands
+       down. (The cancelled flag made run 1 discard its own result after
+       run 2 declined to fetch — React 18 does exactly that on mount.) */
+    const ownsRun = () => stage2DocsLoadedForRef.current === loadFor;
+
+    api.get(`/employees/${loadFor}/documents`)
       .then(r => {
-        if (cancelled) return;
+        if (!ownsRun()) return;
         const rows: ApiDocument[] = Array.isArray(r.data) ? r.data : [];
         setStage2Docs(rows);
         setStage2DocsFull(rows);
       })
-      .catch(() => { if (!cancelled) { setStage2Docs([]); setStage2DocsFull([]); } });
-    return () => { cancelled = true; };
+      .catch(() => { if (ownsRun()) { setStage2Docs([]); setStage2DocsFull([]); } });
   }, [isOpen, emp?.dbId, coreReady]);
 
   const [s4Saving, setS4Saving] = useState(false);
@@ -3947,16 +4002,19 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   {s1Errors.annual_salary && <div className="onb-error-msg">{s1Errors.annual_salary}</div>}
 </Col>
                   <Col md={4} data-field="salary_effective_from">
-  <label className="onb-init-label">
-    Salary Effective From <span className="auto">AUTO</span>
-  </label>
-  <input
-    className="onb-init-input is-autofilled"
-    readOnly
-    tabIndex={-1}
-    value={s1.date_of_joining ? new Date(s1.date_of_joining).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
-    placeholder="Set the joining date first"
-    title="Always the joining date — the first salary structure starts the day the employee joins."
+  <label className="onb-init-label">Salary Effective From<span className="req">*</span></label>
+  <MasterDatePicker
+    placeholder="dd-mm-yyyy"
+    value={s1.salary_effective_from}
+    invalid={!!s1Errors.salary_effective_from}
+    /* The floor is the joining date: a salary cannot start before the
+       person does. Anything later is a revision, which is the point. */
+    minDate={s1.date_of_joining || undefined}
+    disabled={!s1.date_of_joining}
+    onChange={(v) => {
+      setS1(p => ({ ...p, salary_effective_from: v }));
+      setS1Errors(p => ({ ...p, salary_effective_from: '' }));
+    }}
   />
   {s1Errors.salary_effective_from && <div className="onb-error-msg">{s1Errors.salary_effective_from}</div>}
 </Col>
@@ -5028,6 +5086,38 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         }
         setCompErrors({});
       }
+
+      /* The catalogue's own required documents — checked last, because the
+         experience answer decides whether there are company documents to ask
+         about on top of these. Optional ones are excluded, the same filter
+         the stage's own percentage uses. */
+      const uploaded2 = (st?: string) => st === 'uploaded' || st === 'verified';
+      const missing = STAGE2_CATEGORIES.flatMap(cat =>
+        cat.docs.filter(d => d.status !== 'Optional' && !uploaded2(docsByKey[d.id]?.status)));
+
+      setMissingDocKeys(missing.map(d => d.id));
+
+      if (missing.length) {
+        setTimeout(() => {
+          document.querySelector(`[data-doc-key="${missing[0].id}"]`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 50);
+
+        const names = missing.map(d => d.name);
+        return {
+          ok: false,
+          title: missing.length === 1
+            ? '1 required document is missing'
+            : `${missing.length} required documents are missing`,
+          /* Named, not counted: "6 of 8" sends somebody scrolling to work
+             out which two. Capped so a brand-new employee missing all eight
+             does not get a paragraph. */
+          message: names.length > 3
+            ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more still need uploading.`
+            : `${names.join(', ')} ${names.length === 1 ? 'has' : 'have'} not been uploaded yet.`,
+        };
+      }
+
       return { ok: true };
     },
   }), [emp?.dbId, hasExperience, docsByKey]);
@@ -5101,6 +5191,9 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     }
   };
 
+  /* Document keys the gate last refused on, so the rows can show it and
+     not just the toast. Cleared as each one is uploaded. */
+  const [missingDocKeys, setMissingDocKeys] = useState<string[]>([]);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const reloadDocs = async (): Promise<Record<string, ApiDocument> | null> => {
     if (!emp?.dbId) { setDocsLoading(false); return null; }
@@ -5122,6 +5215,12 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
      answer already in memory. Uploads and deletes still call reloadDocs(), so
      the list cannot go stale. (QA #5) */
   useEffect(() => {
+    /* Drop the previous employee's rows before anything else. Without this
+       the old map paints under the new header until the fetch lands, and
+       the delete button carries the old document ids while it does. */
+    setDocsByKey({});
+    setMissingDocKeys([]);
+
     if (initialDocs && initialDocs.length) {
       const map: Record<string, ApiDocument> = {};
       for (const d of initialDocs) map[d.document_key] = d;
@@ -5296,7 +5395,13 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
               const isBusy = uploadingKey === d.id;
               const isLocked = !!uploadingKey && !isBusy;
               return (
-                <div key={d.id} className="onb-doc-row">
+                <div
+                  key={d.id}
+                  data-doc-key={d.id}
+                  /* Drops the moment the file lands, so the mark never
+                     outlives the thing it is pointing at. */
+                  className={`onb-doc-row${missingDocKeys.includes(d.id) && !srv ? ' is-missing' : ''}`}
+                >
                   <span className="onb-doc-row-icon"><i className="ri-file-text-line" /></span>
                   <div className="onb-doc-row-meta">
                     <h6 className="onb-doc-row-name">
