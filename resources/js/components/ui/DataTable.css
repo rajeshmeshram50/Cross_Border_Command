@@ -1505,8 +1505,10 @@
    clicks meant for the table underneath it. */
 .dt-fpop-anchor { z-index: 4000; pointer-events: none; }
 .dt-fpop {
+  /* top/bottom and left come from ToolbarFilter, measured off the button.
+     A percentage top here would resolve against the viewport, not the
+     anchor, and put the panel below the fold. */
   position: fixed;
-  top: calc(100% + 10px);
   pointer-events: auto;
   display: flex; flex-direction: column;
   border-radius: 14px;

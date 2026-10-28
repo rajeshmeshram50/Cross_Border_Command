@@ -11,6 +11,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import TruncText from '../../components/ui/TruncText';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import SearchClear from '../../components/ui/SearchClear';
+import TablePager, { pageSlice, usePager } from '../../components/ui/TablePager';
 import '../../../css/recruitment.css';
 
 type HolidayType = 'Public' | 'Restricted' | 'Company' | 'Regional' | 'Optional';
@@ -668,17 +669,17 @@ function HolidayModal({
 
   return (
     <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static" keyboard={false}
-      modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0">
+      modalClassName="rec-form-modal master-modal hrms-modal" contentClassName="rec-form-content border-0">
       <ModalBody className="p-0" >
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <i className="ri-calendar-event-line" style={{ fontSize: 16, color: '#fff' }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>{editing ? 'Edit Holiday' : 'Add Holiday'}</h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>Manage a company holiday date</div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>{editing ? 'Edit Holiday' : 'Add Holiday'}</h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>Manage a company holiday date</div>
               </div>
             </div>
             <button type="button" onClick={onClose} disabled={saving} aria-label="Close"
@@ -763,6 +764,7 @@ function ManageGroupsModal({
   const [nameErr, setNameErr] = useState('');
 
   const [formOpen, setFormOpen] = useState(false);
+  const pager = usePager(groups.length);
 
   useEffect(() => {
     if (!isOpen) { setEditing(null); setName(''); setDescription(''); setStatus('Active'); setNameErr(''); setFormOpen(false); }
@@ -831,17 +833,17 @@ function ManageGroupsModal({
 
   return (
     <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static" keyboard={false}
-      modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0">
+      modalClassName="rec-form-modal master-modal hrms-modal" contentClassName="rec-form-content border-0">
       <ModalBody className="p-0" >
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className="ri-folder-settings-line" style={{ fontSize: 16, color: '#fff' }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>Holiday Groups</h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>Holiday lists you assign to employees</div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>Holiday Groups</h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>Holiday lists you assign to employees</div>
               </div>
             </div>
             <div className="d-flex align-items-center gap-2">
@@ -881,9 +883,9 @@ function ManageGroupsModal({
               <tbody>
                 {groups.length === 0 ? (
                   <tr><td colSpan={5} className="text-center py-4 text-muted">No groups yet — click “Add Group” to create one.</td></tr>
-                ) : groups.map((g, idx) => (
+                ) : pageSlice(groups, pager.page, pager.pageSize).map((g, idx) => (
                   <tr key={g.id}>
-                    <td className="text-center text-muted fs-13">{idx + 1}</td>
+                    <td className="text-center text-muted fs-13">{pager.page * pager.pageSize + idx + 1}</td>
                     <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>
                     {/* Cut at a character budget rather than clamped to two
                         lines. The clamp kept the text inside the cell but let
@@ -922,6 +924,14 @@ function ManageGroupsModal({
               </tbody>
             </table>
           </div>
+
+          <TablePager
+            total={groups.length}
+            page={pager.page}
+            pageSize={pager.pageSize}
+            onPage={pager.setPage}
+            onPageSize={pager.setPageSize}
+          />
         </div>
 
         <div style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', justifyContent: 'flex-end' }}>
@@ -929,12 +939,12 @@ function ManageGroupsModal({
         </div>
 
         <Modal isOpen={formOpen} toggle={closeForm} centered backdrop="static" keyboard={false}
-          zIndex={1060} modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0"
+          zIndex={1060} modalClassName="rec-form-modal master-modal hrms-modal" contentClassName="rec-form-content border-0"
           style={{ maxWidth: 540, width: '94vw' }}>
           <ModalBody className="p-0" >
             <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
               <div className="d-flex align-items-center justify-content-between">
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15 }}>{editing ? 'Edit Group' : 'Add Group'}</h5>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17 }}>{editing ? 'Edit Group' : 'Add Group'}</h5>
                 <button type="button" onClick={closeForm} disabled={saving} aria-label="Close"
                   className="rec-close-btn d-inline-flex align-items-center justify-content-center"
                   style={{ opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>

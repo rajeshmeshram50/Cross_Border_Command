@@ -192,8 +192,8 @@ export default function CustomFieldModal(props: {
         [data-layout-mode="dark"] .cfm-label { color: rgba(255,255,255,0.65) !important; }
         [data-bs-theme="dark"] .cfm-input,
         [data-layout-mode="dark"] .cfm-input {
-          background: #0f172a !important;
-          border-color: rgba(255,255,255,0.10) !important;
+          background: var(--vz-card-bg) !important;
+          border-color: var(--vz-border-color) !important;
           color: #f1f5f9 !important;
         }
         [data-bs-theme="dark"] .cfm-input::placeholder,
@@ -370,13 +370,16 @@ export default function CustomFieldModal(props: {
   );
 }
 
-const fieldLabel: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 6, display: 'block' };
+// 10.5px, as .rec-form-label is on every other HRMS form.
+const fieldLabel: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4, display: 'block' };
 const req: React.CSSProperties = { color: '#ef4444' };
 function inputStyle(error: boolean): React.CSSProperties {
   return {
-    width: '100%', padding: '10px 12px', borderRadius: 10, boxSizing: 'border-box',
-    border: '1px solid ' + (error ? '#ef4444' : '#e2e8f0'),
-    fontSize: 13.5, background: '#fff', lineHeight: 1.4,
+    // .rec-input's own measurements: 34px, 8px radius, 13px on #e5e7eb.
+    width: '100%', height: 34, padding: '4px 11px', borderRadius: 8, boxSizing: 'border-box',
+    border: '1px solid ' + (error ? '#ef4444' : '#e5e7eb'),
+    fontSize: 13, background: '#fff', lineHeight: 1.4,
+    boxShadow: '0 1px 2px rgba(15,23,42,0.03)',
     transition: 'border-color .15s, box-shadow .15s',
   };
 }

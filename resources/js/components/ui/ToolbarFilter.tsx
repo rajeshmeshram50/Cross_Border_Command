@@ -95,19 +95,35 @@ export default function ToolbarFilter({
     };
   }, [open]);
 
-  /* Keep the panel inside the window. It is fixed-positioned with no left of
-     its own, so it starts at the button and runs right — and the button sits
-     at the right end of the toolbar, so most of it fell off screen. */
-  const popLeft = (() => {
+  /* Where the panel actually goes.
+
+     BOTH coordinates are computed here. The panel is position:fixed, so a
+     percentage `top` in the stylesheet resolves against the viewport —
+     `top: calc(100% + 10px)` put it 10px below the bottom of the screen,
+     and the fixed anchor box it sits in cannot correct that, because a
+     fixed ancestor is not a containing block for a fixed child.
+
+     Horizontally it is clamped because the button sits at the right end of
+     the toolbar and the panel runs rightwards from it. */
+  const FLIP_MIN = 260;
+  const popPos = (() => {
     if (!anchor) return {};
     const w = Math.min(PANEL_W, anchor.vw - 24);
-    return { left: Math.max(12, Math.min(anchor.left, anchor.vw - 12 - w)), width: w };
+    const left = Math.max(12, Math.min(anchor.left, anchor.vw - 12 - w));
+    const below = anchor.vh - (anchor.top + anchor.height) - 10;
+
+    // Open upwards when the button is near the bottom and there is more
+    // room above it than below.
+    return below < FLIP_MIN && anchor.top > below
+      ? { bottom: anchor.vh - anchor.top + 10, left, width: w }
+      : { top: anchor.top + anchor.height + 10, left, width: w };
   })();
+  const flipped = !!anchor && typeof (popPos as { bottom?: number }).bottom === 'number';
 
   /* How tall the tiles may be before the footer falls off the bottom. The head
      and the foot never scroll; the body between them gives way. */
   const bodyMax = anchor
-    ? Math.max(150, anchor.vh - (anchor.top + anchor.height) - 10 - 44 - 54 - 14)
+    ? Math.max(150, (flipped ? anchor.top - 10 : anchor.vh - (anchor.top + anchor.height) - 10) - 44 - 54 - 14)
     : undefined;
 
   const hasMeter = typeof shown === 'number' && typeof total === 'number';
@@ -134,7 +150,7 @@ export default function ToolbarFilter({
           className="dt-fpop-anchor"
           style={{ position: 'fixed', top: anchor.top, left: anchor.left, width: anchor.width, height: anchor.height }}
         >
-          <div className="dt-fpop" role="dialog" aria-label={title} ref={popRef} style={popLeft}>
+          <div className="dt-fpop" role="dialog" aria-label={title} ref={popRef} style={popPos}>
             <div className="dt-fpop-head">
               <span className="dt-fpop-head-ico"><i className="ri-equalizer-line" /></span>
               <span className="dt-fpop-title">{title}</span>

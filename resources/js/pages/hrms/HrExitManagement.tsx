@@ -895,8 +895,8 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
                 6 stages · {CHECKLIST_TOTAL} checkpoints · Filtered by Designation &amp; Employee Type
               </div>
 
-              <div style={{ marginTop: 6 }}>
-                <div className="ecl-head-section-label">Designation Level</div>
+              <div className="ecl-filter-row">
+                <div className="ecl-head-section-label">Designation</div>
                 <div className="ecl-desig-tabs">
                   {desigTabs.map(t => (
                     <button
@@ -911,8 +911,8 @@ function ExitChecklistModal({ open, onClose }: { open: boolean; onClose: () => v
                 </div>
               </div>
 
-              <div className="ecl-type-row">
-                <div className="ecl-head-section-label" style={{ marginBottom: 0 }}>Employee Type:</div>
+              <div className="ecl-filter-row">
+                <div className="ecl-head-section-label">Employee Type</div>
                 <div className="ecl-type-toggle">
                   {([
                     { key: 'all',   label: 'All',             icon: '' },
@@ -5264,10 +5264,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <i className="ri-file-search-line" style={{ fontSize: 18, color: '#fff' }} />
               </span>
               <div className="min-w-0">
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   {previewTpl?.name || 'Document Preview'}
                 </h5>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
                   {employee?.name ? `Filled with ${employee.name}'s data` : 'Live preview'}
                   {previewTpl?.code ? ` · ${previewTpl.code}` : ''}
                 </div>
@@ -6486,8 +6486,10 @@ function apiToExitRow(e: any): EmployeeRow {
   else                                                              status = 'Active';
 
   const currentStage = Math.max(1, Math.min(6, Number(ex?.current_stage) || 1));
+  /* Six stages, so divide by six. The 90 cap stays: 100% is a CLOSED case,
+     and an exit sitting on its last stage is not closed. */
   const exitReadiness = status === 'Exited' ? 100
-    : status === 'Exit In Progress' ? Math.min(90, Math.round((currentStage / 5) * 100))
+    : status === 'Exit In Progress' ? Math.min(90, Math.round((currentStage / 6) * 100))
     : 0;
 
   return {

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ToolbarFilter from '../../components/ui/ToolbarFilter';
+import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
 import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -66,6 +66,28 @@ const ZERO_STATS: Stats = { total: 0, active: 0, scheduled: 0, draft: 0, expired
 /* The three facets behind the toolbar's Filter button. Each selected tile
    takes the colour that value already has in the table, so the panel and
    the rows agree on what Urgent or Draft looks like. */
+/* The rail's categories. `icon` is the glyph beside the category name; the
+ * per-option icons the popover drew are not used by the modal's rows. */
+const ANN_FILTER_FACETS = [
+  { key: 'type',     label: 'Type',     icon: 'ri-price-tag-3-line', options: [
+    { value: 'General', label: 'General' },
+    { value: 'Policy',  label: 'Policy'  },
+    { value: 'Urgent',  label: 'Urgent'  },
+  ] },
+  { key: 'priority', label: 'Priority', icon: 'ri-flag-line', options: [
+    { value: 'Normal',   label: 'Normal'   },
+    { value: 'High',     label: 'High'     },
+    { value: 'Critical', label: 'Critical' },
+  ] },
+  { key: 'status',   label: 'Status',   icon: 'ri-checkbox-circle-line', options: [
+    { value: 'Draft',     label: 'Draft'     },
+    { value: 'Scheduled', label: 'Scheduled' },
+    { value: 'Active',    label: 'Active'    },
+    { value: 'Expired',   label: 'Expired'   },
+    { value: 'Archived',  label: 'Archived'  },
+  ] },
+];
+
 const ANN_FILTER_GROUPS = [
   {
     key: 'type', label: 'Type', cols: 3 as const,
@@ -507,14 +529,19 @@ export default function HrBroadcastCentre() {
                 </>
               }
               toolbarFilters={
-                <ToolbarFilter
+                <MasterFilterButton
                   title="Filter Announcements"
-                  groups={ANN_FILTER_GROUPS}
+                  icon="ri-megaphone-line"
+                  facets={ANN_FILTER_FACETS}
                   value={facets}
-                  onChange={(key, v) => { setFacets(f => ({ ...f, [key]: v })); setPage(0); }}
-                  onClear={() => { setFacets({ type: '', status: '', priority: '' }); setPage(0); }}
-                  shown={total}
-                  total={stats.total}
+                  onApply={next => {
+                    setFacets({
+                      type:     String(next.type ?? ''),
+                      status:   String(next.status ?? ''),
+                      priority: String(next.priority ?? ''),
+                    });
+                    setPage(0);
+                  }}
                 />
               }
             />

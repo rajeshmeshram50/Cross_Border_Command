@@ -491,8 +491,8 @@ export default function HrLeaveApprovals() {
           <div style={{ padding: '14px 22px 12px', background: 'linear-gradient(135deg, #5a3fd1, #7c5cfc)' }}>
             <div className="d-flex align-items-center justify-content-between gap-3">
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15 }}>Leave Request Details</h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17 }}>Leave Request Details</h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   Review the application and approve or reject
                 </div>
               </div>

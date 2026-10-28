@@ -1309,10 +1309,10 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
                   <i className="ri-file-shield-2-line" style={{ fontSize: 18, color: '#fff' }} />
                 </span>
                 <div className="min-w-0">
-                  <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>
+                  <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                     {viewRun?.template?.name || viewRun?.code || 'Signed Document'}
                   </h5>
-                  <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
                     Signed copy{viewRun?.code ? ` · ${viewRun.code}` : ''}
                     {viewRun && signedRunAt(viewRun) ? ` · ${fmtSignedStamp(signedRunAt(viewRun))}` : ''}
                   </div>
@@ -1476,7 +1476,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
         <div className="onb-checklist-header">
           <div className="onb-cl-titlewrap">
             <span className="onb-cl-icon">
-              <i className="ri-checkbox-line" style={{ fontSize: 22 }} />
+              <i className="ri-checkbox-line" />
             </span>
             <div className="min-w-0">
               <h5 className="onb-cl-title">Employee Onboarding Checklist</h5>
@@ -1486,8 +1486,8 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
             </div>
           </div>
 
-          <div className="onb-cl-filters">
-            <p className="onb-cl-filter-label">Designation Level</p>
+          <div className="onb-cl-row">
+            <span className="onb-cl-filter-label">Designation</span>
             <div className="onb-cl-pillrow">
               {DESIGNATION_LEVELS.map(l => (
                 <button
@@ -1503,8 +1503,8 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
             </div>
           </div>
 
-          <div className="onb-cl-row">
-            <span className="onb-cl-filter-label">Employee Type:</span>
+          <div className="onb-cl-row onb-cl-row--last">
+            <span className="onb-cl-filter-label">Employee Type</span>
             <div className="onb-cl-typebox">
               {EMPLOYEE_TYPES.map(t => (
                 <button
@@ -2450,7 +2450,9 @@ const STAGE1_WORK_REQUIRED: Array<[string, string]> = [
   ['expense_policy', 'Expense policy is required'],
 ];
 
-const validateStage1 = (): boolean => {
+/* Stage 1's rules, with no side effects, so the progress rail can ask the
+   same question the Next Stage gate asks. */
+const stage1Errors = (): Record<string, string> => {
   const errors: Record<string, string> = {};
 
   if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
@@ -2556,10 +2558,23 @@ const validateStage1 = (): boolean => {
     if (be.form || rowErr) errors.salary_breakup = be.form || String(rowErr);
   }
 
+  return errors;
+};
+
+const validateStage1 = (): boolean => {
+  const errors = stage1Errors();
   setS1Errors(errors);
 
   if (Object.keys(errors).length > 0) {
-    toast.error('Please fill all required fields', `${Object.keys(errors).length} field(s) need attention`);
+    /* "Fill all required fields" over a form with every box filled sends the
+       user hunting for an empty one. When nothing is missing, what failed is
+       a rule — a date of birth under 18, a malformed email, a role picked
+       twice — and the message has to say so. */
+    const nothingMissing = stage1Filled === stage1RequiredFields.length;
+    toast.error(
+      nothingMissing ? 'Please correct the highlighted fields' : 'Please fill all required fields',
+      `${Object.keys(errors).length} field(s) need attention`,
+    );
     scrollToFirstError(errors);
     return false;
   }
@@ -2973,12 +2988,24 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     }
     if (activeStage === 3) {
       const emailErr = validateOfficialEmail(s1.official_email);
-      return !emailErr
-        ? { ok: true }
-        : { ok: false, reason: emailErr };
+      if (!emailErr) return { ok: true };
+
+      // Raise it on the field too, not only in the toast.
+      setS1Errors(p => ({ ...p, official_email: emailErr }));
+      const el = document.getElementById('field-official-email') as HTMLInputElement | null;
+      el?.focus();
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+
+      return { ok: false, reason: emailErr };
     }
     if (activeStage === 4) {
       if (stage4Pass === stage4Total4 && stage4UanOk) return { ok: true };
+
+      /* The same two lines Next Stage runs. Without them the rail refused
+         the jump over a form with nothing marked on it. */
+      setS4ShowErrors(true);
+      if (stage4Problems.length) scrollToField(stage4Problems[0].field);
+
       return {
         ok: false,
         reason: stage4Problems.length
@@ -2986,9 +3013,20 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           : 'Bank details, PAN, CTC and PF deduction must all be valid before moving on.',
       };
     }
+    /* Stage 5 had no arm here, so the rail let the policies be skipped
+       entirely — the gap #145 closed on the Next Stage button only. */
     if (activeStage === 5) {
-  return { ok: true };
-}
+      if (stage5AllSigned) return { ok: true };
+
+      const notSent = Math.max(0, stage5Total - stage5Sent);
+      return {
+        ok: false,
+        reason: !stage5Loaded      ? 'Still loading the document list — try again in a moment.'
+          : !stage5Finalized       ? 'Tick the documents this employee needs, then Finalize the set before continuing.'
+          : notSent > 0            ? `${notSent} of ${stage5Total} selected document${stage5Total === 1 ? '' : 's'} not sent yet. Send each for signature first.`
+                                   : `${stage5Total - stage5Signed} of ${stage5Total} selected document${stage5Total === 1 ? '' : 's'} still awaiting signature.`,
+      };
+    }
     return { ok: true };
   };
 
@@ -3187,7 +3225,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
   const macroCompleted = Number(emp?.raw?.onboarding_stage_completed ?? 0);
   const stage1AllRequiredFilled = stage1Filled === stage1RequiredFields.length;
-  const stage1IsDone = (stage1Done || macroCompleted >= 1) && stage1AllRequiredFilled;
+  /* Presence is not completion. A stage every rule refuses cannot read
+     100% / Completed on the rail while the gate turns it away. (#36) */
+  const stage1RulesPass = Object.keys(stage1Errors()).length === 0;
+  const stage1IsDone = (stage1Done || macroCompleted >= 1) && stage1AllRequiredFilled && stage1RulesPass;
   const stage2IsDone = stage2Done && macroCompleted >= 2;
   const stage3IsDone = stage3Done || macroCompleted >= 3;
   const stage4IsDone = stage4Done || macroCompleted >= 4;
@@ -7102,7 +7143,7 @@ function Stage5Policies({ emp, onProgress }: {
               </span>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>Send for Signing</div>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Confirm the signing workflow before sending</div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>Confirm the signing workflow before sending</div>
               </div>
             </div>
           </div>

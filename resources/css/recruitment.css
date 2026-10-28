@@ -47,7 +47,9 @@
   overflow: hidden;
 }
 .rec-page-kpis .rec-kpi-card:hover {
-  transform: translateY(-4px);
+  /* No transform. The card answers the pointer with its border and
+     shadow and stays where it is — a row that lifts under the cursor
+     jumps as the pointer crosses it. */
   box-shadow:
     0 16px 32px -8px rgba(15, 23, 42, 0.18),
     0 4px 10px rgba(124, 92, 252, 0.10);
@@ -591,7 +593,7 @@
 [data-bs-theme="dark"] .rec-charcount { color: #9b9eaa; }
 
 .rec-form-label {
-  font-size: 10px; font-weight: 800;
+  font-size: 10.5px; font-weight: 800;
   letter-spacing: 0.06em; text-transform: uppercase;
   margin-bottom: 4px; display: block; line-height: 1.15;
   background: linear-gradient(135deg, #a855f7 0%, #9333ea 60%, #7c3aed 100%);
@@ -633,7 +635,7 @@
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  padding: 4px 11px; font-size: 12px; color: var(--vz-body-color);
+  padding: 4px 11px; font-size: 13px; color: var(--vz-body-color);
   box-shadow: 0 1px 2px rgba(15,23,42,0.03);
   transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
@@ -675,7 +677,7 @@
     0 4px 10px rgba(124,92,252,0.10);
 }
 .rec-input.is-invalid { border-color: #f06548 !important; box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 0 0 3px rgba(240,101,72,0.15) !important; }
-.rec-textarea { width: 100%; min-height: 56px; height: auto; padding: 6px 11px; resize: vertical; line-height: 1.4; font-size: 12px; }
+.rec-textarea { width: 100%; min-height: 56px; height: auto; padding: 6px 11px; resize: vertical; line-height: 1.4; font-size: 13px; }
 
 .rec-input-icon { position: relative; width: 100%; }
 .rec-input-icon-leading {
@@ -2189,9 +2191,11 @@
   padding: 13px 12px;
   background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
   color: var(--vz-secondary-color);
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  /* The DataTable header's own scale, so the two cannot drift. */
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   border-bottom: 1px solid #ececf2;
   white-space: nowrap;
@@ -2957,8 +2961,8 @@
 }
 .cand-sample-head {
   position: relative;
-  padding: 18px 22px;
-  display: flex; align-items: center; gap: 14px;
+  padding: 14px 20px;
+  display: flex; align-items: center; gap: 12px;
   background:
     radial-gradient(700px 220px at 100% 0%, rgba(255,255,255,0.22) 0%, transparent 60%),
     linear-gradient(135deg, #3b82f6, #2563eb);
@@ -2966,27 +2970,26 @@
 }
 .cand-sample-head-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 44px; height: 44px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.28);
+  width: 40px; height: 40px;
+  border-radius: 11px;
+  background: rgba(255,255,255,0.22);
+  border: 2px solid rgba(255,255,255,0.55);
   flex-shrink: 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.30);
 }
-.cand-sample-head-icon i { font-size: 22px; color: #ffffff; }
+.cand-sample-head-icon i { font-size: 18px; color: #ffffff; }
 .cand-sample-head-text { flex: 1; min-width: 0; }
 .cand-sample-head-text h5 {
-  font-size: 16px; font-weight: 700; color: #ffffff; line-height: 1.2;
+  font-size: 17px; font-weight: 700; color: #ffffff; line-height: 1.2;
 }
-.cand-sample-head-sub { font-size: 12px; color: rgba(255,255,255,0.92); margin-top: 2px; }
+.cand-sample-head-sub { font-size: 12px; color: rgba(255,255,255,0.85); margin-top: 1px; }
 .cand-sample-close {
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 32px; height: 32px; border-radius: 8px;
   background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.25);
+  border: 1px solid rgba(255,255,255,0.35);
   color: #ffffff;
   display: inline-flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: background .15s ease;
-  flex-shrink: 0;
+  flex-shrink: 0; cursor: pointer; font-size: 18px;
+  transition: background .15s ease;
 }
 .cand-sample-close:hover { background: rgba(255,255,255,0.30); }
 .cand-sample-close i { font-size: 18px; }
@@ -3101,7 +3104,7 @@
   transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
   display: inline-flex; align-items: center; gap: 7px;
 }
-.cand-sample-download:hover {
+.cand-sample-download:hover:not(:disabled) {
   transform: translateY(-1px);
   filter: brightness(1.05);
   box-shadow:
@@ -3109,7 +3112,14 @@
     0 3px 6px rgba(37,99,235,0.26),
     inset 0 1px 0 rgba(255,255,255,0.32);
 }
-.cand-sample-download:active { transform: translateY(0); filter: brightness(0.98); }
+.cand-sample-download:active:not(:disabled) { transform: translateY(0); filter: brightness(0.98); }
+/* Downloading is a disabled state this button spends real time in, so it
+   has to read as inert rather than merely unhovered. */
+.cand-sample-download:disabled {
+  opacity: 0.6; cursor: not-allowed;
+  transform: none; filter: none;
+  box-shadow: 0 1px 3px rgba(37,99,235,0.20);
+}
 .cand-sample-download i { font-size: 14px; }
 
 .cand-import-modal {
@@ -3123,8 +3133,8 @@
 .modal-dialog:has(> .cand-import-modal) { max-width: 640px; }
 .cand-import-head {
   position: relative;
-  padding: 18px 22px;
-  display: flex; align-items: center; gap: 14px;
+  padding: 14px 20px;
+  display: flex; align-items: center; gap: 12px;
   background:
     radial-gradient(700px 220px at 100% 0%, rgba(255,255,255,0.22) 0%, transparent 60%),
     linear-gradient(135deg, #a855f7 0%, #9333ea 60%, #7c3aed 100%);
@@ -3132,21 +3142,20 @@
 }
 .cand-import-head-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 44px; height: 44px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.28);
+  width: 40px; height: 40px;
+  border-radius: 11px;
+  background: rgba(255,255,255,0.22);
+  border: 2px solid rgba(255,255,255,0.55);
   flex-shrink: 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.30);
 }
-.cand-import-head-icon i { font-size: 22px; color: #ffffff; }
+.cand-import-head-icon i { font-size: 18px; color: #ffffff; }
 .cand-import-head-text { flex: 1; min-width: 0; }
-.cand-import-head-text h5 { font-size: 16px; font-weight: 700; color: #ffffff; line-height: 1.2; }
-.cand-import-head-sub { font-size: 12px; color: rgba(255,255,255,0.92); margin-top: 2px; }
+.cand-import-head-text h5 { font-size: 17px; font-weight: 700; color: #ffffff; line-height: 1.2; }
+.cand-import-head-sub { font-size: 12px; color: rgba(255,255,255,0.85); margin-top: 1px; }
 .cand-import-close {
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 32px; height: 32px; border-radius: 8px;
   background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.25);
+  border: 1px solid rgba(255,255,255,0.35);
   color: #ffffff;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background .15s ease;
@@ -3303,8 +3312,8 @@
 }
 .cand-export-head {
   position: relative;
-  padding: 18px 22px;
-  display: flex; align-items: center; gap: 14px;
+  padding: 14px 20px;
+  display: flex; align-items: center; gap: 12px;
   background:
     radial-gradient(700px 220px at 100% 0%, rgba(255,255,255,0.22) 0%, transparent 60%),
     linear-gradient(135deg, #22c55e, #15803d);
@@ -3312,21 +3321,20 @@
 }
 .cand-export-head-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 44px; height: 44px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.28);
+  width: 40px; height: 40px;
+  border-radius: 11px;
+  background: rgba(255,255,255,0.22);
+  border: 2px solid rgba(255,255,255,0.55);
   flex-shrink: 0;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.30);
 }
-.cand-export-head-icon i { font-size: 22px; color: #ffffff; }
+.cand-export-head-icon i { font-size: 18px; color: #ffffff; }
 .cand-export-head-text { flex: 1; min-width: 0; }
-.cand-export-head-text h5 { font-size: 16px; font-weight: 700; color: #ffffff; line-height: 1.2; }
-.cand-export-head-sub { font-size: 12px; color: rgba(255,255,255,0.92); margin-top: 2px; }
+.cand-export-head-text h5 { font-size: 17px; font-weight: 700; color: #ffffff; line-height: 1.2; }
+.cand-export-head-sub { font-size: 12px; color: rgba(255,255,255,0.85); margin-top: 1px; }
 .cand-export-close {
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 32px; height: 32px; border-radius: 8px;
   background: rgba(255,255,255,0.18);
-  border: 1px solid rgba(255,255,255,0.25);
+  border: 1px solid rgba(255,255,255,0.35);
   color: #ffffff;
   display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background .15s ease;
@@ -4287,7 +4295,23 @@
   color: rgba(255,255,255,0.55);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  margin-bottom: 4px;
+  /* Inline with its pills now, on both rows. The fixed width is what lines
+     the two pill groups up with each other — without it each row starts
+     wherever its own label happens to end. */
+  flex: 0 0 82px;
+  line-height: 1.2;
+}
+
+/* The row both filters use. Same gap, same baseline, same everything. */
+.ecl-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+@media (max-width: 640px) {
+  .ecl-filter-row { flex-wrap: wrap; }
+  .ecl-head-section-label { flex-basis: 100%; }
 }
 
 .ecl-desig-tabs {
@@ -4318,30 +4342,22 @@
   border-color: #ffffff;
 }
 
-.ecl-type-row {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
 .ecl-type-toggle {
-  display: inline-flex;
-  background: rgba(0,0,0,0.20);
-  border-radius: 7px;
-  padding: 2px;
-  gap: 2px;
+  display: flex; flex-wrap: wrap; gap: 4px;
 }
+/* .ecl-dt's measurements exactly — 26px, fully round, 10.5px, 1px border. */
 .ecl-type-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  height: 24px;
-  padding: 0 12px;
-  border-radius: 5px;
-  border: 0;
-  background: transparent;
-  color: rgba(255,255,255,0.75);
-  font-size: 10px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.20);
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.85);
+  font-size: 10.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: background .15s ease, color .15s ease;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
   white-space: nowrap;
 }
 .ecl-type-btn i { font-size: 12px; }
@@ -4360,13 +4376,15 @@
 [data-bs-theme="dark"] .ecl-dt.is-active i { color: #fca5a5; }
 .ecl-filter-badge {
   display: inline-flex; align-items: center;
+  height: 26px;
   font-size: 10px;
   font-weight: 700;
   background: rgba(255,255,255,0.18);
   color: #ffffff;
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 0 10px;
   margin-left: auto;
+  white-space: nowrap;
 }
 
 .ecl-info-bar {
@@ -5990,6 +6008,52 @@
 }
 .etp-note i { font-size: 15px; flex: none; margin-top: 1px; color: #b45309; }
 .etp-note strong { color: #7c2d12; }
+/* ── Initiate Exit picker · dark ──
+   The tile has to be LIFTED off the panel, because the two surface tokens
+   resolve to the same colour and a border alone cannot separate them here. */
+[data-bs-theme="dark"] .etp-card,
+[data-layout-mode="dark"] .etp-card {
+  background: color-mix(in srgb, #fff 5%, var(--vz-card-bg));
+  border-color: color-mix(in srgb, #fff 14%, var(--vz-border-color));
+}
+/* A black shadow over a dark panel does nothing, so hover answers with the
+   accent itself. */
+[data-bs-theme="dark"] .etp-card:hover,
+[data-layout-mode="dark"] .etp-card:hover {
+  background: color-mix(in srgb, #fff 8%, var(--vz-card-bg));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+/* 16% of the accent over a dark tile is barely a ring; the selected tile has
+   to be unmistakable because the choice it commits cannot be undone. */
+[data-bs-theme="dark"] .etp-card.is-on,
+[data-layout-mode="dark"] .etp-card.is-on {
+  background: color-mix(in srgb, var(--etp-accent, #7c3aed) 12%, var(--vz-card-bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--etp-accent, #7c3aed) 38%, transparent);
+}
+/* The icon tint is mixed with TRANSPARENT, so on a dark tile it resolves to
+   near-black. Mixed with the tile instead, it keeps its colour. */
+[data-bs-theme="dark"] .etp-ico,
+[data-layout-mode="dark"] .etp-ico {
+  background: color-mix(in srgb, var(--etp-accent, #7c3aed) 24%, var(--vz-card-bg));
+  color: color-mix(in srgb, var(--etp-accent, #7c3aed) 70%, #fff);
+}
+/* 11px of --vz-secondary-color on a dark tile is under the contrast floor. */
+[data-bs-theme="dark"] .etp-desc,
+[data-layout-mode="dark"] .etp-desc {
+  color: color-mix(in srgb, var(--vz-body-color) 78%, transparent);
+}
+/* Cancel sat on the panel in the panel's own colour, for the same reason. */
+[data-bs-theme="dark"] .etp-cancel,
+[data-layout-mode="dark"] .etp-cancel {
+  background: color-mix(in srgb, #fff 6%, var(--vz-card-bg));
+  border-color: color-mix(in srgb, #fff 14%, var(--vz-border-color));
+  color: var(--vz-body-color);
+}
+[data-bs-theme="dark"] .etp-cancel:hover:not(:disabled),
+[data-layout-mode="dark"] .etp-cancel:hover:not(:disabled) {
+  background: color-mix(in srgb, #fff 11%, var(--vz-card-bg));
+}
+
 [data-bs-theme="dark"] .etp-note {
   background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.35); color: #fcd34d;
 }
@@ -6072,11 +6136,34 @@
   border: 1.5px dashed var(--vz-border-color); border-radius: 10px;
   padding: 12px 14px; background: var(--vz-secondary-bg); transition: all .15s ease;
 }
-.ep-fnf-drop:hover { border-color: #7c3aed; background: rgba(124,58,237,0.05); }
+/* :not(.is-locked) so a locked box never reacts, whatever the source order. */
+.ep-fnf-drop:hover:not(.is-locked) { border-color: #7c3aed; background: rgba(124,58,237,0.06); }
+[data-bs-theme="dark"] .ep-fnf-drop:hover:not(.is-locked),
+[data-layout-mode="dark"] .ep-fnf-drop:hover:not(.is-locked) {
+  /* 5% violet over a dark panel is nothing at all. */
+  border-color: #a78bfa; background: rgba(139, 92, 246, 0.14);
+}
 .ep-fnf-drop.has-file { border-style: solid; border-color: #a7f3d0; background: #ecfdf5; }
 
 .ep-fnf-drop.is-locked { cursor: default; }
-.ep-fnf-drop.is-locked:hover { border-color: #a7f3d0; background: #ecfdf5; }
+/* Locked still answers the pointer — it carries the View / Download buttons
+   — but in the theme's own colours. The old rule painted the has-file mint
+   whether or not a file was there, and had no dark pair, so a locked and
+   EMPTY dropzone went white against the dark modal. */
+.ep-fnf-drop.is-locked:hover {
+  border-color: #9ca3af;
+  background: #f3f4f6;
+}
+[data-bs-theme="dark"] .ep-fnf-drop.is-locked:hover,
+[data-layout-mode="dark"] .ep-fnf-drop.is-locked:hover {
+  border-color: color-mix(in srgb, #fff 24%, var(--vz-border-color));
+  background: color-mix(in srgb, #fff 7%, var(--vz-secondary-bg));
+}
+.ep-fnf-drop.is-locked.has-file:hover { border-color: #a7f3d0; background: #ecfdf5; }
+[data-bs-theme="dark"] .ep-fnf-drop.is-locked.has-file:hover,
+[data-layout-mode="dark"] .ep-fnf-drop.is-locked.has-file:hover {
+  border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.10);
+}
 .ep-fnf-drop.is-locked .ep-fnf-drop-view { cursor: pointer; }
 .ep-fnf-drop-ico {
   flex: none; width: 38px; height: 38px; border-radius: 10px; font-size: 19px;
@@ -6109,7 +6196,10 @@
 [data-layout-mode="dark"] .ep-fnf-drop-view:hover {
   color: #e0e7ff; background: rgba(129, 140, 248, 0.18); border-color: rgba(129, 140, 248, 0.40);
 }
-[data-bs-theme="dark"] .ep-fnf-drop.has-file { background: rgba(16,185,129,0.10); }
+[data-bs-theme="dark"] .ep-fnf-drop.has-file,
+[data-layout-mode="dark"] .ep-fnf-drop.has-file {
+  background: rgba(16,185,129,0.10); border-color: rgba(16, 185, 129, 0.35);
+}
 
 .modal-dialog:has(> .ep-modal) { max-width: 1260px; }
 
@@ -7493,9 +7583,9 @@
 
   .modal-dialog:has(> .ecl-modal) { max-width: 96vw; }
   .ecl-head { padding: 12px 16px; }
-  .ecl-desig-tabs { gap: 5px; }
-  .ecl-dt { padding: 0 9px; font-size: 10px; }
-  .ecl-type-row { gap: 6px; }
+  .ecl-desig-tabs, .ecl-type-toggle { gap: 5px; }
+  .ecl-dt, .ecl-type-btn { padding: 0 9px; font-size: 10px; }
+  .ecl-filter-row { gap: 8px; }
   .ecl-filter-badge { margin-left: 0; }
   .ecl-info-bar { padding: 9px 16px; gap: 8px; }
 
@@ -7680,7 +7770,7 @@
   .ep-head-meta .rec-id-pill:first-of-type { display: inline-flex; }
   .ep-stage-card { width: 180px; }
   .ep-doc-stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-  .ep-doc-stat-num { font-size: 18px; }
+  .ep-doc-stat-num { font-size: 24px; }
   .ep-fnf-row { font-size: 12px; padding: 9px 12px; }
 }
 
@@ -8218,7 +8308,7 @@
 
 .att-today-stats--4 { grid-template-columns: repeat(4, 1fr); }
 .att-stat { text-align: center; }
-.att-stat-num { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.att-stat-num { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
 .att-stat-label { font-size: 9.5px; font-weight: 800; letter-spacing: 0.10em; color: var(--vz-secondary-color); margin-top: 2px; }
 
 .att-deviation {
@@ -8437,7 +8527,9 @@
   gap: 8px;
   margin-bottom: 14px;
 }
-.att-cal-kpis .rec-kpi-num { font-size: 20px; }
+/* 24px like every other KPI number. Attendance's calendar strip was the
+   odd one out at 20, and the Documents strip at 18. */
+.att-cal-kpis .rec-kpi-num { font-size: 24px; }
 
 .reg-req-table {
   --atl-a-50:  #f0fdfa;
@@ -11889,20 +11981,24 @@
 
           .onb-modal-wide .modal-dialog { max-width: min(900px, 92vw); }
           .onb-modal-content { border-radius: 24px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.18); }
-          .onb-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; font-size: 14px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; height: 50px; }
+          .onb-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 0 14px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; height: 38px; }
           .onb-input::placeholder { color: #9ca3af; font-weight: 400; }
           .onb-input:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }
           .onb-input.is-invalid { border-color: #f06548 !important; box-shadow: 0 0 0 3px rgba(240,101,72,0.15) !important; }
 
+          /* .onb-input's measurements exactly — these were pinned to its OLD
+             50px, so moving the input to 38 left the row on two heights.
+             min-height as well as height: min-height resolves after height
+             and would clamp it back up. */
           .onb-modal-content .master-select-toggle,
           .onb-modal-content .master-datepicker-toggle {
             background: #fff !important;
             border: 1px solid #e5e7eb !important;
-            border-radius: 12px !important;
-            padding: 14px 16px !important;
-            height: 50px !important;
-            min-height: 50px !important;
-            font-size: 14px !important;
+            border-radius: 10px !important;
+            padding: 0 14px !important;
+            height: 38px !important;
+            min-height: 38px !important;
+            font-size: 13px !important;
             color: #1f2937 !important;
           }
           .onb-modal-content .master-select-placeholder,
@@ -11935,9 +12031,23 @@
           }
           .onb-error { display: flex; align-items: center; gap: 4px; color: #f06548; font-size: 12px; margin-top: 6px; }
           .onb-error i { font-size: 13px; }
-          [data-bs-theme="dark"] .onb-input { background: #1c2531; border-color: var(--vz-border-color); color: var(--vz-body-color); }
+          /* One fill for every control in this modal — the input, the three
+             MasterSelect toggles and the date picker. .onb-input carried a
+             hardcoded #1c2531 while the others resolved --vz-card-bg, so a
+             row of fields showed two different darks. Sunk below the panel
+             rather than level with it, so a field still reads as one. */
+          [data-bs-theme="dark"] .onb-input,
+          [data-layout-mode="dark"] .onb-input,
+          [data-bs-theme="dark"] .onb-modal-content .master-select-toggle,
+          [data-layout-mode="dark"] .onb-modal-content .master-select-toggle,
+          [data-bs-theme="dark"] .onb-modal-content .master-datepicker-toggle,
+          [data-layout-mode="dark"] .onb-modal-content .master-datepicker-toggle {
+            background: color-mix(in srgb, #000 30%, var(--vz-card-bg)) !important;
+            border-color: var(--vz-border-color) !important;
+            color: var(--vz-body-color) !important;
+          }
           [data-bs-theme="dark"] .onb-input::placeholder { color: var(--vz-secondary-color); }
-          .onb-label { font-size: 12px; font-weight: 700; color: #374151; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; display: block; }
+          .onb-label { font-size: 10.5px; font-weight: 700; color: #374151; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; display: block; }
           [data-bs-theme="dark"] .onb-label { color: var(--vz-body-color); }
           .onb-label .onb-req { color: #f06548; margin-left: 2px; font-weight: 700; }
           .onb-expiry-pill { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: #fff; border: 1px solid #e5e7eb; color: #6b7280; }
@@ -11954,9 +12064,11 @@
           .onb-close-btn:active { transform: rotate(90deg) scale(0.92); }
           [data-bs-theme="dark"] .onb-close-btn { color: var(--vz-secondary-color); }
           [data-bs-theme="dark"] .onb-close-btn:hover { background: rgba(239,68,68,0.18); color: #fca5a5; }
-          .onb-header-title { font-size: 19px; letter-spacing: -0.01em; color: #1f2937; }
-          .onb-header-sub   { font-size: 13.5px; color: #6b7280; }
-          .onb-header-icon  { width: 52px; height: 52px; border-radius: 14px; background: #f3edff; }
+          /* 17 / 12 / 38, the HRMS modal header scale. This one ran a size up
+             on all three. */
+          .onb-header-title { font-size: 17px; letter-spacing: -0.01em; color: #1f2937; }
+          .onb-header-sub   { font-size: 12px; color: #6b7280; }
+          .onb-header-icon  { width: 38px; height: 38px; border-radius: 10px; background: #f3edff; }
           .onb-header-divider { height: 1px; background: #eef0f4; margin: 0 28px; }
           [data-bs-theme="dark"] .onb-header-title   { color: var(--vz-heading-color, #fff) !important; }
           [data-bs-theme="dark"] .onb-header-sub     { color: var(--vz-secondary-color) !important; }

@@ -645,7 +645,7 @@ export default function HrDocumentTemplates() {
           {/* mb-4 (24px), not mb-3 — the table card sat almost against the KPI
               tiles, and the two are separate blocks: the tiles summarise, the
               card below is the list. 8px more is enough to read as a break. */}
-          <Row className="g-1 mb-4 align-items-stretch rec-page-kpis">
+          <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
             {KPI.map(k => (
               <Col key={k.label} xl={true} md={3} sm={6} xs={12}>
                 {/* The shared KPI card, as Payroll, Attendance and the employee
@@ -1160,16 +1160,15 @@ function RefineTemplates(props: {
         className={`sl-refine-btn${open ? ' is-open' : ''}${props.active ? ' has-active' : ''}`}
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
-        /* Icon only. The word cost ~45px on a row that had none to spare, and
-           a funnel is one of the few glyphs that needs no label. The name lives
-           on the tooltip and on aria-label so it is still announced and still
-           discoverable on hover. */
+        /* Icon only. The word cost ~45px on a row that had none to spare.
+           The name lives on the tooltip and on aria-label so it is still
+           announced and still discoverable on hover. */
         aria-label={props.active > 0 ? `Filter — ${props.active} applied` : 'Filter'}
         title={props.active > 0 ? `Filter — ${props.active} applied` : 'Filter'}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-        </svg>
+        {/* ri-equalizer-line, the same glyph every other filter button in
+            the app uses — this one drew a funnel of its own. */}
+        <i className="ri-equalizer-line" style={{ fontSize: 17 }} />
         {props.active > 0 && <span className="sl-refine-badge">{props.active}</span>}
       </button>
 

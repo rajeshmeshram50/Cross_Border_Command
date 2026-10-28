@@ -684,8 +684,8 @@ export default function GenerateDocument() {
               ← Back
             </button>
             {step < 3 ? (
-              <button type="button" onClick={goNext} disabled={previewing}
-                style={{ padding: '8px 18px', background: PRIMARY_GRADIENT, border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer', boxShadow: PRIMARY_GLOW }}>
+              <button type="button" onClick={goNext} disabled={previewing} className="gd-next"
+                style={{ padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                 {previewing ? 'Building preview…' : 'Next →'}
               </button>
             ) : (
@@ -1229,33 +1229,28 @@ function Step1(props: {
 
   return (
     <div>
+      {/* Title left, search right — the toolbar every HRMS list uses. The
+          search had a band of its own, under a second band carrying the
+          scope hint, so the step opened on three stacked rows before the
+          table. The scope the hint announced is already on the modal's own
+          header (code • version) and in the template that was opened. */}
       <StepHead icon="ri-team-line" title="Select Employees" sub={STEPS[0].sub}
         right={
-          <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
-            {props.selectedIds.size} selected
-          </span>
+          <div className="d-flex align-items-center gap-2 flex-wrap justify-content-end" style={{ minWidth: 0 }}>
+            <div className="ui-search-abs gd-head-search" style={{ position: 'relative' }}>
+              <i className="ri-search-line" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 15 }} />
+              <Input autoComplete="off" type="text" placeholder="Search by name, code, email…" value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 38 }} className="gd-search" />
+              <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
+            </div>
+            <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999, flexShrink: 0 }}>
+              {props.selectedIds.size} selected
+            </span>
+          </div>
         } />
 
-      {/* Scope hint — the list is filtered to the template's designation level
-          (and IT/Non-IT/Legal category it was authored under) so only eligible
-          recipients appear. */}
-      {(props.roleType || props.category) && (
-        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }} className="gd-scope-hint">
-          <i className="ri-filter-3-line me-1" style={{ color: '#8b5cf6' }} />
-          Showing {props.category ? <><strong style={{ color: '#4338ca' }}>{props.category}</strong> employees</> : 'employees'}
-          {props.roleType ? <> at the <strong style={{ color: '#4338ca' }}>{props.roleType}</strong> level</> : null}.
-        </div>
-      )}
-
-      <div className="ui-search-abs" style={{ position: 'relative', marginBottom: 12, maxWidth: 360 }}>
-        <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-        <Input autoComplete="off" type="text" placeholder="Search by name, code, email…" value={search}
-          onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
-          <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
-      </div>
-
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }} className="gd-table-wrap">
-        <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: '52px 32px 2fr 104px 1.4fr 124px 0.9fr 0.9fr', gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
+        <div style={{ display: 'grid', gridTemplateColumns: '52px 32px 2fr 104px 1.4fr 124px 0.9fr 0.9fr', gap: 12 }} className="gd-table-head">
           <div>Sr No</div>
           <input type="checkbox" checked={allChecked} onChange={toggleAll} style={{ cursor: 'pointer' }} />
           <div>Employee</div>
@@ -1290,7 +1285,7 @@ function Step1(props: {
                   borderTop: i === 0 ? 'none' : '1px solid #f1f5f9',
                   background: sentRun ? '#f9fafb' : checked ? '#eef2ff' : '#fff', alignItems: 'center',
                   cursor: sentRun ? 'not-allowed' : 'pointer', opacity: sentRun ? 0.65 : 1 }}>
-                <div className="gd-row-cell" style={{ fontSize: 12.5, fontWeight: 700, color: '#6b7280' }}>{(safePage - 1) * PER_PAGE + i + 1}</div>
+                <div className="gd-row-cell"><span className="gd-sr">{(safePage - 1) * PER_PAGE + i + 1}</span></div>
                 <input type="checkbox" checked={checked} disabled={!!sentRun} onChange={() => toggleOne(e.id)} style={{ cursor: sentRun ? 'not-allowed' : 'pointer' }} />
                 <div>
                   <div style={{ fontWeight: 700, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} className="gd-row-name">
@@ -1463,16 +1458,16 @@ function Step2(props: {
               recipient meant a 100-person run was a 100-screen scroll with no
               way to find anyone; this is the same grid + pager as Step 1. */}
           <div className="ui-search-abs" style={{ position: 'relative', marginBottom: 12, maxWidth: 360 }}>
-            <i className="ri-search-line" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+            <i className="ri-search-line" style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 15 }} />
             <Input autoComplete="off" type="text" placeholder="Search by name, code, email…" value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 32, height: 36 }} className="gd-search" />
+              onChange={e => { setSearch(e.target.value); setPage(1); }} style={{ paddingLeft: 38 }} className="gd-search" />
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
 
           <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }} className="gd-table-wrap gd-vars-table">
             <div style={{ overflowX: 'auto' }}>
               <div style={{ minWidth: gridMinWidth }}>
-                <div style={{ background: '#f5f3ff', padding: '10px 14px', display: 'grid', gridTemplateColumns: gridCols, gap: 12, fontSize: 11, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase' }} className="gd-table-head">
+                <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 12 }} className="gd-table-head">
                   <div>Sr No</div>
                   <div>Employee</div>
                   {/* The name is clamped to two lines with the full text on
@@ -2087,6 +2082,87 @@ function ScopedStyles() {
       .gd-page .gd-input {
         transition: border-color 140ms ease, box-shadow 140ms ease;
       }
+
+      /* .dt-search's measurements — the search on every other HRMS list.
+         This one had no rule of its own at all and fell through to
+         Bootstrap's .form-control. (QA #133) */
+      .gd-page .gd-search {
+        height: 42px;
+        border-radius: 11px;
+        background: rgba(255, 255, 255, .80);
+        border: 1.5px solid rgba(124, 58, 237, .28);
+        box-shadow: 0 1px 0 rgba(255, 255, 255, .95) inset;
+        font-size: 13px;
+        transition: border-color .16s ease, box-shadow .16s ease;
+      }
+      .gd-page .gd-search:hover { border-color: rgba(124, 58, 237, .45); }
+      /* In the step head it shares the row with the count badge, so it is
+         capped rather than greedy — the same reasoning as .dt-search. */
+      .gd-page .gd-head-search { width: 320px; max-width: 100%; }
+
+      /* The table header every other list wears: a filled band, white
+         9.5px/800 at .07em. This one was pale lilac with grey 11px text. */
+      .gd-page .gd-table-head {
+        padding: 9px 14px;
+        background: color-mix(in srgb, #8b5cf6 60%, #7c3aed);
+        color: #fff;
+        font-size: 9.5px; font-weight: 800;
+        letter-spacing: .07em; text-transform: uppercase;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+      }
+      /* The numbered pill, as DataTable's serial column draws it. */
+      .gd-page .gd-sr {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 22px; height: 22px; padding: 0 6px;
+        border-radius: 7px;
+        background: #ede9fe; color: #6d28d9;
+        font-size: 11.5px; font-weight: 800;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-sr,
+      [data-layout-mode="dark"] .gd-page .gd-sr {
+        background: rgba(139, 92, 246, .22); color: #c4b5fd;
+      }
+      .gd-page .gd-row { transition: background .14s ease; }
+
+      /* Hover, in LIGHT mode — these three had rules for dark only, so the
+         footer was inert under the pointer on the theme most people use. */
+      .gd-page .gd-cancel,
+      .gd-page .gd-back,
+      .gd-page .gd-outline-btn,
+      .gd-page .gd-next {
+        transition: background .15s ease, border-color .15s ease, color .15s ease,
+                    box-shadow .15s ease, transform .15s ease, filter .15s ease;
+      }
+      .gd-page .gd-cancel:hover:not(:disabled),
+      .gd-page .gd-back:hover:not(:disabled),
+      .gd-page .gd-outline-btn:hover:not(:disabled) {
+        background: #f3f4f6;
+        border-color: #9ca3af;
+        color: #111827;
+      }
+      .gd-page .gd-next {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        border: 0; color: #fff;
+        box-shadow: 0 6px 16px rgba(99, 102, 241, .32);
+      }
+      .gd-page .gd-next:hover:not(:disabled) {
+        filter: brightness(1.06);
+        box-shadow: 0 10px 22px rgba(99, 102, 241, .42);
+        transform: translateY(-1px);
+      }
+      /* "Building preview…" is a disabled state this button sits in for
+         real seconds, so it has to read inert rather than merely unhovered. */
+      .gd-page .gd-next:disabled {
+        opacity: .6; cursor: default;
+        transform: none; filter: none; box-shadow: none;
+      }
+      .gd-page .gd-cancel:disabled,
+      .gd-page .gd-back:disabled,
+      .gd-page .gd-outline-btn:disabled { opacity: .6; cursor: default; }
+      @media (max-width: 760px) {
+        .gd-page .gd-head-search { width: 100%; }
+        .gd-page .gd-step-head > div:last-child { width: 100%; }
+      }
       .gd-page .gd-input:focus,
       .gd-page .gd-input:focus-visible {
         outline: none;
@@ -2187,7 +2263,16 @@ function ScopedStyles() {
       [data-bs-theme="dark"] .gd-page .gd-input,
       [data-layout-mode="dark"] .gd-page .gd-search,
       [data-layout-mode="dark"] .gd-page .gd-input {
-        background: #0f172a !important; border-color: rgba(255,255,255,0.10) !important; color: #f1f5f9 !important;
+        /* The card background, as every other HRMS field reads in dark —
+           #0f172a was a navy this page chose for itself. */
+        background: var(--vz-card-bg) !important;
+        border-color: var(--vz-border-color) !important;
+        color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-search,
+      [data-layout-mode="dark"] .gd-page .gd-search {
+        border-color: rgba(167, 139, 250, .30) !important;
+        box-shadow: none;
       }
       [data-bs-theme="dark"] .gd-page .gd-search::placeholder,
       [data-bs-theme="dark"] .gd-page .gd-input::placeholder,

@@ -549,6 +549,27 @@ export const MASTER_MODAL_CSS = `
   [data-layout-mode="dark"] .master-modal .master-field .form-select {
     background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg)) !important;
   }
+  /* A background of its OWN, before any ancestor gets a say.
+
+     The toggle renders as a bare <button>, and every rule that fills it is
+     scoped to some ancestor — .master-modal, .rec-form-modal, .hrexp-hero-
+     select. In a modal matching none of them it fell back to the browser's
+     ButtonFace, which is white: right by accident in light mode, wrong in
+     dark, and that is the Assign Assets modal (#110). Colour only — borders
+     stay with whatever rule owns them, so no existing field changes shape.
+
+     Every rule below overrides this one; none of them is weakened by it. */
+  .master-select-toggle {
+    background: var(--vz-card-bg, #fff);
+    color: var(--vz-body-color);
+  }
+  /* Disabled is a separate state because the ancestor rules all exclude it,
+     so it has never had a fill of its own either. */
+  .master-select-toggle:disabled {
+    background: var(--vz-secondary-bg, #f3f4f6);
+    color: var(--vz-secondary-color);
+  }
+
   /* Dropdown triggers wear the same tinted fill + border as the text inputs,
      so every field in the modal reads as one set. */
   .master-modal .master-select-toggle:not(:disabled) {
@@ -560,6 +581,29 @@ export const MASTER_MODAL_CSS = `
   [data-bs-theme="dark"] .master-modal .master-select-toggle:not(:disabled),
   [data-layout-mode="dark"] .master-modal .master-select-toggle:not(:disabled) {
     background: color-mix(in srgb, #6691e7 12%, var(--vz-card-bg)) !important;
+  }
+
+  /* ── HRMS: fields sunk below the panel ──
+     The rules above tint a field 12% blue over the card, so it reads as
+     RAISED. HRMS asked for the opposite, and its own modals already do it
+     (Generate Onboarding Link). .hrms-modal carries the decision so the
+     Master module keeps the tint it was designed with. */
+  [data-bs-theme="dark"] .hrms-modal .master-field .form-control,
+  [data-bs-theme="dark"] .hrms-modal .master-field .form-select,
+  [data-bs-theme="dark"] .hrms-modal .master-select-toggle:not(:disabled),
+  [data-bs-theme="dark"] .hrms-modal .master-datepicker-toggle,
+  [data-layout-mode="dark"] .hrms-modal .master-field .form-control,
+  [data-layout-mode="dark"] .hrms-modal .master-field .form-select,
+  [data-layout-mode="dark"] .hrms-modal .master-select-toggle:not(:disabled),
+  [data-layout-mode="dark"] .hrms-modal .master-datepicker-toggle {
+    background: color-mix(in srgb, #000 30%, var(--vz-card-bg)) !important;
+    border-color: var(--vz-border-color) !important;
+    color: var(--vz-body-color) !important;
+  }
+  /* Focus keeps its violet ring over the darker fill. */
+  [data-bs-theme="dark"] .hrms-modal .master-field .form-control:focus,
+  [data-layout-mode="dark"] .hrms-modal .master-field .form-control:focus {
+    background: color-mix(in srgb, #000 30%, var(--vz-card-bg)) !important;
   }
 
   /* Prefix-icon input groups */

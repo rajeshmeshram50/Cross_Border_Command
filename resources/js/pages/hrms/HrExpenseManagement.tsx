@@ -1088,7 +1088,7 @@ export default function HrExpenseManagement() {
           </div>
         </div>
 
-        <Row className="g-2 mb-2 align-items-stretch hrexp-kpi-row rec-page-kpis">
+        <Row className="g-1 mb-3 align-items-stretch hrexp-kpi-row rec-page-kpis">
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label={isAdvanceModule ? 'Total Advances' : 'Total Claims'}

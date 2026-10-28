@@ -1448,8 +1448,8 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
                 <i className="ri-calendar-event-line" style={{ fontSize: 18, color: '#fff' }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16 }}>Holidays</h5>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17 }}>Holidays</h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
                   {loading ? 'Loading…' : `${sorted.length} holiday${sorted.length === 1 ? '' : 's'} configured`}
                 </div>
               </div>
@@ -1533,13 +1533,13 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
                 {row.empInitials}
               </span>
               <div className="min-w-0">
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   {/* Employee CODE, not `row.id` — the latter is the leave
                       request's internal database id and read as a stray number
                       beside the name (same leak as the approve modal, CBC #132). */}
                   {row.empName} <span style={{ opacity: 0.8 }}>· {row.empCode}</span>
                 </h5>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   {row.empRole} · Reporting to {row.reportingManager.name}
                 </div>
               </div>

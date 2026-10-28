@@ -995,12 +995,14 @@ export default function TemplateFormPage() {
             </button>
             {step < STEPS.length ? (
               <button type="button" onClick={handleNext} disabled={saving}
-                style={{ padding: '8px 18px', background: '#6366f1', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#fff', cursor: 'pointer' }}>
+                className="tpl-btn-next"
+                style={{ padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 Next →
               </button>
             ) : (
               <button type="button" onClick={() => handleSubmit(false)} disabled={saving}
-                style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                className="tpl-btn-publish"
+                style={{ padding: '8px 18px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                 {saving ? <><Spin /> Saving…</> : (editing ? 'Update Template' : 'Publish Template')}
               </button>
             )}
@@ -2303,11 +2305,51 @@ function TplFormDarkStyles() {
         color: #374151;
       }
       .tpl-form-page .tpl-btn-ghost:disabled { color: #9ca3af; cursor: default; }
+
+      /* Hover, on every footer button (QA #123). */
+      .tpl-form-page .tpl-btn-ghost,
+      .tpl-form-page .tpl-btn-next,
+      .tpl-form-page .tpl-btn-publish {
+        transition: background .15s ease, border-color .15s ease, color .15s ease,
+                    box-shadow .15s ease, transform .15s ease, filter .15s ease;
+      }
+      .tpl-form-page .tpl-btn-ghost:hover:not(:disabled) {
+        background: #f3f4f6;
+        border-color: #9ca3af;
+        color: #111827;
+      }
+      .tpl-form-page .tpl-btn-next {
+        background: #6366f1; color: #fff; border: 0;
+      }
+      .tpl-form-page .tpl-btn-next:hover:not(:disabled) {
+        background: #4f46e5;
+        box-shadow: 0 6px 16px rgba(99, 102, 241, .35);
+        transform: translateY(-1px);
+      }
+      .tpl-form-page .tpl-btn-publish {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: 0;
+      }
+      .tpl-form-page .tpl-btn-publish:hover:not(:disabled) {
+        filter: brightness(1.06);
+        box-shadow: 0 6px 16px rgba(124, 92, 252, .38);
+        transform: translateY(-1px);
+      }
+      /* Saving is a disabled state these two spend real time in, so it has
+         to read as inert rather than merely unhovered. */
+      .tpl-form-page .tpl-btn-next:disabled,
+      .tpl-form-page .tpl-btn-publish:disabled {
+        opacity: .6; cursor: default; transform: none; box-shadow: none; filter: none;
+      }
       [data-bs-theme="dark"] .tpl-form-page .tpl-btn-ghost,
       [data-layout-mode="dark"] .tpl-form-page .tpl-btn-ghost {
         background: var(--vz-card-bg) !important;
         border-color: var(--vz-border-color) !important;
         color: var(--vz-body-color) !important;
+      }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-btn-ghost:hover:not(:disabled),
+      [data-layout-mode="dark"] .tpl-form-page .tpl-btn-ghost:hover:not(:disabled) {
+        background: color-mix(in srgb, #fff 8%, var(--vz-card-bg)) !important;
+        border-color: color-mix(in srgb, #fff 22%, var(--vz-border-color)) !important;
       }
       [data-bs-theme="dark"] .tpl-form-page .tpl-btn-ghost:disabled,
       [data-layout-mode="dark"] .tpl-form-page .tpl-btn-ghost:disabled {

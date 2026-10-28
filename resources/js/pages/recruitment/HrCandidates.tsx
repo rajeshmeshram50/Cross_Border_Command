@@ -142,6 +142,16 @@ export default function HrCandidates() {
   const [tab, setTab]                 = useState<'all' | 'final' | 'selected' | 'rejected'>('final');
   const [search, setSearch]           = useState('');
 
+  /* An empty tab and an over-filtered one are different answers. "No
+     candidates match your filters" on an untouched Selected tab tells the
+     user to clear filters they never set. */
+  const emptyLabel = search.trim()
+    ? 'No candidates match your search'
+    : tab === 'final'    ? 'No final-round candidates yet'
+    : tab === 'selected' ? 'No selected candidates found'
+    : tab === 'rejected' ? 'No rejected candidates found'
+    : 'No candidates yet';
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing]     = useState<CandidateRow | null>(null);
   /* Rejected candidates open the same form in read-only mode — the profile is
@@ -669,7 +679,7 @@ export default function HrCandidates() {
               emptyMessage={
                 <>
                   <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  No candidates match your filters
+                  {emptyLabel}
                 </>
               }
             />
@@ -1072,6 +1082,9 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
             <h5 className="mb-0">Sample Import Format</h5>
             <div className="cand-sample-head-sub">Download an Excel template to bulk-upload candidates</div>
           </div>
+          <button type="button" className="cand-sample-close" onClick={onClose} aria-label="Close">
+            <i className="ri-close-line" />
+          </button>
         </div>
 
         <div className="cand-sample-body">
@@ -1505,12 +1518,12 @@ function CandidateFormModal({
         <div className="rec-form-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <i className={readOnly ? 'ri-eye-line' : 'ri-user-add-line'} style={{ fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>Candidate Details</h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{readOnly ? 'View applicant profile — read only' : editing ? 'Update applicant profile' : 'Register a new applicant profile in the pipeline'}</div>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>Candidate Details</h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{readOnly ? 'View applicant profile — read only' : editing ? 'Update applicant profile' : 'Register a new applicant profile in the pipeline'}</div>
               </div>
             </div>
             <button

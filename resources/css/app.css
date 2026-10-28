@@ -257,6 +257,9 @@ button.ms-cstrip-add {
    plan, payment, branch and master strips on their 42. */
 .frm-cstrip.hr-cstrip :is(button, a.btn):not(.dt-tab):not(.dt-act):not(.dt-search-clear):not(.dt-tabrail *) {
   height: 40px !important;
+  /* 12.5px, matching .rec-btn-*, .cand-pill-btn and the DataTable toolbar.
+     The blanket rule's 13px !important beat every one of them. */
+  font-size: 12.5px !important;
   /* min-height too, and this is the part that actually settles it.
      .hr-cstrip > .d-flex .btn.rounded-pill carries min-height: 42px, and
      min-height is resolved AFTER height — it clamps the used value back
@@ -1799,10 +1802,17 @@ tbody tr:nth-child(10) {
   color: #2e1065;
 }
 
-/* 14.5px, matching .cstrip__title on the Supplier strip. Size only — the
-   band keeps its 70px and the icon its 46px. */
+/* 14.5px, matching .cstrip__title on the Supplier strip. */
 .frm-cstrip.hr-cstrip .frm-cstrip-title {
   font-size: 14.5px;
+}
+
+/* 58px, not the base 70: 40px of control (the strip's buttons, and the tabs
+   inside their rail) with 9px above and below. The 38px icon and the
+   14.5 + 12 title stack both sit inside that 40. */
+.frm-cstrip.hr-cstrip {
+  min-height: 58px;
+  padding: 9px 18px;
 }
 
 .hr-cstrip .frm-cstrip-sub {

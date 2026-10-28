@@ -1153,8 +1153,8 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
                 <i className="ri-file-add-line" style={{ fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>Raise Hiring Request</h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>Raise Hiring Request</h5>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   Internal workforce demand · Reviewed by HR before job posting
                 </div>
               </div>
@@ -1809,7 +1809,7 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
                 <i className="ri-eye-line" style={{ fontSize: 18 }} />
               </span>
               <div className="min-w-0">
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   {r.position} <span style={{ opacity: 0.8 }}>· {r.code || r.id}</span>
                 </h5>
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
@@ -2545,10 +2545,10 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 <i className={mode === 'edit' ? 'ri-pencil-line' : 'ri-add-circle-line'} style={{ fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, letterSpacing: '-0.01em', lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, letterSpacing: '-0.01em', lineHeight: 1.2 }}>
                   {mode === 'edit' ? `Edit Recruitment ${editing ? `(${editing.id})` : ''}` : 'Create Recruitment'}
                 </h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1, lineHeight: 1.2 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1, lineHeight: 1.2 }}>
                   Fill in the details to open a new hiring position
                 </div>
               </div>

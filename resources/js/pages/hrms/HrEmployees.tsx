@@ -2285,15 +2285,74 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
 
   const empScrollRef = useRef<HTMLDivElement>(null);
 
-  const scrollToFirstError = () => {
+  /* Which step owns a field, for jumping to the one that failed.
+     Tracks the four validateStepN bodies above — a field added to one of
+     them belongs here too, or its error cannot be navigated to. */
+  const FIELD_STEP: Record<string, number> = {
+    actual_name: 1, address_line1: 1, city: 1, country_id: 1, date_of_birth: 1,
+    display_name: 1, email: 1, first_name: 1, gender: 1, last_name: 1,
+    middle_name: 1, mobile: 1, nationality_country_id: 1, perm_address_line1: 1,
+    perm_city: 1, perm_country_id: 1, perm_pincode: 1, perm_state_id: 1,
+    pincode: 1, state_id: 1, work_country_id: 1,
+
+    date_of_joining: 2, department_id: 2, designation_id: 2, legal_entity_id: 2,
+    notice_period: 2, primary_role_id: 2, probation_policy: 2,
+    reporting_manager_id: 2, work_type: 2,
+
+    doc_aadhaar: 3, doc_pan: 3, expense_policy: 3, holiday_list: 3,
+    laptop_master_asset_id: 3, leave_plan: 3, mobile_master_asset_id: 3,
+    overtime: 3, shift: 3, weekly_off: 3,
+
+    annual_salary: 4, salary_breakup: 4, salary_effective_from: 4,
+  };
+
+  /* The server's key, mapped to a field this form actually renders. It posts
+     reporting_manager where the form names reporting_manager_id, and nests
+     breakup errors as earnings.0.amount. */
+  const stepOfErrorKey = (key: string): number | null => {
+    const base = key.split('.')[0];
+    for (const candidate of [key, base, `${base}_id`, base.replace(/_id$/, '')]) {
+      if (candidate && FIELD_STEP[candidate]) return FIELD_STEP[candidate];
+    }
+    if (/^(earnings|deductions)\b/.test(base)) return 4;
+    return null;
+  };
+
+  /**
+   * Navigate to the first error, then scroll to it.
+   *
+   * `errors` is optional: the per-step validators raise errors on the step
+   * already open, so they need only the scroll. A SERVER rejection names
+   * fields from any step, and those have to be navigated to first — the
+   * previous version queried the DOM for .is-invalid and found nothing at
+   * all when the offending field belonged to a step that was not rendered,
+   * so the toast appeared over a form with nothing highlighted on it.
+   */
+  const scrollToFirstError = (errors?: Record<string, string>) => {
+    if (errors) {
+      const steps = Object.keys(errors)
+        .map(stepOfErrorKey)
+        .filter((n): n is number => n !== null);
+
+      // The earliest step that failed, so fixing them runs forwards.
+      if (steps.length) {
+        const target = Math.min(...steps) as 1 | 2 | 3 | 4;
+        if (target !== empStep) setEmpStep(target);
+      }
+    }
+
+    // Two frames: one for the step swap to commit, one for its layout.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const root = empScrollRef.current;
       if (!root) return;
-      const el = root.querySelector('.is-invalid, .has-error, .master-select-wrap.invalid, .emp-err');
+      const el = root.querySelector(
+        '.is-invalid, .has-error, .master-select-wrap.invalid, .master-file-input.invalid,'
+        + ' .master-datepicker-wrap.invalid, .emp-err',
+      );
       if (!el) return;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       const focusable = (el.closest('[class*="col"]') || el.parentElement)
-        ?.querySelector('input:not([type="file"]), textarea') as HTMLElement | null;
+        ?.querySelector('input:not([type="file"]), textarea, button') as HTMLElement | null;
       focusable?.focus?.({ preventScroll: true });
     }));
   };
@@ -3153,7 +3212,7 @@ const STEP_SAFE_FIELDS = new Set([
           flat[k] = Array.isArray(fieldErrors[k]) ? fieldErrors[k][0] : String(fieldErrors[k]);
         }
         setEErrors(flat);
-        scrollToFirstError();
+        scrollToFirstError(flat);
 
         /* A duplicate address or number keeps the headline it had when a
            separate pre-check asked the question — "Could not save" over a
@@ -3365,7 +3424,7 @@ const STEP_SAFE_FIELDS = new Set([
           flat[k] = (Array.isArray(fieldErrors[k]) ? fieldErrors[k][0] : fieldErrors[k]) || 'Invalid';
         }
         setEErrors(flat);
-        scrollToFirstError();
+        scrollToFirstError(flat);
         toast.error('Could not save employee', err?.response?.data?.message || 'Please correct the highlighted fields.');
       } else {
         const apiMsg = err?.response?.data?.message || err?.message || 'Save failed';
@@ -6098,7 +6157,7 @@ const STEP_SAFE_FIELDS = new Set([
         centered
         size="lg"
         contentClassName="border-0"
-        modalClassName="master-modal"
+        modalClassName="master-modal hrms-modal"
         backdrop="static"
         keyboard={false}
       >
@@ -6106,7 +6165,7 @@ const STEP_SAFE_FIELDS = new Set([
         <ModalBody className="p-0">
           <div
             style={{
-              padding: '22px 26px',
+              padding: '14px 20px',
               background: 'linear-gradient(120deg, #5b3fd1 0%, #6366f1 55%, #7c5cfc 100%)',
               color: '#fff',
               position: 'relative',
@@ -6123,35 +6182,32 @@ const STEP_SAFE_FIELDS = new Set([
               aria-label="Close"
               className="assign-close-x btn p-0 d-inline-flex align-items-center justify-content-center"
               style={{
-                position: 'absolute', top: 16, right: 18, zIndex: 2,
-                width: 30, height: 30, borderRadius: 10,
+                position: 'absolute', top: 14, right: 16, zIndex: 2,
+                width: 32, height: 32, borderRadius: 8,
                 background: 'rgba(255,255,255,0.18)',
-                border: '1px solid rgba(255,255,255,0.30)',
+                border: '1px solid rgba(255,255,255,0.35)',
                 color: '#fff',
               }}
             >
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
             <div className="d-flex align-items-center gap-3" style={{ position: 'relative', paddingRight: 44 }}>
-              <div className="d-flex align-items-center gap-3 min-w-0">
+              <div className="d-flex align-items-center gap-2 min-w-0">
                 <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                  className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
                   style={{
-                    width: 46, height: 46,
+                    width: 40, height: 40, borderRadius: 11,
                     background: 'rgba(255,255,255,0.22)',
-                    /* Heavier ring — at 1px the outline all but vanished against
-                       the violet gradient behind it, leaving the tile reading as
-                       a soft patch rather than a framed icon. */
-                    border: '2.5px solid rgba(255,255,255,0.55)',
+                    border: '2px solid rgba(255,255,255,0.55)',
                   }}
                 >
-                  <i className="ri-computer-line" style={{ color: '#fff', fontSize: 21 }} />
+                  <i className="ri-computer-line" style={{ fontSize: 18, color: '#fff' }} />
                 </span>
                 <div className="min-w-0">
-                  <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 19, letterSpacing: '-0.01em' }}>
+                  <h5 className="fw-bold mb-0 text-white" style={{ fontSize: 17, lineHeight: 1.2 }}>
                     Assign Assets
                   </h5>
-                  <div className="text-truncate" style={{ fontSize: 13, color: 'rgba(255,255,255,0.92)' }}>
+                  <div className="text-truncate" style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
                     {assignEmp ? (
                       <>
                         {assignEmp.name} · <span className="font-monospace">{assignEmp.id}</span> · {assignEmp.department}

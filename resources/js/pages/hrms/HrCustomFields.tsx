@@ -3,9 +3,9 @@ import { Col, Row } from 'reactstrap';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
-import { MasterSelect } from '../../components/ui/MasterSelect';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { Shimmer } from '../../components/ui/Shimmer';
 import CustomFieldModal, { CustomFieldFormPayload } from './doc-templates/CustomFieldModal';
@@ -490,21 +490,25 @@ export default function HrCustomFields() {
               </>
             }
             toolbarFilters={
-              <div style={{ minWidth: 150 }}>
-                <MasterSelect
-                  searchable={false}
-                  value={typeFilter}
-                  onChange={setTypeFilter}
-                  options={[
-                    { value: '',         label: 'All Types' },
-                    { value: 'text',     label: 'Text' },
-                    { value: 'date',     label: 'Date' },
-                    { value: 'number',   label: 'Number' },
-                    { value: 'textarea', label: 'Textarea' },
-                  ]}
-                  placeholder="All Types"
-                />
-              </div>
+              <MasterFilterButton
+                title="Filter Custom Fields"
+                icon="ri-star-fill"
+                facets={[{
+                  key: 'type',
+                  label: 'Field Type',
+                  icon: 'ri-price-tag-3-line',
+                  /* No 'All' row — an empty selection already means all,
+                     and Reset All is the way back. */
+                  options: [
+                    { value: 'text',     label: 'Text',     count: stats.text },
+                    { value: 'date',     label: 'Date',     count: stats.date },
+                    { value: 'number',   label: 'Number',   count: stats.number },
+                    { value: 'textarea', label: 'Textarea', count: stats.textarea },
+                  ],
+                }]}
+                value={{ type: typeFilter }}
+                onApply={next => setTypeFilter(String(next.type ?? ''))}
+              />
             }
           />
         </div>

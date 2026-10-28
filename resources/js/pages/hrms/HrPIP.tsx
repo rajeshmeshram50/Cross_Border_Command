@@ -2609,7 +2609,7 @@ function InitiatePipModal({
                 <i className="ri-shield-flash-line" />
               </span>
               <div className="min-w-0">
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   Initiate Performance Improvement Plan
                 </h5>
                 <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>

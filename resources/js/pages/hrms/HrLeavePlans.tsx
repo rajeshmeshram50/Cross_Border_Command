@@ -15,6 +15,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
 import SearchClear from '../../components/ui/SearchClear';
+import TablePager, { pageSlice, usePager } from '../../components/ui/TablePager';
 
 type CalendarStart = 'fixed_month' | 'joining_date';
 
@@ -1125,6 +1126,8 @@ function ConfigurationTab({
   onShowGuide: () => void;
   canEdit: boolean;
 }) {
+  const typePager = usePager(plan.leaveTypes.length);
+
   return (
     <div className="lp-config">
       <div className="lp-config-actions">
@@ -1174,7 +1177,7 @@ function ConfigurationTab({
                   <div className="text-muted fs-13 mt-1">Click <strong>+ Assign Leave Type</strong> to configure leave categories for this plan.</div>
                 </td>
               </tr>
-            ) : plan.leaveTypes.map(t => (
+            ) : pageSlice(plan.leaveTypes, typePager.page, typePager.pageSize).map(t => (
               <tr key={t.id}>
                 <td>
                   <div className="d-flex align-items-center gap-2">
@@ -1215,6 +1218,14 @@ function ConfigurationTab({
           </tbody>
         </table>
       </div>
+
+      <TablePager
+        total={plan.leaveTypes.length}
+        page={typePager.page}
+        pageSize={typePager.pageSize}
+        onPage={typePager.setPage}
+        onPageSize={typePager.setPageSize}
+      />
     </div>
   );
 }
@@ -1640,14 +1651,14 @@ function ViewLeaveTypeModal({
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className="ri-eye-line" style={{ color: '#fff', fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   Leave Type Details
                 </h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   Read-only view of "{t.name}"
                 </div>
               </div>
@@ -1709,14 +1720,14 @@ function GuidanceModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => vo
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className="ri-question-line" style={{ color: '#fff', fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   Leave Setup — Quick Guide
                 </h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   How leave types and plans fit together
                 </div>
               </div>
@@ -1873,10 +1884,10 @@ function AddLeavePlanModal({
                 <i className={editing ? 'ri-pencil-line' : 'ri-calendar-2-line'} style={{ color: '#fff', fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   {editing ? 'Edit Leave Plan' : 'Add Leave Plan'}
                 </h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   {editing ? `Update "${editing.name}"` : 'Create a new leave policy group'}
                 </div>
               </div>
@@ -2112,10 +2123,10 @@ function AddLeaveTypeModal({
                 <i className={editing ? 'ri-pencil-line' : 'ri-add-line'} style={{ color: '#fff', fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   {editing ? 'Edit Leave Type' : 'Add Leave Type'}
                 </h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   {editing ? `Update "${editing.name}" in the catalog` : 'Add a new leave type to the catalog'}
                 </div>
               </div>
@@ -2382,10 +2393,10 @@ function AssignLeaveTypesModal({
                 <i className="ri-checkbox-multiple-line" style={{ color: '#fff', fontSize: 16 }} />
               </span>
               <div>
-                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
+                <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 17, lineHeight: 1.2 }}>
                   Assign Leave Types
                 </h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   to {planName || 'this plan'}
                 </div>
               </div>
