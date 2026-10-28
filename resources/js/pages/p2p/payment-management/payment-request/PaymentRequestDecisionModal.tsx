@@ -1,6 +1,3 @@
-// Approve / Reject a payment request. One dialog, two modes: the request is
-// shown read-only exactly as raised, and the approver sets only the decision —
-// the amount being sanctioned, or the reason for declining.
 import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -8,19 +5,13 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { Box, Chip, HeroRefChips, ICON_X, STAT_ICONS, Stat, fmtDate, moneyIn } from '../../purchase-management/order/manage-payment/payment-shared';
 import { decidePaymentRequest, type PaymentRequestRow } from './paymentRequestData';
 import { ccySymbol } from '../../../../utils/currency';
-import { PoApiError } from '../../purchase-management/order/api/po-api';
 import type { PaymentRequestDetail } from './paymentRequestDetailData';
 import '../../p2p-detail.css';
 import '../../purchase-management/order/manage-payment/manage-payment-requests.css';
 import '../../purchase-management/order/manage-payment/raise-payment-request.css';
-// For the apay-wait veil shown while the decision saves.
 import '../../purchase-management/order/manage-payment/add-payment.css';
 import './payment-request-decision.css';
 
-/* The live camera the Physical Inspection screen uses. A hidden
-   <input type="file" capture="environment"> only opens a camera on a phone —
-   on a desktop the attribute is ignored and the ordinary file picker appears,
-   which is what "Camera" used to do here. */
 const CameraCaptureModal = lazy(() => import('../../purchase-management/order/physical-inspection/CameraCaptureModal'));
 
 export type DecisionMode = 'approve' | 'decline';
@@ -37,15 +28,7 @@ const ICON_FILE = <svg {...ic} strokeWidth={2.3}><path d="M14 2H6a2 2 0 0 0-2 2v
 const ICON_ALERT = <svg {...ic} strokeWidth={2.4}><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>;
 const ICON_WALLET = <svg {...ic} width="14" height="14" strokeWidth={2.2}><rect x="2" y="7" width="20" height="14" rx="2.5" /><path d="M16 7V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2" /></svg>;
 
-/** `url` is a blob link to the picked file, so the chip can open it (CS-433 / CS-434). */
 type Attached = { name: string; size: number; cam: boolean; url: string };
-
-/* What may be attached to a decision: a scan or a photo of it, nothing else.
-   A Word file was being taken here, and an approval's evidence has to be
-   something that reads the same to everyone who opens it later — a .docx
-   opens differently, or not at all, depending on the machine.
-   `accept` only filters the picker, and the picker can be set back to "All
-   files", so the same list is enforced on what comes back (CS-433). */
 const PROOF_ACCEPT = '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg';
 const PROOF_EXT = /\.(pdf|png|jpe?g)$/i;
 const PROOF_MIME = /^(application\/pdf|image\/(png|jpeg))$/i;
@@ -57,8 +40,6 @@ const ROLE_LABEL: Record<string, string> = {
 const initialsOf = (name: string) => name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 const kb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
-/** The most that can be sanctioned: what was asked for, capped by what the
-    document still has open once other approvals are counted. */
 export function approvalCap(detail: PaymentRequestDetail, req: PaymentRequestRow): number {
   const committed = detail.linked
     .filter(r => r.requestId !== req.requestId && r.status === 'approved')
@@ -69,7 +50,6 @@ export function approvalCap(detail: PaymentRequestDetail, req: PaymentRequestRow
 export default function PaymentRequestDecisionModal({ mode, detail, request, onClose, onDecided }: {
   mode: DecisionMode;
   detail: PaymentRequestDetail;
-  /** The request being decided — the open one, or another from the same document. */
   request: PaymentRequestRow;
   onClose: () => void;
   onDecided: (row: PaymentRequestRow) => void;
@@ -78,7 +58,6 @@ export default function PaymentRequestDecisionModal({ mode, detail, request, onC
   const { user } = useAuth();
   const approve = mode === 'approve';
   const { doc, ledger, linked, supplier, po } = detail;
-  // Amounts follow the PO's own currency — an import must not print ₹ (QA #167).
   const money = moneyIn(request.currency);
   const D = doc.kind === 'spi' ? 'SPI' : 'PO';
 

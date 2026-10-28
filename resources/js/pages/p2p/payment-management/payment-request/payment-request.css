@@ -725,9 +725,6 @@
   color: #cbd5e1;
 }
 
-/* ── Approving several at once (CS-429) ─────────────────────────────────────
-   The Awaiting tab leads with a tick box, and what is ticked is summed up in a
-   bar above the table with the one action on it. */
 .prm-pickcell {
   text-align: center;
 }

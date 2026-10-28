@@ -1,6 +1,3 @@
-// The transaction's own paper trail — not the supplier's KYC vault. The order
-// the request sits on, the trade documents generated off it, and every
-// supplier invoice mapped to it.
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -12,9 +9,7 @@ import type { PaymentRequestDetail, TradeDoc } from './paymentRequestDetailData'
 type VaultRow = {
   id: string; sub: string; name: string; nameSub: string;
   date: string; amount: number | null; pill: ReactNode;
-  /** The file on record; empty when nothing has been generated or uploaded. */
   file: string;
-  /** Fetches the bytes — absent when the row has no file to open. */
   fetch?: () => Promise<Blob>;
 };
 
@@ -41,7 +36,6 @@ export default function TxnVaultModal({ detail, onClose }: { detail: PaymentRequ
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // The PO is also a trade document; it is listed once, with its signature state.
   const poDoc = tradeDocs.find(d => d.name === 'Purchase Order');
   const poRows: VaultRow[] = po ? [{
     id: po.po, sub: poDoc?.code ?? 'Order', name: 'Purchase Order', nameSub: row.supplier,
@@ -55,7 +49,6 @@ export default function TxnVaultModal({ detail, onClose }: { detail: PaymentRequ
     file: d.hasFile ? (d.attachment || `${d.code.replace(/[^0-9A-Za-z]+/g, '_')}.pdf`) : '',
     fetch: d.hasFile ? () => fileOf(d) : undefined,
   }));
-  // Invoices mapped to the order; a direct SPI is its own single invoice.
   const spiRows: VaultRow[] = po
     ? po.invoices.map(l => ({
       id: l.spi, sub: 'Invoice', name: 'Supplier Purchase Invoice', nameSub: row.supplier,

@@ -1,5 +1,3 @@
-// P2P → Payment Request Management: every payment request raised on a PO or an SPI.
-// Rows, tab counts and paging come from GET /p2p/orders/payment-requests; the layout reuses the shared P2P styles.
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -10,12 +8,8 @@ import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { IcoAlert, IcoArrowR, IcoCard, IcoStar, IcoChat, IcoCheck, IcoChevron, IcoCircleX, IcoClock, IcoEye, IcoFile, IcoList, IcoScales, IcoSearch, IcoSend } from '../../icons';
 import DeclineReasonModal from './DeclineReasonModal';
-// The request view is a screen of its own, loaded only when one is opened.
 const PaymentRequestDetail = lazy(() => import('./PaymentRequestDetail'));
-import {
-  fetchPaymentRequests, STATUS_LABEL, SUPPLIER_TAG_LABEL,
-  type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,
-} from './paymentRequestData';
+import {  fetchPaymentRequests, STATUS_LABEL, SUPPLIER_TAG_LABEL,  type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,} from './paymentRequestData';
 import '../../p2p-detail.css';
 import '../../purchase-management/order/po-list/order.css';
 import './payment-request.css';
@@ -80,24 +74,20 @@ const COLUMNS: Column[] = [
   { label: 'Requested Payment Type', width: 170 },
   { label: 'Requested By', width: 140 },
   { label: 'Requested To', width: 140 },
-  // View Request (~132px) + gap + the 36px reason button + cell padding.
   { label: 'Action', width: 212 },
 ];
 
-/* The Awaiting tab drops Approved Amount, which nothing awaiting has yet. */
 const columnsFor = (tab: TabKey): Column[] => (tab !== 'awaiting'
   ? COLUMNS
   : COLUMNS.filter(c => c.label !== 'Approved Amount')
     .map(c => (c.label === 'Requested Payment Amount' ? { ...c, groupEnd: true } : c)));
 
 const tableWidth = (cols: Column[]) => cols.reduce((sum, c) => sum + c.width, 0);
-// Eight rows a page, per CS-428.
 const PAGE_SIZES = [10, 25, 50];
 
 const STATUS_VARIANT: Record<RequestStatus, BadgeVariant> = {
   awaiting: 'gold', approved: 'success', declined: 'danger',
 };
-/* Figma .po-supcat: star gold, regular blue, high risk red, blacklisted slate. */
 const SUPPLIER_VARIANT: Record<SupplierTag, BadgeVariant> = {
   star: 'gold', regular: 'info', high: 'danger', blacklisted: 'dark',
 };
@@ -131,8 +121,7 @@ function Party({ party }: { party: PartyRef }) {
   );
 }
 
-/* What the request sits on: a PO, an SPI, or an SPI mapped to its PO. The flag
-   below (physical inspection / direct SPI) is what the approver checks first. */
+
 function RaisedAgainst({ row }: { row: PaymentRequestRow }) {
   return (
     <div className="prm-against">
@@ -285,8 +274,7 @@ export default function PaymentRequestManagement() {
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
-            {/* Emptying the box by hand left a filtered table reading as "no
-                results" for as long as it took to select and delete. */}
+
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
@@ -412,20 +400,6 @@ export default function PaymentRequestManagement() {
   );
 }
 
-/* The list while it loads (QA #87): the table it is about to become, with bars
-   where the values will be, instead of the line "Loading payment requests…".
-   Same bars (.spi-sk-bar) and the same column widths the PO list uses, so the
-   two lists wait in the same way. */
-/* Takes the ACTIVE tab's columns, not the full COLUMNS list.
-   The width came from a bare `TABLE_WIDTH`, which is a module-level const over
-   in the PO list (Order.tsx) and does not exist here — so this component threw
-   ReferenceError the moment it rendered, and since it renders on every first
-   load of the page, the error boundary replaced the whole screen. Widths now
-   come from this module's own tableWidth() helper, which the real table two
-   hundred lines up already uses.
-   Passing the columns in also settles a smaller mismatch: the Awaiting tab
-   drops the "Approved Amount" column, so the skeleton was laying out a column
-   the table it becomes would not have. */
 function PrmListSkeleton({ columns }: { columns: Column[] }) {
   return (
     <div className="ord-table-scroll">
