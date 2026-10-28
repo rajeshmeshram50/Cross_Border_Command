@@ -9888,14 +9888,22 @@
 .vs3t .vs3-in:not(:placeholder-shown) { border-color: #22d3ee; background: #f0fdff; }
 .vs3t .master-datepicker-toggle .master-datepicker-value { font-size: 11.5px; font-weight: 700; color: #0c2c3a; }
 
+/* Tinted and outlined, not a solid red gradient. One of these sits on every
+   row, and as a filled red block with a glow under it the column of them was
+   the loudest thing on a card whose actual job is the fields to its left -
+   a destructive action shouting on a row nobody is trying to destroy.
+   This is the same treatment the dark rule below already used, and the same
+   soft-red action button the rest of the app uses.
+   border-box so the 40px box survives gaining a border. */
 .vs3t .vs3-rm {
-  width: 40px; height: 40px; border: none; border-radius: 11px; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center; color: #fff;
-  background: linear-gradient(135deg, #f87171 0%, #ef4444 50%, #dc2626 100%);
-  box-shadow: 0 4px 12px -3px rgba(220,38,38,.55), 0 1px 0 rgba(255,255,255,.3) inset;
-  transition: transform .18s, filter .14s;
+  box-sizing: border-box;
+  width: 40px; height: 40px; border-radius: 11px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #ef4444; background: #fef2f2; border: 1.5px solid #fecaca;
+  box-shadow: 0 1px 2px rgba(220,38,38,.06);
+  transition: background .14s, border-color .14s, color .14s, transform .18s;
 }
-.vs3t .vs3-rm:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.vs3t .vs3-rm:hover { background: #fee2e2; border-color: #f87171; color: #dc2626; transform: translateY(-1px); }
 .vs3t .vs3-rm svg { width: 15px; height: 15px; }
 /* Dark: the light button is a solid red gradient with a white inset highlight
    and a red glow under it. That is right on a white row and wrong on a dark

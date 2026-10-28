@@ -1,0 +1,114 @@
+/* ── Direct SPI · step 03's supplier picker ──────────────────────────────────
+   A wider row than the other two lists, from the prototype's `.spidd-opt--po`
+   / `.spidd-grid--sup` block: an initials avatar, the name with its kind, and
+   the four facts that decide the choice in a grid beneath.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* The trigger shows the code and the name only — the grid belongs to the list,
+   where you are comparing, not to the field, where you have already chosen. */
+.sdx-trig--sup { gap: 10px; }
+.sdx-sup__code {
+  flex-shrink: 0; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: #0e7490; background: #ecfeff; border: 1px solid #bfeef4; border-radius: 7px; padding: 3px 9px;
+}
+.sdx-sup__name {
+  flex: 1; min-width: 0; font-size: 12.5px; font-weight: 800; color: #0c2c3a;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.sdx-pop--sup .sdx-pop__list { padding: 8px; }
+.sdx-sup__opt {
+  position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr);
+  column-gap: 12px; align-items: start;
+  padding: 10px 12px; border-radius: 12px; border: 1px solid transparent; cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.sdx-sup__opt + .sdx-sup__opt { margin-top: 4px; }
+.sdx-sup__opt:hover { background: #f6fdff; border-color: #d7f3f8; }
+/* The selected row takes a left bar as well as a fill — in a list of cards
+   the fill alone is easy to lose against the hover state above it. */
+.sdx-sup__opt.is-sel {
+  background: linear-gradient(180deg, #ecfeff, #f7feff);
+  border-color: #a5f3fc; box-shadow: inset 3px 0 0 #06b6d4;
+}
+
+.sdx-sup__av {
+  width: 36px; height: 36px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 12px; font-weight: 800; letter-spacing: .02em;
+  box-shadow: 0 5px 12px -6px rgba(8,60,80,.5);
+}
+/* The avatar carries the supplier's kind, so the list is scannable by colour
+   before any of it is read. */
+.sdx-sup__av--manufacturer { background: linear-gradient(135deg, #67e8f9, #0891b2 60%, #0e7490); }
+.sdx-sup__av--trader       { background: linear-gradient(135deg, #c4b5fd, #7c3aed 70%, #5b21b6); }
+.sdx-sup__av--service      { background: linear-gradient(135deg, #fcd34d, #d97706 70%, #b45309); }
+
+.sdx-sup__main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sdx-sup__hd { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sdx-sup__nm {
+  font-size: 12.5px; font-weight: 800; color: #0c4a6e; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sdx-sup__kind {
+  margin-left: auto; flex-shrink: 0;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  border-radius: 999px; padding: 3px 9px; white-space: nowrap;
+}
+.sdx-sup__kind--manufacturer { color: #0e7490; background: #e0f7fb; }
+.sdx-sup__kind--trader       { color: #5b21b6; background: #ede9fe; }
+.sdx-sup__kind--service      { color: #92400e; background: #fef3c7; }
+.sdx-sup__tick {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: transparent;
+}
+.sdx-sup__tick svg { width: 10px; height: 10px; }
+.sdx-sup__opt.is-sel .sdx-sup__tick { color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2); }
+
+.sdx-sup__grid {
+  display: grid; grid-template-columns: .9fr 1fr 1.4fr .8fr; gap: 0; margin-top: 6px;
+  border: 1px solid #e6f1f5; border-radius: 9px; background: #fbfeff; overflow: hidden;
+}
+.sdx-sup__c { display: flex; flex-direction: column; gap: 1px; padding: 5px 9px; min-width: 0; }
+.sdx-sup__c + .sdx-sup__c { border-left: 1px solid #e6f1f5; }
+.sdx-sup__cl { font-size: 7.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #8aa5b2; white-space: nowrap; }
+.sdx-sup__cv { font-size: 10.5px; font-weight: 700; color: #0c4a6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sdx-sup__cv.is-mono { font-size: 10px; color: #0e7490; font-variant-numeric: tabular-nums; }
+.sdx-sup__opt.is-sel .sdx-sup__grid { background: #fff; border-color: #cdeff6; }
+/* Risk is the one value here that can stop a choice, so it is the one value
+   that carries a colour of its own. */
+.sdx-risk--low    { color: #047857; }
+.sdx-risk--medium { color: #b45309; }
+.sdx-risk--high   { color: #be123c; }
+
+/* The popover is only as wide as its trigger, so in a narrow dialog four
+   columns leave every value too thin to read. Two by two keeps each label
+   whole; the third cell starts a row, so it loses the divider on its left and
+   the bottom pair gain one above. */
+@media (max-width: 620px) {
+  .sdx-sup__grid { grid-template-columns: 1fr 1fr; }
+  .sdx-sup__c:nth-child(3) { border-left: 0; }
+  .sdx-sup__c:nth-child(n+3) { border-top: 1px solid #e6f1f5; }
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .sdx-sup__code { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-sup__name,
+[data-bs-theme="dark"] .sdx-sup__nm { color: #e2e8f0; }
+[data-bs-theme="dark"] .sdx-sup__opt:hover { background: rgba(34,211,238,.08); border-color: rgba(34,211,238,.2); }
+[data-bs-theme="dark"] .sdx-sup__opt.is-sel { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.34); }
+[data-bs-theme="dark"] .sdx-sup__grid { background: rgba(148,163,184,.08); border-color: rgba(34,211,238,.16); }
+[data-bs-theme="dark"] .sdx-sup__c + .sdx-sup__c { border-left-color: rgba(34,211,238,.16); }
+@media (max-width: 620px) {
+  [data-bs-theme="dark"] .sdx-sup__c:nth-child(n+3) { border-top-color: rgba(34,211,238,.16); }
+}
+[data-bs-theme="dark"] .sdx-sup__cl { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-sup__cv { color: #cbd5e1; }
+[data-bs-theme="dark"] .sdx-sup__cv.is-mono { color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-sup__opt.is-sel .sdx-sup__grid { background: rgba(34,211,238,.08); }
+[data-bs-theme="dark"] .sdx-sup__kind--manufacturer { background: rgba(34,211,238,.16); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-sup__kind--trader { background: rgba(124,58,237,.2); color: #c4b5fd; }
+[data-bs-theme="dark"] .sdx-sup__kind--service { background: rgba(245,158,11,.18); color: #fcd34d; }
+[data-bs-theme="dark"] .sdx-risk--low { color: #6ee7b7; }
+[data-bs-theme="dark"] .sdx-risk--medium { color: #fcd34d; }
+[data-bs-theme="dark"] .sdx-risk--high { color: #fca5a5; }

@@ -1,0 +1,202 @@
+/* ── Direct SPI · the revealed fields and both pickers ───────────────────────
+   The second half of the prototype's `.sdx-*` block: what each step shows once
+   it is unlocked. Kept beside direct-spi.css rather than inside it so the
+   layout (which never changes) and the step bodies (which do) stay separable.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* A question that exists only because of the answer above it sits in its own
+   tinted well, so the follow-up reads as part of that step, not a new one. */
+.sdx-field {
+  margin-top: 12px; padding: 12px; border-radius: 13px;
+  background: linear-gradient(180deg, #f6fcfd, #f0f9fb); border: 1px solid #dceff4;
+  animation: sdxIn .22s ease both;
+}
+.sdx-lbl {
+  display: flex; align-items: center; gap: 6px; margin: 0 0 8px 2px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #45707f;
+}
+.sdx-lbl svg { width: 12px; height: 12px; color: #0891b2; flex-shrink: 0; }
+
+/* ── The picker trigger ──────────────────────────────────────────────────── */
+.sdx-trig {
+  width: 100%; min-height: 52px; display: flex; align-items: center; gap: 11px;
+  padding: 7px 12px 7px 9px; border-radius: 13px; cursor: pointer; text-align: left; font-family: inherit;
+  border: 1.5px solid #d6e9f0; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  transition: border-color .15s, box-shadow .15s;
+}
+.sdx-trig:hover { border-color: #a5e6f1; }
+.sdx-trig.is-open { border-color: #22d3ee; box-shadow: 0 0 0 4px rgba(34,211,238,.14); }
+.sdx-trig__ph { flex: 1; display: flex; align-items: center; gap: 9px; padding-left: 4px; font-size: 12.5px; font-weight: 600; color: #94a3b8; }
+.sdx-trig__ph svg { width: 15px; height: 15px; color: #0891b2; flex-shrink: 0; }
+.sdx-trig__code {
+  flex-shrink: 0; font-size: 11.5px; font-weight: 800; color: #fff;
+  padding: 6px 9px; border-radius: 9px; font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: 0 4px 10px -4px rgba(8,145,178,.6);
+}
+.sdx-trig__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sdx-trig__main b { font-size: 12.5px; font-weight: 800; color: #0c2c3a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sdx-trig__main small { font-size: 10.5px; color: #6a869c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.sdx-trig__chev {
+  width: 28px; height: 28px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #0891b2; background: #ecfeff; border: 1px solid #c9eef5; transition: transform .2s;
+}
+.sdx-trig__chev svg { width: 14px; height: 14px; }
+.sdx-trig.is-open .sdx-trig__chev { transform: rotate(180deg); }
+
+/* ── The picker list ─────────────────────────────────────────────────────── */
+/* Portalled to the body and placed against the viewport: the dialog body
+   scrolls, and a list rendered inside it would be clipped by that. */
+@keyframes sdxPopIn { from { opacity: 0; } to { opacity: 1; } }
+.sdx-pop {
+  position: fixed; z-index: 10000040; display: flex; flex-direction: column;
+  background: #fff; border: 1px solid #cfe9f0; border-radius: 16px; overflow: hidden;
+  box-shadow: 0 28px 60px -18px rgba(8,40,60,.45), 0 0 0 1px rgba(8,40,60,.03);
+  animation: sdxPopIn .16s ease both;
+  /* The list is portalled to the body, so it lands outside
+     `.spi-mdl-backdrop` and would inherit the app's Rubik rather than the
+     dialog's DM Sans. Every size and weight here is the design's, and Rubik
+     renders all of them heavier — the stack has to be restated at the portal
+     root or the popover reads bolder than the panel that opened it. */
+  font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.sdx-pop__search {
+  display: flex; align-items: center; gap: 9px; padding: 10px 12px;
+  border-bottom: 1px solid #e8f2f6; background: linear-gradient(180deg, #f6fcfd, #fff); color: #0891b2;
+}
+.sdx-pop__search svg { width: 15px; height: 15px; flex-shrink: 0; }
+.sdx-pop__search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  font-family: inherit; font-size: 12.5px; font-weight: 600; color: #0c2c3a;
+}
+.sdx-pop__search input::placeholder { color: #94a3b8; font-weight: 500; }
+.sdx-pop__count {
+  flex-shrink: 0; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #0e7490; background: #ecfeff; border: 1px solid #c9eef5; padding: 3px 8px; border-radius: 999px;
+}
+.sdx-pop__list { overflow-y: auto; padding: 6px; flex: 1; min-height: 0; }
+.sdx-pop__none { padding: 24px 12px; text-align: center; font-size: 12px; font-weight: 600; color: #94a3b8; }
+.sdx-pop__opt { display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 12px; cursor: pointer; transition: background .12s; }
+.sdx-pop__opt:hover { background: #f0fbfd; }
+.sdx-pop__opt.is-sel { background: linear-gradient(135deg, #ecfeff, #f5fdff); box-shadow: inset 0 0 0 1.5px #a5e6f1; }
+.sdx-pop__ico {
+  width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #0891b2; background: #ecfeff; border: 1px solid #c9eef5;
+}
+.sdx-pop__ico svg { width: 15px; height: 15px; }
+/* The tile takes its ROW's type, not the list's. Painting every procurement
+   violet made the kind of work unreadable until you reached the chip on the
+   far right; keyed to the type, the left edge already says it — and violet is
+   then meaningful, marking a service among the goods and freight. */
+.sdx-pop__ico--goods,
+.sdx-pop__ico--ffd     { color: #0891b2; background: #ecfeff; border-color: #c9eef5; }
+.sdx-pop__ico--service { color: #7c3aed; background: #f5f3ff; border-color: #e4dcfd; }
+.sdx-pop__opt.is-sel .sdx-pop__ico { color: #fff; border-color: transparent; background: linear-gradient(135deg, #22d3ee, #0891b2); }
+.sdx-pop__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sdx-pop__row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sdx-pop__row b { font-size: 12.5px; font-weight: 700; color: #0c2c3a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sdx-pop__code {
+  flex-shrink: 0; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: #0e7490; background: #ecfeff; border: 1px solid #bfeef4; border-radius: 7px; padding: 1px 7px;
+}
+.sdx-pop__main small { font-size: 10.5px; color: #6a869c; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sdx-pop__tick {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: transparent; border: 1.5px solid #d6e3ea;
+}
+.sdx-pop__tick svg { width: 11px; height: 11px; }
+.sdx-pop__opt.is-sel .sdx-pop__tick {
+  border-color: transparent; color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2); box-shadow: 0 3px 8px -2px rgba(8,145,178,.6);
+}
+
+/* The procurement kind, carried on both the row and the trigger. */
+.sdx-ptype {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; white-space: nowrap;
+}
+.sdx-ptype svg { width: 11px; height: 11px; flex-shrink: 0; }
+.sdx-ptype--goods   { color: #0e7490; background: #ecfeff; border: 1px solid #bfeef4; }
+.sdx-ptype--ffd     { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; }
+.sdx-ptype--service { color: #6d28d9; background: #f5f3ff; border: 1px solid #ddd6fe; }
+
+/* ── What the pick will do ───────────────────────────────────────────────── */
+/* The trigger already shows WHAT was picked; this says what picking it means,
+   which is the part a procurement link actually needs to spell out. */
+.sdx-linked {
+  display: flex; align-items: center; gap: 9px; margin-top: 9px; padding: 9px 12px;
+  border-radius: 11px; background: #ecfdf5; border: 1px solid #bbf0d6;
+  font-size: 11px; font-weight: 600; color: #065f46;
+}
+.sdx-linked__ck {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: linear-gradient(135deg, #34d399, #059669);
+}
+.sdx-linked__ck svg { width: 11px; height: 11px; }
+.sdx-linked b { color: #047857; font-variant-numeric: tabular-nums; }
+.sdx-linked .sdx-ptype { margin-left: auto; }
+
+/* ── Auto-created case ───────────────────────────────────────────────────── */
+.sdx-auto {
+  margin-top: 12px; display: flex; align-items: center; gap: 16px;
+  padding: 14px 16px; border-radius: 14px; position: relative; overflow: hidden;
+  animation: sdxIn .22s ease both;
+  background: linear-gradient(120deg, #ecfeff 0%, #e0f7fb 55%, #cffafe 100%); border: 1px solid #a5e6f1;
+}
+.sdx-auto::after {
+  content: ''; position: absolute; right: -30px; bottom: -60px;
+  width: 150px; height: 150px; border-radius: 50%; border: 20px solid rgba(8,145,178,.07);
+}
+.sdx-auto__l { flex-shrink: 0; padding-right: 16px; border-right: 1px dashed #9fdcea; }
+.sdx-auto__lbl { font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #0e7490; }
+.sdx-auto__id { font-size: 22px; font-weight: 800; letter-spacing: .02em; color: #0c4a6e; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.sdx-auto__r { position: relative; z-index: 1; min-width: 0; }
+.sdx-auto__chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; color: #047857; background: #fff; border: 1px solid #a7f3d0;
+}
+.sdx-auto__chip svg { width: 10px; height: 10px; }
+.sdx-auto__s { font-size: 11px; font-weight: 500; color: #155e75; margin-top: 5px; line-height: 1.5; }
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .sdx-field { background: rgba(34,211,238,.06); border-color: rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .sdx-lbl { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-trig { background: #102a35; border-color: rgba(34,211,238,.22); }
+[data-bs-theme="dark"] .sdx-trig__main b { color: #e2e8f0; }
+[data-bs-theme="dark"] .sdx-trig__main small,
+[data-bs-theme="dark"] .sdx-trig__ph { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-trig__chev { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.26); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-pop { background: #0c1c24; border-color: rgba(34,211,238,.22); }
+[data-bs-theme="dark"] .sdx-pop__search { background: #102a35; border-bottom-color: rgba(34,211,238,.16); }
+[data-bs-theme="dark"] .sdx-pop__search input { color: #e2e8f0; }
+[data-bs-theme="dark"] .sdx-pop__count { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-pop__opt:hover { background: rgba(34,211,238,.08); }
+[data-bs-theme="dark"] .sdx-pop__opt.is-sel { background: rgba(34,211,238,.12); box-shadow: inset 0 0 0 1.5px rgba(34,211,238,.4); }
+[data-bs-theme="dark"] .sdx-pop__row b { color: #e2e8f0; }
+[data-bs-theme="dark"] .sdx-pop__main small { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-pop__code { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-pop__ico { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.26); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-pop__ico--goods,
+[data-bs-theme="dark"] .sdx-pop__ico--ffd { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.26); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-pop__ico--service { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.34); color: #c4b5fd; }
+[data-bs-theme="dark"] .sdx-pop__none { color: #7f9aa6; }
+/* The empty circle kept its light-grey ring, which on a near-black row read
+   brighter than the row it sat in. Same value the option radios use. */
+[data-bs-theme="dark"] .sdx-pop__tick { border-color: rgba(148,163,184,.4); }
+[data-bs-theme="dark"] .sdx-linked { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.34); color: #6ee7b7; }
+[data-bs-theme="dark"] .sdx-linked b { color: #a7f3d0; }
+[data-bs-theme="dark"] .sdx-auto { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .sdx-auto__l { border-right-color: rgba(34,211,238,.3); }
+[data-bs-theme="dark"] .sdx-auto__lbl { color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-auto__id { color: #e2e8f0; }
+[data-bs-theme="dark"] .sdx-auto__s { color: #a8c2cc; }
+[data-bs-theme="dark"] .sdx-auto__chip { background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.34); color: #6ee7b7; }
+[data-bs-theme="dark"] .sdx-ptype--goods { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-ptype--ffd { background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.34); color: #fcd34d; }
+[data-bs-theme="dark"] .sdx-ptype--service { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.34); color: #c4b5fd; }

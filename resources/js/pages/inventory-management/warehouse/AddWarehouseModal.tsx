@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../hooks/useScrollLock';
+import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import { useToast } from '../../../contexts/ToastContext';
 import { useBranchSwitcher } from '../../../contexts/BranchSwitcherContext';
 import '../../p2p/p2p-detail.css';
@@ -35,6 +36,13 @@ const IcoX = (p: { size?: number }) => Ico(
   <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>, p.size ?? 16,
 );
 const IcoCheck = () => Ico(<polyline points="20 6 9 17 4 12" />, 14);
+const IcoEye = () => Ico(
+  <><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></>, 13,
+);
+const IcoDown = () => Ico(
+  <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" /></>, 13,
+);
 const IcoInfo = () => Ico(
   <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" />
     <line x1="12" y1="16" x2="12.01" y2="16" /></>, 13,
@@ -97,8 +105,14 @@ function validate(d: Draft, hasStates: boolean): Partial<Record<keyof Draft, str
   if (!d.contact.trim()) e.contact = 'Enter the contact person’s name';
   const mobile = d.mobile.replace(/[\s-]/g, '');
   if (!mobile) e.mobile = 'Enter the mobile number';
+  /* India is the one country whose numbering this form actually knows: a
+     +91 mobile is ten digits and starts 6-9. Everywhere else the form has no
+     dial code and no national format to check against, so it only asks for a
+     plausible length - 7 covers the shortest national numbers, 13 the longest
+     with a country code typed in. 6-15 let a 15-digit number through, which
+     is longer than E.164 allows for the whole number including its code. */
   else if (india && !/^[6-9]\d{9}$/.test(mobile)) e.mobile = 'Enter a valid 10-digit mobile number';
-  else if (!india && !/^\d{6,15}$/.test(mobile)) e.mobile = 'Enter a valid mobile number';
+  else if (!india && !/^\d{7,13}$/.test(mobile)) e.mobile = 'Enter a mobile number of 7 to 13 digits';
   if (!d.email.trim()) e.email = 'Enter the email address';
   else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email.trim())) e.email = 'Enter a valid email address';
   if (d.map.trim() && !/^https?:\/\/\S+$/i.test(d.map.trim())) e.map = 'Enter a valid link starting with https://';
@@ -148,6 +162,20 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
   const set = (p: Partial<Draft>) => setD(prev => ({ ...prev, ...p }));
 
   const [cardFile, setCardFile] = useState<File | null>(null);
+  /* CS-939: an attachment could be removed but never looked at. Two cases
+     and they resolve differently - a file just picked exists only in the
+     browser and is previewed from a blob URL, while one already saved comes
+     back as a storage path and goes through resolveFileUrl. The blob is
+     revoked when it changes or the dialog closes: an object URL pins the
+     whole file in memory until it is released. */
+  const cardHref = useMemo(
+    () => (cardFile ? URL.createObjectURL(cardFile) : resolveFileUrl(warehouse?.cardUrl)),
+    [cardFile, warehouse?.cardUrl],
+  );
+  useEffect(() => {
+    if (!cardFile) return;
+    return () => URL.revokeObjectURL(cardHref);
+  }, [cardFile, cardHref]);
   const [saving, setSaving] = useState(false);
   const { selectedBranchId } = useBranchSwitcher();
 
@@ -175,6 +203,13 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
     return () => { live = false; };
   }, [countryId]);
   const hasStates = states.length > 0;
+  /* The country is chosen but its states have not landed yet. The save
+     already refused this case and raised "Still loading states" (CS-939
+     #12) - but a refusal after the click is a dead end: the user did the
+     right thing and got told off for it. Stated once here so the button can
+     be unavailable while it is true, and the toast is left only for the
+     race between the click and the response. */
+  const statesLoading = !!countryId && statesFor !== countryId;
 
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({});
   const clear = (k: keyof Draft) => setErrors(e => (e[k] ? { ...e, [k]: undefined } : e));
@@ -283,7 +318,10 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
       pincode: d.pin.trim(),
       map_url: d.map.trim() || null,
       contact_person: d.contact.trim(),
-      contact_dial: india ? '+91' : (warehouse?.dial || null),
+      /* No dial code outside India. It used to carry the stored one forward,
+         so a warehouse edited from India to elsewhere kept +91 against a
+         number that was no longer Indian. */
+      contact_dial: india ? '+91' : null,
       contact_mobile: d.mobile.replace(/[\s-]/g, ''),
       contact_email: d.email.trim(),
       card: cardFile,
@@ -327,6 +365,19 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
         role="dialog" aria-modal="true" aria-labelledby="whm-add-title"
         tabIndex={-1} ref={cardRef}
       >
+        {/* CS-939: the save had no visible loader, and the form stayed live
+            while the request ran. Escape, Cancel and a second submit were
+            already guarded one by one - but the fields, the close X and
+            anything added later were not. One sheet over the dialog settles
+            all of them and is the loader at the same time. */}
+        {saving && (
+          <div className="whm-saving" role="status" aria-live="polite">
+            <span className="whm-saving__box">
+              <span className="whm-saving__spin" aria-hidden />
+              Saving the warehouse…
+            </span>
+          </div>
+        )}
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
             <div className="spi-mdl-head-ico"><IcoWarehouse size={22} /></div>
@@ -341,10 +392,18 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
               </div>
             </div>
           </div>
-          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><IcoX /></button>
+          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"
+            disabled={saving} title={saving ? 'Saving — please wait' : undefined}><IcoX /></button>
         </div>
 
-        <div className="spi-mdl-body whm-addbody">
+        {/* inert, not only a veil over the top (CS-939 #10). The sheet stops
+            clicks that land ON it, but the Warehouse Type menu is portalled
+            to document.body - outside the dialog, so outside anything drawn
+            inside it - and once open it took clicks the veil never saw.
+            inert takes the whole subtree out of reach: no pointer, no focus,
+            no keyboard, so the trigger cannot open the menu to begin with.
+            The veil stays; it is what SHOWS the form is busy. */}
+        <div className="spi-mdl-body whm-addbody" inert={saving}>
 
           <Card icon={<IcoWarehouse />} title="Warehouse Details">
             <Field label="Warehouse ID" hint="Generated automatically">
@@ -456,12 +515,15 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
               />
             </Field>
             <Field label="Mobile Number" req error={errors.mobile}>
-              <div className="whm-pre">
-                <span>{india ? '+91' : '+'}</span>
+              {/* The prefix box is India's, not every country's. Elsewhere it
+                  showed a bare '+' against a number with no code in it, which
+                  read as a country code the user had failed to fill in. */}
+              <div className={india ? 'whm-pre' : undefined}>
+                {india && <span>+91</span>}
                 <input
                   className={`spi-dt-inp${errors.mobile ? ' is-invalid' : ''}`}
-                  type="tel" inputMode="numeric" maxLength={india ? 10 : 15}
-                  placeholder={india ? '10-digit mobile number' : 'Mobile number'}
+                  type="tel" inputMode="numeric" maxLength={india ? 10 : 13}
+                  placeholder={india ? '10-digit mobile number' : '7 to 13 digits'}
                   value={d.mobile}
                   onChange={e => { set({ mobile: e.target.value.replace(/\D/g, '') }); clear('mobile'); }}
                 />
@@ -481,6 +543,17 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
                   title={d.card || 'Add the contact’s business card'}>
                   {d.card || 'Upload business card'}
                 </button>
+                {cardHref && (
+                  <>
+                    {/* target=_blank with rel, so a PDF or an image opens in
+                        the browser's own viewer rather than replacing the
+                        form - the dialog holds unsaved input. */}
+                    <a className="whm-file__act" href={cardHref} target="_blank" rel="noopener noreferrer"
+                      title="View attachment" aria-label="View attachment"><IcoEye /></a>
+                    <a className="whm-file__act" href={cardHref} download={d.card || 'attachment'}
+                      title="Download attachment" aria-label="Download attachment"><IcoDown /></a>
+                  </>
+                )}
                 {cardFile && (
                   <button type="button" className="whm-file__x" aria-label="Remove file"
                     onClick={() => { setCardFile(null); set({ card: warehouse?.cardName ?? '' }); }}>
@@ -532,8 +605,11 @@ export default function AddWarehouseModal({ warehouse, onClose, onSaved }: {
           <span className="whm-footnote"><IcoInfo /> Fields marked * are required</span>
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
-            <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
-              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Warehouse' : 'Save Warehouse'}
+            <button type="button" className="spi-mdl-confirm" onClick={() => void save()}
+              disabled={saving || statesLoading}
+              title={statesLoading ? 'Loading the states for this country…' : undefined}>
+              {saving || statesLoading ? <span className="whm-btnspin" aria-hidden /> : <IcoCheck />}
+              {saving ? 'Saving…' : statesLoading ? 'Loading states…' : editing ? 'Update Warehouse' : 'Save Warehouse'}
             </button>
           </div>
         </div>

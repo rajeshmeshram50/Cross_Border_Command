@@ -1,0 +1,426 @@
+/* ── Direct SPI setup ────────────────────────────────────────────────────────
+   Ported from the Kryptone prototype's `.sdx-*` block, value for value.
+
+   The shell classes are ours (.spi-mdl-*), only the panel inside is the
+   design's, so nothing here touches the With-PO layout: every rule is either a
+   new .sdx- name or scoped to .spi-mdl--sdx, which the modal only carries while
+   Direct SPI is the chosen type.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* The dialog grows for the two-column layout — the design's 1240 against the
+   760 the type cards alone need. Only while Direct SPI is selected.
+
+   The growth is ANIMATED, as the prototype has it (.cpo-modal transitions
+   max-width over .3s). Snapping straight to 1240 reads as a second dialog
+   replacing the first; easing it keeps the one you clicked in front of you
+   while it makes room. Scoped to --wide, which only this chooser uses, so no
+   other .spi-mdl picks up a width transition. */
+.spi-mdl--wide {
+  transition: max-width .3s cubic-bezier(.16,1,.3,1), width .3s cubic-bezier(.16,1,.3,1);
+}
+.spi-mdl.spi-mdl--sdx {
+  max-width: 1240px;
+  width: calc(100vw - 40px);
+  max-height: calc(100vh - 32px);
+  /* The base dialog scrolls as one box, so its scrollbar ran the full height
+     — over the coloured header and across the rounded corner. Here the shell
+     is a column that does not scroll at all and the body is the only scroll
+     container, so the header and footer stay put and the track starts beneath
+     the header. `min-height: 0` on the body is what lets it shrink to the
+     dialog instead of the band being crushed to fit. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.spi-mdl--sdx > .spi-mdl-head,
+.spi-mdl--sdx > .spi-mdl-foot { flex: 0 0 auto; }
+.spi-mdl--sdx > .spi-mdl-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* The page behind the dialog must not take over at either end. */
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #b9dde8 transparent;
+}
+.spi-mdl--sdx > .spi-mdl-body::-webkit-scrollbar { width: 8px; }
+.spi-mdl--sdx > .spi-mdl-body::-webkit-scrollbar-thumb {
+  background: #b9dde8; border-radius: 99px; border: 2px solid transparent; background-clip: content-box;
+}
+.spi-mdl--sdx > .spi-mdl-body::-webkit-scrollbar-track { background: transparent; }
+/* The panel is mounted only once the dialog has finished growing (see
+   sdxReady in MapInvoiceModal), so it needs no delay of its own — it fades in
+   where it lands. The cards beside it come with it, because the aside is what
+   re-stacks them. */
+@keyframes sdxIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.spi-mdl--sdx .sdx-aside,
+.spi-mdl--sdx .sdx-main { animation: sdxIn .24s cubic-bezier(.16,1,.3,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spi-mdl--wide { transition: none; }
+  .spi-mdl--sdx .sdx-aside,
+  .spi-mdl--sdx .sdx-main { animation: none; }
+}
+.spi-mdl--sdx .spi-mdl-body {
+  background: linear-gradient(180deg, #f6fbfd 0%, #eef7fa 100%);
+}
+
+/* ── Loading skeleton ───────────────────────────────────────────────────────
+   One keyframe drives every bar: a gradient slid across an over-sized
+   background, which the compositor can run on its own without laying anything
+   out again. No per-bar delays — they would each need their own rule, and a
+   single sweep is what the rest of the app shows.
+   ────────────────────────────────────────────────────────────────────────── */
+@keyframes sdxSk { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+.sdxsk-bar {
+  display: block; height: 10px; border-radius: 6px; flex-shrink: 0;
+  background: linear-gradient(90deg, #e4eff4 25%, #f3fafc 37%, #e4eff4 63%);
+  background-size: 400% 100%;
+  animation: sdxSk 1.4s ease-in-out infinite;
+}
+/* On the coloured summary head the same bars have to be lighter than their
+   background, not darker. */
+.sdxsk-bar--onhd {
+  background: linear-gradient(90deg, rgba(255,255,255,.22) 25%, rgba(255,255,255,.42) 37%, rgba(255,255,255,.22) 63%);
+  background-size: 400% 100%;
+}
+.sdxsk-lines { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.sdxsk-ring {
+  width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+  border: 5px solid rgba(255,255,255,.22);
+}
+.sdxsk-row { display: flex; align-items: center; gap: 11px; padding: 11px 14px; }
+.sdxsk-row + .sdxsk-row { border-top: 1px dashed #e4eef3; }
+.sdxsk-ico { width: 30px; height: 30px; border-radius: 9px; }
+.sdxsk-tick { width: 18px; height: 18px; border-radius: 50%; }
+.sdxsk-head-ico { width: 34px; height: 34px; border-radius: 11px; }
+.sdxsk-node { width: 30px; height: 30px; border-radius: 10px; margin-top: 14px; }
+.sdxsk-card { display: flex; flex-direction: column; }
+.sdxsk-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.sdxsk-opt { height: 62px; border-radius: 13px; }
+@media (max-width: 620px) { .sdxsk-opts { grid-template-columns: 1fr; } }
+/* Stillness is the accessible fallback: the shapes already say where the
+   content will land, so the sweep is the only thing that has to go. */
+@media (prefers-reduced-motion: reduce) { .sdxsk-bar { animation: none; } }
+
+[data-bs-theme="dark"] .sdxsk-bar {
+  background: linear-gradient(90deg, rgba(148,163,184,.10) 25%, rgba(148,163,184,.20) 37%, rgba(148,163,184,.10) 63%);
+  background-size: 400% 100%;
+}
+[data-bs-theme="dark"] .sdxsk-row + .sdxsk-row { border-top-color: rgba(34,211,238,.14); }
+
+.sdx-layout {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+/* The validation message is a third child of this grid, so left alone it
+   would drop into the narrow column under the summary — half a dialog away
+   from the step it is talking about. It belongs across the full width. */
+.sdx-layout > .spi-mdl-err { grid-column: 1 / -1; }
+/* Below the design's own 980 the two columns cannot both hold their content,
+   so the summary and the steps stack rather than squeezing. */
+@media (max-width: 980px) {
+  .sdx-layout { grid-template-columns: minmax(0, 1fr); }
+  .spi-mdl.spi-mdl--sdx { width: calc(100vw - 24px); }
+  /* Stuck to the top of a body that now scrolls past it, the summary would
+     cover the steps it is summarising. Stacked, it belongs at the top once. */
+  .spi-mdl--sdx .sdx-aside { position: static; }
+}
+
+/* The dialog is a flex item in a centred backdrop, where the default
+   `min-width: auto` refuses to shrink it below its own min-content: the box
+   then overflows the viewport on BOTH sides and the left half cannot be
+   reached, which is what a narrow window was showing. `min-width: 0` down the
+   chain lets the declared width win, so the content wraps and the body
+   scrolls instead of the dialog being clipped. Scoped to --sdx: .spi-mdl is
+   shared by every P2P modal. */
+.spi-mdl.spi-mdl--sdx { min-width: 0; }
+.spi-mdl--sdx .spi-mdl-body,
+.spi-mdl--sdx .sdx-layout,
+.spi-mdl--sdx .sdx-aside,
+.spi-mdl--sdx .sdx-main,
+.spi-mdl--sdx .sdx-step,
+.spi-mdl--sdx .sdx-card { min-width: 0; }
+
+/* The footer is three items on one line at full width. Narrow, the note is
+   the one that can go: it repeats what step 02 already says on the card. */
+@media (max-width: 620px) {
+  .spi-mdl--sdx .sdx-ft__note { display: none; }
+}
+
+.sdx-aside { position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; }
+/* Stacked, and without their bullet points: in the aside the cards are a
+   switch between two types, not the pitch for each one. */
+.sdx-aside .spich-grid { grid-template-columns: 1fr; gap: 10px; margin: 0; }
+.sdx-aside .spich-card { padding: 13px 14px; }
+.sdx-aside .spich-c2__pts { display: none; }
+.sdx-aside .spich-c2__ico { width: 40px; height: 40px; }
+
+/* ── The running summary ─────────────────────────────────────────────────── */
+.sdx-sum {
+  border-radius: 18px; background: #fff; border: 1px solid #d9edf3; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 18px 36px -28px rgba(8,145,178,.7);
+}
+.sdx-sum__hd {
+  display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+  color: #fff; position: relative; overflow: hidden;
+  background: linear-gradient(120deg, #0b4f63 0%, #0e7490 40%, #0891b2 75%, #22d3ee 100%);
+}
+.sdx-sum__hd::after {
+  content: ''; position: absolute; right: -40px; top: -60px;
+  width: 170px; height: 170px; border-radius: 50%; border: 22px solid rgba(255,255,255,.08);
+}
+.sdx-ring { position: relative; width: 52px; height: 52px; flex-shrink: 0; }
+.sdx-ring svg { width: 52px; height: 52px; transform: rotate(-90deg); }
+.sdx-ring__bg { fill: none; stroke: rgba(255,255,255,.22); stroke-width: 5; }
+.sdx-ring__fg { fill: none; stroke: #a7f3d0; stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset .35s ease; }
+.sdx-ring span {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 900; font-variant-numeric: tabular-nums;
+}
+.sdx-sum__t { font-size: 13.5px; font-weight: 800; letter-spacing: -.2px; }
+.sdx-sum__sub { font-size: 11px; font-weight: 500; opacity: .85; margin-top: 2px; }
+.sdx-sum__rows { padding: 6px 8px 8px; }
+.sdx-sum__row { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 12px; }
+.sdx-sum__row + .sdx-sum__row { border-top: 1px dashed #e3eff4; border-radius: 0; }
+.sdx-sum__ico {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #94a3b8; background: #f1f5f9;
+}
+.sdx-sum__ico svg { width: 14px; height: 14px; }
+.sdx-sum__row.is-ok .sdx-sum__ico { color: #0891b2; background: #e0f7fb; }
+.sdx-sum__txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sdx-sum__l { font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #7b97a6; }
+.sdx-sum__v {
+  font-size: 12.5px; font-weight: 700; color: #94a3b8;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 1px;
+}
+.sdx-sum__row.is-ok .sdx-sum__v { color: #0c2c3a; }
+.sdx-sum__s { font-size: 10.5px; color: #6a869c; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sdx-sum__st {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px dashed #cbd5e1; color: #fff;
+}
+.sdx-sum__row.is-ok .sdx-sum__st {
+  border: 0; background: linear-gradient(135deg, #34d399, #059669);
+  box-shadow: 0 3px 8px -3px rgba(5,150,105,.7);
+}
+.sdx-sum__st svg { width: 11px; height: 11px; }
+
+/* ── The steps column ────────────────────────────────────────────────────── */
+.sdx-main { min-width: 0; }
+.sdx-main__hd { display: flex; align-items: center; gap: 11px; margin: 0 0 12px; }
+.sdx-main__ico {
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(135deg, #fcd34d, #d97706 65%, #b45309);
+  box-shadow: 0 8px 16px -8px rgba(217,119,6,.75);
+}
+.sdx-main__ico svg { width: 16px; height: 16px; }
+.sdx-main__t { font-size: 15px; font-weight: 800; color: #0c2c3a; letter-spacing: -.3px; }
+.sdx-main__s { font-size: 11.5px; font-weight: 500; color: #6a869c; margin-top: 1px; }
+
+.sdx-steps { display: flex; flex-direction: column; }
+.sdx-step { display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 12px; }
+.sdx-rail { display: flex; flex-direction: column; align-items: center; }
+.sdx-node {
+  width: 30px; height: 30px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; margin-top: 14px;
+  font-size: 12px; font-weight: 900; font-variant-numeric: tabular-nums;
+  color: #0e7490; background: #fff; border: 1.5px solid #bfe9f1;
+  box-shadow: 0 4px 10px -6px rgba(8,145,178,.5); transition: all .2s;
+}
+.sdx-node svg { width: 14px; height: 14px; }
+.sdx-step.is-active .sdx-node {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: 0 0 0 5px rgba(34,211,238,.16), 0 8px 16px -8px rgba(8,145,178,.8);
+}
+.sdx-step.is-done .sdx-node {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, #34d399, #059669);
+  box-shadow: 0 8px 16px -8px rgba(5,150,105,.7);
+}
+.sdx-step.is-locked .sdx-node { color: #94a3b8; border-color: #e2e8f0; background: #f8fafc; box-shadow: none; }
+/* Dashed while the step ahead is still shut, solid green once it is open —
+   the rule itself says whether the path continues. */
+.sdx-line {
+  flex: 1; width: 2px; margin: 6px 0 0; border-radius: 2px;
+  background: repeating-linear-gradient(180deg, #cfe7ee 0 5px, transparent 5px 9px);
+}
+.sdx-step.is-done .sdx-line { background: linear-gradient(180deg, #34d399, #a7f3d0); }
+.sdx-step:last-child .sdx-line { display: none; }
+
+.sdx-card {
+  margin-bottom: 12px; border-radius: 16px; border: 1px solid #dcedf3; background: #fff;
+  padding: 16px 18px 17px;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 12px 28px -24px rgba(8,145,178,.55);
+  transition: border-color .2s, box-shadow .2s;
+}
+.sdx-step:last-child .sdx-card { margin-bottom: 0; }
+.sdx-step.is-active .sdx-card {
+  border-color: #a5e6f1;
+  box-shadow: 0 0 0 3px rgba(34,211,238,.10), 0 16px 30px -22px rgba(8,145,178,.7);
+}
+/* A locked step is a dashed outline with no lift — it reads as a placeholder
+   for work not yet reachable rather than a card that failed to paint. */
+.sdx-step.is-locked .sdx-card { background: #fbfcfd; border-style: dashed; box-shadow: none; padding: 12px 16px; }
+
+.sdx-hd { display: flex; align-items: flex-start; gap: 10px; }
+.sdx-hd__txt { flex: 1; min-width: 0; }
+.sdx-eyebrow { font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #0891b2; }
+.sdx-step.is-done .sdx-eyebrow { color: #059669; }
+.sdx-step.is-locked .sdx-eyebrow { color: #94a3b8; }
+.sdx-t { font-size: 13.5px; font-weight: 800; color: #0c2c3a; letter-spacing: -.2px; margin-top: 2px; }
+.sdx-req { color: #f43f5e; }
+.sdx-step.is-locked .sdx-t { color: #94a3b8; font-weight: 700; }
+.sdx-s { font-size: 11px; font-weight: 500; color: #6a869c; margin-top: 2px; line-height: 1.45; }
+.sdx-locked-msg { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 10.5px; font-weight: 600; color: #94a3b8; }
+.sdx-locked-msg svg { width: 12px; height: 12px; }
+
+.sdx-tag {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
+}
+.sdx-tag::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.sdx-tag--req { color: #be123c; background: #fff1f2; border: 1px solid #fecdd3; }
+.sdx-tag--done { color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; }
+.sdx-tag--lock { color: #94a3b8; background: #f1f5f9; border: 1px solid #e2e8f0; }
+.sdx-tag--lock::before { display: none; }
+.sdx-tag--lock svg { width: 10px; height: 10px; }
+
+.sdx-body { margin-top: 12px; }
+.sdx-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 620px) { .sdx-opts { grid-template-columns: 1fr; } }
+.sdx-opt {
+  position: relative; display: flex; align-items: center; gap: 11px;
+  width: 100%; text-align: left; padding: 13px 14px; border-radius: 13px; cursor: pointer;
+  font-family: inherit; border: 1.5px solid #e2eef3;
+  background: linear-gradient(180deg, #fff, #fbfdfe);
+  transition: border-color .16s, box-shadow .16s, transform .16s, background .16s;
+}
+.sdx-opt:hover:not(:disabled) { border-color: #a5e6f1; transform: translateY(-1px); box-shadow: 0 10px 20px -16px rgba(8,145,178,.7); }
+.sdx-opt:disabled { cursor: not-allowed; opacity: .72; }
+.sdx-opt__ico {
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #0891b2; background: #ecfeff; border: 1px solid #c9eef5; transition: all .16s;
+}
+.sdx-opt__ico svg { width: 16px; height: 16px; }
+.sdx-opt__b { flex: 1; min-width: 0; }
+.sdx-opt__t { display: block; font-size: 12.5px; font-weight: 800; color: #0c2c3a; letter-spacing: -.1px; }
+.sdx-opt__s { display: block; font-size: 10.5px; font-weight: 500; color: #6a869c; margin-top: 2px; }
+.sdx-opt__rad {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  border: 1.5px solid #cbd9e1; background: #fff;
+  display: flex; align-items: center; justify-content: center; color: transparent; transition: all .16s;
+}
+.sdx-opt__rad svg { width: 11px; height: 11px; }
+.sdx-opt.is-on {
+  border-color: #22d3ee; background: linear-gradient(135deg, #f0fdff 0%, #ffffff 75%);
+  box-shadow: 0 0 0 3px rgba(34,211,238,.14), 0 12px 22px -16px rgba(8,145,178,.75);
+}
+.sdx-opt.is-on .sdx-opt__ico {
+  color: #fff; border-color: transparent;
+  background: linear-gradient(135deg, #67e8f9, #0891b2 60%, #0e7490);
+  box-shadow: 0 6px 14px -6px rgba(8,145,178,.7);
+}
+.sdx-opt.is-on .sdx-opt__t { color: #0e7490; }
+.sdx-opt.is-on .sdx-opt__rad {
+  border-color: transparent; color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #0891b2);
+  box-shadow: 0 3px 8px -2px rgba(8,145,178,.6);
+}
+
+/* ── The footer note ─────────────────────────────────────────────────────── */
+.sdx-ft__note {
+  display: inline-flex; align-items: center; gap: 7px; margin-right: auto;
+  font-size: 11px; font-weight: 600; color: #6a869c;
+  padding: 7px 12px; border-radius: 999px; background: #fff; border: 1px solid #dceff4;
+}
+.sdx-ft__note svg { width: 13px; height: 13px; color: #0891b2; flex-shrink: 0; }
+
+/* Before the three steps are answered the button stays clickable on purpose —
+   a disabled button cannot say which step is missing and the message below it
+   can — so the design dims it instead, and brightens it on `is-ready`. Opacity
+   rather than a paler gradient, as the prototype has it: one rule that holds
+   in both themes. Scoped to this dialog; the base button is shared by every
+   P2P modal. */
+.spi-mdl--sdx .spi-mdl-confirm:not(.is-ready):not([aria-busy="true"]) { opacity: .6; }
+.spi-mdl--sdx .spi-mdl-confirm.is-ready {
+  box-shadow: 0 12px 26px -8px rgba(8,145,178,.7), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+/* ── Dark ────────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .spi-mdl--sdx .spi-mdl-body { background: linear-gradient(180deg, #0b1922, #0c1c24); }
+/* The shell draws its edge as a 1.5px ring — a hairline on a white page, but
+   on a dark one a lit outline tracing the whole dialog, which is what read as
+   a border. Dropped to a 1px hairline at a third of the alpha and paid for
+   with a deeper, wider shadow, so the dialog is lifted off the page rather
+   than drawn on it. Three classes, so it wins over the shared rule wherever
+   that is defined. */
+[data-bs-theme="dark"] .spi-mdl.spi-mdl--wide.spi-mdl--sdx {
+  box-shadow: 0 0 0 1px rgba(34,211,238,.1), 0 36px 80px -16px rgba(0,0,0,.82);
+}
+/* The shared scrim is a light-mode value: at .45 over an already dark page it
+   barely dims the table behind, so the list stayed legible under the dialog
+   and every edge had busy content pressed against it. Deeper, and only under
+   this dialog — `:has` leaves every other P2P modal on the shared value, and
+   a browser without it simply keeps that value too. */
+[data-bs-theme="dark"] .spi-mdl-backdrop:has(> .spi-mdl--sdx) {
+  background: rgba(3, 12, 18, .72);
+}
+[data-bs-theme="dark"] .sdx-sum { background: #0c1c24; border-color: rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .sdx-sum__row + .sdx-sum__row { border-top-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .sdx-sum__ico { background: rgba(148,163,184,.12); color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-sum__row.is-ok .sdx-sum__ico { background: rgba(34,211,238,.14); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-sum__l { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-sum__v { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-sum__row.is-ok .sdx-sum__v { color: #e2e8f0; }
+[data-bs-theme="dark"] .sdx-sum__s { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-sum__st { border-color: rgba(148,163,184,.4); }
+[data-bs-theme="dark"] .sdx-main__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .sdx-main__s,
+[data-bs-theme="dark"] .sdx-s { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-card { background: #0c1c24; border-color: rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .sdx-step.is-locked .sdx-card { background: rgba(148,163,184,.06); border-color: rgba(148,163,184,.26); }
+[data-bs-theme="dark"] .sdx-node { background: #0c1c24; border-color: rgba(34,211,238,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-step.is-locked .sdx-node { background: rgba(148,163,184,.1); border-color: rgba(148,163,184,.26); color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-line { background: repeating-linear-gradient(180deg, rgba(34,211,238,.28) 0 5px, transparent 5px 9px); }
+[data-bs-theme="dark"] .sdx-t { color: #e2e8f0; }
+/* The step badges and eyebrows were still on their light fills: a white-pink
+   REQUIRED pill and a near-white LOCKED one sat on a near-black card. Each
+   keeps its meaning — rose, green, slate — as a translucent wash of its own
+   hue over the card, with the text lifted to the light end of that hue so it
+   carries at 9px. */
+[data-bs-theme="dark"] .sdx-tag--req {
+  color: #fda4af; background: rgba(244,63,94,.14); border-color: rgba(244,63,94,.32);
+}
+[data-bs-theme="dark"] .sdx-tag--done {
+  color: #6ee7b7; background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.32);
+}
+[data-bs-theme="dark"] .sdx-tag--lock {
+  color: #8fa8b6; background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.26);
+}
+/* #0891b2 on a near-black card falls to about 3.3:1, which 9.5px uppercase
+   cannot carry — the lighter cyan is the same accent at a readable level. */
+[data-bs-theme="dark"] .sdx-eyebrow { color: #22d3ee; }
+[data-bs-theme="dark"] .sdx-step.is-done .sdx-eyebrow { color: #34d399; }
+[data-bs-theme="dark"] .sdx-step.is-locked .sdx-eyebrow { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-step.is-locked .sdx-t { color: #9fb3bf; }
+[data-bs-theme="dark"] .sdx-locked-msg { color: #7f9aa6; }
+/* The required asterisk at #f43f5e lands near 3.9:1 on the dark card. */
+[data-bs-theme="dark"] .sdx-req { color: #fb7185; }
+[data-bs-theme="dark"] .sdx-opt { background: #102a35; border-color: rgba(34,211,238,.2); }
+[data-bs-theme="dark"] .sdx-opt__t { color: #e2e8f0; }
+[data-bs-theme="dark"] .sdx-opt__s { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-opt__ico { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.26); color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-opt__rad { background: transparent; border-color: rgba(148,163,184,.4); }
+[data-bs-theme="dark"] .sdx-opt.is-on { background: rgba(34,211,238,.1); border-color: #22d3ee; }
+[data-bs-theme="dark"] .sdx-opt.is-on .sdx-opt__t { color: #67e8f9; }
+[data-bs-theme="dark"] .sdx-ft__note { background: #0c1c24; border-color: rgba(34,211,238,.2); color: #7f9aa6; }

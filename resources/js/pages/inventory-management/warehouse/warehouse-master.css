@@ -119,6 +119,11 @@
   background: linear-gradient(180deg, #f0fdff, #e3f7fb);
   border-bottom: 1px solid #c9ebf2;
 }
+/* The shimmer's own cells. The placeholder rows sit in the real table so
+   they take the body's padding - but a bar needs a touch more room than a
+   line of text to read as a row rather than a stripe. */
+.whm-page .ord-table tbody td.whm-shimcell { padding: 16px 12px; }
+
 .whm-page .ord-table tbody td {
   padding: 12px;
   font-size: 11.5px;
@@ -198,11 +203,34 @@
 }
 
 /* ── Warehouse: icon, name, street, then city line ──────────────────────── */
+/* A stated width, and the three lines inside it truncate (CS-939).
+   The table is table-layout: auto on purpose - see the note above - so a
+   column is as wide as its widest cell, and nothing here capped the name.
+   One warehouse called "Mumbai Central Fulfillment" five times over pushed
+   this column to most of the table and squeezed every other column out of
+   view, so the width of the list depended on the longest name anyone had
+   ever typed.
+   320 is the width the three lines need: the name, the street address under
+   it, and the city line. Past that they ellipsise, with the full value on
+   the title. A max-width alone would have left SHORT names giving a narrow
+   column, which is still a column that moves - the ticket asks for one that
+   does not. */
 .whm-page .whm-namecell {
   display: flex;
   gap: 10px;
   align-items: flex-start;
   text-align: left;
+  width: 320px;
+}
+/* overflow: hidden is doing two jobs - drawing the ellipsis, and dropping
+   this text's min-content contribution to zero so it can no longer widen
+   the column from the inside. */
+.whm-page .whm-namecell__t > b,
+.whm-page .whm-namecell__t > span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* The design's own tile: solid teal with a white glyph, 32px at radius 10.
    Ours was a pale box with a teal glyph, which made the one thing that tells
@@ -263,11 +291,16 @@
 .whm-page .whm-type--tpl { color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; }
 
 /* ── Area ───────────────────────────────────────────────────────────────── */
+/* A number cannot be cut at 30 characters without lying about the value, so
+   this column is given a width instead. 9,99,99,99,99,999 is the widest the
+   Indian grouping gets at this size; past that it wraps rather than pushing
+   the neighbouring columns off screen. */
 .whm-page .whm-area {
   display: inline-flex;
   align-items: baseline;
   gap: 4px;
-  white-space: nowrap;
+  width: 150px;
+  justify-content: center;
 }
 .whm-page .whm-area b {
   font-size: 13px;
@@ -284,6 +317,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+  width: 240px;
   text-align: left;
 }
 .whm-page .whm-loc__city { font-size: 11.5px; color: #64748b; }
@@ -319,7 +353,18 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  width: 240px;
   text-align: left;
+}
+/* The character cap settles the usual case; these stop a single unbroken
+   string - an email with no spaces in it - from widening the column anyway. */
+.whm-page .whm-contact > b,
+.whm-page .whm-contact > span,
+.whm-page .whm-loc__city {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .whm-page .whm-contact b {
   display: inline-flex;
@@ -769,6 +814,25 @@
   cursor: pointer;
 }
 .whm-file__x:hover { background: #fee2e2; color: #e11d48; }
+/* View and Download, built on the remove button's box so the three sit as
+   one group. Teal on hover rather than the red the remove button takes -
+   two of these are safe and one is not, and the colour is what says which. */
+.whm-file__act {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: #fff;
+  color: #0e7490;
+  cursor: pointer;
+  text-decoration: none;
+}
+.whm-file__act:hover { background: #e0f7fb; color: #0891b2; }
+[data-bs-theme="dark"] .whm-file__act { background: rgba(34,211,238,.14); color: #7dd3e8; }
+[data-bs-theme="dark"] .whm-file__act:hover { background: rgba(34,211,238,.26); color: #a5f3fc; }
 /* The menu is anchored to the field rather than portalled: it opens inside
    the scrolling body, and a portalled one would stay put while the form
    scrolled away underneath it. */
@@ -938,8 +1002,29 @@
   background: rgba(148, 163, 184, .12);
   border-color: rgba(148, 163, 184, .24);
 }
+/* The OFF track needs an edge in the dark. #334155 to #1e293b on a row that
+   is itself near-black gave the control no outline at all, so a switch that
+   was simply off read as nothing there - the white knob looked like a loose
+   dot between two teal buttons.
+   An inset ring rather than a border: .whm-toggle is 42x24 with the knob
+   placed absolutely at top/left 3, and a real border would shift the padding
+   box and move the knob with it. An inset shadow draws the same line and
+   changes no geometry. */
 [data-bs-theme="dark"] .whm-toggle {
-  background: linear-gradient(180deg, #334155, #1e293b);
+  background: linear-gradient(180deg, #3b4a5f, #202c3c);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, .45), inset 0 1px 3px rgba(0, 0, 0, .45);
+}
+[data-bs-theme="dark"] .whm-toggle span::after { background: #64748b; }
+/* The ON state, restated for the dark (CS-939 #14). The rule above and
+   .whm-toggle.is-on both carry two components, so at equal specificity the
+   later one wins - and this sheet declares the dark rule after it. The
+   result was an enabled toggle painted with the DISABLED background, so the
+   knob's position was the only thing left saying which way it was set.
+   A touch more glow than the light rule carries: a teal ring at .15 reads on
+   white and disappears on #1e293b. */
+[data-bs-theme="dark"] .whm-toggle.is-on {
+  background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25), 0 0 0 3px rgba(34, 211, 238, .24);
 }
 
 /* A field that has settled: read-only because zones are allocated against this
@@ -955,3 +1040,42 @@
   background: rgba(148, 163, 184, .10);
   color: #94a3b8;
 }
+
+/* ── Save veil (CS-939) ──
+   It covers the DIALOG rather than the viewport, so the backdrop behind is
+   left alone and the sheet belongs to the card it is blocking.
+   cursor: progress, not not-allowed - the save is running, not refused. */
+/* Fixed over the viewport, not pinned inside the dialog. A sticky sheet was
+   tried first and covered the form, but the dialog scrolls and the field
+   menus portal to <body>, so neither the area below the fold nor an open
+   menu was ever underneath it. Fixed inside .spi-mdl-backdrop - itself fixed
+   - covers the lot. The real blocking is `inert` on the body; this is what
+   SHOWS the form is busy.
+   cursor: progress, not not-allowed - the save is running, not refused. */
+.whm-addmdl { position: relative; }
+.whm-saving {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(240,253,255,.55);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.whm-saving__box {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 12px 20px; border-radius: 12px;
+  background: #fff; border: 1.5px solid #cdeaf3;
+  box-shadow: 0 18px 40px -16px rgba(8,145,178,.45);
+  font-size: 12.5px; font-weight: 700; color: #0c4a6e;
+}
+.whm-saving__spin, .whm-btnspin {
+  width: 15px; height: 15px; flex-shrink: 0; border-radius: 50%;
+  border: 2.2px solid #0891b2; border-top-color: transparent;
+  animation: whmSaveSpin .6s linear infinite;
+}
+/* On the button the mark sits on a filled teal face, so it is drawn in the
+   button's own ink rather than the accent. */
+.whm-btnspin { width: 13px; height: 13px; border-width: 2px; border-color: currentColor; border-top-color: transparent; }
+@keyframes whmSaveSpin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .whm-saving { background: rgba(5,20,30,.72); }
+[data-bs-theme="dark"] .whm-saving__box { background: #0f2231; border-color: rgba(34,211,238,.3); color: #cfeef8; }
+@media (prefers-reduced-motion: reduce) { .whm-saving__spin, .whm-btnspin { animation: none; } }

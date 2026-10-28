@@ -15,6 +15,10 @@ import { uniqueLabels } from '../zone/zone-data';
 
 const LABEL = (id: string, name: string) => `${id} · ${name}`;
 
+/* How much of a warehouse name an option row can hold beside its badge. */
+const WH_NAME_MAX = 20;
+const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max).trimEnd()}…` : s);
+
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 
@@ -109,6 +113,17 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
     () => uniqueLabels(lookups.zones.filter(z => z.apiId), z => z.apiId as number, z => LABEL(z.id, z.name), z => z.whName ?? ''),
     [lookups],
   );
+  /* The same cut Add Zone makes: a long warehouse name is shortened for the
+     option row, while the closed field and the tooltip keep it whole. */
+  const whShortLabels = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const w of activeWarehouses) {
+      const label = whLabels.get(w.apiId) ?? LABEL(w.id, w.name);
+      const short = truncate(w.name, WH_NAME_MAX);
+      if (short !== w.name) m[label] = label.replace(w.name, short);
+    }
+    return m;
+  }, [activeWarehouses, whLabels]);
 
   const [unit, setUnit] = useState<Unit>(rack?.dims.unit ?? 'cm');
   const [d, setD] = useState<Draft>(() => {
@@ -269,6 +284,7 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
               <EditSelect
                 value={d.wh}
                 options={activeWarehouses.map(w => whLabels.get(w.apiId) ?? LABEL(w.id, w.name))}
+                shortLabels={whShortLabels}
                 placeholder="Select warehouse"
                 invalid={!!errors.wh}
                 onChange={v => { set({ wh: v, zone: '', cold: false, haz: false }); clear('wh'); clear('zone'); }}
