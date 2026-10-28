@@ -232,12 +232,14 @@ export const SHARED_STAGE_CSS = `
 
 /* Previous (ghost) button. */
 .smd-stg-btn {
-  padding: 6px 13px; border-radius: 8px;
+  /* Every button on the lead page is 40px (QA #308). */
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 10px;
   border: 1.5px solid #c4b5fd;
   background: #fff;
   color: #7c3aed;
   font-family: inherit;
-  font-weight: 700; font-size: 10px;
+  font-weight: 700; font-size: 11.5px;
   cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px;
   transition: all .18s;
@@ -247,11 +249,11 @@ export const SHARED_STAGE_CSS = `
 
 /* Primary (Save & Next) button. */
 .smd-stg-btn-primary {
-  padding: 6px 14px; border-radius: 8px;
+  padding: 0 18px; border-radius: 10px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   color: #fff;
   border: none;
-  font-size: 10px; font-weight: 700;
+  font-size: 11.5px; font-weight: 700;
   box-shadow: 0 3px 10px rgba(124,58,237,.35);
 }
 .smd-stg-btn-primary:hover {

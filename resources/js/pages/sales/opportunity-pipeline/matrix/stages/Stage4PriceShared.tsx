@@ -870,7 +870,8 @@ const STAGE4_CSS = `
 
 .s4-back-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 6px 12px; border-radius: 8px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 10px;
   background: #fff; border: 1.5px solid #ddd6fe;
   color: #5b21b6; font-weight: 700; font-size: 12px;
   cursor: pointer; font-family: inherit;

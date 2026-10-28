@@ -14,6 +14,7 @@ import LeadDetailsModal from './LeadDetailsModal';
 import LeadActivityModal from './LeadActivityModal';
 import LeadFilterModal, { type LeadFilters, countFilterValues } from './LeadFilterModal';
 import SearchClear from '../../../components/ui/SearchClear';
+import '../../../components/ui/DataTable.css';
 
 /* Filters are deliberately NOT persisted.
  *
@@ -124,6 +125,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   all:             'All Leads',
   key_opportunity: 'Key Opportunity Leads',
 };
+
 
 /* Sub-tab labels for the Key Opportunity view. */
 const DEAL_STATE_LABELS: Record<DealState, string> = {
@@ -1170,16 +1172,22 @@ export default function SalesLeadWorksheet() {
 
       {/* ── Tabs + Search ── */}
       <div className="lwp-pre-table">
-        <div className="lwp-pills">
-          {(Object.keys(TAB_LABELS) as TabKey[]).map(t => (
-            <div
-              key={t}
-              className={`lwp-pill ${tab === t ? 'active' : ''}`}
-              onClick={() => switchTab(t)}
-            >
-              {TAB_LABELS[t]}{countsLoaded ? ` (${counts[t] ?? 0})` : ''}
-            </div>
-          ))}
+        <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="teal">
+          <div className="dt-tabs" role="tablist">
+            {(Object.keys(TAB_LABELS) as TabKey[]).map(t => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={tab === t}
+                className={`dt-tab ${tab === t ? 'on' : 'off'}`}
+                onClick={() => switchTab(t)}
+              >
+                {TAB_LABELS[t]}
+                {countsLoaded && <span className="dt-tab-count">{counts[t] ?? 0}</span>}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="lwp-search">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2.2">
@@ -1213,16 +1221,22 @@ export default function SalesLeadWorksheet() {
 
       {/* ── Key Opportunity sub-tabs — only under the Key Opportunity tab ── */}
       {tab === 'key_opportunity' && (
-        <div className="lwp-subtabs">
-          {(Object.keys(DEAL_STATE_LABELS) as DealState[]).map(s => (
-            <div
-              key={s}
-              className={`lwp-subtab ${dealState === s ? 'active' : ''}`}
-              onClick={() => switchDealState(s)}
-            >
-              {DEAL_STATE_LABELS[s]}{countsLoaded ? ` (${counts[s === 'in_progress' ? 'key_in_progress' : 'key_won'] ?? 0})` : ''}
-            </div>
-          ))}
+        <div className="dt-tabrail hr-dt lwp-subrail" data-accent="teal">
+          <div className="dt-tabs" role="tablist">
+            {(Object.keys(DEAL_STATE_LABELS) as DealState[]).map(st => (
+              <button
+                key={st}
+                type="button"
+                role="tab"
+                aria-selected={dealState === st}
+                className={`dt-tab ${dealState === st ? 'on' : 'off'}`}
+                onClick={() => switchDealState(st)}
+              >
+                {DEAL_STATE_LABELS[st]}
+                {countsLoaded && <span className="dt-tab-count">{counts[st === 'in_progress' ? 'key_in_progress' : 'key_won'] ?? 0}</span>}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1873,12 +1887,13 @@ const SCOPED_CSS = `
   flex-shrink: 0; z-index: 1;
 }
 .lwp-root .lwp-bact {
-  /* Figma toolbar-button sizing (restored to match the design exactly). */
+  /* The Supplier / Customers header Add button (.sup-fig .cstrip__action-btn):
+     40px tall, 18px sides, 11.5 / 700. */
   position: relative; overflow: hidden;
   display: inline-flex; align-items: center; gap: 7px;
   box-sizing: border-box; height: 40px;
-  padding: 0 20px; border-radius: 12px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  padding: 0 18px; border-radius: 12px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap; transition: all .22s;
   letter-spacing: .02em; min-height: 40px; border: none;
 }
@@ -2068,90 +2083,25 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .lwp-root .lwp-chip-x { background: rgba(34,211,238,.18); color: #67e8f9; }
 
-/* ─── Pre-table: pills + search ───
- * Tab pills sit on the left, the search bar is pushed to the far right
- * (space-between) per the Figma. The bar holds a fixed, modest width
- * (see .lwp-search) rather than stretching across the empty band. */
+/* ─── Toolbar: tab rails + search ───
+ * The shared list tab rail (.dt-tabrail — 40px tabs with count chips, 48px rail)
+ * and the search track filling the rest of the row, straight on the page. */
+.lwp-root,
+.lwp-root .dt-tabrail.dt-tabrail {
+  --dt-a-50:#f0fdfa; --dt-a-100:#ccfbf1; --dt-a-150:#cffafe; --dt-a-200:#a5e8f5;
+  --dt-a-300:#67e8f9; --dt-a-400:#22d3ee; --dt-a-500:#06b6d4; --dt-a-600:#0891b2;
+  --dt-a-700:#0e7490; --dt-a-800:#155e75; --dt-a-rgb: 8, 145, 178;
+}
 .lwp-root .lwp-pre-table {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; margin-bottom: 8px; flex-shrink: 0;
-}
-.lwp-root .lwp-pills {
-  display: flex; align-items: center; gap: 4px;
-  background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
-  /* 40px tall like the banner action buttons. */
-  box-sizing: border-box; height: 40px;
-  padding: 3px 12.5px; border-radius: 12px;
-  border: 1.5px solid #a5f3fc;
-  box-shadow: 0 2px 10px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
-  flex-shrink: 0;
-}
-.lwp-root .lwp-pill {
-  box-sizing: border-box; height: 31px;
-  padding: 0 20px; border-radius: 9px;
-  font-size: 12.5px; font-weight: 600; cursor: pointer;
-  background: transparent; color: #0e7490;
-  border: none; transition: all .18s; white-space: nowrap;
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.lwp-root .lwp-pill:hover { color: #0891b2; background: rgba(255,255,255,.6); }
-.lwp-root .lwp-pill.active {
-  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
-  color: #fff;
-  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
-  border-radius: 9px;
-}
-/* Dark mode — drop the light cyan gradient container for a translucent tonal
-   panel; inactive pills read cyan-on-dark, active pill keeps the cyan fill. */
-[data-bs-theme="dark"] .lwp-root .lwp-pills {
-  background: rgba(8,145,178,0.12);
-  border-color: rgba(34,211,238,0.18);
-  box-shadow: none;
-}
-[data-bs-theme="dark"] .lwp-root .lwp-pill { color: #67e8f9; }
-[data-bs-theme="dark"] .lwp-root .lwp-pill:hover { color: #cffafe; background: rgba(0,0,0,.25); }
-[data-bs-theme="dark"] .lwp-root .lwp-pill.active {
-  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
-  color: #fff;
-  box-shadow: 0 3px 12px rgba(8,145,178,.35);
-}
-
-/* ─── Key Opportunity sub-tabs ───────────────────────────────────────
- * Secondary strip shown only under the Key Opportunity tab. Amber tonal
- * family (echoes the key-opportunity star) so it reads as a child of the
- * cyan primary tabs rather than a competing peer. */
-.lwp-root .lwp-subtabs {
-  display: inline-flex; align-items: center; gap: 4px;
-  align-self: flex-start;
-  background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
-  padding: 4px; border-radius: 10px;
-  border: 1.5px solid #a5f3fc;
-  box-shadow: 0 2px 8px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
+  display: flex; align-items: stretch; gap: 14px;
   margin-bottom: 8px; flex-shrink: 0;
 }
-.lwp-root .lwp-subtab {
-  padding: 6px 14px; border-radius: 7px;
-  font-size: 11.5px; font-weight: 600; cursor: pointer;
-  background: transparent; color: #0e7490;
-  transition: all .18s; white-space: nowrap;
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.lwp-root .lwp-subtab:hover { color: #0891b2; background: rgba(255,255,255,.6); }
-.lwp-root .lwp-subtab.active {
-  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
-  color: #fff;
-  box-shadow: 0 3px 10px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
-}
-[data-bs-theme="dark"] .lwp-root .lwp-subtabs {
-  background: rgba(8,145,178,0.12);
-  border-color: rgba(34,211,238,0.18);
-  box-shadow: none;
-}
-[data-bs-theme="dark"] .lwp-root .lwp-subtab { color: #67e8f9; }
-[data-bs-theme="dark"] .lwp-root .lwp-subtab:hover { color: #cffafe; background: rgba(0,0,0,.25); }
-[data-bs-theme="dark"] .lwp-root .lwp-subtab.active {
-  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%); color: #fff;
-}
+.lwp-root .lwp-pre-table .dt-tabrail .dt-tab { height: 40px; font-size: 12.5px; }
+.lwp-root .lwp-pre-table .dt-tabrail .dt-tab svg { flex-shrink: 0; }
+/* Key Opportunity sub-tabs: their own rail on the row below the toolbar. */
+.lwp-root .lwp-subrail { align-self: flex-start; margin-bottom: 8px; flex-shrink: 0; max-width: 100%; overflow-x: auto; }
+.lwp-root .lwp-subrail .dt-tab { height: 40px; font-size: 12.5px; }
+.lwp-root .lwp-subrail .dt-tab svg { flex-shrink: 0; }
 .lwp-root .lwp-search {
   /* Clear button picks up this page's cyan instead of the neutral default. */
   --ui-search-clear: #0891b2;
@@ -2171,7 +2121,7 @@ const SCOPED_CSS = `
    * column — the target asked for. That alignment is approximate by nature:
    * the table's columns are content-sized, so they shift with the data. The
    * cap is what keeps it from stretching the full 1217px of free space. */
-  flex: 1 1 420px; min-width: 220px; max-width: 686px; height: 40px;
+  flex: 1 1 auto; min-width: 240px; max-width: none; height: auto; min-height: 48px;
   box-shadow: 0 2px 10px rgba(8,145,178,.1), 0 1px 0 rgba(255,255,255,.9) inset;
   transition: all .2s;
 }
@@ -2184,6 +2134,31 @@ const SCOPED_CSS = `
   font-size: 12.5px; color: #0c4a6e; outline: none; width: 100%; font-weight: 500;
 }
 .lwp-root .lwp-search input::placeholder { color: #94a3b8; font-weight: 400; }
+/* Search = the Customers list search (.smc-toolbar .dt-search): the tab rail's
+   track — same border, 3px padding and tint as the tab rail, so both stand 48px —
+   with the 40px white field drawn inside it by ::before; the icon, input and
+   clear button all sit inside that field. */
+.lwp-root .lwp-search.lwp-search {
+  position: relative;
+  padding: 3px 16px;
+  border: 1px solid #c9f8fd;
+  background: linear-gradient(180deg, #f4feff, #ecfeff);
+  border-radius: 12px;
+  box-shadow: none;
+}
+.lwp-root .lwp-search.lwp-search::before {
+  content: ''; position: absolute; inset: 3px; z-index: 0; pointer-events: none;
+  border-radius: 9px;
+  background: #fff;
+  border: 1px solid #d6f9fd;
+  transition: border-color .16s, box-shadow .16s;
+}
+.lwp-root .lwp-search.lwp-search > * { position: relative; z-index: 1; }
+.lwp-root .lwp-search.lwp-search:focus-within { border-color: #c9f8fd; box-shadow: none; }
+.lwp-root .lwp-search.lwp-search:focus-within::before { border-color: #22d3ee; box-shadow: 0 0 0 3px rgba(8,145,178,.14); }
+[data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search { background: rgba(8,145,178,.08); border-color: rgba(8,145,178,.22); box-shadow: none; }
+[data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search::before { background: rgba(255,255,255,.03); border-color: rgba(8,145,178,.25); }
+[data-bs-theme="dark"] .lwp-root .lwp-search.lwp-search:focus-within::before { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.28); }
 
 /* ─── Table card ─── */
 .lwp-root .lwp-table-card {
@@ -2892,7 +2867,7 @@ const SCOPED_CSS = `
   box-shadow: 0 0 0 3px rgba(8,145,178,.28), 0 4px 16px rgba(0,0,0,.35);
 }
 /* Same white-bevel leak on the other three that re-colour in dark but never
-   restated box-shadow. (.lwp-pills and .lwp-subtabs already handle their own.) */
+   restated box-shadow. */
 [data-bs-theme="dark"] .lwp-root .lwp-banner {
   box-shadow: 0 2px 0 rgba(255,255,255,.04) inset, 0 4px 16px rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.25);
 }
@@ -3111,9 +3086,8 @@ const SCOPED_CSS = `
   /* Reset the flex basis: in the stacked (column) layout the 420px basis
    * applies to the VERTICAL axis and balloons the search into a tall empty
    * box. Pin it back to a normal 40px-tall, full-width bar. */
-  .lwp-root .lwp-search { flex: 0 0 auto; width: 100%; max-width: none; height: 40px; }
-  .lwp-root .lwp-pills { width: 100%; justify-content: space-between; overflow-x: auto; }
-  .lwp-root .lwp-pill  { padding: 0 14px; font-size: 12px; }
+  .lwp-root .lwp-search { flex: 0 0 auto; width: 100%; max-width: none; height: 48px; }
+  .lwp-root .lwp-pre-table .dt-tabrail { max-width: 100%; overflow-x: auto; }
 }
 
 /* Large phone — actions become 2-column grid, pills shrink */
@@ -3127,7 +3101,6 @@ const SCOPED_CSS = `
     padding: 9px 12px; font-size: 11.5px;
     min-height: 38px; min-width: 0;
   }
-  .lwp-root .lwp-pill { padding: 0 10px; font-size: 11px; }
   .lwp-root .lwp-chip-strip { gap: 4px; }
   .lwp-root .lwp-chip { font-size: 10.5px; padding: 2px 4px 2px 8px; }
   .lwp-root .lwp-pagination { padding: 8px 12px; gap: 6px; }

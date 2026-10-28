@@ -489,13 +489,15 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-toolbar > .smd-act { flex: 1 1 auto; justify-content: center; }
 .smd-act-sep {
   display: inline-block;
-  width: 1px; height: 22px;
+  width: 1px; height: 28px;
   flex: 0 0 auto;
   background: linear-gradient(to bottom, transparent, #ddd6fe, transparent);
 }
 .smd-act {
+  /* 40px — the height of every other button on the page (banner, Back). */
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 13px; border-radius: 9px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 13px; border-radius: 10px;
   background: linear-gradient(135deg, #f5f3ff, #ede9fe);
   border: 1.5px solid #c4b5fd;
   color: #5b21b6;
@@ -989,7 +991,9 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-deal-save-wrap { display: flex; justify-content: center; margin-top: auto; padding-top: 8px; }
 .smd-deal-save-btn {
   min-width: 150px;
-  padding: 8px 32px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; height: 40px;
+  padding: 0 32px; border-radius: 10px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   color: #fff; font-weight: 800; font-size: 12px;
   border: none; cursor: pointer;
@@ -1068,6 +1072,57 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-day.is-today,
 [data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-cell.is-today,
 [data-bs-theme="dark"] .master-datepicker-popup.smd-cal .master-datepicker-footer .today-btn { color: #c4b5fd; }
+
+/* One header line across the three columns: the CLM panel, the stage card and the
+   Deal panel headers are each sized by their own content (28 / 32 / 34px icons),
+   so their bottom edges never met. A fixed 56px height puts all three on one line. */
+.smd-clm-header, .smd-deal-header, .smd-stage-card .smd-stg-head {
+  box-sizing: border-box; height: 56px; flex-shrink: 0;
+  padding-top: 0; padding-bottom: 0;
+}
+
+/* Every heading in the three lead columns is 12px (QA #309): the three panel
+   headers, the CLM group / row titles, and each stage's section and card titles.
+   Scoped under .smd-root so it outranks the stages' own <style> blocks. */
+.smd-root .smd-clm-title,
+.smd-root .smd-deal-title,
+.smd-root .smd-stg-head-title,
+.smd-root .smd-clm-group-title,
+.smd-root .smd-clm-row-title,
+.smd-root .smd-sect-title,
+.smd-root .smd-st2-status-title,
+.smd-root .smd-st2-activity-title,
+.smd-root .s3-ready-title,
+.smd-root .s3-ready-item-title,
+.smd-root .s3-card-title,
+.smd-root .s4-card-title { font-size: 12px; }
+/* ...and every sub-heading under them is 8px (QA #311). */
+.smd-root .smd-clm-sub,
+.smd-root .smd-deal-sub,
+.smd-root .smd-stg-head-sub,
+.smd-root .smd-clm-group-sub,
+.smd-root .smd-clm-row-sub,
+.smd-root .smd-st2-activity-sub,
+.smd-root .s3-ready-sub,
+.smd-root .s3-ready-item-sub,
+.smd-root .s3-card-sub,
+.smd-root .s4-card-sub { font-size: 8px; }
+/* ...and every button label on the lead page is 11.5px (QA #312). */
+.smd-root .smd-hdr-wa-text,
+.smd-root .smd-back-btn,
+.smd-root .smd-act,
+.smd-root .smd-deal-save-btn,
+.smd-root .smd-stg-btn,
+.smd-root .smd-stg-btn-primary,
+.smd-root .st2-pick-btn,
+.smd-root .s3-mark-btn,
+.smd-root .s3-create-btn,
+.smd-root .s3-group-btn,
+.smd-root .s4-back-btn,
+.smd-root .s5-summary-btn,
+.smd-root .s5-create-btn,
+.smd-root .s5-seg-btn,
+.smd-root .s6-cta { font-size: 11.5px; }
 
 /* ── Stage card (middle column shell) — 4px rainbow accent on top ── */
 .smd-stage-card {

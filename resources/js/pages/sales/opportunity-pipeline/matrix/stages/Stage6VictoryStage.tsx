@@ -729,7 +729,8 @@ const STAGE6_CSS = `
 .s6-cta {
   margin-top: 10px;
   display: inline-flex; align-items: center; gap: 8px;
-  padding: 9px 20px; border-radius: 11px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 20px; border-radius: 11px;
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: #fff; font-family: inherit;
   font-size: 12.5px; font-weight: 800;

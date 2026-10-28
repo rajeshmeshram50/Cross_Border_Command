@@ -1386,7 +1386,8 @@ const STAGE3_CSS = `
 .s3-pending { color: #6d28d9; font-style: italic; font-size: 11.5px; font-weight: 600; }
 .s3-mark-btn {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 6px 12px; border: none; cursor: pointer;
+  box-sizing: border-box; height: 40px;
+  padding: 0 14px; border: none; cursor: pointer;
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
   font-family: inherit; font-size: 11px; font-weight: 700;
@@ -1404,7 +1405,8 @@ const STAGE3_CSS = `
 }
 .s3-create-btn {
   display: inline-flex; align-items: center;
-  padding: 6px 14px; border: none; cursor: pointer;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border: none; cursor: pointer;
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
   font-family: inherit; font-size: 11.5px; font-weight: 700;
@@ -1498,7 +1500,9 @@ const STAGE3_CSS = `
 /* Group create CTA */
 .s3-cta-row { display: flex; justify-content: center; padding: 16px 0 4px; }
 .s3-group-btn {
-  padding: 10px 24px; border: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; height: 40px;
+  padding: 0 24px; border: none; cursor: pointer;
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
   font-family: inherit; font-size: 13px; font-weight: 700;

@@ -783,7 +783,9 @@ const STAGE2_CSS = `
 }
 .st2-pick-count { font-size: 11.5px; font-weight: 600; color: #64748b; }
 .st2-pick-btn {
-  padding: 10px 28px; border-radius: 11px; border: 1.5px solid transparent;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; height: 40px;
+  padding: 0 28px; border-radius: 11px; border: 1.5px solid transparent;
   font-size: 13px; font-weight: 600; cursor: pointer; transition: all .18s ease;
 }
 .st2-pick-btn:disabled { opacity: .55; cursor: not-allowed; }

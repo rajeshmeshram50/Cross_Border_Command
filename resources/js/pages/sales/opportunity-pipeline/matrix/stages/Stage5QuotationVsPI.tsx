@@ -1701,7 +1701,8 @@ const STAGE5_CSS = `
 .s5-head-divider { width: 1px; height: 22px; background: rgba(124,58,237,.25); }
 .s5-summary-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 6px 13px; border-radius: 9px; cursor: pointer;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 9px; cursor: pointer;
   font-family: inherit; font-size: 10.5px; font-weight: 700; white-space: nowrap;
   background: linear-gradient(135deg, #4c1d95, #6d28d9); color: #fff; border: none;
   box-shadow: 0 3px 10px rgba(124,58,237,.40), inset 0 1px 0 rgba(255,255,255,.16);
@@ -1728,7 +1729,8 @@ const STAGE5_CSS = `
 }
 .s5-seg-btn {
   position: relative; display: inline-flex; align-items: center; gap: 7px;
-  padding: 7px 18px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  box-sizing: border-box; height: 40px;
+  padding: 0 18px; border-radius: 9px; cursor: pointer; white-space: nowrap;
   font-family: inherit; font-size: 11px; font-weight: 600; letter-spacing: .01em;
   background: rgba(255,255,255,.75); color: #6d28d9;
   border: 1.5px solid rgba(124,58,237,.2);
@@ -1758,7 +1760,8 @@ const STAGE5_CSS = `
 .s5-create-div { width: 1px; height: 26px; flex-shrink: 0; background: linear-gradient(180deg, transparent, rgba(124,58,237,.25), transparent); }
 .s5-create-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 16px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 9px; cursor: pointer; white-space: nowrap;
   font-family: inherit; font-size: 11px; font-weight: 700; letter-spacing: .02em;
   transition: all .22s cubic-bezier(.4,0,.2,1);
 }
@@ -2016,7 +2019,7 @@ const STAGE5_CSS = `
 .s5-ps-export { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 9px; border: 1.5px solid rgba(8,145,178,.3); background: linear-gradient(135deg, #fff, #f0f9ff); font-family: inherit; font-size: 10.5px; font-weight: 700; color: #0369a1; cursor: pointer; box-shadow: 0 1px 4px rgba(8,145,178,.1); transition: all .15s; }
 .s5-ps-export:hover:not(:disabled) { background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-ps-export:disabled { opacity: .5; cursor: not-allowed; }
-.s5-ps-close-btn { padding: 7px 18px; border-radius: 9px; border: none; cursor: pointer; font-family: inherit; font-size: 10.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(8,145,178,.32); transition: all .15s; }
+.s5-ps-close-btn { display: inline-flex; align-items: center; box-sizing: border-box; height: 40px; padding: 0 18px; border-radius: 9px; border: none; cursor: pointer; font-family: inherit; font-size: 10.5px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(8,145,178,.32); transition: all .15s; }
 .s5-ps-close-btn:hover { background: linear-gradient(135deg, #0369a1, #0c4a6e); transform: translateY(-1px); }
 
 /* ─── Dark mode ─── */
