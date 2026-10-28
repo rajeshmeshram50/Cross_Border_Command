@@ -8524,3 +8524,34 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   box-shadow: none;
 }
 [data-bs-theme="dark"] .prd-fbtn:disabled { background: transparent; color: #71717a; border-color: rgba(255,255,255,.12); }
+
+/* Header tab row: 8px from the panel edge, not 12 (+1px border ≈ 14) — QA #27.
+   The cards below take the same 8px sides and top so their left edge stays
+   level with the first tab. */
+.prd-toolbar { padding: 8px 8px 1px; }
+.prd-panel .prd-grid,
+.prd-panel .prd-list { padding: 8px; }
+
+/* The badge dot keeps its own colour on the selected tab (QA #28) — green for
+   Active, red for Inactive — instead of turning white when the tab switches.
+   A light ring keeps it readable on the violet tab. */
+.prd-tab.is-active .prd-tab-badge--active .prd-tab-badge-dot {
+  background: #22c55e;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .85);
+}
+.prd-tab.is-active .prd-tab-badge--inactive .prd-tab-badge-dot {
+  background: #ef4444;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .85);
+}
+
+/* Idle tab hover goes white, not a deeper violet (QA #29); the selected tab
+   keeps its own gradient. */
+.prd-tab:not(.is-active):hover {
+  background: #fff;
+  color: #6d28d9;
+  border-color: rgba(139, 92, 246, .35);
+}
+[data-bs-theme="dark"] .prd-tab:not(.is-active):hover {
+  background: rgba(255, 255, 255, .1);
+  color: #ddd6fe;
+}

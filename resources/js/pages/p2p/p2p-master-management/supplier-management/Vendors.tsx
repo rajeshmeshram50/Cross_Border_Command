@@ -137,6 +137,15 @@ function ClipCell({ value, className }: { value?: string | null; className?: str
   return clipped ? <Tooltip label={v}>{inner}</Tooltip> : inner;
 }
 
+/* A segment chip's name, with its full text on hover only when the chip cuts
+   it — the Customer list's SegChip, measured from the DOM. */
+function SegNameCell({ name }: { name: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const clipped = useIsClipped(ref, name);
+  const inner = <span ref={ref} className="smc-seg-name">{name}</span>;
+  return clipped ? <Tooltip label={name}>{inner}</Tooltip> : inner;
+}
+
 /* Supplier Type pill colours - the Customer list's .smc-type-pill takes its
    colours inline per value the same way. */
 const TYPE_PILL: Record<'material' | 'logistics' | 'services', { bg: string; color: string; border: string }> = {
@@ -1055,12 +1064,14 @@ useEffect(() => {
                             <td>
                               {v.segmentItems && v.segmentItems.length > 0 ? (
                                 <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
-                                  <Tooltip label={v.segments?.[0] ?? v.segmentItems[0].name}>
-                                    <span className="smc-seg smc-seg--withbadge">
-                                      <span className="smc-seg-name">{v.segmentItems[0].name}</span>
-                                      <SegmentBadge status={v.segmentItems[0].reg} style={{ marginLeft: 0, flexShrink: 0 }} />
-                                    </span>
-                                  </Tooltip>
+                                  {/* The name tooltip hangs on the NAME only, never the
+                                      whole chip: the Reg badge inside carries its own
+                                      tooltip, and moving onto it never left the chip, so
+                                      both stayed up at once (QA #50). */}
+                                  <span className="smc-seg smc-seg--withbadge">
+                                    <SegNameCell name={v.segmentItems[0].name} />
+                                    <SegmentBadge status={v.segmentItems[0].reg} style={{ marginLeft: 0, flexShrink: 0 }} />
+                                  </span>
                                   {v.segmentItems.length > 1 && (
                                     <Tooltip label={`View ${v.segmentItems.length - 1} more`}>
                                       <button

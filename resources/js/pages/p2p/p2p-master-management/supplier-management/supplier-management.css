@@ -846,10 +846,10 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 
 /* Filter sits in .sl-refine (it anchors the Refine panel) — stretch it to the
    rail height like the Customer list's bare Filter button. */
-/* The search bar's visible field is 40px (drawn 4px inside its 48px track),
-   so Filter stands 44px and centres on it. */
+/* Filter stands 48px, level with the tab rail and the single-box search,
+   as on the Product list (QA #25 / #51). */
 .smc-root .smc-toolbar .sl-refine { display: flex; align-items: center; flex-shrink: 0; }
-.smc-root .smc-toolbar .sl-refine > .sl-refine-btn { height: 44px; min-height: 44px; }
+.smc-root .smc-toolbar .sl-refine > .sl-refine-btn { height: 48px; min-height: 48px; }
 
 /* 15 columns (14 on International — no GST State Code), not the Customer
    list's 13, so its nth-child budget is restated. Sums to 100 either way. */
@@ -1011,3 +1011,27 @@ border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-
 /* Mapped Products keeps its old count button — restate its own type, which the
    Customer table's blanket 11.5 / 500 cell rule would otherwise flatten. */
 .smc-root .smc-table-wrap .table tbody td:not(:last-child) .sl-prodcount.sl-prodcount { font-size: 12px !important; font-weight: 800 !important; }
+
+/* Search = the Product list's single box (QA #51): one 1.5px border, white,
+   48px to match the tab rail — not the Customer list's track, whose outer
+   border and inner ::before field read as two boxes of different sizes. */
+.smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search {
+  height: 48px; min-height: 48px;
+  padding: 0 14px 0 38px;
+  background: #fff;
+  border: 1.5px solid #e6e2f5;
+  border-radius: 11px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, .05), 0 6px 18px rgba(124, 58, 237, .05);
+  transition: border-color .16s, box-shadow .16s;
+}
+.smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search::before { content: none; display: none; }
+.smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search:focus-within {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, .18);
+}
+.smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search input::placeholder { color: #a78bfa; font-weight: 500; }
+[data-bs-theme="dark"] .smc-root.sup-list .smc-table-card .smc-toolbar .dt-search.dt-search {
+  background: rgba(255, 255, 255, .04);
+  border-color: rgba(167, 139, 250, .3);
+  box-shadow: none;
+}
