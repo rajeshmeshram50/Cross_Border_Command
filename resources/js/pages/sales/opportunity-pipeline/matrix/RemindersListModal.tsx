@@ -351,17 +351,18 @@ const RLM_CSS = `
 .rlm-head-actions { display: flex; gap: 8px; align-items: center; }
 .rlm-add-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 9px; border: none;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 10px; border: none;
   background: rgba(255, 255, 255, .20); color: #fff;
-  font-size: 12px; font-weight: 700; cursor: pointer;
+  font-size: 11.5px; font-weight: 700; cursor: pointer;
   transition: background .15s;
   font-family: inherit;
 }
 .rlm-add-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .32); }
 .rlm-add-btn:disabled { opacity: .55; cursor: not-allowed; }
 .rlm-close {
-  width: 30px; height: 30px; border: none; cursor: pointer;
-  background: rgba(255, 255, 255, .18); color: #fff; border-radius: 9px;
+  width: 40px; height: 40px; border: none; cursor: pointer;
+  background: rgba(255, 255, 255, .18); color: #fff; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
 }
 .rlm-close:hover { background: rgba(255, 255, 255, .32); }
@@ -416,7 +417,7 @@ const RLM_CSS = `
 .rlm-sk-sub  { height: 9px; margin-top: 6px; opacity: .7; }
 .rlm-sk-num  { width: 22px; height: 22px; border-radius: 7px; }
 .rlm-sk-pill { width: 74px; height: 20px; border-radius: 999px; }
-.rlm-sk-btn  { width: 62px; height: 28px; border-radius: 7px; }
+.rlm-sk-btn  { width: 62px; height: 40px; border-radius: 10px; }
 [data-bs-theme="dark"] .rlm-sk {
   background: linear-gradient(90deg, #241c48 25%, #2e2557 50%, #241c48 75%);
   background-size: 400px 100%;
@@ -461,9 +462,10 @@ const RLM_CSS = `
 .rlm-act-cell { display: flex; gap: 6px; }
 .rlm-row-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 10px; border: 1.5px solid #cbd5e1;
+  box-sizing: border-box; height: 40px; justify-content: center;
+  padding: 0 14px; border: 1.5px solid #cbd5e1;
   background: #fff; color: #475569;
-  border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer;
+  border-radius: 10px; font-size: 11.5px; font-weight: 700; cursor: pointer;
   transition: all .12s;
   font-family: inherit;
 }
@@ -475,7 +477,7 @@ const RLM_CSS = `
 .rlm-row-btn-done:hover { background: #dcfce7; border-color: #86efac; }
 .rlm-row-btn-undo { color: #b45309; border-color: #fde68a; background: #fffbeb; }
 .rlm-row-btn-undo:hover { background: #fef3c7; border-color: #fcd34d; }
-.rlm-row-btn-del  { color: #dc2626; border-color: #fecaca; padding: 5px 8px; }
+.rlm-row-btn-del  { color: #dc2626; border-color: #fecaca; width: 40px; padding: 0; }
 .rlm-row-btn-del:hover { background: #fee2e2; }
 
 .rlm-status {

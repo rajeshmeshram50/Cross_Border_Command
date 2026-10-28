@@ -924,7 +924,7 @@ export const SALES_MATRIX_DETAIL_CSS = `
 /* Tabs = the Customers list tab rail (.dt-tabrail): 40px tabs in the 48px
    violet rail. Four tabs share the narrow column, so they split it evenly
    at 11.5px; the SOON tag sits inside the tab's top-right corner. */
-.smd-deal-tabs { margin: 12px 14px 0; } /* = .smd-stg-body padding, so the rail and the stage card start level */
+.smd-deal-tabs { margin: 12px 10px 0; } /* top = .smd-stg-body padding (columns start level); sides = .smd-deal-form padding (rail spans the fields) */
 .smd-deal-tabs .dt-tabs { display: flex; width: 100%; }
 .smd-deal-tabs .dt-tab.smd-deal-tab {
   position: relative; flex: 1 1 0; min-width: 0;
