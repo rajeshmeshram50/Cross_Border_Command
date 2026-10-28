@@ -3,7 +3,7 @@ import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker'
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
-import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoUser } from '../../../icons';
+import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoUser, IcoVan } from '../../../icons';
 import StageSummary from './StageSummary';
 import ProductTable from './ProductTable';
 import type { ProductLine, TaxMode } from '../invoice-products';
@@ -23,16 +23,20 @@ const ICON_PICK_CAMERA = (
 );
 
 export default function Step2InvoiceProducts({
-  draft, set, lines, onChangeLine, taxMode, onPickFile, readOnly = false,
+  draft, set, lines, onChangeLine, onRemoveLine, taxMode, onPickFile, readOnly = false, direct = false,
 }: {
   draft: InvoiceDraft;
   set: SetDraft;
   lines: ProductLine[];
   onChangeLine: (index: number, patch: Partial<ProductLine>) => void;
+  /** Drop a line the supplier did not invoice. The design's Action column. */
+  onRemoveLine?: (index: number) => void;
   taxMode: TaxMode;
   onPickFile: (kind: 'invoice' | 'eway', file: File) => void;
   readOnly?: boolean;
-
+  /* A Direct SPI matches the shipment's proforma invoice against the
+     supplier's own — there is no purchase order in between. */
+  direct?: boolean;
 }) {
   const [invOpen, setInvOpen] = useState(true);
   const [prodOpen, setProdOpen] = useState(true);
@@ -83,9 +87,11 @@ export default function Step2InvoiceProducts({
             <div className="spi-dt-sec-row">
               <span className="spi-dt-sec-lbl">Products</span>
               <span className="spi-dt-sec-sep" />
-              <span className="spi-dt-sec-title">Product Details (3-Way Match)</span>
+              <span className="spi-dt-sec-title">Product Details ({direct ? '2' : '3'}-Way Match)</span>
             </div>
-            <div className="spi-dt-sec-sub">PI vs PO vs SPI product mapping &amp; 3-way match</div>
+            <div className="spi-dt-sec-sub">
+              {direct ? 'PI vs SPI product mapping & 2-way match' : 'PI vs PO vs SPI product mapping & 3-way match'}
+            </div>
           </div>
           <div className="spi-dt-pills">
             <HeadPill icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono />
@@ -94,7 +100,12 @@ export default function Step2InvoiceProducts({
             <span className="spi-dt-dots">⋮</span>
             <HeadPill icon={<IcoPin />} label="STATE CODE" value={draft.stateCode || '—'} mono />
             <span className="spi-dt-dots">⋮</span>
-            <HeadPill icon={<IcoLines />} label="PO NUMBER" value={draft.poNumber || '—'} alt mono />
+            {/* A Direct SPI has no purchase order to name here. The shipment
+                is what took its place as the thing this invoice belongs to,
+                so the slot carries that instead of an empty PO chip. */}
+            {direct
+              ? <HeadPill icon={<IcoVan />} label="SHIPMENT ID" value={draft.shipmentId || '—'} alt mono />
+              : <HeadPill icon={<IcoLines />} label="PO NUMBER" value={draft.poNumber || '—'} alt mono />}
             <span className="spi-dt-dots">⋮</span>
             <HeadPill icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />
           </div>
@@ -102,7 +113,8 @@ export default function Step2InvoiceProducts({
         </div>
 
         <div className="spi-dt-sec-body">
-          <ProductTable lines={lines} onChange={onChangeLine} taxMode={taxMode} readOnly={readOnly} />
+          <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
+            twoWay={direct} sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
         </div>
       </div>
     </>

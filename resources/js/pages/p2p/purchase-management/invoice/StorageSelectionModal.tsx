@@ -95,6 +95,7 @@ export default function StorageSelectionModal({
      the user reconsiders the storage type is how you end up submitting a site
      that was chosen under a different answer. */
   const back = () => {
+    if (leaving) return;
     const to = step === 3 && skipsWarehouse ? 1 : step - 1;
     if (to === 1) setWarehouseId(null);
     setStep(to);
@@ -106,7 +107,7 @@ export default function StorageSelectionModal({
        needs no knowledge that it is in a modal. */
     <div
       className="smod-backdrop is-open"
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={e => { if (!leaving && e.target === e.currentTarget) onClose(); }}
     >
       <div className="smod-box" role="dialog" aria-modal="true" aria-labelledby="smod-title">
         <div className="smod-head">
@@ -119,7 +120,8 @@ export default function StorageSelectionModal({
             <div className="smod-head-badge" title={referenceKind === 'po' ? 'PO' : 'Supplier'}>
               {reference}
             </div>
-            <button type="button" className="smod-close" onClick={onClose} aria-label="Close">
+            <button type="button" className="smod-close" onClick={onClose} aria-label="Close"
+              disabled={leaving} title={leaving ? 'Opening the invoice — please wait' : undefined}>
               <IcoX size={13} stroke={2.6} />
             </button>
           </div>
@@ -270,12 +272,18 @@ export default function StorageSelectionModal({
           <div className="smod-footer-btns">
             {/* Back appears only from step 2 on — on step 1 there is nowhere to
                 go back to, and a dead button is worse than no button. */}
+            {/* Both are shut while the hand-off is in flight. The spinner on
+                Next said the dialog was busy, but Back, Cancel, the close ×
+                and a backdrop click were all still live behind it — any of
+                them would have unmounted or rewound the wizard while the
+                parent was already loading the invoice form from the choice it
+                had just been handed. */}
             {step > 1 && (
-              <button type="button" className="smod-back" onClick={back}>
+              <button type="button" className="smod-back" onClick={back} disabled={leaving}>
                 <IcoChevronL size={11} stroke={2.6} /> Back
               </button>
             )}
-            <button type="button" className="smod-cancel" onClick={onClose}>Cancel</button>
+            <button type="button" className="smod-cancel" onClick={onClose} disabled={leaving}>Cancel</button>
             {/* `.disabled` is a class, not the attribute — the stylesheet dims
                 it and sets pointer-events: none. aria-disabled carries the same
                 fact to a screen reader, which a class cannot. */}

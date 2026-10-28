@@ -289,6 +289,21 @@
 }
 .whm-page .whm-type--own { color: #0e7490; background: #e0f7fb; border: 1px solid #bfe9f1; }
 .whm-page .whm-type--tpl { color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0; }
+/* Zone and Rack were truncating their names with .pts-trunc, which lives in
+   putaway-summary.css - a sheet neither page imports. CSS chunks persist
+   once loaded, so the class worked only if the Putaway Summary page had
+   been opened earlier in the session: the name truncated or ran the column
+   wide depending on where the user had been. This sheet is imported by all
+   four inventory masters, so the rule is theirs.
+   min-width: 0 is on it for the same reason putaway's copy carries it - the
+   text sits in a flex column, and a flex child will not shrink below its
+   content without it, so text-overflow never fires. */
+.whm-page .inv-trunc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ── Area ───────────────────────────────────────────────────────────────── */
 /* A number cannot be cut at 30 characters without lying about the value, so
@@ -713,6 +728,12 @@
   /* Room for the tag, so a longer id never runs under it. */
   padding-right: 62px;
 }
+/* The rule above is written for a generated ID — monospace, tracked out, so
+   the characters of a code line up and can be read off one by one. Most AUTO
+   fields hold no code: a warehouse type, a city, "Not Allowed", an area. Set
+   in the same face those read as machine output rather than as the words they
+   are, so they take the page's own font. */
+.whm-auto--text .spi-dt-inp { font-family: inherit; letter-spacing: 0; }
 .whm-auto__tag {
   position: absolute;
   right: 9px;

@@ -1597,6 +1597,20 @@ body:has(.avm-backdrop) .spi-dt-overlay.cpf-form { z-index: 1080; }
 [data-bs-theme="dark"] .cpd-tbl tbody tr:nth-child(even) { --cpd-rowbg: #13242e; }
 [data-bs-theme="dark"] .cpd-tbl tbody tr:hover td { background: rgba(34, 211, 238, .07); }
 
+/* The hover wash must not reach the two frozen columns.
+   `tr:hover td` is (0,3,3) and the frozen column's own dark fill is only
+   (0,2,0), so hovering a row replaced that solid fill with a TRANSLUCENT one —
+   and a see-through frozen column is a hole: the scrolled columns slide under
+   it and read straight through. You only ever see it on the row the pointer is
+   on, which is why it shows up while scrolling and never in a screenshot of a
+   table at rest. Light mode never had it because its hover is an opaque
+   #f8fdff.
+   Same cure the header already uses (`.cpd-edh` → #3291ab): keep the hover
+   colour, mixed down to the opaque value instead of layered as alpha.
+   .07 cyan over #0e1b24 is exactly #0f2832, and over #13242e is #14303b. */
+[data-bs-theme="dark"] .cpd-tbl tbody tr:hover .cpd-stick { background: #0f2832; }
+[data-bs-theme="dark"] .cpd-tbl tbody tr:nth-child(even):hover .cpd-stick { background: #14303b; }
+
 /* Editable cells: the tint and both controls. */
 [data-bs-theme="dark"] .cpd-ed { background: rgba(34, 211, 238, .1); box-shadow: inset 1px 0 0 rgba(34, 211, 238, .22), inset -1px 0 0 rgba(34, 211, 238, .22); }
 [data-bs-theme="dark"] .cpd-tbl--pd .cpd-in {

@@ -1,7 +1,7 @@
 import { memo, useCallback } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../../components/ui/Tooltip';
-import { IcoCheck, IcoTrash, IcoX } from '../../../icons';
+import { IcoTrash, IcoX } from '../../../icons';
 import { DESC_MAX, NAME_MAX, truncateDesc, truncateName, type ProductLine } from '../invoice-products';
 
 export interface ProductIdentity {
@@ -27,18 +27,24 @@ type IdentityColumn = {
   key: keyof ProductIdentity; label: string; placeholder: string; type: 'text' | 'date';
 };
 
-const IDENTITY_COLUMNS: IdentityColumn[] = [
-  { key: 'serial', label: 'Serial No.', placeholder: 'e.g. SN-001', type: 'text' },
-  { key: 'lot', label: 'Lot No.', placeholder: 'e.g. LT-001', type: 'text' },
-  { key: 'batch', label: 'Batch No.', placeholder: 'e.g. BT-001', type: 'text' },
-  { key: 'cat', label: 'Cat No.', placeholder: 'e.g. CT-001', type: 'text' },
-  { key: 'expiry', label: 'Expiry Date', placeholder: '', type: 'date' },
-  { key: 'mfg', label: 'MFG Date', placeholder: '', type: 'date' },
-  /* Short enough to fit the same box as the codes beside it — the field still
-     takes a full sentence, it just no longer asks for a wider column to say
-     so while empty. */
-  { key: 'remarks', label: 'Remarks', placeholder: 'Add a note…', type: 'text' },
-];
+/* The design's own mark for this section: a tick leaving a box, for details
+   recorded against what is going in. Inline, because it is used nowhere else
+   and the shared IcoCheck is a bare tick. */
+/* A speech bubble — the mark a remark carries elsewhere in the flow. */
+const IcoNote = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8z" />
+  </svg>
+);
+
+const IcoCheckBox = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M9 11l3 3L22 4" />
+    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+  </svg>
+);
 
 const putUnits = (n: number) => `${Math.round(n * 1000) / 1000} unit${n === 1 ? '' : 's'}`;
 
@@ -55,13 +61,18 @@ const ADV_COLUMNS: IdentityColumn[] = [
   { key: 'cat', label: 'CAT No.', placeholder: 'e.g. CT-001', type: 'text' },
   { key: 'mfg', label: 'MFG Date', placeholder: '', type: 'date' },
   { key: 'expiry', label: 'Expiry Date', placeholder: '', type: 'date' },
-  { key: 'remarks', label: 'Remarks', placeholder: 'Add a note…', type: 'text' },
 ];
 
 function SelectedProducts({
   rows, identities, onIdentityChange, onRemove, onClear, onQtyChange, qtyMaxOf,
+  remark, onRemarkChange,
 }: {
   rows: BoxContent[];
+  /* The box's note. It belongs to the carton rather than to any row, but it
+     sits in THIS card because it is read along with the contents — given a
+     card of its own it looked like a second box's worth of detail. */
+  remark?: string;
+  onRemarkChange?: (value: string) => void;
   onQtyChange?: (code: string, qty: number) => void;
   /** Ceiling for a row's stepper. Defaults to the line's whole SPI quantity,
    *  which is only right when no other box holds any of it. */
@@ -75,94 +86,58 @@ function SelectedProducts({
 
   const totalUnits = rows.reduce((n, r) => n + r.qty, 0);
 
-  /* Editing a box that is already packed is a different job from choosing what
-     goes into one, and the design gives it its own table: the identifiers that
-     will be printed, each product's SPI allowance beside what this box holds.
-     The selection screen above keeps the wider table it has always had. */
-  if (!isSelection) {
-    return (
-      <div className="vti-dw-section">
-        {/* No icon and no total here, unlike the sections around it: the
-            design leaves this heading bare, and the box's own total already
-            sits in the strip overhead. */}
-        <div className="vti-dw-section-hd">
-          <div className="vti-dw-section-title">Product Advance Details ({rows.length})</div>
-        </div>
+  /* ONE table for both jobs, as the design has it. Choosing what goes into a
+     carton and editing a carton already packed ask the same questions — which
+     products, how many of each, and the identifiers that will be printed — so
+     they are the same rows. Only the heading differs: picking adds the
+     running total and a way to start over, while a packed box already shows
+     its total in the strip overhead and has nothing to clear.
 
-        <div className="vs3-wrap">
-          <table className="vs3t">
-            <thead>
-              <tr>
-                <th>Sr. No</th>
-                <th>Product</th>
-                <th>SPI Quantity</th>
-                <th>Box Quantity</th>
-                {ADV_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, i) => (
-                <AdvRow
-                  key={row.line.code}
-                  index={i}
-                  row={row}
-                  identity={identities[row.line.code] ?? EMPTY_IDENTITY}
-                  onChange={onIdentityChange}
-                  onRemove={onRemove}
-                  onQtyChange={onQtyChange}
-                  max={qtyMaxOf?.(row.line.code) ?? row.line.spiQty}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
+     We had a second, wider table here with Code and Description as columns of
+     their own and a plain number for the quantity. It said the same things in
+     more space and left no room for the stepper, so the quantity could not be
+     adjusted while picking — the one place you most want to. */
   return (
-    <div className="vti-box invf-selprod">
-      <div className="vti-header">
-        <div className="vti-header-ico"><IcoCheck size={18} stroke={2.6} /></div>
-        <div className="vti-header-text">
-          <div className="vti-header-title">Selected Products ({rows.length})</div>
-          <div className="vti-header-sub">
-            Everything going into this carton
-            &nbsp;·&nbsp; identifiers are per product
-          </div>
+    <div className="vti-dw-section">
+      <div className="vti-dw-section-hd">
+        {/* The mark belongs to the picking state only, as the design has it:
+            there it says these details are being recorded against a choice
+            you are still making. On a box already packed the heading is bare
+            — nothing is being chosen, so nothing is being ticked off. */}
+        <div className="vti-dw-section-title">
+          {isSelection && IcoCheckBox} Product Advance Details ({rows.length})
         </div>
-        <div className="vti-header-stats">
-          <div className="vti-stat-pill total">
-            <div className="vti-stat-dot" />Total: {totalUnits} unit{totalUnits === 1 ? '' : 's'}
-          </div>
-          {onClear && (
+        {isSelection && (
+          <div className="invf-selprod__stats">
+            {/* A quiet running total, not a status chip. The dotted pills in
+                the Box Generation header stand for counts that change state —
+                boxed, pending — and this one only adds up what is on screen,
+                so the design leaves it as plain text beside the button. */}
+            <span className="invf-selprod__total">
+              Total: {totalUnits} unit{totalUnits === 1 ? '' : 's'}
+            </span>
             <button type="button" className="invf-selprod__clear" onClick={onClear}>
               <IcoX size={11} stroke={2.6} /> Clear Selection
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      <div className="vti-table-wrap">
-        <table className="vti-table">
+      <div className="vs3-wrap">
+        <table className="vs3t">
           <thead>
             <tr>
-              {/* "Sr No", not "#": every other table in the flow names this
-                  column, and a lone glyph is the only header you have to
-                  work out. */}
-              <th>Sr No</th>
+              <th>Sr. No</th>
               <th>Product</th>
-              <th>Code</th>
-              <th className="vti-desc-h">Description</th>
-              <th>Qty in Box</th>
-              {IDENTITY_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}
-              {onRemove && <th>Remove</th>}
+              <th>SPI Quantity</th>
+              <th>Box Quantity</th>
+              {ADV_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}
+              <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <IdentityRow
+              <AdvRow
                 key={row.line.code}
                 index={i}
                 row={row}
@@ -170,11 +145,30 @@ function SelectedProducts({
                 onChange={onIdentityChange}
                 onRemove={onRemove}
                 onQtyChange={onQtyChange}
+                max={qtyMaxOf?.(row.line.code) ?? row.line.spiQty}
               />
             ))}
           </tbody>
         </table>
       </div>
+
+      {onRemarkChange && (
+        <div className="vs3-rmk">
+          <div className="vs3-rmk__hd">
+            <span className="vs3-rmk__ico">{IcoNote}</span>
+            Box Remark
+          </div>
+          <div className="vs3-rmk__body">
+            <input
+              className="vs3-rmk__in"
+              type="text"
+              placeholder="Any additional notes about this box…"
+              value={remark ?? ''}
+              onChange={e => onRemarkChange(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -291,94 +285,6 @@ const AdvRow = memo(function AdvRow({
           <span className="spk-dash">—</span>
         )}
       </td>
-    </tr>
-  );
-});
-
-const IdentityRow = memo(function IdentityRow({
-  index, row, identity, onChange, onRemove, onQtyChange,
-}: {
-  index: number;
-  row: BoxContent;
-  onQtyChange?: (code: string, qty: number) => void;
-  identity: ProductIdentity;
-  onChange: (code: string, patch: Partial<ProductIdentity>) => void;
-  onRemove?: (code: string) => void;
-}) {
-  const { line, qty } = row;
-
-  const patch = useCallback(
-    (p: Partial<ProductIdentity>) => onChange(line.code, p),
-    [line.code, onChange],
-  );
-
-  return (
-    <tr className="vti-prod-row">
-      <td><span className="invf-selprod__no">{index + 1}</span></td>
-      <td>
-        <div className="vti-prod-cell">
-          <div>
-            <Tooltip label={line.spiName} disabled={line.spiName.length <= NAME_MAX}>
-              <div className="vti-prod-name">{truncateName(line.spiName)}</div>
-            </Tooltip>
-            <div className="vti-prod-sku">HSN {line.hsn}</div>
-          </div>
-        </div>
-      </td>
-      <td><span className="vti-code">{line.code}</span></td>
-      <td className="vti-desc">
-        <Tooltip label={line.description} disabled={line.description.length <= DESC_MAX}>
-          <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
-        </Tooltip>
-      </td>
-      <td>
-        {onQtyChange ? (
-          <input
-            type="number" min={0} step="any" className="vti-subbox-inp"
-            aria-label={`Units of ${line.spiName} in this carton`}
-            value={qty}
-            onChange={e => onQtyChange(line.code, Math.max(0, Number(e.target.value) || 0))}
-          />
-        ) : (
-          <span className="vti-qty-badge">{qty}</span>
-        )}
-      </td>
-
-      {IDENTITY_COLUMNS.map(c => (
-        <td key={c.key}>
-          {c.type === 'date' ? (
-            <MasterDatePicker
-              value={identity[c.key]}
-              onChange={v => patch({ [c.key]: v })}
-              placeholder={c.label}
-            />
-          ) : (
-            <input
-              className={`cpd-in invf-selprod__in${c.key === 'remarks' ? ' invf-selprod__in--note' : ''}`}
-              type={c.type}
-              placeholder={c.placeholder}
-              value={identity[c.key]}
-              onChange={e => patch({ [c.key]: e.target.value })}
-              aria-label={`${c.label} for ${line.spiName}`}
-            />
-          )}
-        </td>
-      ))}
-
-      {onRemove && (
-        <td>
-          <Tooltip label={`Take ${line.spiName} out of this carton`}>
-            <button
-              type="button"
-              className="invf-selprod__rm"
-              onClick={() => onRemove(line.code)}
-              aria-label={`Remove ${line.spiName}`}
-            >
-              <IcoX size={12} stroke={2.6} />
-            </button>
-          </Tooltip>
-        </td>
-      )}
     </tr>
   );
 });

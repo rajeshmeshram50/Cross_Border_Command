@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -8,7 +8,8 @@ import './invoice-form.css';
 import { HeadPill } from '../order/create-po/CreatePoForm';
 import { WizSpinner } from '../order/create-po/form-fields';
 import {
-  IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLines, IcoLock, IcoUser, IcoWarehouse, IcoX,
+  IcoBriefcase, IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLock, IcoRefLines,
+  IcoUser, IcoVan, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
@@ -33,6 +34,18 @@ const STAGES = [
   { title: 'Temporary Putaway Allocation', desc: 'Assign a temporary putaway location for each product' },
 ] as const;
 
+/* A Direct SPI has no purchase order and no GRN behind it, so its second
+   stage matches two documents rather than three: the shipment's proforma
+   invoice against the supplier's own invoice. The rail has to say which match
+   is being made, because the columns below it differ. */
+const DIRECT_STAGES: Record<number, { title: string; desc: string }> = {
+  0: { title: 'Supplier Details', desc: 'Confirm the supplier this invoice is issued by' },
+  1: {
+    title: 'Invoice & Product Details (2-Way Match)',
+    desc: 'Enter invoice details & match products against the PI of the shipment',
+  },
+};
+
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 export interface InvoiceFormInput {
@@ -44,6 +57,9 @@ export interface InvoiceFormInput {
   supplier: string;
   storage: StorageChoice;
   invoiceNo?: string;
+  /* Set for a Direct SPI, and only for one: its presence is what says this
+     invoice was never meant to have a purchase order behind it. */
+  direct?: { shipmentId?: string; procurementCode?: string; supplierCode?: string };
 }
 
 const BOX_FIELD_LABEL: Record<string, string> = {
@@ -62,8 +78,32 @@ export default function InvoiceForm({
   invoiceNo: string;
   onClose: () => void;
 }) {
-  const { draft, set } = useInvoiceDraft({ supplier: input.supplier, poNo: input.poNo });
+  /* A Direct SPI starts with NO supplier in the draft, even though the setup
+     named one: that name is a label, not a record, and the save is keyed on a
+     vendor id. Stage 1 is where the supplier is confirmed against the master,
+     which is what the design asks for — seeding the name here would lock that
+     field on a supplier the server has never heard of. The header pill still
+     shows the chosen name until a real one replaces it. */
+  const { draft, set } = useInvoiceDraft({
+    supplier: input.direct ? '' : input.supplier, poNo: input.poNo,
+    shipmentId: input.direct?.shipmentId, procurementCode: input.direct?.procurementCode,
+  });
   const toast = useToast();
+
+  /* No purchase order behind this invoice, now or ever: either it was set up
+     as a Direct SPI in this session, or it was saved as one and has no PO to
+     come back to. Several parts of the form read differently for it. */
+  /* A Direct SPI reads its supplier out of the master before step 1 can show
+     anything, which is the same kind of wait a With-PO invoice has while its
+     purchase order loads — so it gets the same answer: the full StageSkeleton,
+     not a few shimmer bars inside otherwise-real cards.
+     Step 1 stays mounted behind it (hidden, the way `saving` already does it)
+     because the lookup lives in that component's effect — unmount it and the
+     thing the skeleton is waiting for never runs. */
+  const [directSupLoading, setDirectSupLoading] = useState(!!input.direct?.supplierCode);
+
+  const [noPo, setNoPo] = useState(!!input.direct);
+  const isDirect = !!input.direct || noPo;
 
   const [poLoading, setPoLoading] = useState(!!(input.poId || input.spiId));
   const [poError, setPoError] = useState<string | null>(null);
@@ -117,7 +157,14 @@ export default function InvoiceForm({
           setStage(spiViewOnlyReason(existing.status) ? 0 : resumeAt);
         }
         if (!poId) {
-          setPoError('This invoice is not linked to a purchase order.');
+          /* A Direct SPI has no purchase order by definition, so saying so is
+             not a failure — it is the type. That holds on the way in, where
+             `direct` carries the setup, and on the way back to a saved one,
+             which is recognised by having been stored without a purchase
+             order. Anything else reaching here really did lose its PO. */
+          const standalone = !!input.direct || (!!existing && !existing.purchase_order_id);
+          setNoPo(standalone);
+          if (!standalone) setPoError('This invoice is not linked to a purchase order.');
           return;
         }
         const [po, openLines] = await Promise.all([
@@ -182,6 +229,14 @@ export default function InvoiceForm({
     return () => { live = false; };
   }, [warehouseId]);
 
+  /* The design's Action column. A line the supplier did not actually invoice
+     has to be removable here — it comes in from the PI, and without this the
+     only way to drop one was to leave it at zero, which still carries it into
+     the boxes and the put-away. */
+  const removeLine = useCallback((index: number) => {
+    setLines(ls => ls.filter((_, i) => i !== index));
+  }, []);
+
   const changeLine = useCallback((index: number, patch: Partial<ProductLine>) => {
     setLines(ls => ls.map((l, i) => (i === index ? { ...l, ...patch } : l)));
   }, []);
@@ -205,7 +260,15 @@ export default function InvoiceForm({
   const saveStage1 = async () => {
     if (spiId) { advance(); return; }
     if (!draft.vendorId) {
-      toast.warning('Supplier not loaded', 'The purchase order has no supplier to raise this invoice against.');
+      /* Which supplier is missing, and from where: a Direct SPI is waiting
+         for one to be picked, a With-PO invoice for one its order never
+         carried. The same wording for both sent people looking at the wrong
+         screen. */
+      if (isDirect) {
+        toast.warning('Choose a supplier', 'Pick the supplier this invoice is issued by before continuing.');
+      } else {
+        toast.warning('Supplier not loaded', 'The purchase order has no supplier to raise this invoice against.');
+      }
       return;
     }
     setSaving(true);
@@ -478,13 +541,16 @@ export default function InvoiceForm({
     }
   };
 
-  const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || (stage === 0 && (poLoading || !!poError)) || (stage === 2 && boxesLoading);
+  const nextBlocked = viewOnly ? poLoading : saving || mapBlocked || (stage === 0 && (poLoading || directSupLoading || !!poError)) || (stage === 2 && boxesLoading);
   const goBack = () => (stage === 0 ? onClose() : setStage(stage - 1));
 
   const isLast = stage === STAGES.length - 1;
+  /* One stage, named for the invoice it belongs to. Stages the two types
+     share fall through to the common wording rather than being repeated. */
+  const stageLabel = (i: number) => (isDirect && DIRECT_STAGES[i]) || STAGES[i];
 
   return createPortal(
-    <div className="spi-dt-overlay cpf-form">
+    <div className="spi-dt-overlay cpf-form spi-invform">
       {/* One veil over the whole wizard while a save is in flight.
           Guarding each control one at a time is a losing game - the body had
           inert, but the step rail, Close and the footer each sat outside it
@@ -496,10 +562,8 @@ export default function InvoiceForm({
           place the user is looking. */}
       {saving && (
         <div className="spi-dt-veil" role="status" aria-live="polite">
-          <span className="spi-dt-veil__box">
-            <span className="spi-dt-veil__spin" aria-hidden />
-            Saving — please wait
-          </span>
+          <span className="spi-dt-veil__spin" aria-hidden />
+          <span className="spi-dt-veil__lbl">Saving — please wait</span>
         </div>
       )}
       <div className="spi-dt">
@@ -519,14 +583,46 @@ export default function InvoiceForm({
               </div>
             </div>
 
+            {/* What this invoice answers to, named left to right. A With-PO
+                invoice answers to its purchase order; a Direct SPI has none,
+                so it names the shipment it belongs to and the procurement
+                case it is raised under instead — two references in the one
+                slot, which is why the tints alternate from here on. */}
             <div className="spi-dt-pills">
-              <HeadPill icon={<IcoLines />} label="INVOICE NO" value={spiCode ?? invoiceNo} mono />
+              <HeadPill icon={<IcoRefLines />} label="INVOICE NO" value={spiCode ?? invoiceNo} mono />
               <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoLines />} label="PO NUMBER" value={input.poNo ?? '—'} alt mono />
-              <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoUser />} label="SUPPLIER" value={draft.supplier || input.supplier} />
-              <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={savedWarehouse ?? warehouseLabel(input.storage)} alt />
+              {/* The shipment pill is dropped outright on an "All Other's"
+                  Direct SPI rather than shown reading "All Other's" — the
+                  header names what this invoice answers to, and a pill whose
+                  value is "there isn't one" is not a reference, it is a line
+                  of text that looks like a shipment at a glance.
+                  Built as a list because the tints alternate: hard-coded
+                  `alt` flags would have inverted every pill after the gap the
+                  moment one was removed. */}
+              {isDirect ? (() => {
+                const pills = [
+                  draft.shipmentId
+                    ? { key: 'ship', icon: <IcoVan />, label: 'SHIPMENT ID', value: draft.shipmentId, mono: true }
+                    : null,
+                  { key: 'proc', icon: <IcoBriefcase />, label: 'PROCUREMENT CASE ID', value: draft.procurementCode || '—', mono: true },
+                  { key: 'sup', icon: <IcoUser />, label: 'SUPPLIER', value: draft.supplier || input.supplier },
+                  { key: 'wh', icon: <IcoWarehouse />, label: 'WAREHOUSE', value: savedWarehouse ?? warehouseLabel(input.storage) },
+                ].filter((p): p is NonNullable<typeof p> => p !== null);
+                return pills.map((p, i) => (
+                  <Fragment key={p.key}>
+                    <HeadPill icon={p.icon} label={p.label} value={p.value} mono={p.mono} alt={i % 2 === 0} />
+                    {i < pills.length - 1 && <span className="spi-dt-dots">⋮</span>}
+                  </Fragment>
+                ));
+              })() : (
+                <>
+                  <HeadPill icon={<IcoRefLines />} label="PO NUMBER" value={input.poNo ?? '—'} alt mono />
+                  <span className="spi-dt-dots">⋮</span>
+                  <HeadPill icon={<IcoUser />} label="SUPPLIER" value={draft.supplier || input.supplier} />
+                  <span className="spi-dt-dots">⋮</span>
+                  <HeadPill icon={<IcoWarehouse />} label="WAREHOUSE" value={savedWarehouse ?? warehouseLabel(input.storage)} alt />
+                </>
+              )}
             </div>
 
             <div className="spi-dt-head-r">
@@ -556,8 +652,8 @@ export default function InvoiceForm({
                   {i < stage && <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck size={9} stroke={3.2} /> DONE</span>}
                 </div>
                 <div className="spi-dt-step-big">{pad2(i + 1)}</div>
-                <div className="spi-dt-step-title">{s.title}</div>
-                <div className="spi-dt-step-desc">{s.desc}</div>
+                <div className="spi-dt-step-title">{stageLabel(i).title}</div>
+                <div className="spi-dt-step-desc">{stageLabel(i).desc}</div>
                 <span className="spi-dt-step-ghost">{pad2(i + 1)}</span>
               </div>
               </Tooltip>
@@ -571,7 +667,8 @@ export default function InvoiceForm({
           ) : (
             <>
               {saving && <StageSkeleton stage={stage + 1} />}
-              <div className="cpf-stepwrap" hidden={saving}>
+              {!saving && stage === 0 && directSupLoading && <StageSkeleton stage={0} />}
+              <div className="cpf-stepwrap" hidden={saving || (stage === 0 && directSupLoading)}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
@@ -584,14 +681,24 @@ export default function InvoiceForm({
                     Every box is on its shelf, so the invoice, its boxes and their locations are view only — Map Invoice to finish.
                   </div>
                 )}
-                {stage === 0 && <Step1SupplierDetails draft={draft} set={set} error={poError} readOnly={viewOnly} />}
+                {stage === 0 && (
+                  <Step1SupplierDetails draft={draft} set={set} error={poError} readOnly={viewOnly} direct={isDirect}
+                    /* Who the setup named, so step 1 can resolve them against
+                       the master and arrive filled in rather than asking the
+                       same question a second time. */
+                    directSupplier={input.direct
+                      ? { code: input.direct.supplierCode, name: input.supplier }
+                      : undefined}
+                    onResolved={() => setDirectSupLoading(false)} />
+                )}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
-                    onChangeLine={changeLine} />
+                    onChangeLine={changeLine} onRemoveLine={removeLine} direct={isDirect} />
                 )}
                 {stage === 2 && (
                   <Step3BoxPackaging
                     draft={draft}
+                    direct={isDirect}
                     lines={spiId ? boxLines : lines}
                     boxes={boxes}
                     nextBoxCodes={nextBoxCodes}
@@ -638,7 +745,7 @@ export default function InvoiceForm({
           <div className="spi-dt-foot-l">
             <div>
               <div className="spi-dt-foot-step">STEP {pad2(stage + 1)} OF {pad2(STAGES.length)}</div>
-              <div className="spi-dt-foot-name">{STAGES[stage].title}</div>
+              <div className="spi-dt-foot-name">{stageLabel(stage).title}</div>
             </div>
             <div className="spi-dt-dots">
               {STAGES.map((s, i) => (

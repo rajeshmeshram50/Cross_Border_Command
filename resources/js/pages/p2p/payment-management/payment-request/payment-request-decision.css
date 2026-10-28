@@ -1,8 +1,3 @@
-/* Approve / Reject Payment Request dialog. Built on the Raise Payment Request
-   dialog's frame (mpr-*, rpr-*); only the read-only plates, the remark box
-   and the decline accent are new here. */
-/* Prototype width. The frame zooms to .8 on 1025–1640px screens, so the
-   width is scaled back up there to land at the same on-screen size. */
 .mpr-card.spi-mdl.prd-dec { width: min(1600px, 96vw); max-height: 92vh; }
 @media (min-width: 1025px) and (max-width: 1640px) {
   .mpr-card.spi-mdl.prd-dec { width: min(2000px, calc(96vw / .8)); max-height: calc(92vh / .8); }
@@ -18,7 +13,6 @@
 .prd-dec__progbar > span { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, #22d3ee, #0891b2); box-shadow: 0 0 6px rgba(34,211,238,.5); }
 @media (max-width: 760px) { .prd-dec__prog { display: none; } }
 
-/* The request on one line, the decision closing it. */
 .prd-dec__grid7 { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px 12px; align-items: stretch; }
 @media (max-width: 1320px) { .prd-dec__grid7 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .prd-dec__grid7 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -41,7 +35,6 @@
 .prd-dec__ro.is-amt { color: #0b5f77; }
 .prd-dec__rosub { display: block; margin-top: 2px; font-size: 9.5px; font-weight: 700; color: #6b8493; }
 
-/* The live controls carry the only accent on the card. */
 .prd-dec__field.is-live > label,
 .prd-dec__field.is-live .prd-dec__fieldhd label { color: #0e7490; }
 .prd-dec__field.is-live > label::before,
@@ -94,12 +87,10 @@
 .prd-dec__filex svg { width: 10px; height: 10px; }
 .prd-dec__filex:hover { background: #fee2e2; color: #dc2626; }
 
-/* Approve commits money, so it submits in green; decline in rose. */
 .prd-dec__submit.spi-mdl-confirm { background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 3px 10px rgba(5,150,105,.32); }
 .prd-dec__submit.spi-mdl-confirm.is-no { background: linear-gradient(135deg, #fb7185, #be123c); box-shadow: 0 3px 10px rgba(190,18,60,.32); }
 .prd-dec__submit.spi-mdl-confirm:hover:not(:disabled) { filter: brightness(1.06); }
 
-/* Decline: the chrome stays teal, the red goes on the reason and the button. */
 .prd-dec--no .prd-dec__field.is-live .prd-dec__fieldhd label { color: #be123c; }
 .prd-dec--no .prd-dec__field.is-live .prd-dec__fieldhd label::before { background: linear-gradient(180deg, #fca5a5, #dc2626); box-shadow: 0 0 7px -1px rgba(239,68,68,.75); }
 .prd-dec--no .prd-dec__remark { border-color: #fb7185; background: #fffafb; box-shadow: 0 0 0 3.5px rgba(244,63,94,.13); }
@@ -122,13 +113,11 @@
 [data-bs-theme="dark"] .prd-dec__progtxt { color: #bae6fd; }
 [data-bs-theme="dark"] .prd-dec--no .prd-dec__remark { background: rgba(244,63,94,.06); }
 
-/* Deciding: the dialog is inert behind the apay-wait veil (CS-433 / CS-434). */
 .prd-dec.is-saving { position: relative; }
 .prd-dec input:disabled,
 .prd-dec textarea:disabled,
 .prd-dec button:disabled { opacity: .6; cursor: not-allowed; }
 
-/* The attachment chip opens the file, so its name reads as a link. */
 a.prd-dec__filen { color: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 a.prd-dec__filen:hover { color: #0891b2; }
 .prd-dec--no a.prd-dec__filen:hover { color: #dc2626; }

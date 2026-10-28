@@ -108,7 +108,7 @@ export function Field({ label, children, full, wide, req, error, hint, labelEnd 
    The options here are plain strings, so each is both value and label.
    Also used outside this form (Refund Adjustment, Payment Request), which
    pass `invalid` to flag a required field — keep that prop working. */
-export function EditSelect({ value, options, onChange, placeholder, invalid, readOnly, locked, onLockedClick, badges, listBadgesOnly, shortLabels }: {
+export function EditSelect({ value, options, onChange, placeholder, invalid, readOnly, locked, onLockedClick, badges, listBadgesOnly, shortLabels, codes, searchPlaceholder }: {
   value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; invalid?: boolean;
   /** Show the value in the wizard's locked-select box instead of a dropdown. */
   readOnly?: boolean;
@@ -126,6 +126,12 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
      full option is what the hover tooltip shows. Left out, every option
      renders exactly as before. */
   shortLabels?: Record<string, string>;
+  /* Option → the identifier drawn as a chip at the head of its row. The
+     option text keeps the id too, so the tooltip and the closed field still
+     read whole and a search for it still finds the row. */
+  codes?: Record<string, string>;
+  /** What the list's search box asks for, when "Search…" is too vague. */
+  searchPlaceholder?: string;
 }) {
   if (readOnly) {
     return (
@@ -140,11 +146,20 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
       value={value}
       options={options.map((o) => {
         const short = shortLabels?.[o];
-        /* `fullLabel` feeds the tooltip and `selectedLabel` the closed field,
-           so shortening touches the list row only. */
-        const base = short
-          ? { value: o, label: short, fullLabel: o, selectedLabel: o }
-          : { value: o, label: o };
+        const code = codes?.[o];
+        /* `fullLabel` is the hover text, and the option always has one once
+           it is drawn in parts — the closed field truncates by width whatever
+           the list does. MasterSelect decides for itself whether the LIST row
+           still needs the tooltip, by checking the chip and the label against
+           it.
+
+           `selectedLabel` is for the other case: no chip, and the closed
+           field is to read shorter than the list row. */
+        const base = {
+          value: o,
+          label: short ?? o,
+          ...(code ? { code, fullLabel: o } : (short ? { fullLabel: o, selectedLabel: o } : {})),
+        };
         return locked?.[o]
           ? { ...base, disabled: true, disabledReason: locked[o], badge: { text: 'Locked', tone: 'gray' as const, lock: true },
             ...(badges?.[o] ? { badges: [badges[o]] } : {}) }
@@ -152,6 +167,7 @@ export function EditSelect({ value, options, onChange, placeholder, invalid, rea
       })}
       onChange={onChange}
       listBadgesOnly={listBadgesOnly}
+      searchPlaceholder={searchPlaceholder}
       placeholder={placeholder ?? '— Select —'}
       invalid={invalid}
       onDisabledClick={onLockedClick ? (opt) => onLockedClick(opt.value) : undefined}

@@ -65,16 +65,103 @@
 .sdx-sup__tick svg { width: 10px; height: 10px; }
 .sdx-sup__opt.is-sel .sdx-sup__tick { color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2); }
 
+/* No box, no dividers. This was a bordered, filled panel with a vertical rule
+   between each of its four cells, sitting inside the row's own bordered card,
+   inside the popover's border — three frames deep, and with ten of them down
+   the list the whole menu read as a stack of boxes rather than a list of
+   suppliers. The grid stays, because columns that line up down the list are
+   the actual reason to lay these four facts out this way; it is only the
+   chrome around them that goes. Column spacing does the separating the rules
+   used to do, which is why the gap opens from 0 to 18. */
 .sdx-sup__grid {
-  display: grid; grid-template-columns: .9fr 1fr 1.4fr .8fr; gap: 0; margin-top: 6px;
-  border: 1px solid #e6f1f5; border-radius: 9px; background: #fbfeff; overflow: hidden;
+  display: grid; grid-template-columns: .9fr 1fr 1.4fr .8fr; gap: 2px 18px; margin-top: 7px;
+  border: 0; border-radius: 0; background: none; overflow: visible;
 }
-.sdx-sup__c { display: flex; flex-direction: column; gap: 1px; padding: 5px 9px; min-width: 0; }
-.sdx-sup__c + .sdx-sup__c { border-left: 1px solid #e6f1f5; }
-.sdx-sup__cl { font-size: 7.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #8aa5b2; white-space: nowrap; }
-.sdx-sup__cv { font-size: 10.5px; font-weight: 700; color: #0c4a6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sdx-sup__cv.is-mono { font-size: 10px; color: #0e7490; font-variant-numeric: tabular-nums; }
-.sdx-sup__opt.is-sel .sdx-sup__grid { background: #fff; border-color: #cdeff6; }
+.sdx-sup__c { display: flex; flex-direction: column; gap: 1px; padding: 0; min-width: 0; }
+.sdx-sup__c + .sdx-sup__c { border-left: 0; }
+/* A point larger each, now that neither is squeezed into a 5px-padded cell. */
+.sdx-sup__cl { font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #8aa5b2; white-space: nowrap; }
+.sdx-sup__cv { font-size: 11px; font-weight: 700; color: #0c4a6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sdx-sup__cv.is-mono { font-size: 10.5px; color: #0e7490; font-variant-numeric: tabular-nums; }
+
+/* The segment cell holds a name and, when there is more than one, a count.
+   The name is what gives way — min-width: 0 so it ellipsises inside the
+   cell while the count keeps its full width; without it the flex child
+   refuses to shrink and the "+2" is what gets pushed out instead. */
+.sdx-sup__seg { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.sdx-sup__seg1 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A button now, not a hint: `cursor: help` promised a tooltip, and the count
+   opens the list instead. `font: inherit` because a <button> does not take the
+   page's family on its own and would otherwise sit in the browser's UI font
+   beside a cell that is in DM Sans. */
+.sdx-sup__segmore {
+  flex-shrink: 0; cursor: pointer;
+  padding: 1px 5px; border-radius: 999px;
+  background: #e0f7fb; border: 1px solid #b9e9f3; color: #0e7490;
+  font-family: inherit; font-size: 9px; font-weight: 800; letter-spacing: .02em; line-height: 1.5;
+  transition: background .14s, border-color .14s;
+}
+.sdx-sup__segmore:hover { background: #cbf1f8; border-color: #7dd3e8; }
+.sdx-sup__segmore[aria-expanded="true"] { background: #0891b2; border-color: #0891b2; color: #fff; }
+.sdx-sup__segmore:focus-visible { outline: 2px solid #0891b2; outline-offset: 1px; }
+[data-bs-theme="dark"] .sdx-sup__segmore {
+  background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.3); color: #67e8f9;
+}
+[data-bs-theme="dark"] .sdx-sup__segmore:hover { background: rgba(34,211,238,.24); border-color: rgba(34,211,238,.45); }
+[data-bs-theme="dark"] .sdx-sup__segmore[aria-expanded="true"] { background: #0e7490; border-color: #22d3ee; color: #ecfeff; }
+
+/* The segment list the count opens. Portalled to the body and fixed, because
+   the cell sits inside the picker's own scrolling list and anything placed
+   within that list is clipped by it. Above `.sdx-pop` (10000040) — it is
+   opened FROM that popover and has to sit over it. The font stack is restated
+   for the same reason it is on `.sdx-pop`: a portal lands outside the dialog
+   and would otherwise inherit the app's Rubik. */
+/* The card itself no longer scrolls — the LIST does, so the "Segments (n)"
+   heading stays put instead of sliding away under its own items. */
+.sdx-segpop {
+  position: fixed; z-index: 10000050;
+  width: 236px;
+  padding: 9px 10px 10px; border-radius: 12px;
+  background: #fff; border: 1px solid #cfe9f0;
+  box-shadow: 0 20px 44px -16px rgba(8,40,60,.4), 0 0 0 1px rgba(8,40,60,.03);
+  font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  animation: sdxPopIn .14s ease both;
+}
+.sdx-segpop__hd {
+  font-size: 8.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: #8aa5b2; margin-bottom: 7px;
+}
+/* One per line, not wrapped chips. Wrapping put two short segments beside
+   each other and a long one alone, so the list had no column to scan down —
+   you read it as a shape rather than as a list.
+   The height is stated in the row's own units: five rows of 24 plus the four
+   5px gaps between them, so the sixth is half-visible at the fold and the
+   scrollbar is the thing that says there is more. Writing it as a plain
+   `max-height: 140px` would drift the moment the item padding changes. */
+.sdx-segpop__list {
+  --seg-row: 24px;
+  --seg-gap: 5px;
+  display: flex; flex-direction: column; gap: var(--seg-gap);
+  max-height: calc(var(--seg-row) * 5 + var(--seg-gap) * 4);
+  overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: #b9dde8 transparent;
+  /* Room for the bar so it does not sit on top of the last chip's edge. */
+  padding-right: 2px;
+}
+.sdx-segpop__list::-webkit-scrollbar { width: 6px; }
+.sdx-segpop__list::-webkit-scrollbar-thumb { background: #b9dde8; border-radius: 99px; }
+.sdx-segpop__list::-webkit-scrollbar-track { background: transparent; }
+.sdx-segpop__item {
+  display: flex; align-items: center;
+  height: var(--seg-row); flex-shrink: 0;
+  font-size: 10.5px; font-weight: 700; color: #0e7490;
+  background: #f0fdff; border: 1px solid #bdf0f7; border-radius: 999px; padding: 0 10px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+[data-bs-theme="dark"] .sdx-segpop { background: #0c1c24; border-color: rgba(34,211,238,.22); box-shadow: 0 20px 44px -16px rgba(0,0,0,.72); }
+[data-bs-theme="dark"] .sdx-segpop__hd { color: #7f9aa6; }
+[data-bs-theme="dark"] .sdx-segpop__item { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.26); color: #a5f3fc; }
 /* Risk is the one value here that can stop a choice, so it is the one value
    that carries a colour of its own. */
 .sdx-risk--low    { color: #047857; }
@@ -83,12 +170,9 @@
 
 /* The popover is only as wide as its trigger, so in a narrow dialog four
    columns leave every value too thin to read. Two by two keeps each label
-   whole; the third cell starts a row, so it loses the divider on its left and
-   the bottom pair gain one above. */
+   whole; with the dividers gone the second row only needs room above it. */
 @media (max-width: 620px) {
-  .sdx-sup__grid { grid-template-columns: 1fr 1fr; }
-  .sdx-sup__c:nth-child(3) { border-left: 0; }
-  .sdx-sup__c:nth-child(n+3) { border-top: 1px solid #e6f1f5; }
+  .sdx-sup__grid { grid-template-columns: 1fr 1fr; row-gap: 7px; }
 }
 
 /* ── Dark ────────────────────────────────────────────────────────────────── */
@@ -97,15 +181,11 @@
 [data-bs-theme="dark"] .sdx-sup__nm { color: #e2e8f0; }
 [data-bs-theme="dark"] .sdx-sup__opt:hover { background: rgba(34,211,238,.08); border-color: rgba(34,211,238,.2); }
 [data-bs-theme="dark"] .sdx-sup__opt.is-sel { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.34); }
-[data-bs-theme="dark"] .sdx-sup__grid { background: rgba(148,163,184,.08); border-color: rgba(34,211,238,.16); }
-[data-bs-theme="dark"] .sdx-sup__c + .sdx-sup__c { border-left-color: rgba(34,211,238,.16); }
-@media (max-width: 620px) {
-  [data-bs-theme="dark"] .sdx-sup__c:nth-child(n+3) { border-top-color: rgba(34,211,238,.16); }
-}
+/* Dark loses the same panel it does in light — the fill and the dividers are
+   gone, so there is nothing here left to recolour. */
 [data-bs-theme="dark"] .sdx-sup__cl { color: #7f9aa6; }
 [data-bs-theme="dark"] .sdx-sup__cv { color: #cbd5e1; }
 [data-bs-theme="dark"] .sdx-sup__cv.is-mono { color: #67e8f9; }
-[data-bs-theme="dark"] .sdx-sup__opt.is-sel .sdx-sup__grid { background: rgba(34,211,238,.08); }
 [data-bs-theme="dark"] .sdx-sup__kind--manufacturer { background: rgba(34,211,238,.16); color: #67e8f9; }
 [data-bs-theme="dark"] .sdx-sup__kind--trader { background: rgba(124,58,237,.2); color: #c4b5fd; }
 [data-bs-theme="dark"] .sdx-sup__kind--service { background: rgba(245,158,11,.18); color: #fcd34d; }

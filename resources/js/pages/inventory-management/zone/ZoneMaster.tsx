@@ -164,22 +164,31 @@ export default function ZoneMaster() {
   const rowCount = list.rows.length;
   useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
 
-  const [busyId, setBusyId] = useState<number | null>(null);
+  /* Optimistic, like the warehouse switch (CS-940 #12): flip now, save
+     behind it, take the server's row when it lands, flip back if refused —
+     no full reload through the skeleton. Busy is per row. */
+  const patchRows = list.patch;
+  const [busyIds, setBusyIds] = useState<ReadonlySet<number>>(new Set());
+  const busyRef = useRef(busyIds);
+  busyRef.current = busyIds;
   const toggle = useCallback(async (z: Zone) => {
-    if (busyId || !z.apiId) return;
+    const apiId = z.apiId;
+    if (!apiId || busyRef.current.has(apiId)) return;
     const activate = z.status !== 'active';
-    setBusyId(z.apiId);
+    const put = (row: Zone) => patchRows(rs => rs.map(r => (r.apiId === apiId ? row : r)));
+    setBusyIds(s => new Set(s).add(apiId));
+    put({ ...z, status: activate ? 'active' : 'inactive' });
     try {
-      await zoneApi.setStatus(z.apiId, activate);
+      put(await zoneApi.setStatus(apiId, activate));
       if (activate) toast.success(`${z.id} marked Active`);
       else toast.warning(`${z.id} marked Inactive`, 'It stays in the list, dimmed.');
-      reload();
     } catch (e) {
+      put(z);
       toast.error('Could not change the status', e instanceof ZoneApiError ? e.message : 'Please try again.');
     } finally {
-      setBusyId(null);
+      setBusyIds(s => { const n = new Set(s); n.delete(apiId); return n; });
     }
-  }, [busyId, reload, toast]);
+  }, [patchRows, toast]);
 
   const [qrFor, setQrFor] = useState<Zone | null>(null);
   const [formFor, setFormFor] = useState<Zone | 'new' | null>(null);
@@ -197,10 +206,17 @@ export default function ZoneMaster() {
     }
   }, [openingId, toast]);
 
+  /* The warehouses carry the area their zones already use, which the form's
+     "still free" hint reads. Loaded once, it stayed at the first figure no
+     matter how many zones were added (CS-940 #11) — so refresh on every save
+     and every time the form opens (another user may have added a zone). */
   const onSaved = useCallback(() => {
     reload();
     loadCounts();
-  }, [reload, loadCounts]);
+    loadWarehouses();
+  }, [reload, loadCounts, loadWarehouses]);
+  const formOpen = formFor !== null;
+  useEffect(() => { if (formOpen) loadWarehouses(); }, [formOpen, loadWarehouses]);
 
   const rows = list.rows;
   const total = list.meta?.total ?? 0;
@@ -269,7 +285,8 @@ export default function ZoneMaster() {
                 <span className="spi-seg-ico">{t.icon}</span>
                 {t.label}
                 <span className="spi-seg-c">
-                  {countsReady ? counts[t.key] : <Shimmer width={12} height={9} radius={5} />}
+                  {countsReady ? counts[t.key] : <Shimmer width={14} height={10} radius={5}
+                    style={{ backgroundColor: tab === t.key ? 'rgba(255,255,255,.5)' : '#b9ccd8' }} />}
                 </span>
               </button>
             ))}
@@ -325,7 +342,7 @@ export default function ZoneMaster() {
               </thead>
               {rows.map((z, i) => (
                 <tbody key={z.apiId ?? z.id}>
-                  <Row z={z} sr={start + i + 1} off={z.status !== 'active'} busy={busyId === z.apiId}
+                  <Row z={z} sr={start + i + 1} off={z.status !== 'active'} busy={!!z.apiId && busyIds.has(z.apiId)}
                     w={z.warehouseId ? warehouseById.get(z.warehouseId) : undefined}
                     opening={openingId === z.apiId}
                     onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={t => void openEdit(t)} />
@@ -336,6 +353,7 @@ export default function ZoneMaster() {
         )}
 
         <WorklistPager
+          loading={loading}
           className="wl-teal"
           total={total}
           page={page}
@@ -405,7 +423,7 @@ function Row({ z, sr, off, busy, opening, w, onToggle, onQr, onEdit }: {
               : z.storage === 'fridge' ? <IcoFridge size={15} /> : <IcoFloor size={15} />}
           </span>
           <div className="whm-namecell__t">
-            <b className="pts-trunc">{z.name}</b>
+            <b className="inv-trunc">{z.name}</b>
             <span className="whm-namecell__loc"><IcoTag />{z.purpose}</span>
           </div>
         </div>

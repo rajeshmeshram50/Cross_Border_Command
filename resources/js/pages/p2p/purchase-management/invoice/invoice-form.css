@@ -36,7 +36,16 @@
 .spi-prodtbl thead .cpd-grp-stick {
   position: sticky;
   left: 42px;
-  z-index: 5;
+  /* Above the header cells that scroll past it, not below them. Every other
+     `th` in this variant carries z-index 7 and the pinned ones 8, so at 5 the
+     band was the one pinned thing in the table that scrolled content could
+     paint over: keep scrolling right and the next group's header slides across
+     the label. 9 clears both. It cannot collide with the pinned Sr No (z 8):
+     that column is pinned at left 0 for 42px and this band starts where it
+     ends. This has to be stated here rather than inherited, because
+     `.cpd-tbl--pd thead .cpd-stick` ties 8 to the cells that pin a COLUMN, and
+     a band spanning two of them is not one of those. */
+  z-index: 9;
   background: #0e7490;
   text-align: left;
 }
@@ -226,12 +235,19 @@
 .vti-prod-cell { display:flex; align-items:center; gap:9px; }
 .vti-prod-name { font-size:11.5px; font-weight:700; color:#0F172A; letter-spacing:-.2px; line-height:1.2; }
 .vti-prod-sku  { font-size:9.5px; font-weight:500; color:#94A3B8; margin-top:1px; }
+/* The identifiers under the product name: code, HSN, GST on one line, as the
+   design has them. The row's own margin-top is dropped here — the line sets
+   the spacing once, rather than each part of it setting its own. */
+.vti-prod-meta { display:flex; align-items:center; gap:7px; margin-top:4px; }
+.vti-prod-meta .vti-prod-sku { margin-top:0; white-space:nowrap; }
+/* The label stays quiet and the value it labels carries the weight, so the
+   line scans as three facts rather than six words. */
+.vti-prod-meta .vti-prod-sku b { color:#64748B; font-weight:700; }
+.vti-prod-dot { width:3px; height:3px; border-radius:50%; background:#CBD5E1; flex-shrink:0; }
 .vti-code { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; font-size:10px; font-weight:600; color:#0891b2; background:#F0FDFF; border:1px solid #BAE6FD; border-radius:6px; padding:3px 7px; white-space:nowrap; letter-spacing:.02em; }
 .vti-qty-badge { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; border-radius:50%; font-size:12.5px; font-weight:800; color:#3730a3; background: #e0e7ff; border: none; padding:0 4px; }
 .vti-qty-badge.extra-qty { color:#d97706; background: transparent; font-size:14px; font-weight:800; box-shadow:none; }
 .vti-extra-badge { display:inline-flex; align-items:center; justify-content:center; min-width:32px; height:32px; border-radius:50%; font-size:11px; font-weight:800; color:#d97706; background: transparent; border: 2px solid #F59E0B; padding:0 4px; }
-.vti-mode-sel { appearance:none; -webkit-appearance:none; border:1.5px solid #E2E8F0; border-radius:8px; padding:6px 20px; font-size:11.5px; font-weight:600; color:#64748B; background:#fff; min-width:86px; text-align:center; cursor:default; box-shadow: 0 1px 3px rgba(15,23,42,.06); letter-spacing:.01em; }
-.vti-mode-sel:disabled { opacity:1; cursor:default; background:#fff; color:#64748B; border-color:#E2E8F0; font-weight:600; }
 .vti-subbox-cell { display:flex; align-items:center; gap:6px; justify-content:center; width:100%; }
 .vti-subbox-inp { width:auto; min-width:60px; max-width:90px; border:1.5px solid #CBD5E1; border-radius:10px; padding:6px 10px; font-size:12px; color:#334155; font-weight:800; background:linear-gradient(135deg,#f8fafc,#f1f5f9); text-align:center; box-shadow: 0 2px 6px rgba(15,23,42,.06), inset 0 1px 0 rgba(255,255,255,.9); transition: all .18s; }
 .vti-subbox-inp:hover { border-color:#64748B; box-shadow: 0 3px 10px rgba(15,23,42,.1), inset 0 1px 0 rgba(255,255,255,.9); }
@@ -1331,6 +1347,29 @@
 .invf-packed .invf-packed-table th:nth-child(3),
 .invf-packed .invf-packed-table td.invf-c-prod { min-width: 190px; text-align: left; }
 
+/* Box Generation leads with Sr No, so it has the same quarrel with the base
+   table's positional rules: the left-align and the 190px floor are written for
+   whatever sits in column two, and here that is a one-digit number. Left
+   alone, Sr No took a product's width and the product itself fell back to the
+   table's centred default and floated in the middle of a stretched column.
+   Keyed to classes for the reason the packed table is: these positions move. */
+.vti-boxgen th:nth-child(2),
+.vti-boxgen td.vti-sr-td { min-width: 0; width: 56px; text-align: center; }
+.vti-boxgen th.vti-prod-h,
+.vti-boxgen td.vti-prod-td { min-width: 190px; text-align: left; }
+/* Sr No as the design draws it: a quiet rounded tile, not a bare figure. It
+   numbers the row rather than telling you anything, so it reads as a marker
+   and the product beside it keeps the weight. */
+.vti-sr {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 6px;
+  border-radius: 7px; background: #F3FBFD; border: 1px solid #DCEFF5;
+  font-size: 11px; font-weight: 700; color: #64748B; font-variant-numeric: tabular-nums;
+}
+[data-bs-theme="dark"] .vti-sr {
+  background: rgba(34, 211, 238, .07); border-color: rgba(34, 211, 238, .18); color: #9db3c1;
+}
+
 /* ── Packed Boxes & Products Details — one row per carton ──
    The row carries what the carton MEASURED, so most cells are a figure with
    its unit set quieter than the number. Vertical alignment is top, not the
@@ -2014,19 +2053,110 @@
   cursor: pointer;
   transition: all .14s;
 }
-/* Destructive, so it is outlined rather than filled — it empties the carton. */
+/* Destructive, so it carries its colour as a wash rather than a fill — it
+   empties the carton. Sizes are the design's own. */
 .invf-selprod__clear {
-  gap: 4px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 6px 14px;
   font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: .01em;
   color: #dc2626;
-  background: #fff;
-  border: 1.5px solid #fecaca;
+  background: rgba(239, 68, 68, .08);
+  border: 1.5px solid rgba(239, 68, 68, .25);
   white-space: nowrap;
 }
+.invf-selprod__clear:hover { background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .4); }
+/* ── Product remarks, under the advance-details table ──────────────────────
+   A card in the drawer's own idiom, so it reads as another section of the box
+   rather than a stray field under a table. Two columns: which product, and
+   the note against it. */
+.vs3-rmk { padding: 12px 16px 14px; border-top: 1px solid rgba(6,182,212,.14); }
+.vs3-rmk__hd {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  font-size: 11.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.1px;
+}
+.vs3-rmk__list { display: flex; flex-direction: column; gap: 8px; }
+/* The name is given a fixed share so every field starts on the same line —
+   ragged left edges on a stack of inputs read as a broken grid. */
+.vs3-rmk__row { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 12px; align-items: center; }
+.vs3-rmk__nm { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.vs3-rmk__nm b {
+  font-size: 11.5px; font-weight: 700; color: #0c2c3a; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 900px) { .vs3-rmk__row { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+[data-bs-theme="dark"] .vs3-rmk { border-top-color: rgba(34,211,238,.16); }
+[data-bs-theme="dark"] .vs3-rmk__hd { color: #7dd3fc; }
+[data-bs-theme="dark"] .vs3-rmk__nm b { color: #e2e8f0; }
+
+/* ── The box's remark, under the advance-details table ─────────────────────
+   Drawn as the review panel draws it, value for value: a banded heading with
+   a gradient mark, and a field that reads as empty until it holds something.
+   A note is a sentence; as a column it had the width of a product code. */
+.vs3-rmk { border-top: 1px solid #eaf5f8; }
+.vs3-rmk__hd {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  font-size: 11.5px; font-weight: 800; color: #0c4a6e;
+  background: linear-gradient(180deg, #f4fcfe, #fff); border-bottom: 1px solid #eaf5f8;
+}
+.vs3-rmk__ico {
+  width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: 0 4px 10px -4px rgba(8,145,178,.6);
+}
+/* The field is measured against this box, not against the table above it:
+   that table scrolls sideways, so a width taken from the section ran as wide
+   as the widest row and pushed the note off the card's right edge. */
+.vs3-rmk__body { padding: 12px 14px; }
+/* Dashed while empty — "nothing recorded", not a box that failed to draw. It
+   takes the teal left bar the moment it is quoting something somebody wrote. */
+.vs3-rmk__in {
+  display: block; width: 100%; padding: 12px 14px;
+  border-radius: 11px; outline: none; font-family: inherit;
+  font-size: 12px; font-weight: 700; color: #0c2c3a; line-height: 1.5;
+  background: #fafdfe; border: 1.5px dashed #d8e7ee;
+  transition: border-color .14s, background .14s, box-shadow .14s;
+}
+.vs3-rmk__in::placeholder { color: #9fb2c0; font-weight: 700; }
+.vs3-rmk__in:focus,
+.vs3-rmk__in:not(:placeholder-shown) {
+  font-weight: 600;
+  background: linear-gradient(135deg, #f0fdff, #fff);
+  border: 1.5px solid #cffafe; border-left: 3px solid #22d3ee;
+}
+.vs3-rmk__in:focus { box-shadow: 0 0 0 3px rgba(34,211,238,.16); }
+
+[data-bs-theme="dark"] .vs3-rmk { border-top-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .vs3-rmk__hd {
+  background: linear-gradient(180deg, #16394a, #13303c);
+  border-bottom-color: rgba(34,211,238,.14); color: #d7eef5;
+}
+[data-bs-theme="dark"] .vs3-rmk__in {
+  background: rgba(255,255,255,.02); border: 1.5px dashed rgba(34,211,238,.25); color: #d7eef5;
+}
+[data-bs-theme="dark"] .vs3-rmk__in::placeholder { color: #7f97a5; }
+[data-bs-theme="dark"] .vs3-rmk__in:focus,
+[data-bs-theme="dark"] .vs3-rmk__in:not(:placeholder-shown) {
+  background: rgba(34,211,238,.07); border: 1.5px solid rgba(34,211,238,.22); border-left: 3px solid #22d3ee;
+}
+
+/* 8px to the button, as the design spaces them. It sits in the drawer's own
+   section header now, which spaces its two children apart but does not lay
+   this group out, so the row says so itself. */
+.invf-selprod__stats { display: flex; align-items: center; gap: 8px; }
+.invf-selprod__total {
+  font-size: 10px;
+  font-weight: 600;
+  color: #0891b2;
+  opacity: .75;
+  white-space: nowrap;
+}
+[data-bs-theme="dark"] .invf-selprod__total { color: #67e8f9; }
+[data-bs-theme="dark"] .invf-selprod__clear { background: rgba(239, 68, 68, .16); border-color: rgba(239, 68, 68, .36); color: #fca5a5; }
+[data-bs-theme="dark"] .invf-selprod__clear:hover { background: rgba(239, 68, 68, .24); }
 .invf-selprod__clear:hover { background: #fef2f2; border-color: #fca5a5; }
 .invf-selprod__rm {
   width: 24px;
@@ -2275,6 +2405,10 @@
 [data-bs-theme="dark"] .vti-prod-sku,
 [data-bs-theme="dark"] .vti-desc__wrap,
 [data-bs-theme="dark"] .invf-selprod__no { color: #7c93a8; }
+/* Same two steps the light line keeps: the value a shade brighter than its
+   label, and a separator dim enough to read as punctuation. */
+[data-bs-theme="dark"] .vti-prod-meta .vti-prod-sku b { color: #cbd5e1; }
+[data-bs-theme="dark"] .vti-prod-dot { background: rgba(148, 163, 184, .45); }
 
 /* Chips and badges — the same hues, carried on translucent fills so they read
    as accents rather than as light patches. */
@@ -2395,15 +2529,6 @@
   background: rgba(34, 211, 238, .12);
   border-color: rgba(34, 211, 238, .3);
   color: #7dd3fc;
-}
-
-/* The Mode select is disabled, and its disabled rule repeats the white fill —
-   so it needs overriding in both states or it stays a white tile. */
-[data-bs-theme="dark"] .vti-mode-sel,
-[data-bs-theme="dark"] .vti-mode-sel:disabled {
-  background: #0c1c24;
-  border-color: rgba(34, 211, 238, .22);
-  color: #9db3c1;
 }
 
 /* The table header sat at the same dim grey as the body text, which on a dark
@@ -9719,6 +9844,86 @@
    create-po.css and the Purchase Order module's own tables use it, so editing
    it there would restyle a screen nobody asked about.
    ────────────────────────────────────────────────────────────────────────── */
+/* The "WITHOUT GST" / "WITH GST" qualifier is an inline-block with a top
+   margin, so it only drops below its heading when the heading happens to fill
+   the cell. "PRODUCT COST" does; "TOTAL PRODUCT COST" wraps to a short second
+   line, which leaves room beside it and the chip lands on top of the word
+   COST. Block makes the line break unconditional, and auto margins keep it
+   centred under either heading.
+
+   The final column also gains room: 88px is enough for one word plus a chip,
+   not for a heading that wraps and a chip under it.
+
+   Scoped to .spi-prodtbl, since .cpd-th-sub is create-po.css's and the
+   Purchase Order tables lay these headings out at their own widths. */
+.spi-prodtbl .cpd-th-sub {
+  display: block;
+  width: fit-content;
+  margin: 4px auto 0;
+}
+.spi-prodtbl th.cpd-th-final { min-width: 124px; }
+/* Wide enough for "CGST (%)" whole — the percent headings were the only ones
+   with no floor, so the column took whatever content width it was given and
+   clipped the leading letter off "IGST (%)". */
+.spi-prodtbl th.cpd-th-pct { min-width: 76px; }
+
+/* ── One button height ───────────────────────────────────────────────────────
+   Every button on this form stands 40px, which is what the inputs beside them
+   already measure (.spi-prodtbl .cpd-in, .spi-dt-inp). They were five
+   different heights: the footer pair sized themselves off 10px of padding,
+   Add Supplier was 36, the supplier edit 38, the vault button 8px of padding,
+   and the two in-table icons 26.
+
+   Scoped to .spi-invform, a class this form and nothing else carries. The
+   classes themselves - .cpf-*, .cpd-*, .spi-dt-btn-* - live in create-po.css
+   and p2p-detail.css, which the Purchase Order, Debit Note and Payment
+   Request screens also load, so setting a height on them there would resize
+   buttons on screens nobody asked about.
+
+   `min-height` goes with `height` on the padded ones: a button with padding
+   and a line taller than the box will push past a bare height. */
+.spi-invform .spi-dt-btn-ghost,
+.spi-invform .spi-dt-btn-next,
+.spi-invform .spi-dt-btn-map,
+.spi-invform .cpf-addbtn,
+.spi-invform .cpf-vault {
+  height: 40px; min-height: 40px; padding-top: 0; padding-bottom: 0;
+}
+.spi-invform .cpf-supedit,
+.spi-invform .spi-prodtbl .cpd-iconbtn,
+.spi-invform .spi-prodtbl .cpd-addbtn,
+.spi-invform .spi-prodtbl .cpd-del {
+  width: 40px; height: 40px; min-height: 40px;
+}
+
+/* The design's Action column: a red-outlined bin, square, on the row's own
+   centre line. Scoped to .spi-prodtbl so the Purchase Order module's tables,
+   which share .cpd-*, are untouched. */
+.spi-prodtbl .cpd-th-act { width: 74px; }
+.spi-prodtbl .cpd-td-act { text-align: center; }
+.spi-prodtbl .cpd-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+  border: 1.5px solid #fecaca; border-radius: 10px;
+  background: #fef2f2; color: #ef4444; cursor: pointer;
+  transition: background .14s, border-color .14s, color .14s, box-shadow .14s;
+}
+.spi-prodtbl .cpd-del:hover:not(:disabled) {
+  background: #fee2e2; border-color: #f87171; color: #dc2626;
+  box-shadow: 0 2px 8px -2px rgba(239,68,68,.45);
+}
+.spi-prodtbl .cpd-del:disabled { opacity: .4; cursor: not-allowed; }
+[data-bs-theme="dark"] .spi-prodtbl .cpd-del {
+  background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.32); color: #fca5a5;
+}
+
+/* The rate and quantity cells were sized by whatever the column had left
+   once the four tax columns took their share, so 3200 came out as "3…". A
+   stated floor on the two editable numbers keeps four digits and a decimal
+   readable; the table already scrolls horizontally, which is where the
+   surplus belongs. */
+.spi-prodtbl .cpd-in--num { min-width: 86px; }
+
 .spi-prodtbl .cpd-in {
   height: 40px; min-height: 40px;
   padding: 0 10px;
@@ -9844,6 +10049,9 @@
   box-shadow: 0 0 4px rgba(6,182,212,.5);
 }
 
+/* The design's pill, at the design's size. It is deliberately shorter than
+   the 40px boxes beside it: the fields take typing, this one is a dial you
+   nudge, and the smaller pill is what separates the two at a glance. */
 .vs3t .vqe {
   display: inline-flex; align-items: center; gap: 2px; height: 30px;
   padding: 0 10px 0 3px; border-radius: 999px; box-sizing: border-box;
@@ -9869,7 +10077,15 @@
 }
 .vs3t .vqe .vqe-inp::-webkit-outer-spin-button,
 .vs3t .vqe .vqe-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.vs3t .vqe .vqe-max { margin-left: 4px; font-size: 10.5px; font-weight: 700; color: #64748b; }
+/* Typing into it is how you jump to a figure the steppers would take twenty
+   presses to reach, so the field has to look like it takes typing. */
+.vs3t .vqe .vqe-inp:focus { background: #e0f7fc; border-radius: 6px; }
+/* A floor under "/ 150", so the pill does not change width as the figure
+   beside it goes from three digits to one. */
+.vs3t .vqe .vqe-max {
+  margin-left: 4px; min-width: 34px; text-align: left;
+  font-size: 10.5px; font-weight: 700; color: #64748b;
+}
 .vs3t .vqe .vqe-max b { color: #0c4a6e; font-weight: 800; }
 
 .vs3t .vs3-in, .vs3t .master-datepicker-toggle {
@@ -9941,6 +10157,7 @@
 [data-bs-theme="dark"] .vs3t .vqe .vqe-btn { background: #102a35; border-color: rgba(34,211,238,.28); color: #67e8f9; }
 [data-bs-theme="dark"] .vs3t .vqe .vqe-btn:hover:not(:disabled) { background: #14323f; }
 [data-bs-theme="dark"] .vs3t .vqe .vqe-inp { color: #e2e8f0; }
+[data-bs-theme="dark"] .vs3t .vqe .vqe-inp:focus { background: rgba(34,211,238,.14); }
 [data-bs-theme="dark"] .vs3t .vqe .vqe-max { color: #7c93a8; }
 [data-bs-theme="dark"] .vs3t .vqe .vqe-max b { color: #e2e8f0; }
 [data-bs-theme="dark"] .vs3t .vs3-in,

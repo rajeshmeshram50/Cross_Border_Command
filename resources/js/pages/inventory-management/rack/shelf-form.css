@@ -12,7 +12,6 @@
    letter-spaced. Most of the fields it dresses here are not ids — a warehouse
    name, "Not Allowed", "240 cm" — and mono makes ordinary words look like
    codes. The id keeps it; everything else reads as text. */
-.rks-autotxt .spi-dt-inp { font-family: inherit; letter-spacing: 0; }
 
 /* The five-across row. Falls to three and then two rather than straight to
    two: at three the fields are still wide enough for "Maximum Shelf Weight". */

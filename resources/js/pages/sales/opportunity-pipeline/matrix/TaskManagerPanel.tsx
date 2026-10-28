@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../../../../api';
+import '../../../../components/ui/DataTable.css';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -223,20 +224,22 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
           also shows a "Saved" badge when the lead already has a row
           persisted (initial !== null) so the user gets immediate
           feedback that their data was loaded from the server. */}
-      <div className="smd-deal-tabs">
-        <button className="smd-deal-tab smd-deal-tab-active">
-          ✓ Task Manager
-          {initial?.id != null && <span className="tm-saved-badge" title="Saved on server">●</span>}
-        </button>
-        <button className="smd-deal-tab" disabled>
-          ⚡ Chanakya<span className="smd-deal-tab-soon">SOON</span>
-        </button>
-        <button className="smd-deal-tab" disabled>
-          ◎ Sarthi<span className="smd-deal-tab-soon">SOON</span>
-        </button>
-        <button className="smd-deal-tab" disabled>
-          ◆ Chat View<span className="smd-deal-tab-soon">SOON</span>
-        </button>
+      <div className="smd-deal-tabs dt-tabrail hr-dt" data-accent="violet">
+        <div className="dt-tabs" role="tablist">
+          <button type="button" role="tab" aria-selected className="dt-tab on smd-deal-tab">
+            ✓ Task Manager
+            {initial?.id != null && <span className="tm-saved-badge" title="Saved on server">●</span>}
+          </button>
+          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
+            ⚡ Chanakya<span className="smd-deal-tab-soon">SOON</span>
+          </button>
+          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
+            ◎ Sarthi<span className="smd-deal-tab-soon">SOON</span>
+          </button>
+          <button type="button" role="tab" aria-selected={false} className="dt-tab off smd-deal-tab" disabled>
+            ◆ Chat View<span className="smd-deal-tab-soon">SOON</span>
+          </button>
+        </div>
       </div>
 
       {/* Form */}

@@ -446,6 +446,26 @@ export const IcoReceipt = (p: IconProps) => (
   </Svg>
 );
 
+/* Three rules of falling length — a document's own reference, such as an
+   invoice number. The list mark next to it carries leading dots and reads as
+   a list of rows; this one reads as lines of text. */
+export const IcoRefLines = (p: IconProps) => (
+  <Svg size={13} stroke={2.5} {...p}>
+    <path d="M4 7h16" /><path d="M4 12h10" /><path d="M4 17h7" />
+  </Svg>
+);
+
+/* A box van: the shipment an invoice is raised against. IcoShip draws a
+   long-haul rig; at 11px its cab polygon closes up, so the header strip
+   takes this flatter body with small wheels instead. */
+export const IcoVan = (p: IconProps) => (
+  <Svg size={13} stroke={2.4} {...p}>
+    <rect x="1" y="6" width="14" height="11" />
+    <path d="M15 9h4l3 3v5h-7z" />
+    <circle cx="6" cy="19" r="1.6" /><circle cx="17.5" cy="19" r="1.6" />
+  </Svg>
+);
+
 export const IcoBriefcase = (p: IconProps) => (
   <Svg {...p}>
     <rect x="2" y="7" width="20" height="14" rx="2.5" /><path d="M16 7V5a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2" />

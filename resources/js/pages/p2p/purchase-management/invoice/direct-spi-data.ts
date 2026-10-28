@@ -53,8 +53,8 @@ export const NEXT_PROCUREMENT = `PC-${String(PROCUREMENTS.length + 1).padStart(3
 export const SUPPLIERS: SupplierRow[] = [
   { code: 'S-001', name: 'Reliance Industries Ltd', kind: 'manufacturer', segment: 'Raw Material', location: 'Mumbai, Maharashtra',  risk: 'Low Risk' },
   { code: 'S-002', name: 'Tata Steel Ltd',          kind: 'manufacturer', segment: 'Raw Material', location: 'Mumbai, Maharashtra',  risk: 'Medium Risk' },
-  { code: 'S-003', name: 'Adani Enterprises Ltd',   kind: 'trader',       segment: 'Trading',      location: 'Ahmedabad, Gujarat',   risk: 'High Risk' },
+  { code: 'S-003', name: 'Adani Enterprises Ltd',   kind: 'trader',       segment: ['Trading', 'Logistics', 'Commodities'], location: 'Ahmedabad, Gujarat', risk: 'High Risk' },
   { code: 'S-004', name: 'Mahindra Logistics Ltd',  kind: 'service',      segment: 'Logistics',    location: 'Pune, Maharashtra',    risk: 'Low Risk' },
-  { code: 'S-005', name: 'Godrej Agrovet Ltd',      kind: 'manufacturer', segment: 'Agri Inputs',  location: 'Nashik, Maharashtra',  risk: 'Low Risk' },
+  { code: 'S-005', name: 'Godrej Agrovet Ltd',      kind: 'manufacturer', segment: ['Agri Inputs', 'Raw Material'], location: 'Nashik, Maharashtra', risk: 'Low Risk' },
   { code: 'S-006', name: 'Shakti Traders',          kind: 'trader',       segment: 'Commodities',  location: 'Indore, Madhya Pradesh', risk: 'Medium Risk' },
 ];

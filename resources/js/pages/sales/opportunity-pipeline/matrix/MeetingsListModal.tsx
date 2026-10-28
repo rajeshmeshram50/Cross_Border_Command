@@ -366,17 +366,18 @@ const MLM_CSS = `
 .mlm-head-actions { display: flex; gap: 8px; align-items: center; }
 .mlm-add-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 9px; border: none;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 10px; border: none;
   background: rgba(255, 255, 255, .20); color: #fff;
-  font-size: 12px; font-weight: 700; cursor: pointer;
+  font-size: 11.5px; font-weight: 700; cursor: pointer;
   transition: background .15s;
   font-family: inherit;
 }
 .mlm-add-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .32); }
 .mlm-add-btn:disabled { opacity: .55; cursor: not-allowed; }
 .mlm-close {
-  width: 30px; height: 30px; border: none; cursor: pointer;
-  background: rgba(255, 255, 255, .18); color: #fff; border-radius: 9px;
+  width: 40px; height: 40px; border: none; cursor: pointer;
+  background: rgba(255, 255, 255, .18); color: #fff; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
 }
 .mlm-close:hover { background: rgba(255, 255, 255, .32); }
@@ -460,9 +461,10 @@ const MLM_CSS = `
 .mlm-act-cell { display: flex; gap: 6px; }
 .mlm-row-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 10px; border: 1.5px solid #cbd5e1;
+  box-sizing: border-box; height: 40px; justify-content: center;
+  padding: 0 14px; border: 1.5px solid #cbd5e1;
   background: #fff; color: #475569;
-  border-radius: 7px; font-size: 11px; font-weight: 600; cursor: pointer;
+  border-radius: 10px; font-size: 11.5px; font-weight: 700; cursor: pointer;
   transition: all .12s;
   font-family: inherit;
 }
@@ -472,7 +474,7 @@ const MLM_CSS = `
 .mlm-row-btn:disabled { opacity: .4; cursor: not-allowed; }
 .mlm-row-btn-done { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
 .mlm-row-btn-done:hover { background: #dcfce7; border-color: #86efac; }
-.mlm-row-btn-del  { color: #dc2626; border-color: #fecaca; padding: 5px 8px; }
+.mlm-row-btn-del  { color: #dc2626; border-color: #fecaca; width: 40px; padding: 0; }
 .mlm-row-btn-del:hover:not(:disabled) { background: #fee2e2; }
 
 .mlm-status {
@@ -495,7 +497,7 @@ const MLM_CSS = `
 .mlm-skel + .mlm-skel { margin-top: 5px; }
 .mlm-skel-sub  { height: 8px; opacity: .72; }
 .mlm-skel-pill { height: 16px; border-radius: 999px; }
-.mlm-skel-btn  { display: inline-block; height: 22px; border-radius: 7px; }
+.mlm-skel-btn  { display: inline-block; height: 40px; border-radius: 10px; }
 /* Action buttons sit side by side, so undo the stacking margin the
    two-line cells above rely on. */
 .mlm-skel-btn + .mlm-skel-btn { margin-top: 0; margin-left: 6px; }

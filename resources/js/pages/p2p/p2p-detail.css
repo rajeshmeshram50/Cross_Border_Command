@@ -308,28 +308,35 @@
    save, and the toast that reports the result, both still have to be seen.
    cursor: progress rather than not-allowed: the work is running, it has not
    been refused. */
+/* The app's own busy treatment (`.busy-veil` in app.css), in this wizard's
+   colours. It was a 60% near-white scrim with a white pill floating in it:
+   over a page that is already almost white, 60% leaves nothing to see, so the
+   wizard read as wiped rather than working, and the pill read as a toast that
+   had landed in the middle of the screen.
+   The house values do the job with much less: a 35% scrim and the blur doing
+   the work of hiding, so the form stays recognisably underneath — you can see
+   what is being saved. Ring and caption stacked, no box; the sizes are the
+   shared ones (34px ring, 12.5px label), only the hue is ours. */
 .spi-dt-veil {
   position: fixed; inset: 0; z-index: 10000;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(240,250,253,.6);
-  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: rgba(255,255,255,.35);
+  /* The shared rule blurs the CONTENT element; this sheet is fixed over the
+     whole wizard and has no such element to reach, so the same blur and
+     desaturation are applied to what shows through instead. */
+  -webkit-backdrop-filter: blur(3px) saturate(.9); backdrop-filter: blur(3px) saturate(.9);
   cursor: progress;
 }
-.spi-dt-veil__box {
-  display: inline-flex; align-items: center; gap: 10px;
-  padding: 12px 20px; border-radius: 12px;
-  background: #fff; border: 1.5px solid #cdeaf3;
-  box-shadow: 0 18px 40px -16px rgba(8,145,178,.45);
-  font-size: 12.5px; font-weight: 700; color: #0c4a6e;
-}
 .spi-dt-veil__spin {
-  width: 15px; height: 15px; flex-shrink: 0; border-radius: 50%;
-  border: 2.2px solid #0891b2; border-top-color: transparent;
-  animation: spiDtVeilSpin .6s linear infinite;
+  width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%;
+  border: 3px solid rgba(8,145,178,.22); border-top-color: #0891b2;
+  animation: spiDtVeilSpin .7s linear infinite;
 }
+.spi-dt-veil__lbl { font-size: 12.5px; font-weight: 500; letter-spacing: .01em; color: #4b6472; }
 @keyframes spiDtVeilSpin { to { transform: rotate(360deg); } }
-[data-bs-theme="dark"] .spi-dt-veil { background: rgba(5,20,30,.6); }
-[data-bs-theme="dark"] .spi-dt-veil__box { background: #0f2231; border-color: rgba(34,211,238,.3); color: #cfeef8; }
+[data-bs-theme="dark"] .spi-dt-veil { background: rgba(5,20,30,.35); }
+[data-bs-theme="dark"] .spi-dt-veil__spin { border-color: rgba(34,211,238,.2); border-top-color: #22d3ee; }
+[data-bs-theme="dark"] .spi-dt-veil__lbl { color: #9db3c1; }
 @media (prefers-reduced-motion: reduce) { .spi-dt-veil__spin { animation: none; } }
 .spi-dt-step--nav.is-busy:hover { filter: none; box-shadow: none; transform: none; }
 .spi-dt-step.is-active { border:1.5px solid transparent; color:#fff; z-index:2;

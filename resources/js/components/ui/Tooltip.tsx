@@ -377,6 +377,33 @@ export default function Tooltip({
     if (showTimer.current) window.clearTimeout(showTimer.current);
   }, []);
 
+  /* A tooltip whose trigger gets covered can never be closed by the trigger:
+     no `mouseleave` is coming once something is drawn on top of it. Clicking
+     closes it, but opening a modal also locks the page scroll, and losing the
+     scrollbar shifts the layout under a stationary cursor — the browser then
+     fires a fresh `mouseover` on the trigger and the tooltip reopens behind
+     the dialog, where it sits until the page is reloaded.
+
+     So while one is open, any pointer movement that is not over the trigger
+     or the tip itself closes it. That is true of every ghost tooltip and of
+     nothing a reader is still using.
+
+     Declared above the disabled early-return below: a hook after it ran only
+     when the tooltip was enabled, so a tooltip that switches on once its text
+     is clipped (TruncCell, FitTip) changed its hook count and crashed. */
+  useEffect(() => {
+    if (!open) return;
+    const elsewhere = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (triggerRef.current?.contains(t)) return;
+      if (tipRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mouseover', elsewhere, true);
+    return () => document.removeEventListener('mouseover', elsewhere, true);
+  }, [open]);
+
   if (disabled || label === null || label === undefined || label === '') {
     return children;
   }

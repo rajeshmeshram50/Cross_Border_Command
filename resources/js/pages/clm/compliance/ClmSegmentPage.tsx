@@ -234,7 +234,7 @@ export default function ClmSegmentPage() {
              The 500px search is untouched. */
           height: 42px; padding-right: 12px;
           border: 1.5px solid rgba(6,182,212,.22); border-radius: 10px;
-          background: #fff; color: #0c4a6e; font-size: 12px; font-weight: 600;
+          background: #fff; color: #0c4a6e; font-size: 12.5px; font-weight: 600;
           box-shadow: 0 1px 4px rgba(6,182,212,.07);
           transition: border-color .15s ease, box-shadow .15s ease;
         }
@@ -244,7 +244,9 @@ export default function ClmSegmentPage() {
         .clm-root .seg-filter-ms .master-select-chev { font-size: 16px; color: #94a3b8; }
         .clm-root .seg-filter-ms .master-select-wrap.show .master-select-chev { color: #0891b2; }
         div.master-select-menu.dropdown-menu.seg-filter-menu { border: 1.5px solid rgba(6,182,212,.22) !important; border-radius: 8px !important; box-shadow: 0 10px 24px rgba(8,145,178,.14), 0 2px 6px rgba(15,23,42,.05) !important; }
-        .seg-filter-menu .master-select-item { font-size: 12px !important; color: #0c4a6e !important; }
+        /* Matches the toggle at 12.5 — the closed control and the list it
+           opens are the same text, so they read wrong at different sizes. */
+        .seg-filter-menu .master-select-item { font-size: 12.5px !important; color: #0c4a6e !important; }
         .seg-filter-menu .master-select-item:hover, .seg-filter-menu .master-select-item:focus { background: rgba(6,182,212,.08) !important; color: #0e7490 !important; }
         .seg-filter-menu .master-select-item.active { background: rgba(6,182,212,.12) !important; color: #0891b2 !important; }
         [data-bs-theme="dark"] .clm-root .seg-filter-ms .master-select-toggle { background: #1e293b; border-color: rgba(6,182,212,.25); color: #e2e8f0; }

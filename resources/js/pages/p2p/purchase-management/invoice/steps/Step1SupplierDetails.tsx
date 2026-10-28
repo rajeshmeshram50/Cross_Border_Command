@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { EditSelect, Field, WizSpinner } from '../../order/create-po/form-fields';
+import { Shimmer } from '../../../../../components/ui/Shimmer';
 import {
   SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
-import { poLookupApi } from '../../order/api/po-api';
+import { poLookupApi, type SupplierOption } from '../../order/api/po-api';
 import { legalFromVault } from '../../order/create-po/supplier-checks';
 import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
 import { spiApi } from '../spi-api';
@@ -39,6 +40,17 @@ const GST_STATUSES = ['Active', 'Suspended', 'Cancelled'];
 const COUNTRIES = ['India', 'United Arab Emirates', 'Singapore', 'United States'];
 const STATES = ['Maharashtra', 'Gujarat', 'Karnataka', 'Delhi', 'Tamil Nadu'];
 
+/* Every field in these two cards is filled from the supplier record, so while
+   that record is being fetched the honest thing on screen is the shape of what
+   is coming — not a grid of empty inputs, which reads as a form waiting for
+   you to type into it when in fact it is about to answer itself. 38px is the
+   height of .spi-dt-inp, so nothing moves when the real controls land. */
+const SUPPLIER_SK = ['SELECT SUPPLIER', 'COMPANY LEGAL NAME', 'SUPPLIER TYPE', 'RISK LEVEL', 'SUPPLIER CATEGORY'];
+const ADDRESS_SK = ['COUNTRY', 'STATE', 'STATE CODE', 'CITY', 'CONTACT PERSON NAME', 'DESIGNATION', 'CONTACT NUMBER', 'EMAIL ID'];
+function FieldSk({ label, full }: { label: string; full?: boolean }) {
+  return <Field label={label} full={full}><Shimmer height={38} radius={10} /></Field>;
+}
+
 const GUIDELINES = [
   {
     title: 'Physical inspection is mandatory',
@@ -50,8 +62,20 @@ const GUIDELINES = [
   },
 ];
 
-export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false }: {
+export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false, direct = false, directSupplier, onResolved }: {
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
+  /* A Direct SPI stands on its own: there is no purchase order to describe,
+     so the whole Purchase Order section goes rather than standing there with
+     nothing in its fields. */
+  direct?: boolean;
+  /* Who the Direct SPI setup named. A label and a code, not a record — see
+     the seeding effect below for why that distinction decides everything. */
+  directSupplier?: { code?: string; name?: string };
+  /* Fired once, when the setup's supplier has been resolved (or found not to
+     resolve). The form holds the stage skeleton until it hears this, so it
+     must fire on every path out of that effect — including the ones with no
+     work to do — or the skeleton never lifts. */
+  onResolved?: () => void;
 }) {
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
@@ -162,24 +186,37 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
   const editVendorId = draft.vendorId ?? vendorId;
 
   const [refreshing, setRefreshing] = useState(false);
+
+  /* Everything this form knows about a supplier, read in one go: the master
+     record, its newest GST scrutiny and its Evidence Vault. Picking one on a
+     Direct SPI and re-reading one after an edit want exactly the same work,
+     so they share it — the vendor id is the only thing the caller supplies,
+     and it goes into the draft because the save is keyed on it. */
+  const loadSupplier = async (id: number) => {
+    const [fresh, scrutinyRows] = await Promise.all([
+      poLookupApi.supplier(id),
+      spiApi.vendorScrutiny(id).catch(() => null),
+    ]);
+    const gst = newestScrutiny(scrutinyRows);
+    set({
+      vendorId: id,
+      ...draftFromSupplier(fresh),
+      ...(gst ? draftFromScrutiny(gst) : { scrutinyDate, filingDate }),
+    });
+    setVendorId(id);
+    setVault(vaultTargetOf(fresh));
+    poLookupApi.supplierVault(id)
+      .then(v => set({ legal: legalFromVault(v) }))
+      .catch(() => {});
+    return fresh;
+  };
+
   const refreshSupplier = async () => {
     const id = editVendorId;
     if (id === null) return;
     setRefreshing(true);
     try {
-      const [fresh, scrutinyRows] = await Promise.all([
-        poLookupApi.supplier(id),
-        spiApi.vendorScrutiny(id).catch(() => null),
-      ]);
-      const gst = newestScrutiny(scrutinyRows);
-      set({
-        ...draftFromSupplier(fresh),
-        ...(gst ? draftFromScrutiny(gst) : { scrutinyDate, filingDate }),
-      });
-      setVault(vaultTargetOf(fresh));
-      poLookupApi.supplierVault(id)
-        .then(v => set({ legal: legalFromVault(v) }))
-        .catch(() => {});
+      const fresh = await loadSupplier(id);
       if ((fresh.category ?? '').toLowerCase().includes('blacklist')) {
         toast.warning('Supplier is now blacklisted', `${fresh.name} is blacklisted — review this invoice before saving it.`);
       } else {
@@ -191,6 +228,85 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
       setRefreshing(false);
     }
   };
+
+  /* A Direct SPI names its supplier here and nowhere else — there is no
+     purchase order to inherit one from — so the field is a live list off the
+     master rather than the single read-only value a With-PO invoice shows. */
+  const [supplierOpts, setSupplierOpts] = useState<SupplierOption[]>([]);
+  const [picking, setPicking] = useState(false);
+  /* Loaded whenever the picker is live, not only while it is empty. It used
+     to stop at the first supplier, which is what left the control a dead box
+     with nothing behind it to reopen. */
+  useEffect(() => {
+    if (!direct || hasPo || readOnly) return;
+    let live = true;
+    poLookupApi.suppliers()
+      .then(rows => { if (live) setSupplierOpts(rows); })
+      .catch(() => { if (live) setSupplierOpts([]); });
+    return () => { live = false; };
+  }, [direct, hasPo, readOnly]);
+
+  const pickSupplier = async (id: number) => {
+    if (picking) return;
+    setPicking(true);
+    try {
+      const fresh = await loadSupplier(id);
+      if ((fresh.category ?? '').toLowerCase().includes('blacklist')) {
+        toast.warning('Supplier is blacklisted', `${fresh.name} is blacklisted — review this invoice before saving it.`);
+      }
+    } catch {
+      toast.error('Could not load the supplier', 'Please pick it again.');
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  /* The setup already asked who the supplier is, so this step should not ask
+     again — it should arrive filled in and read-only.
+     What it must NOT do is paste the chosen name into the draft: the save is
+     keyed on a vendor id, and a name alone would lock the field on a record
+     the server may never have heard of. So the chosen code is RESOLVED
+     against the master first and, on a hit, goes through the very same
+     loadSupplier the picker uses — the draft then holds a real id and
+     hasSupplier flips the field to its read-only form on its own.
+     A miss leaves the live picker exactly as it is today, which is the right
+     fallback: the setup named someone this master does not carry, and the
+     only honest thing to do is ask. */
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!direct || seeded.current) return;
+    const want = (directSupplier?.code ?? '').trim().toLowerCase();
+    const wantName = (directSupplier?.name ?? '').trim().toLowerCase();
+    /* Nothing to resolve — but the form above is holding a skeleton until it
+       hears back, so every exit from this effect has to report, including the
+       ones that do no work at all. */
+    if (hasSupplier || (!want && !wantName)) { seeded.current = true; onResolved?.(); return; }
+    seeded.current = true;
+    let live = true;
+    setPicking(true);
+    poLookupApi.suppliers()
+      .then(rows => {
+        if (!live) return undefined;
+        const hit = (want && rows.find(r => (r.code ?? '').trim().toLowerCase() === want))
+          || (wantName && rows.find(r => r.name.trim().toLowerCase() === wantName))
+          || null;
+        return hit ? loadSupplier(hit.id) : undefined;
+      })
+      .catch(() => undefined)
+      .finally(() => { if (live) { setPicking(false); onResolved?.(); } });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direct, hasSupplier, directSupplier?.code, directSupplier?.name]);
+
+  /* A record is on its way in and none of these fields can be answered yet —
+     either the setup's supplier is being resolved, or one was just picked by
+     hand. Both go through loadSupplier, so both raise `picking`. */
+  const resolving = picking && !hasSupplier;
+
+  /* Everything in step 01 is the supplier master's to state, so the moment a
+     supplier is resolved the whole step reads. `locked` already covers the
+     purchase-order and view-only cases; this adds the one that was missing. */
+  const gstLocked = locked || hasSupplier;
 
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
@@ -246,6 +362,7 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
         </div>
       )}
 
+      {!direct && (
       <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head" onClick={() => setPoOpen(o => !o)}>
           <div className="spi-dt-sec-ico"><IcoFile /></div>
@@ -344,6 +461,8 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
         </div>
       </div>
 
+      )}
+
       <div className={`spi-dt-sec ${supOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head" onClick={() => setSupOpen(o => !o)}>
           <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoUser /></div>
@@ -353,7 +472,9 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
               <span className="spi-dt-sec-sep" />
               <span className="spi-dt-sec-title">Basic Supplier Details</span>
             </div>
-            <div className="spi-dt-sec-sub">Primary information about the supplier this PO is issued to.</div>
+            <div className="spi-dt-sec-sub">
+              Primary information about the supplier this {direct ? 'invoice' : 'PO'} is issued to.
+            </div>
           </div>
           <div className="spi-dt-sec-toggle"><IcoChevron /></div>
         </div>
@@ -374,18 +495,44 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
               <span className="spi-dt-fields-badge cpf-push">5 FIELDS</span>
               <span className={`cpf-chev ${supCardOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
             </div>
-            {supCardOpen && (
+            {supCardOpen && resolving && (
+              <div className="spi-dt-grid4 cpf-grid5">
+                {SUPPLIER_SK.map(l => <FieldSk key={l} label={l} />)}
+              </div>
+            )}
+            {supCardOpen && !resolving && (
               <div className="spi-dt-grid4 cpf-grid5">
                 <Field label="SELECT SUPPLIER" req>
                   <div className="cpf-supsel">
-                    {hasSupplier ? (
+                    {/* The picker stays live after a supplier is chosen. It
+                        used to become a dead read-only box, so the only way
+                        to correct a wrong supplier was to leave the form and
+                        start the invoice again. It is also the one control on
+                        this step that SHOULD be editable: every other field
+                        here is the master's answer to this question, which is
+                        why picking again refills them all through the same
+                        loadSupplier path.
+                        Still read-only where it genuinely is not a choice —
+                        a With-PO invoice inherits its supplier from the order,
+                        and a view-only SPI changes nothing. */}
+                    {hasPo || readOnly ? (
                       <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
                     ) : (
                       <MasterSelect
-                        value={supplier}
-                        options={[{ value: supplier, label: supplier }]}
-                        placeholder="— Select Supplier —"
-                        onChange={v => set({ supplier: v })}
+                        value={draft.vendorId != null ? String(draft.vendorId) : ''}
+                        /* The code is the chip, the name the label — the same
+                           row the warehouse and zone pickers draw. */
+                        options={supplierOpts.map(o => ({
+                          value: String(o.id), label: o.name, code: o.code, fullLabel: `${o.code} · ${o.name}`,
+                        }))}
+                        /* The chosen supplier is shown from the draft, so the
+                           field reads correctly before the list has landed
+                           and on a vendor the list does not happen to carry. */
+                        currentValueLabel={supplier || undefined}
+                        placeholder={picking ? 'Loading supplier…' : '— Select Supplier —'}
+                        searchPlaceholder="Search supplier code or name"
+                        disabled={picking}
+                        onChange={v => { if (v) void pickSupplier(Number(v)); }}
                       />
                     )}
                     {/* The supplier is fetched before the form can open, and on
@@ -435,7 +582,13 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
               <span className="spi-dt-fields-badge cpf-push">9 FIELDS</span>
               <span className={`cpf-chev ${addrOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
             </div>
-            {addrOpen && (
+            {addrOpen && resolving && (
+              <div className="spi-dt-grid4">
+                <FieldSk label="REGISTERED OFFICE ADDRESS" full />
+                {ADDRESS_SK.map(l => <FieldSk key={l} label={l} />)}
+              </div>
+            )}
+            {addrOpen && !resolving && (
               <div className="spi-dt-grid4">
                 <Field label="REGISTERED OFFICE ADDRESS" full>
                   <input className="spi-dt-inp" placeholder={hasSupplier ? "—" : "Building / street / area / landmark, with PIN code"} readOnly={hasSupplier}
@@ -574,27 +727,38 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
                     )}
                   </span>
                 </div>
+                {/* gstLocked, not `locked`/`hasPo`. These five were the only
+                    fields in step 01 still gated on there being a purchase
+                    order, so on a Direct SPI — which has none by definition —
+                    they stayed typeable while the supplier's name, address
+                    and risk beside them were all read-only. They are not this
+                    invoice's data to edit either way: they arrive from the
+                    supplier's newest scrutiny record via draftFromScrutiny,
+                    and typing over them here would have changed the invoice
+                    and left the master saying something else. The Supplier
+                    Risk Alert directly below reads from exactly these values,
+                    so an edit here also silently rewrote its verdict. */}
                 <div className="spi-dt-grid4">
                   <Field label="SCRUTINY DATE">
-                    {hasPo
+                    {gstLocked
                       ? <input className="spi-dt-inp" value={formatDmy(scrutinyDate)} readOnly />
                       : <MasterDatePicker value={scrutinyDate} onChange={v => set({ scrutinyDate: v })} />}
                   </Field>
                   <Field label="GST NUMBER">
-                    <input className="spi-dt-inp" placeholder={locked ? '—' : '15-digit GSTIN'} maxLength={15} readOnly={locked}
+                    <input className="spi-dt-inp" placeholder={gstLocked ? '—' : '15-digit GSTIN'} maxLength={15} readOnly={gstLocked}
                       value={gstNumber} onChange={e => set({ gstNumber: e.target.value.toUpperCase() })} />
                   </Field>
                   <Field label="GST STATUS">
-                    <EditSelect readOnly={locked} value={gstStatus} options={GST_STATUSES} onChange={v => set({ gstStatus: v })} />
+                    <EditSelect readOnly={gstLocked} value={gstStatus} options={GST_STATUSES} onChange={v => set({ gstStatus: v })} />
                   </Field>
                   <Field label="LAST FILING DATE">
-                    {hasPo
+                    {gstLocked
                       ? <input className="spi-dt-inp" value={formatDmy(filingDate)} readOnly />
                       : <MasterDatePicker value={filingDate} onChange={v => set({ filingDate: v })} />}
                   </Field>
                   <Field label="PREV. INVOICE / REMARKS" full>
-                    <textarea className="spi-dt-textarea" readOnly={locked}
-                      placeholder={locked ? '—' : 'Notes on previous invoices, filing history or scrutiny remarks…'}
+                    <textarea className="spi-dt-textarea" readOnly={gstLocked}
+                      placeholder={gstLocked ? '—' : 'Notes on previous invoices, filing history or scrutiny remarks…'}
                       value={remarks} onChange={e => set({ remarks: e.target.value })} />
                   </Field>
                 </div>

@@ -7,6 +7,7 @@
  */
 import type { ReactNode } from 'react';
 import RowsPerPageSelect from './RowsPerPageSelect';
+import { Shimmer } from './Shimmer';
 
 interface Props {
   /** Total row count across all pages. */
@@ -27,11 +28,18 @@ interface Props {
   /** Drop the page controls when everything already fits on one page, so the
    *  footer doesn't carry a "1 / 1" and two dead arrows. */
   hideNavWhenSinglePage?: boolean;
+  /** The rows above are still loading. `total` is 0 until they land, so
+   *  without this the footer reads "No records" over a table full of
+   *  shimmer — it states a result the page does not have yet. While it is
+   *  set the count shimmers instead, and the page controls are inert so a
+   *  click cannot ask for page 2 of a set whose size is still unknown.
+   *  Opt-in: every caller that omits it behaves exactly as before. */
+  loading?: boolean;
 }
 
 export default function WorklistPager({
   total, page, pageSize, onPage, onPageSize, pageSizeOptions = [10, 25, 50], className,
-  note, hideNavWhenSinglePage,
+  note, hideNavWhenSinglePage, loading,
 }: Props) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(Math.max(1, page), pages);
@@ -40,10 +48,12 @@ export default function WorklistPager({
   return (
     <div className={`wl-pager${className ? ` ${className}` : ''}`}>
       <span className="tc-wl-info">
-        {total === 0
-          ? 'No records'
-          : <>Showing <span className="tc-wl-hl">{start + 1}–{Math.min(start + pageSize, total)}</span> of <span className="tc-wl-hl">{total}</span></>}
-        {note != null && <> · {note}</>}
+        {loading
+          ? <Shimmer width={96} height={9} radius={5} style={{ display: 'inline-block', verticalAlign: 'middle' }} />
+          : total === 0
+            ? 'No records'
+            : <>Showing <span className="tc-wl-hl">{start + 1}–{Math.min(start + pageSize, total)}</span> of <span className="tc-wl-hl">{total}</span></>}
+        {!loading && note != null && <> · {note}</>}
       </span>
       {showNav && <div className="tc-wl-right">
         {onPageSize && (
@@ -52,12 +62,18 @@ export default function WorklistPager({
             <RowsPerPageSelect value={pageSize} options={pageSizeOptions} onChange={onPageSize} />
           </span>
         )}
-        <span className="tc-wl-range">{safePage} / {pages}</span>
+        {/* "1 / 1" is what an unknown total computes to, which is a page
+            count the footer has no way to know yet. */}
+        <span className="tc-wl-range">
+          {loading
+            ? <Shimmer width={26} height={9} radius={5} style={{ display: 'inline-block', verticalAlign: 'middle', backgroundColor: 'rgba(255,255,255,.45)' }} />
+            : <>{safePage} / {pages}</>}
+        </span>
         <div className="tc-wl-nav">
-          <button type="button" className="tc-wl-btn" disabled={safePage <= 1} onClick={() => onPage(safePage - 1)} aria-label="Previous page">
+          <button type="button" className="tc-wl-btn" disabled={loading || safePage <= 1} onClick={() => onPage(safePage - 1)} aria-label="Previous page">
             <i className="ri-arrow-left-s-line"></i>
           </button>
-          <button type="button" className="tc-wl-btn" disabled={safePage >= pages} onClick={() => onPage(safePage + 1)} aria-label="Next page">
+          <button type="button" className="tc-wl-btn" disabled={loading || safePage >= pages} onClick={() => onPage(safePage + 1)} aria-label="Next page">
             <i className="ri-arrow-right-s-line"></i>
           </button>
         </div>

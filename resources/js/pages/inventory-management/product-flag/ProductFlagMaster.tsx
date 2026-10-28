@@ -198,7 +198,8 @@ export default function ProductFlagMaster() {
                     first response - `tabs?.all ?? 0` meant the rail showed
                     zeros meanwhile, and zero is a real count. */}
                 <span className="spi-seg-c">
-                  {list.meta ? counts[t.key] : <Shimmer width={12} height={9} radius={5} />}
+                  {list.meta ? counts[t.key] : <Shimmer width={14} height={10} radius={5}
+                    style={{ backgroundColor: tab === t.key ? 'rgba(255,255,255,.5)' : '#b9ccd8' }} />}
                 </span>
               </button>
             ))}
@@ -263,6 +264,7 @@ export default function ProductFlagMaster() {
         )}
 
         <WorklistPager
+          loading={loading}
           className="wl-teal"
           total={total}
           page={page}

@@ -1,5 +1,3 @@
-// P2P → Payment Request Management: every payment request raised on a PO or an SPI.
-// Rows, tab counts and paging come from GET /p2p/orders/payment-requests; the layout reuses the shared P2P styles.
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useDebouncedValue } from '../../../../hooks/useDebouncedValue';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -10,14 +8,12 @@ import { useFitPageSize } from '../../../../hooks/useFitPageSize';
 import Badge, { type BadgeVariant } from '../../../../components/ui/Badge';
 import { IcoAlert, IcoArrowR, IcoCard, IcoStar, IcoChat, IcoCheck, IcoChevron, IcoCircleX, IcoClock, IcoEye, IcoFile, IcoList, IcoScales, IcoSearch, IcoSend } from '../../icons';
 import DeclineReasonModal from './DeclineReasonModal';
-// The request view is a screen of its own, loaded only when one is opened.
 const PaymentRequestDetail = lazy(() => import('./PaymentRequestDetail'));
-import {
-  fetchPaymentRequests, STATUS_LABEL, SUPPLIER_TAG_LABEL,
-  type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,
-} from './paymentRequestData';
+import {  fetchPaymentRequests, STATUS_LABEL, SUPPLIER_TAG_LABEL,  type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,} from './paymentRequestData';
+import '../../../../components/ui/DataTable.css';
 import '../../p2p-detail.css';
 import '../../purchase-management/order/po-list/order.css';
+import '../../p2p-master-management/supplier-management/supplier-management.css';
 import './payment-request.css';
 
 const GUIDE_STEPS: { num: string; title: string; desc: string; icon: ReactNode }[] = [
@@ -80,24 +76,20 @@ const COLUMNS: Column[] = [
   { label: 'Requested Payment Type', width: 170 },
   { label: 'Requested By', width: 140 },
   { label: 'Requested To', width: 140 },
-  // View Request (~132px) + gap + the 36px reason button + cell padding.
   { label: 'Action', width: 212 },
 ];
 
-/* The Awaiting tab drops Approved Amount, which nothing awaiting has yet. */
 const columnsFor = (tab: TabKey): Column[] => (tab !== 'awaiting'
   ? COLUMNS
   : COLUMNS.filter(c => c.label !== 'Approved Amount')
     .map(c => (c.label === 'Requested Payment Amount' ? { ...c, groupEnd: true } : c)));
 
 const tableWidth = (cols: Column[]) => cols.reduce((sum, c) => sum + c.width, 0);
-// Eight rows a page, per CS-428.
 const PAGE_SIZES = [10, 25, 50];
 
 const STATUS_VARIANT: Record<RequestStatus, BadgeVariant> = {
   awaiting: 'gold', approved: 'success', declined: 'danger',
 };
-/* Figma .po-supcat: star gold, regular blue, high risk red, blacklisted slate. */
 const SUPPLIER_VARIANT: Record<SupplierTag, BadgeVariant> = {
   star: 'gold', regular: 'info', high: 'danger', blacklisted: 'dark',
 };
@@ -131,8 +123,6 @@ function Party({ party }: { party: PartyRef }) {
   );
 }
 
-/* What the request sits on: a PO, an SPI, or an SPI mapped to its PO. The flag
-   below (physical inspection / direct SPI) is what the approver checks first. */
 function RaisedAgainst({ row }: { row: PaymentRequestRow }) {
   return (
     <div className="prm-against">
@@ -158,24 +148,19 @@ export default function PaymentRequestManagement() {
   const [loading, setLoading] = useState(true);
   const [guideOpen, setGuideOpen] = useState(true);
   const [tab, setTab] = useState<TabKey>('all');
-  // Awaiting requests have nothing approved yet, so that column is left out (CS-429).
   const columns = useMemo(() => columnsFor(tab), [tab]);
   const showApproved = tab !== 'awaiting';
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  // Rows per page as in the Segment Master: what fits the table, never fewer than 10.
   const tableRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize, refitSize] = useFitPageSize(tableRef);
   const [reasonRow, setReasonRow] = useState<PaymentRequestRow | null>(null);
   const [viewId, setViewId] = useState<number | null>(null);
   const closeView = useCallback(() => setViewId(null), []);
 
-  // Tabs, search and paging run on the server; a newer request wins over a slower older one.
   const debouncedSearch = useDebouncedValue(search.trim(), 400);
   const [reload, setReload] = useState(0);
   const latest = useRef(0);
-  /* Which query the rows on screen answer. While a different one is in flight
-     the list shimmers rather than showing the previous tab's rows (CS-430). */
   const queryKey = `${tab}|${debouncedSearch}|${page}|${pageSize}`;
   const [shownKey, setShownKey] = useState('');
   useEffect(() => {
@@ -187,13 +172,11 @@ export default function PaymentRequestManagement() {
       .finally(() => { if (ticket === latest.current) setLoading(false); });
   }, [tab, debouncedSearch, page, pageSize, reload, toast]);
   const refresh = useCallback(() => setReload(n => n + 1), []);
-  // Re-measure once real rows are on screen; a larger fit fetches that many.
   useEffect(() => { if (rows.length) refitSize(); }, [rows.length, refitSize]);
 
   const counts = meta?.counts ?? { all: 0, awaiting: 0, approved: 0, declined: 0 };
   const total = meta?.total ?? 0;
 
-  // Page 1 whenever the result set changes underneath the pager.
   useEffect(() => { setPage(1); }, [tab, debouncedSearch, pageSize]);
 
   const start = (page - 1) * pageSize;
@@ -207,73 +190,78 @@ export default function PaymentRequestManagement() {
   return (
     <div className="ord-page prm-page">
 
-      <div className="spi-head">
-        <div className="spi-head-left">
-          <div className="spi-head-icon">
-            <IcoSend size={19} />
-          </div>
-          <div>
-            <div className="spi-head-title">Payment Request Management</div>
-            <div className="spi-head-sub">
-              Payment requests raised against a purchase order or a supplier invoice — approve, part-approve or decline the ones sent to you,
-              then track the release.
+      <div className="sup-fig">
+        <div className="cstrip">
+          <span className="cstrip__accent" />
+          <span className="cstrip__glow" />
+          <span className="cstrip__sheen" />
+          <div className="cstrip__left">
+            <div className="cstrip__avatar-wrap">
+              <div className="cstrip__avatar"><IcoSend size={17} /></div>
+              <span className="cstrip__online-dot" />
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className={`spi-bref${guideOpen ? '' : ' is-collapsed'}`}>
-        <div className="spi-bref-head" role="button" tabIndex={0} aria-expanded={guideOpen} onClick={toggleGuide} onKeyDown={onGuideKey}>
-          <div className="spi-bref-ico">
-            <IcoSend size={14} stroke={2.4} />
-          </div>
-          <div className="spi-bref-mid">
-            <div className="spi-bref-row">
-              <div className="spi-bref-label">Payment Request Management</div>
-              <div className="spi-bref-sep" />
-              <div className="spi-bref-title">What We Are Doing Here</div>
-            </div>
-            <div className="spi-bref-sub">
-              Every request raised on a PO or an SPI lands here: check what it is against, decide it in full or in
-              part, then watch the release close it out — end to end in one place.
-            </div>
-          </div>
-          <div className="spi-bref-toggle">
-            <IcoChevron size={10} stroke={2.8} />
-          </div>
-        </div>
-
-        <div className="spi-bref-body">
-          {GUIDE_STEPS.map(step => (
-            <div className="spi-step" key={step.num}>
-              <div className="spi-step-top">
-                <span className="spi-step-ico">{step.icon}</span>
-                <span className="spi-step-num">{step.num}</span>
+            <div className="min-w-0">
+              <div className="cstrip__title">Payment Request Management</div>
+              <div className="cstrip__sub">
+                Payment requests raised against a purchase order or a supplier invoice — approve, part-approve or decline the ones sent to you,
+                then track the release.
               </div>
-              <div className="spi-step-title">{step.title}</div>
-              <div className="spi-step-desc">{step.desc}</div>
             </div>
-          ))}
+          </div>
+        </div>
+
+        <div className={`bref-box${guideOpen ? '' : ' is-collapsed'}`}>
+          <div className="bref-box__header" role="button" tabIndex={0} aria-expanded={guideOpen} onClick={toggleGuide} onKeyDown={onGuideKey}>
+            <div className="bref-box__header-ico"><IcoSend size={15} stroke={2.4} /></div>
+            <div className="bref-box__header-mid">
+              <div className="bref-box__header-row">
+                <div className="bref-box__header-label">Payment Request Management</div>
+                <div className="bref-box__header-sep" />
+                <div className="bref-box__header-title">What We Are Doing Here</div>
+              </div>
+              <div className="bref-box__header-sub">
+                Every request raised on a PO or an SPI lands here: check what it is against, decide it in full or in
+                part, then watch the release close it out — end to end in one place.
+              </div>
+            </div>
+            <div className="bref-box__header-right">
+              <div className="bref-box__toggle"><IcoChevron size={10} stroke={2.8} /></div>
+            </div>
+          </div>
+
+          <div className="bref-box__body">
+            {GUIDE_STEPS.map(step => (
+              <div className="bref-item" key={step.num}>
+                <div className="bref-item__top">
+                  <div className="bref-item__ico">{step.icon}</div>
+                  <span className="bref-item__num">{step.num}</span>
+                </div>
+                <div className="bref-item__title">{step.title}</div>
+                <div className="bref-item__desc">{step.desc}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
       <div className="spi-card ord-list">
         <div className="spi-segrow">
-          <div className="spi-seg" role="tablist" aria-label="Payment request views">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                type="button"
-                role="tab"
-                aria-selected={t.key === tab}
-                className={`spi-seg-btn${t.key === tab ? ' is-active' : ''}`}
-                onClick={() => setTab(t.key)}
-              >
-                <span className="spi-seg-ico">{t.icon}</span>
-                {t.label}
-                <span className="spi-seg-c">{counts[t.key]}</span>
-              </button>
-            ))}
+          <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="teal">
+            <div className="dt-tabs" role="tablist" aria-label="Payment request views">
+              {TABS.map(t => (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={t.key === tab}
+                  className={`dt-tab ${t.key === tab ? 'on' : 'off'}`}
+                  onClick={() => setTab(t.key)}
+                >
+                  {t.icon} {t.label}
+                  <span className="dt-tab-count">{counts[t.key]}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="spi-search ui-search-abs">
@@ -285,8 +273,7 @@ export default function PaymentRequestManagement() {
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
-            {/* Emptying the box by hand left a filtered table reading as "no
-                results" for as long as it took to select and delete. */}
+
             <SearchClear show={search} onClear={() => { setSearch(''); setPage(1); }} />
           </div>
         </div>
@@ -299,7 +286,6 @@ export default function PaymentRequestManagement() {
           </div>
         ) : (
           <div className={`ord-table-scroll${loading ? ' is-refreshing' : ''}`} ref={tableRef}>
-            {/* Columns keep their widths, but the table still fills a wide screen. */}
             <table className="ord-table" style={{ minWidth: tableWidth(columns), width: '100%' }}>
               <colgroup>
                 {columns.map(c => <col key={c.label} style={{ width: c.width }} />)}
@@ -412,20 +398,6 @@ export default function PaymentRequestManagement() {
   );
 }
 
-/* The list while it loads (QA #87): the table it is about to become, with bars
-   where the values will be, instead of the line "Loading payment requests…".
-   Same bars (.spi-sk-bar) and the same column widths the PO list uses, so the
-   two lists wait in the same way. */
-/* Takes the ACTIVE tab's columns, not the full COLUMNS list.
-   The width came from a bare `TABLE_WIDTH`, which is a module-level const over
-   in the PO list (Order.tsx) and does not exist here — so this component threw
-   ReferenceError the moment it rendered, and since it renders on every first
-   load of the page, the error boundary replaced the whole screen. Widths now
-   come from this module's own tableWidth() helper, which the real table two
-   hundred lines up already uses.
-   Passing the columns in also settles a smaller mismatch: the Awaiting tab
-   drops the "Approved Amount" column, so the skeleton was laying out a column
-   the table it becomes would not have. */
 function PrmListSkeleton({ columns }: { columns: Column[] }) {
   return (
     <div className="ord-table-scroll">

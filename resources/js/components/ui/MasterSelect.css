@@ -263,6 +263,35 @@
     color: #6366f1 !important;
     font-weight: 600;
   }
+  /* The option's identifier, drawn as a chip ahead of its name so the ids
+     line up in a column of their own. Monospace and tabular, because these
+     are read by position (WH-001 against WH-010), not as words; it never
+     shrinks, since half an id is no id at all. */
+  .master-select-code {
+    flex: 0 0 auto;
+    margin-right: 10px;
+    padding: 2px 8px;
+    border-radius: 7px;
+    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .01em;
+    font-variant-numeric: tabular-nums;
+    color: #0e7490;
+    background: #ecfeff;
+    border: 1px solid #bfeef4;
+    white-space: nowrap;
+  }
+  /* Beside a code chip the name is the record's own, not a setting someone
+     picked from a list, so it carries the weight the list row gives it —
+     at 500 it read as the placeholder it had just replaced. */
+  .master-select-code + .master-select-value-text { font-weight: 700; color: #0c2c3a; }
+  [data-bs-theme="dark"] .master-select-code + .master-select-value-text { color: #e2e8f0; }
+  [data-bs-theme="dark"] .master-select-code {
+    color: #67e8f9;
+    background: rgba(34, 211, 238, .12);
+    border-color: rgba(34, 211, 238, .3);
+  }
   .master-select-empty {
     padding: 10px 12px;
     font-size: 12px;

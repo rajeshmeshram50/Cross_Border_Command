@@ -14,7 +14,10 @@ import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { EMPTY_IDENTITY, type ProductIdentity } from './SelectedProducts';
 import { putId, type ProductFlagOption, type SpiBox, type SpiBoxBody, type SpiBoxItem } from '../spi-api';
 
-const BOX_TABLE_COLUMNS = 11;
+/* Checkbox, Sr. No, Product, Description, Qty, Remaining, Missing, Extra,
+   Sub-Box Count, Actions. Code moved into the product cell and the disabled
+   Mode select went with the design, so this came down from 11. */
+const BOX_TABLE_COLUMNS = 10;
 
 type Packing =
   | { scenario: 's1'; qty: number }
@@ -60,7 +63,7 @@ const todayIso = () => {
 
 export default function Step3BoxPackaging({
   draft, lines, boxes = [], nextBoxCodes = [], flagMaster = [], readOnly = false, onCreateBox, onUpdateBox, onDeleteBoxes, onFlagsChanged,
-  spiId, spiCode, onDeleteBoxPhoto, placedBoxIds = [], onLoadBox,
+  spiId, spiCode, onDeleteBoxPhoto, placedBoxIds = [], onLoadBox, direct = false,
 }: {
   onLoadBox?: (boxId: number) => Promise<SpiBox | null>;
   placedBoxIds?: number[];
@@ -77,6 +80,10 @@ export default function Step3BoxPackaging({
   onUpdateBox?: (boxId: number, body: SpiBoxBody) => Promise<SpiBox | null>;
   onDeleteBoxes?: (ids: number[]) => Promise<boolean>;
   onFlagsChanged?: () => void;
+  /* A Direct SPI is a 2-way match, so what is missing or extra is counted
+     against the shipment's PI rather than a purchase order. The packing
+     itself is the same work either way. */
+  direct?: boolean;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -352,14 +359,15 @@ export default function Step3BoxPackaging({
       if (id.mfg && id.mfg > today) return `${c.line.spiName}: the MFG date is in the future.`;
     }
     if (data.remark !== 'correct') {
-      const reasons = scenario === 's3'
-        ? contents.every(c => (data.identities[c.line.code]?.remarks ?? '').trim())
-        : !!data.boxIdentity.remarks.trim();
+      /* One note for the carton, whichever scenario it is: a mixed carton
+         used to demand a reason against every product in it, which is three
+         ways of writing the same sentence about one box. */
+      const reasons = !!data.boxIdentity.remarks.trim();
       const label = { damaged: 'Damaged / Rejected', mismatched: 'Mismatched', extra: 'Extra Quantity' }[data.remark];
       if (!reasons) return `${label} needs a note saying what was found — add it in Remarks.`;
     }
-    if (data.remark === 'extra' && !contents.some(c => lineTotals(fullOf(c.line.code) ?? c.line).extra > 0)) {
-      return 'Extra Quantity applies only to a product billed above its PO quantity.';
+    if (data.remark === 'extra' && !contents.some(c => lineTotals(fullOf(c.line.code) ?? c.line, 'intra', direct).extra > 0)) {
+      return `Extra Quantity applies only to a product billed above its ${direct ? 'PI' : 'PO'} quantity.`;
     }
     return null;
   };
@@ -376,10 +384,11 @@ export default function Step3BoxPackaging({
       flags: ids,
       photos: data.photos,
       items: contents.map(c => {
+        /* The identifiers stay per product — a serial or a batch belongs to
+           the unit. The note does not: it is the box's, so every item in the
+           carton carries the same one. */
         const id = scenario === 's3' ? (data.identities[c.line.code] ?? EMPTY_IDENTITY) : data.boxIdentity;
-        const note = scenario === 's3'
-          ? [id.remarks.trim(), data.note && data.note.startsWith('Cold chain') ? data.note : ''].filter(Boolean).join(' · ')
-          : data.note ?? '';
+        const note = data.note ?? '';
         return {
           supplier_invoice_item_id: c.line.spiItemId!,
           quantity: c.qty,
@@ -815,7 +824,11 @@ export default function Step3BoxPackaging({
         )}
 
         <div className={`vti-table-wrap${drawerOpen ? '' : ' vti-wrap--rows'}`}>
-          <table className="vti-table">
+          {/* `vti-boxgen` names this table apart from the packed-products one
+              beside it, which wears the same chrome. They no longer have the
+              same columns in the same places, and the shared rules key off
+              position. */}
+          <table className="vti-table vti-boxgen">
             <thead>
               <tr>
                 <th>
@@ -829,8 +842,8 @@ export default function Step3BoxPackaging({
                     onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSelectAll(); } }}
                   />
                 </th>
-                <th>Product (SPI)</th>
-                <th>Code</th>
+                <th className="vti-sr-h">Sr. No</th>
+                <th className="vti-prod-h">Product (SPI)</th>
                 <th className="vti-desc-h">Description</th>
                 <th>Qty (SPI)</th>
                 <th>
@@ -840,7 +853,6 @@ export default function Step3BoxPackaging({
                 </th>
                 <th>Missing Qty</th>
                 <th>Extra Qty</th>
-                <th>Mode</th>
                 <th>Sub-Box Count</th>
                 <th>Actions</th>
               </tr>
@@ -848,7 +860,7 @@ export default function Step3BoxPackaging({
             <tbody>
               {pendingLines.map((line, i) => {
                 const full = fullOf(line.code);
-                const { missing, extra } = lineTotals(full ?? line);
+                const { missing, extra } = lineTotals(full ?? line, 'intra', direct);
                 const packed = Math.round((packedQty[line.code] ?? 0) * 1000) / 1000;
                 const left = full ? remainingOf(full) : line.spiQty;
                 const pack = packing[line.code];
@@ -887,13 +899,24 @@ export default function Step3BoxPackaging({
                         />
                       )}
                     </td>
-                    <td>
+                    <td className="vti-sr-td"><span className="vti-sr">{i + 1}</span></td>
+                    <td className="vti-prod-td">
                       <div className="vti-prod-cell">
                         <div>
                           <Tooltip label={line.spiName} disabled={line.spiName.length <= NAME_MAX}>
                             <div className="vti-prod-name">{truncateName(line.spiName)}</div>
                           </Tooltip>
-                          <div className="vti-prod-sku">HSN {line.hsn}</div>
+                          {/* The design keeps the code with the product, not in
+                              a column of its own: it identifies this row rather
+                              than answering a question of its own, and sitting
+                              beside the HSN and the GST it reads as one line of
+                              identifiers under the name. */}
+                          <div className="vti-prod-meta">
+                            <span className="vti-code">{line.code}</span>
+                            <span className="vti-prod-sku">HSN <b>{line.hsn}</b></span>
+                            <span className="vti-prod-dot" />
+                            <span className="vti-prod-sku">GST <b>{line.gst}%</b></span>
+                          </div>
                           {pack && (
                             <Tooltip label="Reset the packaging scenario for this product">
                               <span className="vti-scn-chip is-on"
@@ -907,7 +930,6 @@ export default function Step3BoxPackaging({
                         </div>
                       </div>
                     </td>
-                    <td><span className="vti-code">{line.code}</span></td>
                     <td className="vti-desc">
                       <Tooltip label={line.description} disabled={line.description.length <= DESC_MAX}>
                         <span className="vti-desc__wrap">{truncateDesc(line.description)}</span>
@@ -928,11 +950,6 @@ export default function Step3BoxPackaging({
                     </td>
                     <td>
                       <span className={`cpd-qtypill${extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{extra}</span>
-                    </td>
-                    <td>
-                      <select className="vti-mode-sel" disabled defaultValue="auto">
-                        <option value="auto">Auto</option>
-                      </select>
                     </td>
                     <td>
                       {single || mixed ? (

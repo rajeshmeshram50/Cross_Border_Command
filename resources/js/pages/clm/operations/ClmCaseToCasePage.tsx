@@ -417,7 +417,7 @@ export default function ClmCaseToCasePage() {
   }
 
   return (
-    <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-sans)' }}>
+    <div className="ctc-page" style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-sans)' }}>
       <style>{CTC_CSS + OPS_SEARCH_CSS}</style>
 
       {/* Whole-page lock while a contract OR completion certificate is
@@ -743,6 +743,19 @@ function ActBtn({ t, tone, title, onClick, children, busy, busyLabel, disabled, 
 }
 
 const CTC_CSS = `
+/* QA #31 — "the search bar is not static while changing the tabs".
+   The search box itself is already fixed at 500px and does not shrink; what
+   moves is everything, including it. .main-content is the app's one scroller,
+   so the moment a filter or a tab change makes this page shorter or taller
+   than the viewport its scrollbar appears or disappears and the whole column
+   jumps sideways by its width — under a cursor that is resting on the search
+   box. Reserving the gutter means the scrollbar can come and go without
+   taking any horizontal space with it.
+
+   Scoped by :has to this page: the gutter is reserved only while Case to Case
+   is mounted, so Sales, HRMS and the rest of CLM are untouched. */
+.main-content:has(.ctc-page) { scrollbar-gutter: stable; }
+
 @keyframes ctcFade { from { opacity:0 } to { opacity:1 } }
 @keyframes ctcSpin { to { transform: rotate(360deg) } }
 

@@ -45,10 +45,10 @@ export default function AddProductFlagModal({ flag, onClose, onSaved }: {
   const cardRef = useRef<HTMLDivElement>(null);
   useEffect(() => { cardRef.current?.focus(); }, []);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, saving]);
 
   /* The code the next flag will get, shown before saving — the warehouse and
      zone forms already do this, and "Assigned on save" told nobody which
@@ -109,6 +109,18 @@ export default function AddProductFlagModal({ flag, onClose, onSaved }: {
         role="dialog" aria-modal="true" aria-labelledby="pfm-add-title"
         tabIndex={-1} ref={cardRef}
       >
+        {/* The same save sheet the warehouse, zone, rack and shelf forms use:
+            while the request is out, one sheet over the dialog says so and
+            stops a second click landing on anything behind it. */}
+        {saving && (
+          <div className="whm-saving" role="status" aria-live="polite">
+            <span className="whm-saving__box">
+              <span className="whm-saving__spin" aria-hidden />
+              Saving the product flag…
+            </span>
+          </div>
+        )}
+
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
             <div className="spi-mdl-head-ico"><IcoFlag size={22} /></div>
@@ -123,10 +135,13 @@ export default function AddProductFlagModal({ flag, onClose, onSaved }: {
               </div>
             </div>
           </div>
-          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><IcoX /></button>
+          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"
+            disabled={saving} title={saving ? 'Saving — please wait' : undefined}><IcoX /></button>
         </div>
 
-        <div className="spi-mdl-body whm-addbody">
+        {/* inert as well as the sheet, so the name and purpose cannot be
+            retyped under a save that is already carrying the old values. */}
+        <div className="spi-mdl-body whm-addbody" inert={saving}>
           <div className="whm-card">
             <div className="whm-sec">
               <span className="whm-sec__ico"><IcoFlag size={15} /></span>
@@ -160,9 +175,10 @@ export default function AddProductFlagModal({ flag, onClose, onSaved }: {
         <div className="spi-mdl-foot">
           <span className="whm-footnote"><IcoInfo /> Fields marked * are required</span>
           <div className="spi-mdl-foot-btns">
-            <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
+            <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
-              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Flag' : 'Save Flag'}
+              {saving ? <span className="whm-btnspin" aria-hidden /> : <IcoCheck />}
+              {saving ? 'Saving…' : editing ? 'Update Flag' : 'Save Flag'}
             </button>
           </div>
         </div>

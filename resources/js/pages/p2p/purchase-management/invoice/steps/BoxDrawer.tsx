@@ -467,6 +467,8 @@ export default function BoxDrawer({
               onClear={onClearContents}
               onQtyChange={onContentQtyChange}
               qtyMaxOf={contentQtyMaxOf}
+              remark={boxIdentity.remarks ?? ''}
+              onRemarkChange={v => setBoxIdentity(m => ({ ...m, remarks: v }))}
             />
           )}
 

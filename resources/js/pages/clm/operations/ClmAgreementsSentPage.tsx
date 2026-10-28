@@ -329,11 +329,24 @@ export default function ClmAgreementsSentPage() {
 
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
         {/* gap 8, the CLM toolbar band — see .clm-tabs-bar in clmShared.ts. */}
-        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
+        {/* nowrap, with min-width 0 — these go together, and the pair is why
+            the search no longer drops to its own line on a 1366 laptop.
+            .ops-search is flex: 0 0 500px, a rigid 500. Five tabs with their
+            count pills come to roughly 850, and 850 + 8 + 500 + 16 of padding
+            overflows the content column at that width, so the toolbar's own
+            wrap caught the search and put it below the rail. Wrap comes back
+            under 900px, where stacking is the right answer rather than an
+            accident. */}
+        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'nowrap', flexShrink: 0, minWidth: 0 }}>
           {/* The employee list's rail — its `hr-dt` skin, not the base .dt-tabs
               rule — on the teal ramp. See the longer note on Case to Case.
               3px of padding puts the rail at 42, which is .ops-search. */}
           <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 11, padding: 3, height: 48, boxSizing: 'border-box',
+            /* The rail is what gives way first: it shrinks and scrolls its
+               tabs sideways rather than shoving the search onto a second row.
+               min-width 0 is what allows that at all — a flex item will not
+               go below its content without it. */
+            flex: '0 1 auto', minWidth: 0, overflowX: 'auto', overflowY: 'hidden',
             ...(t.dark
               ? { background: 'rgba(8,145,178,.08)', border: '1px solid rgba(8,145,178,.22)' }
               : { background: 'linear-gradient(180deg, #f6feff, #f0fdff)', border: '1px solid #c9f8fd' }) }}>
@@ -1066,8 +1079,48 @@ const AWS_CSS = `
   .aws-clarify-modal { max-height: 92vh; overflow-y: auto !important; }
 }
 
+/* The rail scrolls its own tabs when the toolbar runs short of room, and the
+   scrollbar is hidden: it would sit inside a 48px capsule and eat the height
+   the 40px tabs are centred in. */
+.aws-tabrail { scrollbar-width: none; }
+.aws-tabrail::-webkit-scrollbar { display: none; }
+/* 0 200 500px, not the inherited 0 0 500px: the search keeps its 500 while the
+   room is there and gives it back before anything wraps. 220 is the floor —
+   below that "Search agreements…" is lost to the ellipsis.
+   The 200 is a shrink factor, and it decides the ORDER the two give way in.
+   Flex shares a shortfall in proportion to base size × factor, so at 1 each
+   the rail (roughly 815 wide) would absorb about two thirds of it and the
+   last tab would sit clipped at every width — measured at 22px of "Clarifi-
+   cations" cut off on a 1366 laptop. 20 was not enough either: it still left
+   16px cut, because every pixel the tabs below gave back was handed straight
+   to the search rather than to closing the gap. At 200 the rail's share of
+   any shortfall is under 2px, so the search surrenders its width first, down
+   to 220, and the rail only starts to scroll once that floor is reached —
+   which measures as no clipping at all from 1366 up. */
+   The floor needs !important of its own: .ops-search sets min-width: 0 at the
+   same specificity, so which of the two applied would otherwise come down to
+   which stylesheet loaded last, and the search would collapse to nothing. */
+.aws-searchbox { flex: 0 200 500px !important; min-width: 220px !important; }
+
+/* Between 900 and 1500 the five tabs and a usable search are within about
+   20px of fitting on one row, so the tabs give that back rather than leaving
+   "Clarifications" half cut off on a 1366 laptop — 5px off each tab's side
+   padding, 3 off the gaps and 4 off each count pill comes to roughly 80px,
+   which clears it. The labels are untouched; only the air around them moves.
+   The pill numbers are inline-styled, so overriding them takes !important. */
+@media (min-width: 901px) and (max-width: 1500px) {
+  .aws-tabrail { gap: 5px !important; }
+  .aws-tabrail > button { padding: 0 9px !important; gap: 5px !important; }
+  .aws-tabrail > button > span:last-child { min-width: 24px !important; padding: 0 4px !important; }
+}
+
 @media (max-width: 900px) {
-  .aws-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
+  /* Under 900 the stack is deliberate, so wrap is put back on. */
+  .aws-toolbar { flex-wrap: wrap !important; }
+  /* height auto and overflow visible: the rail is inline-styled to 48px with
+     overflow-y hidden for the scrolling case, which would clip the second row
+     of tabs that wrapping creates here. */
+  .aws-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; overflow-x: visible; overflow-y: visible; flex-basis: auto; height: auto !important; }
   .aws-tabrail > button { flex: 1 1 calc(50% - 4px); justify-content: center; }
   .aws-hspacer { display: none; }
   .aws-searchbox { width: 100% !important; max-width: none !important; flex: 1 1 100% !important; }

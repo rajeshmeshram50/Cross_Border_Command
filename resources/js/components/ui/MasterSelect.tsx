@@ -48,6 +48,18 @@ const badgeToneStyle = (tone?: OptBadgeSpec['tone']): CSSProperties => {
    it isn't clipped by the option list's `overflow: auto`. `staticPill`
    forces the plain, non-interactive span (used inside the toggle, which is
    itself a <button> — a nested interactive control there would be invalid). */
+/* Does the option's row show every word it has? True when the id has been
+   lifted into a chip and the label beside it is the rest of the full text,
+   untruncated — the test is separator-agnostic, so "WH-001 · Mumbai" counts
+   whether the caller joined it with a dot, a dash or a space. A row like that
+   needs no tooltip; one with a shortened name, or no chip at all (where the
+   label can still be clipped by width), keeps it. */
+function drawsWhole(opt: { label: string; code?: string; fullLabel?: string }) {
+  if (!opt.code) return false;
+  if (!opt.fullLabel) return true;
+  return opt.fullLabel.startsWith(opt.code) && opt.fullLabel.endsWith(opt.label);
+}
+
 export function OptBadge({ b, staticPill, shrink }: { b: OptBadgeSpec; staticPill?: boolean; shrink?: boolean }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -94,9 +106,16 @@ export function OptBadge({ b, staticPill, shrink }: { b: OptBadgeSpec; staticPil
     );
   }
 
+  /* A native `title` repeating the pill's own visible text put a second,
+     slower tooltip under the row's styled one — two pills over the same row,
+     one of them saying what was already written on the badge. It is kept only
+     where something is actually hidden: a caller-supplied title that differs
+     from the text, or a pill allowed to shrink, which ellipsises. */
+  const hint = b.title && b.title !== b.text ? b.title : (shrink ? b.text : undefined);
+
   if (!interactive) {
-    if (b.lock) return <span title={b.title ?? b.text} style={{ ...style, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{LOCK_ICON}{b.text}</span>;
-    return <span title={b.title ?? b.text} style={style}>{b.text}</span>;
+    if (b.lock) return <span title={hint} style={{ ...style, display: 'inline-flex', alignItems: 'center', gap: 4 }}>{LOCK_ICON}{b.text}</span>;
+    return <span title={hint} style={style}>{b.text}</span>;
   }
 
   const place = () => {
@@ -187,6 +206,7 @@ export function MasterSelect({
   emptyText,
   listBadgesOnly,
   searchable = true,
+  searchPlaceholder,
   onDisabledClick,
   menuClassName,
 }: {
@@ -202,8 +222,12 @@ export function MasterSelect({
      30-char-capped agreement type), the full text shows in the hover tooltip.
      `selectedLabel` — an alternate, shorter text shown in the CLOSED trigger
      when this option is picked (e.g. options list "CLT-004 - Risk", but the
-     trigger shows just "Risk"); falls back to `label`. */
-  options: { value: string; label: string; fullLabel?: string; selectedLabel?: string; badge?: OptBadgeSpec; badges?: OptBadgeSpec[]; disabled?: boolean; disabledReason?: string }[];
+     trigger shows just "Risk"); falls back to `label`.
+     `code` — an identifier (WH-001, ZN-137) drawn as a monospace chip at the
+     head of the row, ahead of the label. Run into the label as text it reads
+     as part of the name and the column of ids is lost; as a chip the eye can
+     scan the ids down one edge and the names down the other. */
+  options: { value: string; label: string; fullLabel?: string; selectedLabel?: string; code?: string; badge?: OptBadgeSpec; badges?: OptBadgeSpec[]; disabled?: boolean; disabledReason?: string }[];
   placeholder?: string;
   /* Label to show for the current value when it is NOT among `options`
    * (e.g. the option was deliberately excluded from the pickable list, or an
@@ -249,6 +273,9 @@ export function MasterSelect({
    * option lists (e.g. a 3-value filter) so opening the dropdown on mobile
    * doesn't auto-focus the search field and pop up the on-screen keyboard. */
   searchable?: boolean;
+  /** What the search box asks for, when "Search…" is vaguer than it needs to
+      be (e.g. "Search warehouse ID or name"). */
+  searchPlaceholder?: string;
   /* Called when a DISABLED option is clicked. Without it a disabled option is
      simply inert; with it the click is intercepted (still no selection) so the
      caller can explain why — e.g. a toast "segment must match". The menu stays
@@ -357,7 +384,11 @@ export function MasterSelect({
   const filtered = serverMode
     ? options
     : (search.trim()
-        ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
+        /* The code and the full label are searched as well as the visible
+           one: once an id is lifted out into a chip, or a label shortened,
+           typing that id would otherwise match nothing. */
+        ? options.filter(o => `${o.label} ${o.code ?? ''} ${o.fullLabel ?? ''}`.toLowerCase()
+          .includes(search.trim().toLowerCase()))
         : options);
   // Long local lists render 10 options at a time and add 10 more on scroll,
   // so a 250-country list never puts 250 rows in the DOM at once.
@@ -405,7 +436,13 @@ export function MasterSelect({
                the truncating label and stays visible. */
             <Tooltip label={selected.fullLabel ?? selected.label} position="bottom">
               <span className="master-select-value">
-                <span className="master-select-value-text">{selected.selectedLabel ?? selected.label}</span>
+                {/* The chip belongs on the closed field as much as in the
+                    list: the id is how the record is named everywhere else on
+                    the form, and run back into the sentence it stops being
+                    one. The name beside it truncates; the tooltip above
+                    carries the whole thing. */}
+                {selected.code && <span className="master-select-code">{selected.code}</span>}
+                <span className="master-select-value-text">{selected.code ? selected.label : (selected.selectedLabel ?? selected.label)}</span>
                 {!listBadgesOnly && badgesOf(selected).filter((b) => !b.listOnly).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
               </span>
             </Tooltip>
@@ -474,7 +511,7 @@ export function MasterSelect({
               <input
                 type="text"
                 className="master-select-search-input"
-                placeholder="Search…"
+                placeholder={searchPlaceholder ?? 'Search…'}
                 value={search}
                 onChange={e => {
                   const q = e.target.value;
@@ -531,7 +568,16 @@ export function MasterSelect({
                     {/* Full label (or the disabled reason) shows on hover in the
                         project's styled dark pill (Tooltip) so a truncated (long)
                         option name stays readable — replaces the plain native title. */}
-                    <Tooltip label={opt.disabled ? (opt.disabledReason ?? opt.fullLabel ?? opt.label) : (opt.fullLabel ?? opt.label)} position="top">
+                    {/* The row's tooltip stands down when the chip and the
+                        label between them already show every word of the
+                        option (see drawsWhole) — otherwise it reads the row
+                        back at you, a second pill over a row that needs
+                        none. */}
+                    <Tooltip
+                      label={opt.disabled ? (opt.disabledReason ?? opt.fullLabel ?? opt.label) : (opt.fullLabel ?? opt.label)}
+                      disabled={!opt.disabled && drawsWhole(opt)}
+                      position="top"
+                    >
                       {(opt.badge || opt.badges?.length) ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
                           {/* Label GROWS to take all free space (flex 1 1 auto)
@@ -540,6 +586,7 @@ export function MasterSelect({
                               product code+name almost the whole row instead of being
                               hard-capped at 55%. The badge wrapper never shrinks, so
                               it always stays fully readable on the right. */}
+                          {opt.code && <span className="master-select-code">{opt.code}</span>}
                           <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
                           {/* The product NAME wins the row: the segment chip shrinks (its own
                               text ellipsises) before the label gives up any width. */}
@@ -548,7 +595,10 @@ export function MasterSelect({
                           </span>
                         </span>
                       ) : (
-                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
+                        <span style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                          {opt.code && <span className="master-select-code">{opt.code}</span>}
+                          <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
+                        </span>
                       )}
                     </Tooltip>
                   </DropdownItem>

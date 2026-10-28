@@ -154,7 +154,7 @@ const SCOPED_CSS = `
 .kop-head-title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
 .kop-head-sub   { font-size: 12px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 2px; }
 .kop-close {
-  width: 30px; height: 30px; border-radius: 9px;
+  width: 40px; height: 40px; border-radius: 10px;
   border: 1px solid rgba(255,255,255,.25);
   background: rgba(255,255,255,.12);
   color: #fff; cursor: pointer;
@@ -201,9 +201,9 @@ const SCOPED_CSS = `
 }
 .kop-btn-ghost, .kop-btn-primary {
   display: inline-flex; align-items: center; gap: 6px;
-  height: 30px; padding: 0 13px;
-  border-radius: 8px;
-  font-family: inherit; font-size: 12px; font-weight: 600;
+  box-sizing: border-box; height: 40px; padding: 0 18px;
+  border-radius: 10px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
   cursor: pointer;
   transition: background .15s, border-color .15s, transform .12s, box-shadow .15s;
 }
