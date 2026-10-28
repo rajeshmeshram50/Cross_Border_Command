@@ -268,7 +268,8 @@ export default function RackMaster() {
                     first response - `tabs?.all ?? 0` meant the rail showed
                     zeros meanwhile, and zero is a real count. */}
                 <span className="spi-seg-c">
-                  {list.meta ? counts[t.key] : <Shimmer width={12} height={9} radius={5} />}
+                  {list.meta ? counts[t.key] : <Shimmer width={14} height={10} radius={5}
+                    style={{ backgroundColor: tab === t.key ? 'rgba(255,255,255,.5)' : '#b9ccd8' }} />}
                 </span>
               </button>
             ))}
@@ -339,6 +340,7 @@ export default function RackMaster() {
         )}
 
         <WorklistPager
+          loading={loading}
           className="wl-teal"
           total={total}
           page={page}
@@ -426,7 +428,7 @@ function Row({ r, sr, off, busy, opening, w, z, onToggle, onQr, onEdit, onShelve
         <div className="whm-namecell">
           <span className="whm-namecell__ico"><IcoRack size={15} /></span>
           <div className="whm-namecell__t">
-            <ClipName value={r.name} className="pts-trunc" />
+            <ClipName value={r.name} className="inv-trunc" />
             <span className="whm-namecell__loc">
               {r.cold ? <IcoSnow /> : r.haz ? <IcoHaz /> : <IcoRack size={11} />}
               {rackKind(r)}

@@ -33,6 +33,11 @@ export interface InvoiceDraft {
   supplierCode: string;
   poNumber: string;
   piNumber: string;
+  /* A Direct SPI's own references: the shipment it belongs to (empty for
+     "All Other's") and the procurement case it answers to. A With-PO invoice
+     leaves both empty — its purchase order already says all of this. */
+  shipmentId: string;
+  procurementCode: string;
   legalName: string;
   supplierType: string;
   riskLevel: string;
@@ -164,7 +169,7 @@ export function draftFromPo(po: PoDetail, sup: SupplierDetail | null): Partial<I
   };
 }
 
-export function useInvoiceDraft(seed: { supplier: string; poNo?: string }) {
+export function useInvoiceDraft(seed: { supplier: string; poNo?: string; shipmentId?: string; procurementCode?: string }) {
   const [draft, setDraft] = useState<InvoiceDraft>(() => ({
     poType: '',
     docType: '',
@@ -191,6 +196,8 @@ export function useInvoiceDraft(seed: { supplier: string; poNo?: string }) {
     supplierCode: '',
     poNumber: seed.poNo ?? '',
     piNumber: '',
+    shipmentId: seed.shipmentId ?? '',
+    procurementCode: seed.procurementCode ?? '',
     legalName: '',
     supplierType: '',
     riskLevel: '',

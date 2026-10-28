@@ -269,7 +269,8 @@ export default function ZoneMaster() {
                 <span className="spi-seg-ico">{t.icon}</span>
                 {t.label}
                 <span className="spi-seg-c">
-                  {countsReady ? counts[t.key] : <Shimmer width={12} height={9} radius={5} />}
+                  {countsReady ? counts[t.key] : <Shimmer width={14} height={10} radius={5}
+                    style={{ backgroundColor: tab === t.key ? 'rgba(255,255,255,.5)' : '#b9ccd8' }} />}
                 </span>
               </button>
             ))}
@@ -336,6 +337,7 @@ export default function ZoneMaster() {
         )}
 
         <WorklistPager
+          loading={loading}
           className="wl-teal"
           total={total}
           page={page}
@@ -405,7 +407,7 @@ function Row({ z, sr, off, busy, opening, w, onToggle, onQr, onEdit }: {
               : z.storage === 'fridge' ? <IcoFridge size={15} /> : <IcoFloor size={15} />}
           </span>
           <div className="whm-namecell__t">
-            <b className="pts-trunc">{z.name}</b>
+            <b className="inv-trunc">{z.name}</b>
             <span className="whm-namecell__loc"><IcoTag />{z.purpose}</span>
           </div>
         </div>

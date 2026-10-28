@@ -45,7 +45,13 @@ export interface ProductLine {
 }
 
 /** The quantity this invoice is actually working against. */
-export const openQtyOf = (l: ProductLine): number => l.poOpenQty ?? l.poQty;
+/* What this invoice is measured against. Normally the purchase order's open
+   quantity; on a 2-way match there is no purchase order, so the baseline is
+   the shipment's proforma invoice — which is the document the Direct SPI is
+   matched to. Measured against a PO it does not have, every line on a Direct
+   SPI would read as extra. */
+export const openQtyOf = (l: ProductLine, twoWay = false): number =>
+  (twoWay ? l.piQty : l.poOpenQty ?? l.poQty);
 
 export type TaxMode = 'intra' | 'inter' | 'export';
 
@@ -75,7 +81,7 @@ export interface LineTotals {
   extra: number;
 }
 
-export function lineTotals(l: ProductLine, mode: TaxMode = 'intra'): LineTotals {
+export function lineTotals(l: ProductLine, mode: TaxMode = 'intra', twoWay = false): LineTotals {
   const base = round2(l.spiQty * l.spiRate);
   const rate = mode === 'export' ? 0 : l.gst;
   const gstAmount = round2((base * rate) / 100);
@@ -102,18 +108,18 @@ export function lineTotals(l: ProductLine, mode: TaxMode = 'intra'): LineTotals 
        against what earlier invoices over-supplied. A line the previous invoice
        covered is not missing again here; one it over-supplied opens at zero and
        only counts as extra if THIS invoice bills against it. */
-    missing: Math.max(0, openQtyOf(l) - l.spiQty),
-    extra: Math.max(0, l.spiQty - openQtyOf(l)),
+    missing: Math.max(0, openQtyOf(l, twoWay) - l.spiQty),
+    extra: Math.max(0, l.spiQty - openQtyOf(l, twoWay)),
   };
 }
 
-export function tableTotals(lines: ProductLine[], mode: TaxMode = 'intra') {
+export function tableTotals(lines: ProductLine[], mode: TaxMode = 'intra', twoWay = false) {
   return lines.reduce((t, l) => {
-    const c = lineTotals(l, mode);
+    const c = lineTotals(l, mode, twoWay);
     return {
       piQty: t.piQty + l.piQty,
       // The open column, so the footer adds up to what the rows show.
-      poQty: t.poQty + openQtyOf(l),
+      poQty: t.poQty + openQtyOf(l, twoWay),
       spiQty: t.spiQty + l.spiQty,
       missing: t.missing + c.missing,
       extra: t.extra + c.extra,

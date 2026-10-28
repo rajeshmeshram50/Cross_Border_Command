@@ -12,15 +12,21 @@ const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFr
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
-  lines, onChange, taxMode = 'intra', readOnly = false,
+  lines, onChange, taxMode = 'intra', readOnly = false, twoWay = false, sourceNote,
 }: {
   lines: ProductLine[];
   onChange: (index: number, patch: Partial<ProductLine>) => void;
   readOnly?: boolean;
 
   taxMode?: TaxMode;
+  /* Drop the purchase order's three columns — its product, its quantity and
+     its cost. A Direct SPI has no purchase order to match against, so the
+     match is the shipment's proforma invoice against the supplier's own. */
+  twoWay?: boolean;
+  /** What the untinted cells came from, named in the legend. */
+  sourceNote?: string;
 }) {
-  const totals = tableTotals(lines, taxMode);
+  const totals = tableTotals(lines, taxMode, twoWay);
   const catalogue = useMemo(() => {
     const seen = new Map<string, { value: string; label: string; name: string; productId?: number }>();
     for (const l of lines) {
@@ -74,7 +80,7 @@ export default function ProductTable({
       <div className="cpd-legend">
         <span className="cpd-legend__sw" />
         Tinted cells are editable — SPI product, quantity and rate. Everything else is
-        carried from the PI or the PO, or calculated.
+        carried from {sourceNote ?? (twoWay ? 'the PI' : 'the PI or the PO')}, or calculated.
       </div>
 
       {/* `--rows` caps the height at about five lines and scrolls the rest.
@@ -106,22 +112,26 @@ export default function ProductTable({
           <thead>
             <tr className="cpd-grp">
               <th rowSpan={2} className="cpd-stick cpd-stick--1">Sr. No</th>
-              <th colSpan={3} className="cpd-stick cpd-grp-stick">3-Way Product Mapping</th>
+              <th colSpan={twoWay ? 2 : 3} className="cpd-stick cpd-grp-stick">
+                {twoWay ? '2-Way Product Mapping' : '3-Way Product Mapping'}
+              </th>
               <th rowSpan={2} className="cpd-th-left">Description</th>
-              <th colSpan={5}>Quantities</th>
-              <th colSpan={1}>Purchase Order (PO)</th>
+              <th colSpan={twoWay ? 4 : 5}>Quantities</th>
+              {/* Without a purchase order there is nothing to show under it:
+                  the group goes rather than standing empty over the rows. */}
+              {!twoWay && <th colSpan={1}>Purchase Order (PO)</th>}
               <th colSpan={4 + 2 * (inter ? 1 : 2)}>Supplier Invoice (SPI)</th>
             </tr>
             <tr>
               <th className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>
-              <th className="cpd-th-left">Product (PO)</th>
+              {!twoWay && <th className="cpd-th-left">Product (PO)</th>}
               <th className="cpd-th-left cpd-edh">Product (SPI)</th>
               <th>Qty (PI)</th>
-              <th>Qty (PO)</th>
+              {!twoWay && <th>Qty (PO)</th>}
               <th className="cpd-c cpd-edh">Qty (SPI)</th>
               <th>Missing Qty</th>
               <th>Extra Qty</th>
-              <th className="cpd-th-amt">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
+              {!twoWay && <th className="cpd-th-amt">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>}
               <th className="cpd-th-amt cpd-c cpd-edh">Product Rate</th>
               <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
               {inter
@@ -139,7 +149,7 @@ export default function ProductTable({
           <tbody>
             {lines.map((line, i) => (
               <Row
-                key={line.key ?? line.code} line={line} index={i}
+                key={line.key ?? line.code} line={line} index={i} twoWay={twoWay}
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
@@ -151,13 +161,13 @@ export default function ProductTable({
             <tfoot>
               <tr>
                 <td className="cpd-foot-lbl cpd-stick cpd-stick--1" colSpan={2}>Totals</td>
-                <td colSpan={3} />
+                <td colSpan={twoWay ? 2 : 3} />
                 <td className="cpd-c">{totals.piQty}</td>
-                <td className="cpd-c">{totals.poQty}</td>
+                {!twoWay && <td className="cpd-c">{totals.poQty}</td>}
                 <td className="cpd-c">{totals.spiQty}</td>
                 <td className="cpd-c">{totals.missing}</td>
                 <td className="cpd-c">{totals.extra}</td>
-                <td className="cpd-r">{money(totals.poCost)}</td>
+                {!twoWay && <td className="cpd-r">{money(totals.poCost)}</td>}
                 <td />
                 <td className="cpd-r">{money(totals.base)}</td>
                 {inter
@@ -176,10 +186,12 @@ export default function ProductTable({
 }
 
 const Row = memo(function Row({
-  line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly,
+  line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly, twoWay,
 }: {
   line: ProductLine;
   index: number;
+  /** Matches the header: no purchase order columns. */
+  twoWay: boolean;
   onChange: (index: number, patch: Partial<ProductLine>) => void;
 
   onOpenDetail: (productId: number) => void;
@@ -189,7 +201,7 @@ const Row = memo(function Row({
   catalogue: Array<{ value: string; label: string; name: string; productId?: number }>;
   readOnly: boolean;
 }) {
-  const t = lineTotals(line, taxMode);
+  const t = lineTotals(line, taxMode, twoWay);
   const inter = taxMode === 'inter' || taxMode === 'export';
 
   const patch = useCallback(
@@ -203,9 +215,11 @@ const Row = memo(function Row({
       <td className="cpd-prodcell cpd-td-left cpd-stick cpd-stick--2">
         <ProdCell name={line.piName} code={line.piCode ?? line.code} hsn={line.hsn} gst={line.gst} />
       </td>
-      <td className="cpd-prodcell cpd-td-left">
-        <ProdCell name={line.poName} code={line.code} hsn={line.hsn} gst={line.gst} />
-      </td>
+      {!twoWay && (
+        <td className="cpd-prodcell cpd-td-left">
+          <ProdCell name={line.poName} code={line.code} hsn={line.hsn} gst={line.gst} />
+        </td>
+      )}
 
       <td className="cpd-prodcell cpd-ed">
         <div className="cpd-prod cpd-prod--po">
@@ -261,15 +275,17 @@ const Row = memo(function Row({
           An over-supply from an earlier invoice shows as 0 open and is named
           in the title: it belongs to the invoice that caused it, not to this
           one. */}
-      <td
-        className="cpd-c"
-        title={line.poOpenQty !== undefined && line.poBilledQty
-          ? `${line.poQty} ordered, ${line.poBilledQty} billed on earlier invoices`
-            + (line.poOverQty ? ` — ${line.poOverQty} over` : '')
-          : undefined}
-      >
-        {openQtyOf(line)}
-      </td>
+      {!twoWay && (
+        <td
+          className="cpd-c"
+          title={line.poOpenQty !== undefined && line.poBilledQty
+            ? `${line.poQty} ordered, ${line.poBilledQty} billed on earlier invoices`
+              + (line.poOverQty ? ` — ${line.poOverQty} over` : '')
+            : undefined}
+        >
+          {openQtyOf(line)}
+        </td>
+      )}
       <td className="cpd-c cpd-ed">
         <input
           className="cpd-in cpd-in--num" type="number" min={0} readOnly={readOnly}
@@ -285,7 +301,7 @@ const Row = memo(function Row({
         <span className={`cpd-qtypill${t.extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{t.extra}</span>
       </td>
 
-      <td className="cpd-r spi-pocost">{money(t.poCost)}</td>
+      {!twoWay && <td className="cpd-r spi-pocost">{money(t.poCost)}</td>}
       <td className="cpd-r cpd-ed">
         <input
           className="cpd-in cpd-in--num" type="number" min={0} step="0.01" readOnly={readOnly}

@@ -272,7 +272,8 @@ export default function WarehouseMaster() {
                 <span className="spi-seg-ico">{t.icon}</span>
                 {t.label}
                 <span className="spi-seg-c">
-                  {countsReady ? counts[t.key] : <Shimmer width={12} height={9} radius={5} />}
+                  {countsReady ? counts[t.key] : <Shimmer width={14} height={10} radius={5}
+                    style={{ backgroundColor: tab === t.key ? 'rgba(255,255,255,.5)' : '#b9ccd8' }} />}
                 </span>
               </button>
             ))}
@@ -358,6 +359,7 @@ export default function WarehouseMaster() {
         )}
 
         <WorklistPager
+          loading={loading}
           className="wl-teal"
           total={total}
           page={page}

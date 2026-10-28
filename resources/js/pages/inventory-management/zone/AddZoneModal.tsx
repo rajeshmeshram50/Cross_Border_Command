@@ -32,10 +32,27 @@ const TEMP_PRESETS = [
 
 const WAREHOUSE_LABEL = (id: string, name: string) => `${id} · ${name}`;
 
-/* How much of a warehouse name an option row can hold beside its ownership
-   badge. An ellipsis replaces the rest, and the tooltip carries the whole. */
-const WH_NAME_MAX = 20;
+/* How much of a name an option row can hold beside its code chip and its
+   ownership badge. An ellipsis takes the rest; the tooltip carries the whole. */
+const NAME_MAX = 20;
 const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max).trimEnd()}…` : s);
+
+/* An option label is "WH-001 · Mumbai Central Warehouse". The list draws the
+   id as a chip and the name beside it, so the two are split here: the label
+   itself stays the value, which keeps the stored draft, the tooltip and the
+   search over it unchanged. The name is taken as whatever follows the id, not
+   as `w.name`, because the de-duplicating pass may have added a city to it. */
+function split<T extends { id: string }>(rows: T[], labelOf: (row: T) => string) {
+  const codes: Record<string, string> = {};
+  const names: Record<string, string> = {};
+  for (const row of rows) {
+    const label = labelOf(row);
+    const head = `${row.id} · `;
+    codes[label] = row.id;
+    names[label] = truncate(label.startsWith(head) ? label.slice(head.length) : label, NAME_MAX);
+  }
+  return { codes, names };
+}
 
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
@@ -178,15 +195,8 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
      characters for the list row only — the closed field and the hover tooltip
      both keep it whole. Built from the same labels the options are, so a
      label the uniqueness pass changed still matches its own entry. */
-  const whShortLabels = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const w of activeWarehouses) {
-      const label = whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name);
-      const short = truncate(w.name, WH_NAME_MAX);
-      if (short !== w.name) m[label] = label.replace(w.name, short);
-    }
-    return m;
-  }, [activeWarehouses, whLabels]);
+  const whList = useMemo(() => split(activeWarehouses, w => whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name)),
+    [activeWarehouses, whLabels]);
   const zoneWarehouse = zone?.warehouseId ? warehouses.find(w => w.apiId === zone.warehouseId) : undefined;
   const cm = zone?.dims?.unit === 'cm';
   const fromCm = (v: number) => String(cm ? round(v / 100, 3) : v);
@@ -387,6 +397,18 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
         tabIndex={-1} ref={cardRef}
         style={{ position: 'relative' }}
       >
+        {/* CS-940 #5: the save had no visible loader and the form stayed
+            live while the request ran. Same treatment as Add Warehouse -
+            one sheet over the dialog, which blocks and reports at once, so
+            there is no list of controls to keep in step. */}
+        {saving && (
+          <div className="whm-saving" role="status" aria-live="polite">
+            <span className="whm-saving__box">
+              <span className="whm-saving__spin" aria-hidden />
+              Saving the zone…
+            </span>
+          </div>
+        )}
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
             <div className="spi-mdl-head-ico"><IcoZone size={22} /></div>
@@ -399,10 +421,15 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
               </div>
             </div>
           </div>
-          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><IcoX /></button>
+          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"
+            disabled={saving} title={saving ? 'Saving — please wait' : undefined}><IcoX /></button>
         </div>
 
-        <div className="spi-mdl-body whm-addbody">
+        {/* inert, not only the sheet above: the Warehouse and Zone Type
+            menus portal to document.body, so they open outside the dialog
+            and outside anything drawn inside it. inert takes the subtree out
+            of reach, so the trigger cannot open them at all. */}
+        <div className="spi-mdl-body whm-addbody" inert={saving}>
 
           <Card icon={<IcoWarehouse />} title="Warehouse Details">
             <Field label="Warehouse" req error={errors.wh} hint="Only active own warehouses are listed">
@@ -411,7 +438,9 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
                 options={activeWarehouses.map(w => whLabels.get(w.apiId) ?? WAREHOUSE_LABEL(w.id, w.name))}
                 placeholder="Select warehouse"
                 badges={whBadges}
-                shortLabels={whShortLabels}
+                codes={whList.codes}
+                shortLabels={whList.names}
+                searchPlaceholder="Search warehouse ID or name"
                 /* List only: the closed field keeps the name, and the
                    Warehouse Type box beside it already states the type of
                    whichever one is selected. */
@@ -663,7 +692,8 @@ export default function AddZoneModal({ zone, warehouses, onClose, onSaved }: {
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
-              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Zone' : 'Save Zone'}
+              {saving ? <span className="whm-btnspin" aria-hidden /> : <IcoCheck />}
+              {saving ? 'Saving…' : editing ? 'Update Zone' : 'Save Zone'}
             </button>
           </div>
         </div>
@@ -699,7 +729,7 @@ function Card({ icon, title, children }: { icon: ReactNode; title: string; child
 function AutoField({ label, value }: { label: string; value: string }) {
   return (
     <Field label={label}>
-      <div className={`whm-auto znm-auto${value ? ' is-filled' : ''}`}>
+      <div className={`whm-auto znm-auto whm-auto--text${value ? ' is-filled' : ''}`}>
         <input className="spi-dt-inp" value={value} placeholder="Fetched from warehouse" readOnly tabIndex={-1} />
         <span className="whm-auto__tag">AUTO</span>
       </div>

@@ -6,6 +6,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import '../../p2p/p2p-common.css';
 import '../warehouse/warehouse-master.css';
+import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import '../zone/zone.css';
 import './rack.css';
 import './rack-shelves.css';
@@ -20,6 +21,15 @@ const AddShelfModal = lazy(() => import('./AddShelfModal'));
 const ShelfQrModal = lazy(() => import('./ShelfQrModal'));
 
 const nf = (v: number, dp = 0) => v.toLocaleString('en-IN', { maximumFractionDigits: dp });
+
+/* The shelf name is cut at 15 characters rather than left to the CSS ellipsis.
+   The CSS stopped the column moving, but a name long enough to fill 220px was
+   still painted to the very edge of the cell with no visible sign it had been
+   cut - "The invisible iconThe invisible ico" simply ran into the column
+   beside it. Cutting the string itself puts the "…" inside the text, where it
+   reads as truncation; the full value stays on the row's title. */
+const NAME_MAX = 15;
+const clip = (s: string, max = NAME_MAX) => (s.length > max ? `${s.slice(0, max).trimEnd()}…` : s);
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const formatDate = (iso: string) => {
@@ -109,8 +119,17 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
   const [freeCm, setFreeCm] = useState(0);
   const [nextLevel, setNextLevel] = useState(1);
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  /* `state` describes what the table HAS; this describes what it is doing.
+     load() is called again after a shelf is saved, and it never returned
+     state to 'loading' - deliberately, so a failed refresh keeps the rows
+     it already had rather than blanking the popup. The cost was that a
+     SUCCESSFUL refresh showed nothing either: the old rows sat there until
+     the new ones replaced them (CS-942 #17). A separate flag gives the
+     shimmer something to key off without touching the failure behaviour. */
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
+    setBusy(true);
     shelfApi.list(r.apiId)
       .then(res => {
         setShelves(res.shelves);
@@ -121,7 +140,8 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
       .catch(e => {
         setState(st => (st === 'ready' ? st : 'failed'));
         toast.error('Could not load the shelves', e instanceof InventoryApiError ? e.message : 'Please try again.');
-      });
+      })
+      .finally(() => setBusy(false));
   }, [r.apiId, toast]);
   useEffect(() => { load(); }, [load]);
 
@@ -234,13 +254,16 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
                 <tr>{COLUMNS.map(c => <th key={c} scope="col">{c}</th>)}</tr>
               </thead>
               <tbody>
-                {state !== 'ready' || paged.length === 0 ? (
+                {busy ? (
+                  /* The <thead> above stays put, so only the rows are stand-ins
+                     and nothing in the popup moves between load and result. */
+                  <ShimmerTableRows rows={4} cols={COLUMNS.length} height={13} />
+                ) : state !== 'ready' || paged.length === 0 ? (
                   <tr>
                     <td colSpan={COLUMNS.length}>
                       <div className="ord-empty">
-                        {state === 'loading' ? 'Loading shelves…'
-                          : state === 'failed' ? 'Could not load the shelves.'
-                            : 'No shelves in this rack yet.'}
+                        {state === 'failed' ? 'Could not load the shelves.'
+                          : 'No shelves in this rack yet.'}
                       </div>
                     </td>
                   </tr>
@@ -260,6 +283,7 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
 
         <div className="spi-mdl-foot rks-foot">
           <WorklistPager
+            loading={busy}
             className="wl-teal rks-pager"
             total={shelves.length}
             page={page}
@@ -335,10 +359,12 @@ function ShelfRow({ s, sr, rackOff, busy, onToggle, onEdit, onQr }: {
       </td>
 
       <td>
-        <div className="whm-namecell" title={`Purpose: ${s.purpose}`}>
+        {/* The name and type can now ellipsise, so the hover has to carry them
+            as well as the purpose - otherwise a clipped shelf name is lost. */}
+        <div className="whm-namecell" title={`${s.name} — ${s.type}\nPurpose: ${s.purpose}`}>
           <span className="whm-namecell__ico"><IcoShelf size={14} /></span>
           <div className="whm-namecell__t">
-            <b>{s.name}</b>
+            <b>{clip(s.name)}</b>
             <span className="rks-typetxt">{s.type}</span>
           </div>
         </div>

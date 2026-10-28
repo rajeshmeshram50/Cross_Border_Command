@@ -11,16 +11,27 @@
    — "Zone, of the with-rack kind" — rather than qualifying the control.
    Sentence case, not uppercase: it is a phrase, and the label around it is
    already shouting. */
+/* A label carrying this pill is a ROW — the word, the pill that narrows it,
+   the required mark — not one run of text. As inline content the pill had no
+   air on either side and sat off-centre against the uppercase caps, which is
+   what made it look stuck to the word before it. */
+.whm-addmdl .spi-dt-field-lbl:has(.rkm-lbltag) {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
 .rkm-lbltag {
-  margin-left: 4px;
-  padding: 1px 6px;
+  /* The gap above does the spacing now. */
+  margin: 0;
+  padding: 3px 9px;
   border-radius: 999px;
   border: 1px solid #bfe9f1;
   background: #e0f7fb;
   color: #0e7490;
-  font-size: 8.5px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: .04em;
+  line-height: 1.25;
   text-transform: none;
   white-space: nowrap;
 }

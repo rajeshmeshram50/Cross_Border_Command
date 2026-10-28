@@ -94,6 +94,16 @@ export default function InvoiceList() {
       poNo: storageFor.poNo,
       supplier: storageFor.supplier ?? '—',
       storage: choice,
+      /* A Direct SPI's whole context is these three answers, so they have to
+         survive the hand-off — dropped here, the form had no way to tell a
+         standalone invoice from one whose purchase order failed to load. */
+      direct: storageFor.mode === 'without-po'
+        ? {
+          shipmentId: storageFor.shipmentId,
+          procurementCode: storageFor.procurementCode,
+          supplierCode: storageFor.supplierCode,
+        }
+        : undefined,
     });
   }, [storageFor]);
 

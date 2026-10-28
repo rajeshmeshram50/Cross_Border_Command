@@ -2014,19 +2014,110 @@
   cursor: pointer;
   transition: all .14s;
 }
-/* Destructive, so it is outlined rather than filled — it empties the carton. */
+/* Destructive, so it carries its colour as a wash rather than a fill — it
+   empties the carton. Sizes are the design's own. */
 .invf-selprod__clear {
-  gap: 4px;
-  padding: 4px 10px;
+  gap: 6px;
+  padding: 6px 14px;
   font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   letter-spacing: .01em;
   color: #dc2626;
-  background: #fff;
-  border: 1.5px solid #fecaca;
+  background: rgba(239, 68, 68, .08);
+  border: 1.5px solid rgba(239, 68, 68, .25);
   white-space: nowrap;
 }
+.invf-selprod__clear:hover { background: rgba(239, 68, 68, .14); border-color: rgba(239, 68, 68, .4); }
+/* ── Product remarks, under the advance-details table ──────────────────────
+   A card in the drawer's own idiom, so it reads as another section of the box
+   rather than a stray field under a table. Two columns: which product, and
+   the note against it. */
+.vs3-rmk { padding: 12px 16px 14px; border-top: 1px solid rgba(6,182,212,.14); }
+.vs3-rmk__hd {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  font-size: 11.5px; font-weight: 800; color: #0c4a6e; letter-spacing: -.1px;
+}
+.vs3-rmk__list { display: flex; flex-direction: column; gap: 8px; }
+/* The name is given a fixed share so every field starts on the same line —
+   ragged left edges on a stack of inputs read as a broken grid. */
+.vs3-rmk__row { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 12px; align-items: center; }
+.vs3-rmk__nm { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.vs3-rmk__nm b {
+  font-size: 11.5px; font-weight: 700; color: #0c2c3a; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 900px) { .vs3-rmk__row { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+[data-bs-theme="dark"] .vs3-rmk { border-top-color: rgba(34,211,238,.16); }
+[data-bs-theme="dark"] .vs3-rmk__hd { color: #7dd3fc; }
+[data-bs-theme="dark"] .vs3-rmk__nm b { color: #e2e8f0; }
+
+/* ── The box's remark, under the advance-details table ─────────────────────
+   Drawn as the review panel draws it, value for value: a banded heading with
+   a gradient mark, and a field that reads as empty until it holds something.
+   A note is a sentence; as a column it had the width of a product code. */
+.vs3-rmk { border-top: 1px solid #eaf5f8; }
+.vs3-rmk__hd {
+  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+  font-size: 11.5px; font-weight: 800; color: #0c4a6e;
+  background: linear-gradient(180deg, #f4fcfe, #fff); border-bottom: 1px solid #eaf5f8;
+}
+.vs3-rmk__ico {
+  width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: linear-gradient(135deg, #22d3ee, #0891b2 60%, #0e7490);
+  box-shadow: 0 4px 10px -4px rgba(8,145,178,.6);
+}
+/* The field is measured against this box, not against the table above it:
+   that table scrolls sideways, so a width taken from the section ran as wide
+   as the widest row and pushed the note off the card's right edge. */
+.vs3-rmk__body { padding: 12px 14px; }
+/* Dashed while empty — "nothing recorded", not a box that failed to draw. It
+   takes the teal left bar the moment it is quoting something somebody wrote. */
+.vs3-rmk__in {
+  display: block; width: 100%; padding: 12px 14px;
+  border-radius: 11px; outline: none; font-family: inherit;
+  font-size: 12px; font-weight: 700; color: #0c2c3a; line-height: 1.5;
+  background: #fafdfe; border: 1.5px dashed #d8e7ee;
+  transition: border-color .14s, background .14s, box-shadow .14s;
+}
+.vs3-rmk__in::placeholder { color: #9fb2c0; font-weight: 700; }
+.vs3-rmk__in:focus,
+.vs3-rmk__in:not(:placeholder-shown) {
+  font-weight: 600;
+  background: linear-gradient(135deg, #f0fdff, #fff);
+  border: 1.5px solid #cffafe; border-left: 3px solid #22d3ee;
+}
+.vs3-rmk__in:focus { box-shadow: 0 0 0 3px rgba(34,211,238,.16); }
+
+[data-bs-theme="dark"] .vs3-rmk { border-top-color: rgba(34,211,238,.14); }
+[data-bs-theme="dark"] .vs3-rmk__hd {
+  background: linear-gradient(180deg, #16394a, #13303c);
+  border-bottom-color: rgba(34,211,238,.14); color: #d7eef5;
+}
+[data-bs-theme="dark"] .vs3-rmk__in {
+  background: rgba(255,255,255,.02); border: 1.5px dashed rgba(34,211,238,.25); color: #d7eef5;
+}
+[data-bs-theme="dark"] .vs3-rmk__in::placeholder { color: #7f97a5; }
+[data-bs-theme="dark"] .vs3-rmk__in:focus,
+[data-bs-theme="dark"] .vs3-rmk__in:not(:placeholder-shown) {
+  background: rgba(34,211,238,.07); border: 1.5px solid rgba(34,211,238,.22); border-left: 3px solid #22d3ee;
+}
+
+/* 8px to the button, as the design spaces them. It sits in the drawer's own
+   section header now, which spaces its two children apart but does not lay
+   this group out, so the row says so itself. */
+.invf-selprod__stats { display: flex; align-items: center; gap: 8px; }
+.invf-selprod__total {
+  font-size: 10px;
+  font-weight: 600;
+  color: #0891b2;
+  opacity: .75;
+  white-space: nowrap;
+}
+[data-bs-theme="dark"] .invf-selprod__total { color: #67e8f9; }
+[data-bs-theme="dark"] .invf-selprod__clear { background: rgba(239, 68, 68, .16); border-color: rgba(239, 68, 68, .36); color: #fca5a5; }
+[data-bs-theme="dark"] .invf-selprod__clear:hover { background: rgba(239, 68, 68, .24); }
 .invf-selprod__clear:hover { background: #fef2f2; border-color: #fca5a5; }
 .invf-selprod__rm {
   width: 24px;
@@ -9844,6 +9935,9 @@
   box-shadow: 0 0 4px rgba(6,182,212,.5);
 }
 
+/* The design's pill, at the design's size. It is deliberately shorter than
+   the 40px boxes beside it: the fields take typing, this one is a dial you
+   nudge, and the smaller pill is what separates the two at a glance. */
 .vs3t .vqe {
   display: inline-flex; align-items: center; gap: 2px; height: 30px;
   padding: 0 10px 0 3px; border-radius: 999px; box-sizing: border-box;
@@ -9869,7 +9963,15 @@
 }
 .vs3t .vqe .vqe-inp::-webkit-outer-spin-button,
 .vs3t .vqe .vqe-inp::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.vs3t .vqe .vqe-max { margin-left: 4px; font-size: 10.5px; font-weight: 700; color: #64748b; }
+/* Typing into it is how you jump to a figure the steppers would take twenty
+   presses to reach, so the field has to look like it takes typing. */
+.vs3t .vqe .vqe-inp:focus { background: #e0f7fc; border-radius: 6px; }
+/* A floor under "/ 150", so the pill does not change width as the figure
+   beside it goes from three digits to one. */
+.vs3t .vqe .vqe-max {
+  margin-left: 4px; min-width: 34px; text-align: left;
+  font-size: 10.5px; font-weight: 700; color: #64748b;
+}
 .vs3t .vqe .vqe-max b { color: #0c4a6e; font-weight: 800; }
 
 .vs3t .vs3-in, .vs3t .master-datepicker-toggle {
@@ -9941,6 +10043,7 @@
 [data-bs-theme="dark"] .vs3t .vqe .vqe-btn { background: #102a35; border-color: rgba(34,211,238,.28); color: #67e8f9; }
 [data-bs-theme="dark"] .vs3t .vqe .vqe-btn:hover:not(:disabled) { background: #14323f; }
 [data-bs-theme="dark"] .vs3t .vqe .vqe-inp { color: #e2e8f0; }
+[data-bs-theme="dark"] .vs3t .vqe .vqe-inp:focus { background: rgba(34,211,238,.14); }
 [data-bs-theme="dark"] .vs3t .vqe .vqe-max { color: #7c93a8; }
 [data-bs-theme="dark"] .vs3t .vqe .vqe-max b { color: #e2e8f0; }
 [data-bs-theme="dark"] .vs3t .vs3-in,

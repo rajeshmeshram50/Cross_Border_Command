@@ -11,6 +11,7 @@ import DirectSpiSetup, {
   DirectSpiSummary, DirectSpiSummarySkeleton, DirectSpiStepsSkeleton,
   EMPTY_DIRECT, directReady, type DirectSpiState,
 } from './DirectSpiSetup';
+import { SUPPLIERS, NEXT_PROCUREMENT } from './direct-spi-data';
 import './direct-spi.css';
 
 const PO_PAGE_SIZE = 20;
@@ -22,6 +23,13 @@ export interface InvoiceMapChoice {
   poId?: number;
   poNo?: string;
   supplier?: string;
+  /* What a Direct SPI was set up with. A Direct SPI has no purchase order to
+     inherit from, so these three answers are the only context the form gets:
+     they name the shipment it belongs to, the procurement case it is
+     answerable to, and the supplier who issued it. */
+  shipmentId?: string;
+  procurementCode?: string;
+  supplierCode?: string;
 }
 
 /**
@@ -139,6 +147,9 @@ export default function MapInvoiceModal({
   /* Everything the standalone route needs before the wizard can open. Held
      here rather than inside the panel so Confirm can read it. */
   const [direct, setDirect] = useState<DirectSpiState>(EMPTY_DIRECT);
+  /* The picker stores the code; the form wants the name, since that is what
+     every header and chip downstream reads. */
+  const directSupplier = SUPPLIERS.find(r => r.code === direct.supplier);
   const isDirect = mode === 'without-po';
 
   /* The panel waits for the dialog to finish growing.
@@ -175,7 +186,13 @@ export default function MapInvoiceModal({
     setConfirming(true);
     onConfirm(mode === 'with-po' && poPicked
       ? { mode, poId: poPicked.id, poNo: poPicked.code, supplier: poPicked.supplier_name ?? undefined }
-      : { mode, supplier: direct.supplier ?? supplier });
+      : {
+        mode,
+        supplier: directSupplier?.name ?? supplier,
+        shipmentId: direct.shipment === 'with' ? direct.shipmentId ?? undefined : undefined,
+        procurementCode: direct.procMode === 'auto' ? NEXT_PROCUREMENT : direct.procurementId ?? undefined,
+        supplierCode: direct.supplier ?? undefined,
+      });
   };
 
   const choose = (next: InvoiceMapMode) => { setMode(next); setShowError(false); };

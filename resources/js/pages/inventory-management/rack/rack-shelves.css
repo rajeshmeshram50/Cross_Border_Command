@@ -217,8 +217,23 @@
 .rks-table .whm-idcell,
 .rks-table .znm-flagcell,
 .rks-table .whm-acts { justify-content: center; align-items: center; margin: 0 auto; }
-.rks-table .whm-namecell { min-width: 150px; }
-.rks-table .whm-namecell__t { display: flex; flex-direction: column; align-items: flex-start; }
+/* A `min-width` here was the whole bug: it set a floor and no ceiling, so the
+   Shelf column was still as wide as the longest shelf name in the list and the
+   twelve columns beside it shifted every time that name changed. A stated
+   width holds the column still in both directions; the name and the type line
+   under it ellipsise past it (the rules live in warehouse-master.css) with the
+   full purpose on the row's title.
+   Written at three classes so it outranks `.whm-page .whm-namecell`'s 320px
+   outright - 320 is right for a warehouse's three address lines, too wide for
+   two short shelf lines, and the two rules are otherwise the same specificity
+   in separately-loaded chunks, which would leave the winner up to load order.
+   170 is what the 15-character name the cell now renders actually needs,
+   beside the 32px tile.
+   `min-width: 0` on the text column is what lets its children shrink at all:
+   a flex item defaults to min-content, which would have pushed the width back
+   open from the inside. */
+.rks-mdl .rks-table .whm-namecell { width: 170px; }
+.rks-table .whm-namecell__t { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 /* An inactive shelf dims, but not its controls — switching it back on is the
    one thing left to do with it. */
 .rks-table tr.is-off td:last-child { opacity: 1; }

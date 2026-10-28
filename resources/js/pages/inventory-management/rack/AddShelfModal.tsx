@@ -235,6 +235,16 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
         role="dialog" aria-modal="true" aria-labelledby="rks-add-title"
         tabIndex={-1} ref={cardRef}
       >
+        {/* CS-942 #16: the save showed no loader and left the form live.
+            One sheet over the dialog blocks and reports at once. */}
+        {saving && (
+          <div className="whm-saving" role="status" aria-live="polite">
+            <span className="whm-saving__box">
+              <span className="whm-saving__spin" aria-hidden />
+              Saving the shelf…
+            </span>
+          </div>
+        )}
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
             <div className="spi-mdl-head-ico"><IcoShelf size={22} /></div>
@@ -248,10 +258,14 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
               </div>
             </div>
           </div>
-          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><IcoX /></button>
+          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"
+            disabled={saving} title={saving ? 'Saving — please wait' : undefined}><IcoX /></button>
         </div>
 
-        <div className="spi-mdl-body whm-addbody">
+        {/* inert as well as the sheet: the Shelf Type menu portals to
+            document.body, so it opens outside the dialog and outside
+            anything drawn inside it. */}
+        <div className="spi-mdl-body whm-addbody" inert={saving}>
 
           <Card icon={<IcoRack />} title="Rack Details">
             <AutoField label="Rack ID" value={r.id} mono />
@@ -431,7 +445,8 @@ export default function AddShelfModal({ rack: r, freeCm: rackFreeCm, nextLevel, 
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
-              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Shelf' : 'Save Shelf'}
+              {saving ? <span className="whm-btnspin" aria-hidden /> : <IcoCheck />}
+              {saving ? 'Saving…' : editing ? 'Update Shelf' : 'Save Shelf'}
             </button>
           </div>
         </div>
@@ -458,7 +473,7 @@ function Card({ icon, title, five, children }: {
 function AutoField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <Field label={label}>
-      <div className={`whm-auto znm-auto is-filled${mono ? '' : ' rks-autotxt'}`}>
+      <div className={`whm-auto znm-auto is-filled${mono ? '' : ' whm-auto--text'}`}>
         <input className="spi-dt-inp" value={value} readOnly tabIndex={-1} />
         <span className="whm-auto__tag">AUTO</span>
       </div>

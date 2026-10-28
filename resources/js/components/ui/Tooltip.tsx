@@ -400,6 +400,29 @@ export default function Tooltip({
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
   };
 
+  /* A tooltip whose trigger gets covered can never be closed by the trigger:
+     no `mouseleave` is coming once something is drawn on top of it. Clicking
+     closes it, but opening a modal also locks the page scroll, and losing the
+     scrollbar shifts the layout under a stationary cursor — the browser then
+     fires a fresh `mouseover` on the trigger and the tooltip reopens behind
+     the dialog, where it sits until the page is reloaded.
+
+     So while one is open, any pointer movement that is not over the trigger
+     or the tip itself closes it. That is true of every ghost tooltip and of
+     nothing a reader is still using. */
+  useEffect(() => {
+    if (!open) return;
+    const elsewhere = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (triggerRef.current?.contains(t)) return;
+      if (tipRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mouseover', elsewhere, true);
+    return () => document.removeEventListener('mouseover', elsewhere, true);
+  }, [open]);
+
   // Compose hover/focus handlers + ref onto the child via React's
   // cloneElement (the spread-into-object approach below this used to
   // be silently broken — the resulting plain object isn't a real React

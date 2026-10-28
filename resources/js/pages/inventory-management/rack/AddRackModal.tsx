@@ -15,9 +15,25 @@ import { uniqueLabels } from '../zone/zone-data';
 
 const LABEL = (id: string, name: string) => `${id} · ${name}`;
 
-/* How much of a warehouse name an option row can hold beside its badge. */
-const WH_NAME_MAX = 20;
+/* How much of a name an option row can hold beside its code chip. */
+const NAME_MAX = 20;
 const truncate = (s: string, max: number) => (s.length > max ? `${s.slice(0, max).trimEnd()}…` : s);
+
+/* "WH-001 · Mumbai Central Warehouse" split into the chip and the name the
+   list draws. The label itself stays the option's value, so the stored draft,
+   the tooltip and the search over it are untouched. The name is whatever
+   follows the id, since the de-duplicating pass may have appended a city. */
+function split<T extends { id: string }>(rows: T[], labelOf: (row: T) => string) {
+  const codes: Record<string, string> = {};
+  const names: Record<string, string> = {};
+  for (const row of rows) {
+    const label = labelOf(row);
+    const head = `${row.id} · `;
+    codes[label] = row.id;
+    names[label] = truncate(label.startsWith(head) ? label.slice(head.length) : label, NAME_MAX);
+  }
+  return { codes, names };
+}
 
 const inGrouping = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 });
 const inWhole = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
@@ -115,12 +131,18 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
   );
   /* The same cut Add Zone makes: a long warehouse name is shortened for the
      option row, while the closed field and the tooltip keep it whole. */
-  const whShortLabels = useMemo(() => {
-    const m: Record<string, string> = {};
+  const whList = useMemo(() => split(activeWarehouses, w => whLabels.get(w.apiId) ?? LABEL(w.id, w.name)),
+    [activeWarehouses, whLabels]);
+  /* CS-941 #2. It varies here, unlike the zone form: a rack may sit in a
+     third-party warehouse, so this list is filtered on `active` alone and
+     both kinds appear in it. */
+  const whBadges = useMemo(() => {
+    const m: Record<string, { text: string; tone: 'green' | 'gray' }> = {};
     for (const w of activeWarehouses) {
       const label = whLabels.get(w.apiId) ?? LABEL(w.id, w.name);
-      const short = truncate(w.name, WH_NAME_MAX);
-      if (short !== w.name) m[label] = label.replace(w.name, short);
+      m[label] = w.type === 'own'
+        ? { text: 'Own Warehouse', tone: 'green' }
+        : { text: 'Third Party (3PL)', tone: 'gray' };
     }
     return m;
   }, [activeWarehouses, whLabels]);
@@ -162,6 +184,10 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
       : []),
     [picked, lookups, rack],
   );
+  /* The zone list is the same shape, and sits in the same card: chipping one
+     and not the other would read as a list that half-loaded. */
+  const zoneList = useMemo(() => split(zoneChoices, z => (z.apiId && zoneLabels.get(z.apiId)) || LABEL(z.id, z.name)),
+    [zoneChoices, zoneLabels]);
   const zone = useMemo(
     () => (d.zone ? zoneChoices.find(z => z.apiId && zoneLabels.get(z.apiId) === d.zone) ?? null : null),
     [d.zone, zoneChoices, zoneLabels],
@@ -262,6 +288,16 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
         role="dialog" aria-modal="true" aria-labelledby="rkm-add-title"
         tabIndex={-1} ref={cardRef}
       >
+        {/* CS-941 #8 (loader) and #3 (form stays clickable) are one thing:
+            a sheet over the dialog reports and blocks at once. */}
+        {saving && (
+          <div className="whm-saving" role="status" aria-live="polite">
+            <span className="whm-saving__box">
+              <span className="whm-saving__spin" aria-hidden />
+              Saving the rack…
+            </span>
+          </div>
+        )}
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
             <div className="spi-mdl-head-ico"><IcoRack size={22} /></div>
@@ -274,18 +310,27 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
               </div>
             </div>
           </div>
-          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"><IcoX /></button>
+          <button type="button" className="spi-mdl-x" onClick={onClose} aria-label="Close"
+            disabled={saving} title={saving ? 'Saving — please wait' : undefined}><IcoX /></button>
         </div>
 
-        <div className="spi-mdl-body whm-addbody">
+        {/* inert as well as the sheet: the Warehouse and Zone menus portal
+            to document.body, outside anything drawn in the dialog. */}
+        <div className="spi-mdl-body whm-addbody" inert={saving}>
 
           <Card icon={<IcoWarehouse />} title="Warehouse Details">
             <Field label="Warehouse" req error={errors.wh}>
               <EditSelect
                 value={d.wh}
                 options={activeWarehouses.map(w => whLabels.get(w.apiId) ?? LABEL(w.id, w.name))}
-                shortLabels={whShortLabels}
+                codes={whList.codes}
+                shortLabels={whList.names}
+                searchPlaceholder="Search warehouse ID or name"
                 placeholder="Select warehouse"
+                badges={whBadges}
+                /* List only: the Warehouse Type box beside the field already
+                   states the type of whichever one is selected. */
+                listBadgesOnly
                 invalid={!!errors.wh}
                 onChange={v => { set({ wh: v, zone: '', cold: false, haz: false }); clear('wh'); clear('zone'); }}
               />
@@ -309,6 +354,9 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
               <EditSelect
                 value={d.zone}
                 options={zoneChoices.map(z => (z.apiId && zoneLabels.get(z.apiId)) || LABEL(z.id, z.name))}
+                codes={zoneList.codes}
+                shortLabels={zoneList.names}
+                searchPlaceholder="Search zone ID or name"
                 placeholder={picked ? 'Select zone' : 'Select warehouse first'}
                 invalid={!!errors.zone}
                 onChange={v => { set({ zone: v, cold: false, haz: false }); clear('zone'); }}
@@ -390,7 +438,7 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
                   </Field>
                 ))}
                 <Field label={<>Area <span className="rkm-lbltag">Length × Width</span></>}>
-                  <div className={`whm-auto${area ? ' is-filled' : ''}`}>
+                  <div className={`whm-auto whm-auto--text${area ? ' is-filled' : ''}`}>
                     <input
                       className="spi-dt-inp"
                       value={area ? `${inGrouping.format(area.raw)} ${unit}²` : ''}
@@ -409,7 +457,8 @@ export default function AddRackModal({ rack, lookups, onClose, onSaved }: {
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             <button type="button" className="spi-mdl-confirm" onClick={() => void save()} disabled={saving}>
-              <IcoCheck /> {saving ? 'Saving…' : editing ? 'Update Rack' : 'Save Rack'}
+              {saving ? <span className="whm-btnspin" aria-hidden /> : <IcoCheck />}
+              {saving ? 'Saving…' : editing ? 'Update Rack' : 'Save Rack'}
             </button>
           </div>
         </div>
@@ -434,7 +483,7 @@ function Card({ icon, title, children }: { icon: ReactNode; title: string; child
 function AutoField({ label, value, from }: { label: string; value: string; from: 'warehouse' | 'zone' }) {
   return (
     <Field label={label}>
-      <div className={`whm-auto znm-auto${value ? ' is-filled' : ''}`}>
+      <div className={`whm-auto znm-auto whm-auto--text${value ? ' is-filled' : ''}`}>
         <input className="spi-dt-inp" value={value} placeholder={`Fetched from ${from}`} readOnly tabIndex={-1} />
         <span className="whm-auto__tag">AUTO</span>
       </div>

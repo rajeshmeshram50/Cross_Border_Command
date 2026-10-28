@@ -5,7 +5,7 @@ import { EditSelect, Field, WizSpinner } from '../../order/create-po/form-fields
 import {
   SevIcon, gstState, isRiskMandatory, monthsAgo, riskItems, vaultTargetOf, type Severity,
 } from '../../order/create-po/supplier-checks';
-import { poLookupApi } from '../../order/api/po-api';
+import { poLookupApi, type SupplierOption } from '../../order/api/po-api';
 import { legalFromVault } from '../../order/create-po/supplier-checks';
 import { draftFromScrutiny, draftFromSupplier, newestScrutiny } from '../invoice-draft';
 import { spiApi } from '../spi-api';
@@ -50,8 +50,12 @@ const GUIDELINES = [
   },
 ];
 
-export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false }: {
+export default function Step1SupplierDetails({ draft, set, error = null, readOnly = false, direct = false }: {
   draft: InvoiceDraft; set: SetDraft; error?: string | null; readOnly?: boolean;
+  /* A Direct SPI stands on its own: there is no purchase order to describe,
+     so the whole Purchase Order section goes rather than standing there with
+     nothing in its fields. */
+  direct?: boolean;
 }) {
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
@@ -162,24 +166,37 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
   const editVendorId = draft.vendorId ?? vendorId;
 
   const [refreshing, setRefreshing] = useState(false);
+
+  /* Everything this form knows about a supplier, read in one go: the master
+     record, its newest GST scrutiny and its Evidence Vault. Picking one on a
+     Direct SPI and re-reading one after an edit want exactly the same work,
+     so they share it — the vendor id is the only thing the caller supplies,
+     and it goes into the draft because the save is keyed on it. */
+  const loadSupplier = async (id: number) => {
+    const [fresh, scrutinyRows] = await Promise.all([
+      poLookupApi.supplier(id),
+      spiApi.vendorScrutiny(id).catch(() => null),
+    ]);
+    const gst = newestScrutiny(scrutinyRows);
+    set({
+      vendorId: id,
+      ...draftFromSupplier(fresh),
+      ...(gst ? draftFromScrutiny(gst) : { scrutinyDate, filingDate }),
+    });
+    setVendorId(id);
+    setVault(vaultTargetOf(fresh));
+    poLookupApi.supplierVault(id)
+      .then(v => set({ legal: legalFromVault(v) }))
+      .catch(() => {});
+    return fresh;
+  };
+
   const refreshSupplier = async () => {
     const id = editVendorId;
     if (id === null) return;
     setRefreshing(true);
     try {
-      const [fresh, scrutinyRows] = await Promise.all([
-        poLookupApi.supplier(id),
-        spiApi.vendorScrutiny(id).catch(() => null),
-      ]);
-      const gst = newestScrutiny(scrutinyRows);
-      set({
-        ...draftFromSupplier(fresh),
-        ...(gst ? draftFromScrutiny(gst) : { scrutinyDate, filingDate }),
-      });
-      setVault(vaultTargetOf(fresh));
-      poLookupApi.supplierVault(id)
-        .then(v => set({ legal: legalFromVault(v) }))
-        .catch(() => {});
+      const fresh = await loadSupplier(id);
       if ((fresh.category ?? '').toLowerCase().includes('blacklist')) {
         toast.warning('Supplier is now blacklisted', `${fresh.name} is blacklisted — review this invoice before saving it.`);
       } else {
@@ -189,6 +206,35 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
       toast.error('Could not refresh the supplier', 'The changes were saved, but this form could not reload them — reopen it to see them.');
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  /* A Direct SPI names its supplier here and nowhere else — there is no
+     purchase order to inherit one from — so the field is a live list off the
+     master rather than the single read-only value a With-PO invoice shows. */
+  const [supplierOpts, setSupplierOpts] = useState<SupplierOption[]>([]);
+  const [picking, setPicking] = useState(false);
+  useEffect(() => {
+    if (!direct || hasSupplier) return;
+    let live = true;
+    poLookupApi.suppliers()
+      .then(rows => { if (live) setSupplierOpts(rows); })
+      .catch(() => { if (live) setSupplierOpts([]); });
+    return () => { live = false; };
+  }, [direct, hasSupplier]);
+
+  const pickSupplier = async (id: number) => {
+    if (picking) return;
+    setPicking(true);
+    try {
+      const fresh = await loadSupplier(id);
+      if ((fresh.category ?? '').toLowerCase().includes('blacklist')) {
+        toast.warning('Supplier is blacklisted', `${fresh.name} is blacklisted — review this invoice before saving it.`);
+      }
+    } catch {
+      toast.error('Could not load the supplier', 'Please pick it again.');
+    } finally {
+      setPicking(false);
     }
   };
 
@@ -246,6 +292,7 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
         </div>
       )}
 
+      {!direct && (
       <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head" onClick={() => setPoOpen(o => !o)}>
           <div className="spi-dt-sec-ico"><IcoFile /></div>
@@ -344,6 +391,8 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
         </div>
       </div>
 
+      )}
+
       <div className={`spi-dt-sec ${supOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head" onClick={() => setSupOpen(o => !o)}>
           <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoUser /></div>
@@ -353,7 +402,9 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
               <span className="spi-dt-sec-sep" />
               <span className="spi-dt-sec-title">Basic Supplier Details</span>
             </div>
-            <div className="spi-dt-sec-sub">Primary information about the supplier this PO is issued to.</div>
+            <div className="spi-dt-sec-sub">
+              Primary information about the supplier this {direct ? 'invoice' : 'PO'} is issued to.
+            </div>
           </div>
           <div className="spi-dt-sec-toggle"><IcoChevron /></div>
         </div>
@@ -382,10 +433,16 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
                       <EditSelect readOnly value={supplier} options={[]} onChange={() => {}} />
                     ) : (
                       <MasterSelect
-                        value={supplier}
-                        options={[{ value: supplier, label: supplier }]}
-                        placeholder="— Select Supplier —"
-                        onChange={v => set({ supplier: v })}
+                        value={draft.vendorId != null ? String(draft.vendorId) : ''}
+                        /* The code is the chip, the name the label — the same
+                           row the warehouse and zone pickers draw. */
+                        options={supplierOpts.map(o => ({
+                          value: String(o.id), label: o.name, code: o.code, fullLabel: `${o.code} · ${o.name}`,
+                        }))}
+                        placeholder={picking ? 'Loading supplier…' : '— Select Supplier —'}
+                        searchPlaceholder="Search supplier code or name"
+                        disabled={picking || readOnly}
+                        onChange={v => { if (v) void pickSupplier(Number(v)); }}
                       />
                     )}
                     {/* The supplier is fetched before the form can open, and on
