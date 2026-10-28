@@ -250,7 +250,7 @@ const SCOPED_CSS = `
 .rmk-head-title { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
 .rmk-head-sub   { font-size: 12px; font-weight: 400; color: rgba(255,255,255,.85); margin-top: 2px; }
 .rmk-close {
-  width: 30px; height: 30px; border-radius: 9px;
+  width: 40px; height: 40px; border-radius: 10px;
   border: 1px solid rgba(255,255,255,.25);
   background: rgba(255,255,255,.12);
   color: #fff; cursor: pointer;
@@ -371,9 +371,9 @@ const SCOPED_CSS = `
 .rmk-foot-right { display: flex; gap: 8px; margin-left: auto; }
 .rmk-btn-ghost, .rmk-btn-primary, .rmk-btn-danger {
   display: inline-flex; align-items: center; gap: 8px;
-  height: 38px; padding: 0 18px;
+  box-sizing: border-box; height: 40px; padding: 0 18px;
   border-radius: 10px;
-  font-family: inherit; font-size: 13px; font-weight: 600;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
   cursor: pointer;
   transition: background .15s, border-color .15s, transform .12s, box-shadow .15s, color .15s;
 }
@@ -400,7 +400,7 @@ const SCOPED_CSS = `
 /* Icon-only variant — collapses padding so the button reads as a
    square trash chip rather than a wide pill with empty text space. */
 .rmk-btn-danger-icon {
-  width: 38px; padding: 0;
+  width: 40px; padding: 0;
   justify-content: center; gap: 0;
 }
 

@@ -858,10 +858,17 @@
 .spi-dt-field .arf-sk-l { margin:3px 0; }
 
 /* ── Responsive ────────────────────────────────────────────────────────── */
-/* Header: pills and buttons share one row only while there is room. */
-@media (max-width: 1500px) {
-  .arf-form .spi-dt-head { flex-wrap:wrap; row-gap:8px; padding-top:8px; padding-bottom:8px; }
-  .arf-form .spi-dt-pills { flex-wrap:wrap; }
+/* Header: title, five reference pills and the two buttons share one row only
+   where they all fit (~1800px). Below that the row used to squeeze and clip
+   (nowrap) or wrap in source order, leaving the buttons riding on the pills
+   row (QA #1). Now it breaks on purpose: title + Evidence Vault / Close on the
+   first row, the pills on a full-width second row. */
+@media (max-width: 1800px) {
+  .arf-form .spi-dt-head { flex-wrap:wrap; row-gap:8px; padding-top:9px; padding-bottom:9px; }
+  .arf-form .spi-dt-head-l { order:1; flex:1 1 auto; }
+  .arf-form .spi-dt-head-r { order:2; margin-left:auto; }
+  .arf-form .spi-dt-head-r .spi-dt-divider { display:none; }
+  .arf-form .spi-dt-pills { order:3; flex:1 1 100%; margin-left:0; flex-wrap:wrap; row-gap:8px; }
 }
 /* spi-dt-grid4 drops to 2 columns at 1100px; spans follow it down. */
 @media (max-width: 1100px) {

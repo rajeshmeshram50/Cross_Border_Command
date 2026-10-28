@@ -2945,6 +2945,13 @@ const LASM_CSS = `
   background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
 .lasm-btn-remind:hover:not(:disabled) { background: #fde68a; border-color: #f59e0b; }
 .lasm-btn-remind:disabled { opacity: .55; cursor: not-allowed; }
+/* Every Actions-column button is one size: 40px tall, 11.5px text (text
+   buttons) and 40px squares (icon buttons), 10px corners. */
+.lasm-btn-send, .lasm-td-send, .lasm-btn-remind {
+  box-sizing: border-box; height: 40px; padding: 0 16px; border-radius: 10px;
+  font-size: 11.5px; font-weight: 700; justify-content: center;
+}
+.lasm-btn-eye, .lasm-btn-icon, .lasm-btn-cert { box-sizing: border-box; width: 40px; height: 40px; border-radius: 10px; }
 /* Reminder-count badge embedded in the Remind button. Pill-shaped so
    it sits visually flush with the icon + label inside the button. */
 .lasm-remind-count { display: inline-flex; align-items: center; justify-content: center;

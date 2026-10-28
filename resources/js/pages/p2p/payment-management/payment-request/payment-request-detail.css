@@ -41,11 +41,6 @@
   box-shadow: 0 2px 0 rgba(255, 255, 255, .85) inset, 0 4px 16px rgba(6, 182, 212, .15);
 }
 
-.prd-shell--empty {
-  align-items: center;
-  justify-content: center;
-}
-
 .prd-head {
   flex-shrink: 0;
   background: linear-gradient(150deg, #062d3d 0%, #0a4d66 45%, #0e7490 100%);
@@ -791,36 +786,6 @@
 
 .prd-sup .spi-dt-card.is-collapsed .spi-dt-card-head {
   border-bottom-color: transparent;
-}
-
-.prd-sup .cpf-gst__btn {
-  flex-shrink: 0;
-  align-self: center;
-  padding: 8px 14px;
-  border: none;
-  border-radius: 9px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 800;
-  color: #fff;
-  background: linear-gradient(135deg, #0e7490, #0891b2 55%, #06b6d4);
-  box-shadow: 0 3px 10px rgba(8, 145, 178, .3);
-  transition: transform .15s, box-shadow .15s;
-}
-
-.prd-sup .cpf-gst__btn:hover {
-  transform: translateY(-1px);
-}
-
-.prd-sup .cpf-gst__btn--warn {
-  background: linear-gradient(135deg, #b45309, #d97706 55%, #f59e0b);
-  box-shadow: 0 3px 10px rgba(217, 119, 6, .3);
-}
-
-.prd-sup .cpf-gst__btn--stop {
-  background: linear-gradient(135deg, #b91c1c, #dc2626 55%, #ef4444);
-  box-shadow: 0 3px 10px rgba(220, 38, 38, .3);
 }
 
 .prd-sup .spi-dt-inp[readonly],

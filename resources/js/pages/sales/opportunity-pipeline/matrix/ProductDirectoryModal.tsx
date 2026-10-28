@@ -1088,9 +1088,10 @@ const SCOPED_CSS = `
 .pdm-head-actions { display: flex; gap: 8px; align-items: center; }
 .pdm-map-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 9px; border: none;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 10px; border: none;
   background: rgba(255,255,255,.18); color: #fff;
-  font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
   transition: background .15s;
 }
 .pdm-map-btn:hover:not(:disabled) { background: rgba(255,255,255,.30); }
@@ -1098,8 +1099,8 @@ const SCOPED_CSS = `
 .pdm-map-btn-ghost { background: transparent; border: 1.5px solid rgba(255,255,255,.32); }
 .pdm-map-btn-ghost:hover { background: rgba(255,255,255,.12); }
 .pdm-close {
-  width: 30px; height: 30px; border: none; cursor: pointer;
-  background: rgba(255,255,255,.18); color: #fff; border-radius: 9px;
+  width: 40px; height: 40px; border: none; cursor: pointer;
+  background: rgba(255,255,255,.18); color: #fff; border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
 }
 .pdm-close:hover { background: rgba(255,255,255,.32); }

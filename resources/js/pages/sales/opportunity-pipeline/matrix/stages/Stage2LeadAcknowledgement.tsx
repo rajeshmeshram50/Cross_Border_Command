@@ -491,6 +491,7 @@ function BucketIcon({ bucket }: { bucket: Bucket }) {
 const STAGE2_CSS = `
 /* ── Status card ── */
 .smd-st2-status-block {
+  position: relative;
   background: #fff;
   border: 1.5px solid #ddd6fe;
   border-top: 3px solid #7c3aed;
@@ -499,9 +500,13 @@ const STAGE2_CSS = `
   margin-bottom: 12px;
 }
 .smd-st2-status-head {
+  /* Add New Reason is pinned to the card corner (below), so this row is only
+     as tall as the title and the pills sit right under it; padding-right
+     keeps the title clear of the button. */
   display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-bottom: 9px; flex-wrap: wrap;
+  gap: 8px; margin-bottom: 9px; flex-wrap: wrap; padding-right: 170px;
 }
+.smd-st2-status-head .smd-st2-add-reason { position: absolute; top: 13px; right: 18px; }
 .smd-st2-check {
   width: 17px; height: 17px; border-radius: 5px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
@@ -528,12 +533,14 @@ const STAGE2_CSS = `
 
 .smd-st2-pills { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .smd-st2-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 14px; border-radius: 20px;
+  /* 40px, the height of every other button on the lead page. */
+  display: inline-flex; align-items: center; gap: 6px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 18px; border-radius: 20px;
   border: 1.5px solid;
   background: #fff;
   font-family: inherit;
-  font-size: 10.5px; font-weight: 600;
+  font-size: 11.5px; font-weight: 600;
   cursor: pointer;
   transition: all .18s;
   white-space: nowrap;
@@ -797,22 +804,22 @@ const STAGE2_CSS = `
 .st2-pick-foot.smd-st2-pill-d .st2-pick-btn-primary { background: linear-gradient(135deg, #f43f5e, #e11d48); box-shadow: 0 3px 10px rgba(244,63,94,.35); }
 
 /* ── Add New Reason ── */
+/* Add New Reason = the stage footer's Save & Next (.smd-stg-btn-primary):
+   40px, 11.5 / 700, violet, 10px corners. */
 .smd-st2-add-reason {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 11px; border-radius: 20px; cursor: pointer;
-  font-family: inherit; font-size: 9.5px; font-weight: 700;
-  /* The violet fill of the status badge that used to sit beside it. */
-  color: #fff; background: linear-gradient(115deg, #6d28d9, #7c3aed, #8b5cf6);
-  border: 1.5px solid transparent; box-shadow: 0 2px 8px rgba(124,58,237,.35);
+  display: inline-flex; align-items: center; gap: 6px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 18px; border-radius: 10px; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
+  color: #fff; background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  border: none; box-shadow: 0 3px 10px rgba(124,58,237,.35);
   transition: all .18s; white-space: nowrap;
 }
 .smd-st2-add-reason:hover {
-  background: linear-gradient(115deg, #5b21b6, #6d28d9, #7c3aed); color: #fff;
-  transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.45);
+  background: linear-gradient(135deg, #6d28d9, #4c1d95); color: #fff;
+  transform: translateY(-1px); box-shadow: 0 5px 14px rgba(124,58,237,.48);
 }
 /* ── Dark mode ─────────────────────────────────────────────── */
-[data-bs-theme="dark"] .smd-st2-add-reason { background: linear-gradient(115deg, #6d28d9, #7c3aed, #8b5cf6); border-color: transparent; color: #fff; }
-[data-bs-theme="dark"] .smd-st2-add-reason:hover { background: linear-gradient(115deg, #5b21b6, #6d28d9, #7c3aed); color: #fff; }
 [data-bs-theme="dark"] .smd-st2-status-block {
   background: #14102a;
   border-color: rgba(167,139,250,.30);
@@ -905,7 +912,8 @@ const STAGE2_CSS = `
 /* ── Responsive ────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .st2-pick-cols { grid-template-columns: 1fr; }
-  .smd-st2-status-head { flex-direction: column; align-items: flex-start; }
+  .smd-st2-status-head { flex-direction: column; align-items: flex-start; padding-right: 0; }
+  .smd-st2-status-head .smd-st2-add-reason { position: static; }
   .smd-st2-pills { flex-direction: column; align-items: stretch; }
   .smd-st2-pill { text-align: center; }
 }
