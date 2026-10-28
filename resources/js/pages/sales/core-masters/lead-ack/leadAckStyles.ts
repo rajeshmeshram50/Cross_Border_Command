@@ -390,7 +390,7 @@ export const LEAD_ACK_CSS = `
 .lam-modal-close {
   position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
   z-index: 2;
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 40px; height: 40px; border-radius: 10px;
   background: rgba(255,255,255,0.12); color: #fff;
   border: 1px solid rgba(255,255,255,0.25);
   cursor: pointer;
@@ -559,9 +559,10 @@ export const LEAD_ACK_CSS = `
 .lam-modal-footer-right { justify-content: flex-end; }
 .lam-footer-actions { display: flex; gap: 8px; }
 .lam-btn {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 18px; border-radius: 10px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 18px; border-radius: 10px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700;
   cursor: pointer;
   border: 1.5px solid transparent;
   transition: all .18s ease;

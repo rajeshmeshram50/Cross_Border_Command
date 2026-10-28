@@ -4747,15 +4747,17 @@ const SCOPED_CSS = `
 .qpi-modal-pill {
   background: rgba(255,255,255,.08);
   border: 1.5px solid rgba(255,255,255,.2);
-  border-radius: 7px;
-  padding: 3px 10px;
-  display: flex; flex-direction: column;
+  /* Same height and corner as the ✕ beside it. */
+  box-sizing: border-box; height: 40px;
+  border-radius: 10px;
+  padding: 0 12px;
+  display: flex; flex-direction: column; justify-content: center;
 }
 .qpi-modal-pill-label { font-size: 8.5px; opacity: .75; letter-spacing: .05em; text-transform: uppercase; font-weight: 700; line-height: 1.2; }
 .qpi-modal-pill-value { font-size: 11px; font-weight: 800; font-family: 'JetBrains Mono', ui-monospace, monospace; line-height: 1.2; }
 .qpi-modal-pill-purple { background: rgba(255,255,255,.1); }
 .qpi-modal-close {
-  width: 28px; height: 28px; border-radius: 7px;
+  width: 40px; height: 40px; border-radius: 10px;
   background: rgba(255,255,255,.1); border: 1.5px solid rgba(255,255,255,.2);
   color: #fff; display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background .15s;
@@ -5023,8 +5025,9 @@ const SCOPED_CSS = `
 }
 .qpi-prod-add {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 6px 10px; border-radius: 7px; border: none;
-  color: #fff; font-family: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 10px; border: none;
+  color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
   box-shadow: 0 3px 10px rgba(124,58,237,.35);
   white-space: nowrap;
 }
@@ -5092,15 +5095,17 @@ const SCOPED_CSS = `
 }
 .qpi-modal-foot-actions { display: flex; align-items: center; gap: 8px; }
 .qpi-btn-cancel {
-  padding: 6px 16px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 40px;
+  padding: 0 18px; border-radius: 10px;
   border: 1px solid #e2e8f0; background: #fff;
-  color: #475569; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  color: #475569; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
 }
 
 .qpi-btn-back {
-  padding: 6px 14px; border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 40px;
+  padding: 0 18px; border-radius: 10px;
   border: 1px solid #c4b5fd; background: #fff;
-  color: #6d28d9; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+  color: #6d28d9; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
   transition: background .18s ease, border-color .18s ease, color .18s ease,
               transform .15s ease, box-shadow .18s ease;
 }
@@ -5118,10 +5123,11 @@ const SCOPED_CSS = `
 }
 
 .qpi-btn-next, .qpi-btn-submit {
-  padding: 6px 18px; border-radius: 7px;
+  box-sizing: border-box; height: 40px;
+  padding: 0 18px; border-radius: 10px;
   border: none; color: #fff;
-  font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   transition: transform .15s ease, box-shadow .18s ease, filter .18s ease;
 }
 .qpi-btn-next-teal,   .qpi-btn-submit-teal   { background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 4px 12px rgba(14,116,144,.4); }
@@ -5444,12 +5450,12 @@ const SCOPED_CSS = `
   .qpi-modal-backdrop { padding: 8px; }
   .qpi-modal { max-height: calc(100vh - 16px); border-radius: 12px; }
   .qpi-modal-head { padding: 12px 14px; gap: 10px; }
-  .qpi-modal-pill { padding: 4px 10px; }
+  .qpi-modal-pill { padding: 0 10px; }
   .qpi-modal-pill-value { font-size: 11px; }
   .qpi-modal-body { padding: 12px 14px; }
   .qpi-modal-foot { padding: 10px 14px; }
   .qpi-btn-cancel, .qpi-btn-back, .qpi-btn-next, .qpi-btn-submit {
-    padding: 9px 14px; font-size: 12px;
+    padding: 0 14px; font-size: 11.5px;
   }
 
   .qpi-moremenu { min-width: 180px; }
@@ -5457,7 +5463,7 @@ const SCOPED_CSS = `
 
 @media (max-width: 400px) {
   .qpi-root { font-size: 12px; }
-  .qpi-modal-pill { padding: 3px 8px; }
+  .qpi-modal-pill { padding: 0 8px; }
   .qpi-modal-pill-label { font-size: 9px; }
   .qpi-modal-pill-value { font-size: 10.5px; }
   .qpi-act { width: 28px; height: 28px; }

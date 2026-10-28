@@ -259,7 +259,7 @@ const SCOPED_CSS = `
 .cv2pi-title { font-size: 16px; font-weight: 800; line-height: 1.2; }
 .cv2pi-sub { font-size: 12px; opacity: 0.9; margin-top: 2px; }
 .cv2pi-close {
-  width: 30px; height: 30px; border-radius: 8px;
+  width: 40px; height: 40px; border-radius: 10px;
   border: 0; background: rgba(255,255,255,0.16); color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 18px; cursor: pointer; flex-shrink: 0;
@@ -312,7 +312,7 @@ const SCOPED_CSS = `
   border: 1px solid var(--vz-border-color, #d1d5db);
   background: var(--vz-card-bg, #fff);
   color: var(--vz-body-color, #374151);
-  font-size: 13px; font-weight: 700; cursor: pointer;
+  font-size: 11.5px; font-weight: 700; cursor: pointer;
   transition: background .15s ease;
 }
 .cv2pi-cancel:hover:not(:disabled) { background: var(--vz-light, #f3f4f6); }
@@ -322,7 +322,7 @@ const SCOPED_CSS = `
   height: 40px; padding: 0 20px;
   border-radius: 10px; border: 0;
   background: linear-gradient(135deg, #0d9488, #0f766e);
-  color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
+  color: #fff; font-size: 11.5px; font-weight: 700; cursor: pointer;
   box-shadow: 0 6px 16px rgba(13,148,136,0.35);
   transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
 }

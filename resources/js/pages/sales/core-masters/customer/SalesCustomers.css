@@ -1089,11 +1089,14 @@
 .smc-confirm-actions {
   display: flex; gap: 10px; justify-content: center;
 }
+/* The app's button size: 40px tall, 11.5 / 700 (as on My Workplace). */
 .smc-confirm-cancel,
 .smc-confirm-ok {
   flex: 1 1 0;
-  padding: 10px 16px; border-radius: 10px;
-  font-weight: 700; font-size: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; height: 40px;
+  padding: 0 16px; border-radius: 10px;
+  font-weight: 700; font-size: 11.5px;
   cursor: pointer; transition: all .15s ease;
   border: 1px solid transparent;
 }
