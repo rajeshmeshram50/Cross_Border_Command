@@ -40,12 +40,12 @@ export default function ProfileTab() {
           {/* Personal Information — full-width row of 7 identity fields */}
           <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-indigo">
   <div
-    className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-indigo"
+    className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-indigo"
   >
     <span className="ep-section-icon ep-icon-indigo">
       <i className="ri-user-line" />
     </span>
-    <h6 className="mb-0 fw-bold ep-fs-13">Personal Information</h6>
+    <h6 className="mb-0 fw-bold ep-sec-head">Personal Information</h6>
   </div>
   <div className="px-3 py-3">
     {/* Row 1 — three action tiles side by side: Profile Photo · Login
@@ -186,12 +186,12 @@ export default function ProfileTab() {
           {/* Contact Information — 4 fields */}
           <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-blue">
             <div
-              className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-blue"
+              className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-blue"
             >
               <span className="ep-section-icon ep-icon-blue">
                 <i className="ri-phone-line" />
               </span>
-              <h6 className="mb-0 fw-bold ep-fs-13">Contact Information</h6>
+              <h6 className="mb-0 fw-bold ep-sec-head">Contact Information</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -216,12 +216,12 @@ export default function ProfileTab() {
               white so the field rows stay readable. */}
           <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-emerald">
             <div
-              className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-emerald"
+              className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-emerald"
             >
               <span className="ep-section-icon ep-icon-emerald">
                 <i className="ri-map-pin-line" />
               </span>
-              <h6 className="mb-0 fw-bold ep-fs-13">Address Details</h6>
+              <h6 className="mb-0 fw-bold ep-sec-head">Address Details</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -258,12 +258,12 @@ export default function ProfileTab() {
             <Col xl={4}>
               <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-amber">
                 <div
-                  className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-amber"
+                  className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-amber"
                 >
                   <span className="ep-section-icon ep-icon-amber">
                     <i className="ri-briefcase-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold ep-fs-13">Work Experience</h6>
+                  <h6 className="mb-0 fw-bold ep-sec-head">Work Experience</h6>
                 </div>
                 <div className="px-3 py-3 flex-grow-1">
                   {/* REAL work experience (was hardcoded sample data). Sourced
@@ -467,13 +467,13 @@ export default function ProfileTab() {
             <Col xl={4}>
               <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-indigo">
                 <div
-                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-indigo"
+                  className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 ep-hd-indigo"
                 >
                   <div className="d-flex align-items-center gap-3">
                     <span className="ep-section-icon ep-icon-indigo">
                       <i className="ri-shield-check-line" />
                     </span>
-                    <h6 className="mb-0 fw-bold ep-fs-13">KYC Documents</h6>
+                    <h6 className="mb-0 fw-bold ep-sec-head">KYC Documents</h6>
                   </div>
                   <span className="badge rounded-pill fw-semibold px-2 py-1 pft-kyc-badge">3 / 3</span>
                 </div>

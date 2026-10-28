@@ -25,7 +25,7 @@ export default function HrRegularizationRequests() {
   const navigate = useNavigate();
 
   return (
-    <div className="rec-page att-page">
+    <div className="rec-page att-page reg-page">
       <Row>
         <Col xs={12}>
           <div className="frm-cstrip hr-cstrip hr-cstrip--teal mb-3">

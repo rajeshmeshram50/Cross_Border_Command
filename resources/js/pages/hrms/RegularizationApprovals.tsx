@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Card, CardBody, Input, Modal, ModalBody } from 'reactstrap';
+import { Modal, ModalBody } from 'reactstrap';
 import Swal from 'sweetalert2';
 import { useToast } from '../../contexts/ToastContext';
 import { Shimmer } from '../../components/ui/Shimmer';
 import BusyOverlay from '../../components/ui/BusyOverlay';
-import WorklistPager from '../../components/ui/WorklistPager';
-import SearchClear from '../../components/ui/SearchClear';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import { regularizationApi, type ApiRegularization, type ApiRegularizationApprover, type RegularizationStatus } from './regularizationApi';
 import { to12h, punchPair12h } from '../../utils/timeFormat';
 
@@ -250,7 +249,6 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
   const [busy, setBusy]       = useState<{ id: number; action: 'approve' | 'reject' } | null>(null);
   /** Row whose details are open in the read-only popup (QA #78). */
   const [detail, setDetail]   = useState<ApiRegularization | null>(null);
-  const [open, setOpen]       = useState(true);
   const [page, setPage]       = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch]   = useState('');
@@ -362,253 +360,193 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
     }
   };
 
-  return (
-    <Card className="att-logs-card mt-2 mb-0">
-      <CardBody>
-      {/* Same shell as the Logs & Requests card above: header strip straight in
-          the CardBody, then the bordered table box butted onto the pager. The
-          old inner `border rounded overflow-hidden` wrapper plus its px-3 py-3
-          padding put this table in a second, inset frame — which is what made
-          the two cards read as different components. */}
-      <div className="att-logs-headbar">
-        <div className="d-flex align-items-center gap-3 min-w-0">
-          <span className="att-logs-headbar-icon"><i className="ri-checkbox-multiple-line" /></span>
-          <div>
-            <div className="att-logs-headbar-title">Regularization Requests</div>
-            <div className="att-logs-headbar-sub">Approve or reject attendance correction requests</div>
-          </div>
-        </div>
-        <div className="d-flex align-items-center gap-2 flex-wrap justify-content-end">
-          {/* Same search-box shell the Attendance employee list uses, so the
-              two on this page are one control with one behaviour. */}
-          <div className="rec-req-search search-box reg-req-search">
-            <Input
-              autoComplete="off"
-              type="text"
-              className="form-control form-control-sm"
-              placeholder="Search employee, date, type, reason…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              aria-label="Search regularization requests"
-            />
-            <SearchClear show={search} onClear={() => setSearch('')} />
-            <i className="ri-search-line search-icon" />
-          </div>
-          <div className="att-logs-ranges att-seg-toggle" role="group">
-            {STATUS_FILTERS.map(f => (
+  /* The same cells the hand-built table drew; only the wrapper changed. */
+  const columns: DataTableColumn<ApiRegularization>[] = [
+    {
+      id: 'employee', header: 'Employee',
+      accessorFn: r => empName(r),
+      cell: ({ row }) => <span className="fw-semibold">{empName(row.original)}</span>,
+    },
+    {
+      id: 'date', header: 'Date',
+      accessorFn: r => r.regularization_date,
+      cell: ({ row }) => fmtDate(row.original.regularization_date),
+    },
+    {
+      id: 'type', header: 'Type',
+      accessorFn: r => r.type ?? '',
+      cell: ({ row }) => (
+        <>
+          <span className="text-muted ep-fs-12">{row.original.mode === 'exempt' ? 'Exempt day' : 'Adjust log'}</span>
+          {row.original.type && <div className="ep-fs-11 text-muted">{row.original.type}</div>}
+        </>
+      ),
+    },
+    /* The approver used to see only the times being ASKED for, with nothing to
+       compare them against — approving blind. "Original" is the day as it
+       stands, so the correction reads as before → after. Both punch columns are
+       width-capped so a long correction wraps instead of stretching the table. */
+    {
+      id: 'original', header: 'Original Punches', enableSorting: false,
+      meta: { width: 210, wrap: true },
+      cell: ({ row }) => {
+        const r = row.original;
+        if (r.mode === 'exempt') return <span className="text-muted">—</span>;
+        /* `original_display` is a single "first in – last out" span for a live
+           day, but a frozen pre-approval snapshot can carry every pair,
+           comma-separated. Split so both read as the same chips. Prose like
+           "No punches (absent)" has no comma and becomes one muted chip. */
+        const originals = to12h(r.original_display).split(',').map(t => t.trim()).filter(Boolean);
+        return <PunchChips pairs={originals} muted />;
+      },
+    },
+    {
+      id: 'requested', header: 'Requested Punches', enableSorting: false,
+      meta: { width: 260, wrap: true },
+      cell: ({ row }) => {
+        const r = row.original;
+        if (r.mode === 'exempt') return <span className="text-muted">—</span>;
+        return <PunchChips pairs={(r.punches ?? []).map(p => punchPair12h(p.in, p.out))} />;
+      },
+    },
+    {
+      id: 'reason', header: 'Reason', enableSorting: false,
+      meta: { width: 220, wrap: true },
+      cell: ({ row }) => <span className="ep-fs-12"><ReasonCell text={row.original.reason} /></span>,
+    },
+    {
+      id: 'status', header: 'Status',
+      accessorFn: r => r.status,
+      cell: ({ row }) => {
+        const tone = statusTone(row.original.status, dark);
+        return (
+          <span
+            className="d-inline-flex align-items-center fw-semibold ep-fs-11 px-2 py-1 rounded"
+            style={{ background: tone.bg, color: tone.fg }}
+          >
+            {row.original.status}
+          </span>
+        );
+      },
+    },
+    {
+      id: 'action', header: 'Action', enableSorting: false,
+      meta: { align: 'right' },
+      cell: ({ row }) => {
+        const r = row.original;
+        const rowBusy   = busy?.id === r.id;
+        const approving = rowBusy && busy?.action === 'approve';
+        const rejecting = rowBusy && busy?.action === 'reject';
+        /* `can_act_now` alone was the gate, but the backend can still report it
+           true on a row already decided (multi-level chains) — that row then
+           drew Approve / Reject while every other decided row drew View. A
+           decided row is never actionable, so require Pending too. */
+        if (r.can_act_now && r.status === 'Pending') {
+          return (
+            <div className="d-inline-flex align-items-center gap-1">
               <button
-                key={f.key}
                 type="button"
-                className={`att-logs-range ${status === f.key ? 'is-active' : ''}`}
-                onClick={() => setStatus(f.key)}
+                data-tooltip={approving ? 'Approving…' : 'Approve'}
+                data-tooltip-pos="left"
+                aria-label="Approve"
+                aria-busy={approving}
+                disabled={rowBusy}
+                onClick={() => act(r, 'approve')}
+                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                style={{
+                  width: 28, height: 28, padding: 0,
+                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                  color: '#fff', border: 'none',
+                  // Inline opacity beats Bootstrap's .btn:disabled dimming, so the
+                  // button actually running stays bright and the other one greys out.
+                  opacity: rejecting ? 0.45 : 1,
+                  cursor: rowBusy ? 'wait' : 'pointer',
+                }}
               >
-                {f.label}
-                {/* Count lives on each tab so it always matches what that tab
-                    actually shows (e.g. Rejected reflects rejected rows). */}
-                {!loading && (
-                  <span
-                    className="ms-1 d-inline-flex align-items-center justify-content-center fw-semibold"
-                    style={{
-                      minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999,
-                      fontSize: 10.5, lineHeight: 1,
-                      background: status === f.key ? 'rgba(255,255,255,0.28)' : 'var(--vz-light, #eef2f6)',
-                      color: status === f.key ? '#fff' : 'var(--vz-secondary-color, #6b7280)',
-                    }}
-                  >
-                    {counts[f.key]}
-                  </span>
-                )}
+                {approving
+                  ? <span className="spinner-border" role="status" aria-hidden="true" style={{ width: 13, height: 13, borderWidth: 2 }} />
+                  : <i className="ri-check-line" />}
               </button>
-            ))}
-          </div>
-          <button type="button" className="btn btn-sm btn-light" onClick={() => setOpen(o => !o)} aria-label="Toggle">
-            <i className={open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} />
-          </button>
-        </div>
-      </div>
-
-      {open && (
-        <div>
-          {/* First load has nothing to stand over, so it keeps the skeleton.
-              Every REFRESH after that — approving a row, a request filed from
-              the panel above — blurs the table it already has instead of
-              replacing it with a grey block. */}
-          {loading && !hasLoaded ? (
-            <Shimmer height={120} radius={10} />
-          ) : error ? (
-            <div className="text-center text-muted ep-fs-13 py-3"><i className="ri-error-warning-line me-1" />{error}</div>
-          ) : (
-            <BusyOverlay busy={loading} label="Refreshing requests…">
-            <div className="table-responsive att-tablebox">
-              {/* No .table-sm — its compressed cell padding is what made this
-                  table read tighter than every other HRMS list. No .table-light
-                  either: Bootstrap paints that band with an inset box-shadow
-                  that would cover the header gradient. Both the header and the
-                  body rhythm now come from .reg-req-table in recruitment.css,
-                  copied from the Recruitment list table. */}
-              <table className="table align-middle mb-0 reg-req-table">
-                <thead>
-                  <tr>
-                    <th>Employee</th>
-                    <th>Date</th>
-                    <th>Type</th>
-                    {/* The approver used to see only the times being ASKED for,
-                        with nothing to compare them against — approving blind.
-                        "Original" is the day as it stands (live for a pending
-                        request, the frozen pre-approval snapshot once acted on),
-                        so the correction reads as before → after. */}
-                    <th>Original Punches</th>
-                    <th>Requested Punches</th>
-                    <th>Reason</th>
-                    <th>Status</th>
-                    <th className="text-end">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center text-muted ep-fs-13 py-4">
-                        {needle
-                          ? <>No requests match “{debouncedSearch}”.</>
-                          : <>No {status === 'All' ? '' : status.toLowerCase()} regularization requests.</>}
-                      </td>
-                    </tr>
-                  ) : rows.map(r => {
-                    const tone = statusTone(r.status, dark);
-                    const rowBusy    = busy?.id === r.id;
-                    const approving  = rowBusy && busy?.action === 'approve';
-                    const rejecting  = rowBusy && busy?.action === 'reject';
-                    const punches = (r.punches ?? []).map(p => punchPair12h(p.in, p.out));
-                    /* `original_display` is a single "first in – last out" span
-                       for a live day, but a frozen pre-approval snapshot can
-                       carry every pair, comma-separated. Split it so both read
-                       as the same chips. Prose like "No punches (absent)" has
-                       no comma and simply becomes one muted chip. */
-                    const originals = to12h(r.original_display)
-                      .split(',')
-                      .map(t => t.trim())
-                      .filter(Boolean);
-                    return (
-                      <tr key={r.id}>
-                        <td className="fw-semibold">{empName(r)}</td>
-                        <td>{fmtDate(r.regularization_date)}</td>
-                        <td>
-                          <span className="text-muted ep-fs-12">{r.mode === 'exempt' ? 'Exempt day' : 'Adjust log'}</span>
-                          {r.type && <div className="ep-fs-11 text-muted">{r.type}</div>}
-                        </td>
-                        {/* Both punch columns are width-capped so a long
-                            correction wraps instead of stretching the table. */}
-                        <td style={{ maxWidth: 210, whiteSpace: 'normal' }}>
-                          {r.mode === 'exempt' ? <span className="text-muted">—</span> : <PunchChips pairs={originals} muted />}
-                        </td>
-                        <td style={{ maxWidth: 260, whiteSpace: 'normal' }}>
-                          {r.mode === 'exempt' ? <span className="text-muted">—</span> : <PunchChips pairs={punches} />}
-                        </td>
-                        <td className="ep-fs-12" style={{ maxWidth: 220, whiteSpace: 'normal' }}>
-                          <ReasonCell text={r.reason} />
-                        </td>
-                        <td>
-                          <span
-                            className="d-inline-flex align-items-center fw-semibold ep-fs-11 px-2 py-1 rounded"
-                            style={{ background: tone.bg, color: tone.fg }}
-                          >
-                            {r.status}
-                          </span>
-                        </td>
-                        <td className="text-end">
-                          {/* `can_act_now` alone was the gate, but the backend can
-                              still report it true on a row that has already been
-                              decided (multi-level chains). That row then rendered
-                              the teal Approve / red Reject pills while every other
-                              Approved row rendered a plain View button — two
-                              different Action cells for the same status. A decided
-                              row is never actionable, so require Pending too. */}
-                          {r.can_act_now && r.status === 'Pending' ? (
-                            /* Round gradient icon-pills — same standard Approve /
-                               Reject action buttons the Expense Claims table uses
-                               (CBC #41). */
-                            <div className="d-inline-flex align-items-center gap-1">
-                              <button
-                                type="button"
-                                data-tooltip={approving ? 'Approving…' : 'Approve'}
-                                data-tooltip-pos="left"
-                                aria-label="Approve"
-                                aria-busy={approving}
-                                disabled={rowBusy}
-                                onClick={() => act(r, 'approve')}
-                                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                                style={{
-                                  width: 28, height: 28, padding: 0,
-                                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                                  color: '#fff', border: 'none',
-                                  // Inline opacity beats Bootstrap's .btn:disabled dimming, so the
-                                  // button actually running stays bright and the other one greys out.
-                                  opacity: rejecting ? 0.45 : 1,
-                                  cursor: rowBusy ? 'wait' : 'pointer',
-                                }}
-                              >
-                                {approving
-                                  ? <span className="spinner-border" role="status" aria-hidden="true"
-                                          style={{ width: 13, height: 13, borderWidth: 2 }} />
-                                  : <i className="ri-check-line" />}
-                              </button>
-                              <button
-                                type="button"
-                                data-tooltip={rejecting ? 'Rejecting…' : 'Reject'}
-                                data-tooltip-pos="left"
-                                aria-label="Reject"
-                                aria-busy={rejecting}
-                                disabled={rowBusy}
-                                onClick={() => act(r, 'reject')}
-                                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                                style={{
-                                  width: 28, height: 28, padding: 0,
-                                  background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
-                                  color: '#fff', border: 'none',
-                                  opacity: approving ? 0.45 : 1,
-                                  cursor: rowBusy ? 'wait' : 'pointer',
-                                }}
-                              >
-                                {rejecting
-                                  ? <span className="spinner-border" role="status" aria-hidden="true"
-                                          style={{ width: 13, height: 13, borderWidth: 2 }} />
-                                  : <i className="ri-close-line" />}
-                              </button>
-                            </div>
-                          ) : (
-                            /* A DECIDED row (Approved / Rejected / Cancelled) used to read
-                               "View only" as bare text — it looked like a greyed-out control
-                               and offered no way to see what had actually been requested.
-                               That text is now the button. (QA #78)
-
-                               A row still awaiting someone else's decision keeps its plain
-                               "Awaiting manager" label: it is a status, not an action, and
-                               there is nothing settled to review yet. */
-                            r.status === 'Pending'
-                              ? <span className="text-muted ep-fs-11">Awaiting manager</span>
-                              : <ViewButton row={r} onOpen={setDetail} />
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <button
+                type="button"
+                data-tooltip={rejecting ? 'Rejecting…' : 'Reject'}
+                data-tooltip-pos="left"
+                aria-label="Reject"
+                aria-busy={rejecting}
+                disabled={rowBusy}
+                onClick={() => act(r, 'reject')}
+                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                style={{
+                  width: 28, height: 28, padding: 0,
+                  background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
+                  color: '#fff', border: 'none',
+                  opacity: approving ? 0.45 : 1,
+                  cursor: rowBusy ? 'wait' : 'pointer',
+                }}
+              >
+                {rejecting
+                  ? <span className="spinner-border" role="status" aria-hidden="true" style={{ width: 13, height: 13, borderWidth: 2 }} />
+                  : <i className="ri-close-line" />}
+              </button>
             </div>
-            <WorklistPager
-              total={total}
-              page={page}
-              pageSize={pageSize}
-              onPage={setPage}
-              onPageSize={(n) => { setPageSize(n); setPage(1); }}
-            />
-            </BusyOverlay>
-          )}
-        </div>
+          );
+        }
+        /* A row still awaiting someone else's decision keeps its plain label:
+           that is a status, not an action, and there is nothing settled to
+           review yet. Decided rows get the View button (QA #78). */
+        return r.status === 'Pending'
+          ? <span className="text-muted ep-fs-11">Awaiting manager</span>
+          : <ViewButton row={r} onOpen={setDetail} />;
+      },
+    },
+  ];
+
+  return (
+    <>
+      {/* First load has nothing to stand over, so it keeps the skeleton. Every
+          REFRESH after that — approving a row, a request filed from the panel
+          above — blurs the table it already has instead of replacing it with a
+          grey block. That is why `loading` is NOT handed to the table: the
+          component greys its whole card, which is the behaviour this overlay
+          exists to avoid. */}
+      {loading && !hasLoaded ? (
+        <Shimmer height={120} radius={10} />
+      ) : error ? (
+        <div className="text-center text-muted ep-fs-13 py-3"><i className="ri-error-warning-line me-1" />{error}</div>
+      ) : (
+        <BusyOverlay busy={loading} label="Refreshing requests…">
+          <DataTable
+            data={rows}
+            columns={columns}
+            accent="teal"
+            tabs={STATUS_FILTERS.map(f => ({ key: f.key, label: f.label, count: counts[f.key] }))}
+            activeTab={status}
+            onTabChange={k => setStatus(k as RegularizationStatus | 'All')}
+            searchable
+            searchValue={search}
+            onSearchChange={setSearch}
+            /* 0, not the default 300: the component already debounces at 350ms
+               before it fetches, and two debounces in series would stack. */
+            searchDebounce={0}
+            searchPlaceholder="Search employee, date, type, reason…"
+            serial
+            /* The server owns paging, search and the tab counts. pageIndex is
+               0-based here and 1-based in the request. */
+            serverPagination={{
+              total,
+              pageIndex: page - 1,
+              onPageChange: i => setPage(i + 1),
+              onPageSizeChange: n => { setPageSize(n); setPage(1); },
+            }}
+            pageSize={pageSize}
+            emptyMessage={needle
+              ? <>No requests match “{debouncedSearch}”.</>
+              : <>No {status === 'All' ? '' : status.toLowerCase()} regularization requests.</>}
+          />
+        </BusyOverlay>
       )}
-      </CardBody>
       <RegularizationDetailModal row={detail} onClose={() => setDetail(null)} />
-    </Card>
+    </>
   );
 }
 

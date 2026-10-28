@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
-import ToolbarFilter from '../../components/ui/ToolbarFilter';
+import { HolidayFilterModal, type HolidayFilterValues } from './HrHoliday';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ActionIcon, type DataTableColumn } from '../../components/ui/DataTable';
 import { useAuth } from '../../contexts/AuthContext';
@@ -1367,7 +1367,9 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
   /* Group / year / type, read off the rows themselves: /holidays returns the
      whole calendar, so the options and their counts are exact and nothing
      has to be fetched a second time when a tile is pressed. */
-  const [facets, setFacets] = useState<Record<string, string>>({ group: '', year: '', type: '' });
+  const [facets, setFacets] = useState<HolidayFilterValues>({ group: '', year: '', type: '' });
+  const [filterOpen, setFilterOpen] = useState(false);
+  const activeFacetCount = Object.values(facets).filter(Boolean).length;
   const yearOf = (raw: any) => { const d = new Date(String(raw)); return isNaN(d.getTime()) ? '' : String(d.getFullYear()); };
 
   const filterGroups = useMemo(() => {
@@ -1402,13 +1404,21 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
     {
       header: 'Holiday',
       accessorKey: 'name',
-      meta: { width: 38 },
+      /* Percentages, not px. As numbers these were shares of the leftover
+         width under table-layout:fixed, and 38px against the serial
+         column's 56 made Sr No the widest column on the table. */
+      meta: { width: '44%' },
       cell: (info: any) => {
         const h = info.row.original;
+        /* min-width:0 so the block can shrink below its text: without it the
+           min-content floor wins and the ellipsis never engages. */
+        const clip: React.CSSProperties = {
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0,
+        };
         return (
-          <div>
-            <div className="fw-semibold" style={{ fontSize: 13 }}>{h.name}</div>
-            {h.group?.name && <div className="text-muted" style={{ fontSize: 11 }}>{h.group.name}</div>}
+          <div style={{ minWidth: 0 }}>
+            <div className="fw-semibold" style={{ fontSize: 13, ...clip }} title={h.name}>{h.name}</div>
+            {h.group?.name && <div className="text-muted" style={{ fontSize: 11, ...clip }} title={h.group.name}>{h.group.name}</div>}
           </div>
         );
       },
@@ -1416,27 +1426,49 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
     {
       header: 'Date',
       accessorKey: 'date',
-      meta: { width: 22 },
+      meta: { width: '17%' },
       cell: (info: any) => <span style={{ fontSize: 13 }}>{fmt(info.row.original.date)}</span>,
     },
     {
       header: 'Day',
       id: 'day',
-      meta: { width: 18 },
+      meta: { width: '15%' },
       cell: (info: any) => <span className="text-muted" style={{ fontSize: 13 }}>{weekday(info.row.original.date)}</span>,
     },
     {
       header: 'Type',
       accessorKey: 'type',
-      meta: { width: 22 },
-      cell: (info: any) => (
-        <span className="rec-pill" style={{ background: '#ede9fe', color: '#5b3fd1', fontSize: 11 }}>
-          {info.row.original.type || '—'}
-        </span>
-      ),
+      meta: { width: '15%' },
+      cell: (info: any) => {
+        const t = String(info.row.original.type || '').trim();
+        /* Matches HrHoliday's TYPE_TONES so the two holiday tables agree.
+           Translucent in dark, so the pill sits on its row rather than
+           carrying a panel of its own. */
+        const light: Record<string, { bg: string; fg: string }> = {
+          Public:     { bg: '#dceefe', fg: '#0c63b0' },
+          Restricted: { bg: '#fff1d6', fg: '#b66a00' },
+          Company:    { bg: '#e6e0fd', fg: '#5b3ed6' },
+          Regional:   { bg: '#d8f5e6', fg: '#0f8a4d' },
+          Optional:   { bg: '#f1f1f4', fg: '#5b6270' },
+        };
+        const darkTones: Record<string, { bg: string; fg: string }> = {
+          Public:     { bg: 'rgba(59,130,246,0.18)',  fg: '#93c5fd' },
+          Restricted: { bg: 'rgba(245,158,11,0.18)',  fg: '#fcd34d' },
+          Company:    { bg: 'rgba(139,92,246,0.20)',  fg: '#c4b5fd' },
+          Regional:   { bg: 'rgba(34,197,94,0.18)',   fg: '#86efac' },
+          Optional:   { bg: 'rgba(148,163,184,0.20)', fg: '#cbd5e1' },
+        };
+        const palette = dark ? darkTones : light;
+        const tone = palette[t] || palette.Public;
+        return (
+          <span className="rec-pill" style={{ background: tone.bg, color: tone.fg, ['--pill-fg' as any]: tone.fg, fontSize: 11 }}>
+            {t || '—'}
+          </span>
+        );
+      },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], []);
+  ], [dark]);
 
   return (
     <Modal isOpen={open} toggle={onClose} centered size="lg" scrollable contentClassName="border-0">
@@ -1466,20 +1498,22 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
             columns={holidayColumns}
             serial
             accent="violet"
+            /* The HRMS skin is scoped to .dt-root.hr-dt OR a .dt-root inside
+               .page-content:has(.hr-cstrip). This table is in a modal portal,
+               outside .page-content, so without the class it falls back to the
+               base skin and its much louder header band. */
+            className="hr-dt"
+            /* Names the rows at the head of the toolbar. With no tabs the
+               left half is empty and the search floats alone on the right. */
+            title="Configured holidays"
             loading={loading}
             paginate
-            pageSize={8}
-            toolbarFilters={filterGroups.length > 0 ? (
-              <ToolbarFilter
-                title="Filter Holidays"
-                groups={filterGroups}
-                value={facets}
-                onChange={(key, v) => setFacets(f => ({ ...f, [key]: v }))}
-                onClear={() => setFacets({ group: '', year: '', type: '' })}
-                shown={sorted.length}
-                total={rows.length}
-              />
-            ) : undefined}
+            pageSize={10}
+            /* The same .lfm-backdrop sheet the Leave table behind this modal
+               opens — it used to be the small ToolbarFilter popover, so one
+               screen offered two different filter UIs. */
+            activeFilterCount={activeFacetCount}
+            onFilterClick={filterGroups.length > 0 ? () => setFilterOpen(true) : undefined}
             emptyMessage={
               <>
                 <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -1487,7 +1521,19 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
               </>
             }
           />
-        </div>      </ModalBody>
+        </div>
+
+        {/* Reused from HrHoliday: the facets are the same three keys. */}
+        <HolidayFilterModal
+          open={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          onApply={(f) => { setFacets(f); setFilterOpen(false); }}
+          initial={facets}
+          groupOptions={(filterGroups.find(g => g.key === 'group')?.options ?? []).map(o => ({ value: o.value, label: o.label }))}
+          typeOptions={(filterGroups.find(g => g.key === 'type')?.options ?? []).map(o => ({ value: o.value, label: o.label }))}
+          yearOptions={(filterGroups.find(g => g.key === 'year')?.options ?? []).map(o => ({ value: o.value, label: o.label }))}
+        />
+      </ModalBody>
     </Modal>
   );
 }

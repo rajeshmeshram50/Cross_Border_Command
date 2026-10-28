@@ -839,6 +839,14 @@ export default function PublicOnboarding() {
            onb-layout itself) so the decorative ::before notch and
            the onb-wave SVG inside onb-layout track the card height,
            not the viewport height. */
+        /* The app's face. This page is opened from an emailed link with no
+           Velzon body class above it, so it inherited the browser default
+           rather than DM Sans like the rest of HRMS. The token, not the font
+           name, so there is still one place that decides it. (#161) */
+        .onb-shell, .onb-shell input, .onb-shell select,
+        .onb-shell textarea, .onb-shell button {
+          font-family: var(--font-sans, 'DM Sans', system-ui, sans-serif);
+        }
         .onb-shell {
           min-height: 100vh;
           width: 100%;
@@ -1203,8 +1211,9 @@ export default function PublicOnboarding() {
         }
         /* Bring the field icon up a notch so it centers in the taller input */
         .onb-main .onb-field-icon { top: 50%; }
-        /* Label-to-input gap — tighter, consistent. */
-        .onb-main .emp-label { margin-bottom: 6px; font-size: 12.5px; }
+        /* Label-to-input gap — tighter, consistent. 10.5px is the module's
+           field-label size; this was 12.5. (#161) */
+        .onb-main .emp-label { margin-bottom: 6px; font-size: 10.5px; }
         /* Inline error text — slim red helper aligned to the field. */
         .onb-main .emp-err { display: block; margin-top: 4px; font-size: 11.5px; color: #b1401d; }
 
@@ -1290,13 +1299,16 @@ export default function PublicOnboarding() {
           white-space: nowrap;
           font-variant-numeric: tabular-nums;
         }
+        /* 17 / 12 — the header and subtitle sizes every HRMS form uses.
+           Was 26 / 13.5, which made this page's heading the largest type in
+           the product. (#161) */
         .onb-main-title {
-          font-size: 26px; font-weight: 800; letter-spacing: -0.02em;
-          color: var(--vz-heading-color, #0f172a); margin: 0 0 6px;
-          line-height: 1.15;
+          font-size: 17px; font-weight: 800; letter-spacing: -0.01em;
+          color: var(--vz-heading-color, #0f172a); margin: 0 0 4px;
+          line-height: 1.2;
         }
         .onb-main-sub {
-          font-size: 13.5px; color: var(--vz-secondary-color, #6b7280);
+          font-size: 12px; color: var(--vz-secondary-color, #6b7280);
           margin: 0 0 14px; line-height: 1.55; max-width: 680px;
         }
 
@@ -1337,7 +1349,8 @@ export default function PublicOnboarding() {
           background: transparent;
           border: 0;
           padding: 10px 18px 12px;
-          font-size: 13.5px;
+          /* 12.5px, as every tab in the product. (#161) */
+          font-size: 12.5px;
           font-weight: 600;
           color: var(--vz-secondary-color, #94a3b8);
           cursor: pointer;
@@ -1457,12 +1470,17 @@ export default function PublicOnboarding() {
 
         /* Foot buttons — match the reference template's uppercase
            Previous (outlined) and Next (solid blue) treatment. */
+        /* 40px stated rather than implied by padding: these buttons swap
+           label mid-submit ("Next" to a spinner), and a padding-sized button
+           changes height when they do. (#161) */
         .onb-btn {
           display: inline-flex;
           align-items: center;
+          justify-content: center;
           gap: 8px;
-          padding: 9px 22px;
-          font-size: 12px;
+          height: 40px;
+          padding: 0 22px;
+          font-size: 12.5px;
           font-weight: 700;
           letter-spacing: 0.06em;
           text-transform: uppercase;
@@ -1529,7 +1547,8 @@ export default function PublicOnboarding() {
           .onb-side { padding: 20px 20px 16px; gap: 18px; }
           .onb-side-brand-logo, .onb-side-brand-fallback { width: 94px; height: 64px; }
           .onb-main { padding: 24px 20px 22px; }
-          .onb-main-title { font-size: 22px; }
+          /* 17px is already small enough to need no phone step-down. */
+          .onb-main-title { font-size: 17px; }
           .onb-welcome { padding: 12px 14px; }
           .onb-welcome-icon { width: 38px; height: 38px; font-size: 18px; }
         }

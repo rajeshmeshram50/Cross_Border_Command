@@ -75,12 +75,12 @@ export default function JobTab() {
           {/* Employment Details — single row of 8 fields */}
           <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-indigo">
             <div
-              className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-indigo"
+              className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-indigo"
             >
               <span className="ep-section-icon ep-icon-indigo">
                 <i className="ri-briefcase-line" />
               </span>
-              <h6 className="mb-0 fw-bold ep-fs-13">Employment Details</h6>
+              <h6 className="mb-0 fw-bold ep-sec-head">Employment Details</h6>
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
@@ -114,7 +114,7 @@ export default function JobTab() {
           {/* Organisational Structure — 4 fields full width */}
           <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-blue">
             <div
-              className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-blue"
+              className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-blue"
             >
               <span className="ep-section-icon ep-icon-blue">
                 <i className="ri-building-2-line" />
@@ -143,7 +143,7 @@ export default function JobTab() {
             <Col xl={4}>
               <div className="ep-section-card-flat ep-section-card h-100 ep-ct-emerald">
                 <div
-                  className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-emerald"
+                  className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-emerald"
                 >
                   <span className="ep-section-icon ep-icon-emerald">
                     <i className="ri-edit-line" />
@@ -165,7 +165,7 @@ export default function JobTab() {
             <Col xl={4}>
               <div className="ep-section-card-flat ep-section-card h-100 ep-ct-amber">
                 <div
-                  className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-amber"
+                  className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-amber"
                 >
                   <span className="ep-section-icon ep-icon-amber">
                     <i className="ri-file-list-3-line" />
@@ -198,7 +198,7 @@ export default function JobTab() {
             <Col xl={4}>
               <div className="ep-section-card-flat ep-section-card h-100 ep-ct-blue">
                 <div
-                  className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-blue"
+                  className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-blue"
                 >
                   <span className="ep-section-icon ep-icon-blue">
                     <i className="ri-time-line" />
@@ -229,7 +229,7 @@ export default function JobTab() {
           {/* Asset Details */}
           <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-amber">
             <div
-              className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-amber"
+              className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-amber"
             >
               <span className="ep-section-icon ep-icon-amber">
                 <i className="ri-computer-line" />

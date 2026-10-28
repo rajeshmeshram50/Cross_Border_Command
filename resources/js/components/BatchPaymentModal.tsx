@@ -216,7 +216,9 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             <div style={rowBetween}>
               <div style={{ fontWeight: 700, color: 'var(--bpw-text)', fontSize: 15 }}>Previous batch payments</div>
             </div>
-            <div style={tableWrap}>
+            {/* No maxHeight here: the page size caps the rows, so the shared
+                wrap's 300px only made a full page of five scroll. */}
+            <div style={{ ...tableWrap, maxHeight: 'none' }}>
               <table style={table}>
                 <thead><tr>{['SR NO', 'DATE', 'EMPLOYEE', 'EXPENSE IDS', 'METHOD', 'UTR / REFERENCE', 'AMOUNT', 'NOTE', 'ZOHO', 'PROOF'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
                 <tbody>
@@ -247,7 +249,9 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                 </tbody>
               </table>
             </div>
-            {history.length > PAGE && <WorklistPager total={history.length} page={histPage} pageSize={PAGE} onPage={setHistPage} />}
+            {/* Always rendered. Gating it on more-than-one-page left the
+                table with no controls at all on the common case. */}
+            <WorklistPager total={history.length} page={histPage} pageSize={PAGE} onPage={setHistPage} />
           </div>
           <div className="bpw-foot" style={footer}>
             <div style={{ fontSize: 12.5, color: 'var(--bpw-muted)' }}>Pay several small approved claims of one employee at once.</div>
@@ -312,18 +316,37 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             {/* ───── STEP 1 — select employee + claims ───── */}
             {view === 'select' && (
               <>
-                <div style={{ maxWidth: 520, marginBottom: 14 }}>
-                  <label style={lbl}>Employee <span style={req}>*</span></label>
+                <div
+                  style={{
+                    maxWidth: 520,
+                    marginBottom: 14,
+                    position: 'relative',
+                    zIndex: 100,
+                  }}
+                >
+                  <label style={lbl}>
+                    Employee <span style={req}>*</span>
+                  </label>
+
                   <SearchableSelect
                     menuMaxHeight={188}
                     value={empId ? String(empId) : null}
                     options={employees.map(e => ({ value: String(e.id), raw: e }))}
-                    onChange={v => { const id = v ? Number(v) : ''; setEmpId(id); if (id) loadPayable(id); else setPayable([]); }}
+                    onChange={v => {
+                      const id = v ? Number(v) : '';
+                      setEmpId(id);
+                      if (id) loadPayable(id);
+                      else setPayable([]);
+                    }}
                     placeholder="Select employee…"
                     searchPlaceholder="Search by name or code…"
                     getSearchText={(e: Emp) => `${empName(e)} ${e.emp_code ?? ''}`}
-                    renderTrigger={(e: Emp) => <span>{empName(e)}{e.emp_code ? ` (${e.emp_code})` : ''}</span>}
-                    renderOption={(e: Emp) => <span>{empName(e)}{e.emp_code ? ` (${e.emp_code})` : ''}</span>}
+                    renderTrigger={(e: Emp) => (
+                      <span>{empName(e)}{e.emp_code ? ` (${e.emp_code})` : ''}</span>
+                    )}
+                    renderOption={(e: Emp) => (
+                      <span>{empName(e)}{e.emp_code ? ` (${e.emp_code})` : ''}</span>
+                    )}
                   />
                 </div>
 
@@ -452,7 +475,9 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {view === 'pay' && <button style={ghostBtn} onClick={() => setView('select')}>← Back</button>}
-              <button style={ghostBtn} onClick={onClose}>Close</button>
+              {/* Closes the WIZARD, not the dialog — the history list is
+                  underneath, and the ✕ and backdrop both go back to it. */}
+              <button style={ghostBtn} onClick={() => { resetForm(); setView('history'); }}>Close</button>
               {view === 'select' && (
                 <button style={{ ...primaryBtn, opacity: selected.size === 0 ? .5 : 1 }} disabled={selected.size === 0} onClick={() => setView('pay')}>Next → {inr(total)}</button>
               )}

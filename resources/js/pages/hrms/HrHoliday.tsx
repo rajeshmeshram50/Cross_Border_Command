@@ -46,12 +46,42 @@ const TYPE_OPTIONS: { value: HolidayType; label: string }[] = [
   { value: 'Optional',   label: 'Optional Holiday' },
 ];
 
+/* Light pastels read as bright chips on the dark page, so each type also
+   carries a dark variant. The tones are applied INLINE on the pill, which is
+   why this cannot be restated by a theme rule in CSS — the value has to be
+   chosen per render instead. (#10) */
 const TYPE_TONES: Record<string, { bg: string; fg: string }> = {
   Public:     { bg: '#dceefe', fg: '#0c63b0' },
   Restricted: { bg: '#fff1d6', fg: '#b66a00' },
   Company:    { bg: '#e6e0fd', fg: '#5b3ed6' },
   Regional:   { bg: '#d8f5e6', fg: '#0f8a4d' },
   Optional:   { bg: '#f1f1f4', fg: '#5b6270' },
+};
+/* Translucent grounds, not fixed darks: the pill then sits on whatever
+   surface its row has rather than carrying its own panel. */
+const TYPE_TONES_DARK: Record<string, { bg: string; fg: string }> = {
+  Public:     { bg: 'rgba(59,130,246,0.18)',  fg: '#93c5fd' },
+  Restricted: { bg: 'rgba(245,158,11,0.18)',  fg: '#fcd34d' },
+  Company:    { bg: 'rgba(139,92,246,0.20)',  fg: '#c4b5fd' },
+  Regional:   { bg: 'rgba(34,197,94,0.18)',   fg: '#86efac' },
+  Optional:   { bg: 'rgba(148,163,184,0.20)', fg: '#cbd5e1' },
+};
+const isDarkTheme = () => {
+  const el = document.documentElement;
+  return el.getAttribute('data-bs-theme') === 'dark'
+      || el.getAttribute('data-layout-mode') === 'dark';
+};
+/* Re-renders when the theme attribute flips, so switching theme repaints the
+   pills without a reload. Same hook RegularizationApprovals uses. */
+const useIsDark = () => {
+  const [dark, setDark] = useState(isDarkTheme);
+  useEffect(() => {
+    const el = document.documentElement;
+    const obs = new MutationObserver(() => setDark(isDarkTheme()));
+    obs.observe(el, { attributes: true, attributeFilter: ['data-bs-theme', 'data-layout-mode'] });
+    return () => obs.disconnect();
+  }, []);
+  return dark;
 };
 const PER_PAGE_KEY = 'cbc.hr.holidays.perPage.v1';
 
@@ -166,6 +196,7 @@ export default function HrHoliday() {
 
   const applyFilter = (set: (v: string) => void) => (v: string) => { set(v); setPage(0); };
 
+  const dark = useIsDark();
   const columns = useMemo<DataTableColumn<HolidayRow>[]>(() => [
     {
       header: 'Holiday ID',
@@ -261,7 +292,8 @@ export default function HrHoliday() {
       meta: { width: 151, align: 'center' },
       cell: info => {
         const t = info.row.original.type;
-        const tone = TYPE_TONES[t] || TYPE_TONES.Public;
+        const palette = dark ? TYPE_TONES_DARK : TYPE_TONES;
+        const tone = palette[t] || palette.Public;
         return <span className="rec-pill" style={{ background: tone.bg, color: tone.fg, ['--pill-fg' as any]: tone.fg }}>{t}</span>;
       },
     },
@@ -294,7 +326,7 @@ export default function HrHoliday() {
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [inUseGroupIds, groups]);
+  ], [inUseGroupIds, groups, dark]);
 
   const targetGroupId =groupFilter !== 'All' ? Number(groupFilter) : null;
 
@@ -934,10 +966,6 @@ function ManageGroupsModal({
           />
         </div>
 
-        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>Done</button>
-        </div>
-
         <Modal isOpen={formOpen} toggle={closeForm} centered backdrop="static" keyboard={false}
           zIndex={1060} modalClassName="rec-form-modal master-modal hrms-modal" contentClassName="rec-form-content border-0"
           style={{ maxWidth: 540, width: '94vw' }}>
@@ -987,7 +1015,7 @@ function ManageGroupsModal({
  * Group / Type / Year, each single-select, where "no selection" means All.
  * Commits a draft on Apply so the list reloads once, not once per select. */
 type HolidayFacetKey = 'group' | 'type' | 'year';
-type HolidayFilterValues = { group: string; type: string; year: string };
+export type HolidayFilterValues = { group: string; type: string; year: string };
 
 const HOLIDAY_FACET_ICONS: Record<HolidayFacetKey, ReactNode> = {
   group: (
@@ -1009,7 +1037,7 @@ const HOLIDAY_FACET_ICONS: Record<HolidayFacetKey, ReactNode> = {
   ),
 };
 
-function HolidayFilterModal({
+export function HolidayFilterModal({
   open, onClose, onApply, initial, groupOptions, typeOptions, yearOptions,
 }: {
   open: boolean;

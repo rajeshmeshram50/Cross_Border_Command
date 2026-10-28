@@ -417,7 +417,7 @@ const MMS_CSS = `
   padding: 5px 36px 5px 10px;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
-  background: #fff;
+  background: var(--vz-card-bg);
   font-size: 13px;
   color: #1f2937;
   cursor: pointer;
@@ -432,7 +432,12 @@ const MMS_CSS = `
 }
 .mms-toggle.is-invalid { border-color: #ef4444; }
 .mms-toggle.is-invalid.is-open { box-shadow: 0 0 0 3px rgba(239,68,68,0.18); }
-.mms-toggle.is-disabled { background: #f9fafb; cursor: not-allowed; opacity: 0.85; }
+/* Same fill MasterSelect:disabled uses — the two sit side by side in Assign
+ * Assets and a hardcoded wash made the disabled one read as a lighter box. */
+/* Same surface as the enabled control, and no opacity. Both lightened this
+ * away from the MasterSelect sharing its row; the muted placeholder and the
+ * cursor say the field is dead without recolouring the box. */
+.mms-toggle.is-disabled { background: var(--vz-card-bg); cursor: not-allowed; }
 
 /* Collapsed variant (opt-in via collapse). Shows the first chip + a "View all
  * N" pill so the field stays a single row on dense forms — the rest of the
@@ -686,15 +691,14 @@ const MMS_CSS = `
 }
 .mms-done:hover { background: #4f46e5; }
 
-/* Dark mode parity. */
+/* Dark mode parity. No background here: --vz-card-bg already carries the
+ * right surface per theme, and the literal that used to sit in this rule was
+ * the input-BORDER token, which is why it read lighter than its neighbours. */
 [data-bs-theme="dark"] .mms-toggle,
 [data-layout-mode="dark"] .mms-toggle {
-  background: #2a2f34;
   border-color: rgba(255,255,255,0.10);
   color: #e5e7eb;
 }
-[data-bs-theme="dark"] .mms-toggle.is-disabled,
-[data-layout-mode="dark"] .mms-toggle.is-disabled { background: rgba(255,255,255,0.04); }
 [data-bs-theme="dark"] .mms-placeholder,
 [data-layout-mode="dark"] .mms-placeholder { color: #6b7280; }
 [data-bs-theme="dark"] .mms-menu,

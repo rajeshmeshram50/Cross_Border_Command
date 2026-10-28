@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Card, Col, FormGroup, Input, Label, Modal, ModalBody, ModalFooter, Row,
 } from 'reactstrap';
+import '../../../components/ui/DataTable.css';   // .dt-tabrail / .dt-tab — the shared tab rail
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
@@ -408,42 +409,49 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
 
   return (
         <div className="ep-tab-fill">
-          {/* Sub-tab pill — Payroll Summary (indigo) | Payment Details (green).
-              Same compact strap shape as the Evidence Vault subtabs. */}
-          <Row className="g-2 mb-3">
-            <Col xs={12}>
-              <div
-                className="d-flex pyt-subtab-strap"
-              >
-                {[
-                  { key: 'summary' as const, label: 'Payroll Summary',  icon: 'ri-calendar-line',            activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
-                  { key: 'details' as const, label: 'Payment Details',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#064e3b,#047857)', shadow: 'rgba(4,120,87,0.22)' },
-                ].map(t => {
-                  const on = payrollTab === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => setPayrollTab(t.key)}
-                      /* The active state needs to be a CLASS, not just the
-                         inline custom properties below: the hover rules live
-                         in CSS and have to tell the two states apart, and a
-                         stylesheet cannot read an inline variable. */
-                      className={`btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold pyt-subtab-btn${on ? ' pyt-subtab-btn--on' : ''}`}
-                      style={{
-                        ['--pyt-tab-bg' as any]: on ? t.activeBg : 'transparent',
-                        ['--pyt-tab-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                        ['--pyt-tab-shadow' as any]: on ? `0 3px 8px ${t.shadow}` : 'none',
-                      }}
-                    >
-                      <i className={`${t.icon} pyt-icon-12`} />
-                      {t.label}
-                    </button>
-                  );
-                })}
+          {/* The shared tab rail — .dt-tabrail / .dt-tabs / .dt-tab, as on
+              Expense Details and Evidence Vault. 40px tabs in a 48px rail.
+              This was a full-width strap whose two buttons each painted their
+              own gradient; the rail owns the selected state now, which is what
+              stops the two drifting apart again. */}
+          {/* Heading left, rail right, in the module's card shell — the same
+              .att-logs-card / .att-logs-headbar the Attendance and
+              Regularization cards use. On the bare page background this row
+              read as loose furniture above the content. */}
+          <div className="att-logs-card pyt-headcard mb-3">
+            <div className="att-logs-headbar px-3 py-2">
+            <div className="d-flex align-items-center gap-3 min-w-0">
+              <span className="att-logs-headbar-icon"><i className="ri-money-dollar-circle-line" /></span>
+              <div className="min-w-0">
+                <div className="att-logs-headbar-title">Payroll Details</div>
+                <div className="att-logs-headbar-sub">Salary structure, payouts and payment records</div>
               </div>
-            </Col>
-          </Row>
+            </div>
+            <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+            <div className="dt-tabs" role="tablist">
+              {[
+                { key: 'summary' as const, label: 'Payroll Summary', icon: 'ri-calendar-line' },
+                { key: 'details' as const, label: 'Payment Details', icon: 'ri-money-dollar-circle-line' },
+              ].map(t => {
+                const on = payrollTab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={on}
+                    onClick={() => setPayrollTab(t.key)}
+                    className={`dt-tab ${on ? 'on' : 'off'}`}
+                  >
+                    <i className={t.icon} />
+                    {t.label}
+                  </button>
+                );
+              })}
+              </div>
+            </div>
+            </div>
+          </div>
 
           {payrollTab === 'summary' && (
             <div className="ep-tab-pane">
@@ -500,7 +508,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 <Col xl={6}>
                   <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-blue">
                     <div
-                      className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-blue"
+                      className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 ep-hd-blue"
                     >
                       <div className="d-flex align-items-center gap-2">
                         <span className="ep-section-icon ep-icon-blue">
@@ -549,7 +557,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 <Col xl={6}>
                   <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-purple">
                     <div
-                      className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-purple"
+                      className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-purple"
                     >
                       <span className="ep-section-icon ep-icon-purple">
                         <i className="ri-user-2-line" />
@@ -607,7 +615,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 <Col xl={6}>
                   <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-emerald">
                     <div
-                      className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-emerald"
+                      className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-emerald"
                     >
                       <span className="ep-section-icon ep-icon-emerald">
                         <i className="ri-map-pin-line" />
@@ -641,7 +649,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 <Col xl={6}>
                   <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-amber">
                     <div
-                      className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-amber"
+                      className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-amber"
                     >
                       <span className="ep-section-icon ep-icon-amber">
                         <i className="ri-shield-line" />
@@ -786,7 +794,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 <Col xl={7}>
                   <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-indigo">
                     <div
-                      className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-indigo"
+                      className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-indigo"
                     >
                       <span className="ep-section-icon ep-icon-indigo">
                         <i className="ri-briefcase-line" />
@@ -818,7 +826,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 className="ep-section-card-flat ep-section-card mb-3 ep-ct-emerald"
               >
                 <div
-                  className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-emerald"
+                  className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 ep-hd-emerald"
                 >
                   <div className="d-flex align-items-center gap-2">
                     <span className="ep-section-icon ep-icon-emerald">

@@ -6000,13 +6000,25 @@
   display: flex; align-items: center; gap: 12px; margin-top: 14px;
 }
 .etp-foot .etp-actions { margin-left: auto; flex: none; }
+/* One line, 38px to match the buttons it shares the footer with. Centred
+   rather than top-aligned: the note is a strip, and on the narrow layout
+   where it does wrap, a centred icon still reads against the block. */
 .etp-note {
-  display: flex; gap: 9px; align-items: flex-start; flex: 1; min-width: 0;
-  font-size: 12px; line-height: 1.55;
+  display: flex; gap: 9px; align-items: center; flex: 1; min-width: 0;
+  min-height: 38px;
+  font-size: 12px; line-height: 1.45;
   background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
-  padding: 11px 14px; color: #92400e;
+  padding: 6px 14px; color: #92400e;
 }
-.etp-note i { font-size: 15px; flex: none; margin-top: 1px; color: #b45309; }
+/* line-height:1 so the icon's box IS the glyph — the inherited 1.45 made it
+   taller than the text's box, and centring the two left it riding high. No
+   margin here: the optical offset belongs to the text block below, which is
+   one place to tune instead of two moving against each other. */
+.etp-note i { font-size: 15px; flex: none; line-height: 1; color: #b45309; }
+/* The copy, as a flex item with a box of its own rather than a bare inline
+   run. The margin halves: align-items:center centres the MARGIN box, so 2px
+   here settles the text 1px against the glyph. */
+.etp-note-text { margin-top: 2px; }
 .etp-note strong { color: #7c2d12; }
 /* ── Initiate Exit picker · dark ──
    The tile has to be LIFTED off the panel, because the two surface tokens
@@ -8734,20 +8746,34 @@
 [data-bs-theme="dark"] .att-logs-title { color: #ffffff; }
 .att-logs-sub { font-size: 11px; color: var(--vz-secondary-color); margin-top: 1px; }
 
-.att-logs-ranges { display: flex; gap: 4px; flex-wrap: wrap; }
+/* A rail at the DataTable's own box: 40px tabs on 3px of padding and a 1px
+   border is 48px, which is what every other HRMS tab strip measures. These
+   were loose 24px pills with no rail. */
+.att-logs-ranges {
+  display: inline-flex; gap: 2px; flex-wrap: wrap;
+  padding: 3px;
+  background: rgba(13, 148, 136, 0.10);
+  border: 1px solid rgba(13, 148, 136, 0.16);
+  border-radius: 11px;
+}
 .att-logs-range {
-  display: inline-flex; align-items: center;
-  padding: 5px 10px;
-  border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 40px; padding: 0 16px;
+  border-radius: 8px;
   background: transparent;
+  /* Transparent rather than absent, so switching months does not move the
+     rail by a pixel. */
   border: 1px solid transparent;
   color: var(--vz-secondary-color);
-  font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em;
+  font-size: 11.5px; font-weight: 800; letter-spacing: 0.06em;
   cursor: pointer;
   transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
 .att-logs-range:hover { background: #f3f4f6; color: var(--vz-body-color); }
 .att-logs-range.is-active { background: #0d9488; color: #ffffff; border-color: #0d9488; box-shadow: 0 2px 6px rgba(13,148,136,0.30); }
+/* The rail already carries a tinted ground, so a hover that paints the same
+   wash again is invisible — it needs to be a step darker than the rail. */
+.att-logs-ranges .att-logs-range:hover:not(.is-active) { background: rgba(13, 148, 136, 0.16); color: #0f766e; }
 
 .att-logs-tabs {
   display: flex; gap: 4px;
@@ -9963,22 +9989,24 @@
 [data-bs-theme="dark"] .att-seg-toggle .att-logs-range:hover { color: #5eead4; background: rgba(20,184,166,0.18); }
 [data-bs-theme="dark"] .att-seg-toggle .att-logs-range.is-active { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); color: #ffffff; }
 
+/* 48px outer, matching the month rail it sits next to: 46px of button inside
+   a 1px border. It was 30px and stood visibly short of everything around it. */
 .att-logs-viewtoggle {
   display: inline-flex;
   border: 1px solid #99f6e4;
-  border-radius: 9px;
+  border-radius: 11px;
   overflow: hidden;
 }
 
 .att-logs-vbtn {
-  min-width: 32px; height: 30px;
-  padding: 0 11px;
+  min-width: 32px; height: 46px;
+  padding: 0 16px;
   gap: 6px;
   display: inline-flex; align-items: center; justify-content: center;
   background: #ffffff;
   border: 0;
   color: var(--vz-secondary-color);
-  font-size: 11.5px; font-weight: 700;
+  font-size: 12.5px; font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
   transition: background .15s ease, color .15s ease;
@@ -12032,17 +12060,17 @@
           .onb-error { display: flex; align-items: center; gap: 4px; color: #f06548; font-size: 12px; margin-top: 6px; }
           .onb-error i { font-size: 13px; }
           /* One fill for every control in this modal — the input, the three
-             MasterSelect toggles and the date picker. .onb-input carried a
-             hardcoded #1c2531 while the others resolved --vz-card-bg, so a
-             row of fields showed two different darks. Sunk below the panel
-             rather than level with it, so a field still reads as one. */
+             MasterSelect toggles and the date picker — and the same one the
+             rest of HRMS uses. These used to mix 30% black into the token to
+             sit below the panel, which made them a different dark from the
+             selects in Assign Assets. The border separates them instead. */
           [data-bs-theme="dark"] .onb-input,
           [data-layout-mode="dark"] .onb-input,
           [data-bs-theme="dark"] .onb-modal-content .master-select-toggle,
           [data-layout-mode="dark"] .onb-modal-content .master-select-toggle,
           [data-bs-theme="dark"] .onb-modal-content .master-datepicker-toggle,
           [data-layout-mode="dark"] .onb-modal-content .master-datepicker-toggle {
-            background: color-mix(in srgb, #000 30%, var(--vz-card-bg)) !important;
+            background: var(--vz-card-bg) !important;
             border-color: var(--vz-border-color) !important;
             color: var(--vz-body-color) !important;
           }
@@ -12050,12 +12078,17 @@
           .onb-label { font-size: 10.5px; font-weight: 700; color: #374151; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; display: block; }
           [data-bs-theme="dark"] .onb-label { color: var(--vz-body-color); }
           .onb-label .onb-req { color: #f06548; margin-left: 2px; font-weight: 700; }
-          .onb-expiry-pill { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: #fff; border: 1px solid #e5e7eb; color: #6b7280; }
+          /* Same 40px / 12.5px as the submit below them — they are buttons on
+             the same form and were ~44px at 14px. (#160) */
+          .onb-expiry-pill { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 22px; border-radius: 999px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .15s ease; background: #fff; border: 1px solid #e5e7eb; color: #6b7280; }
           .onb-expiry-pill:hover { border-color: #c4b5fd; color: #7c5cfc; }
           .onb-expiry-pill.is-active { background: #f5f0ff; border-color: #a78bfa; color: #7c5cfc; }
           [data-bs-theme="dark"] .onb-expiry-pill { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
           [data-bs-theme="dark"] .onb-expiry-pill.is-active { background: rgba(124,92,252,0.18); border-color: #a78bfa; color: #c4b5fd; }
-          .onb-submit-btn { padding: 16px 22px; border-radius: 16px; font-size: 15px; color: #fff; border: none; background: linear-gradient(90deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%); box-shadow: 0 10px 22px rgba(124,58,237,0.32); transition: transform .15s ease, box-shadow .15s ease; }
+          /* 40px stated, not implied by padding — the label changes to
+             "Generating link…" with a spinner, and a padding-sized button
+             changes height with it. (#160) */
+          .onb-submit-btn { display: flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 22px; border-radius: 16px; font-size: 12.5px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg, #a78bfa 0%, #8b5cf6 50%, #7c3aed 100%); box-shadow: 0 10px 22px rgba(124,58,237,0.32); transition: transform .15s ease, box-shadow .15s ease; }
           .onb-submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 28px rgba(124,58,237,0.38); }
           .onb-submit-btn:disabled { transform: none; box-shadow: 0 6px 14px rgba(124,58,237,0.20); }
           @keyframes onb-spin { to { transform: rotate(360deg); } }
@@ -13078,3 +13111,127 @@
 }
 .brd-wizard .rec-textarea { padding: 9px 11px; }
 .brd-wizard .rec-input::placeholder { font-size: 13px; }
+
+/* ── File input, themed ──
+   A native file control is drawn by the OS, so it stays light grey next to
+   fields that follow the theme. Styling the selector button keeps the real
+   picker — and its keyboard behaviour — while matching the MasterSelect it
+   sits under: same surface token, same border, same 38px and 10px radius. */
+.hrms-file-input.form-control {
+  height: 38px;
+  /* 36 = 38 less the two borders. This is what centres the chip and the
+     filename — flex does not, the browser lays out a file input's innards
+     itself and never applies align-items to them. */
+  line-height: 36px;
+  padding: 0;
+  background: var(--vz-card-bg);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+  color: var(--vz-body-color);
+  font-size: 13px;
+}
+.hrms-file-input.form-control:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+}
+/* Same surface as the well — the divider is what separates them. A lighter
+   chip here read as a button sitting inside the field rather than part of
+   it, which is how the OS draws it and the reason it looked out of place. */
+.hrms-file-input.form-control::file-selector-button {
+  height: 36px;
+  line-height: 36px;
+  margin: 0 12px 0 0;
+  padding: 0 14px;
+  border: 0;
+  border-right: 1px solid var(--vz-border-color);
+  border-radius: 9px 0 0 9px;
+  background: var(--vz-card-bg);
+  color: var(--vz-body-color);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.hrms-file-input.form-control::file-selector-button:hover {
+  background: #6366f1;
+  color: #fff;
+}
+
+.hrms-modal .modal-footer .master-modal-cancel,
+.hrms-modal .modal-footer .btn {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  font-size: 13px;
+}
+/* .btn-label hangs its icon off the left edge with position:absolute and
+   reserves the space with padding-left:44px. The rule above was taking that
+   away, which sat the icon on top of the first letter. */
+.hrms-modal .modal-footer .btn.btn-label {
+  padding-left: 44px;
+  padding-right: 18px;
+}
+
+/* Black in dark mode, as asked. Scoped, because --vz-card-bg is white in
+   light and a black field there would be the one odd control on the form. */
+[data-bs-theme="dark"] .hrms-file-input.form-control,
+[data-layout-mode="dark"] .hrms-file-input.form-control,
+[data-bs-theme="dark"] .hrms-file-input.form-control::file-selector-button,
+[data-layout-mode="dark"] .hrms-file-input.form-control::file-selector-button {
+  background: #000;
+}
+
+/* ── Import Punches · the two fields ──
+   Three classes, because .master-modal .form-control matches the same input
+   with the same weight and is declared later — without the extra class it
+   won the tie and put back the padding and height this is setting. */
+.imp-modal .hrms-file-input.form-control {
+  height: 38px;
+  line-height: 36px;
+  padding: 0;
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+  font-size: 13px;
+  /* The same token .master-select-toggle paints, so this field and the
+     device select share one surface in every theme. */
+  background: var(--vz-card-bg);
+  color: var(--vz-body-color);
+}
+.imp-modal .hrms-file-input.form-control::file-selector-button {
+  height: 36px;
+  line-height: 36px;
+  margin: 0 12px 0 0;
+  padding: 0 14px;
+  border: 0;
+  border-right: 1px solid var(--vz-border-color);
+  border-radius: 9px 0 0 9px;
+  background: var(--vz-card-bg);
+  color: var(--vz-body-color);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.imp-modal .hrms-file-input.form-control::file-selector-button:hover {
+  background: #6366f1;
+  color: #fff;
+}
+
+/* "+N more" / "show less" in the payroll eligibility notice. A button, so
+   it is focusable and announces its state, styled as the inline link it
+   replaces — it sits mid-sentence. (#48) */
+.pay-joiners-more {
+  background: none;
+  border: 0;
+  padding: 0 0 0 4px;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.pay-joiners-more:hover { text-decoration: none; }

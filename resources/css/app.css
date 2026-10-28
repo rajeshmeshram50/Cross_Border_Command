@@ -1717,9 +1717,9 @@ tbody tr:nth-child(10) {
    up against each other rather than each finding its own. min-height, not
    height: the actions group carries flex-wrap, and a hard height would clip
    the second row on a narrow window instead of letting it grow. */
-.frm-cstrip.hr-cstrip > .frm-cstrip-left,
-.frm-cstrip.hr-cstrip > .cand-actions,
-.frm-cstrip.hr-cstrip > .d-flex.flex-shrink-0 {
+.frm-cstrip.hr-cstrip>.frm-cstrip-left,
+.frm-cstrip.hr-cstrip>.cand-actions,
+.frm-cstrip.hr-cstrip>.d-flex.flex-shrink-0 {
   min-height: 42px;
 }
 
@@ -1807,12 +1807,19 @@ tbody tr:nth-child(10) {
   font-size: 14.5px;
 }
 
-/* 58px, not the base 70: 40px of control (the strip's buttons, and the tabs
-   inside their rail) with 9px above and below. The 38px icon and the
-   14.5 + 12 title stack both sit inside that 40. */
+/* 58px, not the base 70.
+
+   The tallest thing the strip can hold is a .dt-tabrail — 48px, being a
+   40px tab on 3px of inset and a 1px border — because Expense and Document
+   Templates put their tabs in the header. 48 + 5 above and below is 58.
+
+   The padding gives way rather than the rail: 48/40 is the geometry every
+   HRMS toolbar shares, and trimming it here alone would leave the header's
+   tabs out of step with the table's on the same page. The 40px buttons, the
+   38px icon and the 14.5 + 12 title stack all clear 48 comfortably. */
 .frm-cstrip.hr-cstrip {
   min-height: 58px;
-  padding: 9px 18px;
+  padding: 5px 18px;
 }
 
 .hr-cstrip .frm-cstrip-sub {
@@ -2220,6 +2227,16 @@ tbody tr:nth-child(10) {
   color: #fff;
 }
 
+/* The app's face, stated not inherited. Velzon puts Rubik on the body, so
+   the pager rendered in Rubik while the table above it ran DM Sans — the
+   same 800 in two faces, which is what made the page number read as not
+   bold (#47). .dt-table and .dt-tab state it for the same reason. */
+.tc-wl-pag,
+.tc-wl-pag button,
+.tc-wl-pag input,
+.tc-wl-pag select {
+  font-family: var(--font-sans);
+}
 .tc-wl-range {
   font-size: 11.5px;
   font-weight: 800;
@@ -5085,4 +5102,68 @@ input[type="search"]:has(~ .ui-search-clear) {
 .doc-html ul[style*="list-style:none"] {
   list-style-type: none;
   padding-left: 0;
+}
+/* ── Teal strip · its buttons follow it ──
+   .cand-pill-btn--primary and .frm-cstrip-back are both hardcoded violet,
+   so on the --teal pages (Attendance, Regularization Requests) the strip was
+   teal and the button on it was purple. Scoped to the variant, so adding
+   another strip colour later is one more block rather than a rewrite. */
+.hr-cstrip--teal .cand-pill-btn--primary {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  box-shadow:
+    0 6px 16px rgba(13, 148, 136, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+}
+.hr-cstrip--teal .frm-cstrip-back {
+  border-color: color-mix(in srgb, #0d9488 30%, var(--vz-border-color));
+  color: #0f766e;
+}
+.hr-cstrip--teal .frm-cstrip-back:hover {
+  background: #f0fdfa;
+  border-color: #5eead4;
+}
+[data-bs-theme="dark"] .hr-cstrip--teal .frm-cstrip-back,
+[data-layout-mode="dark"] .hr-cstrip--teal .frm-cstrip-back {
+  color: #5eead4;
+}
+[data-bs-theme="dark"] .hr-cstrip--teal .frm-cstrip-back:hover,
+[data-layout-mode="dark"] .hr-cstrip--teal .frm-cstrip-back:hover {
+  background: rgba(20, 184, 166, 0.14);
+  border-color: rgba(94, 234, 212, 0.45);
+}
+
+/* ── Regularization Requests · one surface ──
+   The teal strip, the table card and the page were three different colours
+   on one screen. Card and page take the strip's own gradient stops so they
+   read as a single sheet. .reg-page and not .att-page: HR Attendance shares
+   that class and carries a timeline, KPI cards and an employee list that
+   were not part of this. */
+.reg-page {
+  background: linear-gradient(110deg, #f4fdfb 0%, #e9fbf7 45%, #e2f8f3 100%);
+  border-radius: 14px;
+}
+.reg-page .dt-root {
+  background: linear-gradient(110deg, #f4fdfb 0%, #e9fbf7 55%, #e2f8f3 100%);
+  border-color: #99e6dd;
+}
+/* The rows sit on the same wash — a white tbody inside a mint card puts the
+   seam back one level down. */
+.reg-page .dt-root .dt-table,
+.reg-page .dt-root .dt-table tbody tr,
+.reg-page .dt-root .dt-table tbody td {
+  background: transparent;
+}
+[data-bs-theme="dark"] .reg-page,
+[data-layout-mode="dark"] .reg-page {
+  background:
+    radial-gradient(130% 130% at 0% 0%, rgba(13, 148, 136, 0.14), transparent 55%),
+    var(--vz-body-bg);
+}
+[data-bs-theme="dark"] .reg-page .dt-root,
+[data-layout-mode="dark"] .reg-page .dt-root {
+  background:
+    radial-gradient(130% 130% at 0% 50%, rgba(13, 148, 136, 0.20), transparent 55%),
+    linear-gradient(165deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0) 60%),
+    var(--vz-card-bg);
+  border-color: rgba(45, 212, 191, 0.30);
 }

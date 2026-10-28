@@ -183,9 +183,12 @@ export default function CustomFieldModal(props: {
         }
         [data-bs-theme="dark"] .cfm-body,
         [data-layout-mode="dark"] .cfm-body { background: #1f2937 !important; }
+        /* No background: the footer takes the body's, so the two cannot drift
+           apart. It used to be #111827 against the body's #1f2937, which read
+           as a separate panel bolted under the fields. */
         [data-bs-theme="dark"] .cfm-footer,
         [data-layout-mode="dark"] .cfm-footer {
-          background: #111827 !important;
+          background: #1f2937 !important;
           border-top-color: rgba(255,255,255,0.08) !important;
         }
         [data-bs-theme="dark"] .cfm-label,
@@ -303,13 +306,14 @@ export default function CustomFieldModal(props: {
                     <div key={opt.value} className="col-3">
                       <button type="button" onClick={() => setType(opt.value)}
                         className={`cfm-type-tile${active ? ' is-active' : ''}`}
-                        style={{ width: '100%', padding: '12px 6px', borderRadius: 10, boxSizing: 'border-box',
+                        style={{ width: '100%', height: 40, padding: '0 8px', borderRadius: 10, boxSizing: 'border-box',
                           border: '1.5px solid ' + (active ? '#8b5cf6' : '#e5e7eb'),
                           background: active ? '#f5f1fe' : '#fff',
                           boxShadow: active ? '0 0 0 3px rgba(139,92,246,.12)' : 'none',
-                          cursor: 'pointer', textAlign: 'center' }}>
-                        <i className={`${opt.icon} cfm-type-icon`} style={{ fontSize: 18, color: active ? '#6d28d9' : '#6b7280', display: 'block', marginBottom: 4 }} />
-                        <div className="cfm-type-label" style={{ fontSize: 12, fontWeight: 700, color: active ? '#6d28d9' : '#374151' }}>{opt.label}</div>
+                          cursor: 'pointer',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}>
+                        <i className={`${opt.icon} cfm-type-icon`} style={{ fontSize: 16, lineHeight: 1, color: active ? '#6d28d9' : '#6b7280' }} />
+                        <div className="cfm-type-label" style={{ fontSize: 13, fontWeight: 700, color: active ? '#6d28d9' : '#374151' }}>{opt.label}</div>
                       </button>
                     </div>
                   );
@@ -353,13 +357,13 @@ export default function CustomFieldModal(props: {
           </fieldset>
 
           {/* Footer */}
-          <div className="cfm-footer" style={{ padding: '14px 22px', borderTop: '1px solid #eef2f7', background: '#f8fafc', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <div className="cfm-footer" style={{ padding: '14px 22px', borderTop: '1px solid #eef2f7', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <button type="button" onClick={onClose} disabled={saving} className="cfm-cancel"
-              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: 12.5, fontWeight: 700, color: '#475569', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
+              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: 13, fontWeight: 700, color: '#475569', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}>
               Cancel
             </button>
             <button type="button" onClick={submit} disabled={saving} className="cfm-save-btn"
-              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: 'linear-gradient(135deg,#a78bfa 0%,#8b5cf6 55%,#6d28d9 100%)', border: 0, borderRadius: 10, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'progress' : 'pointer', boxShadow: '0 4px 14px rgba(139,92,246,.35), 0 1px 0 rgba(255,255,255,.18) inset', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease', opacity: saving ? 0.85 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              style={{ height: 40, padding: '0 18px', boxSizing: 'border-box', background: 'linear-gradient(135deg,#a78bfa 0%,#8b5cf6 55%,#6d28d9 100%)', border: 0, borderRadius: 10, fontSize: 13, fontWeight: 700, color: '#fff', cursor: saving ? 'progress' : 'pointer', boxShadow: '0 4px 14px rgba(139,92,246,.35), 0 1px 0 rgba(255,255,255,.18) inset', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease', opacity: saving ? 0.85 : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               {saving && <span className="cfm-spinner" />}
               {saving ? 'Saving…' : 'Save Field'}
             </button>
@@ -375,8 +379,9 @@ const fieldLabel: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, lette
 const req: React.CSSProperties = { color: '#ef4444' };
 function inputStyle(error: boolean): React.CSSProperties {
   return {
-    // .rec-input's own measurements: 34px, 8px radius, 13px on #e5e7eb.
-    width: '100%', height: 34, padding: '4px 11px', borderRadius: 8, boxSizing: 'border-box',
+    // 40px, matching the type tiles and footer buttons — the whole dialog is
+    // one control height. Radius 10 to match the tiles beside them.
+    width: '100%', height: 40, padding: '0 12px', borderRadius: 10, boxSizing: 'border-box',
     border: '1px solid ' + (error ? '#ef4444' : '#e5e7eb'),
     fontSize: 13, background: '#fff', lineHeight: 1.4,
     boxShadow: '0 1px 2px rgba(15,23,42,0.03)',

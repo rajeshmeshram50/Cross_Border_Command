@@ -291,8 +291,18 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         .lsp-avatar { background: #ece6ff; }
         :is([data-bs-theme="dark"],[data-layout-mode="dark"]) .lsp-avatar { background: rgba(124,92,252,0.22); }
       `}</style>
-      <div className="d-flex justify-content-between align-items-center mb-3">
-        <h5 className="fw-bold mb-0" style={{ fontSize: 16 }}>Leave</h5>
+      {/* The module's card header — same .att-logs-card / .att-logs-headbar
+          row as Payroll, Expense and Evidence Vault, with the page action on
+          its right. Was a bare 16px <h5> on the page background. */}
+      <div className="att-logs-card lsp-headcard mb-3">
+        <div className="att-logs-headbar px-3 py-2">
+        <div className="d-flex align-items-center gap-3 min-w-0">
+          <span className="att-logs-headbar-icon"><i className="ri-calendar-check-line" /></span>
+          <div className="min-w-0">
+            <div className="att-logs-headbar-title">Leave</div>
+            <div className="att-logs-headbar-sub">Balances, pending requests and history</div>
+          </div>
+        </div>
         {canRequest && (
           /* Still rendered (not hidden) while on probation — clicking it
              explains WHY leave isn't available, which is more useful than a
@@ -312,10 +322,11 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
             <i className="ri-add-line" />Request Leave
           </button>
         )}
+        </div>
       </div>
 
       <div className="mb-3">
-        <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Pending leave requests</h6>
+        <h6 className="fw-bold mb-2 ep-sec-head">Pending leave requests</h6>
         {loading ? (
           <div className="d-flex flex-column gap-2">
             {[0, 1].map(i => (
@@ -419,7 +430,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
       </div>
 
       <div className="mb-3">
-        <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave Balances</h6>
+        <h6 className="fw-bold mb-2 ep-sec-head">Leave Balances</h6>
         {loading ? (
           <div className="d-flex gap-3 flex-wrap">
             {[0, 1, 2].map(i => (
@@ -557,7 +568,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
       </div>
 
       <div>
-        <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave History</h6>
+        <h6 className="fw-bold mb-2 ep-sec-head">Leave History</h6>
         {/* Shared DataTable — same component as Holidays, Hiring Requests and
             the rest of HRMS, so the header band, sortable columns and the
             "Showing X–Y of Z / Rows per page" footer match everywhere. */}
@@ -566,7 +577,10 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
           columns={historyColumns}
           loading={loading}
           accent="violet"
-          pageSize={5}
+          /* .ep-hero, not .hr-cstrip, so the HRMS skin has to be named —
+             without it the base skin's solid accent header band shows. */
+          className="hr-dt"
+          pageSize={10}
           minWidth={720}
           onRowClick={(r) => setDetailsRequestId(r.id)}
           emptyMessage="No Leave history to show."

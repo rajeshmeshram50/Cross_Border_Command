@@ -17,7 +17,7 @@ import api from '../../api';
 import { assertApiBlob } from '../../utils/downloadFile';
 import '../../../css/recruitment.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
-
+import { MasterFilterButton } from '../../components/ui/MasterFilterModal';
 type CycleStatus = 'Completed' | 'In Progress' | 'Not Started';
 type RowStatus   = 'Ready' | 'Processed' | 'Pending Review' | 'On Hold' | 'Paid' | 'Not in Run';
 type AttSource   = 'Biometric' | 'Review' | 'Manual';
@@ -109,26 +109,7 @@ interface PayrollRow {
   bankVerified?: boolean;
 }
 
-/* Money on this screen carries its PAISE. (CBC #10)
- *
- * This used to format with maximumFractionDigits: 0, which silently dropped the
- * decimals from every payroll column — and a payroll table whose figures are
- * rounded independently stops adding up in front of the reader:
- *
- *     gross 1,00,416.67  ded 96,754.49  net 3,662.18   (what payroll computed)
- *     gross 1,00,417     ded 96,754     net 3,662      (what the grid printed)
- *                        1,00,417 - 96,754 = 3,663, but Net says 3,662
- *
- * Nothing was miscalculated; the row simply could not be reconciled by eye,
- * which is exactly what gets raised as "the salary calculation is wrong for
- * decimal values". Both bounds are pinned so every cell shows the same two
- * decimals — a column mixing ₹5,641.8 with ₹10,288 reads no better.
- *
- * Rounded to the paisa first: these are floating-point sums of decimal amounts,
- * so a total can arrive as ...0000000002 and print a third decimal.
- *
- * fmtINRShort (the KPI tiles) is deliberately untouched — ₹1.2L is a headline,
- * not a figure anyone reconciles. */
+ 
 const fmtINR = (n: number) =>
   new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     .format(Math.round((Number(n) || 0) * 100) / 100);
@@ -153,27 +134,7 @@ const financialYearOf = (month?: number, year?: number): string => {
   return `${startYear}-${String(startYear + 1).slice(-2)}`;
 };
 
-// Build the full 12-month cycle list for a year, merging real per-month status
-// from the backend /payroll/cycles payload (keyed `${year}-${month}`); months
-// the backend hasn't surfaced yet default to 'Not Started'.
-//
-// Only the FUTURE is clamped here: a month that hasn't started can't have a
-// status. Past months keep the server's verdict verbatim.
-//
-// They used to be flattened to "Completed | Not Started" on the theory that a
-// lingering unpaid period was noise. That was wrong twice over: a past cycle
-// whose run is generated/approved really is in progress, and since cycles must
-// now run in order it is also what blocks every later month. Painting it
-// "Not Started" sent HR to click Run, which then failed with "already
-// approved/paid and cannot be regenerated".
-/* How long a cycle selection must hold still before the page fetches it.
- *
- * Switching cycle costs two requests — the payroll rows and the Salary Setup
- * roster — and both are heavy. Clicking along the Cycle History strip fired
- * one pair per month passed through, which is how a walk across half a year
- * turned into 7.5 MB and tens of seconds of traffic, all of it for months
- * nobody stopped on and none of it cancellable once sent. Short enough that a
- * deliberate click still feels immediate. */
+
 const CYCLE_SWITCH_DEBOUNCE_MS = 300;
 
 const buildYearMonths = (
@@ -370,6 +331,9 @@ export default function HrPayroll() {
   const [cycleKey, setCycleKey] = useState<string>(monthKey(today.getFullYear(), today.getMonth()));
   const [cycleCollapsed, setCycleCollapsed] = useState(false);
 
+  /* Whether the eligibility notice lists every pending joiner or just the
+     first five. (#48) */
+  const [showAllJoiners, setShowAllJoiners] = useState(false);
   const [tab, setTab] = useState<'processing' | 'biometric' | 'report' | 'salary'>('processing');
   // Employees who became eligible AFTER this run was generated — a notice, never rows. (#30)
   const [pendingJoiners, setPendingJoiners] = useState<{ empId: string; name: string }[]>([]);
@@ -430,8 +394,11 @@ export default function HrPayroll() {
     /* eslint-disable-next-line */
   }, [cycleKey]);
   const [q, setQ] = useState('');
-  const [deptFilter, setDeptFilter]     = useState<string>('All');
-  const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
+  const [facets, setFacets] = useState<Record<string, string>>({
+    department: '',
+    status: '',
+  });
+  const activeFacets = Object.values(facets).filter(Boolean).length;
   const [departments, setDepartments]   = useState<string[]>([]);
 
   useEffect(() => {
@@ -455,6 +422,27 @@ export default function HrPayroll() {
       ...Array.from(set).sort((a, b) => a.localeCompare(b)).map(n => ({ value: n, label: n })),
     ];
   }, [departments, rows]);
+  const payrollFacets = useMemo(
+  () => [
+    {
+      key: 'department',
+      label: 'Department',
+      icon: 'ri-building-2-line',
+      options: deptOptions
+        .filter(o => o.value !== 'All')
+        .map(o => ({ value: o.value, label: o.label })),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      icon: 'ri-checkbox-circle-line',
+      options: STATUS_OPTIONS
+        .filter(o => o.value !== 'All')
+        .map(o => ({ value: o.value, label: o.label })),
+    },
+  ],
+  [deptOptions],
+);
 
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
   const [payslipBreakup, setPayslipBreakup] = useState<{ earnings: PayslipLine[]; deductions: PayslipLine[] } | null>(null);
@@ -1227,10 +1215,10 @@ export default function HrPayroll() {
     try {
       const res = await api.get('/payroll/payslips/bulk', {
         params: {
-          month, year,
-          department: deptFilter !== 'All' ? deptFilter : undefined,
-          status: statusFilter !== 'All' ? statusFilter : undefined,
-        },
+  month, year,
+  department: facets.department || undefined,
+  status: facets.status || undefined,
+},
         responseType: 'blob',
       });
       const url = URL.createObjectURL(new Blob([res.data], { type: 'application/zip' }));
@@ -1259,8 +1247,8 @@ export default function HrPayroll() {
     try {
       const res = await api.post('/payroll/payslips/email', {
         month, year,
-        department: deptFilter !== 'All' ? deptFilter : undefined,
-        status: statusFilter !== 'All' ? statusFilter : undefined,
+department: facets.department || undefined,
+status: facets.status || undefined,
       });
       toast.success('Payslips emailed', res.data?.message || `Payslips sent for ${cycle.label}.`);
     } catch (err: any) {
@@ -1276,11 +1264,11 @@ export default function HrPayroll() {
     setDownloading('csv');
     try {
       const res = await api.get('/payroll/export', {
-        params: {
-          month, year,
-          department: deptFilter !== 'All' ? deptFilter : undefined,
-          status: statusFilter !== 'All' ? statusFilter : undefined,
-        },
+       params: {
+  month, year,
+  department: facets.department || undefined,
+  status: facets.status || undefined,
+},
         responseType: 'blob',
       });
       const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
@@ -1472,8 +1460,8 @@ export default function HrPayroll() {
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return rows
-      .filter(r => deptFilter === 'All' || r.department === deptFilter)
-      .filter(r => statusFilter === 'All' || r.status === statusFilter)
+     .filter(r => !facets.department || r.department === facets.department)
+.filter(r => !facets.status     || r.status === facets.status)
       .filter(r => {
         if (!needle) return true;
         return (
@@ -1483,7 +1471,7 @@ export default function HrPayroll() {
           r.designation.toLowerCase().includes(needle)
         );
       });
-  }, [rows, q, deptFilter, statusFilter]);
+  }, [rows, q, facets]);
 
   /* ── Column sets for the shared <DataTable> ──────────────────────────────
      One per tab, since each tab shows a different projection of the same
@@ -2091,24 +2079,10 @@ export default function HrPayroll() {
   ]), [counts.totalEmployees, roster.length, loading, rosterLoading]);
 
   const payrollToolbarActions = (
-    <>
-      <div className="d-flex align-items-center gap-2">
-        <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-        <div style={{ minWidth: 160 }}>
-          <MasterSelect value={deptFilter} onChange={setDeptFilter} options={deptOptions} placeholder="All" />
-        </div>
-      </div>
-      <div className="d-flex align-items-center gap-2">
-        <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
-        <div style={{ minWidth: 160 }}>
-          <MasterSelect value={statusFilter} onChange={(v) => setStatusFilter(v as 'All' | RowStatus)} options={STATUS_OPTIONS} placeholder="All" />
-        </div>
-      </div>
-      <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
-        {filtered.length} results
-      </div>
-    </>
-  );
+  <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
+    
+  </div>
+);
 
   const cycleStripRef = useRef<HTMLDivElement | null>(null);
   const scrollCycle = (dir: 'prev' | 'next') => {
@@ -2604,9 +2578,22 @@ export default function HrPayroll() {
           <span>
             {pendingJoiners.length === 1 ? '1 employee is' : `${pendingJoiners.length} employees are`} now eligible for this payroll but {pendingJoiners.length === 1 ? 'was' : 'were'} not in it when it was generated — re-run payroll to pay {pendingJoiners.length === 1 ? 'them' : 'them'}:{' '}
             <span style={{ fontWeight: 700 }}>
-              {pendingJoiners.slice(0, 5).map(p => `${p.empId} ${p.name}`).join(', ')}
-              {pendingJoiners.length > 5 ? ` +${pendingJoiners.length - 5} more` : ''}
+              {(showAllJoiners ? pendingJoiners : pendingJoiners.slice(0, 5))
+                .map(p => `${p.empId} ${p.name}`).join(', ')}
             </span>
+            {/* A toggle, not a link: every name is already in `pendingJoiners`
+                — the notice was only ever showing the first five. It used to
+                be the bare text "+N more", with nothing to click. (#48) */}
+            {pendingJoiners.length > 5 && (
+              <button
+                type="button"
+                className="pay-joiners-more"
+                aria-expanded={showAllJoiners}
+                onClick={() => setShowAllJoiners(v => !v)}
+              >
+                {showAllJoiners ? 'show less' : `+${pendingJoiners.length - 5} more`}
+              </button>
+            )}
           </span>
         </div>
       )}
@@ -2654,6 +2641,18 @@ export default function HrPayroll() {
               onSearchChange={setQ}
               searchPlaceholder="Search name, ID, department…"
               toolbarActions={payrollToolbarActions}
+              toolbarFilters={
+                <MasterFilterButton
+                  title="Filter Payroll"
+                  icon="ri-money-rupee-circle-line"
+                  facets={payrollFacets}
+                  value={facets}
+                  onApply={next => setFacets({
+                    department: String(next.department ?? ''),
+                    status:     String(next.status ?? ''),
+                  })}
+                />
+              }
               emptyMessage={
                 <>
                   <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -2695,6 +2694,18 @@ export default function HrPayroll() {
                 onSearchChange={setQ}
                 searchPlaceholder="Search name, ID, department…"
                 toolbarActions={payrollToolbarActions}
+                toolbarFilters={
+  <MasterFilterButton
+    title="Filter Payroll"
+    icon="ri-fingerprint-line"
+    facets={payrollFacets}
+    value={facets}
+    onApply={next => setFacets({
+      department: String(next.department ?? ''),
+      status:     String(next.status ?? ''),
+    })}
+  />
+}
                 emptyMessage={
                   <>
                     <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -2728,6 +2739,18 @@ export default function HrPayroll() {
                 onSearchChange={setQ}
                 searchPlaceholder="Search name, ID, department…"
                 toolbarActions={payrollToolbarActions}
+                toolbarFilters={
+  <MasterFilterButton
+    title="Filter Payroll"
+    icon="ri-file-chart-line"
+    facets={payrollFacets}
+    value={facets}
+    onApply={next => setFacets({
+      department: String(next.department ?? ''),
+      status:     String(next.status ?? ''),
+    })}
+  />
+}
                 emptyMessage={
                   <>
                     <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />

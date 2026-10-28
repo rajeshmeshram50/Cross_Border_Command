@@ -94,6 +94,22 @@ export default function VaultTab() {
      footer as Attendance, Leave, Holidays and Hiring Requests. The hand-rolled
      tables they replace had no footer at all — the list just stopped after the
      last row, with no count and no way to page (#45). */
+  /* Mirrors the category half of EvidenceVaultModal's DOC_KEY_CATALOGUE.
+     Copied rather than imported so that file stays untouched; an unknown key
+     falls through to "Other", as it does there. */
+  const DOC_CATEGORY: Record<string, string> = {
+    aadhaar: 'Identity',   pan: 'Identity',     p_photo: 'Identity',  p_copy: 'Identity',
+    cur_addr: 'Address',   perm_addr: 'Address',
+    edu_10: 'Education',   edu_12: 'Education', edu_deg: 'Education', edu_pg: 'Education',
+    rel_letter: 'Prev. Employment', exp_cert: 'Prev. Employment', pay_slip: 'Prev. Employment',
+  };
+  const CATEGORY_TONE: Record<string, { bg: string; fg: string }> = {
+    Identity:            { bg: '#ede9fe', fg: '#5b21b6' },
+    Address:             { bg: '#dcfce7', fg: '#15803d' },
+    Education:           { bg: '#fef3c7', fg: '#92400e' },
+    'Prev. Employment':  { bg: '#dceefe', fg: '#0c63b0' },
+  };
+
   const uploadedColumns = useMemo<DataTableColumn<any>[]>(() => [
     {
       id: 'document',
@@ -101,6 +117,24 @@ export default function VaultTab() {
       accessorFn: (d: any) => prettyDocKey(d.document_key),
       meta: { width: 180 },
       cell: info => <span className="fw-semibold">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      /* Identity / Address / Education / Prev. Employment / Other — what the
+         vault modal uses to group these. Sortable, so the table can be read
+         by category without being grouped. */
+      id: 'category',
+      header: 'Category',
+      accessorFn: (d: any) => DOC_CATEGORY[d.document_key] || 'Other',
+      meta: { width: 150 },
+      cell: info => {
+        const cat = String(info.getValue() ?? 'Other');
+        const tone = CATEGORY_TONE[cat] || { bg: 'var(--vz-secondary-bg)', fg: 'var(--vz-secondary-color)' };
+        return (
+          <span className="rec-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}>
+            {cat}
+          </span>
+        );
+      },
     },
     {
       id: 'file_name',
@@ -208,6 +242,32 @@ export default function VaultTab() {
       accessorFn: (d: any) => d.code || '',
       meta: { width: 130, wrap: true },
       cell: info => <code className="epv-code-badge">{info.row.original.code || '—'}</code>,
+    },
+    {
+      /* Onboarding / Promotion / Exit. The run has always carried
+         trigger_keyword, but it was only used to split the Exit tab off —
+         with the vault down to two tabs this column is what tells the three
+         kinds of paperwork apart. */
+      id: 'type',
+      header: 'Type',
+      accessorFn: (d: any) => String(d.trigger_keyword || '').toLowerCase(),
+      meta: { width: 130 },
+      cell: info => {
+        const key = String(info.row.original.trigger_keyword || '').toLowerCase();
+        const tone =
+          key === 'exit'      ? { bg: '#dcfce7', fg: '#15803d', label: 'Exit' }
+          : key === 'promotion' ? { bg: '#fef3c7', fg: '#92400e', label: 'Promotion' }
+          : key === 'onboarding' ? { bg: '#ede9fe', fg: '#5b21b6', label: 'Onboarding' }
+          : { bg: 'var(--vz-secondary-bg)', fg: 'var(--vz-secondary-color)', label: key ? key : '—' };
+        return (
+          <span
+            className="rec-pill text-capitalize"
+            style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}
+          >
+            {tone.label}
+          </span>
+        );
+      },
     },
     {
       id: 'signers',
@@ -318,49 +378,51 @@ export default function VaultTab() {
             </div>
           </Card>
 
-          {/* Sub-tab pill — Employee Documents | Organizational Documents */}
-          <Row className="g-2 mb-3">
-            <Col xs={12}>
-              <div
-                className="d-flex vt-subtab-bar"
-              >
-                {[
-                  { key: 'employee'       as const, label: 'Employee Documents',      count: employeeDocCount,      icon: 'ri-user-line',       activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
-                  { key: 'organizational' as const, label: 'Organizational Documents', count: organizationalDocCount, icon: 'ri-building-line',   activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
-                  { key: 'exit'           as const, label: 'Exit Documents',           count: exitDocCount,          icon: 'ri-door-open-line',   activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
-                ].map(t => {
-                  const on = vaultTab === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => setVaultTab(t.key)}
-                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold vt-subtab-btn"
-                      style={{
-                        ['--vt-subtab-bg' as any]: on ? t.activeBg : 'transparent',
-                        ['--vt-subtab-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                        ['--vt-subtab-shadow' as any]: on ? `0 3px 8px ${t.shadow}` : 'none',
-                      }}
-                    >
-                      <i className={`${t.icon} vt-subtab-icon`} />
-                      {t.label}
-                      <span
-                        className="badge rounded-pill d-inline-flex align-items-center justify-content-center vt-subtab-badge"
-                        style={{
-                          ['--vt-subtab-badge-bg' as any]: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                          ['--vt-subtab-badge-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                        }}
+          {/* Drawn exactly like the Evidence Vault modal's strip — see
+              EvidenceVaultModal: .ev-tabstrip wrapping an .ev-softrail rail.
+              The strip supplies the violet --dt-a-* palette, which is why the
+              rail takes the class rather than data-accent: .ev-softrail's
+              trough is mixed against #fff and needs those vars in scope. */}
+          <div className="ev-tabstrip mb-3">
+            <div className="dt-tabrail dt-tabs ev-softrail" role="tablist">
+                  {[
+                    { key: 'employee'       as const, label: 'Employee Documents',       count: employeeDocCount,       icon: 'ri-user-line' },
+                    { key: 'organizational' as const, label: 'Organizational Documents', count: organizationalDocCount, icon: 'ri-building-line' },
+                  ].map(t => {
+                    const on = vaultTab === t.key;
+                    const busy = t.key === 'employee' ? uploadedLoading : signedLoading;
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => setVaultTab(t.key)}
+                        className={`dt-tab ${on ? 'on' : 'off'}`}
                       >
-                        {(t.key === 'employee' ? uploadedLoading : signedLoading)
-                          ? <Shimmer height={9} width={14} className="vt-subtab-badge-shim" style={{ ['--vt-subtab-badge-shim-bg' as any]: on ? 'rgba(255,255,255,0.35)' : 'var(--vz-secondary-color)' }} />
-                          : t.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </Col>
-          </Row>
+                        <i className={t.icon} />
+                        {t.label}
+                        <span className="dt-tab-count">
+                          {busy ? <Shimmer height={9} width={14} /> : t.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+            </div>
+            {/* Both hosts stay mounted; the inactive one is hidden. Moving a
+                single ref between tabs would tear down the portal DataTable
+                renders its search into. */}
+            <div
+              className="vt-head-search"
+              ref={setUploadedSearchHost}
+              style={{ display: vaultTab === 'employee' ? undefined : 'none' }}
+            />
+            <div
+              className="vt-head-search"
+              ref={setSignedSearchHost}
+              style={{ display: vaultTab === 'organizational' ? undefined : 'none' }}
+            />
+          </div>
 
           {/* Employee Documents sub-tab — live list of files the employee
               has actually uploaded (Aadhaar / PAN / photo / etc.). Drops
@@ -370,33 +432,6 @@ export default function VaultTab() {
             <div
               className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet flex-grow-1 d-flex flex-column"
             >
-              <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet vt-uploaded-head"
-              >
-                <div className="d-flex align-items-center gap-2">
-                  <span className="ep-section-icon ep-icon-violet">
-                    <i className="ri-upload-cloud-2-line" />
-                  </span>
-                  <div>
-                    <h6 className="mb-0 fw-bold vt-head-title">Uploaded Documents</h6>
-                    <small className="text-muted vt-head-sub">
-                      Files attached by the employee or HR — view, download, and verification status.
-                    </small>
-                  </div>
-                </div>
-                <div className="d-flex align-items-center gap-3">
-                  {/* DataTable portals its own search box in here, so the
-                      toolbar strip above the table collapses away and the
-                      search sits on the card's header row instead. */}
-                  <div className="vt-head-search" ref={setUploadedSearchHost} />
-                  <div className="text-end">
-                    {uploadedLoading
-                      ? <Shimmer height={20} width={28} className="vt-count-shim" />
-                      : <h4 className="mb-0 fw-bold vt-count-violet">{uploadedDocs.length}</h4>}
-                    <small className="text-muted text-uppercase vt-count-label">Documents</small>
-                  </div>
-                </div>
-              </div>
               <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
                 {/* fitToViewport + autoFitRows: the same fill behaviour as the
                     other list screens — the card stretches to the bottom of the
@@ -409,6 +444,10 @@ export default function VaultTab() {
                   columns={uploadedColumns}
                   serial={{ header: 'SR' }}
                   accent="violet"
+                  /* The profile has an .ep-hero, not an .hr-cstrip, so the
+                     HRMS skin has to be named — otherwise the base skin's
+                     solid accent header band shows. */
+                  className="hr-dt"
                   pageSize={10}
                   fitToViewport
                   autoFitRows
@@ -439,7 +478,7 @@ export default function VaultTab() {
               a designation never sends anything by itself. */}
           {vaultTab === 'organizational' && canSendDocuments && applicableDocs.some((d: any) => !d.is_sent) && (
             <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-amber">
-              <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-amber">
+              <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 ep-hd-amber">
                 <div className="d-flex align-items-center gap-2">
                   <span className="ep-section-icon ep-icon-amber"><i className="ri-user-star-line" /></span>
                   <div>
@@ -487,43 +526,16 @@ export default function VaultTab() {
               {/* The .epv-* rules (Code badge, signer tags, View button) used to
                   be an inline <style> here — see EmployeeProfile.css, where they
                   now live so the Exit Documents tab gets them too. */}
-              <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet vt-uploaded-head"
-              >
-                <div className="d-flex align-items-center gap-2">
-                  <span className="ep-section-icon ep-icon-violet">
-                    <i className="ri-quill-pen-line" />
-                  </span>
-                  <div>
-                    <h6 className="mb-0 fw-bold vt-head-title">My Signed Documents</h6>
-                    <small className="text-muted vt-head-sub">
-                      Final, fully-signed copies — view in the browser or download as PDF.
-                    </small>
-                  </div>
-                </div>
-                <div className="d-flex align-items-center gap-3">
-                  {/* Search lifted onto the header row, same as the Uploaded
-                      Documents card — see the note on that one. */}
-                  <div className="vt-head-search" ref={setSignedSearchHost} />
-                  {/* This card only renders under `vaultTab === 'organizational'`,
-                      so the count is organizationalDocs — the old
-                      `vaultTab === 'exit' ? exitDocs.length : …` ternary could
-                      never take its first branch (TS flagged the comparison as
-                      having no overlap). The Exit card below counts its own. */}
-                  <div className="text-end">
-                    {signedLoading
-                      ? <Shimmer height={20} width={28} className="vt-count-shim" />
-                      : <h4 className="mb-0 fw-bold vt-count-violet">{organizationalDocs.length}</h4>}
-                    <small className="text-muted text-uppercase vt-count-label">Documents</small>
-                  </div>
-                </div>
-              </div>
               <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
                 <DataTable
                   data={organizationalDocs}
                   columns={signedColumns}
                   serial={{ header: 'SR' }}
                   accent="violet"
+                  /* The profile has an .ep-hero, not an .hr-cstrip, so the
+                     HRMS skin has to be named — otherwise the base skin's
+                     solid accent header band shows. */
+                  className="hr-dt"
                   pageSize={10}
                   fitToViewport
                   autoFitRows
@@ -547,7 +559,7 @@ export default function VaultTab() {
               className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet flex-grow-1 d-flex flex-column"
             >
               <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet vt-uploaded-head"
+                className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 ep-hd-violet vt-uploaded-head"
               >
                 <div className="d-flex align-items-center gap-2">
                   <span className="ep-section-icon ep-icon-violet">
@@ -576,6 +588,10 @@ export default function VaultTab() {
                   columns={signedColumns}
                   serial={{ header: 'SR' }}
                   accent="violet"
+                  /* The profile has an .ep-hero, not an .hr-cstrip, so the
+                     HRMS skin has to be named — otherwise the base skin's
+                     solid accent header band shows. */
+                  className="hr-dt"
                   pageSize={10}
                   fitToViewport
                   autoFitRows

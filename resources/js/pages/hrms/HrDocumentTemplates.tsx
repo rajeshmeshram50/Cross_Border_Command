@@ -682,13 +682,18 @@ export default function HrDocumentTemplates() {
             columns={columns}
             serial
             accent="violet"
-            /* fitToViewport + autoFitRows = the My Workplace behaviour: the card
-               stretches to the bottom of the viewport with the pager pinned to
-               its lower edge, and the page size is whatever number of rows fits
-               that height. Without it a short result set left the card floating
-               mid-screen above a band of empty page. */
+            /* fitToViewport keeps the card reaching the bottom of the viewport
+               with the pager pinned to its lower edge. autoFitRows is NOT used
+               here: it derives the page size from measured heights, and on
+               first paint — rows not laid out, rowH falling back to 44 — it
+               settled on ~3. Every tab switch re-measured a better-settled
+               layout and nudged it up by one, which looked like records
+               loading in a few at a time (#41). A stated size cannot drift.
+
+               With 10 and a shorter result, the leftover is blank space inside
+               the card above the pager — the card still reaches the footer. */
             fitToViewport
-            autoFitRows
+            pageSize={10}
             /* …and keep reaching the footer even once a rows-per-page is
                picked by hand (QA #71). Without this the card drops to exactly
                the height of its rows, so a level with one template — Team
@@ -704,11 +709,27 @@ export default function HrDocumentTemplates() {
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search templates…"
+            /* Three different empty states, because they mean different
+               things. A search with no hits used to be told "no templates
+               yet — create one", which is wrong twice over: templates do
+               exist, and a new one would not match the query either (#42). */
             emptyMessage={
-              <>
-                <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
-                No templates yet for {category} · {roleType}. Click <strong>+ Add Template</strong> to create one.
-              </>
+              search.trim() ? (
+                <>
+                  <i className="ri-search-eye-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
+                  No documents found. Try searching with a different keyword.
+                </>
+              ) : activeFilterCount > 0 ? (
+                <>
+                  <i className="ri-filter-off-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
+                  No templates match the selected filters. Clear them to see the full list.
+                </>
+              ) : (
+                <>
+                  <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
+                  No templates yet for {category} · {roleType}. Click <strong>+ Add Template</strong> to create one.
+                </>
+              )
             }
             /* Refine sits in toolbarFilters, which renders BEFORE the
                search — the toolbar convention across HRMS. In

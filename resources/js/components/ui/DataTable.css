@@ -238,11 +238,10 @@
   background: rgba(var(--dt-a-rgb), .10);
   border: 1px solid rgba(var(--dt-a-rgb), .16);
   border-radius: 11px;
-  /* 3px, not 4. The rail has no explicit height, so its outer box is
-     34 (tab) + padding x2 + border x2. At 4px that is 44px against a 42px
-     search box — the rail stood 2px proud of the search beside it on every
-     page. At 3px it is 34 + 6 + 2 = 42 exactly. (The note on .dt-tab about
-     "4px twice" predates the border and no longer adds up.) */
+  /* 3px. The rail has no explicit height, so its outer box is 40 (tab) +
+     padding x2 + border x2 = 48 exactly, which is the stated standard and the
+     height of the search box beside it. Changing this padding changes the
+     rail's height — raise the tab, not the padding. */
   padding: 3px;
   /* Shrinkable (was flex-shrink: 0) with min-width: 0, so as the window narrows
      the rail gives up width and wraps its own tabs onto a second line INSIDE the
@@ -261,12 +260,13 @@
 }
 .dt-tab {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  /* 34px. With the rail's 3px of padding and 1px border on each side that is
-     the 42px search beside it — see .dt-tabs. The rail used to run 37px tabs on
-     9px of padding to claw back width on a six-tab row; it scrolls or wraps for
-     that now, because a rail that sizes itself to its contents is why no two
+  /* 40px. With the rail's 3px of padding and 1px border on each side that is
+     the 48px rail the modules are specified to, and the 48px search beside it
+     — see .dt-tabs. (Was 34/42.) The rail used to run 37px tabs on 9px of
+     padding to claw back width on a six-tab row; it scrolls or wraps for that
+     now, because a rail that sizes itself to its contents is why no two
      modules lined up. */
-  padding: 0 14px; height: 34px;
+  padding: 0 16px; height: 40px;
   /* Transparent on the active tab rather than absent, so switching tabs does
      not move the rail by a pixel. */
   border: 1px solid transparent; border-radius: 8px;
@@ -321,12 +321,13 @@
 .dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: rgba(var(--dt-a-rgb), .11); }
 .dt-tab.on  .dt-tab-count { color: #fff; background: rgba(255, 255, 255, .22); }
 
-/* Filter button — same 42px height / 11px radius as the search field so the
-   toolbar reads as one row of controls. */
+/* Filter button — same 48px height / 11px radius as the search field so the
+   toolbar reads as one row of controls. It was 37 while the comment claimed
+   42 and the search was 42: three heights in a row meant to be one. */
 .dt-filter-btn {
   display: inline-flex; align-items: center; gap: 7px;
   flex-shrink: 0;
-  height: 37px; padding: 0 16px;
+  height: 48px; padding: 0 16px;
   border-radius: 11px;
   font-family: inherit;
   font-size: 12.5px; font-weight: 700;
@@ -367,10 +368,10 @@
    Pages pass these through `toolbarActions` as MasterSelects, whose default
    skin is a white 38px box with a grey hairline — on the toolbar's tinted band
    that read as barely-there, so the control was easy to miss entirely. Match
-   the search field instead: same 42px height, 11px radius, translucent white
+   the search field instead: same 48px height, 11px radius, translucent white
    fill and accent border, so the whole toolbar reads as one row of controls. */
 .dt-toolbar .master-select-toggle {
-  height: 37px;
+  height: 48px;
   border-radius: 11px;
   border: 1.5px solid rgba(var(--dt-a-rgb), .28);
   background: rgba(255, 255, 255, .80);
@@ -428,12 +429,11 @@
      first place. A smaller basis means the rail gets its natural width before
      the search asks for anything beyond what a query needs. (#24) */
   flex: 1 1 260px; min-width: 150px; max-width: 420px;
-  /* The full height of the rail beside it — 34px tab + 4px padding twice — not
-     the height of the tab alone. Lining the field up with the pill inside the
-     rail left it 5px short of the rail's own edge, which is the mismatch you
-     see the moment a Filter button (42px) joins the row. .smc-search is 42px
-     for exactly this reason. */
-  height: 42px;
+  /* The full height of the rail beside it — 40px tab + 3px padding and 1px
+     border twice — not the height of the tab alone. Lining the field up with
+     the pill inside the rail leaves it short of the rail's own edge, which
+     shows the moment a Filter button joins the row. */
+  height: 48px;
   display: flex; align-items: center;
   padding: 0 14px 0 38px;
   background: rgba(255, 255, 255, .80);
