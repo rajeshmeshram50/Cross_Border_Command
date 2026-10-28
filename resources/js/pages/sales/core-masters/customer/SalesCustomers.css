@@ -1712,7 +1712,34 @@
 /* Search and Filter stretch to the tab rail's full height (40px tabs + the rail's padding and
    border) so every control in the row is the same height; 40px floor for a wrapped row. */
 .smc-root .smc-toolbar { align-items: stretch; }
-.smc-root .smc-toolbar .dt-filter-btn { height: auto; min-height: 40px; flex-shrink: 0; }
+/* Filter = the tab rail / search track: 48px outer track (1px border, 3px
+   padding, tint) with the 40px button face drawn inside it by ::before. */
+.smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn {
+  position: relative; isolation: isolate; flex-shrink: 0; align-self: stretch;
+  height: auto; min-height: 48px; padding: 3px 18px;
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 60%, #fff);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--dt-a-50) 60%, #fff), var(--dt-a-50));
+  border-radius: 11px; box-shadow: none; text-shadow: none;
+  color: var(--dt-a-700);
+}
+.smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn::before {
+  content: ''; position: absolute; inset: 3px; z-index: -1; pointer-events: none;
+  border-radius: 8px;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 45%, #fff);
+  transition: border-color .16s, background .16s, box-shadow .16s;
+}
+.smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn > * { position: relative; z-index: 1; }
+.smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn:hover::before { border-color: var(--dt-a-400); background: var(--dt-a-50); }
+/* Filters applied: the inner face takes the selected-tab fill. */
+.smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn.on { color: #fff; }
+.smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn.on::before {
+  border: 0;
+  background: linear-gradient(135deg, var(--dt-a-400) 0%, var(--dt-a-500) 35%, var(--dt-a-600) 68%, var(--dt-a-800) 100%);
+  box-shadow: 0 3px 10px rgba(var(--dt-a-rgb), .40);
+}
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn { background: rgba(var(--dt-a-rgb), .08); border-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .smc-root .smc-table-card .smc-toolbar .dt-filter-btn.dt-filter-btn:not(.on)::before { background: rgba(255,255,255,.03); border-color: rgba(var(--dt-a-rgb), .25); }
 .smc-root .smc-table-card .smc-toolbar .dt-search.dt-search {
   height: auto; min-height: 40px; flex: 1 1 auto; min-width: 240px; max-width: none; margin-left: 0;
 }

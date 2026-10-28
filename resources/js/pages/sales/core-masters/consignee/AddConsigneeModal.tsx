@@ -2871,9 +2871,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               uploads now live in the standalone ConsigneeEvidenceVaultModal. */}
         </div>
 
-        {/* Footer */}
+        {/* Footer — no Cancel here; the header's X closes the popup (QA #99). */}
         <div className="acm-wiz-footer">
-          <button className="acm-btn acm-btn-light" onClick={handleClose}><IconClose size={14} /> Cancel</button>
           <div className="acm-footer-right">
             {stage > 1 && (
               <button className="acm-btn acm-btn-light" onClick={goBack}>
@@ -7902,7 +7901,7 @@ const SCOPED_CSS = `
   flex-wrap: wrap;
   row-gap: 8px;
 }
-.acm-footer-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px; }
+.acm-footer-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 8px; margin-left: auto; }
 
 /* When a popup-on-popup is open, blur the wizard underneath so the
  * focus is squarely on the sub-modal. Disable pointer events too so
