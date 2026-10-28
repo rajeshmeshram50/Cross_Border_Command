@@ -156,22 +156,34 @@ export default function RackMaster() {
   const rowCount = list.rows.length;
   useEffect(() => { if (rowCount) refitPageSize(); }, [rowCount, refitPageSize]);
 
-  const [busyId, setBusyId] = useState<number | null>(null);
+  /* Optimistic, like the warehouse and zone switches (CS-942 #19): flip now,
+     save behind it, take the server's row when it lands, flip back if
+     refused. Then a silent refresh — this list's tabs ARE Active/Inactive,
+     so their counts and the filtered tab catch up without the skeleton. */
+  const patchRows = list.patch;
+  const refreshList = list.refresh;
+  const [busyIds, setBusyIds] = useState<ReadonlySet<number>>(new Set());
+  const busyRef = useRef(busyIds);
+  busyRef.current = busyIds;
   const toggle = useCallback(async (rk: Rack) => {
-    if (busyId) return;
+    const apiId = rk.apiId;
+    if (!apiId || busyRef.current.has(apiId)) return;
     const activate = rk.status !== 'active';
-    setBusyId(rk.apiId);
+    const put = (row: Rack) => patchRows(rs => rs.map(x => (x.apiId === apiId ? row : x)));
+    setBusyIds(s => new Set(s).add(apiId));
+    put({ ...rk, status: activate ? 'active' : 'inactive' });
     try {
-      await rackApi.setStatus(rk.apiId, activate);
+      put(await rackApi.setStatus(apiId, activate));
       if (activate) toast.success(`${rk.id} marked Active`, 'Its shelves stay inactive until you switch them back on.');
       else toast.warning(`${rk.id} marked Inactive`, 'It stays in the list, dimmed. Its shelves are deactivated with it.');
-      reload();
+      refreshList();
     } catch (e) {
+      put(rk);
       toast.error('Could not change the status', e instanceof InventoryApiError ? e.message : 'Please try again.');
     } finally {
-      setBusyId(null);
+      setBusyIds(s => { const n = new Set(s); n.delete(apiId); return n; });
     }
-  }, [busyId, reload, toast]);
+  }, [patchRows, refreshList, toast]);
 
   const [qrFor, setQrFor] = useState<Rack | null>(null);
   const [formFor, setFormFor] = useState<Rack | 'new' | null>(null);
@@ -326,7 +338,7 @@ export default function RackMaster() {
                 <tbody key={r.apiId}>
                   <Row
                     r={r} sr={start + i + 1} off={r.status !== 'active'}
-                    busy={busyId === r.apiId} opening={openingId === r.apiId}
+                    busy={busyIds.has(r.apiId)} opening={openingId === r.apiId}
                     w={r.warehouseId ? warehouseById.get(r.warehouseId) : undefined}
                     z={r.zoneId ? zoneById.get(r.zoneId) : undefined}
                     onToggle={t => void toggle(t)} onQr={setQrFor} onEdit={t => void openEdit(t)}

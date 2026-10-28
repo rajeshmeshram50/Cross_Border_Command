@@ -129,20 +129,27 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
   const [qrFor, setQrFor] = useState<Shelf | null>(null);
 
   const rackOff = r.status === 'inactive';
-  const [busyId, setBusyId] = useState<number | null>(null);
+  /* Optimistic (CS-942 #20): the switch flips on the click and the save runs
+     behind it — it used to wait for the PUT and then refetch the whole rack.
+     The totals above are worked out from these rows, so updating the one row
+     is enough; the server's row replaces the guess, a refusal flips it back.
+     Busy is per shelf, so one pending save does not swallow other clicks. */
+  const [busyIds, setBusyIds] = useState<ReadonlySet<number>>(new Set());
   const toggle = async (s: Shelf) => {
-    if (rackOff || busyId) return;
+    if (rackOff || busyIds.has(s.apiId)) return;
     const activate = s.status !== 'active';
-    setBusyId(s.apiId);
+    const put = (row: Shelf) => setShelves(ss => ss.map(x => (x.apiId === s.apiId ? row : x)));
+    setBusyIds(b => new Set(b).add(s.apiId));
+    put({ ...s, status: activate ? 'active' : 'inactive' });
     try {
-      await shelfApi.setStatus(s.apiId, activate);
+      put(await shelfApi.setStatus(s.apiId, activate));
       if (activate) toast.success(`${s.id} marked Active`);
       else toast.warning(`${s.id} marked Inactive`, 'Its capacity leaves the rack totals above.');
-      load();
     } catch (e) {
+      put(s);
       toast.error('Could not change the status', e instanceof InventoryApiError ? e.message : 'Please try again.');
     } finally {
-      setBusyId(null);
+      setBusyIds(b => { const n = new Set(b); n.delete(s.apiId); return n; });
     }
   };
 
@@ -247,7 +254,7 @@ export default function RackShelvesModal({ rack: r, warehouse: w, zone: z, onClo
                 ) : paged.map((s, i) => (
                   <ShelfRow
                     key={s.apiId} s={s} sr={start + i + 1}
-                    rackOff={rackOff} busy={busyId === s.apiId} onToggle={() => void toggle(s)}
+                    rackOff={rackOff} busy={busyIds.has(s.apiId)} onToggle={() => void toggle(s)}
                     onEdit={() => setFormFor(s)}
                     onQr={() => setQrFor(s)}
                   />
