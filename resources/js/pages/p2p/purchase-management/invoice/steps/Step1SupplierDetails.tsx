@@ -300,6 +300,11 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
      hand. Both go through loadSupplier, so both raise `picking`. */
   const resolving = picking && !hasSupplier;
 
+  /* Everything in step 01 is the supplier master's to state, so the moment a
+     supplier is resolved the whole step reads. `locked` already covers the
+     purchase-order and view-only cases; this adds the one that was missing. */
+  const gstLocked = locked || hasSupplier;
+
   const legal = draft.legal ?? { sections: [], done: 0, total: 0, pct: 0 };
   const legalTone = legal.pct === 100 ? 'ok' : legal.pct >= 60 ? 'warn' : 'bad';
 
@@ -704,27 +709,38 @@ export default function Step1SupplierDetails({ draft, set, error = null, readOnl
                     )}
                   </span>
                 </div>
+                {/* gstLocked, not `locked`/`hasPo`. These five were the only
+                    fields in step 01 still gated on there being a purchase
+                    order, so on a Direct SPI — which has none by definition —
+                    they stayed typeable while the supplier's name, address
+                    and risk beside them were all read-only. They are not this
+                    invoice's data to edit either way: they arrive from the
+                    supplier's newest scrutiny record via draftFromScrutiny,
+                    and typing over them here would have changed the invoice
+                    and left the master saying something else. The Supplier
+                    Risk Alert directly below reads from exactly these values,
+                    so an edit here also silently rewrote its verdict. */}
                 <div className="spi-dt-grid4">
                   <Field label="SCRUTINY DATE">
-                    {hasPo
+                    {gstLocked
                       ? <input className="spi-dt-inp" value={formatDmy(scrutinyDate)} readOnly />
                       : <MasterDatePicker value={scrutinyDate} onChange={v => set({ scrutinyDate: v })} />}
                   </Field>
                   <Field label="GST NUMBER">
-                    <input className="spi-dt-inp" placeholder={locked ? '—' : '15-digit GSTIN'} maxLength={15} readOnly={locked}
+                    <input className="spi-dt-inp" placeholder={gstLocked ? '—' : '15-digit GSTIN'} maxLength={15} readOnly={gstLocked}
                       value={gstNumber} onChange={e => set({ gstNumber: e.target.value.toUpperCase() })} />
                   </Field>
                   <Field label="GST STATUS">
-                    <EditSelect readOnly={locked} value={gstStatus} options={GST_STATUSES} onChange={v => set({ gstStatus: v })} />
+                    <EditSelect readOnly={gstLocked} value={gstStatus} options={GST_STATUSES} onChange={v => set({ gstStatus: v })} />
                   </Field>
                   <Field label="LAST FILING DATE">
-                    {hasPo
+                    {gstLocked
                       ? <input className="spi-dt-inp" value={formatDmy(filingDate)} readOnly />
                       : <MasterDatePicker value={filingDate} onChange={v => set({ filingDate: v })} />}
                   </Field>
                   <Field label="PREV. INVOICE / REMARKS" full>
-                    <textarea className="spi-dt-textarea" readOnly={locked}
-                      placeholder={locked ? '—' : 'Notes on previous invoices, filing history or scrutiny remarks…'}
+                    <textarea className="spi-dt-textarea" readOnly={gstLocked}
+                      placeholder={gstLocked ? '—' : 'Notes on previous invoices, filing history or scrutiny remarks…'}
                       value={remarks} onChange={e => set({ remarks: e.target.value })} />
                   </Field>
                 </div>
