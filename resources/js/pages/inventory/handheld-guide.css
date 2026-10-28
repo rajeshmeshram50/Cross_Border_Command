@@ -1,0 +1,259 @@
+/*
+ * Handheld Screens — the Zebra's put-away flow, shown on a desktop.
+ *
+ * The phone is rendered at the device's real 360px width using the same type
+ * sizes putaway-scan.css sets, so this page shows what is on the handheld
+ * rather than an impression of it. The palette is restated here rather than
+ * imported: putaway-scan.css is scoped under .pwscan and loading it would
+ * bring a whole screen's layout with it.
+ */
+
+/* The counter in the header strip. */
+.hhg-step-of {
+  font-size: 12px; font-weight: 700; letter-spacing: .02em;
+  color: #fff; background: rgba(255, 255, 255, .18);
+  border: 1px solid rgba(255, 255, 255, .3);
+  border-radius: 999px; padding: 5px 12px; white-space: nowrap;
+}
+
+.hhg-split {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  margin-top: 14px;
+}
+@media (max-width: 1100px) { .hhg-split { grid-template-columns: 1fr; gap: 18px; } }
+
+/* ── Screen picker ─────────────────────────────────────────────────────── */
+.hhg-menu { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.hhg-menu h2 {
+  font-size: 11px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--vz-secondary-color); margin: 0 0 3px;
+}
+.hhg-pick {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
+  border: 1px solid var(--vz-border-color); border-radius: 10px;
+  background: var(--vz-card-bg, #fff); color: inherit;
+  padding: 9px 11px; font-family: inherit; font-size: 13.5px; line-height: 1.3; cursor: pointer;
+  transition: border-color .14s, background .14s;
+}
+.hhg-pick:hover { border-color: #0f6e70; }
+.hhg-pick[aria-pressed="true"] { background: #e6f4f4; border-color: #0f6e70; }
+.hhg-n {
+  flex-shrink: 0; width: 21px; height: 21px; border-radius: 999px; margin-top: 1px;
+  background: var(--vz-light); color: var(--vz-secondary-color);
+  font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center;
+}
+.hhg-pick[aria-pressed="true"] .hhg-n { background: #0f6e70; color: #fff; }
+.hhg-pick-t { min-width: 0; }
+.hhg-pick-t b { display: block; font-weight: 600; }
+.hhg-pick-t small { display: block; color: var(--vz-secondary-color); font-size: 12px; }
+
+[data-bs-theme="dark"] .hhg-pick[aria-pressed="true"] { background: rgba(15, 110, 112, .22); }
+
+/* ── Stage ─────────────────────────────────────────────────────────────── */
+.hhg-stage { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 760px) { .hhg-stage { grid-template-columns: 1fr; gap: 18px; } }
+
+/* ── The device ────────────────────────────────────────────────────────── */
+.hhg-phone {
+  width: 360px; max-width: 100%; flex-shrink: 0;
+  border: 10px solid #16242a; border-radius: 30px; background: #16242a;
+  box-shadow: 0 14px 34px rgba(8, 26, 32, .26);
+}
+/* Fixed light palette: the handheld's own screen, which does not follow the
+   desktop theme any more than a photograph of it would. */
+.hhg-phone-in {
+  border-radius: 21px; overflow: hidden;
+  background: #e9eef0; color: #0f1f2b;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.hhg-phone-in *, .hhg-phone-in *::before, .hhg-phone-in *::after { box-sizing: border-box; }
+
+.hhg-sysbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 12px; background: #0b5456; color: #cfe9e9;
+  font-family: ui-monospace, monospace; font-size: 10px; letter-spacing: .03em;
+}
+.hhg-appbar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #0f6e70; color: #fff; }
+.hhg-logo {
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  background: #fff; color: #0f6e70; font-size: 17px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.hhg-abt { flex: 1 1 auto; min-width: 0; line-height: 1.15; }
+.hhg-abt b { display: block; font-size: 15.5px; font-weight: 800; }
+.hhg-abt small { display: block; font-size: 10.5px; letter-spacing: .04em; opacity: .86; text-transform: uppercase; }
+.hhg-bell { position: relative; width: 34px; height: 34px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 19px; }
+.hhg-bell em {
+  position: absolute; top: -2px; right: -2px; min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: 999px; background: #f59e0b; color: #35220a;
+  font-size: 10px; font-weight: 800; font-style: normal;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.hhg-body {
+  padding: 12px; display: flex; flex-direction: column; gap: 10px;
+  /* The screen is a window, not a page: 720 CSS px less the bars and the
+     foot. Content scrolls inside it exactly as it does on the device,
+     instead of stretching the phone off the bottom of the page. */
+  height: 452px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+/* No scrollbar: there is not one in the operator's hand either. */
+.hhg-body::-webkit-scrollbar { width: 0; height: 0; }
+
+.hhg-card { background: #fff; border: 1px solid #d7e0e3; border-radius: 12px; padding: 11px 12px; }
+.hhg-card-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hhg-kick { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #64798a; }
+.hhg-code { font-family: ui-monospace, monospace; font-size: 17px; font-weight: 800; }
+.hhg-sp { flex: 1 1 auto; }
+.hhg-name { font-size: 14px; font-weight: 700; margin: 7px 0 9px; }
+
+.hhg-chip {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .05em; padding: 3px 7px;
+  border-radius: 5px; background: #eef2f4; color: #4a5c6b; white-space: nowrap;
+}
+.hhg-chip.is-ok   { background: #e6f4f4; color: #0f6e70; }
+.hhg-chip.is-warn { background: #fdf0d5; color: #8a5a08; }
+
+.hhg-more {
+  font-size: 12px; font-weight: 800; color: #0f6e70; background: #fff;
+  border: 1.5px solid #0f6e70; border-radius: 7px; padding: 4px 9px;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.hhg-more b {
+  background: #0f6e70; color: #fff; border-radius: 999px; min-width: 17px; height: 17px;
+  font-size: 10px; display: inline-flex; align-items: center; justify-content: center;
+}
+
+.hhg-meta3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+.hhg-meta3 div span { display: block; font-size: 9.5px; font-weight: 700; color: #64798a; letter-spacing: .03em; }
+.hhg-meta3 div b { display: block; font-size: 12.5px; font-weight: 700; margin-top: 2px; }
+
+.hhg-tags { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.hhg-pill {
+  margin-left: auto; font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700;
+  border: 1px solid #d7e0e3; border-radius: 999px; padding: 3px 9px; background: #fff;
+}
+
+/* ── Zone / rack / shelf ───────────────────────────────────────────────── */
+.hhg-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.hhg-slot { background: #fff; border: 1px solid #d7e0e3; border-radius: 10px; padding: 8px 9px; min-width: 0; }
+.hhg-slot > span { display: block; font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #64798a; }
+.hhg-slot > b {
+  display: block; font-family: ui-monospace, monospace; font-size: 14px; font-weight: 800; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hhg-slot > small { display: block; font-size: 10px; color: #64798a; margin-top: 1px; }
+.hhg-slot > i { display: block; font-style: normal; font-size: 10.5px; font-weight: 700; margin-top: 3px; color: #64798a; }
+.hhg-slot.is-done { background: #e6f4f4; border-color: #0f6e70; }
+.hhg-slot.is-done > i { color: #0f6e70; }
+.hhg-slot.is-next { border-color: #f0a830; }
+.hhg-slot.is-next > i { color: #8a5a08; }
+
+/* ── Next scan, toast, banner ──────────────────────────────────────────── */
+.hhg-next { background: #eef8f9; border: 1px solid #bfe3e6; border-radius: 10px; padding: 10px 11px; }
+.hhg-next > span { display: block; font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #0f6e70; }
+.hhg-next > b { display: block; font-size: 14.5px; font-weight: 800; margin-top: 3px; }
+.hhg-next > small { display: block; font-size: 11px; color: #3f5d63; margin-top: 3px; line-height: 1.35; }
+
+.hhg-toast { background: #0f6e70; color: #fff; border-radius: 10px; padding: 9px 12px; }
+.hhg-toast b { display: block; font-size: 13.5px; font-weight: 700; }
+.hhg-toast small { font-size: 11.5px; opacity: .88; }
+
+.hhg-banner { background: #fdf0d5; border: 1px solid #e8c88a; border-radius: 10px; padding: 9px 11px; font-size: 11.5px; color: #7a4e07; }
+
+/* ── Scan field ────────────────────────────────────────────────────────── */
+.hhg-flabel { font-size: 9px; font-weight: 800; letter-spacing: .06em; color: #0f6e70; }
+.hhg-input {
+  background: #fff; border: 1px solid #d7e0e3; border-radius: 10px; height: 50px;
+  display: flex; align-items: center; padding: 0 13px; margin-top: 5px;
+  font-family: ui-monospace, monospace; font-size: 13px; color: #90a4ad;
+}
+
+/* ── Products ──────────────────────────────────────────────────────────── */
+.hhg-prod { background: #fbfdfd; border: 1px solid #d7e0e3; border-radius: 10px; padding: 9px 10px; }
+.hhg-prod + .hhg-prod { margin-top: 8px; }
+.hhg-prod-top { display: flex; align-items: flex-start; gap: 8px; }
+.hhg-sr {
+  width: 20px; height: 20px; border-radius: 999px; flex-shrink: 0;
+  background: #0f6e70; color: #fff; font-size: 10.5px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.hhg-prod-n { flex: 1 1 auto; min-width: 0; font-size: 12.5px; font-weight: 700; line-height: 1.25; }
+.hhg-qty { border: 1px solid #d7e0e3; border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 800; background: #fff; white-space: nowrap; }
+.hhg-prod-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; margin-top: 8px; }
+.hhg-prod-grid div span { display: block; font-size: 9px; font-weight: 800; letter-spacing: .05em; color: #64798a; }
+.hhg-prod-grid div b {
+  display: block; font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── Task rows ─────────────────────────────────────────────────────────── */
+.hhg-rows { display: flex; flex-direction: column; gap: 8px; }
+.hhg-row { background: #fff; border: 1px solid #d7e0e3; border-radius: 10px; padding: 9px 10px; }
+.hhg-row.is-current { background: #e6f4f4; border-color: #0f6e70; }
+.hhg-row-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.hhg-row-code { font-family: ui-monospace, monospace; font-size: 14px; font-weight: 800; }
+.hhg-row-sub { display: block; font-size: 11px; color: #64798a; margin-top: 2px; }
+.hhg-row-state { display: block; font-size: 11px; font-weight: 700; margin-top: 3px; }
+
+.hhg-sheet-head { display: flex; align-items: flex-start; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid #d7e0e3; }
+.hhg-sheet-head b { display: block; font-size: 15px; font-weight: 800; }
+.hhg-sheet-head small { display: block; font-size: 11.5px; color: #64798a; }
+.hhg-x { margin-left: auto; color: #64798a; font-size: 17px; }
+
+/* ── Foot ──────────────────────────────────────────────────────────────── */
+.hhg-foot { border-top: 1px solid #d7e0e3; background: #fff; padding: 9px 12px; display: flex; flex-direction: column; gap: 3px; }
+.hhg-btn {
+  height: 50px; border-radius: 10px; background: #0f6e70; color: #fff;
+  font-size: 15.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.hhg-ghost { height: 40px; color: #64798a; font-size: 13.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* ── Caption ───────────────────────────────────────────────────────────── */
+.hhg-cap { min-width: 0; }
+.hhg-cap h3 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+.hhg-url {
+  display: inline-block; margin-top: 8px; padding: 3px 9px; border-radius: 6px;
+  background: #e6f4f4; color: #0f6e70;
+  font-family: ui-monospace, monospace; font-size: 12.5px;
+}
+[data-bs-theme="dark"] .hhg-url { background: rgba(15, 110, 112, .22); color: #7fd3d1; }
+.hhg-cap p { color: var(--vz-secondary-color); margin: 12px 0 0; max-width: 48ch; font-size: 14.5px; line-height: 1.6; }
+.hhg-cap ul { margin: 12px 0 0; padding-left: 18px; color: var(--vz-secondary-color); font-size: 14px; }
+.hhg-cap li + li { margin-top: 4px; }
+
+/* What the system records at this moment — the half a screenshot cannot show. */
+.hhg-records {
+  margin-top: 18px; padding: 13px 15px;
+  border: 1px solid var(--vz-border-color); border-left: 3px solid #0f6e70;
+  border-radius: 10px; background: var(--vz-light);
+}
+.hhg-records h4 {
+  margin: 0 0 8px; font-size: 10.5px; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--vz-secondary-color);
+}
+.hhg-records ul { margin: 0; padding-left: 17px; font-size: 13.5px; color: var(--vz-secondary-color); }
+.hhg-records li + li { margin-top: 4px; }
+.hhg-records code {
+  font-family: ui-monospace, monospace; font-size: 12.5px;
+  color: #0f6e70; background: rgba(15, 110, 112, .09);
+  padding: 1px 5px; border-radius: 4px;
+}
+[data-bs-theme="dark"] .hhg-records code { color: #7fd3d1; background: rgba(15, 110, 112, .22); }
+
+/* The device facts, under the picker. */
+.hhg-facts {
+  margin-top: 14px; padding: 12px 13px;
+  border: 1px solid var(--vz-border-color); border-radius: 10px;
+  background: var(--vz-card-bg, #fff); font-size: 12.5px;
+}
+.hhg-facts div { display: flex; justify-content: space-between; gap: 10px; }
+.hhg-facts div + div { margin-top: 5px; }
+.hhg-facts span { color: var(--vz-secondary-color); }
+.hhg-facts b { font-weight: 600; text-align: right; }

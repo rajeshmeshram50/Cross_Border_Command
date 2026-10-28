@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 
-/* Sub-navigation shared by the three Inventory scan screens. */
+/* Sub-navigation shared by the Inventory scan screens. */
 export default function InventoryTabs() {
   const cls = ({ isActive }: { isActive: boolean }) => `inv-tab${isActive ? ' active' : ''}`;
   return (
@@ -16,6 +16,9 @@ export default function InventoryTabs() {
       </NavLink>
       <NavLink to="/inventory/scan-log" className={cls}>
         <i className="ri-file-list-3-line" /> Scan Log
+      </NavLink>
+      <NavLink to="/inventory/handheld-guide" className={cls}>
+        <i className="ri-smartphone-line" /> Handheld Screens
       </NavLink>
     </nav>
   );

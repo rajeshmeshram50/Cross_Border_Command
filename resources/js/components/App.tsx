@@ -136,6 +136,7 @@ const ScanLanding = lazyPage(() => import('../pages/inventory/ScanLanding'));
 const PutawayScan = lazyPage(() => import('../pages/p2p/putaway/PutawayScan'));
 const InventoryScanDevices = lazyPage(() => import('../pages/inventory/InventoryScanDevices'));
 const InventoryScanLog = lazyPage(() => import('../pages/inventory/InventoryScanLog'));
+const InventoryHandheldGuide = lazyPage(() => import('../pages/inventory/InventoryHandheldGuide'));
 const MyTeam = lazyPage(() => import('../pages/MyTeam'));
 const Documentation = lazyPage(() => import('../pages/Documentation'));
 const Inbox = lazyPage(() => import('../pages/Inbox'));
@@ -733,6 +734,8 @@ function DashboardRoutesInner({ user }: { user: any }) {
               <Route path="/inventory/stickers" element={<InventoryStickers />} />
               <Route path="/inventory/devices" element={<InventoryScanDevices />} />
               <Route path="/inventory/scan-log" element={<InventoryScanLog />} />
+              {/* What the Zebra shows, for anyone who will not hold one. */}
+              <Route path="/inventory/handheld-guide" element={<InventoryHandheldGuide />} />
               <Route path="/p2p/analytics" element={<ModuleStubPage />} />
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
               <Route path="/p2p/bulk-sourcing" element={<P2pBulkSourcing />} />
