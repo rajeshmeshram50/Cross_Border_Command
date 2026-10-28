@@ -12,6 +12,7 @@ const PaymentRequestDetail = lazy(() => import('./PaymentRequestDetail'));
 import {  fetchPaymentRequests, STATUS_LABEL, SUPPLIER_TAG_LABEL,  type DocRef, type PartyRef, type PaymentRequestRow, type RequestStatus, type SupplierTag,} from './paymentRequestData';
 import '../../p2p-detail.css';
 import '../../purchase-management/order/po-list/order.css';
+import '../../p2p-master-management/supplier-management/supplier-management.css';
 import './payment-request.css';
 
 const GUIDE_STEPS: { num: string; title: string; desc: string; icon: ReactNode }[] = [
@@ -188,53 +189,57 @@ export default function PaymentRequestManagement() {
   return (
     <div className="ord-page prm-page">
 
-      <div className="spi-head">
-        <div className="spi-head-left">
-          <div className="spi-head-icon">
-            <IcoSend size={19} />
-          </div>
-          <div>
-            <div className="spi-head-title">Payment Request Management</div>
-            <div className="spi-head-sub">
-              Payment requests raised against a purchase order or a supplier invoice — approve, part-approve or decline the ones sent to you,
-              then track the release.
+      <div className="sup-fig">
+        <div className="cstrip">
+          <span className="cstrip__accent" />
+          <span className="cstrip__glow" />
+          <span className="cstrip__sheen" />
+          <div className="cstrip__left">
+            <div className="cstrip__avatar-wrap">
+              <div className="cstrip__avatar"><IcoSend size={17} /></div>
+              <span className="cstrip__online-dot" />
             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className={`spi-bref${guideOpen ? '' : ' is-collapsed'}`}>
-        <div className="spi-bref-head" role="button" tabIndex={0} aria-expanded={guideOpen} onClick={toggleGuide} onKeyDown={onGuideKey}>
-          <div className="spi-bref-ico">
-            <IcoSend size={14} stroke={2.4} />
-          </div>
-          <div className="spi-bref-mid">
-            <div className="spi-bref-row">
-              <div className="spi-bref-label">Payment Request Management</div>
-              <div className="spi-bref-sep" />
-              <div className="spi-bref-title">What We Are Doing Here</div>
-            </div>
-            <div className="spi-bref-sub">
-              Every request raised on a PO or an SPI lands here: check what it is against, decide it in full or in
-              part, then watch the release close it out — end to end in one place.
-            </div>
-          </div>
-          <div className="spi-bref-toggle">
-            <IcoChevron size={10} stroke={2.8} />
-          </div>
-        </div>
-
-        <div className="spi-bref-body">
-          {GUIDE_STEPS.map(step => (
-            <div className="spi-step" key={step.num}>
-              <div className="spi-step-top">
-                <span className="spi-step-ico">{step.icon}</span>
-                <span className="spi-step-num">{step.num}</span>
+            <div className="min-w-0">
+              <div className="cstrip__title">Payment Request Management</div>
+              <div className="cstrip__sub">
+                Payment requests raised against a purchase order or a supplier invoice — approve, part-approve or decline the ones sent to you,
+                then track the release.
               </div>
-              <div className="spi-step-title">{step.title}</div>
-              <div className="spi-step-desc">{step.desc}</div>
             </div>
-          ))}
+          </div>
+        </div>
+
+        <div className={`bref-box${guideOpen ? '' : ' is-collapsed'}`}>
+          <div className="bref-box__header" role="button" tabIndex={0} aria-expanded={guideOpen} onClick={toggleGuide} onKeyDown={onGuideKey}>
+            <div className="bref-box__header-ico"><IcoSend size={15} stroke={2.4} /></div>
+            <div className="bref-box__header-mid">
+              <div className="bref-box__header-row">
+                <div className="bref-box__header-label">Payment Request Management</div>
+                <div className="bref-box__header-sep" />
+                <div className="bref-box__header-title">What We Are Doing Here</div>
+              </div>
+              <div className="bref-box__header-sub">
+                Every request raised on a PO or an SPI lands here: check what it is against, decide it in full or in
+                part, then watch the release close it out — end to end in one place.
+              </div>
+            </div>
+            <div className="bref-box__header-right">
+              <div className="bref-box__toggle"><IcoChevron size={10} stroke={2.8} /></div>
+            </div>
+          </div>
+
+          <div className="bref-box__body">
+            {GUIDE_STEPS.map(step => (
+              <div className="bref-item" key={step.num}>
+                <div className="bref-item__top">
+                  <div className="bref-item__ico">{step.icon}</div>
+                  <span className="bref-item__num">{step.num}</span>
+                </div>
+                <div className="bref-item__title">{step.title}</div>
+                <div className="bref-item__desc">{step.desc}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
 import './product-management.css';
 import '../supplier-management/supplier-management.css';   // .sup-fig .cstrip / .bref-box — the shared list header
 import '../../../sales/core-masters/customer/SalesCustomers.css';   // .smc-root header overrides
+import '../../../../components/ui/DataTable.css';   // .dt-tabrail — the Customer list's tabs
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -556,25 +557,21 @@ export default function Products() {
 
       <div className="prd-panel">
       <div className="prd-toolbar">
-        <div className="prd-tabs">
-          <button
-            type="button"
-            className={`prd-tab ${statusTab === 'active' ? 'is-active' : ''}`}
-            onClick={() => setStatusTab('active')}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
-            <span className="prd-tab-label">Supplier Mapped Products</span>
-            <span className="prd-tab-badge prd-tab-badge--active"><span className="prd-tab-badge-dot" />Active<span className="prd-tab-badge-count">{stats.active}</span></span>
-          </button>
-          <button
-            type="button"
-            className={`prd-tab ${statusTab === 'inactive' ? 'is-active' : ''}`}
-            onClick={() => setStatusTab('inactive')}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /><line x1="3.5" y1="20.5" x2="20.5" y2="3.5" /></svg>
-            <span className="prd-tab-label">Zero Supplier Products</span>
-            <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
-          </button>
+        {/* The Customer list's tab rail (dt-tabrail / dt-tab); icons and the
+            Active / Inactive badges are the Product list's own. */}
+        <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+          <div className="dt-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={statusTab === 'active'} className={`dt-tab ${statusTab === 'active' ? 'on' : 'off'}`} onClick={() => setStatusTab('active')}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+              Supplier Mapped Products
+              <span className="prd-tab-badge prd-tab-badge--active"><span className="prd-tab-badge-dot" />Active<span className="prd-tab-badge-count">{stats.active}</span></span>
+            </button>
+            <button type="button" role="tab" aria-selected={statusTab === 'inactive'} className={`dt-tab ${statusTab === 'inactive' ? 'on' : 'off'}`} onClick={() => setStatusTab('inactive')}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /><line x1="3.5" y1="20.5" x2="20.5" y2="3.5" /></svg>
+              Zero Supplier Products
+              <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
+            </button>
+          </div>
         </div>
         <div className="prd-toolbar-find">
         <div className="prd-search">

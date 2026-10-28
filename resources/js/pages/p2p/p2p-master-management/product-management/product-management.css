@@ -630,34 +630,34 @@
   background: linear-gradient(135deg, #f87171, #dc2626);
 }
 
-.prd-tab.is-active .prd-tab-badge--active {
+:is(.prd-tab.is-active, .dt-tab.on) .prd-tab-badge--active {
   color: #fff;
   background: rgba(255, 255, 255, .16);
   border-color: rgba(255, 255, 255, .32);
 }
 
-.prd-tab.is-active .prd-tab-badge--active .prd-tab-badge-dot {
+:is(.prd-tab.is-active, .dt-tab.on) .prd-tab-badge--active .prd-tab-badge-dot {
   background: #fff;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, .22);
 }
 
-.prd-tab.is-active .prd-tab-badge--active .prd-tab-badge-count {
+:is(.prd-tab.is-active, .dt-tab.on) .prd-tab-badge--active .prd-tab-badge-count {
   color: #16a34a;
   background: #fff;
 }
 
-.prd-tab.is-active .prd-tab-badge--inactive {
+:is(.prd-tab.is-active, .dt-tab.on) .prd-tab-badge--inactive {
   color: #fff;
   background: rgba(255, 255, 255, .16);
   border-color: rgba(255, 255, 255, .32);
 }
 
-.prd-tab.is-active .prd-tab-badge--inactive .prd-tab-badge-dot {
+:is(.prd-tab.is-active, .dt-tab.on) .prd-tab-badge--inactive .prd-tab-badge-dot {
   background: #fff;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, .22);
 }
 
-.prd-tab.is-active .prd-tab-badge--inactive .prd-tab-badge-count {
+:is(.prd-tab.is-active, .dt-tab.on) .prd-tab-badge--inactive .prd-tab-badge-count {
   color: #dc2626;
   background: #fff;
 }
@@ -5543,16 +5543,18 @@
   height: 14px;
 }
 
+/* Section heading and subheading in the Customer form's type
+   (.acm-section-title 11px / 600, .acm-section-sub 10.5px / 500). */
 .apm-section-title {
-  font-size: 12.5px;
-  font-weight: 800;
-  letter-spacing: .04em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
   text-transform: uppercase;
   color: #5b21b6;
 }
 
 .apm-section-sub {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
   color: #a78bfa;
   letter-spacing: 0;
@@ -7272,6 +7274,126 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
   }
 }
 
+/* Shell sized like the Customer form's (QA #93): the card fits the viewport,
+   the header, stepper and footer never shrink, and only the body scrolls, so
+   a short viewport (DevTools open, zoom) no longer squashes the header. */
+.apm-backdrop {
+  padding: 16px;
+  overflow: hidden;
+}
+
+.apm-modal {
+  max-height: min(92vh, calc(100vh - 24px));
+}
+
+.apm-head,
+.apm-stepper,
+.apm-foot {
+  flex-shrink: 0;
+}
+
+.apm-body {
+  min-height: 0;
+}
+
+@media (max-width: 1440px) {
+  .apm-backdrop {
+    padding: 10px;
+  }
+
+  .apm-modal {
+    max-width: min(1180px, calc(100vw - 20px));
+    max-height: min(94vh, calc(100vh - 16px));
+  }
+
+  .apm-head {
+    padding: 12px 18px;
+  }
+
+  .apm-stepper {
+    padding: 10px 18px;
+  }
+
+  .apm-body {
+    padding: 0 18px 16px;
+  }
+
+  .apm-foot {
+    padding: 10px 18px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .apm-backdrop {
+    padding: 8px;
+  }
+
+  .apm-modal {
+    max-width: calc(100vw - 16px);
+    max-height: min(96vh, calc(100vh - 12px));
+  }
+
+  .apm-body {
+    padding: 0 14px 14px;
+  }
+}
+
+@media (max-width: 640px) {
+  .apm-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .apm-modal {
+    border-radius: 0;
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+  }
+
+  .apm-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+
+  .apm-head-left {
+    padding-right: 44px;
+  }
+
+  .apm-title {
+    font-size: 16px;
+  }
+
+  .apm-sub {
+    font-size: 11.5px;
+  }
+
+  /* Static, so the close button below pins to the header's corner rather
+     than the actions row; the buttons keep their own layer over the sheen. */
+  .apm-head-actions {
+    position: static;
+  }
+
+  .apm-head-btn {
+    position: relative;
+    z-index: 1;
+  }
+
+  .apm-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+  }
+
+  .apm-body {
+    padding: 0 12px 12px;
+  }
+}
+
 [data-bs-theme="dark"] .apm-modal {
   background: #14102a;
   color: #ede9fe;
@@ -8789,12 +8911,12 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 /* The badge dot keeps its own colour on the selected tab (QA #28) — green for
    Active, red for Inactive — instead of turning white when the tab switches.
    A light ring keeps it readable on the violet tab. */
-.prd-tab.is-active .prd-tab-badge--active .prd-tab-badge-dot {
+:is(.prd-tab.is-active, .dt-tab.on) .prd-tab-badge--active .prd-tab-badge-dot {
   background: #22c55e;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, .85);
 }
 
-.prd-tab.is-active .prd-tab-badge--inactive .prd-tab-badge-dot {
+:is(.prd-tab.is-active, .dt-tab.on) .prd-tab-badge--inactive .prd-tab-badge-dot {
   background: #ef4444;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, .85);
 }
@@ -8810,4 +8932,63 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 [data-bs-theme="dark"] .prd-tab:not(.is-active):hover {
   background: rgba(255, 255, 255, .1);
   color: #ddd6fe;
+}
+/* Add Product form: labels and fields in the Customer form's type
+   (.acm-field .avm-field-label / .avm-input) — labels 11px / 500 in normal case,
+   inputs and dropdowns 13px / 400. */
+.apm-field-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.apm-input,
+.apm-master-select .master-select-wrap .master-select-toggle {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+/* Filter button text = the tab labels' 12.5px (QA #92). */
+.prd-filter-btn { font-size: 12.5px; }
+
+/* Tabs are the Customer list's dt-tabrail; on a phone the stacked toolbar
+   gives the rail the full width, as the old tab row had. */
+@media (max-width: 640px) {
+  .prd-toolbar .dt-tabrail,
+  .prd-toolbar .dt-tabs {
+    width: 100%;
+  }
+
+  .prd-toolbar .dt-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+/* Filter button without the effects: no shine sweep, no drifting gradient,
+   no hover lift — a still button that only brightens on hover. */
+.prd-filter-btn {
+  animation: none;
+  background-size: 100% 100%;
+}
+
+.prd-filter-btn::after {
+  content: none;
+}
+
+.prd-filter-btn:hover,
+.prd-filter-btn:active {
+  transform: none;
+}
+
+/* Add Product form placeholders = the Customer form's (add-vendor-modal.css
+   .avm-input::placeholder): #94a3b8 at .45 opacity, 13px / 400. */
+.apm-input::placeholder,
+.apm-modal textarea::placeholder,
+.apm-master-select .master-select-placeholder {
+  color: #94a3b8 !important;
+  opacity: .45 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
 }
