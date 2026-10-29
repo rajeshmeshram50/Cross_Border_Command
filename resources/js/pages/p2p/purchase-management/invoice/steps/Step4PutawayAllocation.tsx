@@ -461,12 +461,22 @@ function extraFlagNames(items: SpiBoxItem[], master: ProductFlagOption[]): strin
   return out;
 }
 
-function dispositionOf(items: SpiBoxItem[], againstPo: boolean): Disposition {
+/* Which pile a box belongs to.
+ *
+ * `forDispatch` is whether this invoice has somewhere onward to send correct
+ * goods. A PO is one such destination; a shipment is the other, and a Direct
+ * SPI raised against a shipment has exactly the same onward journey as a PO
+ * does. Reading only the PO number filed every box on a Direct SPI as
+ * Inventory Stock - "extra quantity, staged for storage" - including the ones
+ * that are plainly correct and bound for the shipment they were invoiced
+ * against. A Direct SPI with no shipment has no destination, so inventory is
+ * the right answer there and stays the default. */
+function dispositionOf(items: SpiBoxItem[], forDispatch: boolean): Disposition {
   const remarks = items.map(it => it.remark ?? 'correct');
   if (remarks.includes('damaged')) return 'damaged';
   if (remarks.includes('mismatched')) return 'mismatch';
   if (remarks.includes('extra')) return 'inv';
-  return againstPo ? 'ship' : 'inv';
+  return forDispatch ? 'ship' : 'inv';
 }
 
 const locCodeOf = (s: ReturnType<typeof findSpot>): string | null =>
@@ -475,7 +485,7 @@ const locCodeOf = (s: ReturnType<typeof findSpot>): string | null =>
     : s.shelf.code.replace(/^.*?-(SH-\d+)$/, '$1');
 
 function toPickBoxes(
-  boxes: SpiBox[], flagMaster: ProductFlagOption[], lines: ProductLine[], board: PutawayBoard | null, againstPo: boolean,
+  boxes: SpiBox[], flagMaster: ProductFlagOption[], lines: ProductLine[], board: PutawayBoard | null, forDispatch: boolean,
 ): PickBox[] {
   const lineOf = new Map(lines.filter(l => l.spiItemId != null).map(l => [l.spiItemId as number, l]));
   const placeOf = new Map((board?.boxes ?? []).map(row => [row.box_id, row]));
@@ -495,7 +505,7 @@ function toPickBoxes(
       code: b.box_code,
       scenario: SCENARIO_LABEL[b.scenario] ?? b.scenario,
       scenarioKey: b.scenario,
-      type: dispositionOf(items, againstPo),
+      type: dispositionOf(items, forDispatch),
       name: names.length > 1 ? `${names[0]}  +${names.length - 1} more` : (names[0] || '—'),
       skus: items.length,
       qty,
@@ -669,10 +679,11 @@ export interface ZebraTaskRow {
   live: boolean;
 }
 
-function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, onCancelTask, onClose }: {
+function ZebraOpenTasks({ tasks, spiCode, poNumber, shipmentId, supplier, wh, onOpenTask, onCancelTask, onClose }: {
   tasks: ZebraTaskRow[];
   spiCode: string | null;
   poNumber: string | null;
+  shipmentId: string | null;
   supplier: string | null;
   wh: { id?: string | null; name?: string | null; own?: boolean } | null;
   onOpenTask: (code: string) => void;
@@ -737,7 +748,16 @@ function ZebraOpenTasks({ tasks, spiCode, poNumber, supplier, wh, onOpenTask, on
           </div>
           <div className="s4zv-refs">
             {ref(<IcoList />, 'Invoice No', spiCode || '—', true)}
-            {ref(<IcoList />, 'PO Number', poNumber || 'Direct SPI', true)}
+            {/* What this invoice is raised against — the thing the picker on
+                the floor needs to quote. A Direct SPI has no PO but usually
+                has a shipment, and "Direct SPI" told them nothing they could
+                look up. Only an invoice with neither falls back to the
+                label. */}
+            {poNumber
+              ? ref(<IcoList />, 'PO Number', poNumber, true)
+              : shipmentId
+                ? ref(<IcoTruck />, 'Shipment ID', shipmentId, true)
+                : ref(<IcoList />, 'Raised Against', 'Direct SPI — no shipment', true)}
             {ref(<IcoUserSm />, 'Supplier', supplier || '—')}
             {wh?.name && ref(<IcoWh />, 'Warehouse', `${wh.id ? wh.id + ' · ' : ''}${wh.name}`, false,
               <span className="s4zv-ref__tag">{wh.own === false ? 'Third Party' : 'Own'}</span>)}
@@ -1111,10 +1131,10 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
     if (board) onProgress?.(board.counts.placed, board.counts.total);
   }, [board?.counts.placed, board?.counts.total]);
 
-  const againstPo = !!draft.poNumber;
+  const forDispatch = !!draft.poNumber || !!draft.shipmentId;
   const all = useMemo(
-    () => toPickBoxes(boxes, flagMaster, lines, board, againstPo),
-    [boxes, flagMaster, lines, board, againstPo],
+    () => toPickBoxes(boxes, flagMaster, lines, board, forDispatch),
+    [boxes, flagMaster, lines, board, forDispatch],
   );
   const counts = useMemo(() => ({
     all: all.length,
@@ -2152,6 +2172,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
           onCancelTask={code => taskAction(code, 'cancel')}
           spiCode={spiCode}
           poNumber={draft.poNumber || null}
+          shipmentId={draft.shipmentId || null}
           supplier={draft.supplier || null}
           wh={warehouseInfo
             ? { id: warehouseInfo.code, name: warehouseInfo.name, own: warehouseInfo.own !== false }

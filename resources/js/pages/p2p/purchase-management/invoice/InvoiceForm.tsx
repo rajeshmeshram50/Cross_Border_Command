@@ -750,33 +750,24 @@ export default function InvoiceForm({
 
   const step1Busy = stage === 0 && (directSupLoading || supplierBusy);
 
-  /* A save does NOT replace the step with a skeleton.
-   *
-   * It used to: Save & Next swapped the body for a skeleton of the next step
-   * while the save was in flight. Three things went wrong with that, and all
-   * three come from the same mistake — a skeleton is for content that is
-   * being LOADED, and nothing here is loading. The step you are on is on
-   * screen already, filled in, and correct.
-   *
-   *   · it flashed, because most saves return in well under a tenth of a
-   *     second, so the step vanished and came back before it could be read;
-   *   · it contradicted the rail, which still named the step being left —
-   *     the body said "the next one is coming", the breadcrumb said "you are
-   *     still here", and with the body greyed out the rail is the only thing
-   *     left to read;
-   *   · it was the wrong SHAPE. The skeleton of the next step is not the
-   *     height of this one, so the card ended halfway down and left the rest
-   *     of the page blank — the page looked broken in the middle.
-   *
-   * Stage 01 of a Direct SPI makes the wait real — it saves, then fetches the
-   * PI's lines, two round trips — which is why this was so visible there.
-   *
-   * What the user gets instead is what the form already had: the Save button
-   * reads "Saving…" with its spinner, and the body is `inert`, so nothing can
-   * be typed or clicked into a form that is being written. The step then
-   * simply changes. Nothing to flash, nothing to contradict, no half page.
-   * Skeletons stay where they belong — `poLoading` on open, `boxesLoading`
-   * on stage 03 — where they really do stand in for content on its way. */
+  /* Save & Next in flight — the step shows the form shimmer until the next
+     one opens. This is the Create PO wizard's `advancing`, done its way:
+
+       · ONE shimmer, not a skeleton of the step being opened. The PO draws
+         the same two-section PoFormSkeleton every time, whichever step is
+         coming, so it is always the right height for the body it fills. A
+         per-stage skeleton is a different height from the step it replaces,
+         which is how the page came to end halfway down.
+       · no delay before it appears, and no moving the step rail. The PO does
+         neither, and both were my inventions.
+
+     It is derived rather than held in state: a save on any step but the last
+     IS an advance. Only `mapInvoice` saves from the last step, and that one
+     closes the form rather than opening another step, so it must not shimmer.
+
+     The step stays mounted underneath (hidden, not removed), so a save that
+     fails brings it back exactly as it was left — the PO's rule too. */
+  const advancing = saving && stage < STAGES.length - 1;
 
   const isLast = stage === STAGES.length - 1;
   const stageLabel = (i: number) =>
@@ -838,10 +829,15 @@ export default function InvoiceForm({
 
           <div className="spi-dt-steps cpf-steps4">
             {STAGES.map((s, i) => (
+              /* Off while saving: Tooltip wraps an aria-disabled trigger in an
+                 inline-flex span, which pulls the card out of the grid (it
+                 shrinks to its text) and makes it :last-child (it loses its
+                 arrow) for the length of the save. */
               <Tooltip
                 key={s.title}
-                label={saving ? 'Saving — please wait' : i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
+                label={i <= reached ? `Go to Step ${i + 1}` : 'Finish the current step first'}
                 position="bottom"
+                disabled={saving}
               >
               <div
                 className={`spi-dt-step spi-dt-step--nav ${i === stage ? 'is-active' : ''} ${i < stage ? 'is-done' : ''}${saving ? ' is-busy' : ''}`}
@@ -871,8 +867,8 @@ export default function InvoiceForm({
             <StageSkeleton stage={stage} />
           ) : (
             <>
-              {step1Busy && <StageSkeleton stage={0} />}
-              <div className="cpf-stepwrap" hidden={step1Busy}>
+              {(advancing || step1Busy) && <StageSkeleton stage={0} />}
+              <div className="cpf-stepwrap" hidden={advancing || step1Busy}>
                 {viewOnly && (
                   <div className="cpf-viewonly-banner">
                     <IcoLock /> <b>View only.</b>{' '}
