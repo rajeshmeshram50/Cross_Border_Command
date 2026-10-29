@@ -665,7 +665,11 @@ export default function InvoiceForm({
    * Returns the reason, not a boolean — the footer puts it on the button's
    * hover, so a disabled control can say why. */
   const stage1Gate = useMemo(() => {
-    if (stage !== 0 || viewOnly || !draft.supplier) return null;
+    /* Direct SPI only. An invoice raised against a purchase order is billing
+       an order that already passed this check at its own submit — blocking it
+       here would stop an invoice for a supplier the PO was already cleared,
+       or senior-approved, against, and there is no second decision to make. */
+    if (!isDirect || stage !== 0 || viewOnly || !draft.supplier) return null;
     const gst = gstState(draft.supplier, draft.scrutinyDate, draft.filingDate, 'invoice');
     if (gst.tone === 'stop') {
       return `${draft.supplier}'s GST scrutiny is out of date. Refresh it on the supplier record before this invoice can move on.`;
@@ -688,7 +692,7 @@ export default function InvoiceForm({
         + `${ctc.length === 1 ? 'is' : 'are'} still unsigned. Sign ${ctc.length === 1 ? 'it' : 'them'} before this invoice can move on.`;
     }
     return null;
-  }, [stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, gstApproval]);
+  }, [isDirect, stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, gstApproval]);
 
   /* Stage 2 can now be left empty — on an All Other's Direct SPI it STARTS
      empty — and an invoice with no products carries nothing into the boxes

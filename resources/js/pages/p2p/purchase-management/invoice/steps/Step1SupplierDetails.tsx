@@ -394,6 +394,10 @@ export default function Step1SupplierDetails({
           poId={poId}
           approval={approval}
           onSent={onApprovalSent}
+          /* Same checks, named for what the reader is actually looking at —
+             the dialog otherwise says "this PO cannot proceed" on an invoice
+             screen, which reads as the wrong dialog having opened. */
+          doc="invoice"
           onOpenScrutiny={!locked && editVendorId !== null ? () => setScrutinyOpen(true) : undefined}
         />
       )}
@@ -798,7 +802,14 @@ export default function Step1SupplierDetails({
                       on the stop and warn states and absent on the other two,
                       so a cleared supplier shows the banner without a button
                       asking to review nothing. */}
-                  {gst.action && (
+                  {/* Direct SPI only. A With-PO invoice bills an order that
+                      has already been through this very check on its own
+                      submit — re-asking here would stop an invoice for a
+                      supplier the purchase order was already cleared, or
+                      approved, against. The finding above still reads, so
+                      nothing is hidden; it simply stops being a gate on a
+                      document that is not the one being gated. */}
+                  {direct && gst.action && (
                     <button type="button" className={`invf-gst__act invf-gst__act--${gst.tone}`}
                       onClick={openGstNotice}>
                       {gst.action}

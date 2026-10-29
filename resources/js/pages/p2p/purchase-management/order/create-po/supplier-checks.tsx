@@ -111,7 +111,9 @@ const SCRUTINY_DUE_DAYS = 180;
    that is not on their screen. Defaults to 'PO', so every existing caller
    reads exactly as it did. */
 export type CheckDoc = 'PO' | 'invoice' | 'payment request';
-const DOC_THIS: Record<CheckDoc, string> = {
+/* Exported because the GST dialog names the document too, and it was saying
+   "the purchase order" and "this PO" to a reader looking at an invoice. */
+export const DOC_THIS: Record<CheckDoc, string> = {
   PO: 'this PO', invoice: 'this invoice', 'payment request': 'this payment request',
 };
 
