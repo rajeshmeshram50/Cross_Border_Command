@@ -122,6 +122,7 @@ export default function MultiBoxPanel({
                  fully-allocated set cannot be raised at all. */
               quantityMax={b.qty + Math.max(0, line.spiQty - allocated)}
               saved={!!savedCodes[b.no]}
+              updatable={!!savedCodes[b.no] && !readOnly}
               savedBanner={savedCodes[b.no] ? {
                 note: setNote(),
                 /* Done only when nothing is left in the set; otherwise the

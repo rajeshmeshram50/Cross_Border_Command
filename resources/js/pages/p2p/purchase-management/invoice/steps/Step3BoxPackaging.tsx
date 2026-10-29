@@ -474,6 +474,21 @@ export default function Step3BoxPackaging({
   };
 
   const saveSplitBox = async (line: ProductLine, no: number, qty: number, data: BoxSaveData) => {
+    const savedCode = splitCodes[line.code]?.[no];
+    const savedBox = savedCode ? boxes.find(b => b.box_code === savedCode) : undefined;
+    if (savedBox) {
+      if (readOnly || !onUpdateBox) return;
+      if (isPlaced(savedBox)) { toast.info(`${putId(savedBox.box_code)} is in putaway`, lockedMsg); return; }
+      const err = validate('s2', data, [{ line, qty }]);
+      if (err) { toast.warning('Box not saved', err); return; }
+      setSavingKey(`${line.code}#${no}`);
+      try {
+        await onUpdateBox(savedBox.id, bodyFor('s2', data, [{ line, qty }]));
+      } finally {
+        setSavingKey(null);
+      }
+      return;
+    }
     const box = await persist(`${line.code}#${no}`, 's2', data, [{ line, qty }]);
     if (!box) return;
     const codes = { ...(splitCodes[line.code] ?? {}), [no]: box.box_code };

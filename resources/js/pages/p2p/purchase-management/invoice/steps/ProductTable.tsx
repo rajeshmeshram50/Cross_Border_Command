@@ -93,8 +93,10 @@ export default function ProductTable({
    *
    * Not loaded when read-only — nothing can be picked there. */
   const [master, setMaster] = useState<ProductOpt[]>([]);
+  const needsNames = lines.some(l => l.productId != null && !l.code);
+  const wantMaster = !readOnly || needsNames;
   useEffect(() => {
-    if (readOnly) return;
+    if (!wantMaster) return;
     let live = true;
     poLookupApi.products()
       .then(rows => { if (live) setMaster(rows.map(toProduct).filter(p => p.id && p.name)); })
@@ -102,12 +104,13 @@ export default function ProductTable({
          what this table had before and is enough to remap an existing row. */
       .catch(() => {});
     return () => { live = false; };
-  }, [readOnly]);
+  }, [wantMaster]);
 
   const catalogue = useMemo(() => {
     const seen = new Map<string, { value: string; label: string; name: string; productId?: number; master?: ProductOpt }>();
     for (const l of lines) {
-      if (l.productId == null) continue;
+      const lineName = l.poName || l.spiName;
+      if (l.productId == null || (!l.code && !lineName)) continue;
       const value = String(l.productId);
       /* The label is cut at the same 30 the PI column beside it uses. The
          select is a fixed-width control in a sticky column, so a long name
@@ -117,8 +120,8 @@ export default function ProductTable({
       if (!seen.has(value)) {
         seen.set(value, {
           value,
-          label: `${formatProductCode(l.code)} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
-          name: l.poName,
+          label: `${formatProductCode(l.code)} — ${truncate(lineName, MATCH_NAME_MAX)}`,
+          name: lineName,
           productId: l.productId,
         });
       }
@@ -146,6 +149,27 @@ export default function ProductTable({
     }
     return [...seen.values()];
   }, [lines, master]);
+
+  useEffect(() => {
+    if (!master.length) return;
+    const byId = new Map(master.map(p => [p.id, p]));
+    lines.forEach((l, i) => {
+      if (l.productId == null || l.code) return;
+      const p = byId.get(l.productId);
+      if (!p || !p.code) return;
+      const name = withoutCodePrefix(p.name, p.code);
+      onChange(i, {
+        code: formatProductCode(p.code),
+        hsn: l.hsn || p.hsn,
+        piName: l.piName || name, poName: l.poName || name, spiName: l.spiName || name,
+        description: l.description || p.description,
+      });
+    });
+  }, [master, lines, onChange]);
+  const duplicateOf = useCallback(
+    (productId: number, at: number) => lines.some((l, j) => j !== at && l.productId === productId),
+    [lines],
+  );
   const exportSpi = taxMode === 'export';
   const inter = taxMode === 'inter' || exportSpi;
   const [detailId, setDetailId] = useState<number | null>(null);
@@ -322,6 +346,7 @@ export default function ProductTable({
               <Row
                 key={line.key ?? line.code} line={line} index={i} twoWay={twoWay} matched={matched}
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
+                duplicateOf={twoWay ? duplicateOf : undefined}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
                 onRemove={canRemove && lines.length > 1 ? askRemove : undefined}
@@ -363,8 +388,9 @@ export default function ProductTable({
 
 const Row = memo(function Row({
   line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly, twoWay,
-  matched, onRemove, showAction,
+  matched, onRemove, showAction, duplicateOf,
 }: {
+  duplicateOf?: (productId: number, index: number) => boolean;
   line: ProductLine;
   index: number;
   /** Matches the header: no purchase order columns. */
@@ -384,6 +410,7 @@ const Row = memo(function Row({
   onRemove?: (index: number) => void;
   showAction: boolean;
 }) {
+  const rowToast = useToast();
   const t = lineTotals(line, taxMode, twoWay);
   const inter = taxMode === 'inter' || taxMode === 'export';
 
@@ -416,6 +443,10 @@ const Row = memo(function Row({
               onChange={v => {
                 const pick = catalogue.find(c => c.value === v);
                 if (!pick) return;
+                if (pick.productId != null && duplicateOf?.(pick.productId, index)) {
+                  rowToast.warning('Product already added', `${pick.label} is already on this invoice — change its quantity instead.`);
+                  return;
+                }
                 /* A line that came from the PI already carries its code, HSN,
                    GST and description from that document, and they are what
                    the match is being made against — picking a product here
