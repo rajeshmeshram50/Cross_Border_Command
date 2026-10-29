@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Tooltip from '../../../../components/ui/Tooltip';
 import './direct-spi-steps.css';
 import './direct-spi-supplier.css';
 
@@ -128,6 +129,15 @@ function SegmentCell({ row }: { row: SupplierRow }) {
 const KIND_LABEL: Record<SupplierKind, string> = {
   manufacturer: 'Manufacturer', trader: 'Trader', service: 'Service Provider',
 };
+
+/* A supplier name is cut at a character count, not left to the cell's width.
+   CSS ellipsis alone cut at whatever width was left after the kind chip, so
+   the same list showed one name clipped at ~70 characters and the next at
+   ~30, and the hover had no way of saying which. A fixed cut keeps every row
+   reading the same, and the full name lives in the tooltip. */
+const NAME_MAX = 35;
+const clipName = (s: string) =>
+  s.length > NAME_MAX ? `${s.slice(0, NAME_MAX).trimEnd()}…` : s;
 
 /* Initials from the first two words — "Reliance Industries Ltd" gives RI, not
    RIL: the legal suffix is on every name and tells them apart from nothing. */
@@ -294,7 +304,13 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick, loading =
                   <span className={`sdx-sup__av sdx-sup__av--${r.kind}`}>{initialsOf(r.name)}</span>
                   <span className="sdx-sup__main">
                     <span className="sdx-sup__hd">
-                      <span className="sdx-sup__nm">{r.name}</span>
+                      {/* Only when it was actually cut: a tooltip that repeats
+                          a name you can already read is noise. The list sits in
+                          a portal at z-index 10000050, below the tooltip's own
+                          260000, so the default layer is enough here. */}
+                      <Tooltip label={r.name} disabled={r.name.length <= NAME_MAX}>
+                        <span className="sdx-sup__nm">{clipName(r.name)}</span>
+                      </Tooltip>
                       <span className={`sdx-sup__kind sdx-sup__kind--${r.kind}`}>{KIND_LABEL[r.kind]}</span>
                       <span className="sdx-sup__tick">{IcoTick}</span>
                     </span>

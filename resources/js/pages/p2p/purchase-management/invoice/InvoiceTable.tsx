@@ -129,7 +129,7 @@ function InvoiceTableRowBase({
 
       {on('shipmentId') && <td><IdCell id={row.shipmentId} date={row.shipmentDate} /></td>}
       {on('opportunityId') && <td><IdCell id={row.opportunityId} date={row.opportunityDate} /></td>}
-      <td><IdCell id={row.procurementId} date={row.procurementDate} /></td>
+      {on('procurementId') && <td><IdCell id={row.procurementId} date={row.procurementDate} /></td>}
 
       <td><SupplierCell name={row.supplierName} category={row.supplierCategory} /></td>
       <td><RiskPill level={row.riskLevel} /></td>

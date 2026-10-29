@@ -70,21 +70,24 @@ export const invoiceTableWidth = (cols: InvoiceColumn[]) =>
  * inspection, which is the PO's workflow.
  *
  * Shipment and Opportunity are not in this list, because a Direct SPI may
- * still carry a shipment; they are dropped only on the tab that is defined by
- * not having one. */
+ * still carry a shipment; they are dropped by the tab that is defined by not
+ * having one, whether or not there is a purchase order. */
 const DIRECT_HIDDEN = [
   'poNo', 'poType', 'edd', 'totalPo', 'netPayable', 'totalPaid', 'balance', 'inspection',
 ] as const;
 
 /* Without a shipment there is no shipment to name and no opportunity behind
-   it, so these two are blank for every row on that tab by definition. */
-const NO_SHIPMENT_HIDDEN = [...DIRECT_HIDDEN, 'shipmentId', 'opportunityId'] as const;
+   it, so these two print "—" in every row on that tab by definition.
+   Procurement stays: it is raised before a shipment exists, so a row can
+   carry one without carrying a shipment. */
+const NO_SHIPMENT_HIDDEN = ['shipmentId', 'opportunityId'] as const;
 
 /**
  * The columns this tab should show.
  *
- * Only the Direct SPI tab narrows: "All SPI's" and "With Purchase Order SPI"
- * both hold rows that have a purchase order, so every column can speak.
+ * The two tab rows narrow independently and both can apply at once: the scope
+ * drops what has no purchase order behind it, the sub-tab drops what has no
+ * shipment behind it.
  *
  * The result is the single source for the colgroup, the head, the width AND
  * which cells a row draws — the keys have to be read from one place or the
@@ -94,7 +97,9 @@ export function invoiceColumnsFor(
   scope: 'all' | 'with-po' | 'without-po',
   shipScope: 'with-shipment' | 'without-shipment',
 ): InvoiceColumn[] {
-  if (scope !== 'without-po') return INVOICE_COLUMNS;
-  const hidden = new Set<string>(shipScope === 'without-shipment' ? NO_SHIPMENT_HIDDEN : DIRECT_HIDDEN);
+  const hidden = new Set<string>();
+  if (scope === 'without-po') DIRECT_HIDDEN.forEach(k => hidden.add(k));
+  if (shipScope === 'without-shipment') NO_SHIPMENT_HIDDEN.forEach(k => hidden.add(k));
+  if (!hidden.size) return INVOICE_COLUMNS;
   return INVOICE_COLUMNS.filter(c => !hidden.has(c.key));
 }

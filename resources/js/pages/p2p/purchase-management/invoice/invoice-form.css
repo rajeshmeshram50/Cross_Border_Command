@@ -104,7 +104,22 @@
 /* The 3-Way Product Mapping band opens on the pinned Product (PI) column, so
    it is pinned to the same offset — otherwise the band's label and its left
    divider would slide across a column that is standing still. */
-.spi-prodtbl thead .cpd-grp-stick {
+/* ─── Why every rule in this header block carries BOTH `.cpd-tbl--pd` and
+   `.spi-prodtbl` ───────────────────────────────────────────────────────────
+   They are overriding create-po.css, which styles the same `.cpd-tbl--pd`
+   table and leaves these cells translucent. One class each used to be enough,
+   because invoice-form.css was imported after create-po.css and won the ties.
+
+   It no longer loads after it. InvoiceForm is lazy now, and Vite lists a
+   chunk's OWN stylesheet before the ones it imports, so the page loads
+   InvoiceForm-*.css and then create-po-*.css — the opposite order. Every tie
+   on specificity flipped to create-po, which brought back the exact bug the
+   comments below say was fixed: translucent white dividers over a sticky
+   header, with the rows visibly travelling through them.
+
+   So the SPI table's header stops depending on load order. The table carries
+   both classes, so the extra one costs nothing and wins outright. */
+.cpd-tbl--pd.spi-prodtbl thead .cpd-grp-stick {
   position: sticky;
   left: 42px;
   /* Above the header cells that scroll past it, not below them. Every other
@@ -120,15 +135,18 @@
   background: #0e7490;
   text-align: left;
 }
-/* The band's scrolling remainder. Transparent, NOT a solid fill: group cells
-   are deliberately left transparent so the thead's 110deg gradient runs
-   unbroken across the row, and only the pinned ones take a solid colour
-   because they scroll over the body. Painting this one #0e7490 put a flat
-   block in the middle of the gradient, a visibly different shade from the
-   band beside it. The 1px inset divider goes too, so no hairline splits what
-   reads as one bar. */
-.spi-prodtbl thead .cpd-grp-tail {
-  background: transparent;
+/* The band's scrolling remainder.
+   It was transparent, so the thead's 110deg gradient could run unbroken
+   across the row. The gradient is gone: a sticky header has to paint its
+   colour on the CELLS, because a row-group background does not cover the
+   rows scrolling under it, so every group cell that is not pinned now takes
+   the flat #0b7c9b further down this file. This one says so itself rather
+   than leaning on that rule, since a cell left transparent in a sticky
+   header is the bug, not the default.
+   The 1px inset divider still goes, so no hairline splits what reads as one
+   bar with the band beside it. */
+.cpd-tbl--pd.spi-prodtbl thead .cpd-grp-tail {
+  background: #0b7c9b;
   box-shadow: none !important;
 }
 
@@ -166,12 +184,12 @@
    the rest: that edge is where the rows slide beneath the header. The pinned
    cells restate it because their own box-shadow would otherwise replace it
    at the two columns that never scroll away. */
-.spi-prodtbl thead tr.cpd-grp th { border-bottom: 1px solid #2b859d; }
-.spi-prodtbl thead tr.cpd-grp th,
-.spi-prodtbl thead tr:last-child th { box-shadow: inset 1px 0 0 #217f99, 0 1px 0 0 #0e7490; }
-.spi-prodtbl thead tr.cpd-grp th:first-child,
-.spi-prodtbl thead .cpd-grp-tail { box-shadow: 0 1px 0 0 #0e7490; }
-.spi-prodtbl thead tr:last-child th.cpd-stick {
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th { border-bottom: 1px solid #2b859d; }
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th,
+.cpd-tbl--pd.spi-prodtbl thead tr:last-child th { box-shadow: inset 1px 0 0 #217f99, 0 1px 0 0 #0e7490; }
+.cpd-tbl--pd.spi-prodtbl thead tr.cpd-grp th:first-child,
+.cpd-tbl--pd.spi-prodtbl thead .cpd-grp-tail { box-shadow: 0 1px 0 0 #0e7490; }
+.cpd-tbl--pd.spi-prodtbl thead tr:last-child th.cpd-stick {
   box-shadow: 7px 0 12px -8px rgba(8, 47, 73, .35), 0 1px 0 0 #0e7490;
 }
 
@@ -10292,7 +10310,11 @@
    surplus belongs. */
 .spi-prodtbl .cpd-in--num { min-width: 86px; }
 
-.spi-prodtbl .cpd-in {
+/* `.cpd-tbl--pd` again for the load-order reason set out at the top of this
+   file: create-po.css holds `.cpd-tbl--pd .cpd-in`, the same two classes, so
+   with that stylesheet now loading last it took back the height, the padding
+   and the fill — the 40px below was being thrown away. */
+.cpd-tbl--pd.spi-prodtbl .cpd-in {
   height: 40px; min-height: 40px;
   padding: 0 10px;
   border: 1.5px solid #b9dfea;
@@ -10306,11 +10328,11 @@
 /* The focus ring keeps the field's own shadow, which the bare :focus rule in
    create-po.css replaces outright — without this the input went flat the
    moment it was being typed into. */
-.spi-prodtbl .cpd-in:focus {
+.cpd-tbl--pd.spi-prodtbl .cpd-in:focus {
   border-color: #22d3ee;
   box-shadow: 0 0 0 3px rgba(34,211,238,.14), inset 0 1px 0 rgba(255,255,255,.9);
 }
-[data-bs-theme="dark"] .spi-prodtbl .cpd-in {
+[data-bs-theme="dark"] .cpd-tbl--pd.spi-prodtbl .cpd-in {
   background: #0c1c24; border-color: rgba(34,211,238,.22); color: #e2e8f0;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
 }
