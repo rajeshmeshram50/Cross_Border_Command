@@ -2650,7 +2650,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const verifiedUploadedCount = uploadedDocs.filter(d => d.status === 'verified').length;
   const pendingUploadedCount  = uploadedDocs.filter(d => d.status !== 'verified').length;
   const signedCompletedCount  = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed').length;
-  const employeeDocCount       = uploadedDocs.length;
+  /* Held evidence only. A `rejected` upload is a document still owed — the
+     table drew it as an amber "Pending" pill — so it is not part of this
+     tab or its count. */
+  const heldUploadedDocs = uploadedDocs.filter(
+    d => d.status === 'verified' || d.status === 'uploaded',
+  );
+  const employeeDocCount       = heldUploadedDocs.length;
 
   /* Both vault tables show SIGNED copies only.
    *
@@ -2663,8 +2669,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const completedSignedDocs = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed');
   const isExitDoc = (d: SignedDoc) => String(d.trigger_keyword || '').toLowerCase() === 'exit';
 
-  const exitDocs = completedSignedDocs.filter(isExitDoc);
-  const organizationalDocs = completedSignedDocs.filter(d => !isExitDoc(d));
+  /* Exit paperwork sits inside Organizational Documents — the vault has two
+     tabs, and both of these are signed runs on the same columns. isExitDoc
+     stays for the badge the table draws on an exit row. */
+  void isExitDoc;
+  const exitDocs: SignedDoc[] = [];
+  const organizationalDocs = completedSignedDocs;
 
   const organizationalDocCount = organizationalDocs.length;
   const exitDocCount = exitDocs.length;
@@ -2944,7 +2954,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     handleProfilePhotoChange, handleSaveProfilePhoto, restoreSavedProfilePhoto,
     profilePhotoInputRef, setFaceRegOpen, setPwOpen,
     // Vault tab
-    vaultTab, setVaultTab, signedDocs, uploadedDocs, organizationalDocs, exitDocs, signedLoading, uploadedLoading,
+    vaultTab, setVaultTab, signedDocs, uploadedDocs: heldUploadedDocs, organizationalDocs, exitDocs, signedLoading, uploadedLoading,
     applicableDocs, canSendDocuments, sendApplicableDoc, sendingTemplateId,
     vaultCounts, prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
     // Payroll tab
@@ -3446,7 +3456,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <span className="ep-rev-icon ep-bd-icon-emerald">
                   <i className="ri-line-chart-line" />
                 </span>
-                <h6 className="mb-0 fw-bold ep-fs-13">Earnings Breakdown</h6>
+                <h6 className="mb-0 fw-bold ep-sec-head">Earnings Breakdown</h6>
               </div>
               <table className="ep-bd-table">
                 <thead>

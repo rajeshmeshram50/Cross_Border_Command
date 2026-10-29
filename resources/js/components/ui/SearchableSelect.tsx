@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 export interface SearchableSelectOption<T = any> {
   value: string;
@@ -52,6 +53,10 @@ export default function SearchableSelect<T = any>({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+const menuRef = useRef<HTMLDivElement>(null);
+
+const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
 
   const rootRef   = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -92,6 +97,63 @@ export default function SearchableSelect<T = any>({
     if (el) el.scrollIntoView({ block: 'nearest' });
   }, [activeIndex, open]);
 
+  useEffect(() => {
+  if (!open) return;
+
+  const updatePosition = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const gap = 6;
+    const viewportPadding = 8;
+    const availableBelow =
+      window.innerHeight - rect.bottom - gap - viewportPadding;
+    const availableAbove =
+      rect.top - gap - viewportPadding;
+
+    const estimatedMenuHeight = Math.min(
+      menuMaxHeight + 58,
+      400,
+    );
+
+    const placeAbove =
+      availableBelow < Math.min(estimatedMenuHeight, 180) &&
+      availableAbove > availableBelow;
+
+    const availableHeight = Math.max(
+      100,
+      placeAbove ? availableAbove : availableBelow,
+    );
+
+    setMenuStyle({
+      position: 'fixed',
+      left: rect.left,
+      width: rect.width,
+      zIndex: 12000,
+      ...(placeAbove
+        ? {
+            bottom: window.innerHeight - rect.top + gap,
+            top: 'auto',
+          }
+        : {
+            top: rect.bottom + gap,
+            bottom: 'auto',
+          }),
+      maxHeight: availableHeight,
+    });
+  };
+
+  updatePosition();
+
+  window.addEventListener('resize', updatePosition);
+  window.addEventListener('scroll', updatePosition, true);
+
+  return () => {
+    window.removeEventListener('resize', updatePosition);
+    window.removeEventListener('scroll', updatePosition, true);
+  };
+}, [open, menuMaxHeight]);
+
   const commit = (val: string | null) => {
     onChange(val);
     setOpen(false);
@@ -118,6 +180,7 @@ export default function SearchableSelect<T = any>({
     <div ref={rootRef} className={`position-relative ${className ?? ''}`}>
       {/* Trigger */}
       <button
+         ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen(v => !v)}
@@ -162,107 +225,142 @@ export default function SearchableSelect<T = any>({
       </button>
 
       {/* Popover menu */}
-      {open && (
-        <div
-          className="position-absolute w-100"
+{open &&
+  createPortal(
+    <div
+      ref={menuRef}
+      className="searchable-select-menu"
+      style={{
+        ...menuStyle,
+        borderRadius: 14,
+        overflow: 'hidden',
+        background: 'var(--vz-card-bg, #212529)',
+        border: '1px solid var(--vz-border-color, #444)',
+        boxShadow: '0 16px 40px rgba(15,23,42,0.3)',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+      onMouseDown={e => e.stopPropagation()}
+    >
+      {/* Search input header */}
+      <div
+        className="d-flex align-items-center gap-2"
+        style={{
+          padding: '10px 12px',
+          borderBottom: '1px solid var(--vz-border-color)',
+          background: 'var(--vz-secondary-bg)',
+          flexShrink: 0,
+        }}
+      >
+        <i
+          className="ri-search-line"
           style={{
-            top: 'calc(100% + 6px)',
-            left: 0,
-            zIndex: 1050,
-            borderRadius: 14,
-            overflow: 'hidden',
-            background: 'var(--vz-card-bg)',
-            border: '1px solid var(--vz-border-color)',
-            boxShadow: '0 16px 40px rgba(15,23,42,0.14), 0 4px 8px rgba(15,23,42,0.06)',
+            color: 'var(--vz-secondary-color)',
+            fontSize: 15,
           }}
-        >
-          {/* Search input header */}
-          <div
-            className="d-flex align-items-center gap-2"
-            style={{
-              padding: '10px 12px',
-              borderBottom: '1px solid var(--vz-border-color)',
-              background: 'var(--vz-secondary-bg)',
-            }}
-          >
-            <i className="ri-search-line" style={{ color: 'var(--vz-secondary-color)', fontSize: 15 }} />
-            <input
-              ref={searchRef}
-              type="text"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder={searchPlaceholder}
-              className="flex-grow-1"
-              style={{
-                border: 'none',
-                outline: 'none',
-                background: 'transparent',
-                color: 'var(--vz-body-color)',
-                fontSize: 13,
-              }}
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => { setQuery(''); searchRef.current?.focus(); }}
-                className="btn btn-sm p-0 d-inline-flex align-items-center justify-content-center"
-                style={{ width: 22, height: 22, color: 'var(--vz-secondary-color)', border: 'none', background: 'transparent' }}
-                title="Clear search"
-              >
-                <i className="ri-close-circle-fill" style={{ fontSize: 14 }} />
-              </button>
-            )}
-          </div>
+        />
 
-          {/* Option list */}
-          <div
-            ref={listRef}
+        <input
+          ref={searchRef}
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={searchPlaceholder}
+          className="flex-grow-1"
+          style={{
+            border: 'none',
+            outline: 'none',
+            background: 'transparent',
+            color: 'var(--vz-body-color)',
+            fontSize: 13,
+            minWidth: 0,
+          }}
+        />
+
+        {query && (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('');
+              searchRef.current?.focus();
+            }}
             style={{
-              maxHeight: menuMaxHeight,
-              overflowY: 'auto',
-              padding: 6,
+              width: 22,
+              height: 22,
+              color: 'var(--vz-secondary-color)',
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+            }}
+            title="Clear search"
+          >
+            <i className="ri-close-circle-fill" />
+          </button>
+        )}
+      </div>
+
+      {/* Option list */}
+      <div
+        ref={listRef}
+        style={{
+          maxHeight: Math.max(
+            60,
+            Number(menuStyle.maxHeight ?? 300) - 58,
+          ),
+          overflowY: 'auto',
+          padding: 6,
+        }}
+      >
+        {filtered.length === 0 ? (
+          <div
+            className="text-center py-4"
+            style={{
+              color: 'var(--vz-secondary-color)',
+              fontSize: 13,
             }}
           >
-            {filtered.length === 0 ? (
-              <div className="text-center py-4" style={{ color: 'var(--vz-secondary-color)', fontSize: 13 }}>
-                <i className="ri-search-eye-line d-block mb-1" style={{ fontSize: 20 }} />
-                {emptyLabel}
-              </div>
-            ) : (
-              filtered.map((opt, idx) => {
-                const isActive   = idx === activeIndex;
-                const isSelected = opt.value === value;
-                return (
-                  <div
-                    key={opt.value}
-                    data-idx={idx}
-                    onMouseEnter={() => setActiveIndex(idx)}
-                    onClick={() => commit(opt.value)}
-                    role="option"
-                    aria-selected={isSelected}
-                    style={{
-                      padding: '10px 12px',
-                      borderRadius: 10,
-                      marginBottom: 4,
-                      cursor: 'pointer',
-                      transition: 'background .1s ease',
-                      background: isSelected
-                        ? 'linear-gradient(135deg,#405189,#6691e7)'
-                        : isActive
-                          ? 'var(--vz-primary-bg-subtle, rgba(64,81,137,0.08))'
-                          : 'transparent',
-                      color: isSelected ? '#fff' : 'var(--vz-body-color)',
-                    }}
-                  >
-                    {renderOption(opt.raw, isSelected)}
-                  </div>
-                );
-              })
-            )}
+            <i className="ri-search-eye-line d-block mb-1" />
+            {emptyLabel}
           </div>
-        </div>
-      )}
+        ) : (
+          filtered.map((opt, idx) => {
+            const isActive = idx === activeIndex;
+            const isSelected = opt.value === value;
+
+            return (
+              <div
+                key={opt.value}
+                data-idx={idx}
+                onMouseEnter={() => setActiveIndex(idx)}
+                onClick={() => commit(opt.value)}
+                role="option"
+                aria-selected={isSelected}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  marginBottom: 4,
+                  cursor: 'pointer',
+                  transition: 'background .1s ease',
+                  background: isSelected
+                    ? 'linear-gradient(135deg,#405189,#6691e7)'
+                    : isActive
+                      ? 'var(--vz-primary-bg-subtle, rgba(64,81,137,0.08))'
+                      : 'transparent',
+                  color: isSelected
+                    ? '#fff'
+                    : 'var(--vz-body-color)',
+                }}
+              >
+                {renderOption(opt.raw, isSelected)}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>,
+    document.body,
+  )}
     </div>
   );
 }

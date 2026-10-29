@@ -264,28 +264,30 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     // profile overlay) so the cards stretch to the bottom instead of leaving a
     // large empty area below — the two content rows below grow to share it.
     <div className="att-tab-fill d-flex flex-column" style={{ minHeight: '100%' }}>
-      {/* KPI strip */}
-      <Row className="g-3 mb-3 align-items-stretch">
-        <Col xl><KpiTile label="Present Days"      value={<AnimatedNumber value={stats.present_days} />}      sub="This month"         icon="ri-checkbox-circle-line" gradient={G_SUCCESS} /></Col>
-        <Col xl><KpiTile label="Late Marks"        value={<AnimatedNumber value={stats.late_marks} />}        sub="This month"         icon="ri-time-line"            gradient={G_WARNING} /></Col>
-        <Col xl><KpiTile label="Missing Biometric" value={<AnimatedNumber value={stats.missing_biometric} />} sub="Entries this month" icon="ri-error-warning-line"   gradient={G_DANGER}  /></Col>
-        <Col xl><KpiTile label="Total Leaves"      value={<AnimatedNumber value={stats.total_leaves} />}      sub="This month"         icon="ri-calendar-todo-line"   gradient={G_PURPLE}  /></Col>
+      {/* KPI strip. .rec-page-kpis is what makes this the MODULE's strip
+          rather than four plain KPI cards — see recruitment.css. */}
+      <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
+        <Col xl><KpiTile label="Present Days"      value={<AnimatedNumber value={stats.present_days} />}      icon="ri-checkbox-circle-line" gradient={G_SUCCESS} /></Col>
+        <Col xl><KpiTile label="Late Marks"        value={<AnimatedNumber value={stats.late_marks} />}        icon="ri-time-line"            gradient={G_WARNING} /></Col>
+        <Col xl><KpiTile label="Missing Biometric" value={<AnimatedNumber value={stats.missing_biometric} />} icon="ri-error-warning-line"   gradient={G_DANGER}  /></Col>
+        <Col xl><KpiTile label="Total Leaves"      value={<AnimatedNumber value={stats.total_leaves} />}      icon="ri-calendar-todo-line"   gradient={G_PURPLE}  /></Col>
       </Row>
 
       {/* Today + Timeline side-by-side */}
       <Row className="g-3 mb-3 align-items-stretch flex-grow-1">
         <Col xl={6}>
-          {/* No ep-ct-* accent class — these two cards deliberately skip the
-              3px coloured top strip and keep the plain 1px card border. */}
-          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
-            <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-emerald"
-            >
-              <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon ep-icon-emerald">
-                  <i className="ri-calendar-check-line" />
-                </span>
-                <h6 className="mb-0 fw-bold ep-fs-12">Today's Record</h6>
+          {/* The attendance module's card header — same .att-logs-card /
+              .att-logs-headbar as Logs & Requests and My Regularization
+              Requests further down this tab. These two used the profile's
+              tinted section head, so one tab showed two header styles. */}
+          <div className="att-logs-card h-100 d-flex flex-column">
+            <div className="att-logs-headbar px-3 py-2">
+              <div className="d-flex align-items-center gap-3 min-w-0">
+                <span className="att-logs-headbar-icon"><i className="ri-calendar-check-line" /></span>
+                <div>
+                  <div className="att-logs-headbar-title">Today's Record</div>
+                  <div className="att-logs-headbar-sub">Punches and totals for the current day</div>
+                </div>
               </div>
               <small className="text-muted ep-fs-11">
                 {new Date().toLocaleDateString([], { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}
@@ -368,15 +370,14 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
         </Col>
 
         <Col xl={6}>
-          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
-            <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-indigo"
-            >
-              <div className="d-flex align-items-center gap-2">
-                <span className="ep-section-icon ep-icon-indigo">
-                  <i className="ri-pulse-line" />
-                </span>
-                <h6 className="mb-0 fw-bold ep-fs-12">Intraday Punch Timeline</h6>
+          <div className="att-logs-card h-100 d-flex flex-column">
+            <div className="att-logs-headbar px-3 py-2">
+              <div className="d-flex align-items-center gap-3 min-w-0">
+                <span className="att-logs-headbar-icon"><i className="ri-pulse-line" /></span>
+                <div>
+                  <div className="att-logs-headbar-title">Intraday Punch Timeline</div>
+                  <div className="att-logs-headbar-sub">Every tap recorded today, in order</div>
+                </div>
               </div>
               <small className="text-muted ep-fs-11">
                 {todayPunches.length} {todayPunches.length === 1 ? 'punch today' : 'punches today'}

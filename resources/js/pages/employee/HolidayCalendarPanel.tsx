@@ -155,6 +155,12 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
   const css = `
     .hcp-wrap { padding: 2px; }
     .hcp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    /* The app's face, stated not inherited: Velzon puts Rubik on the body, so
+       this panel ran Rubik while the DataTable inside it ran DM Sans. Same
+       trap .dt-table, .dt-tab and .tc-wl-pag each name explicitly. */
+    .hcp-wrap, .hcp-wrap button, .hcp-wrap input, .hcp-wrap select {
+      font-family: var(--font-sans);
+    }
     .hcp-grp { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #475569; }
     .hcp-grp-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; background: linear-gradient(135deg,#7c3aed,#8b5cf6); color: #fff; font-weight: 700; font-size: 12px; box-shadow: 0 2px 8px rgba(124,58,237,.3); }
     .hcp-controls { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -175,7 +181,8 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
        a flex item defaults to its content's min-content width and would push
        the RECURRING pill out of the column instead of clipping. */
     .hcp-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
-    .hcp-name { font-weight: 700; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* 600, as the primary name cell on every other list in the module. */
+    .hcp-name { font-weight: 600; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .hcp-desc { display: block; font-size: 12px; color: #64748b; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .hcp-desc--empty { color: #cbd5e1; }
     .hcp-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid; }
@@ -192,19 +199,30 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
     .hcp-cal-head .m { font-weight: 800; font-size: 14px; }
     .hcp-cal-head button { width: 28px; height: 28px; border: 0; border-radius: 7px; background: rgba(255,255,255,.2); color: #fff; cursor: pointer; }
     .hcp-cal-head button:disabled { opacity: .4; cursor: default; }
-    .hcp-cal-grid { display: grid; grid-template-columns: repeat(7,1fr); }
+    /* minmax(0,1fr), not plain 1fr: a bare 1fr means minmax(AUTO,1fr), and an auto
+       minimum is min-content — one long unbroken holiday name then sets the
+       column's width and pulls the whole grid out of shape, however hard the
+       text inside is clipped. (#58) */
+    .hcp-cal-grid { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); }
     .hcp-cal-grid .wd { text-align: center; font-size: 10px; font-weight: 800; color: #94a3b8; text-transform: uppercase; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
-    .hcp-cell { min-height: 56px; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; padding: 5px 6px; position: relative; }
+    .hcp-cell { min-height: 56px; min-width: 0; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; padding: 5px 6px; position: relative; }
     .hcp-cell:nth-child(7n) { border-right: 0; }
     .hcp-cell .d { font-size: 11.5px; font-weight: 700; color: #475569; }
     .hcp-cell.hol { background: #f5f3ff; }
     .hcp-cell.hol .d { color: #6d28d9; }
-    .hcp-cell .hn { margin-top: 3px; font-size: 9.5px; line-height: 1.2; font-weight: 700; color: #5b21b6; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    /* overflow-wrap so a name with no spaces breaks rather than running past
+       the clamp as a single unbreakable line. */
+    .hcp-cell .hn { margin-top: 3px; font-size: 9.5px; line-height: 1.2; font-weight: 700; color: #5b21b6; overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
     .hcp-cell.empty { background: #fafbfc; }
 
     .hcp-side { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; overflow: hidden; }
     .hcp-side-h { padding: 10px 14px; font-size: 12px; font-weight: 800; color: #0f172a; border-bottom: 1px solid #f1f5f9; background: #f8fafc; }
     .hcp-side-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #f8fafc; }
+    /* One line with an ellipsis; the full name is on the title. Without the
+       min-width the flex child's min-content floor keeps it from shrinking,
+       so nothing ellipsises. (#58) */
+    .hcp-side-item > div:last-child { min-width: 0; flex: 1; }
+    .hcp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .hcp-side-date { flex-shrink: 0; text-align: center; width: 38px; }
     .hcp-side-date .dd { font-size: 16px; font-weight: 800; color: #6d28d9; line-height: 1; }
     .hcp-side-date .wd { font-size: 9px; font-weight: 700; color: #94a3b8; text-transform: uppercase; }
@@ -254,29 +272,54 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
     <div className="hcp-wrap">
       <style>{css}</style>
 
-      <div className="hcp-toolbar">
-        <div className="hcp-grp">
-          <i className="ri-calendar-event-line" style={{ fontSize: 17, color: '#7c3aed' }} />
-          {hasGroup ? (
-            <>
-              <span>Assigned calendar:</span>
-              <span className="hcp-grp-pill"><i className="ri-bookmark-line" />{groupName || 'Holiday Group'}</span>
-            </>
-          ) : (
-            <span style={{ fontWeight: 600 }}>No holiday calendar assigned</span>
-          )}
-        </div>
-
-        <div className="hcp-controls">
-          {!loading && hasGroup && <span className="hcp-count">{holidays.length} holiday{holidays.length === 1 ? '' : 's'} in {year}</span>}
-          <div className="hcp-year">
-            <button type="button" onClick={() => setYear(y => y - 1)} aria-label="Previous year"><i className="ri-arrow-left-s-line" /></button>
-            <span>{year}</span>
-            <button type="button" onClick={() => setYear(y => y + 1)} aria-label="Next year"><i className="ri-arrow-right-s-line" /></button>
+      {/* The module's card header — same .att-logs-card / .att-logs-headbar
+          row as the other profile tabs. The assigned calendar reads as the
+          subtitle rather than floating on the page background, and the count
+          sits with it instead of competing for the right-hand corner. */}
+      <div className="att-logs-card hcp-headcard mb-3">
+        <div className="att-logs-headbar px-3 py-2">
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            <span className="att-logs-headbar-icon"><i className="ri-calendar-event-line" /></span>
+            <div className="min-w-0">
+              <div className="att-logs-headbar-title">Holidays</div>
+              <div className="att-logs-headbar-sub">
+                {hasGroup
+                  ? <>{groupName || 'Holiday Group'}{!loading && <> · {holidays.length} holiday{holidays.length === 1 ? '' : 's'} in {year}</>}</>
+                  : 'No holiday calendar assigned'}
+              </div>
+            </div>
           </div>
-          <div className="hcp-toggle">
-            <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}><i className="ri-list-unordered" /> List</button>
-            <button type="button" className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}><i className="ri-calendar-2-line" /> Calendar</button>
+
+          <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+            <div className="hcp-year">
+              <button type="button" onClick={() => setYear(y => y - 1)} aria-label="Previous year"><i className="ri-arrow-left-s-line" /></button>
+              <span>{year}</span>
+              <button type="button" onClick={() => setYear(y => y + 1)} aria-label="Next year"><i className="ri-arrow-right-s-line" /></button>
+            </div>
+            {/* The shared rail, so this view switch matches every other tab
+                switch in the product. Was a hand-built button pair. */}
+            <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+              <div className="dt-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'list'}
+                  onClick={() => setView('list')}
+                  className={`dt-tab ${view === 'list' ? 'on' : 'off'}`}
+                >
+                  <i className="ri-list-unordered" />List
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'calendar'}
+                  onClick={() => setView('calendar')}
+                  className={`dt-tab ${view === 'calendar' ? 'on' : 'off'}`}
+                >
+                  <i className="ri-calendar-2-line" />Calendar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -314,6 +357,8 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
           columns={holidayColumns}
           serial
           accent="violet"
+          /* .ep-hero, not .hr-cstrip, so the HRMS skin has to be named. */
+          className="hr-dt"
           pageSize={10}
           minWidth={720}
           /* No search box: one year's holiday calendar is a short, complete
@@ -363,7 +408,7 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
                     <div className="wd">{d.toLocaleDateString('en-GB', { weekday: 'short' })}</div>
                   </div>
                   <div style={{ minWidth: 0 }}>
-                    <div className="hcp-name" style={{ fontSize: 13 }}>{h.name}</div>
+                    <div className="hcp-name" style={{ fontSize: 13 }} title={h.name}>{h.name}</div>
                     <span className="hcp-badge" style={{ marginTop: 4, background: c.bg, color: c.fg, borderColor: c.bd }}><span className="dot" />{h.type}</span>
                   </div>
                 </div>

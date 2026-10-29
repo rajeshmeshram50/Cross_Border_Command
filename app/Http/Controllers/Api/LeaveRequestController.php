@@ -751,6 +751,15 @@ class LeaveRequestController extends Controller
             ];
         }
 
+        /* The same thing for non-admins, who cannot be counted in SQL: keep a
+           copy with every filter EXCEPT status, to run the permission pass
+           over further down. Taken here for the same reason as the admin
+           clone above — once the status clause is on, the other tabs are
+           unreachable. (#5) */
+        $countQuery = ($request->boolean('with_counts') && !$isAdminScope)
+            ? (clone $q)->reorder()
+            : null;
+
         // Now the status clause, after the counts have seen the full spread.
         if ($status && $status !== 'All') {
             $q->where('status', $status);
@@ -782,22 +791,27 @@ class LeaveRequestController extends Controller
         // only show ones where I can act on the current level. For
         // decided requests fall back to "I was somewhere on the chain"
         // so my history view still includes them.
+        /* One definition, used for the rows on screen AND for the tab counts
+           below. Two copies would eventually disagree, and a count that
+           disagreed would report rows the viewer may not open. (#5) */
+        $visibleToViewer = function (LeaveRequest $row) use ($user, $myEmployeeId) {
+            // Always keep my own requests — I'm the requestor, not an
+            // approver, so the canActOnLevel pass below would otherwise
+            // drop them and leave my own Leave page empty.
+            if ((int) $row->employee_id === (int) $myEmployeeId) return true;
+            $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
+            if ($row->status === 'Pending') {
+                $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
+                return $this->canActOnLevel($user, $chain, $idx, $row);
+            }
+            foreach (array_keys($chain) as $i) {
+                if ($this->canActOnLevel($user, $chain, $i, $row)) return true;
+            }
+            return (int) $row->approved_by === (int) $user->id;
+        };
+
         if (!$isAdminScope) {
-            $rows = $rows->filter(function (LeaveRequest $row) use ($user, $myEmployeeId) {
-                // Always keep my own requests — I'm the requestor, not an
-                // approver, so the canActOnLevel pass below would otherwise
-                // drop them and leave my own Leave page empty.
-                if ((int) $row->employee_id === (int) $myEmployeeId) return true;
-                $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
-                if ($row->status === 'Pending') {
-                    $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
-                    return $this->canActOnLevel($user, $chain, $idx, $row);
-                }
-                foreach (array_keys($chain) as $i) {
-                    if ($this->canActOnLevel($user, $chain, $i, $row)) return true;
-                }
-                return (int) $row->approved_by === (int) $user->id;
-            })->values();
+            $rows = $rows->filter($visibleToViewer)->values();
         }
 
         /* Non-admin paging happens HERE, after the permission pass — never
@@ -807,16 +821,18 @@ class LeaveRequestController extends Controller
            return 25 rows, drop 17 of them, and show 8 with no way to reach the
            rest. Count and slice the filtered set instead. */
         if ($total === null) {
-            /* Non-admin counts, off the permission-filtered collection. Only the
-               tab that is currently open can be counted honestly here, because
-               $q already carries its status clause — the others would need a
-               second pass through the same permission filter. A manager's queue
-               is their own team's, not the tenant's, so the set is small and the
-               missing tabs simply report what is in hand. */
+            /* Non-admin counts, across EVERY status. $countQuery was cloned
+               before the status clause and goes through the same permission
+               filter as the rows on screen, so a tab reports what the viewer
+               would actually get if they clicked it. Counting $rows instead
+               reported only the open tab and zeroed the rest (#5). */
             if ($request->boolean('with_counts') && $counts === null) {
-                $byStatus = $rows->countBy(fn (LeaveRequest $r) => (string) $r->status);
+                $countRows = $countQuery
+                    ? $countQuery->get()->filter($visibleToViewer)->values()
+                    : $rows;
+                $byStatus = $countRows->countBy(fn (LeaveRequest $r) => (string) $r->status);
                 $counts = [
-                    'All'       => $rows->count(),
+                    'All'       => $countRows->count(),
                     'Pending'   => (int) ($byStatus['Pending']   ?? 0),
                     'Approved'  => (int) ($byStatus['Approved']  ?? 0),
                     'Rejected'  => (int) ($byStatus['Rejected']  ?? 0),

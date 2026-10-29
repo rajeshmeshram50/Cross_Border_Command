@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef, type CSSProperties } from 'react';
+import { Fragment, useEffect, useMemo, useState, useCallback, useRef, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
@@ -1262,6 +1262,12 @@ function LeaveTypesTab({
   };
   const regular     = filter(catalog.filter(t => t.group === 'regular'));
   const incidental  = filter(catalog.filter(t => t.group === 'incidental'));
+  /* Paged over both groups at once. The divider is not a row in here — it is
+     drawn from the page's own contents below, so it travels with the first
+     incidental type wherever that lands. */
+  const allTypes  = [...regular, ...incidental];
+  const pager     = usePager(allTypes.length);
+  const pageTypes = pageSlice(allTypes, pager.page, pager.pageSize);
 
   return (
     <div className="lp-types-pane">
@@ -1309,14 +1315,18 @@ function LeaveTypesTab({
             </tr>
           </thead>
           <tbody>
-            {regular.map(t => <CatalogRow key={t.id} t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} canEdit={canEdit} canDelete={canDelete} />)}
-            {incidental.length > 0 && (
-              <tr className="lp-group-row">
-                <td colSpan={5}>STATUTORY / INCIDENTAL</td>
-              </tr>
-            )}
-            {incidental.map(t => <CatalogRow key={t.id} t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} canEdit={canEdit} canDelete={canDelete} />)}
-            {regular.length === 0 && incidental.length === 0 && (
+            {pageTypes.map((t, i) => (
+              <Fragment key={t.id}>
+                {/* First incidental ON THIS PAGE carries the divider. */}
+                {t.group === 'incidental' && (i === 0 || pageTypes[i - 1].group !== 'incidental') && (
+                  <tr className="lp-group-row">
+                    <td colSpan={5}>STATUTORY / INCIDENTAL</td>
+                  </tr>
+                )}
+                <CatalogRow t={t} onView={onView} onEdit={onEdit} onDelete={onDelete} canEdit={canEdit} canDelete={canDelete} />
+              </Fragment>
+            ))}
+            {allTypes.length === 0 && (
               <tr>
                 <td colSpan={5} className="text-center py-5 text-muted">
                   <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
@@ -1327,6 +1337,13 @@ function LeaveTypesTab({
           </tbody>
         </table>
       </div>
+      <TablePager
+        total={allTypes.length}
+        page={pager.page}
+        pageSize={pager.pageSize}
+        onPage={pager.setPage}
+        onPageSize={pager.setPageSize}
+      />
     </div>
   );
 }

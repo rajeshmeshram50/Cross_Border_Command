@@ -405,8 +405,8 @@ export default function HrBiometricDevices() {
           </div>
         </div>
         <Form onSubmit={handleSave}>
-          <ModalBody className="p-4">
-            <Row className="g-3">
+          <ModalBody className="p-3">
+            <Row className="g-2">
               <Col md={6}>
                 <Label>Serial No.<span className="req-star">*</span></Label>
                 <div className="master-field">
@@ -540,28 +540,57 @@ export default function HrBiometricDevices() {
         isOpen={importOpen}
         toggle={() => setImportOpen(false)}
         centered
-        modalClassName="master-modal hrms-modal"
+        size="lg"
+        modalClassName="master-modal hrms-modal imp-modal"
         backdrop="static"
         keyboard={false}
       >
+        {/* Same header as every other HRMS dialog — see Assign Assets. */}
         <div
-          className="position-relative overflow-hidden"
           style={{
-            background: 'linear-gradient(135deg, rgba(124,92,252,0.10) 0%, rgba(169,147,253,0.05) 60%, var(--vz-card-bg) 100%)',
-            padding: '22px 26px',
-            borderBottom: '1px solid var(--vz-border-color)',
+            padding: '14px 20px',
+            background: 'linear-gradient(120deg, #5b3fd1 0%, #6366f1 55%, #7c5cfc 100%)',
+            color: '#fff',
+            position: 'relative',
+            overflow: 'hidden',
           }}
         >
-          <div className="d-flex align-items-center gap-3">
+          <div style={{
+            position: 'absolute', top: -50, right: -40, width: 220, height: 220,
+            borderRadius: '50%', background: 'rgba(255,255,255,0.10)',
+          }} />
+          <button
+            type="button"
+            onClick={() => setImportOpen(false)}
+            disabled={importing}
+            aria-label="Close"
+            className="assign-close-x btn p-0 d-inline-flex align-items-center justify-content-center"
+            style={{
+              position: 'absolute', top: 14, right: 16, zIndex: 2,
+              width: 32, height: 32, borderRadius: 8,
+              background: 'rgba(255,255,255,0.18)',
+              border: '1px solid rgba(255,255,255,0.35)',
+              color: '#fff',
+            }}
+          >
+            <i className="ri-close-line" style={{ fontSize: 18 }} />
+          </button>
+          <div className="d-flex align-items-center gap-3" style={{ position: 'relative', paddingRight: 44 }}>
             <span
-              className="d-inline-flex align-items-center justify-content-center rounded-3"
-              style={{ width: 48, height: 48, background: 'linear-gradient(135deg, rgb(64, 81, 137) 0%, rgb(102, 145, 231) 100%)', boxShadow: '0 6px 16px rgba(124,92,252,0.32)' }}
+              className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+              style={{
+                width: 40, height: 40, borderRadius: 11,
+                background: 'rgba(255,255,255,0.22)',
+                border: '2px solid rgba(255,255,255,0.55)',
+              }}
             >
-              <i className="ri-upload-2-line" style={{ color: '#fff', fontSize: 22 }}></i>
+              <i className="ri-upload-2-line" style={{ fontSize: 18, color: '#fff' }} />
             </span>
-            <div className="flex-grow-1 min-w-0">
-              <h4 className="mb-0 fw-bold" style={{ color: 'rgb(64, 81, 137)', fontWeight: 900 }}>Import Punches</h4>
-              <small className="text-muted" style={{ fontSize: 12 }}>Upload an eSSL export (AttLog .dat/.txt or CSV: UserID, DateTime, Status)</small>
+            <div className="min-w-0">
+              <h5 className="fw-bold mb-0 text-white" style={{ fontSize: 17, lineHeight: 1.2 }}>Import Punches</h5>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+                Upload an eSSL export (AttLog .dat/.txt or CSV: UserID, DateTime, Status)
+              </div>
             </div>
           </div>
         </div>
@@ -589,6 +618,7 @@ export default function HrBiometricDevices() {
                 <Label>Export file<span className="req-star">*</span></Label>
                 <Input
                   type="file"
+                  className="hrms-file-input"
                   accept=".csv,.txt,.dat"
                   onChange={e => setImportFile(e.target.files?.[0] || null)}
                 />

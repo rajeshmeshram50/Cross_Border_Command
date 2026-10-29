@@ -162,44 +162,50 @@ export default function ExpenseTab() {
             </div>
           </Card>
 
-          {/* Expense / Advance module switcher — sits between the hero
-              overview and the section card so the user can flip between
-              Expense Claims and Advance Requests without leaving the
-              Expense Details tab. */}
-          <Row className="g-2 mb-3">
-            <Col xs={12}>
-              <div className="d-flex ext-switcher">
-                {/* Both modules stay in the app's PURPLE family — Expense the
-                    lighter pair, Advance the darker one. Advance used to borrow
-                    the hero's darkest stops (#1e1b4b → #4338ca): indigo-950 is
-                    near-black, so the selected tab read as a black slab beside
-                    a lilac one and looked like a broken hover state rather than
-                    a theme. (QA #161) */}
-                {[
-                  { key: 'expense' as const, label: 'Expense Claims',    icon: 'ri-file-list-3-line',         activeBg: 'linear-gradient(135deg,#a855f7,#c084fc)', shadow: 'rgba(168,85,247,0.22)' },
-                  { key: 'advance' as const, label: 'Advance Requests',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#6d28d9,#8b5cf6)', shadow: 'rgba(109,40,217,0.22)' },
-                ].map(t => {
-                  const on = expenseModuleTab === t.key;
-                  return (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => setExpenseModuleTab(t.key)}
-                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold ext-switcher-btn"
-                      style={{
-                        ['--ext-sw-bg' as any]: on ? t.activeBg : 'transparent',
-                        ['--ext-sw-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                        ['--ext-sw-shadow' as any]: on ? `0 3px 8px ${t.shadow}` : 'none',
-                      }}
-                    >
-                      <i className={`${t.icon} ext-switcher-icon`} />
-                      {t.label}
-                    </button>
-                  );
-                })}
+          {/* Module switcher — heading left, shared rail right, in the
+              module's card shell. Same row Payroll Details uses. This was a
+              full-width strap whose two buttons each painted their own
+              gradient; the rail owns the selected state now. */}
+          <div className="att-logs-card ext-headcard mb-3">
+            <div className="att-logs-headbar px-3 py-2">
+              <div className="d-flex align-items-center gap-3 min-w-0">
+                <span className="att-logs-headbar-icon"><i className="ri-wallet-3-line" /></span>
+                <div className="min-w-0">
+                  <div className="att-logs-headbar-title">Expense Details</div>
+                  <div className="att-logs-headbar-sub">Claims and advances raised by this employee</div>
+                </div>
               </div>
-            </Col>
-          </Row>
+              {/* Expense is the app's lighter violet, Advance the darker one —
+                  the pair the strap was painting by hand, now carried by the
+                  rail's own accent. */}
+              <div
+                className="dt-tabrail hr-dt flex-shrink-0"
+                data-accent={expenseModuleTab === 'advance' ? 'violet' : 'violet'}
+              >
+                <div className="dt-tabs" role="tablist">
+                  {[
+                    { key: 'expense' as const, label: 'Expense Claims',   icon: 'ri-file-list-3-line' },
+                    { key: 'advance' as const, label: 'Advance Requests', icon: 'ri-money-dollar-circle-line' },
+                  ].map(t => {
+                    const on = expenseModuleTab === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={on}
+                        onClick={() => setExpenseModuleTab(t.key)}
+                        className={`dt-tab ${on ? 'on' : 'off'}`}
+                      >
+                        <i className={t.icon} />
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/* Section card — header copy + counts swap based on the
               active module so the rest of the layout (search, Export,
@@ -255,53 +261,42 @@ export default function ExpenseTab() {
                     below), the way the document-templates list puts its search
                     and primary action on the tab line. */}
                 {isOwnProfile && (teamClaims.length > 0 || teamAdvances.length > 0) && (
-                  <div className="d-flex gap-1 ext-subtab-wrap">
-                    {(expenseModuleTab === 'advance'
-                      ? [
-                          { key: 'mine' as const, label: 'My Advances',   icon: 'ri-user-line', count: apiAdvances.length },
-                          { key: 'team' as const, label: 'Team Advances', icon: 'ri-team-line', count: teamAdvances.length },
-                        ]
-                      : [
-                          { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line', count: apiClaims.length },
-                          { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line', count: teamClaims.length },
-                        ]
-                    ).map(t => {
-                      const currentSub = expenseModuleTab === 'advance' ? advanceSubTab : expenseSubTab;
-                      const on = currentSub === t.key;
-                      /* Advance = the app's DARKER violet, Expense = the lighter one.
-                         Both stay in the purple family the rest of the app uses
-                         (--dt-a-700 / --dt-a-500 in DataTable.css). See QA #161. */
-                      const activeAccent = expenseModuleTab === 'advance' ? '#6d28d9' : '#7c3aed';
-                      const activeWash   = expenseModuleTab === 'advance' ? 'rgba(109,40,217,0.12)' : 'rgba(124,58,237,0.12)';
-                      return (
-                        <button
-                          key={t.key}
-                          type="button"
-                          onClick={() => {
-                            if (expenseModuleTab === 'advance') setAdvanceSubTab(t.key);
-                            else                                setExpenseSubTab(t.key);
-                          }}
-                          className="d-inline-flex align-items-center gap-2 fw-semibold ext-subtab"
-                          style={{
-                            ['--ext-subtab-bg' as any]: on ? 'var(--vz-card-bg)' : 'transparent',
-                            ['--ext-subtab-color' as any]: on ? activeAccent : 'var(--vz-secondary-color)',
-                            ['--ext-subtab-shadow' as any]: on ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                          }}
-                        >
-                          <i className={t.icon} />
-                          {t.label}
-                          <span
-                            className="d-inline-flex align-items-center justify-content-center rounded-pill ext-subtab-count"
-                            style={{
-                              ['--ext-subtab-count-bg' as any]: on ? activeWash : 'var(--vz-secondary-bg)',
-                              ['--ext-subtab-count-color' as any]: on ? activeAccent : 'var(--vz-secondary-color)',
+                  <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
+                    {/* Scope tabs, on the same rail as the module and status
+                        tabs — these were loose pills painting their own
+                        selected state through inline custom properties. */}
+                    <div className="dt-tabs" role="tablist">
+                      {(expenseModuleTab === 'advance'
+                        ? [
+                            { key: 'mine' as const, label: 'My Advances',   icon: 'ri-user-line', count: apiAdvances.length },
+                            { key: 'team' as const, label: 'Team Advances', icon: 'ri-team-line', count: teamAdvances.length },
+                          ]
+                        : [
+                            { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line', count: apiClaims.length },
+                            { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line', count: teamClaims.length },
+                          ]
+                      ).map(t => {
+                        const currentSub = expenseModuleTab === 'advance' ? advanceSubTab : expenseSubTab;
+                        const on = currentSub === t.key;
+                        return (
+                          <button
+                            key={t.key}
+                            type="button"
+                            role="tab"
+                            aria-selected={on}
+                            onClick={() => {
+                              if (expenseModuleTab === 'advance') setAdvanceSubTab(t.key);
+                              else                                setExpenseSubTab(t.key);
                             }}
+                            className={`dt-tab ${on ? 'on' : 'off'}`}
                           >
-                            {t.count}
-                          </span>
-                        </button>
-                      );
-                    })}
+                            <i className={t.icon} />
+                            {t.label}
+                            <span className="dt-tab-count">{t.count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -327,7 +322,7 @@ export default function ExpenseTab() {
                         Self used) before the status pills below. Selecting one
                         resets the status filter so the counts on row 2 always
                         describe the subset actually on screen. */}
-                    <div className="dt-tabrail flex-shrink-0" data-accent="blue">
+                    <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="blue">
                       <div className="dt-tabs" role="tablist">
                         {[
                           { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company },
@@ -388,7 +383,7 @@ export default function ExpenseTab() {
                         markup from components/ui/DataTable.css, i.e. the same rail
                         the Employee Onboarding and Document Template lists use, so
                         the strips are identical by construction. */}
-                    <div className="dt-tabrail flex-shrink-0" data-accent="violet">
+                    <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
                       <div className="dt-tabs" role="tablist">
                         {(() => {
                           const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
@@ -477,7 +472,7 @@ export default function ExpenseTab() {
                       markup from components/ui/DataTable.css, i.e. the same rail
                       the Employee Onboarding and Document Template lists use, so
                       the strips are identical by construction. */}
-                  <div className="dt-tabrail flex-shrink-0" data-accent="violet">
+                  <div className="dt-tabrail hr-dt flex-shrink-0" data-accent="violet">
                     <div className="dt-tabs" role="tablist">
                       {(() => {
                         const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;

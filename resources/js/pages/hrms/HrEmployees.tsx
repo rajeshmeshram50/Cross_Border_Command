@@ -4443,7 +4443,7 @@ const STEP_SAFE_FIELDS = new Set([
                   <i
                     className={generatingInvite ? 'ri-loader-4-line' : 'ri-link'}
                     style={{
-                      fontSize: 18,
+                      fontSize: 15,
                       animation: generatingInvite ? 'onb-spin 0.8s linear infinite' : undefined,
                     }}
                   />

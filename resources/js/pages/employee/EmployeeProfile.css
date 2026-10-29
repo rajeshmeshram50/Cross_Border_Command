@@ -1222,7 +1222,10 @@
         .ep-hero {
           position: relative;
           color: #fff;
-          padding: 20px 28px 14px;
+          /* 8px on the left, 28 on the right: the avatar, name and tab rail
+             start near the edge, while the close button and the completion
+             rings keep their inset on the other side. */
+          padding: 20px 28px 14px 8px;
           background:
 
             linear-gradient(120deg,#08112b 0%,#0c1740 40%,#0f1e55 70%,#0d1848 100%);
@@ -1327,20 +1330,30 @@
            Renders as a flat horizontal row of tab buttons, no surrounding
            pill container. Active tab gets a white background that "rises"
            into the navy hero. */
+        /* A rail, at the product's box: 40px tabs on 3px of padding and a 1px
+           border is 48px. This was a bare flex row of 24px buttons with no
+           container — the only tab strip in HRMS with neither. The fill is
+           translucent WHITE, not the accent wash the DataTable rail uses,
+           because this strip sits on the dark hero card where an accent tint
+           would not show. Geometry shared, palette local. */
         .ep-tabbar {
-          background: transparent;
-          border: none;
-          padding: 0;
-          display: flex; flex-wrap: wrap; gap: 6px;
-          border-radius: 0;
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(255,255,255,0.12);
+          padding: 3px;
+          display: inline-flex; flex-wrap: wrap; gap: 2px;
+          border-radius: 11px;
         }
         .ep-tabbar-btn {
-          background: transparent; border: none;
-          padding: 5px 10px;
-          font-size: 11.5px; font-weight: 600;
+          background: transparent;
+          /* Transparent, not absent, so selecting a tab does not shift the
+             rail by a pixel. */
+          border: 1px solid transparent;
+          height: 40px;
+          padding: 0 14px;
+          font-size: 12.5px; font-weight: 650;
           color: rgba(255,255,255,0.65);
-          display: inline-flex; align-items: center; gap: 5px;
-          border-radius: 7px;
+          display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+          border-radius: 8px;
           cursor: pointer;
           transition: all .15s ease;
           white-space: nowrap;
@@ -1380,12 +1393,20 @@
           overflow: hidden;
         }
         [data-bs-theme="dark"] .ep-section-card-flat { background: #1c2531; }
+        /* The family is stated, not inherited: Velzon sets Rubik on the body
+           and wins, so these rendered in Rubik while the rest of HRMS ran DM
+           Sans — same size and weight, visibly more ink. Same trap .dt-tab
+           documents. The token, so one place still decides the face. */
         .ep-field-label {
-          font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+          font-family: var(--font-sans);
+          font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
           text-transform: uppercase; color: var(--vz-secondary-color);
           margin-bottom: 4px;
         }
         .ep-field-value {
+          font-family: var(--font-sans);
+          /* 11px, matching the label and separated from it by weight alone.
+             12.5 made the values heavier than the section header over them. */
           font-size: 11px; font-weight: 600;
           color: var(--vz-heading-color, var(--vz-body-color));
         }
@@ -2194,6 +2215,11 @@
 .ep-fs-12  { font-size: 12px; }
 .ep-fs-125 { font-size: 12.5px; }
 .ep-fs-13  { font-size: 13px; }
+/* Section headers — "Personal Information", "Employment Details" and the
+   rest. Named rather than sized by .ep-fs-13, which the profile also uses
+   for body copy: the two had to move independently. (#162, #164)
+   Family stated for the same reason as .ep-field-value below. (#163) */
+.ep-sec-head { font-family: var(--font-sans); font-size: 13.5px; }
 .ep-fs-135 { font-size: 13.5px; }
 .ep-fs-14  { font-size: 14px; }
 .ep-fs-15  { font-size: 15px; }
@@ -2548,9 +2574,11 @@
    sized for a toolbar (38px, flex 0 8 320px) — here it must fill the host
    instead, at a height that matches the two-line title block beside it. */
 .vt-head-search { display: flex; align-items: center; width: 280px; flex-shrink: 0; }
+/* 48px, the height of the tab rail this sits beside — it was 36 from when
+   the search lived in the card's compact header strip. */
 .vt-head-search .dt-search {
   flex: 1 1 auto; min-width: 0; max-width: none;
-  height: 36px;
+  height: 48px;
   background: #fff;
   box-shadow: 0 1px 3px rgba(15, 23, 42, .06);
 }
@@ -2749,6 +2777,12 @@
 [data-layout-mode="dark"] .epv-view-btn:hover { background: rgba(99,102,241,.26); }
 
 /* ProfileTab (was ProfileTab.css) */
+/* One height for the three tiles in this row. Each used to size to its own
+   contents — a file input in the first, an icon and two text lines in the
+   others — so they came out at three different heights. */
+.pft-tile-photo,
+.pft-tile-password,
+.pft-tile-face { height: 60px; }
 .pft-tile-photo {
   border: 1px dashed rgba(99, 102, 241, 0.35);
   border-radius: 12px;
@@ -2868,7 +2902,8 @@
   line-height: 1;
 }
 .pft-ring-pct-unit { font-size: 7.5px; font-weight: 700; }
-.pft-prof-heading { color: #7c3aed; font-size: 12px; }
+/* 13.5px with the other section headers; the violet is its own. (#162) */
+.pft-prof-heading { color: #7c3aed; font-size: 13.5px; }
 .pft-progress-wrap { position: relative; width: 100%; padding-top: 0; }
 .pft-progress-badge-anchor {
   position: absolute;
@@ -4126,4 +4161,15 @@
 @media (max-width: 480px) {
   .ep-hero { padding: 14px 12px 10px; }
   /* (pane sides deliberately left alone — 8px everywhere, see .ep-content-pane) */
+}
+
+/* Payroll's header card holds the heading row and nothing else, so the
+   headbar's bottom rule would hang under it with nothing to separate. */
+.ext-headcard .att-logs-headbar,
+.hcp-headcard .att-logs-headbar,
+.lsp-headcard .att-logs-headbar,
+.pyt-headcard .att-logs-headbar {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }

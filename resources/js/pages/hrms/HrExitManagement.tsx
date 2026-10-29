@@ -5706,18 +5706,17 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
                 /* Say WHY the notice question won't be asked. Skipping it
                    silently would look like the popup was simply missed. */
                 needsNoticeChoice && pickerNoticeWaived ? (
-                  <span>
-                    {employee?.name || 'This employee'} is on probation, so <strong>no notice period is served</strong> —
-                    the exit opens with no notice payment and the question is not asked.
-                  </span>
+                  <div className="etp-note-text">
+                    {employee?.name || 'This employee'} is on probation — <strong>no notice is served</strong>, so the notice payment question is skipped.
+                  </div>
                 ) : (
-                  <span>
-                    The type sets how the notice period is settled and which stages the exit runs through.
-                    <strong> It cannot be changed once the exit has started</strong> — pick carefully.
-                  </span>
+                  <div className="etp-note-text">
+                    Sets how notice is settled and which stages the exit runs.
+                    <strong> Cannot be changed once the exit has started</strong> — pick carefully.
+                  </div>
                 )
               ) : (
-                <span>Can be changed on Stage 1 — <strong>locked once the F&amp;F is paid</strong>.</span>
+                <div className="etp-note-text">Can be changed on Stage 1 — <strong>locked once the F&amp;F is paid</strong>.</div>
               )}
             </div>
             <div className="etp-actions">

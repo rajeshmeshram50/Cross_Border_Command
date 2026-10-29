@@ -169,47 +169,21 @@ export function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: num
 // `KpiCard` so every tile across the app reads consistently. The `tint` prop
 // is accepted for backwards compatibility but ignored; the card always uses
 // var(--vz-card-bg) and the gradient lives on the top strip + icon tile.
-export function KpiTile({ label, value, sub, icon, gradient }: { label: string; value: React.ReactNode; sub?: string; icon: string; gradient: string; tint?: string }) {
+export function KpiTile({ label, value, icon, gradient }: { label: string; value: React.ReactNode; icon: string; gradient: string; tint?: string }) {
   return (
-    <div
-      className="ep-kpi-tile dashboard-surface"
-      style={{
-        borderRadius: 12,
-        padding: '12px 14px 10px',
-        boxShadow: '0 2px 14px rgba(0,0,0,0.05)',
-        border: '1px solid var(--vz-border-color)',
-        position: 'relative',
-        overflow: 'hidden',
-        height: '100%',
-        background: '#ffffff',
-        transition: 'transform .25s ease, box-shadow .25s ease, border-color .25s ease',
-        cursor: 'default',
-      }}
-    >
-      {/* Gradient top strip */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-        background: gradient,
-      }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>
-            {label}
-          </p>
-          <h3 style={{ fontSize: 22, fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', margin: 0, lineHeight: 1 }}>
-            {value}
-          </h3>
-          {sub && <small className="text-muted d-block" style={{ fontSize: 10.5, marginTop: 4 }}>{sub}</small>}
-        </div>
-        <div style={{
-          width: 36, height: 36, borderRadius: 10,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: gradient, flexShrink: 0,
-          boxShadow: '0 3px 8px rgba(0,0,0,0.10)',
-        }}>
-          <i className={icon} style={{ fontSize: 16, color: '#fff' }} />
-        </div>
+    /* .rec-kpi-card is the module's KPI card — see recruitment.css. Every
+       measurement lives there, so this tile and the ones on HR Attendance /
+       Recruitment cannot drift apart again. .ep-kpi-tile is kept because
+       EmployeeProfile.css selects on it to space the KPI row. */
+    <div className="rec-kpi-card ep-kpi-tile h-100">
+      <span className="rec-kpi-strip" style={{ background: gradient }} />
+      <div className="rec-kpi-text">
+        <span className="rec-kpi-label">{label}</span>
+        <span className="rec-kpi-num">{value}</span>
       </div>
+      <span className="rec-kpi-icon" style={{ background: gradient }}>
+        <i className={icon} />
+      </span>
     </div>
   );
 }
