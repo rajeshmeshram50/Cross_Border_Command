@@ -805,12 +805,19 @@ export default function Step1SupplierDetails({
                       approved, against. The finding above still reads, so
                       nothing is hidden; it simply stops being a gate on a
                       document that is not the one being gated. */}
-                  {direct && gst.action && (
-                    <button type="button" className={`invf-gst__act invf-gst__act--${gst.tone}`}
-                      onClick={openGstNotice}>
-                      {gst.action}
-                    </button>
-                  )}
+                  {direct && gst.action && (() => {
+                    const st = gst.tone === 'warn' ? approval?.status : undefined;
+                    return (
+                      <button type="button" className={`invf-gst__act invf-gst__act--${st === 'approved' ? 'ok' : gst.tone}`}
+                        onClick={openGstNotice}>
+                        {st === 'approved' && <IcoOk />}
+                        {st === 'approved' ? 'Senior approved'
+                          : st === 'pending' ? 'Awaiting senior approval'
+                          : st === 'rejected' ? 'Rejected — send again'
+                          : gst.action}
+                      </button>
+                    );
+                  })()}
                 </div>
                 {/* gstLocked, not `locked`/`hasPo`. These five were the only
                     fields in step 01 still gated on there being a purchase
