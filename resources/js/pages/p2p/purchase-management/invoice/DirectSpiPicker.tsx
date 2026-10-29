@@ -2,25 +2,10 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom';
 import './direct-spi-steps.css';
 
-/**
- * The searchable picker both Direct SPI steps use — a shipment in step 01, a
- * procurement case in step 02. One component because the two are the same
- * control with different rows: a trigger that shows the chosen record, and a
- * portalled list with its own search and a count of what is in it.
- *
- * Portalled because the dialog's body scrolls: a list rendered inline is
- * clipped by it, and anchoring to the viewport is the only way the popover can
- * out-reach its own scroll container.
- */
-
 export interface PickRow {
-  /** The short id shown in the chip — SHP-001, PC-006. */
   code: string;
-  /** The line people actually read. */
   title: string;
-  /** Under it: segment and date, or who raised it and how far along. */
   sub: string;
-  /** Optional right-hand chip — the procurement's type. */
   tag?: { text: string; tone: 'goods' | 'ffd' | 'service' };
 }
 
@@ -40,9 +25,6 @@ const IcoTick = (
   </svg>
 );
 
-/* Each procurement type carries its own mark inside the chip, as the design
-   has it: a carton for goods, a truck for freight, a spanner for a service.
-   The chip alone was a coloured word. */
 const TYPE_ICO: Record<'goods' | 'ffd' | 'service', ReactNode> = {
   goods: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -69,15 +51,18 @@ function TypeChip({ tag }: { tag: NonNullable<PickRow['tag']> }) {
 
 export default function DirectSpiPicker({
   rows, value, onPick, placeholder, noun, ico, popIco, searchPlaceholder,
+  loading = false, error = null, onRetry, pickedRow = null,
 }: {
   rows: PickRow[];
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  pickedRow?: PickRow | null;
   value: string | null;
   onPick: (code: string) => void;
   placeholder: string;
-  /** Pluralised in the count chip — "5 SHIPMENTS". */
   noun: string;
   ico: ReactNode;
-  /** The row glyph, which differs per list (truck vs case). */
   popIco: (r: PickRow) => ReactNode;
   searchPlaceholder: string;
 }) {
@@ -87,15 +72,12 @@ export default function DirectSpiPicker({
   const popRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
 
-  const picked = rows.find(r => r.code === value) ?? null;
+  const picked = rows.find(r => r.code === value) ?? pickedRow;
   const hit = q.trim().toLowerCase();
   const shown = hit
     ? rows.filter(r => `${r.code} ${r.title} ${r.sub} ${r.tag?.text ?? ''}`.toLowerCase().includes(hit))
     : rows;
 
-  /* Measured before paint, so the list never renders one frame at the wrong
-     coordinates. It flips above the trigger when the room below is shorter
-     than the room above — this control sits low in a tall dialog. */
   useLayoutEffect(() => {
     if (!open) { setPos(null); return; }
     const place = () => {
@@ -151,7 +133,7 @@ export default function DirectSpiPicker({
             <span className="sdx-trig__code">{picked.code}</span>
             <span className="sdx-trig__main">
               <b>{picked.title}</b>
-              <small>{picked.sub}</small>
+              {picked.sub && <small>{picked.sub}</small>}
             </span>
             {picked.tag && <TypeChip tag={picked.tag} />}
           </>
@@ -177,10 +159,19 @@ export default function DirectSpiPicker({
               value={q}
               onChange={e => setQ(e.target.value)}
             />
-            <span className="sdx-pop__count">{shown.length} {noun}</span>
+            <span className="sdx-pop__count">{loading ? '…' : shown.length} {noun}</span>
           </div>
           <div className="sdx-pop__list">
-            {shown.length === 0 ? (
+            {loading ? (
+              <div className="sdx-pop__none"><span className="spi-btn-spin" aria-hidden />Loading {noun}…</div>
+            ) : error ? (
+              <div className="sdx-pop__none">
+                {error}
+                {onRetry && <> <button type="button" className="sdx-pop__retry" onClick={onRetry}>Retry</button></>}
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="sdx-pop__none">No {noun} found.</div>
+            ) : shown.length === 0 ? (
               <div className="sdx-pop__none">Nothing matches “{q.trim()}”.</div>
             ) : shown.map(r => {
               const on = r.code === value;
@@ -198,7 +189,7 @@ export default function DirectSpiPicker({
                       <span className="sdx-pop__code">{r.code}</span>
                       <b>{r.title}</b>
                     </span>
-                    <small>{r.sub}</small>
+                    {r.sub && <small>{r.sub}</small>}
                   </span>
                   {r.tag && <TypeChip tag={r.tag} />}
                   <span className="sdx-pop__tick">{IcoTick}</span>

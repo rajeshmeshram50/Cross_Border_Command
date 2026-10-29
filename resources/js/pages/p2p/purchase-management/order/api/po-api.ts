@@ -1,12 +1,6 @@
-// Every API call the Purchase Order screens make, in one place.
-// Screens call these functions, never `api` directly, so a failure always
-// names the action it came from (see PoApiError).
 import axios from 'axios';
 import api from '../../../../../api';
 
-/* ══════════════════════════ Errors ══════════════════════════ */
-
-/** A failed PO call: which action, the HTTP status, the server message and 422 field errors. */
 export class PoApiError extends Error {
   constructor(
     public action: string,
@@ -19,7 +13,6 @@ export class PoApiError extends Error {
     this.name = 'PoApiError';
   }
 
-  /** First field error, else the message — what a toast should show. */
   get firstError(): string {
     const first = Object.values(this.fieldErrors)[0]?.[0];
     return first ?? this.message;
@@ -43,58 +36,43 @@ async function call<T>(action: string, run: () => Promise<{ data: unknown }>, pi
 }
 
 const dataOf = <T>(body: unknown): T => (body as { data?: T } | null)?.data as T;
-// Masters come back as a bare array or wrapped in { data }.
 const listOf = <T>(body: unknown): T[] =>
   (Array.isArray(body) ? body : ((body as { data?: T[] } | null)?.data ?? [])) as T[];
-
-/* ══════════════════════════ Types ══════════════════════════ */
 
 export type YesNo = 'yes' | 'no';
 export type PoStatus = 'draft' | 'submitted' | 'cancelled';
 export type PoTypeKey = 'material_goods' | 'services' | 'ffd_transporter';
 export type DocTypeKey = 'domestic' | 'international';
 export type LinkType = 'with_shipment' | 'standalone';
-/** 'export' is screen-only: an international PO shows one Tax (%) / Tax Amount pair, 0 by default. */
 export type TaxMode = 'intra' | 'inter' | 'export';
 export type GstGate = 'clear' | 'approval_required' | 'blocked';
 export type GstApprovalStatus = 'pending' | 'approved' | 'rejected';
 
-/** Link and supplier codes the server adds to list rows and the detail. */
 export type PoLinkRefs = {
   shipment_code: string | null; shipment_date: string | null;
   pi_code: string | null; pi_date: string | null;
   customer_name: string | null; opportunity_code: string | null;
 };
 
-/** One row of GET /p2p/orders. */
 export type PoListRow = PoLinkRefs & {
   id: number; code: string; po_date: string | null; status: PoStatus; current_step: number | null;
   po_type: PoTypeKey | null; document_type: DocTypeKey | null;
   vendor_id: number | null; supplier_code: string | null; supplier_name: string | null;
   supplier_risk: string | null; supplier_category: string | null;
   link_type: LinkType | null; shipment_order_id: number | null;
-  /** 'yes' = raised against a procurement case that already existed. */
   link_procurement: YesNo | null;
   procurement_request_id: number | null; procurement_request_code: string | null;
   expected_delivery_date: string | null; grand_total: number;
-  /** The PO's own currency; every money figure on its screens follows it. */
   currency_code: string | null;
-  /** Base (without GST), GST and extra charges — the split the payment screens show. */
   taxable_total: number; gst_total: number; charges_total: number;
-  /** Stored payment position, rebuilt on every payment. */
   tds_amount: number; paid_amount: number; balance_amount: number;
   payment_requests_count: number; pending_request_amount: number; ready_to_pay_amount: number;
   physical_inspection: YesNo | null; inspection_status: 'not_required' | 'pending' | 'completed' | null;
   cancel_reason: string | null; items_count: number | null; created_at: string | null;
-  /** A document is out for signature or signed — the PO is view-only. */
   signing_started: boolean;
-  /** Cancelled with money released: initiated until the refund is recovered, then closed. */
   cancel_stage: PoCancelStage | null;
-  /** The advance refund adjustment raised to cancel it. */
   refund: PoListRefund | null;
-  /** Zoho Books: synced once the PO + bill exist; unposted = payments not on the bill yet. */
   zoho_status: 'synced' | 'failed' | null; zoho_bill_number: string | null; zoho_error: string | null;
-  /** True once the PO or its bill exists in Zoho — the tracker opens only then. */
   zoho_started: boolean;
   zoho_unposted_payments: number;
 };
@@ -104,46 +82,36 @@ export type RefundStatus = 'pending' | 'partial' | 'recovered';
 export type PoListRefund = {
   id: number; code: string; date: string | null; paid: number; refund: number; retained: number;
   recovered: number; balance: number; status: RefundStatus;
-  /** The vendor credit and every refund are in Zoho Books. */
   zoho_synced: boolean;
 };
 
 export type PoListTab = 'all' | 'with' | 'without' | 'cancelinit' | 'cancelclosed';
 
-/** Paging for the current tab, plus every tab's total (same search and filters). */
 export type PoListMeta = { total: number; page: number; per_page: number; last_page: number; counts: Record<PoListTab, number> };
 
 export type PoItem = {
   id: number; line_no: number; pi_item_id: number | null; product_id: number | null; description: string | null;
   quantity: string; rate: string; gst_pct: string;
   taxable_amount: string; cgst_amount: string; sgst_amount: string; igst_amount: string; line_total: string;
-  // Read live from products / PI items
   product_code: string | null; product_name: string | null; hsn_code: string | null; uom: string | null;
   pi_product_id: number | null; pi_product_code: string | null; pi_product_name: string | null;
   pi_quantity: number | null; pi_rate: number | null;
-  // Derived
   cgst_pct: number; sgst_pct: number; igst_pct: number; gst_amount: number;
   pending_before_this_po: number | null; missing_qty: number | null;
 };
 
 export type PoDocument = {
   id: number; code: string; name: string; doc_kind: 'purchase_order' | 'agreement' | 'other';
-  /** The CLM library the row came from — null for the Purchase Order itself. */
   source_type: 'trade' | 'agreement' | null; source_id: number | null;
-  /** The library's own sub-title: document type / agreement type. */
   doc_sub: string | null;
-  /** The CLM library's code (TDL-006, A-007…) — null for the Purchase Order itself. */
   master_code: string | null;
   is_required: YesNo; generated_on: string | null; valid_up_to: string | null;
-  /** This PO's own answer. null = nobody decided yet, which is not the same as 'no'. */
   needed: YesNo | null;
   file_path: string | null; original_name: string | null; file_url: string | null;
   status: 'pending' | 'sent' | 'signed'; sent_at: string | null; signed_at: string | null;
-  /** Zoho Sign request (shared /clm/signature-requests) and this file's place in it. */
   signature_request_id: number | null; signature_status: string | null; signature_index: number | null;
 };
 
-/** GET /p2p/orders/{id} and every stage save. */
 export type PoDetail = PoLinkRefs & {
   id: number; code: string; po_date: string | null; status: PoStatus; current_step: number | null;
   po_type: PoTypeKey | null; document_type: DocTypeKey | null;
@@ -158,7 +126,6 @@ export type PoDetail = PoLinkRefs & {
   vendor_id: number | null; home_state_code: string | null; tax_mode: TaxMode | null;
   gst_gate: GstGate | null; gst_scrutiny_date: string | null; gst_last_filing_date: string | null;
   gst_approval_status: GstApprovalStatus | null; gst_approval_note: string | null;
-  /** The latest senior-approval request on this PO. */
   gst_approval: { id: number; status: GstApprovalStatus; reason: string | null; requested_to_name: string | null;
     requested_at: string | null; decided_at: string | null } | null;
   taxable_total: string; total_cgst: string; total_sgst: string; total_igst: string;
@@ -166,14 +133,8 @@ export type PoDetail = PoLinkRefs & {
   terms: string | null; submitted_at: string | null; cancel_reason: string | null;
   inspection_status: 'not_required' | 'pending' | 'completed' | null;
   created_by: number | null; created_by_name: string | null;
-  /** A pending / approved payment request or money paid: the PO is view-only. */
   payments_started: boolean;
-  /** A document is out for signature or signed: view-only until declined / recalled. */
   signing_started: boolean;
-  /** The three T&C layers as the PDF composes them — the typed terms, the
-   *  global entry for this document category, and the segment-matched clauses.
-   *  Carried here so Stage 04 shows what the document prints without a call of
-   *  its own. */
   terms_layers?: {
     typed: string;
     global: string[];
@@ -184,7 +145,6 @@ export type PoDetail = PoLinkRefs & {
   documents: PoDocument[];
 };
 
-/** Stage 01 body — create and update take the same fields. */
 export type PoStage1Body = {
   po_type: PoTypeKey; document_type: DocTypeKey;
   mode_of_transport?: string | null; expected_delivery_date?: string | null; delivery_location?: string | null;
@@ -197,7 +157,6 @@ export type PoStage1Body = {
   vendor_id: number;
 };
 
-/** Stage 02 body — a line is a PI line (pi_item_id), a manual product (product_id), or a PI line with a replacement product. */
 export type PoItemsBody = {
   lines: { pi_item_id?: number | null; product_id?: number | null; quantity: number; rate: number; description?: string | null }[];
   shipping_charges?: number; packaging_charges?: number; other_charges?: number;
@@ -208,14 +167,12 @@ export type PoQtyHistoryRow = {
   event: 'added' | 'updated' | 'removed' | 'cancelled' | 'deleted';
   pi_quantity: string | null; previous_qty: string | null; current_qty: string | null;
   change_qty: string | null; pending_after: string | null;
-  /** The user who made the change (the relation replaces the id). */
   changed_by: { id: number; name: string } | null; created_at: string;
 };
 
 export type PiLine = {
   pi_item_id: number; product_id: number | null; product_code: string | null; product_name: string | null;
   hsn_code: string | null; uom: string | null; rate: number;
-  /** From the product master; null = not set there, the line cannot be ordered. */
   gst_pct: number | null; description: string | null;
   pi_quantity: number; ordered_qty: number; pending_qty: number;
 };
@@ -245,20 +202,16 @@ export type InspectionSummary = {
   }[];
 };
 
-// Supplier and shipment lookups, served by PoLookupController.
 export type ShipmentOption = {
-  id: number; code: string; customer: string | null; consignee: string | null;
+  id: number; code: string; shipment_date?: string | null; customer: string | null; consignee: string | null;
   opportunity_id: number | null; opportunity_code: string | null;
   proforma_invoice_id: number | null; pi_number: string | null;
 };
-/** One link of the Zoho chain, in the order the sync itself runs them. */
-/** One proof file behind a payment or a recovery. */
 export type PoProofFile = {
   id: number; amount: number; date: string | null; ref: string;
   name: string | null; url: string | null;
 };
 
-/** The refund adjustment raised on the PO, with its own reference attachment. */
 export type PoProofAdjustment = {
   id: number; code: string; date: string | null; refund_amount: number;
   attachment_name: string | null; attachment_url: string | null;
@@ -274,13 +227,10 @@ export type ZohoTrackerStep = {
   key: 'purchase_order' | 'bill' | 'payments' | 'vendor_credit' | 'refunds';
   title: string; sub: string;
   state: 'done' | 'pending' | 'failed';
-  /** The Zoho document number or id, once it exists. */
   ref: string | null;
   at: string | null;
   note: string | null;
-  /** Posted / refunded total for this step — printed in the PO's own currency. */
   amount: number | null;
-  /** One line per payment / refund, so a part-posted step says which one is missing. */
   items: ZohoTrackerItem[];
   error: string | null;
 };
@@ -299,40 +249,27 @@ export type ZohoTracker = {
 
 export type SupplierOption = {
   id: number; code: string; name: string; document_type: DocTypeKey;
-  /** master_vendor_types.name, e.g. "Material / Goods" — must fit the PO type. */
   supplier_type?: string | null;
-  /** star | general | high_risk | blacklisted — blacklisted cannot be picked. */
   supplier_category?: string | null;
 };
 export type SupplierDetail = {
   id: number; code: string; name: string; legalName: string | null; type: string | null;
   risk: string | null; category: string | null; segments: string[];
-  /** Products mapped straight to this supplier (Product Master → Vendors, Supplier → Products). */
   mapped_product_ids?: number[];
-  /** What this supplier charges per mapped product — a line prefers it over the master price. */
   product_rates?: Record<number, number>;
   addr: string | null; country: string | null; state: string | null; stateCode: string | null; city: string | null;
   contact: string | null; desig: string | null; phone: string | null; email: string | null;
   scrutiny: string | null; gstNo: string | null; gstStatus: string | null; filing: string | null; remarks: string | null;
-  /** What Zoho Books shows for this supplier; null = not in the books yet. */
   zohoCurrency?: string | null;
-  /** A transaction of ours put that currency there, so no other one is possible. */
   zohoCurrencySettled?: boolean;
-  /** The order that settled it, so a refusal can name which one did. */
   zohoCurrencyPo?: string | null;
-  /** The currencies Zoho Books has enabled; a PO in any other cannot reach it.
-   *  Empty when Zoho is unreachable, and the form falls back to the master list. */
   zohoCurrencies?: string[];
 };
 
-/* ══════════════════════════ Purchase order ══════════════════════════ */
-
 export const poApi = {
-  /** Preview of the next PO code; the real one is allocated on create. */
   nextCode: () =>
     call('PO next code', () => api.get('/p2p/orders/next-code'), dataOf<{ code: string; financial_year: string }>),
 
-  /** Server-paged: `per_page` defaults to 10 on the server. */
   list: (params: { tab?: PoListTab; status?: PoStatus; search?: string; link_type?: LinkType; shipment_order_id?: number; procurement_request_id?: number; vendor_id?: number; per_page?: number; page?: number } = {}) =>
     call('PO list', () => api.get('/p2p/orders', { params }), (b) => {
       const body = b as { data?: PoListRow[]; meta?: PoListMeta } | null;
@@ -342,18 +279,15 @@ export const poApi = {
   show: (id: number) =>
     call('PO detail', () => api.get(`/p2p/orders/${id}`), dataOf<PoDetail>),
 
-  /** Stage 01 — creates the draft. */
   create: (body: PoStage1Body) =>
     call('PO create (Stage 01)', () => api.post('/p2p/orders', body), dataOf<PoDetail>),
 
   updateStage1: (id: number, body: PoStage1Body) =>
     call('PO update (Stage 01)', () => api.put(`/p2p/orders/${id}/stage-1`, body), dataOf<PoDetail>),
 
-  /** Stage 02 — product lines and charges. */
   saveItems: (id: number, body: PoItemsBody) =>
     call('PO product lines (Stage 02)', () => api.put(`/p2p/orders/${id}/items`, body), dataOf<PoDetail>),
 
-  /** Stage 03 — terms; submit = 'yes' submits the PO. */
   saveTerms: (id: number, body: { terms?: string | null; submit?: YesNo }) =>
     call(body.submit === 'yes' ? 'PO submit (Stage 03)' : 'PO terms (Stage 03)', () => api.put(`/p2p/orders/${id}/terms`, body), dataOf<PoDetail>),
 
@@ -363,46 +297,35 @@ export const poApi = {
   cancel: (id: number, reason: string) =>
     call('PO cancel', () => api.post(`/p2p/orders/${id}/cancel`, { reason }), dataOf<PoDetail>),
 
-  /** The money files of one PO for the Evidence Vault: payments released and refunds recovered. */
   proofs: (id: number) =>
     call('PO proofs', () => api.get(`/p2p/orders/${id}/proofs`), dataOf<PoProofs>),
 
-  /** Where the PO stands in Zoho Books — read from our own columns, no Zoho call. */
   zohoTracker: (id: number) =>
     call('PO Zoho tracker', () => api.get(`/p2p/orders/${id}/zoho-tracker`), dataOf<ZohoTracker>),
 
-  /** Zoho Books: PO + bill once, then any payments not posted yet. */
   zohoSync: (id: number) =>
     call('PO Zoho sync', () => api.post(`/p2p/orders/${id}/zoho-sync`), (b) => ({ message: (b as { message?: string } | null)?.message ?? 'Synced to Zoho Books.' })),
 
-  /** Drafts only. */
   remove: (id: number) =>
     call('PO delete', () => api.delete(`/p2p/orders/${id}`), dataOf<{ id: number; deleted: boolean }>),
 
-  /** PI lines of a shipment with ordered / pending qty; excludePo = the PO being edited. */
   piLines: (shipmentId: number, excludePo?: number) =>
     call('PO PI lines', () => api.get(`/p2p/orders/shipments/${shipmentId}/pi-lines`, { params: excludePo ? { exclude_po: excludePo } : {} }),
       dataOf<{ proforma_invoice_id: number | null; lines: PiLine[]; held_by?: PiHolder[] }>),
 };
 
-/** Another open PO holding quantity of the same PI, and where it stands. */
 export type PiHolder = {
   id: number; code: string; status: PoStatus; lines: number; qty: number;
   approval_status: 'pending' | 'approved' | 'rejected' | null;
 };
 
-/* ══════════════════════════ Documents (Stage 04) ══════════════════════════ */
-
 const multipart = { headers: { 'Content-Type': 'multipart/form-data' } };
 
 export const poDocumentApi = {
-  /** Records the signature request this PO just raised for these rows, so the
-   *  link is stored rather than guessed back from the supplier + library id. */
   markSent: (poId: number, documentIds: number[], signatureRequestId: number) =>
     call('PO documents sent', () => api.post(`/p2p/orders/${poId}/documents/mark-sent`,
       { document_ids: documentIds, signature_request_id: signatureRequestId }), dataOf<PoDocument[]>),
 
-  /** Mark documents Necessary / Not necessary on this PO — one call for the set. */
   setNeeds: (poId: number, items: { id: number; needed: boolean }[]) =>
     call('PO document decisions', () => api.post(`/p2p/orders/${poId}/documents/needs`, { items }), dataOf<PoDocument[]>),
 
@@ -428,20 +351,16 @@ export const poDocumentApi = {
   setStatus: (poId: number, docId: number, status: 'sent' | 'signed') =>
     call('PO document status', () => api.patch(`/p2p/orders/${poId}/documents/${docId}/status`, { status }), dataOf<PoDocument>),
 
-  /** The file as a Blob, for saving. */
   download: (poId: number, docId: number) =>
     call('PO document download', () => api.get(`/p2p/orders/${poId}/documents/${docId}/download`, { responseType: 'blob' }), (b) => b as Blob),
 
-  /** Re-render the Purchase Order PDF (pending documents only). */
   generate: (poId: number, docId: number) =>
     call('PO document generate', () => api.post(`/p2p/orders/${poId}/documents/${docId}/generate`), dataOf<PoDocument>),
 
-  /** Send documents to the supplier for e-signature (Zoho Sign). */
   sign: (poId: number, documentIds: number[], opts: { signer_name?: string; signer_email?: string; notes?: string; expiry_days?: number } = {}) =>
     call('PO documents e-sign', () => api.post(`/p2p/orders/${poId}/documents/sign`, { document_ids: documentIds, ...opts }),
       dataOf<{ signature_request_id: number; signer: { name: string; email: string }; documents: PoDocument[] }>),
 
-  /** Email documents to the supplier (or `to`). */
   email: (poId: number, documentIds: number[], to?: string) =>
     call('PO documents email', () => api.post(`/p2p/orders/${poId}/documents/email`, { document_ids: documentIds, to }), dataOf<{ to: string; count: number }>),
 
@@ -449,12 +368,7 @@ export const poDocumentApi = {
     call('PO document delete', () => api.delete(`/p2p/orders/${poId}/documents/${docId}`), dataOf<{ id: number; deleted: boolean }>),
 };
 
-/* ══════════════════════════ Signatures (shared CLM endpoints) ══════════════════════════ */
-
 export const poSignatureApi = {
-  /** A library trade document / agreement as a PDF — rendered for this
-      supplier by the same preview the signature sender shows, so the draft is
-      exactly what the supplier would be asked to sign. */
   draft: (kind: 'trade' | 'agreement', libraryId: number, supplierId: number) =>
     call('PO draft document', () => api.post(
       '/clm/signature-requests/preview',
@@ -462,26 +376,20 @@ export const poSignatureApi = {
       { responseType: 'blob' },
     ), (b) => b as Blob),
 
-  /** The signed copy of one document of a request. */
   signedFile: (sigId: number, index: number) =>
     call('PO signed document', () => api.get(`/clm/signature-requests/${sigId}/download-file/${index}`, { responseType: 'blob' }), (b) => b as Blob),
 
-  /** Zoho Sign's completion certificate. */
   certificate: (sigId: number) =>
     call('PO signing certificate', () => api.get(`/clm/signature-requests/${sigId}/certificate`, { responseType: 'blob' }), (b) => b as Blob),
 
-  /** Nudge the signer of a request still out for signature. */
   remind: (sigId: number) =>
     call('PO signing reminder', () => api.post(`/clm/signature-requests/${sigId}/remind`), (d) => d),
 };
-
-/* ══════════════════════════ Physical inspection ══════════════════════════ */
 
 export const poInspectionApi = {
   show: (poId: number) =>
     call('PO inspection', () => api.get(`/p2p/orders/${poId}/inspection`), dataOf<InspectionSummary>),
 
-  /** Verdict and/or proof for one line — saved immediately; files are added to what is there. */
   markLine: (poId: number, itemId: number, line: { verdict?: InspectionVerdict; remark?: string; files?: File[] }) => {
     const fd = new FormData();
     if (line.verdict) fd.append('verdict', line.verdict);
@@ -493,10 +401,6 @@ export const poInspectionApi = {
   removeFile: (poId: number, itemId: number, index: number) =>
     call('PO inspection file remove', () => api.delete(`/p2p/orders/${poId}/inspection/lines/${itemId}/files/${index}`), dataOf<InspectionSummary>),
 
-  /** One stored proof file, streamed by our server. `itemId` null = a sign-off
-   *  note file. Read through the API, not from the storage URL: once the disk
-   *  is remote (Azure) the browser ignores a cross-origin download and only
-   *  opens the image. */
   proofFile: (poId: number, itemId: number | null, index: number) =>
     call('Proof file', () => api.get(
       itemId === null
@@ -516,41 +420,28 @@ export const poInspectionApi = {
     call('PO inspection withdraw', () => api.post(`/p2p/orders/${poId}/inspection/withdraw`), dataOf<InspectionSummary>),
 };
 
-/* ══════════════════════════ Lookups the PO form uses ══════════════════════════ */
-
 export const poLookupApi = {
-  /** Shipment dropdown (existing endpoint). */
   shipments: () =>
     call('PO shipments', () => api.get('/p2p/orders/shipments'), dataOf<ShipmentOption[]>),
 
-  /** Supplier dropdown (existing endpoint). */
   suppliers: () =>
     call('PO suppliers', () => api.get('/p2p/orders/suppliers'), dataOf<SupplierOption[]>),
 
-  /** Supplier detail for Stage 01 (existing endpoint). `refreshCurrencies` drops
-   *  the server's hour-long cache of Zoho's currency list, for right after one
-   *  has been added there. */
   supplier: (vendorId: number, refreshCurrencies = false) =>
     call('PO supplier detail', () => api.get(`/p2p/orders/suppliers/${vendorId}`, {
       params: refreshCurrencies ? { refresh_currencies: 1 } : undefined,
     }), dataOf<SupplierDetail>),
 
-  /** Supplier Evidence Vault — also drives the legal status panel. */
   supplierVault: (vendorId: number) =>
     call('PO supplier vault', () => api.get(`/segment-uploads/supplier/${vendorId}/vault`), dataOf<Record<string, unknown>>),
 
-  /** Product master for the PO product picker (lite = id, code, name, HSN, segment, GST). */
   products: (perPage = 200) =>
     call('PO products', () => api.get('/products', { params: { lite: 1, per_page: perPage } }), (b) => listOf<Record<string, unknown>>(b)),
 
-  /** Any master list by slug: currencies, incoterms, countries, port_of_loading, port_of_discharge. */
   master: (slug: string) =>
     call(`PO master ${slug}`, () => api.get(`/master/${slug}`), (b) => listOf<Record<string, unknown>>(b)),
 };
 
-/* ══════════════════════════ Senior GST approval ══════════════════════════ */
-
-/** A user who can be asked to approve; department / designation come from their employee record. */
 export type GstApprover = {
   id: number; name: string; email: string | null; user_type: string | null;
   employee_id: number | null; emp_code: string | null; department: string | null; designation: string | null;
@@ -564,7 +455,6 @@ export type GstApprovalRequest = {
   reason: string | null; decided_at: string | null;
 };
 
-/** One Inbox row: the request with its PO and supplier. */
 export type GstApprovalInboxRow = {
   id: number; purchase_order_id: number; status: GstApprovalStatus;
   request_note: string | null; reason: string | null; requested_at: string | null; decided_at: string | null;
@@ -574,7 +464,6 @@ export type GstApprovalInboxRow = {
 };
 export type GstApprovalInboxMeta = { total: number; per_page: number; current_page: number; last_page: number };
 
-/** Everything the senior's review page shows. */
 export type GstApprovalReview = {
   request: GstApprovalRequest;
   can_decide: boolean;
@@ -606,20 +495,12 @@ export type GstApprovalReview = {
 };
 
 export const poApprovalApi = {
-  /** Users the request can be sent to. */
-  /** `self` lists the caller too — a payment request may be raised to yourself. */
   approvers: (self = false) =>
     call('GST approvers', () => api.get('/p2p/orders/gst-approvals/approvers', { params: self ? { include_self: 1 } : undefined }), dataOf<GstApprover[]>),
 
-  /** Raised from Step 03 when the supplier's GST return is overdue.
-   *  On a re-send after a rejection the server keeps the same approver, so
-   *  `requested_to` is left out then. */
   request: (poId: number, body: { requested_to?: number; note?: string }) =>
     call('GST approval request', () => api.post(`/p2p/orders/${poId}/gst-approval/request`, body), dataOf<GstApprovalRequest>),
 
-  /* ── Approver side (the Inbox) ── */
-
-  /** Requests sent to the signed-in user — pending, or already decided when `history`. Server-paged. */
   inbox: (params: { history: boolean; page?: number; per_page?: number }) =>
     call('PO approvals', () => api.get('/p2p/orders/gst-approvals', {
       params: { history: params.history ? 1 : 0, page: params.page ?? 1, per_page: params.per_page ?? 10 },
@@ -628,62 +509,49 @@ export const poApprovalApi = {
       return { rows: body?.data ?? [], meta: body?.meta ?? null };
     }),
 
-  /** Everything the review page shows for one request. */
   show: (id: number) =>
     call('PO approval', () => api.get(`/p2p/orders/gst-approvals/${id}`), dataOf<GstApprovalReview>),
 
-  /** Approve or reject — only the senior it was sent to; a reason is required either way. */
   decide: (id: number, body: { decision: 'approved' | 'rejected'; reason: string }) =>
     call('PO approval decision', () => api.put(`/p2p/orders/gst-approvals/${id}`, body), dataOf<GstApprovalRequest>),
 };
 
-/* ══════════════════════════ Payments (TDS, requests, payments) ══════════════════════════ */
-
 export type PayRequestStatus = 'pending' | 'approved' | 'rejected';
 export type PayPerson = { id: number; name: string | null; role: string | null };
 
-/** The PO's value split and payment position — the "PO Payment Details Summary" cards. */
 export type PoPaymentPosition = {
   id: number; code: string; status: PoStatus; document_type: DocTypeKey | null;
-  /** The PO's own currency — an import is not priced in rupees. */
   currency_code: string;
   base_amount: number; gst_amount: number; gst_pct: number; extra_charges: number; grand_total: number;
   tds_percentage: number; tds_amount: number; tds_saved: boolean; tds_locked: boolean; tds_applies: boolean;
-  // What fixed it: a recorded payment, or an approved request. Null while open.
   tds_locked_by?: 'payment' | 'approval' | null;
   net_payable: number; paid: number; balance: number; paid_pct: number; complete: boolean;
 };
 
-/** "All Request Details Summary" cards. */
 export type PoRequestsSummary = {
   total_requests: number; approved_count: number; pending_count: number; rejected_count: number;
   requested_amount: number; awaiting_amount: number; approved_amount: number;
   approved_unpaid: number; ready_count: number; paid: number; open_to_request: number;
 };
 
-/** One row of the Payment Requests History. */
 export type PoPayRequest = {
   id: number; code: string; payment_type: string; percentage: number | null; requested_amount: number; reason: string | null;
   requested_by: PayPerson; requested_to: PayPerson; requested_at: string | null;
   status: PayRequestStatus; approved_amount: number | null; decision_note: string | null; decided_at: string | null;
   paid_amount: number; due: number | null;
-  /** This request is awaiting and was sent to the reader, so they may decide it. */
   can_decide?: boolean;
 };
 
 export type PoPaymentsPayload = { po: PoPaymentPosition; requests_summary: PoRequestsSummary; requests: PoPayRequest[] };
 
-/** One row of the Payment History. */
 export type PoPaymentRow = {
   id: number; amount: number; bank_name: string | null; utr_cheque_number: string | null; utr_cheque_date: string | null;
   proof_name: string | null; proof_url: string | null; created_at: string | null;
-  /** Posted to the Zoho bill — it can no longer be edited or deleted. */
   zoho_synced?: boolean; zoho_sync_status?: 'synced' | 'failed' | null; zoho_error?: string | null;
 };
 
 export type PoPaymentBody = { amount: number; bank_name?: string; utr_cheque_number?: string; utr_cheque_date?: string; proof?: File | null };
 
-/** A row of Payment Request Management (all POs). */
 export type PayRequestListRow = {
   id: number; code: string; purchase_order_id: number; payment_type: string; percentage: number | null;
   requested_amount: number; status: PayRequestStatus; approved_amount: number | null; paid_amount: number; due: number | null;
@@ -697,7 +565,6 @@ export type PayRequestListRow = {
   supplier_code: string | null; supplier_name: string | null; supplier_category: string | null;
   requested_by: PayPerson; requested_to: PayPerson; can_decide: boolean;
 };
-/** The answer to a batch decision: what was recorded, and what was refused and why. */
 export type BulkDecision = {
   decided: { id: number; code: string | null; amount: number | null }[];
   failed: { id: number; code: string | null; message: string }[];
@@ -707,7 +574,6 @@ export type PayRequestListMeta = { total: number; page: number; per_page: number
 export type PayRequestDetail = {
   request: PayRequestListRow & { reason: string | null };
   po: PoPaymentsPayload;
-  /** Every payment on the PO, with the request each was paid against. */
   payments: (PoPaymentRow & { payment_request_id: number })[];
 };
 
@@ -722,11 +588,9 @@ const paymentForm = (b: PoPaymentBody) => {
 };
 
 export const poPaymentApi = {
-  /** Manage Payment Requests: both summaries and the request table of one PO. */
   forPo: (poId: number) =>
     call('PO payment summary', () => api.get(`/p2p/orders/${poId}/payment-requests`), dataOf<PoPaymentsPayload>),
 
-  /** One TDS per PO; editable until the first payment. Send the % or the amount. */
   saveTds: (poId: number, body: { tds_percentage?: number; tds_amount?: number }) =>
     call('PO TDS', () => api.put(`/p2p/orders/${poId}/tds`, body), dataOf<PoPaymentsPayload>),
 
@@ -749,7 +613,6 @@ export const poPaymentApi = {
     call('Delete payment', () => api.delete(`/p2p/orders/${poId}/payment-requests/${requestId}/payments/${paymentId}`),
       dataOf<{ summary: PoPaymentsPayload }>),
 
-  /** Post one payment to the Zoho bill (the PO and bill are created first if missing). */
   zohoSyncPayment: (poId: number, requestId: number, paymentId: number) =>
     call('Payment Zoho sync', () => api.post(`/p2p/orders/${poId}/payment-requests/${requestId}/payments/${paymentId}/zoho-sync`),
       (b) => {
@@ -757,7 +620,6 @@ export const poPaymentApi = {
         return { ...(body?.data as { payment: PoPaymentRow; summary: PoPaymentsPayload }), message: body?.message ?? null };
       }),
 
-  /** Payment Request Management: every request of the company, paged, with tab counts. */
   list: (q: { tab?: PayRequestTab; search?: string; page?: number; per_page?: number; mine?: boolean } = {}) =>
     call('Payment requests', () => api.get('/p2p/orders/payment-requests', {
       params: { tab: q.tab ?? 'all', search: q.search || undefined, page: q.page ?? 1, per_page: q.per_page, mine: q.mine ? 1 : undefined },
@@ -772,19 +634,15 @@ export const poPaymentApi = {
   detail: (requestId: number) =>
     call('Payment request details', () => api.get(`/p2p/orders/payment-requests/${requestId}`), dataOf<PayRequestDetail>),
 
-  /** Approve (full or part) or decline, by the person the request was sent to. */
   decide: (requestId: number, body: { decision: 'approved' | 'rejected'; approved_amount?: number; note?: string }) =>
     call('Payment request decision', () => api.put(`/p2p/orders/payment-requests/${requestId}/decision`, body), dataOf<PayRequestDetail>),
 
-  /** Decide several at once; each is approved in full, and each answers for itself. */
   decideMany: (body: { ids: number[]; decision: 'approved' | 'rejected'; note?: string }) =>
     call('Payment request decisions', () => api.put('/p2p/orders/payment-requests/decisions', body), (b) => {
       const body = b as { data?: BulkDecision; message?: string } | null;
       return { ...(body?.data ?? { decided: [], failed: [] }), message: body?.message ?? '' };
     }),
 };
-
-/* ══════════════════════════ Advance Receipt Refund Adjustment ══════════════════════════ */
 
 export type RefundPo = {
   id: number; code: string; po_date: string | null; po_type: string | null; document_type: DocTypeKey | null;
@@ -793,14 +651,12 @@ export type RefundPo = {
   paid_amount: number; balance_amount: number; status: PoStatus; cancel_stage: PoCancelStage | null; cancel_reason: string | null;
   procurement_code: string | null; vendor_id: number | null; supplier_code: string | null; supplier_name: string | null;
   zoho_bill_number: string | null;
-  /** The PO's own currency — a refund on it is money in that, not in rupees. */
   currency_code?: string | null;
   shipment_code: string | null; shipment_date: string | null; opportunity_code: string | null; opportunity_date: string | null;
 };
 export type RefundRecoveryRow = {
   id: number; amount: number; recovered_date: string | null; reference_no: string | null;
   proof_name: string | null; proof_url: string | null;
-  /** Every proof on the recovery — a bank advice and a photo of the cheque can both be here. */
   proofs?: { path: string; name: string; url: string; mime?: string | null; size?: number | null }[];
   zoho_sync_status: 'synced' | 'failed' | null; zoho_error: string | null; zoho_synced_at: string | null;
 };
@@ -810,23 +666,19 @@ export type RefundRow = {
   refund_type: string; reason: string;
   paid_amount: number; refund_amount: number; retained_amount: number; retained_type: string | null; retained_remark: string | null;
   recovered_amount: number; balance_amount: number; status: RefundStatus; recoveries_count: number;
-  /** Recoveries not yet refunded in Zoho Books. */
   zoho_pending_recoveries?: number;
   zoho_vendorcredit_number: string | null; zoho_sync_status: 'synced' | 'failed' | null; zoho_error: string | null; zoho_synced_at: string | null;
-  /** The vendor credit is in Zoho — the refund amount can no longer change. */
   amounts_locked: boolean;
   po: RefundPo | null;
 };
 export type RefundDetail = RefundRow & {
   recoveries: RefundRecoveryRow[];
-  /** Evidence Vault: money released on the PO and its documents with a file. */
   payments?: { id: number; amount: number; utr: string | null; date: string | null; proof_name: string | null; proof_url: string | null }[];
   documents?: { id: number; name: string; status: string | null; date: string | null; url: string | null }[];
 };
 export type RefundTab = 'all' | 'pending' | 'recovered';
 export type RefundListMeta = { total: number; page: number; per_page: number; last_page: number; counts: Record<RefundTab, number> };
 export type RefundEligiblePo = { id: number; code: string; po_date: string | null; supplier_name: string | null; supplier_code: string | null; paid_amount: number; currency_code?: string | null };
-/** Zoho after a save: a failure never undoes the save, it is only reported. */
 export type ZohoOutcome = { status: 'synced' | 'failed' | 'skipped'; message: string | null } | null;
 
 export type RefundBody = {
@@ -835,9 +687,7 @@ export type RefundBody = {
 };
 export type RecoveryBody = {
   amount: number; recovered_date: string; reference_no?: string;
-  /** Files attached this time — a recovery can carry up to 10 proofs. */
   proofs?: File[];
-  /** Stored proofs the form still shows; on an edit, anything left out is dropped. */
   keep?: string[];
 };
 
@@ -859,8 +709,6 @@ const recoveryForm = (b: RecoveryBody) => {
   f.append('recovered_date', b.recovered_date);
   if (b.reference_no) f.append('reference_no', b.reference_no);
   (b.proofs ?? []).forEach((p) => f.append('proofs[]', p));
-  /* Always sent on an edit, so removing every proof really removes them. An
-     empty keep list goes as one blank entry — no stored path can match it. */
   if (b.keep) b.keep.length ? b.keep.forEach((p) => f.append('keep[]', p)) : f.append('keep[]', '');
   return f;
 };
@@ -871,7 +719,6 @@ const withZoho = (b: unknown) => {
 const refundBase = '/p2p/orders/refund-adjustments';
 
 export const refundApi = {
-  /** Server-paged (10 by default) with every tab's count. */
   list: (q: { tab?: RefundTab; search?: string; page?: number; per_page?: number } = {}) =>
     call('Refund adjustments', () => api.get(refundBase, {
       params: { tab: q.tab ?? 'all', search: q.search || undefined, page: q.page ?? 1, per_page: q.per_page },
@@ -883,29 +730,24 @@ export const refundApi = {
       };
     }),
 
-  /** POs with money released and no adjustment yet — the "Select the purchase order" list. */
   eligiblePos: (search?: string) =>
     call('Refundable POs', () => api.get(`${refundBase}/eligible-pos`, { params: { search: search || undefined } }), dataOf<RefundEligiblePo[]>),
 
-  /** The PO a new adjustment is for, and the number it will get. */
   forPo: (poId: number) =>
     call('Refund PO details', () => api.get(`${refundBase}/po/${poId}`), dataOf<{ next_code: string; po: RefundPo }>),
 
   show: (id: number) =>
     call('Refund adjustment', () => api.get(`${refundBase}/${id}`), dataOf<RefundDetail>),
 
-  /** Raising it cancels the PO (Cancellation Initiated). */
   create: (body: RefundBody) =>
     call('Raise refund adjustment', () => api.post(refundBase, refundForm(body), multipart), withZoho),
 
   update: (id: number, body: RefundBody) =>
     call('Update refund adjustment', () => api.post(`${refundBase}/${id}`, refundForm(body), multipart), withZoho),
 
-  /** The Advance Receipt Refund Adjustment document, rendered by the server. */
   pdf: (id: number) =>
     call('Refund adjustment document', () => api.get(`${refundBase}/${id}/pdf`, { responseType: 'blob' }), (b) => b as Blob),
 
-  /** Retry the Zoho vendor credit. */
   zohoSync: (id: number) =>
     call('Refund Zoho sync', () => api.post(`${refundBase}/${id}/zoho-sync`), withZoho),
 
@@ -918,7 +760,6 @@ export const refundApi = {
   deleteRecovery: (id: number, recId: number) =>
     call('Delete recovery', () => api.delete(`${refundBase}/${id}/recoveries/${recId}`), withZoho),
 
-  /** Retry the Zoho refund of one recovery. */
   syncRecovery: (id: number, recId: number) =>
     call('Recovery Zoho sync', () => api.post(`${refundBase}/${id}/recoveries/${recId}/zoho-sync`), withZoho),
 };
