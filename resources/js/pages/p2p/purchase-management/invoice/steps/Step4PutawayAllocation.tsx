@@ -1,6 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import QRCode from 'qrcode';
+/* This stage's own stylesheet — 3,547 rules that were 71% of invoice-form.css
+   and are read by nothing else. Imported here rather than by the form, so it
+   downloads with the stage; the form is lazy about this module for the same
+   reason. */
+import './step4.css';
 import {
   putId, spiApi, taskScansDone, type ProductFlagOption, type PutawayAssignBody, type PutawayBoard, type PutawayLocations, type PutawayStatus, type SpiBox, type SpiBoxItem,
 } from '../spi-api';

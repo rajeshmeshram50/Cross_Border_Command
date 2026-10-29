@@ -14,7 +14,14 @@ import {
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
-import Step4PutawayAllocation from './steps/Step4PutawayAllocation';
+/* Stage 4 is the heaviest thing in this form by a wide margin - 127 KB of
+   source of its own, five put-away panels behind it, and step4.css, which was
+   71% of invoice-form.css. Three of the four stages never touch it, and a
+   Direct SPI that is only being drafted never leaves stage 1, so loading it
+   with the form made every invoice pay for a stage most never reach.
+   Vite resolves the chunk's stylesheet before the module promise settles, so
+   the stage does not paint unstyled while its CSS is still arriving. */
+const Step4PutawayAllocation = lazy(() => import('./steps/Step4PutawayAllocation'));
 import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
 
@@ -1011,7 +1018,11 @@ export default function InvoiceForm({
                     spiCode={spiCode}
                   />
                 )}
+                {/* The stage's own skeleton while its chunk arrives — the same
+                    one the form shows while a stage's data loads, so reaching
+                    put-away looks like every other wait in this form. */}
                 {stage === 3 && (
+                  <Suspense fallback={<StageSkeleton stage={3} />}>
                   <Step4PutawayAllocation draft={draft} boxes={boxes} lines={spiId ? boxLines : lines}
                     flagMaster={flagMaster} spiId={spiId} direct={isDirect}
                     warehouse={savedWarehouse ?? warehouseLabel(input.storage)}
@@ -1031,6 +1042,7 @@ export default function InvoiceForm({
                       own: input.storage.type === 'own',
                     }}
                     readOnly={viewOnly} />
+                  </Suspense>
                 )}
               </div>
             </>
