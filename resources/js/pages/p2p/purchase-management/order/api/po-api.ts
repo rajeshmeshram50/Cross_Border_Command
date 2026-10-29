@@ -251,6 +251,10 @@ export type SupplierOption = {
   id: number; code: string; name: string; document_type: DocTypeKey;
   supplier_type?: string | null;
   supplier_category?: string | null;
+  segments?: string[];
+  city?: string | null;
+  state?: string | null;
+  risk?: string | null;
 };
 export type SupplierDetail = {
   id: number; code: string; name: string; legalName: string | null; type: string | null;

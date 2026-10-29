@@ -15,13 +15,14 @@ import './direct-spi-supplier.css';
 export type SupplierKind = 'manufacturer' | 'trader' | 'service';
 
 export interface SupplierRow {
+  id?: number;
   code: string;
   name: string;
   kind: SupplierKind;
   /** One segment or several. A comma-separated string counts as several. */
   segment: string | string[];
   location: string;
-  risk: 'Low Risk' | 'Medium Risk' | 'High Risk';
+  risk: string;
 }
 
 /* A supplier can trade in more than one segment, and the cell only had room
@@ -149,10 +150,14 @@ const IcoTick = (
   </svg>
 );
 
-export default function DirectSpiSupplierPicker({ rows, value, onPick }: {
+export default function DirectSpiSupplierPicker({ rows, value, onPick, loading = false, error = null, onRetry, pickedRow = null }: {
   rows: SupplierRow[];
   value: string | null;
   onPick: (code: string) => void;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  pickedRow?: { code: string; name: string } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -160,7 +165,7 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick }: {
   const popRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
 
-  const picked = rows.find(r => r.code === value) ?? null;
+  const picked = rows.find(r => r.code === value) ?? pickedRow;
   const hit = q.trim().toLowerCase();
   const shown = hit
     /* segmentsOf, not r.segment: the hidden ones behind "+N" have to be
@@ -264,7 +269,16 @@ export default function DirectSpiSupplierPicker({ rows, value, onPick }: {
             />
           </div>
           <div className="sdx-pop__list">
-            {shown.length === 0 ? (
+            {loading ? (
+              <div className="sdx-pop__none"><span className="spi-btn-spin" aria-hidden />Loading suppliers…</div>
+            ) : error ? (
+              <div className="sdx-pop__none">
+                {error}
+                {onRetry && <> <button type="button" className="sdx-pop__retry" onClick={onRetry}>Retry</button></>}
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="sdx-pop__none">No suppliers found.</div>
+            ) : shown.length === 0 ? (
               <div className="sdx-pop__none">No supplier matches “{q.trim()}”.</div>
             ) : shown.map(r => {
               const on = r.code === value;
