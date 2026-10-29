@@ -10538,3 +10538,59 @@
 [data-bs-theme="dark"] .s4-root .s4nofit-needs b { color: #86efac; }
 [data-bs-theme="dark"] .s4-root .s4nofit-needs .is-zero { background: rgba(248, 113, 113, .1); border-color: rgba(248, 113, 113, .35); }
 [data-bs-theme="dark"] .s4-root .s4nofit-needs .is-zero b { color: #fca5a5; }
+
+/* ── Empty list, inside the table ─────────────────────────────────────────────
+   The row the invoice list shows when a tab has nothing in it. It lives in the
+   tbody so the column headings and the pager stay where they are — an empty
+   list should read as a list with nothing in it, not as a screen that failed.
+
+   colSpan is the real column count rather than an over-wide guess, because
+   this table ships a <colgroup>: a cell spanning past the last column would
+   be measured against widths that do not exist.
+   ────────────────────────────────────────────────────────────────────────── */
+/* The table stretches to the scroll area it sits in, so the one row inside it
+   has the whole height to centre in. Without this the message sat just under
+   the headings with the rest of the card left white beneath it — the content
+   was centred in a block the height of its own text, which is not what
+   "centred" means when the box around it is five times taller.
+   .ord-table-scroll is `flex: 1 1 auto; min-height: 0` in a column flex card,
+   so its height is resolved by layout and 100% has something to measure
+   against. Only while empty: a populated table must size to its rows. */
+.ord-table.ord-table--empty { height: 100%; }
+.ord-table .ord-emptyrow > td {
+  padding: 0;
+  background: #fff;
+  border-bottom: 0;
+  /* The cell is what centres, via vertical-align — not a stretched flex box
+     inside it. Giving the box `height: 100%` instead made it 575px tall in a
+     561px area, because a table at height 100% plus a thead on top is taller
+     than the box it sits in: the message ended up 48px high and the area
+     gained a scrollbar. Letting the cell take the slack and align its content
+     to the middle measured 264px above and 264px below. */
+  vertical-align: middle;
+}
+.ord-table .ord-emptybox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 24px 20px;
+  text-align: center;
+}
+.ord-table .ord-emptybox b {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0c4a6e;
+  letter-spacing: -.1px;
+}
+.ord-table .ord-emptybox span {
+  max-width: 430px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.55;
+}
+[data-bs-theme="dark"] .ord-table .ord-emptyrow > td { background: #0b1922; }
+[data-bs-theme="dark"] .ord-table .ord-emptybox b { color: #e2e8f0; }
+[data-bs-theme="dark"] .ord-table .ord-emptybox span { color: #7f9aa6; }

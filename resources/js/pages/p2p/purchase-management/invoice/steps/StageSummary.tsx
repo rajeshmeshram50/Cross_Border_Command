@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { formatDmy } from '../../../../../utils/formatDmy';
 import { IcoCheck, IcoChevron, IcoHistory } from '../../../icons';
 import type { InvoiceDraft } from '../invoice-draft';
+import type { SpiBox } from '../spi-api';
+import { SCN_LABEL } from './Step3BoxPackaging';
 
 /** A blank reads as "nothing was entered", not as an empty box. */
 const dash = (x: string) => (x && x.trim() !== '' ? x : '— Not provided');
@@ -23,9 +25,20 @@ const dash = (x: string) => (x && x.trim() !== '' ? x : '— Not provided');
  * - so repeating them here produced eight rows of "Not provided" above the
  * first thing the user actually filled in.
  */
-export default function StageSummary({ draft, upto, direct = false }: {
-  draft: InvoiceDraft; upto: 1 | 2 | 3; direct?: boolean;
+export default function StageSummary({ draft, upto, direct = false, boxes = [] }: {
+  draft: InvoiceDraft; upto: 1 | 2 | 3; direct?: boolean; boxes?: SpiBox[];
 }) {
+  /* Stage 03's recap. The stage records cartons, not fields, so it is counted
+     rather than read off the draft — the draft never held any of this. */
+  const units = boxes.reduce(
+    (n, b) => n + b.items.reduce((m, i) => m + (Number(i.quantity) || 0), 0),
+    0,
+  );
+  const packedItems = new Set(boxes.flatMap(b => b.items.map(i => i.supplier_invoice_item_id))).size;
+  const scenarios = [...new Set(boxes.map(b => b.scenario))]
+    .sort()
+    .map(s => `${SCN_LABEL[s][0]} · ${SCN_LABEL[s][1]}`)
+    .join(', ');
   const [open, setOpen] = useState(false);
 
   return (
@@ -111,7 +124,7 @@ export default function StageSummary({ draft, upto, direct = false }: {
                   {/* The stage rail already names the match this invoice is
                       making; the recap of that stage must not name a
                       different one. */}
-                  Invoice &amp; Product Details{direct ? '' : ' (3-Way Match)'}
+                  Invoice &amp; Product Details ({direct ? '2' : '3'}-Way Match)
                 </span>
               </div>
               <span className="spi-dt-sumstep-done"><IcoCheck size={11} /> Completed</span>
@@ -122,6 +135,30 @@ export default function StageSummary({ draft, upto, direct = false }: {
                 <RO label="Purchase Invoice Date" value={dash(formatDmy(draft.invoiceDate))} />
                 <RO label="Purchase Invoice Attachment" value={dash(draft.invoiceFile)} />
                 <RO label="E-Way Bill Attachment" value={dash(draft.ewayBillFile)} />
+              </Group>
+            </div>
+          </div>
+        )}
+
+        {/* Stage 03. The header has always counted this stage in "3 stages
+            done", but the body stopped at stage 02 — so stage 04 opened on a
+            recap that was short of the stage immediately behind it, which is
+            the one the operator is about to put away. */}
+        {upto >= 3 && (
+          <div className="spi-dt-sumstep">
+            <div className="spi-dt-sumstep-hd">
+              <div className="spi-dt-sumstep-hd-l">
+                <span className="spi-dt-sumstep-num">03</span>
+                <span className="spi-dt-sumstep-title">Temporary Box Packaging</span>
+              </div>
+              <span className="spi-dt-sumstep-done"><IcoCheck size={11} /> Completed</span>
+            </div>
+            <div className="spi-dt-sumstep-body">
+              <Group label="Box Packaging Summary">
+                <RO label="Boxes Packed" value={boxes.length ? String(boxes.length) : dash('')} />
+                <RO label="Products Packed" value={packedItems ? String(packedItems) : dash('')} />
+                <RO label="Units Packed" value={units ? String(units) : dash('')} />
+                <RO label="Packaging Scenarios Used" value={dash(scenarios)} full />
               </Group>
             </div>
           </div>

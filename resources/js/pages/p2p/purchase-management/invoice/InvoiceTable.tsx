@@ -22,10 +22,15 @@ interface InvoiceTableProps {
   loading?: boolean;
   /** The tab's columns. Defaults to all of them. */
   columns?: InvoiceColumn[];
+  /** Shown in the body when there are no rows. The reason differs by tab and
+   *  by whether a search is running, so the caller supplies the words. */
+  emptyTitle?: string;
+  emptyNote?: string;
 }
 
 function InvoiceTableBase({
   rows, onAction, startSr = 0, scrollRef, loading = false, columns = INVOICE_COLUMNS,
+  emptyTitle, emptyNote,
 }: InvoiceTableProps) {
   /* The head, the colgroup, the width and every row's cells all read this one
      set. Letting the body decide separately is how a table ends up with its
@@ -35,7 +40,7 @@ function InvoiceTableBase({
 
   return (
     <div className="ord-table-scroll" ref={scrollRef}>
-      <table className="ord-table" style={{ width }}>
+      <table className={`ord-table${rows.length === 0 && !loading ? ' ord-table--empty' : ''}`} style={{ width }}>
         <colgroup>
           {columns.map(c => <col key={c.key} style={{ width: c.width }} />)}
         </colgroup>
@@ -62,11 +67,31 @@ function InvoiceTableBase({
               </tr>
             </tbody>
           ))
-          : rows.map((row, i) => (
-            <tbody key={row.id}>
-              <InvoiceTableRow row={row} index={startSr + i} onAction={onAction} shown={shown} />
-            </tbody>
-          ))}
+          : rows.length === 0
+            ? (
+              /* The empty state belongs INSIDE the table, not in place of it.
+                 Replacing the whole table left a sentence floating in white
+                 space with no column headings and nothing to say what was
+                 empty — the list looked broken rather than unfilled. Keeping
+                 the head and the pager, and putting the message in the body,
+                 is how every other list in the app reads when it has nothing
+                 to show. */
+              <tbody>
+                <tr className="ord-emptyrow">
+                  <td colSpan={columns.length}>
+                    <div className="ord-emptybox">
+                      <b>{emptyTitle ?? 'No entries yet'}</b>
+                      {emptyNote && <span>{emptyNote}</span>}
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            )
+            : rows.map((row, i) => (
+              <tbody key={row.id}>
+                <InvoiceTableRow row={row} index={startSr + i} onAction={onAction} shown={shown} />
+              </tbody>
+            ))}
       </table>
     </div>
   );

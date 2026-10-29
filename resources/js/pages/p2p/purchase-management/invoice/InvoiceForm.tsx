@@ -615,12 +615,6 @@ export default function InvoiceForm({
 
   return createPortal(
     <div className="spi-dt-overlay cpf-form spi-invform">
-      {saving && (
-        <div className="spi-dt-veil" role="status" aria-live="polite">
-          <span className="spi-dt-veil__spin" aria-hidden />
-          <span className="spi-dt-veil__lbl">Saving — please wait</span>
-        </div>
-      )}
       <div className="spi-dt">
         <div className="spi-dt-topcard">
           <div className="spi-dt-head">

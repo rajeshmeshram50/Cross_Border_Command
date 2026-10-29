@@ -52,6 +52,15 @@ const normFlag = (name: string | null | undefined) => (name ?? '').toLowerCase()
 
 const FLAG_PALETTE = ['#0891b2', '#7c3aed', '#db2777', '#ea580c', '#16a34a', '#2563eb', '#ca8a04'];
 
+/* The two halves of a scenario's name — "Scenario 03" and what it does.
+   Exported because stage 04's recap of this stage has to call a carton by the
+   same name this stage gave it. */
+export const SCN_LABEL: Record<Scenario, [string, string]> = {
+  s1: ['Scenario 01', '1 Product → 1 Box'],
+  s2: ['Scenario 02', '1 Product → Multiple Boxes'],
+  s3: ['Scenario 03', 'Multiple Products → 1 Box'],
+};
+
 const EDIT_MODE: Record<Scenario, string> = {
   s1: 'Single Box', s2: 'Split Carton', s3: 'Mixed Carton',
 };
@@ -180,11 +189,6 @@ export default function Step3BoxPackaging({
     setSelected(allSelected ? [] : selectable);
   };
 
-  const SCN_LABEL: Record<Scenario, [string, string]> = {
-    s1: ['Scenario 01', '1 Product → 1 Box'],
-    s2: ['Scenario 02', '1 Product → Multiple Boxes'],
-    s3: ['Scenario 03', 'Multiple Products → 1 Box'],
-  };
   const REMARK_LABEL: Record<string, string> = {
     correct: 'Correct Product', damaged: 'Damaged / Rejected',
     mismatched: 'Mismatched', extra: 'Extra Quantity',

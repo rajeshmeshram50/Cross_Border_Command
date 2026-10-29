@@ -287,20 +287,20 @@ export default function InvoiceList() {
 
         </div>
 
-        {!(list.loading || list.replacing) && total === 0 ? (
-          <div className="ord-empty">
-            {debouncedQuery
-              ? 'No supplier purchase invoices match your search.'
-              : 'No supplier purchase invoices to display in this category.'}
-          </div>
-        ) : (
-          <InvoiceTable
-            rows={list.rows} onAction={handleRowAction}
-            startSr={start} scrollRef={scrollRef}
-            loading={list.loading || list.replacing}
-            columns={tabColumns}
-          />
-        )}
+        {/* The table is always rendered, empty or not: its head says what the
+            columns of this tab are, and the pager below says how many rows
+            there are. Swapping the whole thing for a sentence took both away
+            and left the list looking broken rather than empty. */}
+        <InvoiceTable
+          rows={list.rows} onAction={handleRowAction}
+          startSr={start} scrollRef={scrollRef}
+          loading={list.loading || list.replacing}
+          columns={tabColumns}
+          emptyTitle={debouncedQuery ? 'No matching invoices' : 'No entries yet'}
+          emptyNote={debouncedQuery
+            ? `Nothing here matches “${debouncedQuery}”. Try a different SPI number, supplier, PO or status.`
+            : 'No supplier purchase invoices in this category yet. Create one to see it here.'}
+        />
 
         <WorklistPager
           className="wl-teal"
