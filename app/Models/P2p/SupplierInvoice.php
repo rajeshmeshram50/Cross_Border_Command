@@ -55,6 +55,11 @@ class SupplierInvoice extends Model
         'code',
         'purchase_order_id',
         'vendor_id',
+        /* Direct SPI only. A PO-backed invoice leaves these null and keeps
+           reading the order's, which stays the authority while it exists. */
+        'shipment_order_id',
+        'procurement_request_id',
+        'procurement_request_code',
         'invoice_no',
         'invoice_date',
         'invoice_file_path',
@@ -67,6 +72,16 @@ class SupplierInvoice extends Model
         'total_sgst',
         'total_igst',
         'grand_total',
+        /* Direct SPI is paid on its own, so the deduction and the ledger
+           live here. TDS is cut on taxable_total, not grand_total — GST
+           is not subject to it. A PO-backed invoice leaves these null
+           and keeps deducting from its order. */
+        'tds_percentage',
+        'tds_amount',
+        'tds_updated_by',
+        'tds_updated_at',
+        'paid_amount',
+        'balance_amount',
         'document_type',
         'currency_code',
         'exchange_rate',
@@ -89,6 +104,11 @@ class SupplierInvoice extends Model
         'total_sgst'      => 'decimal:2',
         'total_igst'      => 'decimal:2',
         'grand_total'     => 'decimal:2',
+        'tds_percentage'  => 'decimal:2',
+        'tds_amount'      => 'decimal:2',
+        'tds_updated_at'  => 'datetime',
+        'paid_amount'     => 'decimal:2',
+        'balance_amount'  => 'decimal:2',
         'exchange_rate'   => 'decimal:6',
         'stage_completed' => 'integer',
         'zoho_synced_at'  => 'datetime',
@@ -104,6 +124,13 @@ class SupplierInvoice extends Model
     {
         return $this->belongsTo(Branch::class);
     }
+    /** GST senior approvals raised against THIS invoice (Direct SPI only —
+     *  a PO-backed invoice raises them on its order). */
+    public function gstApprovals(): HasMany
+    {
+        return $this->hasMany(PoGstApproval::class, 'supplier_invoice_id');
+    }
+
     public function purchaseOrder(): BelongsTo
     {
         return $this->belongsTo(PurchaseOrder::class, 'purchase_order_id');

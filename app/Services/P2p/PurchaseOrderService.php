@@ -372,6 +372,10 @@ class PurchaseOrderService
                Step 02 had taken a whole PI between them, so no further PO could
                be raised and the reason read "nothing left to order". A draft
                sitting with a senior is not abandoned, so it keeps its hold. */
+            /* A cancelled order holds nothing. Without this the approval
+               branch below kept its hold alive after cancellation —
+               the rows survive, so the EXISTS stayed true for ever. */
+            ->where('po.status', '!=', PurchaseOrder::STATUS_CANCELLED)
             ->where(fn ($q) => $q
                 ->where('po.status', PurchaseOrder::STATUS_SUBMITTED)
                 ->orWhereExists(fn ($s) => $s->selectRaw('1')

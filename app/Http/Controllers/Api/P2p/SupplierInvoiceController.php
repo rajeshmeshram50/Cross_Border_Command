@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\P2p;
 
 use App\Http\Controllers\Controller;
+use App\Models\P2p\PoGstApproval;
 use App\Models\P2p\PoPaymentRequest;
 use App\Models\P2p\PurchaseOrder;
 use App\Models\P2p\SpiBox;
@@ -395,6 +396,35 @@ class SupplierInvoiceController extends Controller
                 ], 422));
             }
 
+            /* The supplier stays open until this invoice goes to a senior; a
+               pending or approved request fixes it. Same guard the purchase
+               order carries (PurchaseOrderController), and for the same
+               reason: the senior approved THIS supplier's overdue filing, so
+               a swap afterwards leaves the approval vouching for a risk
+               nobody looked at.
+
+               document_type is locked with it. gstGate() returns 'clear'
+               outright for an international document, so a domestic ->
+               international flip would step around the approval without the
+               supplier moving at all. */
+            $sentToSenior = $spi->gstApprovals()
+                ->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])
+                ->exists();
+
+            if ($sentToSenior && (
+                (int) $data['vendor_id'] !== (int) $spi->vendor_id
+                || $data['document_type'] !== $spi->document_type
+            )) {
+                abort(response()->json([
+                    'status'  => false,
+                    'message' => "{$spi->code} has gone to a senior for GST approval — the supplier and document type can no longer change.",
+                    'errors'  => [
+                        'vendor_id'     => ['The supplier is fixed once the invoice is sent for senior approval.'],
+                        'document_type' => ['The document type is fixed once the invoice is sent for senior approval.'],
+                    ],
+                ], 422));
+            }
+
             $spi->forceFill($data + ['updated_by' => $user->id])->save();
             $this->svc->log($spi, 'stage1_saved');
             $spi->refresh();
@@ -750,8 +780,12 @@ class SupplierInvoiceController extends Controller
                     'ready_to_pay'     => round((float) $approved->sum(fn($r) => max(0, (float) $r->approved_amount - (float) $r->paid_amount)), 2),
                 ],
 
-                /* The real ceiling. A request against this invoice is still checked
-                   against the PO's balance, not the invoice's. */
+                /* The real ceiling for a PO-backed invoice: a request against
+                   it is checked against the ORDER's balance, not the
+                   invoice's. A Direct SPI has no order, so it is its own
+                   ceiling — see `ledger` below, which says which of the two
+                   is in force rather than leaving the caller to infer it
+                   from a null. */
                 'po' => $po ? [
                     'id' => $po->id,
                     'code' => $po->code,
@@ -761,6 +795,33 @@ class SupplierInvoiceController extends Controller
                     'paid_amount'    => (float) $po->paid_amount,
                     'balance_amount' => (float) $po->balance_amount,
                 ] : null,
+
+                /* Whichever document the money is actually measured against.
+                   The screen reads this and does not care which it is; the
+                   `source` says so for anything that does. TDS comes off the
+                   taxable base, so net_payable is grand_total - tds_amount
+                   on both sides — the same arithmetic saveTds() caps. */
+                'ledger' => $po ? [
+                    'source'         => 'purchase_order',
+                    'code'           => $po->code,
+                    'grand_total'    => (float) $po->grand_total,
+                    'tds_amount'     => (float) $po->tds_amount,
+                    'net_payable'    => round((float) $po->grand_total - (float) $po->tds_amount, 2),
+                    'paid_amount'    => (float) $po->paid_amount,
+                    'balance_amount' => (float) $po->balance_amount,
+                ] : [
+                    'source'         => 'supplier_invoice',
+                    'code'           => $spi->code,
+                    'grand_total'    => (float) $spi->grand_total,
+                    'tds_amount'     => (float) $spi->tds_amount,
+                    'net_payable'    => round((float) $spi->grand_total - (float) $spi->tds_amount, 2),
+                    /* Null until the first payment: the ledger has not been
+                       opened, which is not the same as a zero balance. */
+                    'paid_amount'    => $spi->paid_amount === null ? null : (float) $spi->paid_amount,
+                    'balance_amount' => $spi->balance_amount === null
+                        ? round((float) $spi->grand_total - (float) $spi->tds_amount, 2)
+                        : (float) $spi->balance_amount,
+                ],
 
                 'requests' => $rows->map(fn($r) => [
                     'id' => $r->id,
@@ -1218,6 +1279,33 @@ class SupplierInvoiceController extends Controller
             // the supplier is picked directly instead of inherited.
             'purchase_order_id' => ['nullable', 'integer'],
             'vendor_id'         => ['required', 'integer'],
+
+            /* ── Direct SPI setup, steps 01 and 02 ──────────────────────
+             * Only a Direct SPI sends these. A PO-backed invoice leaves them
+             * out and goes on reading the order's own columns, so there is
+             * never a second copy of the same fact to keep in step.
+             *
+             * Step 01 is answerable with "All Other's (Without Shipment ID)",
+             * which is a real answer and not a skipped question — hence
+             * nullable rather than required_if.
+             *
+             * Tenant-scoped the same way warehouse_id is: an id with no scope
+             * behind it accepts another client's row. Shipment orders are
+             * client-wide, so client_id alone is the right fence here. */
+            /* No deleted_at clause: shipment_orders does not soft-delete,
+               and filtering on a column that is not there throws. */
+            'shipment_order_id' => ['nullable', 'integer', Rule::exists('shipment_orders', 'id')
+                ->where(fn ($q) => $q->where('client_id', $user->client_id))],
+
+            /* NOT fenced to `procurements` yet, deliberately. Step 02 of the
+               Direct SPI setup is not wired, so an id arriving today is a
+               placeholder and an exists rule would refuse an otherwise
+               complete invoice. Restore the tenant scope — the same one
+               shipment_order_id carries above — once real ids are sent. */
+            'procurement_request_id' => ['nullable', 'integer'],
+            // 30, as the purchase order validates it. Stored beside the id
+            // because it is what the lists search and the sticker prints.
+            'procurement_request_code' => ['nullable', 'string', 'max:30'],
             // Decides whether the tax section renders at all, so it is asked
             // up front rather than discovered at Stage 02.
             'document_type'     => ['required', Rule::in(SupplierInvoice::DOC_TYPES)],

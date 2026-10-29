@@ -618,10 +618,24 @@ class SpiBoxController extends Controller
             'printedOn' => now()->format('d/m/Y H:i'),
 
             'refs' => [
-                'procurement' => ['code' => $po?->procurement_request_code, 'date' => $this->day($po?->created_at)],
+                /* The invoice's own first — a Direct SPI has a procurement
+                   case but no order, and printing a dash for it on a carton
+                   that IS against a case is the label losing the one
+                   reference the warehouse traces it by. */
+                'procurement' => [
+                    'code' => $spi->procurement_request_code ?? $po?->procurement_request_code,
+                    'date' => $this->day($po?->created_at ?? $spi->created_at),
+                ],
                 'po'          => ['code' => $po?->code,                     'date' => $this->day($po?->po_date)],
                 'spi'         => ['code' => $spi->code,                     'date' => $this->day($spi->invoice_date)],
             ],
+
+            /* The prototype's face leads with the product and counts the
+               rest — distinct PRODUCTS, not lines: one product split over
+               two batches is still one thing in the box. */
+            'productName'   => $items->first()?->invoiceItem?->product?->name
+                            ?? $items->first()?->invoiceItem?->product?->generic_name,
+            'moreProducts'  => max(0, $items->pluck('supplier_invoice_item_id')->unique()->count() - 1),
 
             'putawayCode'   => 'PUT-' . $box->box_code,
             'scenarioLabel' => match ($box->scenario) {
