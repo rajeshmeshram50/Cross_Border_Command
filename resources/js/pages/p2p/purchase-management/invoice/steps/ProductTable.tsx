@@ -117,7 +117,7 @@ export default function ProductTable({
       if (!seen.has(value)) {
         seen.set(value, {
           value,
-          label: `${l.code} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
+          label: `${formatProductCode(l.code)} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
           name: l.poName,
           productId: l.productId,
         });
@@ -133,7 +133,7 @@ export default function ProductTable({
       if (existing) { existing.master = p; continue; }
       seen.set(value, {
         value,
-        label: `${p.code} — ${truncate(p.name, MATCH_NAME_MAX)}`,
+        label: `${formatProductCode(p.code)} — ${truncate(p.name, MATCH_NAME_MAX)}`,
         name: p.name,
         productId: p.id,
         master: p,
@@ -423,7 +423,7 @@ const Row = memo(function Row({
                   ? {
                     productId: pick.master!.id,
                     spiName: pick.master!.name,
-                    code: pick.master!.code,
+                    code: formatProductCode(pick.master!.code),
                     hsn: pick.master!.hsn,
                     gst: pick.master!.gst ?? 0,
                     description: pick.master!.description,
@@ -563,7 +563,7 @@ function ProdCell({ name, code, hsn, gst }: { name: string; code: string; hsn: s
         <div className="cpd-prod__nm">{short}</div>
       </Tooltip>
       <div className="cpd-prod__meta">
-        <span className="cpd-code">{code}</span>
+        <span className="cpd-code">{formatProductCode(code)}</span>
         <span className="cpd-kv">HSN <b>{hsn}</b></span>
         <span className="cpd-prod__dot" />
         <span className="cpd-kv">GST <b>{gst}%</b></span>

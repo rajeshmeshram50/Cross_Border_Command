@@ -25,7 +25,7 @@ import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
-  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, itemsPayload, linesFromPo, taxModeFor,
+  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, formatProductCode, itemsPayload, linesFromPo, taxModeFor, withoutCodePrefix,
   type ProductLine, type SpiPoOpen,
 } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
@@ -226,13 +226,13 @@ export default function InvoiceForm({
               const byProduct = new Map(pi.map(l => [l.product_id, l]));
               setLines(existing.items.map(it => {
                 const m = (it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id);
-                const name = m?.product_name ?? m?.product_code ?? '';
+                const name = withoutCodePrefix(m?.product_name ?? '', m?.product_code) || formatProductCode(m?.product_code);
                 return {
                   key: `saved:${it.id}`,
                   spiItemId: it.id,
                   piItemId: m?.pi_item_id ?? it.pi_item_id ?? null,
                   productId: it.product_id,
-                  code: m?.product_code ?? '',
+                  code: formatProductCode(m?.product_code),
                   hsn: it.hsn_code ?? m?.hsn_code ?? '',
                   piName: name, poName: name, spiName: name,
                   description: it.description ?? m?.description ?? '',
@@ -375,12 +375,12 @@ export default function InvoiceForm({
         if (shipmentOrderId && !lines.some(l => l.spiItemId != null)) {
           const pi = await poApi.piLines(shipmentOrderId);
           setLines(pi.lines.map(l => {
-            const name = l.product_name ?? l.product_code ?? '';
+            const name = withoutCodePrefix(l.product_name ?? '', l.product_code) || formatProductCode(l.product_code);
             return {
               key: `pi:${l.pi_item_id}`,
               piItemId: l.pi_item_id,
               productId: l.product_id ?? undefined,
-              code: l.product_code ?? '',
+              code: formatProductCode(l.product_code),
               hsn: l.hsn_code ?? '',
               uom: l.uom ?? undefined,
               piName: name, poName: name, spiName: name,
