@@ -11,7 +11,7 @@ import DirectSpiSetup, {
   DirectSpiSummary, DirectSpiSummarySkeleton, DirectSpiStepsSkeleton,
   EMPTY_DIRECT, directReady, PROCUREMENT_STEP_ENABLED, type DirectSpiState,
 } from './DirectSpiSetup';
-import { SUPPLIERS, NEXT_PROCUREMENT } from './direct-spi-data';
+import { NEXT_PROCUREMENT } from './direct-spi-data';
 import './direct-spi.css';
 
 const PO_PAGE_SIZE = 20;
@@ -27,6 +27,10 @@ export interface InvoiceMapChoice {
   shipmentPi?: string;
   procurementCode?: string;
   supplierCode?: string;
+  vendorId?: number;
+  documentType?: 'domestic' | 'international';
+  shipmentOrderId?: number;
+  procurementRequestId?: number;
 }
 
 function TypeCard({
@@ -133,7 +137,6 @@ export default function MapInvoiceModal({
   }, []);
 
   const [direct, setDirect] = useState<DirectSpiState>(EMPTY_DIRECT);
-  const directSupplier = SUPPLIERS.find(r => r.code === direct.supplier);
   const isDirect = mode === 'without-po';
 
   const [sdxReady, setSdxReady] = useState(false);
@@ -168,11 +171,14 @@ export default function MapInvoiceModal({
       ? { mode, poId: poPicked.id, poNo: poPicked.code, supplier: poPicked.supplier_name ?? undefined }
       : {
         mode,
-        supplier: directSupplier?.name ?? supplier,
+        supplier: direct.supplierName ?? supplier,
         shipmentId: direct.shipment === 'with' ? direct.shipmentId ?? undefined : undefined,
         shipmentPi: direct.shipment === 'with' ? direct.shipmentPi ?? undefined : undefined,
         procurementCode: direct.procMode === 'auto' ? NEXT_PROCUREMENT : direct.procurementId ?? undefined,
         supplierCode: direct.supplier ?? undefined,
+        vendorId: direct.supplierId ?? undefined,
+        documentType: direct.supplierDocType === 'international' ? 'international' : 'domestic',
+        shipmentOrderId: direct.shipment === 'with' ? direct.shipmentOrderId ?? undefined : undefined,
       });
   };
 

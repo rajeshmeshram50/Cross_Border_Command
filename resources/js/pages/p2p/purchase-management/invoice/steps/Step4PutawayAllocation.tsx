@@ -1600,7 +1600,7 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
 
   return (
     <div className={`s4-root${fs ? ' is-fullview' : ''}`}>
-      {!fs && <StageSummary draft={draft} upto={3} direct={direct} />}
+      {!fs && <StageSummary draft={draft} upto={3} direct={direct} boxes={boxes} />}
       {!fs && <PutawayStageBrief warehouse={warehouse} />}
 
       <div className="spi-segrow">

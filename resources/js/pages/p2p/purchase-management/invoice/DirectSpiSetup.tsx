@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import DirectSpiPicker, { type PickRow } from './DirectSpiPicker';
 import DirectSpiSupplierPicker from './DirectSpiSupplierPicker';
-import { PROCUREMENTS, NEXT_PROCUREMENT, SUPPLIERS, useShipmentRows } from './direct-spi-data';
+import { PROCUREMENTS, NEXT_PROCUREMENT, useShipmentRows, useSupplierRows } from './direct-spi-data';
 
 export type ShipmentScope = 'with' | 'without';
 
@@ -13,9 +13,14 @@ export interface DirectSpiState {
   shipmentLabel?: string | null;
   shipmentPi?: string | null;
   shipmentDate?: string | null;
+  shipmentOrderId?: number | null;
   procMode: ProcurementMode | null;
   procurementId: string | null;
   supplier: string | null;
+  supplierName?: string | null;
+  supplierId?: number | null;
+  supplierDocType?: string | null;
+  supplierState?: string | null;
 }
 
 export const EMPTY_DIRECT: DirectSpiState = {
@@ -29,8 +34,13 @@ export const directStepDone = (s: DirectSpiState) => ({
     || (s.shipment === 'with' && !!s.shipmentId),
   procurement: s.procMode === 'auto'
     || (s.procMode === 'link' && PROCUREMENTS.some(r => r.code === s.procurementId)),
-  supplier: SUPPLIERS.some(r => r.code === s.supplier),
+  supplier: !!s.supplier,
 });
+
+const supplierOpenOf = (s: DirectSpiState) => {
+  const d = directStepDone(s);
+  return PROCUREMENT_STEP_ENABLED ? d.procurement : d.shipment;
+};
 
 export const directReady = (s: DirectSpiState) => {
   const d = directStepDone(s);
@@ -138,7 +148,6 @@ function Ring({ pct }: { pct: number }) {
 export function DirectSpiSummary({ state }: { state: DirectSpiState }) {
   const done = directStepDone(state);
   const procurement = PROCUREMENTS.find(r => r.code === state.procurementId);
-  const supplier = SUPPLIERS.find(r => r.code === state.supplier);
   const steps = PROCUREMENT_STEP_ENABLED
     ? [done.shipment, done.procurement, done.supplier]
     : [done.shipment, done.supplier];
@@ -178,8 +187,8 @@ export function DirectSpiSummary({ state }: { state: DirectSpiState }) {
             value="Coming soon" sub="Not part of this release" done={false} />
         )}
         <SumRow ico={IcoPerson} label="Supplier"
-          value={supplier?.name ?? 'Not selected'}
-          sub={supplier ? `${supplier.code} · ${supplier.location.split(', ').pop()}` : undefined}
+          value={state.supplier ? state.supplierName ?? state.supplier : 'Not selected'}
+          sub={state.supplier ? [state.supplier, state.supplierState].filter(Boolean).join(' · ') : undefined}
           done={done.supplier} />
       </div>
     </div>
@@ -296,6 +305,7 @@ export default function DirectSpiSetup({ state, onChange }: {
 }) {
   const done = directStepDone(state);
   const ships = useShipmentRows(state.shipment === 'with');
+  const sups = useSupplierRows(supplierOpenOf(state));
   const picked = PROCUREMENTS.find(r => r.code === state.procurementId);
   const supplierOpen = PROCUREMENT_STEP_ENABLED ? done.procurement : done.shipment;
 
@@ -337,7 +347,7 @@ export default function DirectSpiSetup({ state, onChange }: {
               ico={IcoDoc}
               title="All Other’s (Without Shipment ID)"
               sub="Not linked to any shipment"
-              onPick={() => onChange({ ...state, shipment: 'without', shipmentId: null, shipmentLabel: null, shipmentPi: null, shipmentDate: null })}
+              onPick={() => onChange({ ...state, shipment: 'without', shipmentId: null, shipmentLabel: null, shipmentPi: null, shipmentDate: null, shipmentOrderId: null })}
             />
           </div>
 
@@ -353,7 +363,7 @@ export default function DirectSpiSetup({ state, onChange }: {
                 pickedRow={state.shipmentId ? { code: state.shipmentId, title: state.shipmentLabel ?? '', sub: state.shipmentDate ?? '' } : null}
                 onPick={code => {
                   const r = ships.rows.find(x => x.code === code);
-                  onChange({ ...state, shipmentId: code, shipmentLabel: r?.title ?? null, shipmentPi: r?.piNumber ?? null, shipmentDate: r?.sub || null });
+                  onChange({ ...state, shipmentId: code, shipmentLabel: r?.title ?? null, shipmentPi: r?.piNumber ?? null, shipmentDate: r?.sub || null, shipmentOrderId: r?.id ?? null });
                 }}
                 placeholder="Select Shipment ID…"
                 noun="shipments"
@@ -456,9 +466,16 @@ export default function DirectSpiSetup({ state, onChange }: {
           <div className="sdx-field">
             <div className="sdx-lbl">{IcoPerson} Supplier <span className="sdx-req">*</span></div>
             <DirectSpiSupplierPicker
-              rows={SUPPLIERS}
+              rows={sups.rows}
+              loading={sups.loading}
+              error={sups.error}
+              onRetry={sups.retry}
               value={state.supplier}
-              onPick={code => onChange({ ...state, supplier: code })}
+              pickedRow={state.supplier ? { code: state.supplier, name: state.supplierName ?? '' } : null}
+              onPick={code => {
+                const r = sups.rows.find(x => x.code === code);
+                onChange({ ...state, supplier: code, supplierName: r?.name ?? null, supplierId: r?.id ?? null, supplierDocType: r?.docType ?? null, supplierState: r && r.location !== '—' ? r.location.split(', ').pop() ?? null : null });
+              }}
             />
           </div>
         </Step>

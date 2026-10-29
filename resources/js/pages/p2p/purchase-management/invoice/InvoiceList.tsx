@@ -89,24 +89,58 @@ export default function InvoiceList() {
   const reloadList = list.reload;
   const closeForm = useCallback(() => { setFormFor(null); reloadList(); }, [reloadList]);
 
-  const confirmStorage = useCallback((choice: StorageChoice) => {
-    if (!storageFor) return;
-    setStorageFor(null);
-    setFormFor({
-      poId: storageFor.poId,
-      poNo: storageFor.poNo,
-      supplier: storageFor.supplier ?? '—',
-      storage: choice,
-      direct: storageFor.mode === 'without-po'
-        ? {
-          shipmentId: storageFor.shipmentId,
-          shipmentPi: storageFor.shipmentPi,
-          procurementCode: storageFor.procurementCode,
-          supplierCode: storageFor.supplierCode,
-        }
-        : undefined,
-    });
-  }, [storageFor]);
+  const confirmStorage = useCallback(async (choice: StorageChoice): Promise<boolean> => {
+    if (!storageFor) return false;
+    const direct = storageFor.mode === 'without-po'
+      ? {
+        shipmentId: storageFor.shipmentId,
+        shipmentPi: storageFor.shipmentPi,
+        procurementCode: storageFor.procurementCode,
+        supplierCode: storageFor.supplierCode,
+      }
+      : undefined;
+    if (!direct) {
+      setStorageFor(null);
+      setFormFor({
+        poId: storageFor.poId,
+        poNo: storageFor.poNo,
+        supplier: storageFor.supplier ?? '—',
+        storage: choice,
+      });
+      return true;
+    }
+    if (!storageFor.vendorId) {
+      toast.warning('Choose a supplier', 'Pick the supplier this invoice is issued by.');
+      return false;
+    }
+    try {
+      const spi = await spiApi.create({
+        purchase_order_id: null,
+        vendor_id: storageFor.vendorId,
+        document_type: storageFor.documentType ?? 'domestic',
+        warehouse_id: choice.type === 'own' ? choice.warehouse?.apiId ?? null : null,
+        shipment_order_id: storageFor.shipmentOrderId ?? null,
+        procurement_request_id: storageFor.procurementRequestId ?? null,
+        procurement_request_code: storageFor.procurementCode ?? null,
+      });
+      setStorageFor(null);
+      toast.success(`${spi.code} created`, 'Saved as a draft — continue with the supplier details.');
+      setFormFor({
+        spiId: spi.id,
+        status: spi.status,
+        statusLabel: 'Draft',
+        invoiceNo: spi.code,
+        supplier: storageFor.supplier ?? '—',
+        storage: choice,
+        direct,
+        openAtStage1: true,
+      });
+      return true;
+    } catch (e) {
+      toast.error('Could not create the Direct SPI', e instanceof PoApiError ? e.firstError : 'Please try again.');
+      return false;
+    }
+  }, [storageFor, toast]);
 
   const [paymentsRow, setPaymentsRow] = useState<InvoiceRow | null>(null);
   const [summaryRow, setSummaryRow] = useState<InvoiceRow | null>(null);
@@ -287,20 +321,20 @@ export default function InvoiceList() {
 
         </div>
 
-        {!(list.loading || list.replacing) && total === 0 ? (
-          <div className="ord-empty">
-            {debouncedQuery
-              ? 'No supplier purchase invoices match your search.'
-              : 'No supplier purchase invoices to display in this category.'}
-          </div>
-        ) : (
-          <InvoiceTable
-            rows={list.rows} onAction={handleRowAction}
-            startSr={start} scrollRef={scrollRef}
-            loading={list.loading || list.replacing}
-            columns={tabColumns}
-          />
-        )}
+        {/* The table is always rendered, empty or not: its head says what the
+            columns of this tab are, and the pager below says how many rows
+            there are. Swapping the whole thing for a sentence took both away
+            and left the list looking broken rather than empty. */}
+        <InvoiceTable
+          rows={list.rows} onAction={handleRowAction}
+          startSr={start} scrollRef={scrollRef}
+          loading={list.loading || list.replacing}
+          columns={tabColumns}
+          emptyTitle={debouncedQuery ? 'No matching invoices' : 'No entries yet'}
+          emptyNote={debouncedQuery
+            ? `Nothing here matches “${debouncedQuery}”. Try a different SPI number, supplier, PO or status.`
+            : 'No supplier purchase invoices in this category yet. Create one to see it here.'}
+        />
 
         <WorklistPager
           className="wl-teal"

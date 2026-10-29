@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { PickRow } from './DirectSpiPicker';
 import type { SupplierRow } from './DirectSpiSupplierPicker';
-import { PoApiError, poLookupApi, type ShipmentOption } from '../order/api/po-api';
+import { PoApiError, poLookupApi, type ShipmentOption, type SupplierOption } from '../order/api/po-api';
 
 export type ShipmentRow = PickRow & { id: number; piNumber: string | null };
 
@@ -66,11 +66,41 @@ export const PROCUREMENTS: PickRow[] = Array.from({ length: 57 }, (_, i) => {
 
 export const NEXT_PROCUREMENT = `PC-${String(PROCUREMENTS.length + 1).padStart(3, '0')}`;
 
-export const SUPPLIERS: SupplierRow[] = [
-  { code: 'S-001', name: 'Reliance Industries Ltd', kind: 'manufacturer', segment: 'Raw Material', location: 'Mumbai, Maharashtra',  risk: 'Low Risk' },
-  { code: 'S-002', name: 'Tata Steel Ltd',          kind: 'manufacturer', segment: 'Raw Material', location: 'Mumbai, Maharashtra',  risk: 'Medium Risk' },
-  { code: 'S-003', name: 'Adani Enterprises Ltd',   kind: 'trader',       segment: ['Trading', 'Logistics', 'Commodities'], location: 'Ahmedabad, Gujarat', risk: 'High Risk' },
-  { code: 'S-004', name: 'Mahindra Logistics Ltd',  kind: 'service',      segment: 'Logistics',    location: 'Pune, Maharashtra',    risk: 'Low Risk' },
-  { code: 'S-005', name: 'Godrej Agrovet Ltd',      kind: 'manufacturer', segment: ['Agri Inputs', 'Raw Material'], location: 'Nashik, Maharashtra', risk: 'Low Risk' },
-  { code: 'S-006', name: 'Shakti Traders',          kind: 'trader',       segment: 'Commodities',  location: 'Indore, Madhya Pradesh', risk: 'Medium Risk' },
-];
+const kindOf = (type?: string | null): SupplierRow['kind'] => {
+  const t = (type ?? '').toLowerCase();
+  if (t.includes('service')) return 'service';
+  if (/ffd|transport|logistic|trad/.test(t)) return 'trader';
+  return 'manufacturer';
+};
+
+const supplierRow = (v: SupplierOption): SupplierRow => ({
+  id: v.id,
+  docType: v.document_type,
+  code: v.code,
+  name: v.name,
+  kind: kindOf(v.supplier_type),
+  segment: v.segments ?? [],
+  location: [v.city, v.state].filter(Boolean).join(', ') || '—',
+  risk: !v.risk ? '—' : /risk/i.test(v.risk) ? v.risk : `${v.risk} Risk`,
+});
+
+export function useSupplierRows(enabled = true) {
+  const [rows, setRows] = useState<SupplierRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    setLoading(true);
+    setError(null);
+    poLookupApi.suppliers()
+      .then(list => { if (live) setRows((list ?? []).map(supplierRow)); })
+      .catch(e => { if (live) setError(e instanceof PoApiError ? e.firstError : 'Could not load suppliers.'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [enabled, tick]);
+
+  return { rows, loading, error, retry: () => setTick(t => t + 1) };
+}
