@@ -538,7 +538,7 @@ function Row({ r, sr, off, busy, opening, w, z, onToggle, onQr, onEdit, onShelve
               className={`whm-toggle${off ? '' : ' is-on'}`}
               role="switch" aria-checked={!off}
               aria-label={`Toggle status of ${r.id}`}
-              disabled={busy}
+              aria-busy={busy}
               onClick={() => onToggle(r)}
             >
               <span />

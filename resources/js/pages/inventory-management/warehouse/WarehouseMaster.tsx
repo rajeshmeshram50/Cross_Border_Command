@@ -498,7 +498,7 @@ function Row({ w, sr, off, busy, opening, onToggle, onQr, onEdit }: {
             role="switch" aria-checked={!off}
             aria-label={`Toggle status of ${w.id}`}
             title={off ? 'Inactive — click to activate' : 'Active — click to deactivate'}
-            disabled={busy}
+            aria-busy={busy}
             onClick={() => onToggle(w)}
           >
             <span />

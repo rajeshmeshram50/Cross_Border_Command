@@ -332,7 +332,7 @@ function Row({ f, no, off, busy, onToggle, onEdit }: {
             title={f.isDefault
               ? 'Shared default — it cannot be switched off'
               : off ? 'Inactive — click to activate' : 'Active — click to deactivate'}
-            disabled={busy || f.isDefault}
+            disabled={f.isDefault} aria-busy={busy}
             onClick={() => onToggle(f)}
           >
             <span />

@@ -447,7 +447,7 @@ function ShelfRow({ s, sr, rackOff, busy, onToggle, onEdit, onQr }: {
             <button
               type="button"
               className={`whm-toggle${soff ? '' : ' is-on'}`}
-              role="switch" aria-checked={!soff} disabled={rackOff || busy}
+              role="switch" aria-checked={!soff} disabled={rackOff} aria-busy={busy}
               aria-label={`Toggle status of ${s.id}`}
               onClick={onToggle}
             >
