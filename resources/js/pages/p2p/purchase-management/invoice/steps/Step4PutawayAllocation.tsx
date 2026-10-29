@@ -2285,7 +2285,15 @@ export default function Step4PutawayAllocation({ draft, boxes, lines = [], flagM
                         <span className="s4wz-opt__d">{chipB}</span>
                       </span>
                     </span>
-                    <span className="s4wz-opt__radio" aria-hidden />
+                    {/* The same tick the storage-type dialog draws. Both
+                        dialogs share .s4wz-opt, and its stylesheet says the
+                        chosen card is marked with a check rather than a dot —
+                        but the check is an <svg> the markup has to render, and
+                        this copy of the card was left empty, so the selected
+                        option here was a plain filled disc. */}
+                    <span className="s4wz-opt__radio" aria-hidden>
+                      {methodPick === k && <IcoCheck />}
+                    </span>
                   </button>
                 ))}
               </div>
