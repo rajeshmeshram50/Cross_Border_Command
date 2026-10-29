@@ -702,7 +702,9 @@ export default function InvoiceForm({
     onClose();
   };
 
-  const goBack = () => (stage === 0 ? void closeForm() : setStage(stage - 1));
+  /* Only reachable from step 02 onwards now — the button is not drawn on 01,
+     so the close branch it used to carry has nothing left to call it. */
+  const goBack = () => setStage(stage - 1);
 
   const isLast = stage === STAGES.length - 1;
   /* One stage, named for the invoice it belongs to. Stages the two types
@@ -917,9 +919,15 @@ export default function InvoiceForm({
             </div>
           </div>
           <div className="spi-dt-foot-r">
-            <button type="button" className="spi-dt-btn-ghost" onClick={goBack} disabled={saving}>
-              <IcoChevronL /> {stage === 0 ? 'Change Selection' : 'Back'}
-            </button>
+            {/* Only once there is a step to go back to. On step 01 this read
+                "Change Selection" and closed the form, which is what Close in
+                the header already does — two ways out of the same screen, one
+                of them wearing a back arrow. */}
+            {stage > 0 && (
+              <button type="button" className="spi-dt-btn-ghost" onClick={goBack} disabled={saving}>
+                <IcoChevronL /> Back
+              </button>
+            )}
             <button
               type="button"
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
