@@ -196,8 +196,13 @@ class SupplierInvoiceController extends Controller
 
             if (!empty($f['status']))    $base->where("$t.status", $f['status']);
             if (!empty($f['vendor_id'])) $base->where("$t.vendor_id", $f['vendor_id']);
-            if (!empty($f['from']))      $base->whereDate("$t.invoice_date", '>=', $f['from']);
-            if (!empty($f['to']))        $base->whereDate("$t.invoice_date", '<=', $f['to']);
+            /* The same expression the row prints as spi_date. Filtering on
+               invoice_date alone hid every Stage 01 draft, which has none yet:
+               the row showed 29 Oct and a range covering 29 Oct could not find
+               it. Cast to date so the `to` bound includes that whole day. */
+            $spiDate = "COALESCE($t.invoice_date, $t.created_at)::date";
+            if (!empty($f['from']))      $base->whereRaw("$spiDate >= ?", [$f['from']]);
+            if (!empty($f['to']))        $base->whereRaw("$spiDate <= ?", [$f['to']]);
 
             /* The search goes on the base, so the tab numbers and the rows under
                them agree: a tab reading 60 over a list of 3 is the tab lying.
@@ -1017,16 +1022,25 @@ class SupplierInvoiceController extends Controller
     /**
      * One row of the list, flat.
      *
-     * The PO-side chips (PO number, type, shipment, opportunity, procurement)
-     * and every money column are read THROUGH the purchase order — they are
-     * deliberately not copied onto the invoice. A Direct SPI has no PO, so all
-     * of them come back null and the UI shows a dash.
+     * The shipment, the procurement case and the money are read from the
+     * invoice FIRST and from the purchase order only as a fallback: a Direct
+     * SPI carries its own, a PO-backed one leaves them null so the order
+     * stays the one authority.
+     *
+     * PO number and type, and the opportunity, still reach through the order
+     * alone — a Direct SPI has none of those to carry, so they stay null and
+     * the UI shows a dash.
      */
     private function listRow(SupplierInvoice $s, array $refs = ['ship' => [], 'opp' => []]): array
     {
-        $po   = $s->purchaseOrder;
-        $ship = $po?->shipment_order_id   ? ($refs['ship'][$po->shipment_order_id] ?? null) : null;
-        $opp  = $po?->proforma_invoice_id ? ($refs['opp'][$po->proforma_invoice_id] ?? null) : null;
+        $po = $s->purchaseOrder;
+
+        // Own column first, then the order's.
+        $shipId = $s->shipment_order_id ?? $po?->shipment_order_id;
+        $ship   = $shipId ? ($refs['ship'][$shipId] ?? null) : null;
+        // The opportunity still only reaches through the PO's proforma invoice;
+        // a Direct SPI has no PI link of its own to read.
+        $opp    = $po?->proforma_invoice_id ? ($refs['opp'][$po->proforma_invoice_id] ?? null) : null;
         $day  = fn ($d) => $d ? substr((string) $d, 0, 10) : null;
 
         /* Counts come from withCount on the list query; null on any caller that
@@ -1067,7 +1081,7 @@ class SupplierInvoiceController extends Controller
             'shipment_date'    => $day($ship->created_at ?? null),
             'opportunity_id'   => $opp->opp_code ?? null,
             'opportunity_date' => $day($opp->created_at ?? null),
-            'procurement_id'   => $po?->procurement_request_code,
+            'procurement_id'   => $s->procurement_request_code ?? $po?->procurement_request_code,
 
             'supplier'    => [
                 'id'            => $s->vendor?->id,
@@ -1092,12 +1106,24 @@ class SupplierInvoiceController extends Controller
             'pending_payment_requests' => (int) ($s->pending_payment_requests ?? 0),
             'approved_unpaid_amount'   => round((float) ($s->approved_unpaid_amount ?? 0), 2),
 
-            // Money lives on the PO: an SPI amount is the supplier's claim, it
-            // is not what the balance is measured against.
-            'total_po_amount'    => $po ? (float) $po->grand_total : null,
-            'net_payable_amount' => $po ? round((float) $po->grand_total - (float) $po->tds_amount, 2) : null,
-            'total_paid_amount'  => $po ? (float) $po->paid_amount : null,
-            'balance_amount'     => $po ? (float) $po->balance_amount : null,
+            /* Money lives on the PO: an SPI amount is the supplier's claim, it
+               is not what the balance is measured against. A Direct SPI has no
+               order, so the invoice IS the ceiling and these came back null —
+               leaving the payment screen nothing to compute against.
+
+               TDS is cut on the taxable total, not on the grand total, and is
+               already stored that way; what is subtracted here is the amount. */
+            'total_po_amount'    => (float) ($po ? $po->grand_total : $s->grand_total),
+            'net_payable_amount' => $po
+                ? round((float) $po->grand_total - (float) $po->tds_amount, 2)
+                : round((float) $s->grand_total - (float) $s->tds_amount, 2),
+            'total_paid_amount'  => (float) ($po ? $po->paid_amount : $s->paid_amount),
+            /* Derived for a Direct SPI rather than read: balance_amount is null
+               until a payment opens the ledger, and a blank balance on an
+               unpaid invoice reads as missing data, not as nothing paid. */
+            'balance_amount'     => $po
+                ? (float) $po->balance_amount
+                : round((float) $s->grand_total - (float) $s->tds_amount - (float) $s->paid_amount, 2),
             'total_spi_amount'   => (float) $s->grand_total,
 
             'warehouse'   => $s->warehouse ? [
@@ -1137,11 +1163,18 @@ class SupplierInvoiceController extends Controller
      */
     private function applyShipmentMode($q, ?string $mode): void
     {
+        /* Either place the link can live. Going through the order alone meant
+           no Direct SPI could ever appear under "With Shipment ID", however
+           plainly it carried one. Table-qualified: applySearch joins a `po`
+           and an `sh` alias, and a bare shipment_order_id is ambiguous. */
         if ($mode === 'with_shipment') {
-            $q->whereHas('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'));
+            $q->where(fn ($w) => $w
+                ->whereNotNull('p2p_supplier_invoices.shipment_order_id')
+                ->orWhereHas('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id')));
         }
         if ($mode === 'without_shipment') {
-            $q->whereDoesntHave('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'));
+            $q->whereNull('p2p_supplier_invoices.shipment_order_id')
+                ->whereDoesntHave('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'));
         }
     }
 
@@ -1156,10 +1189,18 @@ class SupplierInvoiceController extends Controller
      */
     private function linkRefs($rows): array
     {
-        $pos = collect($rows)->map(fn ($s) => $s->purchaseOrder)->filter();
+        $rows = collect($rows);
+        $pos  = $rows->map(fn ($s) => $s->purchaseOrder)->filter();
+
+        /* A Direct SPI carries its own shipment id; a PO-backed invoice leaves
+           the column null so the order stays the one authority. Both sources
+           go into the same lookup. */
+        $shipIds = $rows->pluck('shipment_order_id')
+            ->merge($pos->pluck('shipment_order_id'))
+            ->filter()->unique()->all();
 
         $ship = DB::table('shipment_orders')
-            ->whereIn('id', $pos->pluck('shipment_order_id')->filter()->unique()->all() ?: [0])
+            ->whereIn('id', $shipIds ?: [0])
             ->get(['id', 'shipment_code', 'created_at'])->keyBy('id');
 
         $opp = DB::table('proforma_invoices')
@@ -1201,9 +1242,12 @@ class SupplierInvoiceController extends Controller
         $this->applyPoMode($scoped, $poMode);
         $scopedTotal = (clone $scoped)->count();
 
-        $withShipment = (clone $scoped)
-            ->whereHas('purchaseOrder', fn ($p) => $p->whereNotNull('shipment_order_id'))
-            ->count();
+        /* Through applyShipmentMode, not a copy of its predicate: the count
+           and the rows under it have to agree, and the copy that drifts is
+           the one that makes a tab lie. */
+        $shipQ = clone $scoped;
+        $this->applyShipmentMode($shipQ, 'with_shipment');
+        $withShipment = $shipQ->count();
 
         return [
             // Two names for one figure: `all_spi` reads alongside the other
@@ -1241,8 +1285,12 @@ class SupplierInvoiceController extends Controller
 
         $q->leftJoin('p2p_purchase_orders as po', 'po.id', '=', 'p2p_supplier_invoices.purchase_order_id')
             ->leftJoin('vendors as v', 'v.id', '=', 'p2p_supplier_invoices.vendor_id')
-            ->leftJoin('shipment_orders as sh', 'sh.id', '=', 'po.shipment_order_id')
-            ->leftJoin('leads as ld', 'ld.id', '=', 'po.lead_id')
+            // COALESCE, so a Direct SPI's own shipment code is searchable too.
+            ->leftJoin('shipment_orders as sh', fn ($j) => $j->whereRaw(
+                'sh.id = COALESCE(p2p_supplier_invoices.shipment_order_id, po.shipment_order_id)'))
+            /* The proforma invoice, not the lead: linkRefs() prints the code from
+               pi.opp_code, and a search has to look where the row read it. */
+            ->leftJoin('proforma_invoices as pfi', 'pfi.id', '=', 'po.proforma_invoice_id')
             ->select('p2p_supplier_invoices.*')
             ->where(function ($w) use ($like, $term) {
                 $w->where('p2p_supplier_invoices.code', 'ilike', $like)                 // SPI/2026-27/001
@@ -1252,15 +1300,22 @@ class SupplierInvoiceController extends Controller
                     ->orWhere('po.code', 'ilike', $like)                                // PO/2026-27/016
                     ->orWhere('po.po_type', 'ilike', $like)                             // material_goods …
                     ->orWhere('po.procurement_request_code', 'ilike', $like)            // PROC-001
+                    ->orWhere('p2p_supplier_invoices.procurement_request_code', 'ilike', $like)
                     ->orWhere('sh.shipment_code', 'ilike', $like)                       // SHP-001
-                    ->orWhere('ld.opp_code', 'ilike', $like)                            // OPP-001
+                    ->orWhere('pfi.opp_code', 'ilike', $like)                           // OPP-001
+                    // Legal name first, the order listRow prints them in.
+                    ->orWhere('v.legal_name', 'ilike', $like)
                     ->orWhere('v.company_name', 'ilike', $like)
                     ->orWhere('v.vendor_code', 'ilike', $like);
 
                 /* The prototype lets you search the WORDS "direct spi without
                    po" to pull up every standalone invoice — there is no column
-                   holding that phrase, so it is matched here instead. */
-                if (str_contains('direct spi without po', strtolower($term))) {
+                   holding that phrase, so it is matched here instead.
+                   Four characters at least: the test is substring-of-the-phrase,
+                   so 'po' and 'spi' would otherwise drag every standalone invoice
+                   into an ordinary code search, and they appear in every PO code
+                   and every invoice code there is. */
+                if (strlen($term) >= 4 && str_contains('direct spi without po', strtolower($term))) {
                     $w->orWhereNull('p2p_supplier_invoices.purchase_order_id');
                 }
             });
