@@ -227,8 +227,11 @@ export default function InvoiceList() {
   const page = list.page;
   const start = (page - 1) * pageSize;
 
+  /* `spi-list` is this page alone: it carries the CLM toolbar measurements,
+     which the other seven pages on the shared .spi-* classes have not moved
+     to yet. */
   return (
-    <div className="spi-root ord-page">
+    <div className="spi-root ord-page spi-list">
 
       <div className="spi-head">
         <div className="spi-head-left">

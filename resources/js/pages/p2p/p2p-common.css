@@ -2602,3 +2602,239 @@
   background: rgba(34, 211, 238, .05);
   border-color: rgba(34, 211, 238, .2);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SPI WORKLIST TOOLBAR — the CLM measurements.
+
+   The house toolbar is one 48px band: a 48px rail holding 40px tabs, and a
+   48px search beside it. Those numbers are set out in clmShared.ts, measured
+   off Customers, and every CLM page now renders them. This toolbar did not:
+   a 50px rail (38px tab in 5px of padding), a 40px search on the scope row,
+   13px/700 tab text and a grey count chip — so the two modules read as
+   different controls for the same job.
+
+   Scoped to `.spi-list`, which only the SPI worklist carries. The `.spi-*`
+   classes are shared with the PO list, Payment Requests, Advance/Refund and
+   the four inventory masters, and moving all eight at once is a bigger change
+   than was asked for. When they follow, this block loses its prefix.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The rail: 48px stated, not inferred from the tab. A tab is 40, inside 3px
+   of padding and a 1px border each side — the only arithmetic that gives a
+   visible capsule round a 40px tab. */
+.spi-list .spi-seg {
+  height: 48px;
+  box-sizing: border-box;
+  gap: 8px;
+  padding: 3px;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #f6feff, #f0fdff);
+  border: 1px solid #c9f8fd;
+}
+
+/* The tab. An inactive one is NOT a tinted chip: it is transparent with the
+   accent as its ink, so only the selected tab carries fill. The border stays
+   1px and turns transparent on selection, so the tab keeps its width.
+   12.5px/650 — 650 is a real weight in DM Sans, and the weight does not
+   change on selection: lettering that thickens on click is what makes a rail
+   look like it moved. */
+.spi-list .spi-seg-btn {
+  height: 40px;
+  box-sizing: border-box;
+  gap: 7px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #0e7490;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0;
+  transition: box-shadow .22s ease, border-color .15s ease;
+}
+
+/* A white chip lifting off the rail, with no outline — hover says "this is
+   under the pointer", not "this is nearly chosen". */
+.spi-list .spi-seg-btn:hover {
+  background: #fff;
+  border-color: transparent;
+  color: #0891b2;
+  box-shadow: 0 2px 6px rgba(16, 24, 40, .12);
+}
+
+.spi-list .spi-seg-btn.is-active {
+  background: linear-gradient(135deg, #22d3ee, #0891b2 55%, #0e7490);
+  /* Against the border box, so the ramp runs to the edge. Placed against the
+     padding box it extends its lightest stop under the transparent border,
+     which reads as a pale line down the left of the selected tab. */
+  background-origin: border-box;
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 6px 16px -5px rgba(6, 182, 212, .55), inset 0 1px 0 rgba(255, 255, 255, .25);
+  text-shadow: 0 1px 2px rgba(14, 116, 144, .4);
+}
+
+.spi-list .spi-seg-btn.is-active:hover { opacity: .95; }
+
+/* Wide enough for two digits and tabular, so the rail does not resize on
+   every keystroke as the counts change — a rail that breathes is what reads
+   as the page jumping. */
+.spi-list .spi-seg-c {
+  min-width: 28px;
+  height: 18px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  background: #ccfbf1;
+  border: 1px solid #a5f3fc;
+  color: #0e7490;
+}
+
+.spi-list .spi-seg-btn.is-active .spi-seg-c {
+  background: rgba(255, 255, 255, .9);
+  border-color: rgba(255, 255, 255, .75);
+  color: #155e75;
+}
+
+/* The search, at the rail's own height. Three stops from white rather than
+   two near-identical tints: starting at pure white and ending on the accent-50
+   gives the surface somewhere to travel, which is what makes it look lit.
+   The shadow is almost all inset — a bright hairline along the top where a lit
+   surface catches the light, a faint accent line along the bottom — so the
+   field is seated on the toolbar, not lifted off it.
+   `.spi-segrow .spi-search` pins 40px at the same specificity, so the scope
+   row is named here too. */
+.spi-list .spi-search,
+.spi-list .spi-segrow .spi-search {
+  height: 48px;
+  padding: 0 14px;
+  border: 1.5px solid #cef8fd;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #ffffff 0%, #f4fdff 48%, #e8fbff 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .95),
+    inset 0 -1px 0 rgba(6, 182, 212, .07),
+    0 1px 2px rgba(8, 145, 178, .06),
+    0 3px 8px -4px rgba(8, 145, 178, .14);
+  gap: 8px;
+}
+
+/* The ring replaces the whole box-shadow, so the top highlight is restated or
+   the field goes flat at the moment it is being used. */
+.spi-list .spi-search:focus-within {
+  border-color: #22d3ee;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .95), 0 0 0 3px rgba(6, 182, 212, .14);
+}
+
+/* The magnifier sits in the flow at 16px rather than absolutely at 13px from
+   the left, which is what lets the 14px inset and the 8px gap put the query
+   text where CLM's sits. */
+.spi-list .spi-search svg {
+  position: static;
+  transform: none;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: #22d3ee;
+  stroke: #22d3ee;
+}
+
+.spi-list .spi-search input {
+  font-size: 13px;
+  font-weight: 500;
+  color: #0c4a6e;
+}
+
+.spi-list .spi-search input::placeholder {
+  color: #50c0d8;
+  font-weight: 500;
+}
+
+/* The sub-tabs keep their underline — that is a different control, and the
+   design draws it that way. Only the lettering joins the house size, so the
+   two rows of the toolbar read as one. */
+.spi-list .spi-subtab {
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+[data-bs-theme="dark"] .spi-list .spi-seg {
+  background: rgba(6, 182, 212, .10);
+  border-color: rgba(6, 182, 212, .22);
+}
+
+[data-bs-theme="dark"] .spi-list .spi-seg-btn {
+  background: transparent;
+  color: #7dd3fc;
+}
+
+[data-bs-theme="dark"] .spi-list .spi-seg-btn:hover:not(.is-active) {
+  background: rgba(34, 211, 238, .08);
+  color: #22d3ee;
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .spi-list .spi-seg-c {
+  background: rgba(34, 211, 238, .16);
+  border-color: rgba(34, 211, 238, .3);
+  color: #7dd3fc;
+}
+
+[data-bs-theme="dark"] .spi-list .spi-search,
+[data-bs-theme="dark"] .spi-list .spi-segrow .spi-search {
+  background: #0c1c24;
+  border-color: rgba(34, 211, 238, .22);
+  box-shadow: none;
+}
+
+[data-bs-theme="dark"] .spi-list .spi-search input { color: #e2e8f0; }
+[data-bs-theme="dark"] .spi-list .spi-search input::placeholder { color: #5f8b9c; }
+
+/* ── One button height ──────────────────────────────────────────────────────
+   Every button on this page stands 40px, the number the form already uses
+   (.spi-invform, invoice-form.css) and the height of the tab inside the rail
+   above. They were four: the Create button 34 off 9px of padding, the row
+   actions 40, the pager arrows 32, the rows-per-page pill 28.
+
+   The pager is the shared WorklistPager that Customers, CLM and HRMS also
+   render, so its arrows are resized HERE only — which does make the SPI pager
+   the odd one out across the app. Say the word and it moves everywhere, or
+   back to 32 here.
+
+   `min-height` goes with `height` on the padded ones: a button with padding
+   and a line taller than the box will push past a bare height. */
+.spi-list .spi-head-btn,
+.spi-list .ord-btn {
+  height: 40px; min-height: 40px;
+  padding-top: 0; padding-bottom: 0;
+  box-sizing: border-box;
+}
+.spi-list .spi-head-btn { padding-left: 20px; padding-right: 20px; }
+
+/* The pager's own controls. The two nav circles are buttons; the rows-per-page
+   pill holds one, and the pill is what has the height, so the button fills it
+   rather than stretching past it. The count pills beside them are not buttons,
+   but a 40px arrow next to a 28px pill reads as a broken row — they take the
+   height so the pager stays one band. */
+.spi-list .tc-wl-btn { width: 40px; height: 40px; }
+.spi-list .tc-wl-rows,
+.spi-list .tc-wl-info,
+.spi-list .tc-wl-range {
+  display: inline-flex; align-items: center;
+  height: 40px; box-sizing: border-box;
+  padding-top: 0; padding-bottom: 0;
+}
+.spi-list .tc-wl-rows-btn { height: 100%; }
+
+/* Narrow screens: the base rule drops the tab to 11px on 7px 11px, which a
+   stated 40px height would fight. The tab shrinks with it; the rail follows,
+   since its height is what holds the two in step. */
+@media (max-width: 768px) {
+  .spi-list .spi-seg { height: auto; }
+  .spi-list .spi-seg-btn { height: 34px; padding: 0 11px; font-size: 11px; }
+  .spi-list .spi-search,
+  .spi-list .spi-segrow .spi-search { height: 42px; }
+}
