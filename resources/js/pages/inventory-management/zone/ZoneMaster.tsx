@@ -178,10 +178,12 @@ export default function ZoneMaster() {
     const put = (row: Zone) => patchRows(rs => rs.map(r => (r.apiId === apiId ? row : r)));
     setBusyIds(s => new Set(s).add(apiId));
     put({ ...z, status: activate ? 'active' : 'inactive' });
+    /* Toast with the switch, not after the PUT (2–3 s on live). A refused
+       save flips it back and the error toast follows. */
+    if (activate) toast.success(`${z.id} marked Active`);
+    else toast.warning(`${z.id} marked Inactive`, 'It stays in the list, dimmed.');
     try {
       put(await zoneApi.setStatus(apiId, activate));
-      if (activate) toast.success(`${z.id} marked Active`);
-      else toast.warning(`${z.id} marked Inactive`, 'It stays in the list, dimmed.');
     } catch (e) {
       put(z);
       toast.error('Could not change the status', e instanceof ZoneApiError ? e.message : 'Please try again.');
@@ -519,7 +521,7 @@ function Row({ z, sr, off, busy, opening, w, onToggle, onQr, onEdit }: {
               className={`whm-toggle${off ? '' : ' is-on'}`}
               role="switch" aria-checked={!off}
               aria-label={`Toggle status of ${z.id}`}
-              disabled={busy}
+              aria-busy={busy}
               onClick={() => onToggle(z)}
             >
               <span />

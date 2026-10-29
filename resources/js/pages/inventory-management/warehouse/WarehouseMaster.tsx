@@ -183,10 +183,13 @@ export default function WarehouseMaster() {
     const put = (row: Warehouse) => patchRows(rs => rs.map(r => (r.apiId === apiId ? row : r)));
     setBusyIds(s => new Set(s).add(apiId));
     put({ ...w, status: activate ? 'active' : 'inactive' });
+    /* The toast goes up with the switch, not after the PUT — on live the
+       round-trip took 2–3 s before it showed. A refused save flips the
+       switch back and the error toast follows. */
+    if (activate) toast.success(`${w.id} marked Active`, 'Its zones and racks stay inactive until you switch them back on.');
+    else toast.warning(`${w.id} marked Inactive`, 'It stays in the list, dimmed.');
     try {
       put(await warehouseApi.setStatus(apiId, activate));
-      if (activate) toast.success(`${w.id} marked Active`, 'Its zones and racks stay inactive until you switch them back on.');
-      else toast.warning(`${w.id} marked Inactive`, 'It stays in the list, dimmed.');
     } catch (e) {
       put(w);
       toast.error('Could not change the status', e instanceof WarehouseApiError ? e.message : 'Please try again.');
@@ -495,7 +498,7 @@ function Row({ w, sr, off, busy, opening, onToggle, onQr, onEdit }: {
             role="switch" aria-checked={!off}
             aria-label={`Toggle status of ${w.id}`}
             title={off ? 'Inactive — click to activate' : 'Active — click to deactivate'}
-            disabled={busy}
+            aria-busy={busy}
             onClick={() => onToggle(w)}
           >
             <span />
