@@ -172,10 +172,12 @@ export default function RackMaster() {
     const put = (row: Rack) => patchRows(rs => rs.map(x => (x.apiId === apiId ? row : x)));
     setBusyIds(s => new Set(s).add(apiId));
     put({ ...rk, status: activate ? 'active' : 'inactive' });
+    /* Toast with the switch, not after the PUT (2–3 s on live). A refused
+       save flips it back and the error toast follows. */
+    if (activate) toast.success(`${rk.id} marked Active`, 'Its shelves stay inactive until you switch them back on.');
+    else toast.warning(`${rk.id} marked Inactive`, 'It stays in the list, dimmed. Its shelves are deactivated with it.');
     try {
       put(await rackApi.setStatus(apiId, activate));
-      if (activate) toast.success(`${rk.id} marked Active`, 'Its shelves stay inactive until you switch them back on.');
-      else toast.warning(`${rk.id} marked Inactive`, 'It stays in the list, dimmed. Its shelves are deactivated with it.');
       refreshList();
     } catch (e) {
       put(rk);
@@ -536,7 +538,7 @@ function Row({ r, sr, off, busy, opening, w, z, onToggle, onQr, onEdit, onShelve
               className={`whm-toggle${off ? '' : ' is-on'}`}
               role="switch" aria-checked={!off}
               aria-label={`Toggle status of ${r.id}`}
-              disabled={busy}
+              aria-busy={busy}
               onClick={() => onToggle(r)}
             >
               <span />

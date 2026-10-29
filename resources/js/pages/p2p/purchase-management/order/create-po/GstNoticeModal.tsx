@@ -9,6 +9,7 @@ import { shortDesignation } from '../../../../../utils/positionHierarchy';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { IcoShieldAlert, IcoUser } from '../shared/icons';
 import { PoApiError, poApprovalApi, type GstApprover, type PoDetail } from '../api/po-api';
+import { DOC_THIS, type CheckDoc } from './supplier-checks';
 
 export type GstNotice = {
   tone: 'stop' | 'warn';
@@ -27,11 +28,20 @@ type Approval = NonNullable<PoDetail['gst_approval']>;
 
 
 /** `poId` + `onSent` send the senior-approval request; `approval` is the one already raised. */
-export default function GstNoticeModal({ notice, onClose, poId, approval, onSent, onOpenScrutiny }: {
+export default function GstNoticeModal({
+  notice, onClose, poId, approval, onSent, onOpenScrutiny, doc = 'PO',
+}: {
   notice: GstNotice; onClose: () => void; poId?: number | null; approval?: Approval | null; onSent?: () => void;
   /** Opens the supplier master on its GST Scrutiny tab; without it the button just closes. */
   onOpenScrutiny?: () => void;
+  /** What this dialog is blocking. The checks are the same on all three; only
+   *  the noun changes, and saying "this PO" to someone looking at an invoice
+   *  reads as the wrong screen having opened. Defaults to the PO it was
+   *  written for. */
+  doc?: CheckDoc;
 }) {
+  const THIS = DOC_THIS[doc];
+  const This = THIS.charAt(0).toUpperCase() + THIS.slice(1);
   useScrollLock(true, '.cgst-card');
   const toast = useToast();
   const [note, setNote] = useState('');
@@ -59,7 +69,18 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
   }, [canSend, sendBackTo, toast]);
 
   const send = async () => {
-    if (!poId) { toast.warning('Save the PO first', 'The request is raised on a saved purchase order.'); return; }
+    /* The request is raised ON a purchase order. On the PO itself that means
+       "save it first"; anywhere else it means there is no order behind this
+       document to raise one against, which is a different thing to say. */
+    if (!poId) {
+      toast.warning(
+        doc === 'PO' ? 'Save the PO first' : 'No purchase order to approve against',
+        doc === 'PO'
+          ? 'The request is raised on a saved purchase order.'
+          : `The request is raised on a purchase order, and ${THIS} has none.`,
+      );
+      return;
+    }
     if (!sendBackTo && !approverId) { setError('Select the senior to send this request to.'); return; }
     setSending(true);
     try {
@@ -127,13 +148,13 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
           {stop ? (
             <p className="cgst-lead">
               This supplier’s GST scrutiny was last completed <b>{notice.scrutinyAge?.toFixed(1)} months ago</b>, outside
-              the {notice.months}-month window. The purchase order cannot proceed until scrutiny is refreshed on the
+              the {notice.months}-month window. {This} cannot proceed until scrutiny is refreshed on the
               supplier record — a senior approval cannot clear this.
             </p>
           ) : (
             <p className="cgst-lead">
               GST scrutiny is current, but this supplier has not filed a return for <b>{notice.filingAge?.toFixed(1)} months</b>.
-              A senior can still allow this purchase order to proceed.
+              A senior can still allow {THIS} to proceed.
             </p>
           )}
 
@@ -158,7 +179,7 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
           {approval && !stop && <ApprovalState approval={approval} />}
 
           {stop ? (
-            <div className="cgst-note">Once scrutiny is updated, reopen this PO and the check will re-run automatically.</div>
+            <div className="cgst-note">Once scrutiny is updated, reopen {THIS} and the check will re-run automatically.</div>
           ) : canSend && (
             <>
               {sendBackTo ? (
@@ -193,7 +214,7 @@ export default function GstNoticeModal({ notice, onClose, poId, approval, onSent
                   id="cgst-note"
                   className="cgst-ta"
                   maxLength={1000}
-                  placeholder="Why this PO should still go through…"
+                  placeholder={`Why ${THIS} should still go through…`}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                 />

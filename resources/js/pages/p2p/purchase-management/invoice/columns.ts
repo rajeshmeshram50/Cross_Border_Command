@@ -52,5 +52,49 @@ export const INVOICE_COLUMNS: InvoiceColumn[] = [
  * Computed, never typed out. A hard-coded 3176 would be wrong the first time
  * anyone changes a width, and wrong silently: the table would simply stop
  * lining up with its own colgroup.
+ *
+ * Takes the columns rather than reading the full list, because a tab that
+ * drops columns has to drop their width with them or the table reserves room
+ * for cells it never draws.
  */
-export const INVOICE_TABLE_WIDTH = INVOICE_COLUMNS.reduce((sum, c) => sum + c.width, 0);
+export const invoiceTableWidth = (cols: InvoiceColumn[]) =>
+  cols.reduce((sum, c) => sum + c.width, 0);
+
+/* What a Direct SPI has nothing to put in.
+ *
+ * It is raised against no purchase order, so the order's number, its type,
+ * the delivery it promised and the four money columns that reconcile against
+ * it are all permanently blank — and a blank column still costs its width,
+ * pushing the columns that DO say something off the right of the screen.
+ * Physical inspection goes with them: it is a status of the order's goods
+ * inspection, which is the PO's workflow.
+ *
+ * Shipment and Opportunity are not in this list, because a Direct SPI may
+ * still carry a shipment; they are dropped only on the tab that is defined by
+ * not having one. */
+const DIRECT_HIDDEN = [
+  'poNo', 'poType', 'edd', 'totalPo', 'netPayable', 'totalPaid', 'balance', 'inspection',
+] as const;
+
+/* Without a shipment there is no shipment to name and no opportunity behind
+   it, so these two are blank for every row on that tab by definition. */
+const NO_SHIPMENT_HIDDEN = [...DIRECT_HIDDEN, 'shipmentId', 'opportunityId'] as const;
+
+/**
+ * The columns this tab should show.
+ *
+ * Only the Direct SPI tab narrows: "All SPI's" and "With Purchase Order SPI"
+ * both hold rows that have a purchase order, so every column can speak.
+ *
+ * The result is the single source for the colgroup, the head, the width AND
+ * which cells a row draws — the keys have to be read from one place or the
+ * body quietly drifts out of step with the head it is sitting under.
+ */
+export function invoiceColumnsFor(
+  scope: 'all' | 'with-po' | 'without-po',
+  shipScope: 'with-shipment' | 'without-shipment',
+): InvoiceColumn[] {
+  if (scope !== 'without-po') return INVOICE_COLUMNS;
+  const hidden = new Set<string>(shipScope === 'without-shipment' ? NO_SHIPMENT_HIDDEN : DIRECT_HIDDEN);
+  return INVOICE_COLUMNS.filter(c => !hidden.has(c.key));
+}

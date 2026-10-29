@@ -104,16 +104,30 @@ const FILING_DUE_DAYS = 90;
 const SCRUTINY_DUE_DAYS = 180;
 
 /** The six standing checks on a supplier, read from its own record. */
-export function riskItems(s: RiskSubject, physInsp: boolean): RiskItem[] {
+/* The document these checks are being read against. The copy below names it,
+   and the same checks are read from a purchase order, a supplier invoice and
+   a payment request - telling someone that senior approval is recommended
+   "before releasing this PO" while they look at an invoice names a document
+   that is not on their screen. Defaults to 'PO', so every existing caller
+   reads exactly as it did. */
+export type CheckDoc = 'PO' | 'invoice' | 'payment request';
+/* Exported because the GST dialog names the document too, and it was saying
+   "the purchase order" and "this PO" to a reader looking at an invoice. */
+export const DOC_THIS: Record<CheckDoc, string> = {
+  PO: 'this PO', invoice: 'this invoice', 'payment request': 'this payment request',
+};
+
+export function riskItems(s: RiskSubject, physInsp: boolean, doc: CheckDoc = 'PO'): RiskItem[] {
+  const THIS = DOC_THIS[doc];
   const items: RiskItem[] = [];
   const tier = riskTier(s.risk);
 
   // Inspection asked for on this PO but not forced by the supplier's rating.
   if (physInsp && tier !== 'high') {
-    items.push({ sev: 'med', title: 'Physical inspection flagged', note: 'This purchase order is marked for mandatory physical inspection before GRN acceptance.', tag: 'Inspection' });
+    items.push({ sev: 'med', title: 'Physical inspection flagged', note: `${doc === 'PO' ? 'This purchase order is' : `This ${doc} is`} marked for mandatory physical inspection before GRN acceptance.`, tag: 'Inspection' });
   }
 
-  if (tier === 'high') items.push({ sev: 'high', title: 'High risk supplier', note: 'Rated High Risk — senior approval recommended before releasing this PO.', tag: 'Risk' });
+  if (tier === 'high') items.push({ sev: 'high', title: 'High risk supplier', note: `Rated High Risk — senior approval recommended before releasing ${THIS}.`, tag: 'Risk' });
   else if (tier === 'medium') items.push({ sev: 'med', title: 'Medium risk supplier', note: 'Rated Medium Risk — review the open items below before proceeding.', tag: 'Risk' });
   else if (tier === 'low') items.push({ sev: 'ok', title: 'Low risk supplier', note: 'Rated Low Risk. No rating-based restriction applies to this purchase order.', tag: 'Risk' });
   else items.push({ sev: 'med', title: 'Risk rating not set', note: 'The supplier master has no risk rating — set one on the supplier record.', tag: 'Risk' });
@@ -124,14 +138,14 @@ export function riskItems(s: RiskSubject, physInsp: boolean): RiskItem[] {
   else items.push({ sev: 'med', title: 'Supplier category not set', note: 'The supplier master has no category — set one on the supplier record.', tag: 'Category' });
 
   if (s.international) {
-    items.push({ sev: 'ok', title: 'GST checks not applicable', note: 'International supplier — GST registration, return filing and scrutiny do not apply to this PO.', tag: 'GST' });
+    items.push({ sev: 'ok', title: 'GST checks not applicable', note: `International supplier — GST registration, return filing and scrutiny do not apply to ${THIS}.`, tag: 'GST' });
     pushDocs(items, s.legal);
     return items;
   }
 
   if (!s.gstStatus) items.push({ sev: 'med', title: 'GST status not recorded', note: 'No GST scrutiny record gives this supplier\'s registration status.', tag: 'GST' });
   else if (s.gstStatus.toLowerCase() !== 'active') items.push({ sev: 'high', title: `GST registration ${s.gstStatus.toLowerCase()}`, note: `GSTIN ${s.gstNo || '—'} is not active — input credit may be blocked.`, tag: 'GST' });
-  else items.push({ sev: 'ok', title: 'GST registration active', note: `GSTIN ${s.gstNo || '—'} is active. Input tax credit can be claimed on this PO.`, tag: 'GST' });
+  else items.push({ sev: 'ok', title: 'GST registration active', note: `GSTIN ${s.gstNo || '—'} is active. Input tax credit can be claimed on ${THIS}.`, tag: 'GST' });
 
   const fd = daysAgo(s.filing);
   if (fd === null) items.push({ sev: 'med', title: 'No GST filing recorded', note: 'The supplier\'s last GST return date is not on record.', tag: 'Filing' });
@@ -163,17 +177,18 @@ export function isStale(iso: string | null | undefined): boolean {
 }
 
 /** Stale scrutiny blocks the PO; a stale return only needs senior approval. */
-export function gstState(supplier: string, scrutiny: string, filing: string): GstState {
+export function gstState(supplier: string, scrutiny: string, filing: string, doc: CheckDoc = 'PO'): GstState {
+  const THIS = DOC_THIS[doc];
   if (!supplier) {
     return { tone: 'idle', title: 'Select a supplier to run the GST compliance check', note: `Scrutiny and filing dates are checked against a ${GST_STALE_MONTHS}-month window.` };
   }
   if (isStale(scrutiny)) {
-    return { tone: 'stop', title: 'GST scrutiny required', note: `Scrutiny is older than ${GST_STALE_MONTHS} months. Refresh it on the supplier record before this PO can move forward.`, action: 'Review requirement' };
+    return { tone: 'stop', title: 'GST scrutiny required', note: `Scrutiny is older than ${GST_STALE_MONTHS} months. Refresh it on the supplier record before ${THIS} can move forward.`, action: 'Review requirement' };
   }
   if (isStale(filing)) {
-    return { tone: 'warn', title: 'Senior approval required', note: `Scrutiny is current, but the last GST return is older than ${GST_STALE_MONTHS} months. A senior must approve this PO.`, action: 'Send for senior approval' };
+    return { tone: 'warn', title: 'Senior approval required', note: `Scrutiny is current, but the last GST return is older than ${GST_STALE_MONTHS} months. A senior must approve ${THIS}.`, action: 'Send for senior approval' };
   }
-  return { tone: 'ok', title: 'GST compliance cleared', note: `Scrutiny and filing are both inside the ${GST_STALE_MONTHS}-month window. This PO can proceed.` };
+  return { tone: 'ok', title: 'GST compliance cleared', note: `Scrutiny and filing are both inside the ${GST_STALE_MONTHS}-month window. ${THIS === 'this PO' ? 'This PO' : THIS[0].toUpperCase() + THIS.slice(1)} can proceed.` };
 }
 
 /** The oldest date a scrutiny or return may carry and still be accepted. */

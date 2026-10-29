@@ -233,13 +233,13 @@ const VMM_CSS = `
   display: flex; align-items: center; justify-content: center;
 }
 .vmm-head-text { flex: 1; min-width: 0; }
-.vmm-head-title { font-size: 16px; font-weight: 800; color: #fff; }
-.vmm-head-sub { font-size: 11.5px; color: #fff; opacity: .92; margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.vmm-head-sub strong { font-weight: 800; color: #fff; }
-.vmm-head-chip { font-family: 'Inter',monospace; font-weight: 800; font-size: 10.5px; color: #fff; background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.35); padding: 2px 9px; border-radius: 999px; }
-.vmm-head-count { font-weight: 800; font-size: 10.5px; letter-spacing: .02em; color: #fff; background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.35); padding: 3px 10px; border-radius: 999px; }
+.vmm-head-title { font-size: 15px; font-weight: 700; color: #fff; }
+.vmm-head-sub { font-size: 11px; font-weight: 500; color: #fff; opacity: .92; margin-top: 3px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vmm-head-sub strong { font-weight: 600; color: #fff; }
+.vmm-head-chip { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 600; font-size: 10px; color: #fff; background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.35); padding: 2px 9px; border-radius: 999px; }
+.vmm-head-count { font-weight: 600; font-size: 10px; letter-spacing: .02em; color: #fff; background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.35); padding: 3px 10px; border-radius: 999px; }
 .vmm-close {
-  width: 30px; height: 30px; flex-shrink: 0;
+  width: 40px; height: 40px; flex-shrink: 0;
   background: rgba(255,255,255,.20); border: 1px solid rgba(255,255,255,.35); cursor: pointer;
   color: #fff; border-radius: 7px;
   display: flex; align-items: center; justify-content: center; transition: background .15s;
@@ -268,35 +268,36 @@ const VMM_CSS = `
 
 .vmm-card-top { display: flex; align-items: center; gap: 11px; padding: 13px 15px; }
 .vmm-rank {
-  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
-  background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;
+  width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0;
+  background: linear-gradient(135deg, #7c3aed, #5b21b6); color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 800;
+  font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(124,58,237,.30);
 }
 .vmm-vendor { flex: 1; min-width: 0; }
 /* A long vendor name (especially one long unbroken token) used to stretch the
    card and push the L1 badge off — clip it to one line with an ellipsis; the
    full name is on the hover tooltip. min-width:0 on the parent is what lets this
    actually shrink inside the flex row. */
-.vmm-vendor-name { font-size: 14px; font-weight: 800; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vmm-vendor-code { display: inline-block; font-size: 9px; font-weight: 700; color: #6366f1; font-family: ui-monospace, monospace; margin-top: 2px; background: #eef2ff; padding: 0 6px; border-radius: 4px; }
+.vmm-vendor-name { font-size: 12.5px; font-weight: 700; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vmm-vendor-code { display: inline-block; font-size: 10px; font-weight: 600; color: #6d28d9; font-family: 'JetBrains Mono', ui-monospace, monospace; margin-top: 3px; background: #f6f0ff; border: 1px solid #e6dffe; padding: 1px 7px; border-radius: 6px; letter-spacing: .02em; }
 .vmm-l1 {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
   background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff;
-  font-size: 9px; font-weight: 800; border-radius: 20px;
+  font-size: 10px; font-weight: 700; border-radius: 20px;
   padding: 3px 10px; white-space: nowrap;
   box-shadow: 0 2px 6px rgba(124,58,237,.25);
 }
 
 .vmm-contact { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 11px 15px; background: #faf8ff; border-top: 1px solid #ece9f6; }
 .vmm-contact-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.vmm-contact-label { font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #6d28d9; }
-.vmm-contact-val { font-size: 12px; font-weight: 600; color: #334155; word-break: break-word; }
+.vmm-contact-label { font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #6d28d9; }
+.vmm-contact-val { font-size: 11.5px; font-weight: 500; color: #334155; word-break: break-word; }
 
 .vmm-prices { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; padding: 13px 15px; background: #fff; border-top: 1px solid #ece9f6; }
 .vmm-price { border-radius: 9px; padding: 9px 11px; border: 1.5px solid; display: flex; flex-direction: column; gap: 3px; }
-.vmm-price-label { font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-.vmm-price-val { font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.vmm-price-label { font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.vmm-price-val { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .vmm-price-target   { background: #faf5ff; border-color: #ddd6fe; }
 .vmm-price-target   .vmm-price-label, .vmm-price-target   .vmm-price-val { color: #6d28d9; }
 .vmm-price-purchase { background: #f0fdf4; border-color: #bbf7d0; }
@@ -307,7 +308,7 @@ const VMM_CSS = `
 .vmm-price-total    .vmm-price-label, .vmm-price-total    .vmm-price-val { color: #c2410c; }
 
 .vmm-foot { padding: 13px 18px; display: flex; justify-content: flex-end; background: #fff; border-top: 1px solid #f1f5f9; }
-.vmm-btn { padding: 8px 22px; border-radius: 8px; font-family: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer; border: 1.5px solid #e5e7eb; background: #fff; color: #1e293b; min-width: 100px; transition: all .15s; }
+.vmm-btn { box-sizing: border-box; height: 40px; padding: 0 22px; border-radius: 10px; font-family: inherit; font-weight: 700; font-size: 11.5px; cursor: pointer; border: 1.5px solid #e5e7eb; background: #fff; color: #1e293b; min-width: 100px; transition: all .15s; }
 .vmm-btn:hover { background: #f8fafc; border-color: #cbd5e1; }
 
 /* Dark mode */
@@ -324,7 +325,7 @@ const VMM_CSS = `
 [data-bs-theme="dark"] .vmm-card { background: #1a1538; border-color: rgba(124,58,237,.30); }
 [data-bs-theme="dark"] .vmm-card.is-l1 { border-color: rgba(167,139,250,.45); }
 [data-bs-theme="dark"] .vmm-vendor-name { color: #ede9fe; }
-[data-bs-theme="dark"] .vmm-vendor-code { background: rgba(124,58,237,.22); color: #c4b5fd; }
+[data-bs-theme="dark"] .vmm-vendor-code { background: rgba(124,58,237,.22); border-color: rgba(167,139,250,.35); color: #c4b5fd; }
 [data-bs-theme="dark"] .vmm-contact { background: rgba(124,58,237,.10); border-top-color: rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .vmm-contact-label { color: #c4b5fd; }
 [data-bs-theme="dark"] .vmm-prices { background: #1a1538; border-top-color: rgba(167,139,250,.18); }

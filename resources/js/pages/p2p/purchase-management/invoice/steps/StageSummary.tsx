@@ -16,8 +16,16 @@ const dash = (x: string) => (x && x.trim() !== '' ? x : '— Not provided');
  *
  * `upto` is how many stages are done, so Step 02 shows stage 01 only and the
  * later steps will add their own blocks beneath it.
+ *
+ * `direct` drops what a Direct SPI has no answer for. The summary recaps what
+ * each stage recorded, and stage 01 of a Direct SPI never asks the purchase
+ * order questions - the whole Purchase Order section is absent from that step
+ * - so repeating them here produced eight rows of "Not provided" above the
+ * first thing the user actually filled in.
  */
-export default function StageSummary({ draft, upto }: { draft: InvoiceDraft; upto: 1 | 2 | 3 }) {
+export default function StageSummary({ draft, upto, direct = false }: {
+  draft: InvoiceDraft; upto: 1 | 2 | 3; direct?: boolean;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -48,17 +56,19 @@ export default function StageSummary({ draft, upto }: { draft: InvoiceDraft; upt
           </div>
 
           <div className="spi-dt-sumstep-body">
-            <Group label="Basic Purchase Order Details">
-              <RO label="PO Type" value={dash(draft.poType)} />
-              <RO label="Document Type" value={dash(draft.docType)} />
-              <RO label="Mode of Transport" value={dash(draft.transport)} />
-              <RO label="PO Date" value={dash(formatDmy(draft.poDate))} />
-              <RO label="Expected Delivery Date" value={dash(formatDmy(draft.deliveryDate))} />
-              <RO label="Delivery Location" value={dash(draft.deliveryLocation)} />
-              <RO label="Payment Type" value={dash(draft.paymentType)} />
-              {/* A boolean has no blank state, so it is never "Not provided". */}
-              <RO label="Physical Inspection Status" value={draft.physInspection ? 'Required' : 'Not Applicable'} />
-            </Group>
+            {!direct && (
+              <Group label="Basic Purchase Order Details">
+                <RO label="PO Type" value={dash(draft.poType)} />
+                <RO label="Document Type" value={dash(draft.docType)} />
+                <RO label="Mode of Transport" value={dash(draft.transport)} />
+                <RO label="PO Date" value={dash(formatDmy(draft.poDate))} />
+                <RO label="Expected Delivery Date" value={dash(formatDmy(draft.deliveryDate))} />
+                <RO label="Delivery Location" value={dash(draft.deliveryLocation)} />
+                <RO label="Payment Type" value={dash(draft.paymentType)} />
+                {/* A boolean has no blank state, so it is never "Not provided". */}
+                <RO label="Physical Inspection Status" value={draft.physInspection ? 'Required' : 'Not Applicable'} />
+              </Group>
+            )}
 
             <Group label="Supplier Details">
               <RO label="Select Supplier" value={dash(`${draft.supplierCode} — ${draft.supplier}`)} />
@@ -97,7 +107,12 @@ export default function StageSummary({ draft, upto }: { draft: InvoiceDraft; upt
             <div className="spi-dt-sumstep-hd">
               <div className="spi-dt-sumstep-hd-l">
                 <span className="spi-dt-sumstep-num">02</span>
-                <span className="spi-dt-sumstep-title">Invoice &amp; Product Details (3-Way Match)</span>
+                <span className="spi-dt-sumstep-title">
+                  {/* The stage rail already names the match this invoice is
+                      making; the recap of that stage must not name a
+                      different one. */}
+                  Invoice &amp; Product Details{direct ? '' : ' (3-Way Match)'}
+                </span>
               </div>
               <span className="spi-dt-sumstep-done"><IcoCheck size={11} /> Completed</span>
             </div>

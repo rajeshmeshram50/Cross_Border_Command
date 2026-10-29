@@ -1,9 +1,9 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
 import { createPortal } from 'react-dom';
 import { Field } from '../../order/create-po/form-fields';
 import { HeadPill } from '../../order/create-po/CreatePoForm';
-import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoUser, IcoVan } from '../../../icons';
+import { IcoBox, IcoChevron, IcoDoc, IcoLines, IcoPaperclip, IcoPin, IcoPlus, IcoUndo, IcoUser, IcoVan } from '../../../icons';
 import StageSummary from './StageSummary';
 import ProductTable from './ProductTable';
 import type { ProductLine, TaxMode } from '../invoice-products';
@@ -23,7 +23,8 @@ const ICON_PICK_CAMERA = (
 );
 
 export default function Step2InvoiceProducts({
-  draft, set, lines, onChangeLine, onRemoveLine, taxMode, onPickFile, readOnly = false, direct = false,
+  draft, set, lines, onChangeLine, onRemoveLine, onAddLine, removedCount = 0, onRestoreLines,
+  taxMode, onPickFile, readOnly = false, direct = false, matched = true,
 }: {
   draft: InvoiceDraft;
   set: SetDraft;
@@ -31,6 +32,13 @@ export default function Step2InvoiceProducts({
   onChangeLine: (index: number, patch: Partial<ProductLine>) => void;
   /** Drop a line the supplier did not invoice. The design's Action column. */
   onRemoveLine?: (index: number) => void;
+  /** There is a proforma invoice behind this table to match against. */
+  matched?: boolean;
+  /** Add one the PI never carried. Omitted when read-only. */
+  onAddLine?: () => void;
+  /** How many lines have been taken off, and the way to put them all back. */
+  removedCount?: number;
+  onRestoreLines?: () => void;
   taxMode: TaxMode;
   onPickFile: (kind: 'invoice' | 'eway', file: File) => void;
   readOnly?: boolean;
@@ -41,9 +49,37 @@ export default function Step2InvoiceProducts({
   const [invOpen, setInvOpen] = useState(true);
   const [prodOpen, setProdOpen] = useState(true);
 
+  /* The reference pills on the Products head.
+   *
+   * The last two are the chain this invoice is matched against, and a Direct
+   * SPI raised without a shipment has no such chain: no shipment to name, and
+   * no proforma invoice behind one. Both pills would stand there reading "—",
+   * which says "this has a shipment id, it just isn't filled in" — the
+   * opposite of the truth on a tab whose whole definition is not having one.
+   *
+   * A With-PO invoice keeps both: its chain is the order and the PI behind it. */
+  const headPills = [
+    <HeadPill key="code" icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono />,
+    <HeadPill key="name" icon={<IcoUser />} label="SUPPLIER NAME" value={draft.supplier} alt />,
+    <HeadPill key="state" icon={<IcoPin />} label="STATE CODE" value={draft.stateCode || '—'} mono />,
+  ];
+  if (!direct) {
+    /* The purchase order is what a 3-way match is made against; the shipment
+       took that slot on a Direct SPI. */
+    headPills.push(
+      <HeadPill key="po" icon={<IcoLines />} label="PO NUMBER" value={draft.poNumber || '—'} alt mono />,
+      <HeadPill key="pi" icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />,
+    );
+  } else if (draft.shipmentId) {
+    headPills.push(
+      <HeadPill key="ship" icon={<IcoVan />} label="SHIPMENT ID" value={draft.shipmentId} alt mono />,
+      <HeadPill key="pi" icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />,
+    );
+  }
+
   return (
     <>
-      <StageSummary draft={draft} upto={1} />
+      <StageSummary draft={draft} upto={1} direct={direct} />
 
       <div className={`spi-dt-sec ${invOpen ? '' : 'is-collapsed'}`}>
         <div className="spi-dt-sec-head cpf-clickable" onClick={() => setInvOpen(o => !o)}>
@@ -93,28 +129,55 @@ export default function Step2InvoiceProducts({
               {direct ? 'PI vs SPI product mapping & 2-way match' : 'PI vs PO vs SPI product mapping & 3-way match'}
             </div>
           </div>
+          {/* Built as a list so the ⋮ separators fall between whatever is
+              actually here. Written out inline, dropping a pill left its
+              divider behind and the strip ended on a dangling mark. */}
           <div className="spi-dt-pills">
-            <HeadPill icon={<IcoLines />} label="SUPPLIER CODE" value={draft.supplierCode} mono />
-            <span className="spi-dt-dots">⋮</span>
-            <HeadPill icon={<IcoUser />} label="SUPPLIER NAME" value={draft.supplier} alt />
-            <span className="spi-dt-dots">⋮</span>
-            <HeadPill icon={<IcoPin />} label="STATE CODE" value={draft.stateCode || '—'} mono />
-            <span className="spi-dt-dots">⋮</span>
-            {/* A Direct SPI has no purchase order to name here. The shipment
-                is what took its place as the thing this invoice belongs to,
-                so the slot carries that instead of an empty PO chip. */}
-            {direct
-              ? <HeadPill icon={<IcoVan />} label="SHIPMENT ID" value={draft.shipmentId || '—'} alt mono />
-              : <HeadPill icon={<IcoLines />} label="PO NUMBER" value={draft.poNumber || '—'} alt mono />}
-            <span className="spi-dt-dots">⋮</span>
-            <HeadPill icon={<IcoDoc />} label="PI NUMBER" value={draft.piNumber || '—'} mono />
+            {headPills.map((pill, i) => (
+              <Fragment key={pill.key}>
+                {i > 0 && <span className="spi-dt-dots">⋮</span>}
+                {pill}
+              </Fragment>
+            ))}
           </div>
           <span className={`cpf-chev ${prodOpen ? '' : 'is-closed'}`}><IcoChevron /></span>
         </div>
 
         <div className="spi-dt-sec-body">
           <ProductTable lines={lines} onChange={onChangeLine} onRemove={onRemoveLine} taxMode={taxMode} readOnly={readOnly}
-            twoWay={direct} sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
+            twoWay={direct} matched={matched}
+            sourceNote={direct && draft.shipmentId ? `the PI of shipment ${draft.shipmentId}` : undefined} />
+          {/* Directly under the totals, because it is a statement about the
+              figures above it: they are short of a product the PI carried.
+              It stays for as long as anything is missing, rather than passing
+              like the toast does — the person who saves this invoice may not
+              be the person who removed the line.
+
+              `matched` is the condition it hangs on, and the sentence above is
+              why: the bar reports a difference from the PI. With no shipment
+              there is no PI, every line was typed in here by hand, and a
+              deleted line is simply a line someone decided against — not
+              something the invoice is now short of. "Restore all" there would
+              offer to put back a document's products on an invoice that never
+              had a document behind it. The toast still covers the undo for a
+              mistaken click; it is the standing claim that does not hold. */}
+          {matched && removedCount > 0 && onRestoreLines && !readOnly && (
+            <div className="invf-removed">
+              <span className="invf-removed__txt">
+                {removedCount} product{removedCount === 1 ? '' : 's'} removed from this invoice
+              </span>
+              <button type="button" className="invf-removed__btn" onClick={onRestoreLines}>
+                <IcoUndo /> Restore {removedCount === 1 ? 'it' : 'all'}
+              </button>
+            </div>
+          )}
+          {/* Under the table, at the end of the row of controls it belongs to
+              — it undoes the Action column, so it sits on that side. */}
+          {onAddLine && !readOnly && (
+            <button type="button" className="cpf-addbtn invf-addprod" onClick={onAddLine}>
+              <IcoPlus /> Add Product
+            </button>
+          )}
         </div>
       </div>
     </>

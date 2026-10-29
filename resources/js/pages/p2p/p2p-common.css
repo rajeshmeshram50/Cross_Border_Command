@@ -862,11 +862,27 @@
   padding: 16px;
   background: rgba(8, 47, 73, .45);
   backdrop-filter: blur(4px);
+  /* A centred flex child taller than its container overflows BOTH ends, and
+     a fixed backdrop cannot be scrolled — so the top of such a dialog is
+     unreachable and the bottom is simply cut off by the window. Letting the
+     backdrop scroll is the floor under every dialog that outgrows the
+     viewport; with the max-height below it should never be needed, but a
+     dialog whose own content refuses to shrink would otherwise be lost. */
+  overflow-y: auto;
 }
 
 .spi-mdl {
   width: min(560px, 100%);
-  max-height: 92vh;
+  /* calc, not 92vh. The backdrop pads 16px on each side, so 92vh + 32px of
+     padding is taller than the window once the window is under ~400px —
+     which is an ordinary laptop with DevTools open, and exactly where the
+     type chooser was being clipped at both ends. This is the tallest the
+     dialog can be and still sit inside that padding, at any height. */
+  max-height: calc(100vh - 32px);
+  /* With `align-items: center`, overflow is split above and below and the
+     part above cannot be scrolled back to. `margin: auto` centres the same
+     way but keeps the overflow reachable. */
+  margin: auto;
   overflow-y: auto;
   background: #fff;
   border-radius: 20px;

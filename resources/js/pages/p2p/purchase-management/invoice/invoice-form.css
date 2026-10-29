@@ -30,6 +30,77 @@
    out of step, so don't.
    ──────────────────────────────────────────────────────────────────────── */
 
+/* The GST banner's own action, in step 01.
+ *
+ * The purchase order puts this button in its wizard footer, because there the
+ * check is a gate on submitting the PO and the last step is where that is
+ * decided. A supplier invoice settles its supplier in step 01, so the button
+ * belongs beside the finding: telling someone at step 04 that the supplier
+ * they chose three screens ago cannot be used is three screens too late.
+ *
+ * `.cpf-gst__txt` already flexes to fill, so the button only has to refuse to
+ * shrink. The banner's own `align-items: flex-start` is relaxed to centre for
+ * the same reason — a 34px button hanging from the top of a three-line
+ * message reads as though it belongs to the first line of it. */
+.invf-gst { align-items: center; }
+.invf-gst__act {
+  flex-shrink: 0;
+  height: 34px; padding: 0 16px; border: none; border-radius: 9px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; color: #fff; cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+}
+/* The tone the banner is already wearing: red refuses, amber asks. */
+.invf-gst__act--stop { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 12px rgba(220, 38, 38, .34); }
+.invf-gst__act--warn { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217, 119, 6, .32); }
+.invf-gst__act:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15, 23, 42, .22); }
+.invf-gst__act:active { transform: translateY(0); }
+
+/* "N products removed from this invoice", under the totals.
+ *
+ * Amber, not red: nothing is wrong — somebody decided the supplier did not
+ * invoice that line — but the figures above are no longer the whole PI, and
+ * that is worth saying until it is either saved or undone. Red would read as
+ * an error to fix; grey would not be read at all. */
+.invf-removed {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 10px 9px 14px;
+  border: 1px solid #fde68a; border-radius: 11px; background: #fffbeb;
+}
+.invf-removed__txt { flex: 1; min-width: 0; font-size: 11.5px; font-weight: 700; color: #b45309; }
+.invf-removed__btn {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px;
+  height: 30px; padding: 0 13px; border: none; border-radius: 8px;
+  font-family: inherit; font-size: 11.5px; font-weight: 700; color: #fff; cursor: pointer;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  box-shadow: 0 3px 10px rgba(217, 119, 6, .3);
+  transition: transform .15s, box-shadow .15s;
+}
+.invf-removed__btn:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(217, 119, 6, .42); }
+.invf-removed__btn:active { transform: translateY(0); }
+.invf-removed__btn svg { display: block; flex-shrink: 0; }
+[data-bs-theme="dark"] .invf-removed { background: rgba(217, 119, 6, .12); border-color: rgba(245, 158, 11, .32); }
+[data-bs-theme="dark"] .invf-removed__txt { color: #fcd34d; }
+
+/* "+ Add Product", under the product table.
+ *
+ * `.spi-dt-sec-body` is a flex COLUMN, so a button dropped into it stretches
+ * the full width — which is how this arrived as a teal bar the width of the
+ * table, louder than the Save & Next below it. It is a secondary action beside
+ * a table of figures, not a banner: `align-self` gives it back its own width,
+ * `flex-end` puts it under the Action column whose deletions it undoes, and
+ * the size comes down from the 36px of "Add Supplier", which sits beside a
+ * card title and can afford to be the loudest thing there. */
+.invf-addprod {
+  align-self: flex-end;
+  margin: 2px 0 0;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  box-shadow: 0 3px 10px rgba(8, 145, 178, .28);
+}
+.invf-addprod:hover { box-shadow: 0 5px 14px rgba(8, 145, 178, .38); }
+
 /* The 3-Way Product Mapping band opens on the pinned Product (PI) column, so
    it is pinned to the same offset — otherwise the band's label and its left
    divider would slide across a column that is standing still. */
@@ -48,6 +119,60 @@
   z-index: 9;
   background: #0e7490;
   text-align: left;
+}
+/* The band's scrolling remainder. Transparent, NOT a solid fill: group cells
+   are deliberately left transparent so the thead's 110deg gradient runs
+   unbroken across the row, and only the pinned ones take a solid colour
+   because they scroll over the body. Painting this one #0e7490 put a flat
+   block in the middle of the gradient, a visibly different shade from the
+   band beside it. The 1px inset divider goes too, so no hairline splits what
+   reads as one bar. */
+.spi-prodtbl thead .cpd-grp-tail {
+  background: transparent;
+  box-shadow: none !important;
+}
+
+/* Description is a row-two cell now rather than a two-row span, so it lands
+   on the product headings' own line without any vertical-align trick — a
+   span can only be aligned against the PAIR of rows, so centred it floated
+   above them and bottomed it fell below.
+
+   Sr. No and Action keep their span, and they are centred EXPLICITLY. The
+   base rule gives every header cell `padding: 7px` with no vertical-align,
+   which leaves them on the browser's default of `middle` — but the two rows
+   they span are not the same height, and the band row's own
+   `padding: 7px 10px 6px` is 1px shorter at the bottom, so "middle" of the
+   pair lands a little below the optical centre. Stating it here with the
+   padding evened out puts them where they look centred. */
+.spi-prodtbl thead th[rowspan="2"] {
+  vertical-align: middle;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+/* The header's dividers, kept but softened — and opaque.
+   They were 22% white between the rows and 16% down the column edges, drawn
+   over cells left transparent so the thead's gradient could run across them.
+   A translucent line over a transparent cell shows what is behind it, and
+   behind a sticky header is the table body, so scrolling rows travelled
+   visibly through them.
+   #2b859d and #217f99 are roughly 12% and 8% white already resolved against
+   the band's #0e7490: lighter than before, so they read as a hint of
+   structure rather than a drawn grid, and solid, so nothing can come through.
+   The first cell of each row and the band's tail skip the vertical line —
+   one would fall at the table's own left edge, the other in the middle of
+   what reads as a single bar.
+   The seal under the bottom row is separate and stays whatever happens to
+   the rest: that edge is where the rows slide beneath the header. The pinned
+   cells restate it because their own box-shadow would otherwise replace it
+   at the two columns that never scroll away. */
+.spi-prodtbl thead tr.cpd-grp th { border-bottom: 1px solid #2b859d; }
+.spi-prodtbl thead tr.cpd-grp th,
+.spi-prodtbl thead tr:last-child th { box-shadow: inset 1px 0 0 #217f99, 0 1px 0 0 #0e7490; }
+.spi-prodtbl thead tr.cpd-grp th:first-child,
+.spi-prodtbl thead .cpd-grp-tail { box-shadow: 0 1px 0 0 #0e7490; }
+.spi-prodtbl thead tr:last-child th.cpd-stick {
+  box-shadow: 7px 0 12px -8px rgba(8, 47, 73, .35), 0 1px 0 0 #0e7490;
 }
 
 /* Four step cards across, not two.
@@ -1316,6 +1441,46 @@
   .cpf-form .spi-dt-head-l,
   .cpf-form .spi-dt-head-r { flex-shrink: 0; }
 }
+
+/* The SECTION head has the same quarrel, and loses it at every width (QA #398).
+ *
+ * `.spi-dt-sec-mid` (the "Products · Product Details (3-Way Match)" block) and
+ * `.spi-dt-pills` beside it are both `flex: 1` with `min-width: 0`, so neither
+ * has a floor and the one with the wider content takes the room. Five chips
+ * carrying a supplier name, a PO number and a PI number always beat two short
+ * lines of text, so the title was squeezed until "Product Details (3-Way
+ * Match)" broke across two lines and its subtitle across two more — a 48px
+ * strip rendering as four stacked fragments.
+ *
+ * The 3-way match is where it shows first: it has five pills to the 2-way's
+ * four, and the longer title of the two.
+ *
+ * Same resolution the strip above already uses: the pills are REFERENCE, so
+ * they are the ones that give way and scroll. The heading keeps its line and
+ * ellipsises if it ever has to, which is still readable — a wrapped heading
+ * inside a fixed-height strip is not.
+ *
+ * Specificity beats the media query above (0,3,0 against its 0,2,0), so the
+ * section's pills scroll at every width while the top strip keeps its own
+ * 761–1500px rule. */
+.cpf-form .spi-dt-sec-mid { flex: 0 1 auto; }
+/* The title sits in a flex row beside "Products" and its divider, and a flex
+   child will not ellipsise while its min-width is `auto` — it reports its
+   whole text as its minimum and overflows instead. The two before it keep
+   their size; the heading is the part with room to give. */
+.cpf-form .spi-dt-sec-row { min-width: 0; }
+.cpf-form .spi-dt-sec-lbl,
+.cpf-form .spi-dt-sec-sep { flex-shrink: 0; }
+.cpf-form .spi-dt-sec-title,
+.cpf-form .spi-dt-sec-sub { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cpf-form .spi-dt-sec-head .spi-dt-pills {
+  flex: 1 1 0;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cpf-form .spi-dt-sec-head .spi-dt-pills::-webkit-scrollbar { display: none; }
 
 /* ── Table legibility ───────────────────────────────────────────────────────
    Both box tables size their columns to content. A product name is the one
@@ -3093,9 +3258,19 @@
 .cpd-scroll--rows {
   max-height: 500px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #bfe3ec transparent;
+  /* The vertical bar was drawn OVER the table's right edge, so it crossed the
+     sticky header band and left a notch in it where the teal stopped short.
+     A stable gutter reserves the 8px outside the content box instead, so the
+     bar runs in a lane of its own and the header reaches the full width of
+     what it is heading. The bar still spans the container's height - it
+     belongs to this box, and the header is inside it - but it no longer sits
+     on top of the header. */
+  scrollbar-gutter: stable;
 }
+/* No `scrollbar-width` here either, for the reason `.cpd-scroll` sets out:
+   setting it makes Chrome ignore the 8px below and draw its own, heavier bar.
+   Firefox gets the standard properties on its own, in the @supports block
+   beside that rule — this element carries `.cpd-scroll` too, so it is covered. */
 .cpd-scroll--rows::-webkit-scrollbar { width: 8px; height: 8px; }
 .cpd-scroll--rows::-webkit-scrollbar-track { background: transparent; }
 .cpd-scroll--rows::-webkit-scrollbar-thumb { background: #bfe3ec; border-radius: 999px; }
@@ -3130,7 +3305,8 @@
    The underline that marks them as editable stays. */
 .cpd-scroll--rows .cpd-tbl thead th.cpd-edh { background: #3291ab; }
 
-[data-bs-theme="dark"] .cpd-scroll--rows { scrollbar-color: rgba(34, 211, 238, .3) transparent; }
+/* `scrollbar-color` is left to the @supports block in create-po.css for the
+   same reason: setting it here would switch Chrome off the 8px bar again. */
 [data-bs-theme="dark"] .cpd-scroll--rows::-webkit-scrollbar-thumb { background: rgba(34, 211, 238, .28); }
 
 /* A header that carries an explanation. Dotted underline rather than an info
@@ -9844,6 +10020,32 @@
    create-po.css and the Purchase Order module's own tables use it, so editing
    it there would restyle a screen nobody asked about.
    ────────────────────────────────────────────────────────────────────────── */
+/* The empty table. colSpan is deliberately larger than any column count this
+   table can reach — the number changes with the tax mode, the match and the
+   Action column, and a cell that spans too few leaves a stripe of unpainted
+   header-coloured background beside it. Spanning past the end is harmless. */
+.spi-prodtbl .cpd-emptyrow > td { padding: 0; background: #fff; }
+.spi-prodtbl .cpd-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 34px 20px 36px; text-align: center;
+}
+.spi-prodtbl .cpd-empty__ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; margin-bottom: 2px;
+  border-radius: 12px; color: #0891b2;
+  background: #e8fbff; border: 1.5px solid #bdf0f7;
+}
+.spi-prodtbl .cpd-empty b { font-size: 12.5px; font-weight: 800; color: #0c4a6e; }
+.spi-prodtbl .cpd-empty span:last-child {
+  max-width: 420px; font-size: 11.5px; font-weight: 500; color: #64748b; line-height: 1.5;
+}
+[data-bs-theme="dark"] .spi-prodtbl .cpd-emptyrow > td { background: #0b1922; }
+[data-bs-theme="dark"] .spi-prodtbl .cpd-empty__ico {
+  background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.26); color: #67e8f9;
+}
+[data-bs-theme="dark"] .spi-prodtbl .cpd-empty b { color: #e2e8f0; }
+[data-bs-theme="dark"] .spi-prodtbl .cpd-empty span:last-child { color: #7f9aa6; }
+
 /* The "WITHOUT GST" / "WITH GST" qualifier is an inline-block with a top
    margin, so it only drops below its heading when the heading happens to fill
    the cell. "PRODUCT COST" does; "TOTAL PRODUCT COST" wraps to a short second

@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useMemo, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import Tooltip from '../../../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -8,12 +8,14 @@ const AddProductModal = lazy(() => import('../../../p2p-master-management/produc
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
 import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, type ProductLine, type TaxMode } from '../invoice-products';
 import { spiApi } from '../spi-api';
+import { poLookupApi } from '../../order/api/po-api';
+import { toProduct, type ProductOpt } from '../../order/create-po/use-po-lookups';
 
 const inr = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money = (n: number) => `₹${inr.format(n)}`;
 
 export default function ProductTable({
-  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, sourceNote,
+  lines, onChange, onRemove, taxMode = 'intra', readOnly = false, twoWay = false, matched = true, sourceNote,
 }: {
   lines: ProductLine[];
   onChange: (index: number, patch: Partial<ProductLine>) => void;
@@ -27,6 +29,13 @@ export default function ProductTable({
      its cost. A Direct SPI has no purchase order to match against, so the
      match is the shipment's proforma invoice against the supplier's own. */
   twoWay?: boolean;
+  /* Whether there is a proforma invoice on the other side of this table.
+     An "All Other's" Direct SPI belongs to no shipment, so there is no PI to
+     match against and the match columns - the PI product, its quantity, and
+     the missing/extra it implies - have nothing to put in them. Showing them
+     empty reads as a match that found nothing rather than a match that was
+     never possible. */
+  matched?: boolean;
   /** What the untinted cells came from, named in the legend. */
   sourceNote?: string;
 }) {
@@ -36,29 +45,67 @@ export default function ProductTable({
      no column at all. The last line stays: an invoice with no products is
      not a state this form can save. */
   const canRemove = !!onRemove && !readOnly;
+  /* Product columns before the SPI one: the PI's, and the PO's on a 3-way.
+     The group header spans this many plus the SPI column itself, and the
+     footer skips exactly this many before the first figure — writing the
+     count once is what keeps the three in step when a column is dropped. */
+  const matchCols = (matched ? 1 : 0) + (twoWay ? 0 : 1);
 
-  /* Nothing undoes this. The line comes off the invoice and, with it, out of
-     the boxes and the put-away that are built from these lines downstream —
-     and the next person to open this table is not the person who set it up.
-     So it asks first, naming the product and what the totals become, the way
-     the box step asks before unpacking one. */
+  /* The line comes off the invoice and, with it, out of the boxes and the
+     put-away that are built from these lines downstream — so it asks first,
+     naming the product and what the totals become, the way the box step asks
+     before unpacking one.
+     It is no longer irreversible: the banner under the table restores it, and
+     the dialog says so rather than sending the reader off to reopen the
+     invoice against the PI, which is what it used to advise. */
   const confirm = useConfirm();
+  /* Declared here, not further down with the modal state: `askRemove` names it
+     in its dependency array, and a `const` read above its own declaration
+     throws on render rather than on the click. */
+  const toast = useToast();
   const askRemove = useCallback(async (index: number) => {
     const line = lines[index];
     if (!line || !onRemove) return;
+    const name = line.spiName || line.piName;
     const after = tableTotals(lines.filter((_, i) => i !== index), taxMode, twoWay);
     const ok = await confirm({
-      title: `Remove ${line.spiName || line.piName} from this invoice?`,
+      title: `Remove ${name} from this invoice?`,
       message: <>It comes off the product match, and the invoice total drops from{' '}
         <strong>{money(totals.cost)}</strong> to <strong>{money(after.cost)}</strong>.{' '}
-        Add it back by reopening the invoice against the PI.</>,
+        You can put it back with <strong>Restore</strong>, under the table.</>,
       tone: 'danger',
       confirmLabel: 'Remove it',
     });
-    if (ok) onRemove(index);
-  }, [confirm, lines, onRemove, taxMode, twoWay, totals.cost]);
+    if (!ok) return;
+    onRemove(index);
+    /* Names what left. The banner says how many are missing; this says which
+       one just went, which is the half a count cannot carry. */
+    toast.info('Removed', name);
+  }, [confirm, lines, onRemove, taxMode, toast, twoWay, totals.cost]);
+  /* The product master, for lines that are not on the table.
+   *
+   * The catalogue below used to be built from `lines` alone, which works only
+   * while every product you could want is already on a row. It stopped working
+   * the moment the Action column could remove one: the removed product left
+   * the catalogue with it, so "Add Product" would have offered a list without
+   * the very thing you were trying to put back. A line added from scratch has
+   * no product at all, and would have had nothing to choose from.
+   *
+   * Not loaded when read-only — nothing can be picked there. */
+  const [master, setMaster] = useState<ProductOpt[]>([]);
+  useEffect(() => {
+    if (readOnly) return;
+    let live = true;
+    poLookupApi.products()
+      .then(rows => { if (live) setMaster(rows.map(toProduct).filter(p => p.id && p.name)); })
+      /* A master that will not load leaves the lines' own products, which is
+         what this table had before and is enough to remap an existing row. */
+      .catch(() => {});
+    return () => { live = false; };
+  }, [readOnly]);
+
   const catalogue = useMemo(() => {
-    const seen = new Map<string, { value: string; label: string; name: string; productId?: number }>();
+    const seen = new Map<string, { value: string; label: string; name: string; productId?: number; master?: ProductOpt }>();
     for (const l of lines) {
       if (l.productId == null) continue;
       const value = String(l.productId);
@@ -76,13 +123,28 @@ export default function ProductTable({
         });
       }
     }
+    /* The lines go in first and keep their entry: their label is the one the
+       rest of the row is already showing. The master only adds what is
+       missing — and carries the row it came from, so a blank line can fill
+       its code, HSN, GST and description from the same pick. */
+    for (const p of master) {
+      const value = String(p.id);
+      const existing = seen.get(value);
+      if (existing) { existing.master = p; continue; }
+      seen.set(value, {
+        value,
+        label: `${p.code} — ${truncate(p.name, MATCH_NAME_MAX)}`,
+        name: p.name,
+        productId: p.id,
+        master: p,
+      });
+    }
     return [...seen.values()];
-  }, [lines]);
+  }, [lines, master]);
   const exportSpi = taxMode === 'export';
   const inter = taxMode === 'inter' || exportSpi;
   const [detailId, setDetailId] = useState<number | null>(null);
 
-  const toast = useToast();
   const [editing, setEditing] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
 
@@ -121,8 +183,13 @@ export default function ProductTable({
     <>
       <div className="cpd-legend">
         <span className="cpd-legend__sw" />
-        Tinted cells are editable — SPI product, quantity and rate. Everything else is
-        carried from {sourceNote ?? (twoWay ? 'the PI' : 'the PI or the PO')}, or calculated.
+        {/* With no PI there is nothing the untinted cells are "carried from",
+            so the sentence would have named a document this invoice has no
+            connection to. They are calculated, and that is all. */}
+        {matched
+          ? <>Tinted cells are editable — SPI product, quantity and rate. Everything else is
+            carried from {sourceNote ?? (twoWay ? 'the PI' : 'the PI or the PO')}, or calculated.</>
+          : <>Tinted cells are editable — SPI product, quantity and rate. Costs and GST are calculated.</>}
       </div>
 
       {/* `--rows` caps the height at about five lines and scrolls the rest.
@@ -154,28 +221,52 @@ export default function ProductTable({
           <thead>
             <tr className="cpd-grp">
               <th rowSpan={2} className="cpd-stick cpd-stick--1">Sr. No</th>
-              <th colSpan={twoWay ? 2 : 3} className="cpd-stick cpd-grp-stick">
-                {twoWay ? '2-Way Product Mapping' : '3-Way Product Mapping'}
+              {/* The band is split so the PINNED half is exactly as wide as
+                  the column that is actually pinned.
+                  It carries `position: sticky; left: 42px`, but it used to
+                  span every product column while only ONE of them - the
+                  Product column at .cpd-stick--2 - is pinned. A sticky cell
+                  keeps the width of its whole span, so on scroll it stood
+                  still at some 470px while just 232px of column stood still
+                  beneath it, and the surplus painted straight over the next
+                  group: "QUANTITIES" lost its first six letters.
+                  The trailing cell holds no label and scrolls with the columns
+                  it covers, so unscrolled the band still reads as one bar. */}
+              <th colSpan={1} className="cpd-stick cpd-grp-stick">
+                {/* No mapping to name when there is nothing on the other
+                    side: one product column is a list, not a match. */}
+                {!matched ? 'Product' : twoWay ? '2-Way Product Mapping' : '3-Way Product Mapping'}
               </th>
-              <th rowSpan={2} className="cpd-th-left">Description</th>
-              <th colSpan={twoWay ? 4 : 5}>Quantities</th>
+              {matchCols > 0 && <th colSpan={matchCols} className="cpd-grp-tail" />}
+              {/* Description belongs to no group, but it is NOT a rowSpan of 2.
+                  Spanning both rows makes it a cell of its own whose text can
+                  only be centred, topped or bottomed against the PAIR of rows,
+                  never against the second one — centred it floated above the
+                  product headings, bottomed it fell below them. As an ordinary
+                  row-two cell under an empty group cell it is simply on the
+                  same line as PRODUCT (PI) and PRODUCT (SPI), which is what it
+                  sits beside. */}
+              <th className="cpd-grp-tail" />
+              <th colSpan={matched ? (twoWay ? 4 : 5) : 1}>{matched ? 'Quantities' : 'Quantity'}</th>
               {/* Without a purchase order there is nothing to show under it:
                   the group goes rather than standing empty over the rows. */}
               {!twoWay && <th colSpan={1}>Purchase Order (PO)</th>}
-              <th colSpan={4 + 2 * (inter ? 1 : 2)}>Supplier Invoice (SPI)</th>
+              {/* 2-way: Rate, Cost, GST (%), Total GST Amount, Total Cost.
+                  3-way: the same, with the tax split into its own columns. */}
+              <th colSpan={twoWay ? 5 : 4 + 2 * (inter ? 1 : 2)}>Supplier Invoice (SPI)</th>
               {/* Belongs to no group, so it spans both header rows the way
                   Sr. No and Description do. */}
               {canRemove && <th rowSpan={2} className="cpd-c cpd-th-act">Action</th>}
             </tr>
             <tr>
-              <th className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>
+              {matched && <th className="cpd-stick cpd-stick--2 cpd-th-left">Product (PI)</th>}
               {!twoWay && <th className="cpd-th-left">Product (PO)</th>}
-              <th className="cpd-th-left cpd-edh">Product (SPI)</th>
-              <th>Qty (PI)</th>
+              <th className={`cpd-th-left cpd-edh${matched ? '' : ' cpd-stick cpd-stick--2'}`}>Product (SPI)</th>
+              <th className="cpd-th-left">Description</th>
+              {matched && <th>Qty (PI)</th>}
               {!twoWay && <th>Qty (PO)</th>}
               <th className="cpd-c cpd-edh">Qty (SPI)</th>
-              <th>Missing Qty</th>
-              <th>Extra Qty</th>
+              {matched && <><th>Missing Qty</th><th>Extra Qty</th></>}
               {!twoWay && <th className="cpd-th-amt">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>}
               <th className="cpd-th-amt cpd-c cpd-edh">Product Rate (SPI)</th>
               <th className="cpd-th-amt">Product Cost<span className="cpd-th-sub cpd-th-sub--wo">Without GST</span></th>
@@ -183,22 +274,48 @@ export default function ProductTable({
                   width floor of their own, so they were sized by content and
                   "IGST (%)" came out clipped to "GST (%)" — a different tax
                   entirely, and one nobody would question on sight. */}
-              {inter
-                ? <th className="cpd-th-pct">{exportSpi ? 'Tax (%)' : 'IGST (%)'}</th>
-                : <><th className="cpd-th-pct">CGST (%)</th><th className="cpd-th-pct">SGST (%)</th></>}
-              {inter
+              {/* A 2-way match carries one GST column, as the design has it:
+                  the rate for the line and the amount it comes to. The split
+                  into CGST and SGST (or IGST) is what a 3-way match shows,
+                  where the figures are being reconciled against a purchase
+                  order and each half has to be checked on its own. Here the
+                  question is only whether the supplier's tax agrees with the
+                  PI, and four columns to answer it is three too many. */}
+              {twoWay
+                ? <th className="cpd-th-pct">GST (%)</th>
+                : inter
+                  ? <th className="cpd-th-pct">{exportSpi ? 'Tax (%)' : 'IGST (%)'}</th>
+                  : <><th className="cpd-th-pct">CGST (%)</th><th className="cpd-th-pct">SGST (%)</th></>}
+              {!twoWay && (inter
                 ? <th className="cpd-th-amt cpd-th-amt--tax">{exportSpi ? 'Tax Amount' : 'IGST Amount'}</th>
                 : <><th className="cpd-th-amt cpd-th-amt--tax">CGST Amount</th>
-                  <th className="cpd-th-amt cpd-th-amt--tax">SGST Amount</th></>}
+                  <th className="cpd-th-amt cpd-th-amt--tax">SGST Amount</th></>)}
               <th className="cpd-th-amt cpd-th-amt--tax">Total GST Amount</th>
               <th className="cpd-th-amt cpd-th-final">Total Product Cost<span className="cpd-th-sub cpd-th-sub--w">With GST</span></th>
             </tr>
           </thead>
 
           <tbody>
+            {/* An invoice with no PI behind it starts with nothing in this
+                table, so the first thing the user meets is a row of headers
+                over blank space — which reads as a table that failed to load
+                rather than one waiting to be filled. */}
+            {lines.length === 0 && (
+              <tr className="cpd-emptyrow">
+                <td colSpan={60}>
+                  <div className="cpd-empty">
+                    <span className="cpd-empty__ico"><IcoPlus /></span>
+                    <b>No products on this invoice yet</b>
+                    <span>{matched
+                      ? 'The products from the PI could not be loaded — reopen the invoice to try again.'
+                      : 'There is no shipment behind this invoice, so nothing is carried in. Add the products the supplier billed for.'}</span>
+                  </div>
+                </td>
+              </tr>
+            )}
             {lines.map((line, i) => (
               <Row
-                key={line.key ?? line.code} line={line} index={i} twoWay={twoWay}
+                key={line.key ?? line.code} line={line} index={i} twoWay={twoWay} matched={matched}
                 onChange={onChange} taxMode={taxMode} catalogue={catalogue} readOnly={readOnly}
                 onEditProduct={editProduct} onAddProduct={addProduct}
                 onOpenDetail={setDetailId}
@@ -212,19 +329,21 @@ export default function ProductTable({
             <tfoot>
               <tr>
                 <td className="cpd-foot-lbl cpd-stick cpd-stick--1" colSpan={2}>Totals</td>
-                <td colSpan={twoWay ? 2 : 3} />
-                <td className="cpd-c">{totals.piQty}</td>
+                <td colSpan={matchCols} />
+                {matched && <td className="cpd-c">{totals.piQty}</td>}
                 {!twoWay && <td className="cpd-c">{totals.poQty}</td>}
                 <td className="cpd-c">{totals.spiQty}</td>
-                <td className="cpd-c">{totals.missing}</td>
-                <td className="cpd-c">{totals.extra}</td>
+                {matched && <><td className="cpd-c">{totals.missing}</td>
+                <td className="cpd-c">{totals.extra}</td></>}
                 {!twoWay && <td className="cpd-r">{money(totals.poCost)}</td>}
                 <td />
                 <td className="cpd-r">{money(totals.base)}</td>
-                {inter
-                  ? <><td /><td className="cpd-r">{money(totals.igst)}</td></>
-                  : <><td /><td /><td className="cpd-r">{money(totals.cgst)}</td>
-                    <td className="cpd-r">{money(totals.sgst)}</td></>}
+                {twoWay
+                  ? <td />
+                  : inter
+                    ? <><td /><td className="cpd-r">{money(totals.igst)}</td></>
+                    : <><td /><td /><td className="cpd-r">{money(totals.cgst)}</td>
+                      <td className="cpd-r">{money(totals.sgst)}</td></>}
                 <td className="cpd-r">{money(totals.gstAmount)}</td>
                 <td className="cpd-r cpd-foot-final">{money(totals.cost)}</td>
                 {canRemove && <td />}
@@ -239,19 +358,21 @@ export default function ProductTable({
 
 const Row = memo(function Row({
   line, index, onChange, onOpenDetail, onEditProduct, onAddProduct, taxMode, catalogue, readOnly, twoWay,
-  onRemove, showAction,
+  matched, onRemove, showAction,
 }: {
   line: ProductLine;
   index: number;
   /** Matches the header: no purchase order columns. */
   twoWay: boolean;
+  /** Matches the header: no PI columns, and no match to compute against. */
+  matched: boolean;
   onChange: (index: number, patch: Partial<ProductLine>) => void;
 
   onOpenDetail: (productId: number) => void;
   onEditProduct: (productId: number) => void;
   onAddProduct: () => void;
   taxMode: TaxMode;
-  catalogue: Array<{ value: string; label: string; name: string; productId?: number }>;
+  catalogue: Array<{ value: string; label: string; name: string; productId?: number; master?: ProductOpt }>;
   readOnly: boolean;
   /* Undefined on the last remaining line, so the button is drawn but refuses
      - the column stays aligned and the reason is on the hover. */
@@ -269,16 +390,18 @@ const Row = memo(function Row({
   return (
     <tr>
       <td className="cpd-c cpd-stick cpd-stick--1">{index + 1}</td>
-      <td className="cpd-prodcell cpd-td-left cpd-stick cpd-stick--2">
-        <ProdCell name={line.piName} code={line.piCode ?? line.code} hsn={line.hsn} gst={line.gst} />
-      </td>
+      {matched && (
+        <td className="cpd-prodcell cpd-td-left cpd-stick cpd-stick--2">
+          <ProdCell name={line.piName} code={line.piCode ?? line.code} hsn={line.hsn} gst={line.gst} />
+        </td>
+      )}
       {!twoWay && (
         <td className="cpd-prodcell cpd-td-left">
           <ProdCell name={line.poName} code={line.code} hsn={line.hsn} gst={line.gst} />
         </td>
       )}
 
-      <td className="cpd-prodcell cpd-ed">
+      <td className={`cpd-prodcell cpd-ed${matched ? '' : ' cpd-stick cpd-stick--2'}`}>
         <div className="cpd-prod cpd-prod--po">
           <div className="cpd-pick">
             <MasterSelect
@@ -287,7 +410,29 @@ const Row = memo(function Row({
               disabled={readOnly}
               onChange={v => {
                 const pick = catalogue.find(c => c.value === v);
-                if (pick) onChange(index, { productId: pick.productId, spiName: pick.name });
+                if (!pick) return;
+                /* A line that came from the PI already carries its code, HSN,
+                   GST and description from that document, and they are what
+                   the match is being made against — picking a product here
+                   remaps the SPI side only, and must not rewrite them.
+                   A line added by hand has none of that, so the same pick is
+                   also where it gets them. `code` is the tell: every carried
+                   line has one, a blank one does not. */
+                const fresh = !line.code && pick.master;
+                onChange(index, fresh
+                  ? {
+                    productId: pick.master!.id,
+                    spiName: pick.master!.name,
+                    code: pick.master!.code,
+                    hsn: pick.master!.hsn,
+                    gst: pick.master!.gst ?? 0,
+                    description: pick.master!.description,
+                    /* Only as a starting figure: what the supplier actually
+                       charged is the point of this column, so a rate already
+                       typed stands. */
+                    spiRate: line.spiRate || pick.master!.price,
+                  }
+                  : { productId: pick.productId, spiName: pick.name });
               }}
             />
             <Tooltip label={line.productId == null
@@ -326,7 +471,7 @@ const Row = memo(function Row({
         />
       </td>
 
-      <td className="cpd-c">{line.piQty}</td>
+      {matched && <td className="cpd-c">{line.piQty}</td>}
       {/* What is still open, not what the order asked for once — a line an
           earlier invoice already covered must not read as outstanding here.
           An over-supply from an earlier invoice shows as 0 open and is named
@@ -351,12 +496,19 @@ const Row = memo(function Row({
         />
       </td>
 
-      <td className="cpd-c">
-        <span className={`cpd-qtypill${t.missing > 0 ? ' cpd-qtypill--miss' : ''}`}>{t.missing}</span>
-      </td>
-      <td className="cpd-c">
-        <span className={`cpd-qtypill${t.extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{t.extra}</span>
-      </td>
+      {/* Missing and extra are differences FROM the PI. With no PI they are
+          not zero, they are undefined — and a column of zeros would read as
+          a clean match on an invoice nothing was ever matched against. */}
+      {matched && (
+        <>
+          <td className="cpd-c">
+            <span className={`cpd-qtypill${t.missing > 0 ? ' cpd-qtypill--miss' : ''}`}>{t.missing}</span>
+          </td>
+          <td className="cpd-c">
+            <span className={`cpd-qtypill${t.extra > 0 ? ' cpd-qtypill--extra' : ''}`}>{t.extra}</span>
+          </td>
+        </>
+      )}
 
       {!twoWay && <td className="cpd-r spi-pocost">{money(t.poCost)}</td>}
       <td className="cpd-r cpd-ed">
@@ -367,12 +519,17 @@ const Row = memo(function Row({
         />
       </td>
       <td className="cpd-r">{money(t.base)}</td>
-      {inter
-        ? <td className="cpd-c">{t.igstPct}%</td>
-        : <><td className="cpd-c">{t.cgstPct}%</td><td className="cpd-c">{t.sgstPct}%</td></>}
-      {inter
+      {/* The whole rate, summed from whichever halves apply rather than read
+          off the line: on an export `lineTotals` zeroes the tax, and the
+          product's own `gst` would still print 18% against ₹0 of it. */}
+      {twoWay
+        ? <td className="cpd-c">{t.cgstPct + t.sgstPct + t.igstPct}%</td>
+        : inter
+          ? <td className="cpd-c">{t.igstPct}%</td>
+          : <><td className="cpd-c">{t.cgstPct}%</td><td className="cpd-c">{t.sgstPct}%</td></>}
+      {!twoWay && (inter
         ? <td className="cpd-r">{money(t.igst)}</td>
-        : <><td className="cpd-r">{money(t.cgst)}</td><td className="cpd-r">{money(t.sgst)}</td></>}
+        : <><td className="cpd-r">{money(t.cgst)}</td><td className="cpd-r">{money(t.sgst)}</td></>)}
       <td className="cpd-r">{money(t.gstAmount)}</td>
       <td className="cpd-r">{money(t.cost)}</td>
       {showAction && (
