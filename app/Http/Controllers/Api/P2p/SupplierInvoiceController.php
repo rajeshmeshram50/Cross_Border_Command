@@ -1031,9 +1031,9 @@ class SupplierInvoiceController extends Controller
      * SPI carries its own, a PO-backed one leaves them null so the order
      * stays the one authority.
      *
-     * PO number and type, and the opportunity, still reach through the order
-     * alone — a Direct SPI has none of those to carry, so they stay null and
-     * the UI shows a dash.
+     * PO number and type still reach through the order alone — a Direct SPI
+     * has neither, so they stay null and the UI shows a dash. The opportunity
+     * falls back to the shipment's PI, so a Direct SPI with a shipment has one.
      */
     private function listRow(SupplierInvoice $s, array $refs = ['ship' => [], 'opp' => []]): array
     {
@@ -1042,9 +1042,10 @@ class SupplierInvoiceController extends Controller
         // Own column first, then the order's.
         $shipId = $s->shipment_order_id ?? $po?->shipment_order_id;
         $ship   = $shipId ? ($refs['ship'][$shipId] ?? null) : null;
-        // The opportunity still only reaches through the PO's proforma invoice;
-        // a Direct SPI has no PI link of its own to read.
-        $opp    = $po?->proforma_invoice_id ? ($refs['opp'][$po->proforma_invoice_id] ?? null) : null;
+        // The opportunity code lives on the proforma invoice: the order's, else
+        // the shipment's — a Direct SPI with a shipment reaches it that way.
+        $piId   = $po?->proforma_invoice_id ?? $ship->proforma_invoice_id ?? null;
+        $opp    = $piId ? ($refs['opp'][$piId] ?? null) : null;
         $day  = fn ($d) => $d ? substr((string) $d, 0, 10) : null;
 
         /* Counts come from withCount on the list query; null on any caller that
@@ -1205,10 +1206,16 @@ class SupplierInvoiceController extends Controller
 
         $ship = DB::table('shipment_orders')
             ->whereIn('id', $shipIds ?: [0])
-            ->get(['id', 'shipment_code', 'created_at'])->keyBy('id');
+            ->get(['id', 'shipment_code', 'proforma_invoice_id', 'created_at'])->keyBy('id');
+
+        // The order's PI, plus the shipment's PI for a Direct SPI, which has
+        // no order to carry one.
+        $piIds = $pos->pluck('proforma_invoice_id')
+            ->merge($ship->pluck('proforma_invoice_id'))
+            ->filter()->unique()->all();
 
         $opp = DB::table('proforma_invoices')
-            ->whereIn('id', $pos->pluck('proforma_invoice_id')->filter()->unique()->all() ?: [0])
+            ->whereIn('id', $piIds ?: [0])
             ->get(['id', 'opp_code', 'created_at'])->keyBy('id');
 
         return ['ship' => $ship, 'opp' => $opp];

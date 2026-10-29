@@ -6,7 +6,7 @@ import { useConfirm } from '../../../../../contexts/ConfirmContext';
 import { IcoPencil, IcoPlus, IcoTrash } from '../../../icons';
 const AddProductModal = lazy(() => import('../../../p2p-master-management/product-management/AddProductModal'));
 import ProductDescription, { ProductDetailView } from '../../order/shared/ProductDescription';
-import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, type ProductLine, type TaxMode } from '../invoice-products';
+import { formatProductCode, lineTotals, MATCH_NAME_MAX, openQtyOf, tableTotals, truncate, withoutCodePrefix, type ProductLine, type TaxMode } from '../invoice-products';
 import { spiApi } from '../spi-api';
 import { poLookupApi } from '../../order/api/po-api';
 import { toProduct, type ProductOpt } from '../../order/create-po/use-po-lookups';
@@ -104,24 +104,6 @@ export default function ProductTable({
     return () => { live = false; };
   }, [readOnly]);
 
-  /* "P-01 — Cooking Oil", not "P-01 — P-01 — Cooking Oil".
-
-     Some products are named with their own code in the master — the name is
-     literally "P-01 – Cooking Oil" — and prefixing the code to that printed
-     it twice in this select, with two different dashes, while the PI column
-     beside it showed the name once. The code is dropped from the front of the
-     name when it is already there; any of the dashes people type between the
-     two is accepted, and a name that merely starts with the same letters is
-     left alone because the separator has to be present. */
-  const optionLabel = (code: string, name: string) => {
-    const bare = String(name ?? '').trim();
-    const c = String(code ?? '').trim();
-    const stripped = c
-      ? bare.replace(new RegExp(`^${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[—–-]\\s*`, 'i'), '')
-      : bare;
-    return `${c} — ${truncate(stripped || bare, MATCH_NAME_MAX)}`;
-  };
-
   const catalogue = useMemo(() => {
     const seen = new Map<string, { value: string; label: string; name: string; productId?: number; master?: ProductOpt }>();
     for (const l of lines) {
@@ -135,7 +117,7 @@ export default function ProductTable({
       if (!seen.has(value)) {
         seen.set(value, {
           value,
-          label: optionLabel(l.code, l.poName),
+          label: `${formatProductCode(l.code)} — ${truncate(l.poName, MATCH_NAME_MAX)}`,
           name: l.poName,
           productId: l.productId,
         });
@@ -151,7 +133,12 @@ export default function ProductTable({
       if (existing) { existing.master = p; continue; }
       seen.set(value, {
         value,
-        label: optionLabel(p.code, p.name),
+        /* The lines above arrive with the code already stripped from their
+           name (withoutCodePrefix, where they are built from the PI/PO). The
+           master's own names have not been through that, and some of them do
+           carry their code — "P-01 – Cooking Oil" — which would print it
+           twice here and make the two halves of this one dropdown disagree. */
+        label: `${formatProductCode(p.code)} — ${truncate(withoutCodePrefix(p.name, p.code), MATCH_NAME_MAX)}`,
         name: p.name,
         productId: p.id,
         master: p,
@@ -441,7 +428,7 @@ const Row = memo(function Row({
                   ? {
                     productId: pick.master!.id,
                     spiName: pick.master!.name,
-                    code: pick.master!.code,
+                    code: formatProductCode(pick.master!.code),
                     hsn: pick.master!.hsn,
                     gst: pick.master!.gst ?? 0,
                     description: pick.master!.description,
@@ -581,7 +568,7 @@ function ProdCell({ name, code, hsn, gst }: { name: string; code: string; hsn: s
         <div className="cpd-prod__nm">{short}</div>
       </Tooltip>
       <div className="cpd-prod__meta">
-        <span className="cpd-code">{code}</span>
+        <span className="cpd-code">{formatProductCode(code)}</span>
         <span className="cpd-kv">HSN <b>{hsn}</b></span>
         <span className="cpd-prod__dot" />
         <span className="cpd-kv">GST <b>{gst}%</b></span>

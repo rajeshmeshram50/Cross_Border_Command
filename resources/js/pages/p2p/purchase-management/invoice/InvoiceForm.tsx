@@ -15,7 +15,7 @@ import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
 import Step3BoxPackaging from './steps/Step3BoxPackaging';
 import Step4PutawayAllocation from './steps/Step4PutawayAllocation';
-import { draftFromPo, useInvoiceDraft } from './invoice-draft';
+import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useInvoiceDraft } from './invoice-draft';
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
@@ -25,7 +25,7 @@ import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
 import { SPI_STATUS_LABELS, spiViewOnlyReason } from './types';
 import {
-  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, itemsPayload, linesFromPo, taxModeFor,
+  DEFAULT_HOME_STATE_CODE, PRODUCT_LINES, blankLine, formatProductCode, itemsPayload, linesFromPo, taxModeFor, withoutCodePrefix,
   type ProductLine, type SpiPoOpen,
 } from './invoice-products';
 import type { StorageChoice } from './StorageSelectionModal';
@@ -101,10 +101,9 @@ export default function InvoiceForm({
 
   const [supplierBusy, setSupplierBusy] = useState(false);
 
-  const matchedToPi = !input.direct || !!draft.shipmentId;
-
   const [noPo, setNoPo] = useState(!!input.direct);
   const isDirect = !!input.direct || noPo;
+  const matchedToPi = !isDirect || !!draft.shipmentId;
 
   const [gstApproval, setGstApproval] = useState<GstApproval | null>(null);
   const savedVendor = useRef<number | null>(null);
@@ -123,7 +122,7 @@ export default function InvoiceForm({
   const [poLoading, setPoLoading] = useState(!!(input.poId || input.spiId));
   const [poError, setPoError] = useState<string | null>(null);
   const [lines, setLines] = useState<ProductLine[]>(
-    input.poId || input.spiId || (input.direct && !input.direct.shipmentId) ? [] : PRODUCT_LINES,
+    input.poId || input.spiId || input.direct ? [] : PRODUCT_LINES,
   );
   const [files, setFiles] = useState<{ invoice_file?: File | null; eway_file?: File | null }>({});
   const [uploaded, setUploaded] = useState<{ invoice?: string | null; eway?: string | null }>({});
@@ -185,6 +184,68 @@ export default function InvoiceForm({
           const standalone = !!input.direct || (!!existing && !existing.purchase_order_id);
           setNoPo(standalone);
           if (!standalone) setPoError('This invoice is not linked to a purchase order.');
+          if (standalone && existing) {
+            const so = existing.shipment_order ?? null;
+            set({
+              ...(so?.shipment_code ? { shipmentId: so.shipment_code } : {}),
+              ...(so?.proforma_invoice?.code ? { piNumber: so.proforma_invoice.code } : {}),
+              ...(existing.procurement_request_code ? { procurementCode: existing.procurement_request_code } : {}),
+              invoiceNumber: existing.invoice_no ?? '',
+              ...(existing.invoice_date ? { invoiceDate: existing.invoice_date.slice(0, 10) } : {}),
+              invoiceFile: existing.invoice_file_name ?? '',
+              ewayBillFile: existing.eway_file_name ?? '',
+            });
+            setUploaded({ invoice: existing.invoice_file_name, eway: existing.eway_file_name });
+            if (!input.direct && existing.vendor_id) {
+              const vid = existing.vendor_id;
+              const [sup, scrutiny] = await Promise.all([
+                poLookupApi.supplier(vid).catch(() => null),
+                spiApi.vendorScrutiny(vid).catch(() => null),
+              ]);
+              if (!live) return;
+              if (sup) {
+                const gst = newestScrutiny(scrutiny);
+                set({
+                  vendorId: vid,
+                  ...draftFromSupplier(sup),
+                  ...(gst ? draftFromScrutiny(gst) : {}),
+                  docType: existing.document_type === 'international' ? 'International' : 'Domestic',
+                });
+                mappedSupplier.current = sup.code;
+              }
+              poLookupApi.supplierVault(vid)
+                .then(v => { if (live) set({ vault: v, legal: legalFromVault(v) }); })
+                .catch(() => { if (live) set({ vault: null, legal: legalFromVault(null) }); });
+            }
+            if (existing.items.length) {
+              const pi = existing.shipment_order_id
+                ? await poApi.piLines(existing.shipment_order_id).then(r => r.lines).catch(() => [])
+                : [];
+              if (!live) return;
+              const byPi = new Map(pi.map(l => [l.pi_item_id, l]));
+              const byProduct = new Map(pi.map(l => [l.product_id, l]));
+              setLines(existing.items.map(it => {
+                const m = (it.pi_item_id != null ? byPi.get(it.pi_item_id) : undefined) ?? byProduct.get(it.product_id);
+                const name = withoutCodePrefix(m?.product_name ?? '', m?.product_code) || formatProductCode(m?.product_code);
+                return {
+                  key: `saved:${it.id}`,
+                  spiItemId: it.id,
+                  piItemId: m?.pi_item_id ?? it.pi_item_id ?? null,
+                  productId: it.product_id,
+                  code: formatProductCode(m?.product_code),
+                  hsn: it.hsn_code ?? m?.hsn_code ?? '',
+                  piName: name, poName: name, spiName: name,
+                  description: it.description ?? m?.description ?? '',
+                  uom: it.uom ?? undefined,
+                  piQty: Number(it.qty_pi ?? m?.pi_quantity) || 0, poQty: 0,
+                  spiQty: Number(it.qty_spi) || 0,
+                  spiRate: Number(it.rate) || 0, poRate: 0,
+                  gst: Number(it.gst_pct) || 0,
+                };
+              }));
+              setRemovedLines([]);
+            }
+          }
           return;
         }
         const [po, openLines] = await Promise.all([
@@ -310,6 +371,30 @@ export default function InvoiceForm({
         });
         savedVendor.current = draft.vendorId;
         mappedSupplier.current = draft.supplierCode;
+        const shipmentOrderId = directLinks.current.shipment_order_id;
+        if (shipmentOrderId && !lines.some(l => l.spiItemId != null)) {
+          const pi = await poApi.piLines(shipmentOrderId);
+          setLines(pi.lines.map(l => {
+            const name = withoutCodePrefix(l.product_name ?? '', l.product_code) || formatProductCode(l.product_code);
+            return {
+              key: `pi:${l.pi_item_id}`,
+              piItemId: l.pi_item_id,
+              productId: l.product_id ?? undefined,
+              code: formatProductCode(l.product_code),
+              hsn: l.hsn_code ?? '',
+              uom: l.uom ?? undefined,
+              piName: name, poName: name, spiName: name,
+              description: l.description ?? '',
+              piQty: Number(l.pi_quantity) || 0,
+              poQty: 0,
+              spiQty: Number(l.pending_qty) || 0,
+              spiRate: Number(l.rate) || 0,
+              poRate: Number(l.rate) || 0,
+              gst: Number(l.gst_pct) || 0,
+            };
+          }));
+          setRemovedLines([]);
+        }
         advance();
       } catch (e) {
         toast.error('Could not save Stage 01', e instanceof PoApiError ? e.firstError : 'Please try again.');
