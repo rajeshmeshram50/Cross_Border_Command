@@ -299,6 +299,10 @@ class SupplierInvoiceController extends Controller
                 'purchaseOrder:id,code,po_date,po_type,shipment_order_id,lead_id,procurement_request_code,'
                     . 'expected_delivery_date,grand_total,tds_amount,paid_amount,balance_amount',
                 'purchaseOrder.shipmentOrder:id,shipment_code',
+                /* A Direct SPI has no order to read its shipment through, so the
+                   header lost its Shipment ID and PI number on reopen. */
+                'shipmentOrder:id,shipment_code,proforma_invoice_id,created_at',
+                'shipmentOrder.proformaInvoice:id,code',
                 'boxes.items',
                 'boxes.attachments',
                 'putaways.box:id,box_code',
