@@ -11,6 +11,7 @@ use App\Models\P2p\SpiPoFulfilment;
 use App\Models\P2p\SpiPutaway;
 use App\Models\P2p\SupplierInvoice;
 use App\Models\P2p\SupplierInvoiceItem;
+use App\Services\P2p\PurchaseOrderService;
 use App\Services\P2p\SupplierInvoiceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +31,12 @@ use Illuminate\Validation\Rule;
  */
 class SupplierInvoiceController extends Controller
 {
-    public function __construct(private SupplierInvoiceService $svc) {}
+    /* The PO service owns orderedByPiItem(), which is where PI quantity is
+       counted for both documents. */
+    public function __construct(
+        private SupplierInvoiceService $svc,
+        private PurchaseOrderService $poSvc,
+    ) {}
 
     /** Writes need a tenant: a super admin has no client to raise an invoice under. */
     private function tenantUser(Request $request)
@@ -354,12 +360,24 @@ class SupplierInvoiceController extends Controller
 
             $spi = SupplierInvoice::create($data + [
                 'code'            => $this->svc->nextCode((int) $user->client_id, (int) $user->branch_id),
-                'stage_completed' => 1,
+                /* A DIRECT SPI is only a draft row at this point: the setup modal
+                   has it, but Stage 01 itself — the invoice details, the
+                   validation, the GST gate — has not been answered yet. Marking
+                   it 1 here sent anyone who closed and reopened straight to
+                   Stage 02. updateStage1() is what earns the 1.
+
+                   An invoice raised against an ORDER keeps the old behaviour:
+                   choosing the purchase order IS its Stage 01. */
+                'stage_completed' => empty($data['purchase_order_id']) ? 0 : 1,
                 'status'          => SupplierInvoice::STATUS_DRAFT,
                 'created_by'      => $user->id,
             ]);
 
             $this->svc->log($spi, 'created', ['new_value' => $spi->code]);
+
+            /* Columns the caller did not send are absent from a freshly created
+               model, so the response shape changed with the payload. */
+            $spi->refresh();
 
             DB::commit();
 
@@ -430,13 +448,31 @@ class SupplierInvoiceController extends Controller
                 ], 422));
             }
 
-            $spi->forceFill($data + ['updated_by' => $user->id])->save();
+            /* What the supplier still owes before Stage 01 counts as answered.
+               The fields are saved either way — an invoice records goods that
+               have already arrived, so refusing the save would only mean the
+               delivery goes unrecorded. The stage is withheld instead, and the
+               reasons come back with it. */
+            $blockers = $this->stage1Blockers($spi, $data, $user);
+
+            $spi->forceFill($data + [
+                'updated_by' => $user->id,
+                /* max(), so a later stage never falls back — and so an invoice
+                   already past Stage 01 is not dragged to 0 by a supplier whose
+                   paperwork lapsed after the fact. */
+                'stage_completed' => max($blockers ? 0 : 1, (int) $spi->stage_completed),
+            ])->save();
             $this->svc->log($spi, 'stage1_saved');
             $spi->refresh();
 
             DB::commit();
 
-            return response()->json(['status' => true, 'data' => $spi], 200);
+            return response()->json([
+                'status' => true,
+                'data'   => $spi,
+                // Empty when Stage 01 is complete; each entry has code + message.
+                'blockers' => $blockers,
+            ], 200);
         } catch (\Throwable $e) {
             DB::rollBack();
             throw $e;
@@ -480,7 +516,16 @@ class SupplierInvoiceController extends Controller
                here, and those are snapshots of the order rather than calculations. */
             $data = $request->validate([
                 'items'              => ['required', 'array', 'min:1'],
+                /* Which existing line each row IS. Optional: a payload without
+                   ids still matches by position, as it always did. Sent, it is
+                   what stops a reordered grid from rewriting rows in place —
+                   Stage 03 boxes point at these ids. */
+                'items.*.id'         => ['nullable', 'integer'],
                 'items.*.po_item_id' => ['nullable', 'integer'],
+                /* A Direct SPI has no PO line to take this from, so the caller
+                   names the PI line it is billing. Ignored when there is a PO:
+                   the order is the authority there. */
+                'items.*.pi_item_id' => ['nullable', 'integer'],
                 'items.*.product_id' => ['required', 'integer'],
                 'items.*.qty_spi'    => ['required', 'numeric', 'gt:0'],
                 'items.*.rate'       => ['required', 'numeric', 'min:0'],
@@ -1322,6 +1367,70 @@ class SupplierInvoiceController extends Controller
     }
 
     /**
+     * Why a DIRECT SPI's Stage 01 is not finished yet.
+     *
+     * The same compliance a purchase order is held to at submit, asked here
+     * instead: the supplier's GST position, the senior approval an overdue
+     * return needs, and paperwork that has run out.
+     *
+     * The fields are saved either way. An invoice records goods that have
+     * already arrived, so refusing the save would only mean the delivery goes
+     * unrecorded — the stage is withheld instead, which stops the wizard
+     * without losing anyone's work.
+     *
+     * Only for a Direct SPI. An invoice raised against an ORDER inherits that
+     * order's clearance: the PO was refused at submit unless all of this
+     * passed, so asking again would hold up an invoice for goods a cleared
+     * order already brought in.
+     *
+     * @return array<int,array{code:string,message:string}>
+     */
+    private function stage1Blockers(SupplierInvoice $spi, array $data, $user): array
+    {
+        if (!empty($data['purchase_order_id'])) return [];
+
+        $vendorId = (int) ($data['vendor_id'] ?? $spi->vendor_id);
+        if (!$vendorId) return [['code' => 'no_supplier', 'message' => 'Select a supplier.']];
+
+        $out = [];
+        $international = ($data['document_type'] ?? $spi->document_type) === 'international';
+        $gst = $this->poSvc->gstGate($vendorId, $international);
+
+        if ($gst['gate'] === 'blocked') {
+            $out[] = ['code' => 'gst_blocked', 'message' => 'GST scrutiny is older than '
+                . PurchaseOrderService::GST_STALE_MONTHS
+                . ' months — refresh it on the supplier record.'];
+        } elseif ($gst['gate'] === 'approval_required') {
+            /* The approval that counts is the one raised against THIS invoice.
+               A different invoice's approval covers a different claim, even
+               for the same supplier. */
+            $approval = $spi->gstApprovals()->latest('id')->first();
+            if ($approval?->status !== PoGstApproval::STATUS_APPROVED) {
+                $out[] = ['code' => 'gst_approval', 'message' => match ($approval?->status) {
+                    PoGstApproval::STATUS_PENDING  => 'Senior approval is still pending.',
+                    PoGstApproval::STATUS_REJECTED => 'The senior rejected this invoice: ' . $approval->reason,
+                    default => 'The supplier\'s last GST return is overdue — send it for senior approval.',
+                }];
+            }
+        }
+
+        if ($expired = $this->poSvc->expiredStandardDocs($vendorId, (int) $user->client_id)) {
+            $named = collect($expired)->take(3)
+                ->map(fn ($d) => $d['name'] . ' (expired ' . $d['expiry'] . ')')->implode(', ');
+            $rest = count($expired) - 3;
+            $out[] = [
+                'code'      => 'expired_documents',
+                'message'   => 'The supplier\'s paperwork has expired: ' . $named
+                    . ($rest > 0 ? ' and ' . $rest . ' more' : '')
+                    . '. Renew it in the Evidence Vault.',
+                'documents' => $expired,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
      * Stage 01 asks only who the invoice is from and, if any, which order it is
      * against. The supplier's own invoice number, date and attachments belong
      * to Stage 02 — so the draft (and its id) exist from the first save, and
@@ -1447,9 +1556,15 @@ class SupplierInvoiceController extends Controller
     {
         $items = $spi->items;
 
+        /* Ordered means the purchase order where there is one and the proforma
+           invoice where there is not, so a Direct SPI is measured against
+           something. qty_po stays for the screens already reading it. */
+        $ordered = $items->sum(fn ($i) => (float) ($i->qty_po ?? $i->qty_pi ?? 0));
+
         return [
             'lines'       => $items->count(),
             'qty_po'      => round((float) $items->sum('qty_po'), 3),
+            'qty_ordered' => round($ordered, 3),
             'qty_spi'     => round((float) $items->sum('qty_spi'), 3),
             // missing_qty is the accessor, extra_qty the column — only one of
             // the pair is ever non-zero on a given line.
@@ -1602,14 +1717,26 @@ class SupplierInvoiceController extends Controller
            save time, and not revisited when a sibling invoice later changes. */
         $open = $poId ? $this->svc->openQtyByPoItem($poId, $spiId) : [];
 
+        /* The two joins were here all along, selecting nothing: hsn_code and
+           uom were in the table and never once written. */
         $products = DB::table('products as p')
             ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
             ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
             ->whereIn('p.id', collect($items)->pluck('product_id'))
-            ->get(['p.id', 'p.name', 'p.description', 'p.gst_amount'])->keyBy('id');
+            ->get(['p.id', 'p.name', 'p.description', 'p.gst_amount',
+                'h.hsn_code', DB::raw('COALESCE(u.short_code, u.title) AS uom')])
+            ->keyBy('id');
 
-        return collect($items)->map(function ($r) use ($international, $poLines, $products, $open) {
-            $po   = $r['po_item_id'] ? ($poLines[$r['po_item_id']] ?? null) : null;
+        /* What the proforma invoice ordered on each line this bills. The match
+           panel has a qty_po for a PO-backed invoice and had nothing at all
+           for a Direct SPI, which answers to a PI instead. */
+        $piQty = DB::table('proforma_invoice_items')
+            ->whereIn('id', collect($items)->pluck('pi_item_id')->filter())
+            ->pluck('quantity', 'id');
+
+        return collect($items)->map(function ($r) use ($international, $poLines, $products, $open, $piQty) {
+            // ?? null: a Direct SPI grid sends no po_item_id key at all.
+            $po   = ($r['po_item_id'] ?? null) ? ($poLines[$r['po_item_id']] ?? null) : null;
             $prod = $products[$r['product_id']] ?? null;
 
             /* How much of THIS line goes past what the order still had open.
@@ -1621,12 +1748,21 @@ class SupplierInvoiceController extends Controller
                 : (float) ($r['extra_qty'] ?? 0);
 
             return [
+                // Stripped before the write; saveItems() matches on it.
+                'id'          => $r['id'] ?? null,
                 'po_item_id'  => $r['po_item_id'] ?? null,
-                // Snapshots of the order, not calculations.
-                'pi_item_id'  => $po->pi_item_id ?? null,
+                /* Snapshots of the order, not calculations — except that a
+                   Direct SPI has no order line, so its PI link comes from the
+                   caller instead. */
+                'pi_item_id'  => $po->pi_item_id ?? ($r['pi_item_id'] ?? null),
                 'product_id'  => $r['product_id'],
                 'description' => $po->description ?? $prod->description ?? $prod->name ?? null,
+                /* From the product master, not the payload: the grid shows them
+                   but they are the product's own facts, not the supplier's. */
+                'hsn_code'    => $prod->hsn_code ?? null,
+                'uom'         => $prod->uom ?? null,
                 'qty_po'      => $po ? (float) $po->quantity : null,
+                'qty_pi'      => isset($r['pi_item_id']) ? ($piQty[$r['pi_item_id']] ?? null) : null,
 
                 'qty_spi'   => (float) $r['qty_spi'],
                 'rate'      => (float) $r['rate'],
@@ -1656,10 +1792,36 @@ class SupplierInvoiceController extends Controller
      */
     private function overBillWarnings(SupplierInvoice $spi, array $rows): array
     {
-        if ($spi->isStandalone()) return [];
+        $out = [];
+
+        /* A Direct SPI answers to the proforma invoice instead of an order.
+           Warned, never refused — the same judgement the PO side makes, that
+           the goods have arrived and an invoice recording them is a fact, not
+           a request. Its own lines are excluded so an edit is not read as a
+           second claim. */
+        if ($spi->isStandalone()) {
+            $piIds = collect($rows)->pluck('pi_item_id')->filter()->unique()->all();
+            if (!$piIds) return [];
+
+            $lines   = DB::table('proforma_invoice_items')->whereIn('id', $piIds)->pluck('quantity', 'id');
+            $claimed = $this->poSvc->orderedByPiItem((int) $spi->client_id, $piIds, null, $spi->id);
+
+            foreach ($rows as $r) {
+                if (empty($r['pi_item_id'])) continue;
+                $left = round((float) ($lines[$r['pi_item_id']] ?? 0) - (float) ($claimed[$r['pi_item_id']] ?? 0), 3);
+                $over = round((float) $r['qty_spi'] - $left, 3);
+                if ($over > 0.001) {
+                    $out[] = $r['description']
+                        . ': billed ' . number_format((float) $r['qty_spi'], 3)
+                        . ' against ' . number_format(max($left, 0), 3) . ' left on the proforma invoice — '
+                        . number_format($over, 3) . ' over.';
+                }
+            }
+
+            return $out;
+        }
 
         $open = $this->svc->openQtyByPoItem((int) $spi->purchase_order_id, $spi->id);
-        $out  = [];
 
         foreach ($rows as $r) {
             if (empty($r['po_item_id'])) continue;

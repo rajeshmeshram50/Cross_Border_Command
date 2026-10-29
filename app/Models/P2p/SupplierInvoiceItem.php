@@ -63,9 +63,13 @@ class SupplierInvoiceItem extends Model
      */
     public function getMissingQtyAttribute(): float
     {
-        if ($this->qty_po === null) return 0.0;   // standalone: no order to fall short of
+        /* A PO-backed line falls short of its order; a Direct SPI line falls
+           short of the proforma invoice it bills. It used to answer 0 either
+           way, so a standalone invoice always claimed to match. */
+        $ordered = $this->qty_po ?? $this->qty_pi;
+        if ($ordered === null) return 0.0;   // neither: nothing to fall short of
 
-        return max(0, round((float) $this->qty_po - (float) $this->qty_spi, 3));
+        return max(0, round((float) $ordered - (float) $this->qty_spi, 3));
     }
 
     public function invoice(): BelongsTo  { return $this->belongsTo(SupplierInvoice::class, 'supplier_invoice_id'); }

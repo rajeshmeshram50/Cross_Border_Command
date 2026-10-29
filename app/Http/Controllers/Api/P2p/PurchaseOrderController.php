@@ -118,6 +118,28 @@ class PurchaseOrderController extends Controller
      */
     private function piHolders(int $piId, int $clientId, ?int $excludePoId): array
     {
+        /* Direct SPIs hold quantity as well, and a screen that lists only the
+           orders tells someone the line is free when an invoice has it. Same
+           test as orderedByPiItem(): standalone, alive, not cancelled. */
+        $invoices = DB::table('p2p_supplier_invoice_items as si')
+            ->join('p2p_supplier_invoices as s', 's.id', '=', 'si.supplier_invoice_id')
+            ->join('proforma_invoice_items as pi', 'pi.id', '=', 'si.pi_item_id')
+            ->where('pi.proforma_invoice_id', $piId)
+            ->where('s.client_id', $clientId)
+            ->whereNull('s.purchase_order_id')
+            ->whereNull('s.deleted_at')
+            ->whereNull('si.deleted_at')
+            ->where('s.status', '!=', SupplierInvoice::STATUS_CANCELLED)
+            ->groupBy('s.id', 's.code', 's.status')
+            ->selectRaw('s.id, s.code, s.status, COUNT(*) as lines, SUM(si.qty_spi) as qty')
+            ->orderBy('s.id')
+            ->get()
+            ->map(fn ($r) => [
+                'id' => (int) $r->id, 'code' => $r->code, 'status' => $r->status,
+                'lines' => (int) $r->lines, 'qty' => (float) $r->qty,
+                'approval_status' => null, 'kind' => 'supplier_invoice',
+            ])->all();
+
         $rows = DB::table('p2p_purchase_order_items as i')
             ->join('p2p_purchase_orders as po', 'po.id', '=', 'i.purchase_order_id')
             ->join('proforma_invoice_items as pi', 'pi.id', '=', 'i.pi_item_id')
@@ -141,15 +163,16 @@ class PurchaseOrderController extends Controller
             ->selectRaw('po.id, po.code, po.status, COUNT(*) as lines, SUM(i.quantity) as qty')
             ->orderBy('po.id')
             ->get();
-        if ($rows->isEmpty()) return [];
+        if ($rows->isEmpty()) return $invoices;
         // Latest senior-approval request per PO.
         $approvals = DB::table('p2p_po_gst_approvals')->whereIn('purchase_order_id', $rows->pluck('id'))
             ->orderBy('id')->get(['purchase_order_id', 'status'])->keyBy('purchase_order_id');
-        return $rows->map(fn ($r) => [
+        return array_merge($rows->map(fn ($r) => [
             'id' => (int) $r->id, 'code' => $r->code, 'status' => $r->status,
             'lines' => (int) $r->lines, 'qty' => (float) $r->qty,
             'approval_status' => $approvals->get($r->id)->status ?? null,
-        ])->all();
+            'kind' => 'purchase_order',
+        ])->all(), $invoices);
     }
 
     /* ══════════════════════════ LIST / SHOW ══════════════════════════ */
@@ -1068,45 +1091,11 @@ class PurchaseOrderController extends Controller
      *
      * @return array<int, array{code: string, name: string, expiry: string}>
      */
+    /* Moved to PurchaseOrderService so a Direct SPI can ask the same question.
+       Kept here as a one-liner because the submit path reads better with it. */
     private function expiredStandardDocs(PurchaseOrder $po): array
     {
-        if (!$po->vendor_id) return [];
-
-        $vendor = \App\Models\Vendor::with(['primaryAddress.country', 'segments'])->find($po->vendor_id);
-        if (!$vendor) return [];
-
-        /* Only what this supplier's own segment rules ask for, on the Domestic or
-           International side its address puts it on. Without this the gate blocked
-           on any expired upload the supplier ever had — including documents no rule
-           selects, which the Evidence Vault never lists, leaving nothing to renew. */
-        $codes = app(\App\Services\SegmentDocScope::class)
-            ->applicableCodes($vendor, 'vendor', (int) $po->client_id);
-        $scoped = array_filter([
-            'kyc' => $codes['kyc'] ?? [],
-            'dd'  => $codes['dd']  ?? [],
-            'tl'  => $codes['tl']  ?? [],
-        ]);
-        if (empty($scoped)) return [];
-
-        return DB::table('segment_doc_uploads')
-            ->where('uploadable_type', \App\Models\Vendor::class)
-            ->where('uploadable_id', $po->vendor_id)
-            ->where('client_id', $po->client_id)
-            ->where(function ($w) use ($scoped) {
-                foreach ($scoped as $cat => $list) {
-                    $w->orWhere(fn ($q) => $q->where('category', $cat)->whereIn('doc_code', $list));
-                }
-            })
-            ->whereNotNull('expiry_date')
-            ->whereDate('expiry_date', '<', now()->toDateString())
-            ->orderBy('expiry_date')
-            ->get(['doc_code', 'doc_name', 'expiry_date'])
-            ->map(fn ($r) => [
-                'code'   => (string) $r->doc_code,
-                'name'   => (string) ($r->doc_name ?: $r->doc_code),
-                'expiry' => \Illuminate\Support\Carbon::parse($r->expiry_date)->format('d-M-Y'),
-            ])
-            ->all();
+        return $this->svc->expiredStandardDocs($po->vendor_id, (int) $po->client_id);
     }
 
     /** "X expired on …, Y expired on … — renew them in the Evidence Vault." */
