@@ -55,7 +55,7 @@ export default function StorageSelectionModal({
   warehouses: StorageWarehouse[];
   warehousesState?: 'idle' | 'loading' | 'ready' | 'failed';
   onClose: () => void;
-  onNext: (choice: StorageChoice) => void;
+  onNext: (choice: StorageChoice) => void | boolean | Promise<boolean | void>;
 }) {
   const [step, setStep] = useState(1);
   /* Nothing is pre-selected on either screen: the two types lead to different
@@ -87,7 +87,11 @@ export default function StorageSelectionModal({
 
   const advance = () => {
     if (leaving || !canAdvance || !type) return;
-    if (step === 3) { setLeaving(true); onNext({ type, warehouse }); return; }
+    if (step === 3) {
+      setLeaving(true);
+      void Promise.resolve(onNext({ type, warehouse })).then(ok => { if (ok === false) setLeaving(false); });
+      return;
+    }
     setStep(step === 1 && skipsWarehouse ? 3 : step + 1);
   };
 

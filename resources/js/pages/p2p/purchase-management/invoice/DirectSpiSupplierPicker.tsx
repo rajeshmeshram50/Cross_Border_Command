@@ -16,6 +16,7 @@ export type SupplierKind = 'manufacturer' | 'trader' | 'service';
 
 export interface SupplierRow {
   id?: number;
+  docType?: string | null;
   code: string;
   name: string;
   kind: SupplierKind;

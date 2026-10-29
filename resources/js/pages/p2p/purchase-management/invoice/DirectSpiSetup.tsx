@@ -13,10 +13,13 @@ export interface DirectSpiState {
   shipmentLabel?: string | null;
   shipmentPi?: string | null;
   shipmentDate?: string | null;
+  shipmentOrderId?: number | null;
   procMode: ProcurementMode | null;
   procurementId: string | null;
   supplier: string | null;
   supplierName?: string | null;
+  supplierId?: number | null;
+  supplierDocType?: string | null;
   supplierState?: string | null;
 }
 
@@ -344,7 +347,7 @@ export default function DirectSpiSetup({ state, onChange }: {
               ico={IcoDoc}
               title="All Other’s (Without Shipment ID)"
               sub="Not linked to any shipment"
-              onPick={() => onChange({ ...state, shipment: 'without', shipmentId: null, shipmentLabel: null, shipmentPi: null, shipmentDate: null })}
+              onPick={() => onChange({ ...state, shipment: 'without', shipmentId: null, shipmentLabel: null, shipmentPi: null, shipmentDate: null, shipmentOrderId: null })}
             />
           </div>
 
@@ -360,7 +363,7 @@ export default function DirectSpiSetup({ state, onChange }: {
                 pickedRow={state.shipmentId ? { code: state.shipmentId, title: state.shipmentLabel ?? '', sub: state.shipmentDate ?? '' } : null}
                 onPick={code => {
                   const r = ships.rows.find(x => x.code === code);
-                  onChange({ ...state, shipmentId: code, shipmentLabel: r?.title ?? null, shipmentPi: r?.piNumber ?? null, shipmentDate: r?.sub || null });
+                  onChange({ ...state, shipmentId: code, shipmentLabel: r?.title ?? null, shipmentPi: r?.piNumber ?? null, shipmentDate: r?.sub || null, shipmentOrderId: r?.id ?? null });
                 }}
                 placeholder="Select Shipment ID…"
                 noun="shipments"
@@ -471,7 +474,7 @@ export default function DirectSpiSetup({ state, onChange }: {
               pickedRow={state.supplier ? { code: state.supplier, name: state.supplierName ?? '' } : null}
               onPick={code => {
                 const r = sups.rows.find(x => x.code === code);
-                onChange({ ...state, supplier: code, supplierName: r?.name ?? null, supplierState: r && r.location !== '—' ? r.location.split(', ').pop() ?? null : null });
+                onChange({ ...state, supplier: code, supplierName: r?.name ?? null, supplierId: r?.id ?? null, supplierDocType: r?.docType ?? null, supplierState: r && r.location !== '—' ? r.location.split(', ').pop() ?? null : null });
               }}
             />
           </div>

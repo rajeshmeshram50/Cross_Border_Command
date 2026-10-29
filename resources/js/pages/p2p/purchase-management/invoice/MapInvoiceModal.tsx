@@ -27,6 +27,10 @@ export interface InvoiceMapChoice {
   shipmentPi?: string;
   procurementCode?: string;
   supplierCode?: string;
+  vendorId?: number;
+  documentType?: 'domestic' | 'international';
+  shipmentOrderId?: number;
+  procurementRequestId?: number;
 }
 
 function TypeCard({
@@ -172,6 +176,9 @@ export default function MapInvoiceModal({
         shipmentPi: direct.shipment === 'with' ? direct.shipmentPi ?? undefined : undefined,
         procurementCode: direct.procMode === 'auto' ? NEXT_PROCUREMENT : direct.procurementId ?? undefined,
         supplierCode: direct.supplier ?? undefined,
+        vendorId: direct.supplierId ?? undefined,
+        documentType: direct.supplierDocType === 'international' ? 'international' : 'domestic',
+        shipmentOrderId: direct.shipment === 'with' ? direct.shipmentOrderId ?? undefined : undefined,
       });
   };
 

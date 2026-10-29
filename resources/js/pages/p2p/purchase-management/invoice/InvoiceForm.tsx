@@ -65,6 +65,7 @@ export interface InvoiceFormInput {
   storage: StorageChoice;
   invoiceNo?: string;
   direct?: { shipmentId?: string; shipmentPi?: string; procurementCode?: string; supplierCode?: string };
+  openAtStage1?: boolean;
 }
 
 const BOX_FIELD_LABEL: Record<string, string> = {
@@ -103,6 +104,7 @@ export default function InvoiceForm({
   const isDirect = !!input.direct || noPo;
 
   const [gstApproval, setGstApproval] = useState<GstApproval | null>(null);
+  const savedVendor = useRef<number | null>(null);
   const reloadApproval = useCallback(() => {
     if (!input.poId) return;
     poApi.show(input.poId)
@@ -161,7 +163,8 @@ export default function InvoiceForm({
           setSpiBranchId(existing.branch_id ?? null);
           const resumeAt = Math.min(Math.max(0, existing.stage_completed), STAGES.length - 1);
           setReached(resumeAt);
-          setStage(spiViewOnlyReason(existing.status) ? 0 : resumeAt);
+          setStage(spiViewOnlyReason(existing.status) || input.openAtStage1 ? 0 : resumeAt);
+          savedVendor.current = existing.vendor_id ?? null;
         }
         if (!poId) {
           const standalone = !!input.direct || (!!existing && !existing.purchase_order_id);
@@ -275,7 +278,26 @@ export default function InvoiceForm({
   };
 
   const saveStage1 = async () => {
-    if (spiId) { advance(); return; }
+    if (spiId) {
+      if (!isDirect || viewOnly || !draft.vendorId || draft.vendorId === savedVendor.current) { advance(); return; }
+      setSaving(true);
+      try {
+        await spiApi.updateStage1(spiId, {
+          purchase_order_id: null,
+          vendor_id: draft.vendorId,
+          document_type: draft.docType === 'International' ? 'international' : 'domestic',
+          warehouse_id: savedWarehouseId ?? (input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null),
+        });
+        savedVendor.current = draft.vendorId;
+        mappedSupplier.current = draft.supplierCode;
+        advance();
+      } catch (e) {
+        toast.error('Could not save Stage 01', e instanceof PoApiError ? e.firstError : 'Please try again.');
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     if (!draft.vendorId) {
       if (isDirect) {
         toast.warning('Choose a supplier', 'Pick the supplier this invoice is issued by before continuing.');

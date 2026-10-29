@@ -75,6 +75,7 @@ const kindOf = (type?: string | null): SupplierRow['kind'] => {
 
 const supplierRow = (v: SupplierOption): SupplierRow => ({
   id: v.id,
+  docType: v.document_type,
   code: v.code,
   name: v.name,
   kind: kindOf(v.supplier_type),

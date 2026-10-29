@@ -86,6 +86,9 @@ export type SpiStage1Body = {
   vendor_id: number;
   document_type: 'domestic' | 'international';
   warehouse_id?: number | null;
+  shipment_order_id?: number | null;
+  procurement_request_id?: number | null;
+  procurement_request_code?: string | null;
 };
 
 export type SpiHeader = {
@@ -625,6 +628,10 @@ export const spiApi = {
 
   create: (body: SpiStage1Body) =>
     call('SPI create (Stage 01)', () => api.post('/p2p/spi', body),
+      (b) => (b as { data?: SpiHeader } | null)?.data as SpiHeader),
+
+  updateStage1: (id: number, body: SpiStage1Body) =>
+    call('SPI update (Stage 01)', () => api.put(`/p2p/spi/${id}/stage-1`, body),
       (b) => (b as { data?: SpiHeader } | null)?.data as SpiHeader),
 
   list: ({ scope = 'all', shipScope, search, page, per_page }: SpiListQuery = {}) =>
