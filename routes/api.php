@@ -558,6 +558,11 @@ Route::middleware(['auth:sanctum', 'user.active', 'tenant'])->group(function () 
         Route::post  ('/',             [SupplierInvoiceController::class, 'store']);              // Stage 01 — create draft
         Route::get   ('/{id}',         [SupplierInvoiceController::class, 'show'])->whereNumber('id');
         Route::put   ('/{id}/stage-1', [SupplierInvoiceController::class, 'updateStage1'])->whereNumber('id');
+        /* GST senior approval for a DIRECT SPI. A PO-backed invoice is
+           refused here and sends its order instead — one supplier risk,
+           one approval. Handled by PoGstApprovalController, which holds
+           the rules both documents are judged by. */
+        Route::post  ('/{id}/gst-approval/request', [\App\Http\Controllers\Api\P2p\PoGstApprovalController::class, 'storeForInvoice'])->whereNumber('id');
         /* Stage 02 — the grid, the totals AND the two attachments, in one save.
            POST rather than PUT because PHP does not populate $_FILES on a PUT;
            the same endpoint still accepts plain JSON when there are no files. */

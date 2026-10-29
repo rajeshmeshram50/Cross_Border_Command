@@ -149,6 +149,9 @@ class PoLookupController extends Controller
             return [
                 'id' => $s->id,
                 'code' => $s->shipment_code,
+                // No date column on shipment_orders — the creation day is the
+                // shipment date everywhere else in P2P (PO, SPI, refunds).
+                'shipment_date' => $s->created_at?->toDateString(),
                 'customer' => $lead && $lead->customer ? $lead->customer->company_name : null,
                 'consignee' => $lead && $lead->consignee ? $lead->consignee->company_name : null,
                 'opportunity_id' => $s->lead_id,

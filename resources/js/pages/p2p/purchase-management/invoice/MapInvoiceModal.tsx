@@ -23,23 +23,12 @@ export interface InvoiceMapChoice {
   poId?: number;
   poNo?: string;
   supplier?: string;
-  /* What a Direct SPI was set up with. A Direct SPI has no purchase order to
-     inherit from, so these three answers are the only context the form gets:
-     they name the shipment it belongs to, the procurement case it is
-     answerable to, and the supplier who issued it. */
   shipmentId?: string;
+  shipmentPi?: string;
   procurementCode?: string;
   supplierCode?: string;
 }
 
-/**
- * One of the two SPI types.
- *
- * Three columns rather than a stack: the badge sits with the title because it
- * qualifies it, the points sit under a dashed rule because they are what the
- * type gets you, and the tick keeps the top-right corner so both cards agree
- * on where "chosen" is said regardless of how tall they end up.
- */
 function TypeCard({
   kind, on, disabled = false, onPick, icon, title, badge, desc, points,
 }: {
@@ -138,57 +127,29 @@ export default function MapInvoiceModal({
     loadPos(poPage + 1, poSearch.trim());
   }, [poLoading, poLoadingMore, poPage, poLastPage, poSearch, loadPos]);
 
-
   const supplierOptions = useMemo(() => {
     const seen = new Set(INVOICE_ROWS.map(r => r.supplierName));
     return [...seen].map(name => ({ value: name, label: name }));
   }, []);
 
-  /* Everything the standalone route needs before the wizard can open. Held
-     here rather than inside the panel so Confirm can read it. */
   const [direct, setDirect] = useState<DirectSpiState>(EMPTY_DIRECT);
-  /* The picker stores the code; the form wants the name, since that is what
-     every header and chip downstream reads. */
   const directSupplier = SUPPLIERS.find(r => r.code === direct.supplier);
   const isDirect = mode === 'without-po';
 
-  /* The panel waits for the dialog to finish growing.
-     Opening and closing were not symmetric: on the way OUT the panel unmounts
-     at once and the two cards fit every width on the way down, so it reads
-     smooth. On the way IN the panel used to mount at 760px, where the steps
-     column is about 380 — so the cards laid out cramped and reflowed the
-     whole way to 860 as the box grew, which is the jolt.
-
-     Holding it back by the width transition means the dialog simply gets
-     wider with the two type cards in it — the With-PO view it came from —
-     and the layout changes once, at the size it will keep. Leaving is
-     immediate, which is the half that already worked. */
   const [sdxReady, setSdxReady] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!isDirect) { setSdxReady(false); return; }
     const box = boxRef.current;
-    /* Reduced motion turns the width transition off entirely (see the media
-       query in direct-spi.css), so the dialog is already at its full size —
-       a wait here would be 300ms of skeleton over a box that finished
-       growing in the first frame. */
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (!box || still) { setSdxReady(true); return; }
 
-    /* The panel now waits for the transition to actually END rather than for
-       a timer set to the same number. A 300ms timer racing a 300ms CSS
-       duration lands the heavy mount on the exact frame the layout settles —
-       the worst frame available — and goes wrong outright whenever the two
-       do not match: an interrupted transition, a dialog already at its final
-       width, or a stylesheet whose duration someone later changes. */
     let done = false;
     const finish = () => { if (!done) { done = true; setSdxReady(true); } };
     const onEnd = (e: TransitionEvent) => {
       if (e.target === box && (e.propertyName === 'width' || e.propertyName === 'max-width')) finish();
     };
     box.addEventListener('transitionend', onEnd);
-    /* A transition that never fires must not leave the skeleton up for good:
-       if the width happened not to change, transitionend never comes. */
     const t = window.setTimeout(finish, 420);
     return () => { box.removeEventListener('transitionend', onEnd); window.clearTimeout(t); };
   }, [isDirect]);
@@ -197,10 +158,6 @@ export default function MapInvoiceModal({
     : isDirect ? directReady(direct)
     : false;
 
-  /* Confirm hands off to the parent, which loads the invoice form — on a slow
-     page that is a visible wait with nothing on screen to say so. The button
-     says it is working and refuses a second click. It is never cleared: the
-     dialog is unmounted by the hand-off it just started. */
   const [confirming, setConfirming] = useState(false);
 
   const confirm = () => {
@@ -213,6 +170,7 @@ export default function MapInvoiceModal({
         mode,
         supplier: directSupplier?.name ?? supplier,
         shipmentId: direct.shipment === 'with' ? direct.shipmentId ?? undefined : undefined,
+        shipmentPi: direct.shipment === 'with' ? direct.shipmentPi ?? undefined : undefined,
         procurementCode: direct.procMode === 'auto' ? NEXT_PROCUREMENT : direct.procurementId ?? undefined,
         supplierCode: direct.supplier ?? undefined,
       });
@@ -222,13 +180,7 @@ export default function MapInvoiceModal({
 
   const errorText = !mode ? 'Please choose how to map this invoice to continue.'
     : mode === 'with-po' ? 'Please select a Purchase Order to continue.'
-    /* Names the step that is actually open. "Select a supplier" was shown
-       even when the shipment question had not been answered yet, which points
-       at a field three steps away and still locked. */
     : !direct.shipment ? 'Answer step 01 — is this raised against a customer shipment?'
-    /* Only while step 02 is live. Frozen, procurementId is always null, so
-       this branch would catch every incomplete form and point the user at a
-       locked step while the supplier is the field actually waiting. */
     : PROCUREMENT_STEP_ENABLED && !direct.procurementId ? 'Link a Procurement Case ID in step 02 to continue.'
     : 'Please select a supplier to continue.';
 
@@ -237,8 +189,6 @@ export default function MapInvoiceModal({
       <div ref={boxRef} className={`spi-mdl spi-mdl--wide${isDirect ? ' spi-mdl--sdx' : ''}`} role="dialog" aria-modal="true" aria-labelledby="inv-map-title">
         <div className="spi-mdl-head">
           <div className="spi-mdl-head-left">
-            {/* A receipt, which is what a supplier invoice is — the clipboard
-                here was the generic document icon. */}
             <div className="spi-mdl-head-ico">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -258,18 +208,10 @@ export default function MapInvoiceModal({
         </div>
 
         <div className="spi-mdl-body">
-          {/* Direct SPI needs three answers of its own, so it takes a column
-              beside the type cards rather than a panel beneath them — stacked,
-              the steps pushed the choice that opened them off the screen. The
-              With-PO route keeps the single-column body it has always had. */}
           <div className={isDirect ? 'sdx-layout' : undefined}>
           <div className={isDirect ? 'sdx-aside' : undefined}>
           <div className="spi-mdl-seclabel">SELECT SPI TYPE</div>
 
-          {/* The two types are a choice between peers, so they sit side by
-              side and are described the same way — what the type is, then
-              what it does for you. Stacked full-width, the second one read
-              as an afterthought below the first. */}
           <div className="spich-grid">
             <TypeCard
               kind="with"
@@ -293,17 +235,6 @@ export default function MapInvoiceModal({
             />
           </div>
 
-          {/* The running answer, under the cards that start it. The skeleton
-              holds its place while the dialog widens, so the column is never
-              an empty half-screen waiting for something to appear in it. */}
-          {/* The keys are what make the swap a fade rather than a cut. Both
-              sides render a plain <div> in the same position, so without them
-              React keeps the one node and only rewrites its className — the
-              skeleton's bars are simply replaced by the real content in a
-              single frame, and the sdxIn fade (which is bound to the element,
-              not the class) never replays. Distinct keys make the incoming
-              panel a new node, so it eases up into place the way it was
-              always meant to. */}
           {isDirect && (sdxReady
             ? <DirectSpiSummary key="sum" state={direct} />
             : <DirectSpiSummarySkeleton key="sum-sk" />)}
@@ -313,9 +244,6 @@ export default function MapInvoiceModal({
             ? <DirectSpiSetup key="main" state={direct} onChange={setDirect} />
             : <DirectSpiStepsSkeleton key="main-sk" />)}
 
-          {/* What the chosen type still needs, in a panel of its own under
-              both cards — it belongs to whichever is selected, and hanging it
-              off one card pushed the other out of line. */}
           {mode === 'with-po' && (
             <div className="spich-sub">
               <div className="spi-mdl-field">
@@ -344,13 +272,7 @@ export default function MapInvoiceModal({
           </div>
         </div>
 
-        {/* Nothing on the left: the audit note sat opposite the only two
-            things in the footer and read as a third control. */}
         <div className="spi-mdl-foot">
-          {/* Why the three steps exist, said once at the bottom rather than on
-              each card: every Direct SPI is answerable to a procurement case,
-              which is the whole reason it cannot be opened from a supplier
-              name alone. */}
           {isDirect && (
             <span className="sdx-ft__note">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"
@@ -362,10 +284,6 @@ export default function MapInvoiceModal({
           )}
           <div className="spi-mdl-foot-btns">
             <button type="button" className="spi-mdl-cancel" onClick={onClose}>Cancel</button>
-            {/* Dead until a type is chosen, because until then there is no
-                question to answer. Once one is, it stays live even with the
-                PO still unpicked — a disabled button cannot say what is
-                missing, and the message below can. */}
             <button type="button" className={`spi-mdl-confirm${canConfirm ? ' is-ready' : ''}`} onClick={confirm}
               disabled={!mode || confirming} aria-busy={confirming}>
               {confirming

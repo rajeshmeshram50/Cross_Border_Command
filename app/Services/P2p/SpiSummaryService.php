@@ -445,9 +445,12 @@ class SpiSummaryService
         $pi = $po?->proforma_invoice_id
             ? DB::table('proforma_invoices')->find($po->proforma_invoice_id)
             : null;
-        $ship = $po?->shipment_order_id
-            ? DB::table('shipment_orders')->find($po->shipment_order_id)
-            : null;
+        /* The invoice's own shipment first. A Direct SPI captures it at
+           Step 01 of its setup; before that column existed this could only
+           come from the order, so a Direct SPI reported no shipment even
+           when one had been chosen. */
+        $shipId = $spi->shipment_order_id ?? $po?->shipment_order_id;
+        $ship = $shipId ? DB::table('shipment_orders')->find($shipId) : null;
 
         return [
             'spi_id'         => $spi->code,
@@ -457,7 +460,9 @@ class SpiSummaryService
             'spi_type'       => $spi->purchase_order_id ? 'PO + SPI' : 'Direct SPI',
             'shipment_id'    => $ship->shipment_code ?? null,
             'opportunity_id' => $pi->opp_code ?? null,
-            'procurement_id' => $po->procurement_request_code ?? null,
+            // Same rule: Step 02 writes it onto the invoice, and only a
+            // PO-backed one falls through to the order.
+            'procurement_id' => $spi->procurement_request_code ?? $po?->procurement_request_code,
             'warehouse'      => $this->warehouse($spi),
             'boxes'          => $boxes->count(),
             'products'       => $this->distinctProducts($boxes),

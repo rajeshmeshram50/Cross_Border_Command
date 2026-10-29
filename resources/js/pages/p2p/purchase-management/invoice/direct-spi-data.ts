@@ -1,22 +1,43 @@
+import { useEffect, useState } from 'react';
 import type { PickRow } from './DirectSpiPicker';
 import type { SupplierRow } from './DirectSpiSupplierPicker';
+import { PoApiError, poLookupApi, type ShipmentOption } from '../order/api/po-api';
 
-/**
- * Static fixtures for the Direct SPI setup, matching the prototype's own rows.
- *
- * Design-only: there is no endpoint behind either list yet, and inventing one
- * would put a server contract in place before the screen it serves has been
- * agreed. Both are shaped like the pickers will consume them, so swapping a
- * fetch in later touches the source and nothing else.
- */
+export type ShipmentRow = PickRow & { id: number; piNumber: string | null };
 
-export const SHIPMENTS: PickRow[] = [
-  { code: 'SHP-001', title: 'Reliance Retail Ltd',  sub: 'Basmati & Pulses · 12/04/2026' },
-  { code: 'SHP-002', title: 'Adani Wilmar Ltd',     sub: 'Edible Oils · 18/04/2026' },
-  { code: 'SHP-003', title: 'ITC Foods Division',   sub: 'Millets · 25/04/2026' },
-  { code: 'SHP-004', title: 'BigBasket Retail',     sub: 'Mixed Agri · 02/05/2026' },
-  { code: 'SHP-005', title: 'Patanjali Foods Ltd',  sub: 'Rice Bulk · 09/05/2026' },
-];
+const slashDate = (iso?: string | null) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '');
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+};
+
+const shipmentRow = (s: ShipmentOption): ShipmentRow => ({
+  id: s.id,
+  code: s.code,
+  title: s.customer || s.consignee || '—',
+  sub: slashDate(s.shipment_date),
+  piNumber: s.pi_number,
+});
+
+export function useShipmentRows(enabled = true) {
+  const [rows, setRows] = useState<ShipmentRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    setLoading(true);
+    setError(null);
+    poLookupApi.shipments()
+      .then(list => { if (live) setRows((list ?? []).map(shipmentRow)); })
+      .catch(e => { if (live) setError(e instanceof PoApiError ? e.firstError : 'Could not load shipments.'); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [enabled, tick]);
+
+  return { rows, loading, error, retry: () => setTick(t => t + 1) };
+}
 
 const PEOPLE = [
   'Priya Sharma', 'Rohan Verma', 'Sneha Kulkarni', 'Vikram Singh', 'Ananya Iyer',
@@ -28,8 +49,6 @@ const TYPES = [
   { text: 'Service', tone: 'service' as const },
 ];
 
-/* 57, the count the prototype shows — enough that the search in the popover is
-   doing real work rather than decorating a list you could read at a glance. */
 export const PROCUREMENTS: PickRow[] = Array.from({ length: 57 }, (_, i) => {
   const n = i + 1;
   const owner = PEOPLE[i % PEOPLE.length];
@@ -45,11 +64,8 @@ export const PROCUREMENTS: PickRow[] = Array.from({ length: 57 }, (_, i) => {
   };
 });
 
-/** The id an auto-created case would take — one past the highest in the list. */
 export const NEXT_PROCUREMENT = `PC-${String(PROCUREMENTS.length + 1).padStart(3, '0')}`;
 
-/* The supplier rows the design lists, each with the four facts step 03 shows:
-   code, segment, location and risk. */
 export const SUPPLIERS: SupplierRow[] = [
   { code: 'S-001', name: 'Reliance Industries Ltd', kind: 'manufacturer', segment: 'Raw Material', location: 'Mumbai, Maharashtra',  risk: 'Low Risk' },
   { code: 'S-002', name: 'Tata Steel Ltd',          kind: 'manufacturer', segment: 'Raw Material', location: 'Mumbai, Maharashtra',  risk: 'Medium Risk' },

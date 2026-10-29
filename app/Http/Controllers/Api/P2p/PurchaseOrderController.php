@@ -126,6 +126,10 @@ class PurchaseOrderController extends Controller
             ->whereNull('po.deleted_at')
             /* Named because they hold quantity, so this asks exactly what
                orderedByPiItem asks: submitted, or a draft with a senior on it. */
+            /* A cancelled order holds nothing. Without this the approval
+               branch below kept its hold alive after cancellation —
+               the rows survive, so the EXISTS stayed true for ever. */
+            ->where('po.status', '!=', PurchaseOrder::STATUS_CANCELLED)
             ->where(fn ($q) => $q
                 ->where('po.status', PurchaseOrder::STATUS_SUBMITTED)
                 ->orWhereExists(fn ($s) => $s->selectRaw('1')

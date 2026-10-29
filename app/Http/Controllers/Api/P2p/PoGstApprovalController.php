@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\P2p;
 use App\Http\Controllers\Api\P2p\Concerns\RunsInTransaction;
 use App\Http\Controllers\Controller;
 use App\Models\P2p\PoGstApproval;
+use App\Models\P2p\SupplierInvoice;
 use App\Models\P2p\PurchaseOrder;
 use App\Services\P2p\PurchaseOrderService;
 use Illuminate\Http\JsonResponse;
@@ -102,11 +103,70 @@ class PoGstApprovalController extends Controller
         $user = $this->tenantUser($request);
         $po = PurchaseOrder::findOrFail($id);
 
-        // A PO that was rejected goes back to the senior who rejected it — the
-        // requester does not get to shop around for a softer approver. Any
+        return $this->raiseApproval($request, $user, [
+            'code'          => $po->code,
+            'vendorId'      => $po->vendor_id,
+            'international' => $po->document_type === 'international',
+            'branchId'      => $po->branch_id,
+            'cancelled'     => $po->isCancelled(),
+            'approvals'     => fn () => $po->gstApprovals(),
+            'foreignKey'    => 'purchase_order_id',
+            'parentId'      => $po->id,
+            'subjectWord'   => 'PO',
+            'noSupplierMsg' => 'Select a supplier on Step 01 first.',
+            /* The PO caches the gate it was approved past. A Direct SPI has
+               no such columns — it re-reads the supplier instead. */
+            'onRaised'      => function (array $gst) use ($po, $user) {
+                $po->update([
+                    'gst_gate' => $gst['gate'], 'gst_scrutiny_date' => $gst['scrutiny_date'], 'gst_last_filing_date' => $gst['filing_date'],
+                    'gst_approval_status' => 'pending', 'updated_by' => $user->id,
+                ]);
+            },
+        ]);
+    }
+
+    /** POST /p2p/spi/{id}/gst-approval/request — the Direct SPI equivalent. */
+    public function storeForInvoice(Request $request, int $id): JsonResponse
+    {
+        $user = $this->tenantUser($request);
+        $spi  = SupplierInvoice::findOrFail($id);
+
+        /* A PO-backed invoice does not raise its own: the order carries the
+           supplier, and its approval already covers this invoice. Allowing
+           both would leave two approvals for one supplier risk, free to
+           disagree. */
+        if (!$spi->isStandalone()) {
+            return $this->fail("{$spi->code} is raised against a purchase order — send that order for approval instead.");
+        }
+
+        return $this->raiseApproval($request, $user, [
+            'code'          => $spi->code,
+            'vendorId'      => $spi->vendor_id,
+            'international' => $spi->document_type === 'international',
+            'branchId'      => $spi->branch_id,
+            'cancelled'     => $spi->status === SupplierInvoice::STATUS_CANCELLED,
+            'approvals'     => fn () => $spi->gstApprovals(),
+            'foreignKey'    => 'supplier_invoice_id',
+            'parentId'      => $spi->id,
+            'subjectWord'   => 'invoice',
+            'noSupplierMsg' => 'Select a supplier on Stage 01 first.',
+            'onRaised'      => fn (array $gst) => null,
+        ]);
+    }
+
+    /**
+     * The rules both documents are held to. See the class note: this is
+     * shared because every test in it is a compliance test, and the copy that
+     * drifts is the one that stops refusing.
+     */
+    private function raiseApproval(Request $request, $user, array $sub): JsonResponse
+    {
+
+        // A document that was rejected goes back to the senior who rejected it —
+        // the requester does not get to shop around for a softer approver. Any
         // requested_to sent with it is ignored. Only if that senior is no longer
         // active does the pick open up again.
-        $last = $po->gstApprovals()->latest('id')->first();
+        $last = ($sub['approvals'])()->latest('id')->first();
         $sameApprover = $last && $last->status === PoGstApproval::STATUS_REJECTED
             ? DB::table('users')->where('id', $last->requested_to)->where('client_id', $user->client_id)
                 ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'name'])
@@ -118,52 +178,49 @@ class PoGstApprovalController extends Controller
         ], ['requested_to.required' => 'Select the senior to send this request to.']);
         $targetId = $sameApprover->id ?? $data['requested_to'];
 
-        if ($po->isCancelled()) return $this->fail('This PO is cancelled.');
-        if (!$po->vendor_id) return $this->fail('Select a supplier on Step 01 first.');
+        if ($sub['cancelled']) return $this->fail("This {$sub['subjectWord']} is cancelled.");
+        if (!$sub['vendorId']) return $this->fail($sub['noSupplierMsg']);
 
         // The gate is re-read live: only an overdue return can be approved past.
-        $gst = $this->svc->gstGate($po->vendor_id, $po->document_type === 'international');
+        $gst = $this->svc->gstGate($sub['vendorId'], $sub['international']);
         if ($gst['gate'] === 'blocked') {
             return $this->fail('GST scrutiny is older than ' . PurchaseOrderService::GST_STALE_MONTHS . ' months — a senior cannot approve this. Update the supplier\'s GST scrutiny first.');
         }
-        if ($gst['gate'] === 'clear') return $this->fail('The supplier\'s GST is up to date — this PO needs no approval.');
+        if ($gst['gate'] === 'clear') return $this->fail("The supplier's GST is up to date — this {$sub['subjectWord']} needs no approval.");
 
-        $open = $po->gstApprovals()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->latest('id')->first();
-        if ($open?->status === PoGstApproval::STATUS_APPROVED) return $this->fail('This PO is already approved — you can submit it.');
+        $open = ($sub['approvals'])()->whereIn('status', [PoGstApproval::STATUS_PENDING, PoGstApproval::STATUS_APPROVED])->latest('id')->first();
+        if ($open?->status === PoGstApproval::STATUS_APPROVED) return $this->fail("This {$sub['subjectWord']} is already approved — you can submit it.");
         if ($open) return $this->fail('A request is already waiting on ' . (DB::table('users')->where('id', $open->requested_to)->value('name') ?? 'the approver') . '.');
 
         $approver = DB::table('users')->where('id', $targetId)->where('client_id', $user->client_id)
             ->where('status', 'active')->whereNull('deleted_at')->first(['id', 'name', 'branch_id', 'user_type']);
         if (!$approver) return $this->fail('Select an active user of your company as the approver.');
-        $branch = $po->branch_id ?: $user->branch_id;
+        $branch = $sub['branchId'] ?: $user->branch_id;
         if ($approver->user_type === 'client_admin') {
-            return $this->fail('A PO approval stops at the branch head — choose a senior from this branch.');
+            return $this->fail("A {$sub['subjectWord']} approval stops at the branch head — choose a senior from this branch.");
         }
         if ($branch && (int) $approver->branch_id !== (int) $branch) {
-            return $this->fail("Choose a senior from this PO's branch.");
+            return $this->fail("Choose a senior from this {$sub['subjectWord']}'s branch.");
         }
         if ((int) $approver->id === (int) $user->id && $user->user_type !== 'branch_user') return $this->fail('You cannot approve your own request — choose a senior.');
 
-        $row = $this->inTransaction('send the approval request', function () use ($po, $user, $data, $gst, $targetId) {
+        $row = $this->inTransaction('send the approval request', function () use ($sub, $user, $data, $gst, $targetId) {
             $row = PoGstApproval::create([
-                'purchase_order_id' => $po->id,
-                'requested_by'      => $user->id,
-                'requested_to'      => $targetId,
-                'request_note'      => $data['note'] ?? null,
-                'requested_at'      => now(),
-                'status'            => PoGstApproval::STATUS_PENDING,
+                $sub['foreignKey'] => $sub['parentId'],
+                'requested_by'     => $user->id,
+                'requested_to'     => $targetId,
+                'request_note'     => $data['note'] ?? null,
+                'requested_at'     => now(),
+                'status'           => PoGstApproval::STATUS_PENDING,
             ]);
-            $po->update([
-                'gst_gate' => $gst['gate'], 'gst_scrutiny_date' => $gst['scrutiny_date'], 'gst_last_filing_date' => $gst['filing_date'],
-                'gst_approval_status' => 'pending', 'updated_by' => $user->id,
-            ]);
+            ($sub['onRaised'])($gst);
             return $row;
         });
 
         $this->notify((int) $approver->id, [
             'kind'       => 'submitted_to_approver',
-            'subject'    => "{$po->code} needs your GST approval",
-            'message'    => "{$user->name} asked you to approve {$po->code} — the supplier's GST return is overdue.",
+            'subject'    => "{$sub['code']} needs your GST approval",
+            'message'    => "{$user->name} asked you to approve {$sub['code']} — the supplier's GST return is overdue.",
             'action_url' => "/inbox/po-approval/{$row->id}",
         ]);
 
