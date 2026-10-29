@@ -96,11 +96,19 @@ class PurchaseOrderController extends Controller
                 ]], 200);
             }
 
-            $exclude = $request->integer('exclude_po') ?: null;
+            /* Whatever is being edited leaves its own claim out, so the screen
+               shows what is left for IT — not what is left once it is counted
+               twice. exclude_po has always done this for an order; a Direct SPI
+               needs the same now that its lines hold PI quantity too, or
+               reopening a saved invoice reads its own quantities as billed by
+               someone else. */
+            $exclude    = $request->integer('exclude_po') ?: null;
+            $excludeSpi = $request->integer('exclude_spi') ?: null;
+
             $body = [
                 'proforma_invoice_id' => $piId,
-                'lines'               => $this->piLinesWithPending($piId, (int) $user->client_id, $exclude),
-                'held_by'             => $this->piHolders($piId, (int) $user->client_id, $exclude),
+                'lines'               => $this->piLinesWithPending($piId, (int) $user->client_id, $exclude, $excludeSpi),
+                'held_by'             => $this->piHolders($piId, (int) $user->client_id, $exclude, $excludeSpi),
             ];
 
             DB::commit();
@@ -116,7 +124,7 @@ class PurchaseOrderController extends Controller
      * Other open POs holding this PI's quantity, with where each stands — so an empty
      * Stage 02 can say why (e.g. the lines are on a PO still waiting for senior approval).
      */
-    private function piHolders(int $piId, int $clientId, ?int $excludePoId): array
+    private function piHolders(int $piId, int $clientId, ?int $excludePoId, ?int $excludeSpiId = null): array
     {
         /* Direct SPIs hold quantity as well, and a screen that lists only the
            orders tells someone the line is free when an invoice has it. Same
@@ -130,6 +138,8 @@ class PurchaseOrderController extends Controller
             ->whereNull('s.deleted_at')
             ->whereNull('si.deleted_at')
             ->where('s.status', '!=', SupplierInvoice::STATUS_CANCELLED)
+            // The invoice being edited does not hold quantity against itself.
+            ->when($excludeSpiId, fn ($q) => $q->where('s.id', '!=', $excludeSpiId))
             ->groupBy('s.id', 's.code', 's.status')
             ->selectRaw('s.id, s.code, s.status, COUNT(*) as lines, SUM(si.qty_spi) as qty')
             ->orderBy('s.id')
@@ -1451,7 +1461,7 @@ class PurchaseOrderController extends Controller
     }
 
     /** PI lines with ordered and pending quantity (all branches of the client count). */
-    private function piLinesWithPending(int $piId, int $clientId, ?int $excludePoId): array
+    private function piLinesWithPending(int $piId, int $clientId, ?int $excludePoId, ?int $excludeSpiId = null): array
     {
         // The PI line rarely carries its own HSN / unit — fall back to the product
         // master's, through the same hsn_id / uom_id the PO column reads.
@@ -1466,7 +1476,7 @@ class PurchaseOrderController extends Controller
                 DB::raw('COALESCE(NULLIF(i.hsn_code, \'\'), h.hsn_code) as hsn_code'),
                 DB::raw('COALESCE(NULLIF(i.unit, \'\'), u.short_code, u.title) as unit'),
                 'i.quantity', 'i.rate', 'i.line_no', 'g.percentage as gst_pct', 'p.description']);
-        $ordered = $this->svc->orderedByPiItem($clientId, $lines->pluck('id')->all(), $excludePoId);
+        $ordered = $this->svc->orderedByPiItem($clientId, $lines->pluck('id')->all(), $excludePoId, $excludeSpiId);
         return $lines->map(function ($l) use ($ordered) {
             $done = $ordered[(int) $l->id] ?? 0;
             return [
