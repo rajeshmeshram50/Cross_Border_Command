@@ -97,6 +97,8 @@ export default function InvoiceList() {
         shipmentPi: storageFor.shipmentPi,
         procurementCode: storageFor.procurementCode,
         supplierCode: storageFor.supplierCode,
+        shipmentOrderId: storageFor.shipmentOrderId,
+        procurementRequestId: storageFor.procurementRequestId,
       }
       : undefined;
     if (!direct) {

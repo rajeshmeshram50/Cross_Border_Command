@@ -137,6 +137,9 @@ export type SpiDetail = {
     purchase_order_id: number | null;
     vendor_id: number;
     document_type: 'domestic' | 'international';
+    shipment_order_id?: number | null;
+    procurement_request_id?: number | null;
+    procurement_request_code?: string | null;
     invoice_no: string | null;
     invoice_date: string | null;
     invoice_file_name: string | null;

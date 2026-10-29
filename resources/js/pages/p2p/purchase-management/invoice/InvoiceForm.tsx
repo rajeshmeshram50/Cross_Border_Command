@@ -64,7 +64,10 @@ export interface InvoiceFormInput {
   supplier: string;
   storage: StorageChoice;
   invoiceNo?: string;
-  direct?: { shipmentId?: string; shipmentPi?: string; procurementCode?: string; supplierCode?: string };
+  direct?: {
+    shipmentId?: string; shipmentPi?: string; procurementCode?: string; supplierCode?: string;
+    shipmentOrderId?: number; procurementRequestId?: number;
+  };
   openAtStage1?: boolean;
 }
 
@@ -105,6 +108,11 @@ export default function InvoiceForm({
 
   const [gstApproval, setGstApproval] = useState<GstApproval | null>(null);
   const savedVendor = useRef<number | null>(null);
+  const directLinks = useRef({
+    shipment_order_id: input.direct?.shipmentOrderId ?? null as number | null,
+    procurement_request_id: input.direct?.procurementRequestId ?? null as number | null,
+    procurement_request_code: input.direct?.procurementCode ?? null as string | null,
+  });
   const reloadApproval = useCallback(() => {
     if (!input.poId) return;
     poApi.show(input.poId)
@@ -165,6 +173,13 @@ export default function InvoiceForm({
           setReached(resumeAt);
           setStage(spiViewOnlyReason(existing.status) || input.openAtStage1 ? 0 : resumeAt);
           savedVendor.current = existing.vendor_id ?? null;
+          if (!existing.purchase_order_id) {
+            directLinks.current = {
+              shipment_order_id: existing.shipment_order_id ?? directLinks.current.shipment_order_id,
+              procurement_request_id: existing.procurement_request_id ?? directLinks.current.procurement_request_id,
+              procurement_request_code: existing.procurement_request_code ?? directLinks.current.procurement_request_code,
+            };
+          }
         }
         if (!poId) {
           const standalone = !!input.direct || (!!existing && !existing.purchase_order_id);
@@ -279,7 +294,11 @@ export default function InvoiceForm({
 
   const saveStage1 = async () => {
     if (spiId) {
-      if (!isDirect || viewOnly || !draft.vendorId || draft.vendorId === savedVendor.current) { advance(); return; }
+      if (!isDirect || viewOnly) { advance(); return; }
+      if (!draft.vendorId) {
+        toast.warning('Choose a supplier', 'Pick the supplier this invoice is issued by before continuing.');
+        return;
+      }
       setSaving(true);
       try {
         await spiApi.updateStage1(spiId, {
@@ -287,6 +306,7 @@ export default function InvoiceForm({
           vendor_id: draft.vendorId,
           document_type: draft.docType === 'International' ? 'international' : 'domestic',
           warehouse_id: savedWarehouseId ?? (input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null),
+          ...directLinks.current,
         });
         savedVendor.current = draft.vendorId;
         mappedSupplier.current = draft.supplierCode;
