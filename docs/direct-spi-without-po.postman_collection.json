@@ -1,7 +1,7 @@
 {
     "info": {
         "name": "Direct SPI (without PO) — Stage 01 to Put-away",
-        "description": "SUPPLIER PURCHASE INVOICE RAISED WITHOUT A PURCHASE ORDER.\n\nA Direct SPI is identified by `purchase_order_id IS NULL`. There is NO type flag and none should be added — everything conditional in this module keys off that null, and a second column saying the same thing is a second thing to keep in step.\n\nWhat the purchase order used to supply now lives on the invoice itself: the shipment, the procurement case, TDS and the payment ledger.\n\n─────────────────────────────────────────────────────────────\nBEFORE YOU START\n─────────────────────────────────────────────────────────────\n1. Migrations — both already applied on the dev database:\n     2026_10_29_000001_direct_spi_links_tds_and_gst_approval\n     2026_10_29_000002_allow_payments_against_a_direct_spi\n   Verify:  php artisan migrate:status | grep 2026_10_29\n\n2. Run folder 00 first. Login stores `token` and `branchId`.\n\n3. Folders are numbered in execution order. 01 captures `spiId`,\n   04 captures `spiItemId`, 05 captures `boxId`. Later calls read\n   them from collection variables — do not skip ahead.\n\n─────────────────────────────────────────────────────────────\nSEEDED TEST DATA (client 1)\n─────────────────────────────────────────────────────────────\n  vendorId 3    S-003 — GST gate = approval_required. The ONLY state a\n                senior can approve. Vendors 4 and 6 are `clear`;\n                1, 2, 5, 7, 9, 10 are `blocked`. Both are refused.\n  shipment 11   DSHP-001, carries proforma_invoice_id 4\n  warehouse 1   WH-001, branch 3\n\n─────────────────────────────────────────────────────────────\nKNOWN GAPS — read before reporting a bug\n─────────────────────────────────────────────────────────────\nA. document_type is REQUIRED by the API but is NOT collected by the\n   Direct SPI setup modal (which asks only shipment, procurement,\n   supplier). Every request here sends it explicitly. Not cosmetic:\n   `international` short-circuits the GST gate to `clear`, and it is\n   one of the two fields frozen once a senior approval exists.\n\nB. A Direct SPI does NOT consume PI quantity. p2p_supplier_invoice_items\n   has pi_item_id, but Stage 2 derives it from the PO line\n   (`$po->pi_item_id`) and a direct line has no PO line — so it saves\n   as null. pending_qty on the PI never decreases, and two Direct SPIs\n   can each claim the same units. See folder 04.\n\nC. PAYMENTS ARE BLOCKED for a Direct SPI. The endpoints exist but\n   refuse it outright: \"is a standalone invoice — it has no purchase\n   order to pay against.\" The tables are open (purchase_order_id is\n   nullable on both, supplier_invoice_id added to p2p_po_payments) but\n   PoPaymentRequestController still takes a PurchaseOrder throughout.\n   See folder 08.\n\nD. ZOHO SYNC returns 501 for a standalone invoice — a pre-existing\n   stub, not a regression. The schema is ready; only the sync is\n   missing.\n\nE. procurement_request_id is accepted but NOT validated against the\n   `procurements` table, by request, while Step 02 is unwired. Restore\n   the tenant fence when real ids start arriving.",
+        "description": "SUPPLIER PURCHASE INVOICE RAISED WITHOUT A PURCHASE ORDER.\n\nA Direct SPI is identified by `purchase_order_id IS NULL`. There is NO type flag and none should be added — everything conditional in this module keys off that null, and a second column saying the same thing is a second thing to keep in step.\n\nWhat the purchase order used to supply now lives on the invoice itself: the shipment, the procurement case, TDS and the payment ledger.\n\n─────────────────────────────────────────────────────────────\nBEFORE YOU START\n─────────────────────────────────────────────────────────────\n1. Migrations — both already applied on the dev database:\n     2026_10_29_000001_direct_spi_links_tds_and_gst_approval\n     2026_10_29_000002_allow_payments_against_a_direct_spi\n   Verify:  php artisan migrate:status | grep 2026_10_29\n\n2. Run folder 00 first. Login stores `token` and `branchId`.\n\n3. Folders are numbered in execution order. 01 captures `spiId`,\n   04 captures `spiItemId`, 05 captures `boxId`. Later calls read\n   them from collection variables — do not skip ahead.\n\n─────────────────────────────────────────────────────────────\nSEEDED TEST DATA (client 1)\n─────────────────────────────────────────────────────────────\n  vendorId 3    S-003 — GST gate = approval_required. The ONLY state a\n                senior can approve. Vendors 4 and 6 are `clear`;\n                1, 2, 5, 7, 9, 10 are `blocked`. Both are refused.\n  shipment 11   DSHP-001, carries proforma_invoice_id 4\n  warehouse 1   WH-001, branch 3\n\n─────────────────────────────────────────────────────────────\nKNOWN GAPS — read before reporting a bug\n─────────────────────────────────────────────────────────────\nA. document_type is REQUIRED by the API but is NOT collected by the\n   Direct SPI setup modal (which asks only shipment, procurement,\n   supplier). Every request here sends it explicitly. Not cosmetic:\n   `international` short-circuits the GST gate to `clear`, and it is\n   one of the two fields frozen once a senior approval exists.\n\nB. A Direct SPI still does not consume PI quantity — but it now RECORDS\n   which PI line it bills. Stage 2 accepts items[].pi_item_id and stores\n   it; previously it derived the value from the PO line and a direct line\n   has none, so it always saved as null. What is still missing is the\n   counting: orderedByPiItem() reads purchase orders only, so pending_qty\n   on the PI does not decrease and two Direct SPIs can still claim the\n   same units. Send the id anyway — the link is what the fix will count.\n   See folders 03 and 04.\n\nC. PAYMENTS ARE BLOCKED for a Direct SPI. The endpoints exist but\n   refuse it outright: \"is a standalone invoice — it has no purchase\n   order to pay against.\" The tables are open (purchase_order_id is\n   nullable on both, supplier_invoice_id added to p2p_po_payments) but\n   PoPaymentRequestController still takes a PurchaseOrder throughout.\n   See folder 08.\n\nD. ZOHO SYNC returns 501 for a standalone invoice — a pre-existing\n   stub, not a regression. The schema is ready; only the sync is\n   missing.\n\nE. procurement_request_id is accepted but NOT validated against the\n   `procurements` table, by request, while Step 02 is unwired. Restore\n   the tenant fence when real ids start arriving.",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "variable": [
@@ -81,6 +81,16 @@
         {
             "key": "spiWithPoId",
             "value": "5"
+        },
+        {
+            "key": "productId2",
+            "value": "2",
+            "description": "P-02 — a second product, so the reorder test has two lines"
+        },
+        {
+            "key": "spiItemId2",
+            "value": "",
+            "description": "The second line, captured by the first save"
         }
     ],
     "auth": {
@@ -871,7 +881,28 @@
             "name": "04 · Stage 02 — items",
             "item": [
                 {
-                    "name": "Save items (JSON)",
+                    "name": "R · Read the lines back (the edit source)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}"
+                            ]
+                        },
+                        "description": "Everything the edit screen needs: data.invoice.items[] carries id, line_no, po_item_id, pi_item_id, product_id, description, hsn_code, uom, qty_po, qty_spi, extra_qty, rate, gst_pct, the three tax amounts and line_total. data.match is ordered-vs-billed per line.\n\nRender the grid in line_no order. The `id` on each row is the thing you send back — it is how the server knows which line you edited."
+                    },
                     "event": [
                         {
                             "listen": "test",
@@ -879,16 +910,19 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('200', () => pm.response.to.have.status(200));",
-                                    "const d = pm.response.json().data;",
-                                    "const items = d.items || [];",
-                                    "if (items.length) pm.collectionVariables.set('spiItemId', String(items[0].id));",
-                                    "pm.test('GAP B — pi_item_id is null on a direct line', () => {",
-                                    "  if (items.length) pm.expect(items[0].pi_item_id).to.eql(null);",
-                                    "});"
+                                    "const inv = (pm.response.json().data || {}).invoice || {};",
+                                    "const lines = inv.items || [];",
+                                    "// The id of each line is what the edit below sends back.",
+                                    "if (lines[0]) pm.collectionVariables.set('spiItemId',  String(lines[0].id));",
+                                    "if (lines[1]) pm.collectionVariables.set('spiItemId2', String(lines[1].id));",
+                                    "pm.test('every line carries an id', () => lines.forEach(l => pm.expect(l.id).to.be.a('number')));"
                                 ]
                             }
                         }
-                    ],
+                    ]
+                },
+                {
+                    "name": "C · Save items — first save (two lines)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -913,18 +947,40 @@
                                 "items"
                             ]
                         },
+                        "description": "The grid and the header in one request. The supplier's invoice number, date and e-way details belong to this screen, not Stage 01, so they save here.\n\npi_item_id: a Direct SPI has no PO line to take it from, so the caller names the PI line it is billing — get the ids from folder 03. On a PO-backed invoice the order wins and this field is ignored.\n\nThe server stores YOUR arithmetic: taxable_total, the three tax totals and grand_total are saved exactly as sent and never recomputed. Two things it does own and will overwrite: extra_qty (worked out from the order's open quantity, because the browser cannot see sibling invoices) and description / qty_po (snapshots off the PO line).\n\nAn international invoice forces the four GST columns to NULL, not 0 — \"does not apply\" is not \"zero rate\".",
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n  \"items\": [\n    {\n      \"po_item_id\": null,\n      \"product_id\": {{productId}},\n      \"qty_spi\": 11,\n      \"rate\": 12000,\n      \"gst_pct\": 0.1,\n      \"taxable_amount\": 132000,\n      \"cgst_amount\": 66,\n      \"sgst_amount\": 66,\n      \"igst_amount\": 0,\n      \"line_total\": 132132\n    }\n  ],\n  \"taxable_total\": 132000,\n  \"total_cgst\": 66,\n  \"total_sgst\": 66,\n  \"total_igst\": 0,\n  \"grand_total\": 132132\n}"
-                        },
-                        "description": "THE WHOLE GRID SAVES AT ONCE — never row by row. The header totals are rolled up from the lines in the same transaction, so a partial save would leave the two disagreeing.\n\nTHE TOTALS YOU SEND ARE OVERWRITTEN. rollupTotals() recomputes taxable_total, total_cgst/sgst/igst and grand_total by SUMming the saved lines. If your arithmetic is off, the LINES win — read the response, not your payload.\n\nTHE SERVER DOES NOT SPLIT GST. cgst/sgst vs igst is decided by the caller from the supplier's state code. Interstate: igst_amount = 132, cgst = sgst = 0.\n\n`po_item_id: null` — a direct line stands on its own, and that field was ALREADY nullable, so Stage 02 needed no change for this feature.\n\nWhat does NOT apply to a direct line: qty_open / qty_over / closed all come from the PO balance. There is no order to exceed, so over-supply detection is simply absent.\n\n>>> GAP B: pi_item_id saves as NULL. writeItems() derives it from the PO\n>>> line (`$po->pi_item_id`) and a direct line has none. Re-run folder 03\n>>> after this and pending_qty is UNCHANGED — the units are on the invoice\n>>> but invisible to the PI ledger, so two Direct SPIs can claim the same\n>>> quantity. Fix needs: accept items.*.pi_item_id, store it, and teach\n>>> orderedByPiItem() to count Direct SPI lines."
-                    }
+                            "raw": "{\n  \"invoice_no\": \"INV-DIRECT-01\",\n  \"invoice_date\": \"2026-10-29\",\n  \"items\": [\n    {\n      \"po_item_id\": null,\n      \"pi_item_id\": {{piItemId}},\n      \"product_id\": {{productId}},\n      \"qty_spi\": 11,\n      \"rate\": 12000,\n      \"gst_pct\": 18,\n      \"taxable_amount\": 132000,\n      \"cgst_amount\": 11880,\n      \"sgst_amount\": 11880,\n      \"igst_amount\": 0,\n      \"line_total\": 155760\n    },\n    {\n      \"po_item_id\": null,\n      \"product_id\": {{productId2}},\n      \"qty_spi\": 4,\n      \"rate\": 500,\n      \"gst_pct\": 18,\n      \"taxable_amount\": 2000,\n      \"cgst_amount\": 180,\n      \"sgst_amount\": 180,\n      \"igst_amount\": 0,\n      \"line_total\": 2360\n    }\n  ],\n  \"taxable_total\": 134000,\n  \"total_cgst\": 12060,\n  \"total_sgst\": 12060,\n  \"total_igst\": 0,\n  \"grand_total\": 158120\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const inv = (pm.response.json().data || {}).invoice || {};",
+                                    "const lines = inv.items || [];",
+                                    "if (lines[0]) pm.collectionVariables.set('spiItemId',  String(lines[0].id));",
+                                    "if (lines[1]) pm.collectionVariables.set('spiItemId2', String(lines[1].id));",
+                                    "pm.test('two lines saved', () => pm.expect(lines.length).to.eql(2));",
+                                    "pm.test('the PI link persisted', () => pm.expect(lines[0].pi_item_id).to.not.eql(null));",
+                                    "pm.test('totals stored as sent', () => pm.expect(Number(inv.grand_total)).to.eql(158120));"
+                                ]
+                            }
+                        }
+                    ]
                 },
                 {
-                    "name": "Save items + attachments (form-data)",
+                    "name": "U · Edit — resend with ids, order reversed",
                     "request": {
                         "method": "POST",
                         "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
                             {
                                 "key": "Accept",
                                 "value": "application/json"
@@ -942,18 +998,184 @@
                                 "items"
                             ]
                         },
+                        "description": "SEND THE WHOLE GRID. This is not a diff — a line you leave out is DELETED, and its quantity goes back to the order. That is how you remove a row; there is no delete endpoint.\n\nSEND items[].id FOR EVERY EXISTING LINE, and omit it for new ones. The id is how the server knows which row you edited.\n\nWithout it, lines are matched by POSITION — and a reordered grid then rewrites rows in place: the row that was line 1 keeps its id and takes line 3's data. Stage 03 boxes point at these ids, so a box silently follows its id to a different product. This request proves the id wins: it sends the two lines in reverse order and each one keeps its own product, while line_no follows the new order.\n\nA Direct SPI made that worse — po_item_id is null there, so nothing else identified the line at all.\n\nAn id belonging to another invoice is ignored, not adopted: a new line is created instead and the foreign row is untouched.\n\nOn a PO-backed line, always resend po_item_id. Omit it and the line quietly loses its order link: qty_po and pi_item_id go null, the match panel stops matching, and no fulfilment ledger row is written.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"invoice_no\": \"INV-DIRECT-01\",\n  \"invoice_date\": \"2026-10-29\",\n  \"items\": [\n    {\n      \"id\": {{spiItemId2}},\n      \"po_item_id\": null,\n      \"product_id\": {{productId2}},\n      \"qty_spi\": 9,\n      \"rate\": 500,\n      \"gst_pct\": 18,\n      \"taxable_amount\": 4500,\n      \"cgst_amount\": 405,\n      \"sgst_amount\": 405,\n      \"igst_amount\": 0,\n      \"line_total\": 5310\n    },\n    {\n      \"id\": {{spiItemId}},\n      \"po_item_id\": null,\n      \"pi_item_id\": {{piItemId}},\n      \"product_id\": {{productId}},\n      \"qty_spi\": 11,\n      \"rate\": 12000,\n      \"gst_pct\": 18,\n      \"taxable_amount\": 132000,\n      \"cgst_amount\": 11880,\n      \"sgst_amount\": 11880,\n      \"igst_amount\": 0,\n      \"line_total\": 155760\n    }\n  ],\n  \"taxable_total\": 136500,\n  \"total_cgst\": 12285,\n  \"total_sgst\": 12285,\n  \"total_igst\": 0,\n  \"grand_total\": 161070\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const lines = ((pm.response.json().data || {}).invoice || {}).items || [];",
+                                    "const a = lines.find(l => String(l.id) === pm.collectionVariables.get('spiItemId'));",
+                                    "const b = lines.find(l => String(l.id) === pm.collectionVariables.get('spiItemId2'));",
+                                    "pm.test('both lines still exist', () => { pm.expect(a).to.not.eql(undefined); pm.expect(b).to.not.eql(undefined); });",
+                                    "// The point of the whole request: an id keeps its product across a reorder.",
+                                    "pm.test('each id kept its product', () => {",
+                                    "  pm.expect(String(a.product_id)).to.eql(pm.collectionVariables.get('productId'));",
+                                    "  pm.expect(String(b.product_id)).to.eql(pm.collectionVariables.get('productId2'));",
+                                    "});",
+                                    "pm.test('line_no followed the new order', () => pm.expect(b.line_no).to.eql(1));",
+                                    "pm.test('the edit took', () => pm.expect(Number(b.qty_spi)).to.eql(9));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "U · Remove a line — just leave it out",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/items",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "items"
+                            ]
+                        },
+                        "description": "The grid is sent whole, so a line missing from it was deleted on screen. Each dropped line gives its quantity back to the order first and is logged as item_removed.\n\nRe-run 'R · Read the lines back' afterwards and only the one line is there.\n\nCareful if Stage 03 has already packed boxes against the line you are dropping — nothing stops the delete.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"invoice_no\": \"INV-DIRECT-01\",\n  \"invoice_date\": \"2026-10-29\",\n  \"items\": [\n    {\n      \"id\": {{spiItemId}},\n      \"po_item_id\": null,\n      \"pi_item_id\": {{piItemId}},\n      \"product_id\": {{productId}},\n      \"qty_spi\": 11,\n      \"rate\": 12000,\n      \"gst_pct\": 18,\n      \"taxable_amount\": 132000,\n      \"cgst_amount\": 11880,\n      \"sgst_amount\": 11880,\n      \"igst_amount\": 0,\n      \"line_total\": 155760\n    }\n  ],\n  \"taxable_total\": 132000,\n  \"total_cgst\": 11880,\n  \"total_sgst\": 11880,\n  \"total_igst\": 0,\n  \"grand_total\": 155760\n}"
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const lines = ((pm.response.json().data || {}).invoice || {}).items || [];",
+                                    "pm.test('one line left', () => pm.expect(lines.length).to.eql(1));",
+                                    "pm.test('the dropped line is gone', () =>",
+                                    "  pm.expect(lines.find(l => String(l.id) === pm.collectionVariables.get('spiItemId2'))).to.eql(undefined));",
+                                    "pm.test('the survivor kept its id', () =>",
+                                    "  pm.expect(String(lines[0].id)).to.eql(pm.collectionVariables.get('spiItemId')));"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "C/U · Save items + attachments (form-data)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200', () => pm.response.to.have.status(200));",
+                                    "const inv = (pm.response.json().data || {}).invoice || {};",
+                                    "const lines = inv.items || [];",
+                                    "if (lines[0]) pm.collectionVariables.set('spiItemId',  String(lines[0].id));",
+                                    "if (lines[1]) pm.collectionVariables.set('spiItemId2', String(lines[1].id));",
+                                    "pm.test('two lines', () => pm.expect(lines.length).to.eql(2));",
+                                    "// Blank form-data values must arrive as null, not as the string ''.",
+                                    "pm.test('po_item_id came through as null', () => pm.expect(lines[0].po_item_id).to.eql(null));",
+                                    "pm.test('the PI link persisted', () => pm.expect(lines[0].pi_item_id).to.not.eql(null));",
+                                    "// Snapshots the server fills in from the product master and the PI.",
+                                    "pm.test('hsn, uom and qty_pi were stored', () => {",
+                                    "  pm.expect(lines[0].hsn_code).to.not.eql(null);",
+                                    "  pm.expect(lines[0].uom).to.not.eql(null);",
+                                    "  pm.expect(lines[0].qty_pi).to.not.eql(null);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
                         "body": {
                             "mode": "formdata",
                             "formdata": [
                                 {
+                                    "key": "invoice_no",
+                                    "value": "INV-DIRECT-01",
+                                    "type": "text",
+                                    "description": "Required. Unique per supplier — reusing one gives 422 \"This supplier has already billed that invoice number.\""
+                                },
+                                {
+                                    "key": "invoice_date",
+                                    "value": "2026-10-29",
+                                    "type": "text",
+                                    "description": "Required. Not in the future."
+                                },
+                                {
+                                    "key": "eway_no",
+                                    "value": "",
+                                    "type": "text",
+                                    "description": "Optional, max 40 chars."
+                                },
+                                {
+                                    "key": "currency_code",
+                                    "value": "",
+                                    "type": "text",
+                                    "description": "Required only when document_type is international. 3 letters.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "exchange_rate",
+                                    "value": "",
+                                    "type": "text",
+                                    "description": "Optional, > 0.",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "items[0][id]",
+                                    "value": "{{spiItemId}}",
+                                    "type": "text",
+                                    "description": "The line being edited. LEAVE BLANK on the first save — blank arrives as null and a new line is created."
+                                },
+                                {
+                                    "key": "items[0][po_item_id]",
+                                    "value": "",
+                                    "type": "text",
+                                    "description": "Blank for a Direct SPI. Do NOT type the word null — leave the value empty and ConvertEmptyStringsToNull turns it into a real null."
+                                },
+                                {
+                                    "key": "items[0][pi_item_id]",
+                                    "value": "{{piItemId}}",
+                                    "type": "text",
+                                    "description": "The PI line this bills. A Direct SPI has no PO line to take it from, so the caller names it."
+                                },
+                                {
                                     "key": "items[0][product_id]",
                                     "value": "{{productId}}",
-                                    "type": "text"
+                                    "type": "text",
+                                    "description": "Required."
                                 },
                                 {
                                     "key": "items[0][qty_spi]",
                                     "value": "11",
-                                    "type": "text"
+                                    "type": "text",
+                                    "description": "Required, > 0."
                                 },
                                 {
                                     "key": "items[0][rate]",
@@ -962,7 +1184,7 @@
                                 },
                                 {
                                     "key": "items[0][gst_pct]",
-                                    "value": "0.1",
+                                    "value": "18",
                                     "type": "text"
                                 },
                                 {
@@ -972,12 +1194,12 @@
                                 },
                                 {
                                     "key": "items[0][cgst_amount]",
-                                    "value": "66",
+                                    "value": "11880",
                                     "type": "text"
                                 },
                                 {
                                     "key": "items[0][sgst_amount]",
-                                    "value": "66",
+                                    "value": "11880",
                                     "type": "text"
                                 },
                                 {
@@ -987,22 +1209,85 @@
                                 },
                                 {
                                     "key": "items[0][line_total]",
-                                    "value": "132132",
+                                    "value": "155760",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][id]",
+                                    "value": "{{spiItemId2}}",
+                                    "type": "text",
+                                    "description": "Blank on the first save."
+                                },
+                                {
+                                    "key": "items[1][po_item_id]",
+                                    "value": "",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][pi_item_id]",
+                                    "value": "7",
+                                    "type": "text",
+                                    "description": "PI 6 line 7 — product 81, Pickle Mango 10kg."
+                                },
+                                {
+                                    "key": "items[1][product_id]",
+                                    "value": "{{productId2}}",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][qty_spi]",
+                                    "value": "4",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][rate]",
+                                    "value": "500",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][gst_pct]",
+                                    "value": "18",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][taxable_amount]",
+                                    "value": "2000",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][cgst_amount]",
+                                    "value": "180",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][sgst_amount]",
+                                    "value": "180",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][igst_amount]",
+                                    "value": "0",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "items[1][line_total]",
+                                    "value": "2360",
                                     "type": "text"
                                 },
                                 {
                                     "key": "taxable_total",
-                                    "value": "132000",
-                                    "type": "text"
+                                    "value": "134000",
+                                    "type": "text",
+                                    "description": "Required. Stored exactly as sent — the server never recomputes it."
                                 },
                                 {
                                     "key": "total_cgst",
-                                    "value": "66",
+                                    "value": "12060",
                                     "type": "text"
                                 },
                                 {
                                     "key": "total_sgst",
-                                    "value": "66",
+                                    "value": "12060",
                                     "type": "text"
                                 },
                                 {
@@ -1012,22 +1297,37 @@
                                 },
                                 {
                                     "key": "grand_total",
-                                    "value": "132132",
-                                    "type": "text"
+                                    "value": "158120",
+                                    "type": "text",
+                                    "description": "Required."
                                 },
                                 {
                                     "key": "invoice_file",
                                     "type": "file",
-                                    "src": []
+                                    "src": [],
+                                    "description": "PDF or image, max 10 MB. Replaces the previous one, which is deleted from disk after the commit. Leave empty to keep what is there."
                                 },
                                 {
                                     "key": "eway_file",
                                     "type": "file",
-                                    "src": []
+                                    "src": [],
+                                    "description": "PDF or image, max 10 MB. Same replace-and-delete behaviour."
                                 }
                             ]
                         },
-                        "description": "Same endpoint, multipart. POST rather than PUT because PHP does not populate $_FILES on a PUT.\n\nDO NOT set Content-Type by hand — the client adds multipart/form-data with the boundary. Setting it manually drops the boundary and Laravel sees an empty body.\n\nOMIT po_item_id entirely. In form-data every value is text, so \"null\" arrives as a 4-character string and fails the integer rule.\n\nBoth files are optional: pdf/jpg/jpeg/png/webp, max 10 MB."
+                        "url": {
+                            "raw": "{{baseUrl}}/p2p/spi/{{spiId}}/items",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "p2p",
+                                "spi",
+                                "{{spiId}}",
+                                "items"
+                            ]
+                        },
+                        "description": "The same endpoint as the JSON saves — POST, not PUT, because PHP does not populate $_FILES on a PUT. It accepts plain JSON when there are no files and multipart when there are.\n\nDO NOT set Content-Type by hand. Postman writes it, with the multipart boundary; typing it yourself drops the boundary and every field arrives empty.\n\nARRAYS: bracket notation, items[0][...], items[1][...], indexes starting at 0 and contiguous. Laravel rebuilds them into the same nested array the JSON body produces, so the validation rules (items.*.product_id and the rest) are identical.\n\nBLANKS, NOT THE WORD null: every form-data value is a string. ConvertEmptyStringsToNull turns an empty value into a real null, which is what nullable|integer wants. Typing null sends the four characters n-u-l-l and fails the integer rule.\n\nNUMBERS are strings here too; numeric and integer both accept them, so 11 and \"11\" behave the same.\n\nLEAVE items[n][id] BLANK on the first save. Filled, it names the line to update — the same rule as the JSON edit, and the thing that stops a reordered grid from rewriting rows in place.\n\nFILES: pick a file for invoice_file / eway_file, or leave them unset to keep the ones already stored. One of each per invoice: a second upload overwrites the first and the old file is deleted from disk after the commit, never before."
                     }
                 },
                 {
@@ -1055,7 +1355,8 @@
                         "description": "Moves the invoice off draft. Stage 01 is no longer editable afterwards — isEditable() keys off the draft status."
                     }
                 }
-            ]
+            ],
+            "description": "Stage 02: the line grid, the supplier's invoice number and date, and the two attachments — one request.\n\nWHEN YOU MAY EDIT: status draft or mapped. Submit sets status to mapped, so Stage 02 stays editable AFTER submitting; it locks only at grn_pending, closed or cancelled.\n\nHOW AN EDIT WORKS: read the lines back, send the WHOLE grid again carrying items[].id on each existing line. Leave a line out to delete it. Omit the id only on new lines.\n\nOrder to run: R → C → U (edit) → U (remove) → attachments → Submit."
         },
         {
             "name": "05 · Stage 03 — boxes & sticker",

@@ -126,6 +126,7 @@ export default function BoxDrawer({
   closeDisabled = false,
   saving = false,
   saved = false,
+  updatable = false,
   savedBanner,
   customFlags = [],
   onFlagCreated,
@@ -153,6 +154,7 @@ export default function BoxDrawer({
   saving?: boolean;
   quantityMax?: number;
   saved?: boolean;
+  updatable?: boolean;
   savedBanner?: { note: string; actionLabel: string; onAction: () => void };
   customFlags?: CustomFlag[];
   onFlagCreated?: () => void;
@@ -360,10 +362,10 @@ export default function BoxDrawer({
               </button>
             </Tooltip>
             <button type="button" className="vti-dw-save-btn"
-              disabled={saving || (!initial && saved) || !onSave}
+              disabled={saving || (!initial && saved && !updatable) || !onSave}
               onClick={() => onSave?.(collect())}>
               <IcoSave size={12} stroke={2.5} />
-              {saving ? 'Saving…' : saved && !initial ? 'Saved' : 'Save'}
+              {saving ? 'Saving…' : saved && !initial && !updatable ? 'Saved' : 'Save'}
             </button>
             {onClose && variant !== 'modal' && (
               <button

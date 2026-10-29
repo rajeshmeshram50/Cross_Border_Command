@@ -90,6 +90,8 @@ export type SpiGstApproval = {
   decided_at?: string | null;
 };
 
+export type SpiStage1Blocker = { code: string; message: string };
+
 export type SpiStage1Body = {
   purchase_order_id: number | null;
   vendor_id: number;
@@ -661,7 +663,10 @@ export const spiApi = {
 
   updateStage1: (id: number, body: SpiStage1Body) =>
     call('SPI update (Stage 01)', () => api.put(`/p2p/spi/${id}/stage-1`, body),
-      (b) => (b as { data?: SpiHeader } | null)?.data as SpiHeader),
+      (b) => {
+        const r = b as { data?: SpiHeader; blockers?: SpiStage1Blocker[] } | null;
+        return { spi: r?.data as SpiHeader, blockers: r?.blockers ?? [] };
+      }),
 
   list: ({ scope = 'all', shipScope, search, page, per_page }: SpiListQuery = {}) =>
     call('SPI list', () => api.get('/p2p/spi', {

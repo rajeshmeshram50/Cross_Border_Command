@@ -52,6 +52,7 @@
 /* The tone the banner is already wearing: red refuses, amber asks. */
 .invf-gst__act--stop { background: linear-gradient(135deg, #ef4444, #dc2626); box-shadow: 0 4px 12px rgba(220, 38, 38, .34); }
 .invf-gst__act--warn { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(217, 119, 6, .32); }
+.invf-gst__act--ok { display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 12px rgba(5, 150, 105, .3); }
 .invf-gst__act:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(15, 23, 42, .22); }
 .invf-gst__act:active { transform: translateY(0); }
 

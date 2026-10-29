@@ -12,6 +12,9 @@ use App\Models\P2p\PurchaseOrderItem;
 use App\Support\TenantContext;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use App\Models\P2p\SupplierInvoice;
+use App\Models\Vendor;
+use App\Services\SegmentDocScope;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -359,10 +362,11 @@ class PurchaseOrderService
      *
      * @return array<int, float> pi_item_id => ordered qty
      */
-    public function orderedByPiItem(int $clientId, array $piItemIds, ?int $excludePoId = null): array
+    public function orderedByPiItem(int $clientId, array $piItemIds, ?int $excludePoId = null, ?int $excludeSpiId = null): array
     {
         if (!$piItemIds) return [];
-        return PurchaseOrderItem::query()
+
+        $po = PurchaseOrderItem::query()
             ->join('p2p_purchase_orders as po', 'po.id', '=', 'p2p_purchase_order_items.purchase_order_id')
             ->where('po.client_id', $clientId)
             ->whereNull('po.deleted_at')
@@ -387,7 +391,91 @@ class PurchaseOrderService
             ->groupBy('p2p_purchase_order_items.pi_item_id')
             ->selectRaw('p2p_purchase_order_items.pi_item_id as pi_item_id, SUM(p2p_purchase_order_items.quantity) as qty')
             ->pluck('qty', 'pi_item_id')
-            ->map(fn ($q) => (float) $q)
+            ->map(fn ($q) => (float) $q);
+
+        /* A DIRECT SPI holds PI quantity too. It has no purchase order, so the
+           query above cannot see it — and until this existed, two Direct SPIs
+           could each bill a PI line in full while pending_qty never moved.
+
+           purchase_order_id IS NULL is the whole condition: an invoice raised
+           against an order is already counted through that order's lines, and
+           counting it here as well would charge the PI twice for one delivery.
+
+           Which ones hold: every invoice that is not cancelled, drafts
+           included — the same rule openQtyByPoItem() applies on the PO side.
+           A draft SPI is a supplier's claim for goods that arrived, not an
+           intention someone may abandon, which is why the PO's stricter
+           "submitted, or with a senior" test does not belong here. */
+        $spi = DB::table('p2p_supplier_invoice_items as si')
+            ->join('p2p_supplier_invoices as s', 's.id', '=', 'si.supplier_invoice_id')
+            ->where('s.client_id', $clientId)
+            ->whereNull('s.purchase_order_id')
+            ->whereNull('s.deleted_at')
+            ->whereNull('si.deleted_at')
+            ->where('s.status', '!=', SupplierInvoice::STATUS_CANCELLED)
+            ->when($excludeSpiId, fn ($q) => $q->where('s.id', '!=', $excludeSpiId))
+            ->whereIn('si.pi_item_id', $piItemIds)
+            ->groupBy('si.pi_item_id')
+            ->selectRaw('si.pi_item_id as pi_item_id, SUM(si.qty_spi) as qty')
+            ->pluck('qty', 'pi_item_id')
+            ->map(fn ($q) => (float) $q);
+
+        /* Both hold against the same line, so the two sums add. Keyed by
+           pi_item_id, which is an integer — merge() would overwrite and
+           mergeRecursive() renumbers integer keys, so neither will do. */
+        $out = $po->all();
+        foreach ($spi->all() as $piItemId => $qty) {
+            $out[$piItemId] = (float) ($out[$piItemId] ?? 0) + (float) $qty;
+        }
+
+        return $out;
+    }
+
+    /**
+     * The supplier's standard paperwork that has run out — KYC, DD and trade
+     * licences, scoped to what this supplier's OWN segment rules ask for on
+     * the side its address puts it on.
+     *
+     * Scoped, not "every expired upload": blocking on a document no rule
+     * selects leaves nothing to renew, because the Evidence Vault never lists
+     * it. Lives here rather than on the PO controller because an invoice
+     * raised without an order has to ask the same question.
+     *
+     * @return array<int,array{code:string,name:string,expiry:string}>
+     */
+    public function expiredStandardDocs(?int $vendorId, int $clientId): array
+    {
+        if (!$vendorId) return [];
+
+        $vendor = Vendor::with(['primaryAddress.country', 'segments'])->find($vendorId);
+        if (!$vendor) return [];
+
+        $codes  = app(SegmentDocScope::class)->applicableCodes($vendor, 'vendor', $clientId);
+        $scoped = array_filter([
+            'kyc' => $codes['kyc'] ?? [],
+            'dd'  => $codes['dd']  ?? [],
+            'tl'  => $codes['tl']  ?? [],
+        ]);
+        if (empty($scoped)) return [];
+
+        return DB::table('segment_doc_uploads')
+            ->where('uploadable_type', Vendor::class)
+            ->where('uploadable_id', $vendorId)
+            ->where('client_id', $clientId)
+            ->where(function ($w) use ($scoped) {
+                foreach ($scoped as $cat => $list) {
+                    $w->orWhere(fn ($q) => $q->where('category', $cat)->whereIn('doc_code', $list));
+                }
+            })
+            ->whereNotNull('expiry_date')
+            ->whereDate('expiry_date', '<', now()->toDateString())
+            ->orderBy('expiry_date')
+            ->get(['doc_code', 'doc_name', 'expiry_date'])
+            ->map(fn ($r) => [
+                'code'   => (string) $r->doc_code,
+                'name'   => (string) ($r->doc_name ?: $r->doc_code),
+                'expiry' => Carbon::parse($r->expiry_date)->format('d-M-Y'),
+            ])
             ->all();
     }
 

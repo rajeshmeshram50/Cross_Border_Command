@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -9,7 +9,7 @@ import { HeadPill } from '../order/create-po/CreatePoForm';
 import { WizSpinner } from '../order/create-po/form-fields';
 import {
   IcoBriefcase, IcoCheck, IcoChevronL, IcoChevronR, IcoDoc, IcoLock, IcoRefLines,
-  IcoUser, IcoVan, IcoWarehouse, IcoX,
+  IcoShield, IcoUser, IcoVan, IcoWarehouse, IcoX,
 } from '../../icons';
 import Step1SupplierDetails from './steps/Step1SupplierDetails';
 import Step2InvoiceProducts from './steps/Step2InvoiceProducts';
@@ -19,7 +19,10 @@ import { draftFromPo, draftFromScrutiny, draftFromSupplier, newestScrutiny, useI
 import { PoApiError, poApi, poLookupApi, type PoDetail } from '../order/api/po-api';
 
 type GstApproval = NonNullable<PoDetail['gst_approval']>;
-import { gstState, legalFromVault, pendingCaseToCase } from '../order/create-po/supplier-checks';
+import { gstState, legalFromVault, pendingCaseToCase, vaultTargetOf } from '../order/create-po/supplier-checks';
+import SupplierDocsNoticeModal, { type SupplierDocsNotice } from '../order/create-po/SupplierDocsNoticeModal';
+
+const SupplierEvidenceVaultModal = lazy(() => import('../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal'));
 import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { putId, spiApi, type ProductFlagOption, type SpiBox, type SpiBoxBody, type WarehouseDetail } from './spi-api';
@@ -367,6 +370,22 @@ export default function InvoiceForm({
     setReached(r => Math.max(r, next));
   };
 
+  const requestSpiApproval = async (body: { requested_to?: number; note?: string }) => {
+    if (!spiId) return;
+    if (draft.vendorId && draft.vendorId !== savedVendor.current) {
+      await spiApi.updateStage1(spiId, {
+        purchase_order_id: null,
+        vendor_id: draft.vendorId,
+        document_type: draft.docType === 'International' ? 'international' : 'domestic',
+        warehouse_id: savedWarehouseId ?? (input.storage.type === 'own' ? input.storage.warehouse?.apiId ?? null : null),
+        ...directLinks.current,
+      });
+      savedVendor.current = draft.vendorId;
+      mappedSupplier.current = draft.supplierCode;
+    }
+    return spiApi.gstApprovalRequest(spiId, body);
+  };
+
   const saveStage1 = async () => {
     if (spiId) {
       if (!isDirect || viewOnly) { advance(); return; }
@@ -376,7 +395,7 @@ export default function InvoiceForm({
       }
       setSaving(true);
       try {
-        await spiApi.updateStage1(spiId, {
+        const { blockers } = await spiApi.updateStage1(spiId, {
           purchase_order_id: null,
           vendor_id: draft.vendorId,
           document_type: draft.docType === 'International' ? 'international' : 'domestic',
@@ -385,6 +404,10 @@ export default function InvoiceForm({
         });
         savedVendor.current = draft.vendorId;
         mappedSupplier.current = draft.supplierCode;
+        if (blockers.length) {
+          toast.warning('Stage 01 is not complete', blockers.map(b => b.message).join(' '));
+          return;
+        }
         const shipmentOrderId = directLinks.current.shipment_order_id;
         if (shipmentOrderId && !lines.some(l => l.spiItemId != null)) {
           const pi = await poApi.piLines(shipmentOrderId);
@@ -646,7 +669,21 @@ export default function InvoiceForm({
     }
     if (stage >= STAGES.length - 1) { void mapInvoice(); return; }
     if (putawayLocked) { advance(); return; }
-    if (stage === 0) { void saveStage1(); return; }
+    if (stage === 0) {
+      if (isDirect && vaultTarget) {
+        const supplierName = draft.legalName || draft.supplier;
+        if (standardDocs && standardDocs.done < standardDocs.total) {
+          setDocsNotice({ target: vaultTarget, supplier: supplierName, code: draft.supplierCode, section: standardDocs });
+          return;
+        }
+        if (ctcPending.length) {
+          setDocsNotice({ target: vaultTarget, supplier: supplierName, code: draft.supplierCode, pending: ctcPending });
+          return;
+        }
+      }
+      void saveStage1();
+      return;
+    }
     if (stage === 1) { void saveStage2(); return; }
     if (stage === 2) {
       const left = unboxed();
@@ -699,6 +736,24 @@ export default function InvoiceForm({
     }
   };
 
+  const directDocsStage = isDirect && stage === 0 && !viewOnly;
+  const standardDocs = draft.legal?.sections?.[0] ?? null;
+  const vaultTarget = useMemo(
+    () => (draft.supplierDetail ? vaultTargetOf(draft.supplierDetail) as SupplierDocsNotice['target'] : null),
+    [draft.supplierDetail],
+  );
+  const ctcPending = useMemo(() => pendingCaseToCase(draft.vault ?? null, null), [draft.vault]);
+  const docsPending = directDocsStage && !!standardDocs && standardDocs.done < standardDocs.total && !!vaultTarget?.db_id;
+  const ctcFooter = directDocsStage && ctcPending.length > 0 && !!vaultTarget?.db_id;
+  const [docsNotice, setDocsNotice] = useState<SupplierDocsNotice | null>(null);
+  const [vaultOpen, setVaultOpen] = useState(false);
+  const refreshVault = useCallback(() => {
+    if (!draft.vendorId) return;
+    poLookupApi.supplierVault(draft.vendorId)
+      .then(v => set({ vault: v, legal: legalFromVault(v) }))
+      .catch(() => {});
+  }, [draft.vendorId, set]);
+
   const stage1Gate = useMemo(() => {
     if (!isDirect || stage !== 0 || viewOnly || !draft.supplier) return null;
     const gst = gstState(draft.supplier, draft.scrutinyDate, draft.filingDate, 'invoice');
@@ -709,11 +764,6 @@ export default function InvoiceForm({
       return gstApproval?.status === 'pending'
         ? `Waiting for ${gstApproval.requested_to_name ?? 'the senior'} to approve ${draft.supplier}'s overdue GST return.`
         : `${draft.supplier}'s last GST return is out of date. It needs a senior's approval before this invoice can move on.`;
-    }
-    const ctc = pendingCaseToCase(draft.vault ?? null, null);
-    if (ctc.length) {
-      return `${ctc.length} case-to-case document${ctc.length === 1 ? '' : 's'} for ${draft.supplier} `
-        + `${ctc.length === 1 ? 'is' : 'are'} still unsigned. Sign ${ctc.length === 1 ? 'it' : 'them'} before this invoice can move on.`;
     }
     return null;
   }, [isDirect, stage, viewOnly, draft.supplier, draft.scrutinyDate, draft.filingDate, draft.vault, gstApproval]);
@@ -891,7 +941,8 @@ export default function InvoiceForm({
                     approval={gstApproval}
                     onApprovalSent={reloadApproval}
                     onBusy={setSupplierBusy}
-                    spiId={spiId} />
+                    spiId={spiId}
+                    onRequestApproval={spiId ? requestSpiApproval : undefined} />
                 )}
                 {stage === 1 && (
                   <Step2InvoiceProducts draft={draft} set={set} lines={lines} taxMode={taxMode} onPickFile={pickFile} readOnly={viewOnly || putawayLocked}
@@ -963,6 +1014,23 @@ export default function InvoiceForm({
                 <IcoChevronL /> Back
               </button>
             )}
+            {docsPending && (
+              <button type="button" className="spi-dt-btn-ghost cpf-foot-docs" onClick={() => setVaultOpen(true)} disabled={saving}>
+                <IcoShield /> Evidence Vault
+                <span className="cpf-foot-docs__n">{standardDocs!.total - standardDocs!.done} pending</span>
+              </button>
+            )}
+            {!docsPending && ctcFooter && vaultTarget && (
+              <button type="button" className="spi-dt-btn-ghost cpf-foot-docs" disabled={saving}
+                title="Documents of this supplier's earlier orders are still unsigned"
+                onClick={() => setDocsNotice({
+                  target: vaultTarget, supplier: draft.legalName || draft.supplier,
+                  code: draft.supplierCode, pending: ctcPending,
+                })}>
+                <IcoShield /> Case to Case
+                <span className="cpf-foot-docs__n">{ctcPending.length} unsigned</span>
+              </button>
+            )}
             <button
               type="button"
               className={isLast ? 'spi-dt-btn-map' : 'spi-dt-btn-next'}
@@ -980,6 +1048,14 @@ export default function InvoiceForm({
           </div>
         </div>
       </div>
+      {docsNotice && (
+        <SupplierDocsNoticeModal notice={docsNotice} onClose={() => setDocsNotice(null)} onVaultChange={refreshVault} />
+      )}
+      {vaultOpen && vaultTarget && (
+        <Suspense fallback={null}>
+          <SupplierEvidenceVaultModal open supplier={vaultTarget as never} onVaultChange={refreshVault} onClose={() => setVaultOpen(false)} />
+        </Suspense>
+      )}
     </div>,
     document.body,
   );

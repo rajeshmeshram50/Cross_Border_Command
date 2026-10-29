@@ -292,13 +292,40 @@ class SupplierInvoiceService
             $before = SupplierInvoiceItem::where('supplier_invoice_id', $spi->id)
                 ->pluck('qty_spi', 'id');
 
+            /* Lines are matched by their own id when the caller sends one, and
+               by position only when it does not.
+               Position alone meant a reordered grid rewrote rows in place: the
+               row that was line 1 kept its id and took line 3's data, while
+               Stage 03 boxes — which point at these ids — silently followed it
+               to a different product. A Direct SPI made that worse, because
+               po_item_id is null there and nothing else identified the line.
+               No id sent still behaves exactly as before. */
+            $existing = SupplierInvoiceItem::where('supplier_invoice_id', $spi->id)->get();
+            $byId     = $existing->keyBy('id');
+            $byLine   = $existing->keyBy('line_no');
+
             $kept = [];
 
             foreach ($rows as $i => $row) {
-                $item = SupplierInvoiceItem::updateOrCreate(
-                    ['supplier_invoice_id' => $spi->id, 'line_no' => $i + 1],
-                    $row
-                );
+                $id = $row['id'] ?? null;
+                unset($row['id']);
+                $row['line_no'] = $i + 1;
+
+                $item = null;
+                if ($id && $byId->has($id)) {
+                    $item = $byId[$id];
+                } elseif (!$id && $byLine->has($i + 1)) {
+                    $item = $byLine[$i + 1];
+                }
+                // Never twice: two payload rows must not collapse into one line.
+                if ($item && in_array($item->id, $kept, true)) $item = null;
+
+                if ($item) {
+                    $item->fill($row)->save();
+                } else {
+                    $item = SupplierInvoiceItem::create($row + ['supplier_invoice_id' => $spi->id]);
+                }
+
                 $kept[] = $item->id;
 
                 $previous = $before[$item->id] ?? null;
